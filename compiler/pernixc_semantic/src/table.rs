@@ -4,9 +4,10 @@ use std::{
     collections::{hash_map::Entry, HashMap},
     fmt::{self, Debug},
     hash::Hash,
-    ops::Deref,
+    ops::{Deref, DerefMut},
 };
 
+use getset::Getters;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use paste::paste;
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
@@ -18,6 +19,7 @@ use crate::{
     arena::{Arena, ID},
     error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
     semantic::{
+        model::{Default, Model},
         term::{constant, lifetime::Lifetime, r#type, GenericArguments},
         Premise, TraitContext,
     },
@@ -102,7 +104,7 @@ pub trait Container:
     + PartialOrd
     + Ord
     + Hash
-    + Default
+    + std::default::Default
     + 'static
     + Send
     + Sync
@@ -113,6 +115,10 @@ pub trait Container:
     /// The type of the read guard of the wrapped value.
     #[clippy::has_significant_drop]
     type Read<'a, T: ?Sized + 'a>: Deref<Target = T> + 'a;
+
+    /// The type of the write guard of the wrapped value.
+    #[clippy::has_significant_drop]
+    type Write<'a, T: ?Sized + 'a>: DerefMut<Target = T> + 'a;
 
     /// The type of the mapped read guard of the wrapped value.
     #[clippy::has_significant_drop]
@@ -125,6 +131,11 @@ pub trait Container:
     fn read<T: Debug + 'static + Send + Sync>(
         value: &Self::Wrap<T>,
     ) -> Self::Read<'_, T>;
+
+    /// Writes the given value.
+    fn write<T: Debug + 'static + Send + Sync>(
+        value: &mut Self::Wrap<T>,
+    ) -> Self::Write<'_, T>;
 
     /// Maps the given value into another sub-field value.
     fn map_read<'a, T: ?Sized + 'a, U: ?Sized + 'a>(
@@ -147,6 +158,7 @@ pub struct RwLockContainer;
 impl Container for RwLockContainer {
     type MappedRead<'a, T: ?Sized + 'a> = MappedRwLockReadGuard<'a, T>;
     type Read<'a, T: ?Sized + 'a> = RwLockReadGuard<'a, T>;
+    type Write<'a, T: ?Sized + 'a> = &'a mut T;
     type Wrap<T: Debug + 'static + Send + Sync> = RwLock<T>;
 
     fn wrap<T: Debug + 'static + Send + Sync>(value: T) -> Self::Wrap<T> {
@@ -172,6 +184,12 @@ impl Container for RwLockContainer {
     ) -> Self::MappedRead<'a, U> {
         MappedRwLockReadGuard::map(value, f)
     }
+
+    fn write<T: Debug + 'static + Send + Sync>(
+        value: &mut Self::Wrap<T>,
+    ) -> Self::Write<'_, T> {
+        value.get_mut()
+    }
 }
 
 /// A struct which implements [`Container`] by not wrapping the value at all.
@@ -182,6 +200,7 @@ impl Container for NoContainer {
     type MappedRead<'a, T: ?Sized + 'a> = &'a T;
     type Read<'a, T: ?Sized + 'a> = &'a T;
     type Wrap<T: Debug + 'static + Send + Sync> = T;
+    type Write<'a, T: ?Sized + 'a> = &'a mut T;
 
     fn wrap<T: Debug + 'static + Send + Sync>(value: T) -> Self::Wrap<T> {
         value
@@ -206,6 +225,12 @@ impl Container for NoContainer {
     ) -> Self::MappedRead<'a, U> {
         f(value)
     }
+
+    fn write<T: Debug + 'static + Send + Sync>(
+        value: &mut Self::Wrap<T>,
+    ) -> Self::Write<'_, T> {
+        value
+    }
 }
 
 /// A struct which implements [`State`] used to signify that the table is built
@@ -225,9 +250,9 @@ impl State for Suboptimal {
     ) {
     }
 
-    fn on_resolved(
+    fn on_resolved<M: Model>(
         _: &Table<Self>,
-        _: Resolution,
+        _: Resolution<M>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
     ) {
@@ -251,9 +276,9 @@ impl State for Success {
     ) {
     }
 
-    fn on_resolved(
+    fn on_resolved<M: Model>(
         _: &Table<Self>,
-        _: Resolution,
+        _: Resolution<M>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
     ) {
@@ -277,68 +302,110 @@ pub trait State: Debug + Sized + 'static + Send + Sync {
         handler: &dyn Handler<Box<dyn error::Error>>,
     );
 
-    fn on_resolved(
+    fn on_resolved<M: Model>(
         table: &Table<Self>,
-        resolution: Resolution,
+        resolution: Resolution<M>,
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     );
 }
 
 /// The representation of the table without any state information.
-#[derive(Debug)]
+#[derive(Debug, Getters)]
 pub struct Representation<T: Container> {
+    /// The modules defined in the table.
+    #[get = "pub"]
     pub(crate) modules: Arena<T::Wrap<Module>, ID<Module>>,
+    /// The structs defined in the table.
+    #[get = "pub"]
     pub(crate) structs: Arena<T::Wrap<Struct>, ID<Struct>>,
+    /// The enums defined in the table.
+    #[get = "pub"]
     pub(crate) enums: Arena<T::Wrap<Enum>, ID<Enum>>,
+    /// The variants defined in the table.
+    #[get = "pub"]
     pub(crate) variants: Arena<T::Wrap<Variant>, ID<Variant>>,
+    /// The types defined in the table.
+    #[get = "pub"]
     pub(crate) types: Arena<T::Wrap<Type>, ID<Type>>,
+    /// The functions defined in the table.
+    #[get = "pub"]
     pub(crate) functions: Arena<T::Wrap<Function>, ID<Function>>,
+    /// The constants defined in the table.
+    #[get = "pub"]
     pub(crate) constants: Arena<T::Wrap<Constant>, ID<Constant>>,
 
+    /// The traits defined in the table.
+    #[get = "pub"]
     pub(crate) traits: Arena<T::Wrap<Trait>, ID<Trait>>,
+    /// The trait types defined in the table.
+    #[get = "pub"]
     pub(crate) trait_types: Arena<T::Wrap<TraitType>, ID<TraitType>>,
+    /// The trait functions defined in the table.
+    #[get = "pub"]
     pub(crate) trait_functions:
         Arena<T::Wrap<TraitFunction>, ID<TraitFunction>>,
+    /// The trait constants defined in the table.
+    #[get = "pub"]
     pub(crate) trait_constants:
         Arena<T::Wrap<TraitConstant>, ID<TraitConstant>>,
 
+    /// The trait implementations defined in the table.
+    #[get = "pub"]
     pub(crate) trait_implementations:
         Arena<T::Wrap<TraitImplementation>, ID<TraitImplementation>>,
+    /// The negative trait implementations defined in the table.
+    #[get = "pub"]
     pub(crate) negative_trait_implementations: Arena<
         T::Wrap<NegativeTraitImplementation>,
         ID<NegativeTraitImplementation>,
     >,
 
+    /// The trait implementation types defined in the table.
+    #[get = "pub"]
     pub(crate) trait_implementation_types:
         Arena<T::Wrap<TraitImplementationType>, ID<TraitImplementationType>>,
+    /// The trait implementation functions defined in the table.
+    #[get = "pub"]
     pub(crate) trait_implementation_functions: Arena<
         T::Wrap<TraitImplementationFunction>,
         ID<TraitImplementationFunction>,
     >,
+    /// The trait implementation constants defined in the table.
+    #[get = "pub"]
     pub(crate) trait_implementation_constants: Arena<
         T::Wrap<TraitImplementationConstant>,
         ID<TraitImplementationConstant>,
     >,
 
+    /// The ADT implementations defined in the table.
+    #[get = "pub"]
     pub(crate) adt_implementations:
         Arena<T::Wrap<AdtImplementation>, ID<AdtImplementation>>,
 
+    /// The ADT implementation types defined in the table.
+    #[get = "pub"]
     pub(crate) adt_implementation_types:
         Arena<T::Wrap<AdtImplementationType>, ID<AdtImplementationType>>,
+    /// The ADT implementation functions defined in the table.
+    #[get = "pub"]
     pub(crate) adt_implementation_functions: Arena<
         T::Wrap<AdtImplementationFunction>,
         ID<AdtImplementationFunction>,
     >,
+    /// The ADT implementation constants defined in the table.
+    #[get = "pub"]
     pub(crate) adt_implementation_constants: Arena<
         T::Wrap<AdtImplementationConstant>,
         ID<AdtImplementationConstant>,
     >,
 
+    /// Maps the root module (target) names to their IDs.
+    #[get = "pub"]
     pub(crate) root_module_ids_by_name: HashMap<String, ID<Module>>,
 }
 
-impl<T: Container> Default for Representation<T> {
+impl<T: Container> std::default::Default for Representation<T> {
     fn default() -> Self {
         Self {
             modules: Arena::default(),
@@ -372,13 +439,22 @@ pub struct Table<T: State> {
     #[deref]
     pub(crate) representation: Representation<T::Container>,
 
-    #[allow(unused)]
     state: T,
 }
 
-impl<T: State + Default> Default for Table<T> {
+impl<T: State + std::default::Default> std::default::Default for Table<T> {
     fn default() -> Self {
         Self { representation: Representation::default(), state: T::default() }
+    }
+}
+
+impl<T: State> Table<T> {
+    /// Creates a new table with the given representation and state.
+    pub const fn new(
+        representation: Representation<T::Container>,
+        state: T,
+    ) -> Self {
+        Self { representation, state }
     }
 }
 
@@ -890,7 +966,7 @@ impl<T: Container> Representation<T> {
     #[allow(clippy::uninhabited_references)]
     pub fn get_type_overall_accessibility(
         &self,
-        ty: &r#type::Type,
+        ty: &r#type::Type<Default>,
     ) -> Option<Accessibility> {
         match ty {
             r#type::Type::Local(local) => {
@@ -973,7 +1049,7 @@ impl<T: Container> Representation<T> {
     #[allow(clippy::uninhabited_references)]
     pub fn get_constant_overall_accessibility(
         &self,
-        constant: &constant::Constant,
+        constant: &constant::Constant<Default>,
     ) -> Option<Accessibility> {
         match constant {
             constant::Constant::Local(local) => {
@@ -1042,15 +1118,14 @@ impl<T: Container> Representation<T> {
     #[must_use]
     pub fn get_lifetime_overall_accessibility(
         &self,
-        lifetime: &Lifetime,
+        lifetime: &Lifetime<Default>,
     ) -> Option<Accessibility> {
         match lifetime {
             Lifetime::Parameter(lifetime_parameter_id) => {
                 self.get_accessibility(lifetime_parameter_id.parent.into())
             }
 
-            Lifetime::Inference(never) => match never.0 {},
-            Lifetime::Local(_) => Some(Accessibility::Public),
+            Lifetime::Inference(never) => match *never {},
 
             Lifetime::Forall(_) | Lifetime::Static => {
                 Some(Accessibility::Public)
@@ -1071,7 +1146,7 @@ impl<T: Container> Representation<T> {
     #[must_use]
     pub fn get_generic_arguments_overall_accessibility(
         &self,
-        generic_arguments: &GenericArguments,
+        generic_arguments: &GenericArguments<Default>,
     ) -> Option<Accessibility> {
         let mut current_min = Accessibility::Public;
 
@@ -1097,7 +1172,10 @@ impl<T: Container> Representation<T> {
     ///
     /// # Errors
     #[must_use]
-    pub fn get_active_premise(&self, global_id: GlobalID) -> Option<Premise> {
+    pub fn get_active_premise(
+        &self,
+        global_id: GlobalID,
+    ) -> Option<Premise<Default>> {
         let mut premise = Premise::default();
 
         for global_id in self.scope_walker(global_id)? {

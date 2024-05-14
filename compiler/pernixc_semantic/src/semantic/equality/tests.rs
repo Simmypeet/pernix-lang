@@ -12,7 +12,7 @@ use crate::{
     arena::ID,
     semantic::{
         instantiation::{self, Instantiation},
-        predicate::{Predicate, TraitMemberEquality},
+        predicate::{Equality, Predicate},
         session::{self, ExceedLimitError, Limit, Session},
         sub_term::TermLocation,
         term::{
@@ -59,9 +59,9 @@ fn symmetric() {
 
     let mut premise = Premise::default();
     premise.append_from_predicates(std::iter::once(
-        Predicate::TraitTypeEquality(TraitMemberEquality {
-            trait_member: trait_member.clone(),
-            equivalent: equivalence.clone(),
+        Predicate::TraitTypeEquality(Equality {
+            lhs: trait_member.clone(),
+            rhs: equivalence.clone(),
         }),
     ));
 
@@ -99,13 +99,13 @@ fn transitivity() {
     let mut premise = Premise::default();
     premise.append_from_predicates(
         [
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: first_trait_member.clone(),
-                equivalent: Type::TraitMember(second_trait_member.clone()),
+            Predicate::TraitTypeEquality(Equality {
+                lhs: first_trait_member.clone(),
+                rhs: Type::TraitMember(second_trait_member.clone()),
             }),
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: second_trait_member,
-                equivalent: equivalence.clone(),
+            Predicate::TraitTypeEquality(Equality {
+                lhs: second_trait_member,
+                rhs: equivalence.clone(),
             }),
         ]
         .into_iter(),
@@ -147,13 +147,13 @@ fn congruence() {
     let mut premise = Premise::default();
     premise.append_from_predicates(
         [
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: first_trait_member.clone(),
-                equivalent: first_equivalence.clone(),
+            Predicate::TraitTypeEquality(Equality {
+                lhs: first_trait_member.clone(),
+                rhs: first_equivalence.clone(),
             }),
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: second_trait_member.clone(),
-                equivalent: second_equivalence.clone(),
+            Predicate::TraitTypeEquality(Equality {
+                lhs: second_trait_member.clone(),
+                rhs: second_equivalence.clone(),
             }),
         ]
         .into_iter(),
@@ -335,7 +335,7 @@ where
 impl<T: Term + Debug + 'static> Property<T> for Mapping<T>
 where
     session::Default: Session<T>,
-    TraitMemberEquality<T>: Into<Predicate>,
+    Equality<T::TraitMember, T>: Into<Predicate>,
 {
     fn apply(
         &self,
@@ -374,9 +374,9 @@ where
         }
 
         premise.append_from_predicates(std::iter::once(
-            TraitMemberEquality {
-                trait_member: self.target_trait_member.clone(),
-                equivalent: to_be_mapped,
+            Equality {
+                lhs: self.target_trait_member.clone(),
+                rhs: to_be_mapped,
             }
             .into(),
         ));
@@ -699,7 +699,7 @@ impl Property<Type> for TypeAlias {
                 parent_id: ID::new(0),
                 span: None,
                 name: "Test".to_string(),
-                data: symbol::TypeData {
+                definition: symbol::TypeDefinition {
                     accessibility: symbol::Accessibility::Public,
                     r#type: {
                         let (lhs, rhs) = self.property.generate();

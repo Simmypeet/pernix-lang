@@ -20,6 +20,7 @@ use super::finalize::{Finalize, StateFlag};
 use crate::{
     arena::ID,
     error::{self, CyclicDependency},
+    semantic::model::Model,
     symbol::{
         AdtImplementation, AdtImplementationConstant,
         AdtImplementationFunction, AdtImplementationType, Constant, Enum,
@@ -80,9 +81,9 @@ impl table::State for Finalizer {
         );
     }
 
-    fn on_resolved(
+    fn on_resolved<M: Model>(
         _: &table::Table<Self>,
-        _: table::resolution::Resolution,
+        _: table::resolution::Resolution<M>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
     ) {

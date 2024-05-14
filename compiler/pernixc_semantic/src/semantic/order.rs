@@ -4,6 +4,7 @@
 //! implementation of the trait.
 
 use super::{
+    model::Model,
     session::{ExceedLimitError, Limit, Session},
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
@@ -24,38 +25,38 @@ pub enum Order {
     Ambiguous,
 }
 
-const fn lifetime_predicate(_: &Lifetime) -> bool { true }
+const fn lifetime_predicate<M: Model>(_: &Lifetime<M>) -> bool { true }
 
-fn type_predicate(x: &Type) -> bool {
+fn type_predicate<M: Model>(x: &Type<M>) -> bool {
     x.is_parameter() || matches!(x, Type::TraitMember(_))
 }
 
-fn constant_predicate(x: &Constant) -> bool { x.is_parameter() }
+fn constant_predicate<M: Model>(x: &Constant<M>) -> bool { x.is_parameter() }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct OrderUnifyingConfig;
 
-impl unification::Config for OrderUnifyingConfig {
+impl<M: Model> unification::Config<M> for OrderUnifyingConfig {
     fn lifetime_unifiable(
         &mut self,
-        _: &Lifetime,
-        _: &Lifetime,
+        _: &Lifetime<M>,
+        _: &Lifetime<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(true)
     }
 
     fn type_unifiable(
         &mut self,
-        from: &Type,
-        to: &Type,
+        from: &Type<M>,
+        to: &Type<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(type_predicate(from) || type_predicate(to))
     }
 
     fn constant_unifiable(
         &mut self,
-        from: &Constant,
-        to: &Constant,
+        from: &Constant<M>,
+        to: &Constant<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(constant_predicate(from) || constant_predicate(to))
     }
@@ -65,9 +66,12 @@ fn get_arguments_matching_count<T: Term>(
     this: &[T],
     other: &[T],
     predicate: &impl Fn(&T) -> bool,
-    environment: &Environment<impl State>,
+    environment: &Environment<T::Model, impl State>,
     session: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<Option<usize>, ExceedLimitError> {
     let mut count = 0;
@@ -90,12 +94,12 @@ fn get_arguments_matching_count<T: Term>(
     Ok(Some(count))
 }
 
-fn get_generic_arguments_matching_count(
-    this: &GenericArguments,
-    other: &GenericArguments,
-    environment: &Environment<impl State>,
+fn get_generic_arguments_matching_count<M: Model>(
+    this: &GenericArguments<M>,
+    other: &GenericArguments<M>,
+    environment: &Environment<M, impl State>,
     limit: &mut Limit<
-        impl Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
     >,
 ) -> Result<Option<usize>, ExceedLimitError> {
     let (Some(lifetime_count), Some(ty_count), Some(constant_count)) = (
@@ -158,7 +162,7 @@ fn get_unification_matching_count<T: Term>(
     }
 }
 
-impl GenericArguments {
+impl<M: Model> GenericArguments<M> {
     /// Determines the order of the generic arguments.
     ///
     /// # Errors
@@ -167,9 +171,9 @@ impl GenericArguments {
     pub fn order(
         &self,
         other: &Self,
-        environment: &Environment<impl State>,
+        environment: &Environment<M, impl State>,
         limit: &mut Limit<
-            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
     ) -> Result<Order, ExceedLimitError> {
         if self.lifetimes.len() != other.lifetimes.len()

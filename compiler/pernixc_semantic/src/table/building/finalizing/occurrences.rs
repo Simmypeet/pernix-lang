@@ -1,5 +1,4 @@
 //! Contains the definition of [`Occurrences`].
-use std::iter::IntoIterator;
 
 use getset::Getters;
 use pernixc_base::diagnostic::Handler;
@@ -8,7 +7,7 @@ use pernixc_syntax::syntax_tree;
 use super::finalizer::build_preset::BuildPreset;
 use crate::{
     error,
-    semantic::{predicate, term},
+    semantic::{model::Default, predicate, term},
     symbol::GlobalID,
     table::{
         building::finalizing::Finalizer, resolution::Observer, State, Table,
@@ -23,24 +22,31 @@ use crate::{
 #[derive(Debug, Default, Getters)]
 pub struct Occurrences {
     #[get = "pub"]
-    types: Vec<(term::r#type::Type, syntax_tree::r#type::Type)>,
+    types: Vec<(term::r#type::Type<Default>, syntax_tree::r#type::Type)>,
     #[get = "pub"]
-    lifetimes: Vec<(term::lifetime::Lifetime, syntax_tree::Lifetime)>,
+    lifetimes: Vec<(term::lifetime::Lifetime<Default>, syntax_tree::Lifetime)>,
     #[get = "pub"]
-    constants:
-        Vec<(term::constant::Constant, syntax_tree::expression::Expression)>,
+    constants: Vec<(
+        term::constant::Constant<Default>,
+        syntax_tree::expression::Expression,
+    )>,
 
     #[get = "pub"]
-    unpacked_types: Vec<(term::r#type::Type, syntax_tree::r#type::Type)>,
+    unpacked_types:
+        Vec<(term::r#type::Type<Default>, syntax_tree::r#type::Type)>,
     #[get = "pub"]
-    unpacked_constants:
-        Vec<(term::constant::Constant, syntax_tree::expression::Expression)>,
+    unpacked_constants: Vec<(
+        term::constant::Constant<Default>,
+        syntax_tree::expression::Expression,
+    )>,
 
     #[get = "pub"]
-    constant_types: Vec<(term::r#type::Type, syntax_tree::r#type::Type)>,
+    constant_types:
+        Vec<(term::r#type::Type<Default>, syntax_tree::r#type::Type)>,
 
     #[get = "pub"]
-    trait_predicates: Vec<(predicate::Trait, syntax_tree::QualifiedIdentifier)>,
+    trait_predicates:
+        Vec<(predicate::Trait<Default>, syntax_tree::QualifiedIdentifier)>,
 }
 
 impl Occurrences {
@@ -109,7 +115,7 @@ impl Occurrences {
     /// Add a type which appears as a type of constant generic parameter.
     pub fn add_constant_type(
         &mut self,
-        ty: term::r#type::Type,
+        ty: term::r#type::Type<Default>,
         syntax_tree: syntax_tree::r#type::Type,
     ) {
         self.constant_types.push((ty, syntax_tree));
@@ -118,17 +124,17 @@ impl Occurrences {
     /// Add a trait predicate.
     pub fn add_trait_predicate(
         &mut self,
-        predicate: predicate::Trait,
+        predicate: predicate::Trait<Default>,
         syntax_tree: syntax_tree::QualifiedIdentifier,
     ) {
         self.trait_predicates.push((predicate, syntax_tree));
     }
 }
 
-impl Observer for Occurrences {
+impl Observer<Default> for Occurrences {
     fn on_type_resolved(
         &mut self,
-        ty: &term::r#type::Type,
+        ty: &term::r#type::Type<Default>,
         syntax_tree: &syntax_tree::r#type::Type,
     ) {
         self.types.push((ty.clone(), syntax_tree.clone()));
@@ -136,7 +142,7 @@ impl Observer for Occurrences {
 
     fn on_lifetime_resolved(
         &mut self,
-        lifetime: &term::lifetime::Lifetime,
+        lifetime: &term::lifetime::Lifetime<Default>,
         syntax_tree: &syntax_tree::Lifetime,
     ) {
         self.lifetimes.push((*lifetime, syntax_tree.clone()));
@@ -144,7 +150,7 @@ impl Observer for Occurrences {
 
     fn on_constant_arguments_resolved(
         &mut self,
-        constant: &term::constant::Constant,
+        constant: &term::constant::Constant<Default>,
         syntax_tree: &syntax_tree::expression::Expression,
     ) {
         self.constants.push((constant.clone(), syntax_tree.clone()));
@@ -152,7 +158,7 @@ impl Observer for Occurrences {
 
     fn on_unpacked_type_resolved(
         &mut self,
-        ty: &term::r#type::Type,
+        ty: &term::r#type::Type<Default>,
         syntax_tree: &syntax_tree::r#type::Type,
     ) {
         self.unpacked_types.push((ty.clone(), syntax_tree.clone()));
@@ -160,7 +166,7 @@ impl Observer for Occurrences {
 
     fn on_unpacked_constant_resolved(
         &mut self,
-        constant: &term::constant::Constant,
+        constant: &term::constant::Constant<Default>,
         syntax_tree: &syntax_tree::expression::Expression,
     ) {
         self.unpacked_constants.push((constant.clone(), syntax_tree.clone()));

@@ -4,11 +4,14 @@ use std::{fmt::Debug, hash::Hash};
 
 use enum_as_inner::EnumAsInner;
 
-use super::term::{
-    constant::{self, Constant},
-    lifetime::Lifetime,
-    r#type::{self, Type},
-    MemberSymbol, Symbol, Term, Tuple, TupleElement,
+use super::{
+    model::Model,
+    term::{
+        constant::{self, Constant},
+        lifetime::Lifetime,
+        r#type::{self, Type},
+        MemberSymbol, ModelOf, Symbol, Term, Tuple, TupleElement,
+    },
 };
 
 /// An error that occurs when assigning a sub-term to a term.
@@ -26,15 +29,15 @@ pub enum AssignSubTermError {
 }
 
 /// Contains the information about the sub-term of a term.
-pub trait SubTerm: Sized {
+pub trait SubTerm: Sized + ModelOf {
     /// The type that represents the location of a sub-type in the term.
-    type SubTypeLocation: Location<Self, Type>;
+    type SubTypeLocation: Location<Self, Type<Self::Model>>;
 
     /// The type that represents the location of a sub-constant in the term.
-    type SubConstantLocation: Location<Self, Constant>;
+    type SubConstantLocation: Location<Self, Constant<Self::Model>>;
 
     /// The type that represents the location of a sub-lifetime in the term.
-    type SubLifetimeLocation: Location<Self, Lifetime>;
+    type SubLifetimeLocation: Location<Self, Lifetime<Self::Model>>;
 
     /// The type that represents the location of a sub-term of this kind of
     /// term.
@@ -97,13 +100,13 @@ pub struct SubMemberSymbolLocation {
     pub from_parent: bool,
 }
 
-impl<ID> MemberSymbol<ID> {
+impl<ID, M: Model> MemberSymbol<M, ID> {
     /// Returns a mutable reference to a particular sub-term of this generic
     /// arguments.
     ///
     /// Returns `None` if the location is invalid.
     #[must_use]
-    pub fn get_term_mut<T: Term>(
+    pub fn get_term_mut<T: Term<Model = M>>(
         &mut self,
         location: SubMemberSymbolLocation,
     ) -> Option<&mut T> {
@@ -120,7 +123,7 @@ impl<ID> MemberSymbol<ID> {
     ///
     /// Returns `None` if the location is invalid.
     #[must_use]
-    pub fn get_term<T: Term>(
+    pub fn get_term<T: Term<Model = M>>(
         &self,
         location: SubMemberSymbolLocation,
     ) -> Option<&T> {
@@ -212,13 +215,13 @@ where
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SubSymbolLocation(pub usize);
 
-impl<ID> Symbol<ID> {
+impl<ID, M: Model> Symbol<M, ID> {
     /// Returns a mutable reference to a particular sub-term of this generic
     /// arguments.
     ///
     /// Returns `None` if the location is invalid.
     #[must_use]
-    pub fn get_term_mut<T: Term>(
+    pub fn get_term_mut<T: Term<Model = M>>(
         &mut self,
         location: SubSymbolLocation,
     ) -> Option<&mut T> {
@@ -232,7 +235,10 @@ impl<ID> Symbol<ID> {
     ///
     /// Returns `None` if the location is invalid.
     #[must_use]
-    pub fn get_term<T: Term>(&self, location: SubSymbolLocation) -> Option<&T> {
+    pub fn get_term<T: Term<Model = M>>(
+        &self,
+        location: SubSymbolLocation,
+    ) -> Option<&T> {
         let generic_arguments =
             T::get_generic_arguments(&self.generic_arguments);
 

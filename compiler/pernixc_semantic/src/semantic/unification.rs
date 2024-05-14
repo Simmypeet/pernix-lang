@@ -4,8 +4,11 @@ use std::collections::HashMap;
 
 use super::{
     equality, get_equivalences, matching,
+    model::Model,
     session::{self, ExceedLimitError, Limit, Session},
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+    term::{
+        constant::Constant, lifetime::Lifetime, r#type::Type, ModelOf, Term,
+    },
     Environment,
 };
 use crate::table::State;
@@ -19,7 +22,7 @@ pub struct Query<'a, T> {
 }
 
 /// A customization point for the unification logic.
-pub trait Config {
+pub trait Config<M: Model> {
     /// Determines if the two given lifetimes are unifiable.
     ///
     /// # Errors
@@ -27,8 +30,8 @@ pub trait Config {
     /// See [`ExceedLimitError`].
     fn lifetime_unifiable(
         &mut self,
-        from: &Lifetime,
-        to: &Lifetime,
+        from: &Lifetime<M>,
+        to: &Lifetime<M>,
     ) -> Result<bool, ExceedLimitError>;
 
     /// Determines if the two given types are unifiable.
@@ -38,8 +41,8 @@ pub trait Config {
     /// See [`ExceedLimitError`].
     fn type_unifiable(
         &mut self,
-        from: &Type,
-        to: &Type,
+        from: &Type<M>,
+        to: &Type<M>,
     ) -> Result<bool, ExceedLimitError>;
 
     /// Determines if the two given constants are unifiable.
@@ -49,13 +52,13 @@ pub trait Config {
     /// See [`ExceedLimitError`].
     fn constant_unifiable(
         &mut self,
-        from: &Constant,
-        to: &Constant,
+        from: &Constant<M>,
+        to: &Constant<M>,
     ) -> Result<bool, ExceedLimitError>;
 }
 
 /// A trait implemented by terms that can be unified.
-pub trait Element {
+pub trait Element: ModelOf {
     /// Accepts a configuration and returns `true` if the term is unifiable.
     ///
     /// # Errors
@@ -64,35 +67,35 @@ pub trait Element {
     fn unifiable(
         from: &Self,
         to: &Self,
-        config: &mut impl Config,
+        config: &mut impl Config<Self::Model>,
     ) -> Result<bool, ExceedLimitError>;
 }
 
-impl Element for Lifetime {
+impl<M: Model> Element for Lifetime<M> {
     fn unifiable(
         from: &Self,
         to: &Self,
-        config: &mut impl Config,
+        config: &mut impl Config<M>,
     ) -> Result<bool, ExceedLimitError> {
         config.lifetime_unifiable(from, to)
     }
 }
 
-impl Element for Type {
+impl<M: Model> Element for Type<M> {
     fn unifiable(
         from: &Self,
         to: &Self,
-        config: &mut impl Config,
+        config: &mut impl Config<M>,
     ) -> Result<bool, ExceedLimitError> {
         config.type_unifiable(from, to)
     }
 }
 
-impl Element for Constant {
+impl<M: Model> Element for Constant<M> {
     fn unifiable(
         from: &Self,
         to: &Self,
-        config: &mut impl Config,
+        config: &mut impl Config<M>,
     ) -> Result<bool, ExceedLimitError> {
         config.constant_unifiable(from, to)
     }
@@ -102,9 +105,11 @@ impl Element for Constant {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub struct Substructural<T: Term> {
-    pub lifetimes: HashMap<T::SubLifetimeLocation, Unification<Lifetime>>,
-    pub types: HashMap<T::SubTypeLocation, Unification<Type>>,
-    pub constants: HashMap<T::SubConstantLocation, Unification<Constant>>,
+    pub lifetimes:
+        HashMap<T::SubLifetimeLocation, Unification<Lifetime<T::Model>>>,
+    pub types: HashMap<T::SubTypeLocation, Unification<Type<T::Model>>>,
+    pub constants:
+        HashMap<T::SubConstantLocation, Unification<Constant<T::Model>>>,
 }
 
 impl<T> Default for Substructural<T>
@@ -153,10 +158,13 @@ pub struct Unification<T: Term> {
 fn substructural_unify<T: Term>(
     lhs: &T,
     rhs: &T,
-    config: &mut impl Config,
-    environment: &Environment<impl State>,
+    config: &mut impl Config<T::Model>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<Option<Unification<T>>, ExceedLimitError> {
     let Some(substructural) = lhs.substructural_match(rhs) else {
@@ -209,10 +217,13 @@ fn substructural_unify<T: Term>(
 pub fn unify<T: Term>(
     from: &T,
     to: &T,
-    config: &mut impl Config,
-    environment: &Environment<impl State>,
+    config: &mut impl Config<T::Model>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<Option<Unification<T>>, ExceedLimitError> {
     if equality::equals(from, to, environment, limit)? {

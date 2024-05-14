@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use getset::Getters;
 
 use super::{
+    model::Model,
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     unification::{self, Unification},
 };
@@ -12,18 +13,18 @@ use super::{
 /// Represents an equality mapping between two terms.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Getters)]
 #[allow(missing_docs)]
-pub struct Mapping {
-    pub lifetimes: HashMap<Lifetime, HashSet<Lifetime>>,
-    pub types: HashMap<Type, HashSet<Type>>,
-    pub constants: HashMap<Constant, HashSet<Constant>>,
+pub struct Mapping<M: Model> {
+    pub lifetimes: HashMap<Lifetime<M>, HashSet<Lifetime<M>>>,
+    pub types: HashMap<Type<M>, HashSet<Type<M>>>,
+    pub constants: HashMap<Constant<M>, HashSet<Constant<M>>>,
 }
 
-impl Mapping {
+impl<M: Model> Mapping<M> {
     /// Creates a new mapping from the given equality pairs.
     pub fn from_pairs(
-        lifetimes: impl IntoIterator<Item = (Lifetime, Lifetime)>,
-        types: impl IntoIterator<Item = (Type, Type)>,
-        constants: impl IntoIterator<Item = (Constant, Constant)>,
+        lifetimes: impl IntoIterator<Item = (Lifetime<M>, Lifetime<M>)>,
+        types: impl IntoIterator<Item = (Type<M>, Type<M>)>,
+        constants: impl IntoIterator<Item = (Constant<M>, Constant<M>)>,
     ) -> Self {
         let mut mappings = Self::default();
 
@@ -41,11 +42,14 @@ impl Mapping {
     }
 
     /// Inserts a new pair of equalities into the mapping.
-    pub fn insert<T: Term>(&mut self, first: T, second: T) {
+    pub fn insert<T: Term<Model = M>>(&mut self, first: T, second: T) {
         T::get_mapping_mut(self).entry(first).or_default().insert(second);
     }
 
-    fn remove_recursive_internal<T: Term>(&mut self, term: &T) -> HashSet<T> {
+    fn remove_recursive_internal<T: Term<Model = M>>(
+        &mut self,
+        term: &T,
+    ) -> HashSet<T> {
         let map = T::get_mapping_mut(self);
 
         let mut terms = map.remove(term).unwrap_or_default();
@@ -75,7 +79,7 @@ impl Mapping {
     }
 
     /// Removes all the equalities that are associated with the given term.
-    pub fn remove_recursive<T: Term>(&mut self, term: &T) {
+    pub fn remove_recursive<T: Term<Model = M>>(&mut self, term: &T) {
         self.remove_recursive_internal(term);
     }
 
@@ -94,9 +98,9 @@ impl Mapping {
             .sum()
     }
 
-    /// Appends all the [`unification::Match::Unifiable`]s from the given
+    /// Appends all the [`unification::Matching::Unifiable`]s from the given
     /// unification into this mapping recursively.
-    pub fn append_from_unification<T: Term>(
+    pub fn append_from_unification<T: Term<Model = M>>(
         &mut self,
         unification: Unification<T>,
     ) {
@@ -121,9 +125,11 @@ impl Mapping {
         }
     }
 
-    /// Creates a new mapping from all the [`unification::Match::Unifiable`]s in
-    /// the given unification.
-    pub fn from_unification<T: Term>(unification: Unification<T>) -> Self {
+    /// Creates a new mapping from all the
+    /// [`unification::Matching::Unifiable`]s in the given unification.
+    pub fn from_unification<T: Term<Model = M>>(
+        unification: Unification<T>,
+    ) -> Self {
         let mut mapping = Self::default();
 
         mapping.append_from_unification(unification);

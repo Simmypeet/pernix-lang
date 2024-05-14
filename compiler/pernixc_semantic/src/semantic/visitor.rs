@@ -5,6 +5,7 @@ use std::{fmt::Debug, hash::Hash};
 use thiserror::Error;
 
 use super::{
+    model::Model,
     sub_term::{
         SubConstantLocation, SubLifetimeLocation, SubTerm, SubTypeLocation,
         TermLocation,
@@ -119,9 +120,9 @@ impl<
         'b,
         T: Element,
         V: Recursive<'b, T>
-            + Recursive<'b, Lifetime>
-            + Recursive<'b, Type>
-            + Recursive<'b, Constant>,
+            + Recursive<'b, Lifetime<T::Model>>
+            + Recursive<'b, Type<T::Model>>
+            + Recursive<'b, Constant<T::Model>>,
     > Visitor<'b, T> for RecursiveVisitorAdapter<'a, V>
 {
     fn visit(&mut self, term: &'b T, location: T::Location) -> bool {
@@ -139,9 +140,9 @@ impl<
         'a,
         T: Element,
         V: MutableRecursive<T>
-            + MutableRecursive<Lifetime>
-            + MutableRecursive<Type>
-            + MutableRecursive<Constant>,
+            + MutableRecursive<Lifetime<T::Model>>
+            + MutableRecursive<Type<T::Model>>
+            + MutableRecursive<Constant<T::Model>>,
     > Mutable<T> for RecursiveVisitorAdapterMut<'a, V>
 {
     fn visit(&mut self, term: &mut T, location: T::Location) -> bool {
@@ -170,7 +171,9 @@ pub trait Element: Sized + SubTerm {
     /// Returns whatever the visitor `visit_*` method returns.
     fn accept_single<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime<Self::Model>>
+            + Visitor<'a, Type<Self::Model>>
+            + Visitor<'a, Constant<Self::Model>>,
     >(
         &'a self,
         visitor: &mut V,
@@ -179,7 +182,9 @@ pub trait Element: Sized + SubTerm {
 
     /// Similar to [`Element::accept_single()`], but for mutable references.
     fn accept_single_mut<
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Lifetime<Self::Model>>
+            + Mutable<Type<Self::Model>>
+            + Mutable<Constant<Self::Model>>,
     >(
         &mut self,
         visitor: &mut V,
@@ -189,7 +194,9 @@ pub trait Element: Sized + SubTerm {
     /// Invokes the [`Recursive`] visitor on the term itself.
     fn accept_single_recursive<
         'a,
-        V: Recursive<'a, Lifetime> + Recursive<'a, Type> + Recursive<'a, Constant>,
+        V: Recursive<'a, Lifetime<Self::Model>>
+            + Recursive<'a, Type<Self::Model>>
+            + Recursive<'a, Constant<Self::Model>>,
     >(
         &'a self,
         visitor: &mut V,
@@ -199,9 +206,9 @@ pub trait Element: Sized + SubTerm {
     /// Similar to [`Element::accept_single_recursive()`], but for mutable
     /// references.
     fn accept_single_recursive_mut<
-        V: MutableRecursive<Lifetime>
-            + MutableRecursive<Type>
-            + MutableRecursive<Constant>,
+        V: MutableRecursive<Lifetime<Self::Model>>
+            + MutableRecursive<Type<Self::Model>>
+            + MutableRecursive<Constant<Self::Model>>,
     >(
         &mut self,
         visitor: &mut V,
@@ -227,7 +234,9 @@ pub trait Element: Sized + SubTerm {
     /// When visiting a non-application term (i.e. `int32, float32`)
     fn accept_one_level<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime<Self::Model>>
+            + Visitor<'a, Type<Self::Model>>
+            + Visitor<'a, Constant<Self::Model>>,
     >(
         &'a self,
         visitor: &mut V,
@@ -239,7 +248,9 @@ pub trait Element: Sized + SubTerm {
     ///
     /// When visiting a non-application term (i.e. `int32, float32`)
     fn accept_one_level_mut<
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Lifetime<Self::Model>>
+            + Mutable<Type<Self::Model>>
+            + Mutable<Constant<Self::Model>>,
     >(
         &mut self,
         visitor: &mut V,
@@ -259,9 +270,13 @@ pub trait Element: Sized + SubTerm {
 /// Returns `true` if the visitor has visited all of the sub-terms of the term.
 pub fn accept_recursive<
     'a,
-    V: Recursive<'a, Lifetime> + Recursive<'a, Type> + Recursive<'a, Constant>,
+    M: Model,
+    V: Recursive<'a, Lifetime<M>>
+        + Recursive<'a, Type<M>>
+        + Recursive<'a, Constant<M>>,
+    E: Element<Model = M>,
 >(
-    element: &'a impl Element,
+    element: &'a E,
     visitor: &mut V,
 ) -> bool {
     if !element.accept_single_recursive(visitor, std::iter::empty()) {
@@ -279,11 +294,13 @@ pub fn accept_recursive<
 
 /// Similar to [`accept_recursive()`], but for mutable references.
 pub fn accept_recursive_mut<
-    V: MutableRecursive<Lifetime>
-        + MutableRecursive<Type>
-        + MutableRecursive<Constant>,
+    M: Model,
+    V: MutableRecursive<Lifetime<M>>
+        + MutableRecursive<Type<M>>
+        + MutableRecursive<Constant<M>>,
+    E: Element<Model = M>,
 >(
-    element: &mut impl Element,
+    element: &mut E,
     visitor: &mut V,
 ) -> bool {
     if !element.accept_single_recursive_mut(visitor, std::iter::empty()) {
@@ -318,14 +335,16 @@ macro_rules! implements_tuple {
     }};
 }
 
-impl<Term: Element + Clone> Tuple<Term>
+impl<T: Element + Clone> Tuple<T>
 where
-    Self: TryFrom<Term, Error = Term> + Into<Term>,
-    SubTupleLocation: Into<Term::ThisSubTermLocation>,
+    Self: TryFrom<T, Error = T> + Into<T>,
+    SubTupleLocation: Into<T::ThisSubTermLocation>,
 {
     fn accept_one_level<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime<T::Model>>
+            + Visitor<'a, Type<T::Model>>
+            + Visitor<'a, Constant<T::Model>>,
     >(
         &'a self,
         visitor: &mut V,
@@ -334,7 +353,9 @@ where
     }
 
     fn accept_one_level_mut<
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Lifetime<T::Model>>
+            + Mutable<Type<T::Model>>
+            + Mutable<Constant<T::Model>>,
     >(
         &mut self,
         visitor: &mut V,
@@ -384,13 +405,15 @@ macro_rules! implements_generic_arguments {
     }};
 }
 
-impl GenericArguments {
+impl<M: Model> GenericArguments<M> {
     #[allow(clippy::trait_duplication_in_bounds)]
     fn accept_one_level<
         'a,
-        T: Element,
+        T: Element<Model = M>,
         Idx,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime<M>>
+            + Visitor<'a, Type<M>>
+            + Visitor<'a, Constant<M>>,
     >(
         &'a self,
         visitor: &mut V,
@@ -411,9 +434,9 @@ impl GenericArguments {
 
     #[allow(clippy::trait_duplication_in_bounds)]
     fn accept_one_level_mut<
-        T: Element,
+        T: Element<Model = M>,
         Idx,
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Lifetime<M>> + Mutable<Type<M>> + Mutable<Constant<M>>,
     >(
         &mut self,
         visitor: &mut V,
@@ -544,12 +567,12 @@ macro_rules! implements_type {
     };
 }
 
-impl Element for Type {
+impl<M: Model> Element for Type<M> {
     type Location = SubTypeLocation;
 
     fn accept_single<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Self> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime<M>> + Visitor<'a, Self> + Visitor<'a, Constant<M>>,
     >(
         &'a self,
         visitor: &mut V,
@@ -559,7 +582,7 @@ impl Element for Type {
     }
 
     fn accept_single_mut<
-        V: Mutable<Lifetime> + Mutable<Self> + Mutable<Constant>,
+        V: Mutable<Lifetime<M>> + Mutable<Self> + Mutable<Constant<M>>,
     >(
         &mut self,
         visitor: &mut V,
@@ -570,7 +593,9 @@ impl Element for Type {
 
     fn accept_single_recursive<
         'a,
-        V: Recursive<'a, Lifetime> + Recursive<'a, Self> + Recursive<'a, Constant>,
+        V: Recursive<'a, Lifetime<M>>
+            + Recursive<'a, Self>
+            + Recursive<'a, Constant<M>>,
     >(
         &'a self,
         visitor: &mut V,
@@ -580,9 +605,9 @@ impl Element for Type {
     }
 
     fn accept_single_recursive_mut<
-        V: MutableRecursive<Lifetime>
+        V: MutableRecursive<Lifetime<M>>
             + MutableRecursive<Self>
-            + MutableRecursive<Constant>,
+            + MutableRecursive<Constant<M>>,
     >(
         &mut self,
         visitor: &mut V,
@@ -593,7 +618,7 @@ impl Element for Type {
 
     fn accept_one_level<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Self> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime<M>> + Visitor<'a, Self> + Visitor<'a, Constant<M>>,
     >(
         &'a self,
         visitor: &mut V,
@@ -602,7 +627,7 @@ impl Element for Type {
     }
 
     fn accept_one_level_mut<
-        V: Mutable<Lifetime> + Mutable<Self> + Mutable<Constant>,
+        V: Mutable<Lifetime<M>> + Mutable<Self> + Mutable<Constant<M>>,
     >(
         &mut self,
         visitor: &mut V,
@@ -623,12 +648,12 @@ impl From<Never> for SubLifetimeLocation {
     fn from(val: Never) -> Self { match val {} }
 }
 
-impl Element for Lifetime {
+impl<M: Model> Element for Lifetime<M> {
     type Location = SubLifetimeLocation;
 
     fn accept_single<
         'a,
-        V: Visitor<'a, Self> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Self> + Visitor<'a, Type<M>> + Visitor<'a, Constant<M>>,
     >(
         &'a self,
         visitor: &mut V,
@@ -638,7 +663,7 @@ impl Element for Lifetime {
     }
 
     fn accept_single_mut<
-        V: Mutable<Self> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Self> + Mutable<Type<M>> + Mutable<Constant<M>>,
     >(
         &mut self,
         visitor: &mut V,
@@ -649,7 +674,9 @@ impl Element for Lifetime {
 
     fn accept_single_recursive<
         'a,
-        V: Recursive<'a, Self> + Recursive<'a, Type> + Recursive<'a, Constant>,
+        V: Recursive<'a, Self>
+            + Recursive<'a, Type<M>>
+            + Recursive<'a, Constant<M>>,
     >(
         &'a self,
         visitor: &mut V,
@@ -660,8 +687,8 @@ impl Element for Lifetime {
 
     fn accept_single_recursive_mut<
         V: MutableRecursive<Self>
-            + MutableRecursive<Type>
-            + MutableRecursive<Constant>,
+            + MutableRecursive<Type<M>>
+            + MutableRecursive<Constant<M>>,
     >(
         &mut self,
         visitor: &mut V,
@@ -672,7 +699,7 @@ impl Element for Lifetime {
 
     fn accept_one_level<
         'a,
-        V: Visitor<'a, Self> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Self> + Visitor<'a, Type<M>> + Visitor<'a, Constant<M>>,
     >(
         &'a self,
         _: &mut V,
@@ -681,7 +708,7 @@ impl Element for Lifetime {
     }
 
     fn accept_one_level_mut<
-        V: Mutable<Self> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Self> + Mutable<Type<M>> + Mutable<Constant<M>>,
     >(
         &mut self,
         _: &mut V,
@@ -755,12 +782,12 @@ macro_rules! implements_constant {
     };
 }
 
-impl Element for Constant {
+impl<M: Model> Element for Constant<M> {
     type Location = SubConstantLocation;
 
     fn accept_single<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Self>,
+        V: Visitor<'a, Lifetime<M>> + Visitor<'a, Type<M>> + Visitor<'a, Self>,
     >(
         &'a self,
         visitor: &mut V,
@@ -771,7 +798,7 @@ impl Element for Constant {
 
     fn accept_single_mut<
         'a,
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Self>,
+        V: Mutable<Lifetime<M>> + Mutable<Type<M>> + Mutable<Self>,
     >(
         &mut self,
         visitor: &mut V,
@@ -782,7 +809,9 @@ impl Element for Constant {
 
     fn accept_single_recursive<
         'a,
-        V: Recursive<'a, Lifetime> + Recursive<'a, Type> + Recursive<'a, Self>,
+        V: Recursive<'a, Lifetime<M>>
+            + Recursive<'a, Type<M>>
+            + Recursive<'a, Self>,
     >(
         &'a self,
         visitor: &mut V,
@@ -792,8 +821,8 @@ impl Element for Constant {
     }
 
     fn accept_single_recursive_mut<
-        V: MutableRecursive<Lifetime>
-            + MutableRecursive<Type>
+        V: MutableRecursive<Lifetime<M>>
+            + MutableRecursive<Type<M>>
             + MutableRecursive<Self>,
     >(
         &mut self,
@@ -805,7 +834,7 @@ impl Element for Constant {
 
     fn accept_one_level<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Self>,
+        V: Visitor<'a, Lifetime<M>> + Visitor<'a, Type<M>> + Visitor<'a, Self>,
     >(
         &'a self,
         visitor: &mut V,
@@ -823,7 +852,7 @@ impl Element for Constant {
     }
 
     fn accept_one_level_mut<
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Self>,
+        V: Mutable<Lifetime<M>> + Mutable<Type<M>> + Mutable<Self>,
     >(
         &mut self,
         visitor: &mut V,
@@ -842,16 +871,16 @@ impl Element for Constant {
     }
 }
 
-type Storage<'a> = Vec<(Kind<'a>, Vec<TermLocation>)>;
+type Storage<'a, M: Model> = Vec<(Kind<'a, M>, Vec<TermLocation>)>;
 
 #[derive(Debug, Clone)]
-struct Collector<'a> {
-    terms: Storage<'a>,
+struct Collector<'a, M: Model> {
+    terms: Storage<'a, M>,
 }
 
-impl<'a, T: 'a> Recursive<'a, T> for Collector<'a>
+impl<'a, T: 'a, M: Model> Recursive<'a, T> for Collector<'a, M>
 where
-    &'a T: Into<Kind<'a>>,
+    &'a T: Into<Kind<'a, M>>,
 {
     fn visit(
         &mut self,
@@ -867,11 +896,13 @@ where
 ///
 /// The terms are visited in a depth-first manner.
 #[derive(Debug, Clone)]
-pub struct RecursiveIterator<'a>(<Storage<'a> as IntoIterator>::IntoIter);
+pub struct RecursiveIterator<'a, M: Model>(
+    <Storage<'a, M> as IntoIterator>::IntoIter,
+);
 
-impl<'a> RecursiveIterator<'a> {
+impl<'a, M: Model> RecursiveIterator<'a, M> {
     /// Creates a new recursive iterator from a term.
-    pub fn new<T: Term>(term: &'a T) -> Self {
+    pub fn new<T: Term<Model = M>>(term: &'a T) -> Self {
         let mut collector = Collector { terms: Storage::new() };
         accept_recursive(term, &mut collector);
 
@@ -879,8 +910,8 @@ impl<'a> RecursiveIterator<'a> {
     }
 }
 
-impl<'a> Iterator for RecursiveIterator<'a> {
-    type Item = (Kind<'a>, Vec<TermLocation>);
+impl<'a, M: Model> Iterator for RecursiveIterator<'a, M> {
+    type Item = (Kind<'a, M>, Vec<TermLocation>);
 
     fn next(&mut self) -> Option<Self::Item> { self.0.next() }
 }

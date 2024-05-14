@@ -18,6 +18,7 @@ use super::{
     instantiation::{self, Instantiation},
     mapping::Mapping,
     matching,
+    model::Model,
     predicate::{self, Outlives, Predicate, Satisfiability},
     session::{ExceedLimitError, Limit, Session},
     sub_term::{self, AssignSubTermError, SubTupleLocation},
@@ -26,6 +27,7 @@ use super::{
 };
 use crate::{
     arena::ID,
+    semantic::model::Default,
     symbol::{GenericID, GenericParameter, GlobalID, MemberID},
     table::{self, DisplayObject, State, Table},
 };
@@ -36,18 +38,18 @@ pub mod r#type;
 
 /// Represents a generic arguments supplied to a term (i.e., `type[ARGS]`).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct GenericArguments {
+pub struct GenericArguments<M: Model> {
     /// The lifetimes supplied to the term.
-    pub lifetimes: Vec<Lifetime>,
+    pub lifetimes: Vec<Lifetime<M>>,
 
     /// The types supplied to the term.
-    pub types: Vec<Type>,
+    pub types: Vec<Type<M>>,
 
     /// The constants supplied to the term.
-    pub constants: Vec<Constant>,
+    pub constants: Vec<Constant<M>>,
 }
 
-impl<T: State> table::Display<T> for GenericArguments {
+impl<T: State, M: Model> table::Display<T> for GenericArguments<M> {
     fn fmt(
         &self,
         table: &Table<T>,
@@ -102,18 +104,45 @@ impl<T: State> table::Display<T> for GenericArguments {
     }
 }
 
+impl<M: Model> GenericArguments<M> {
+    /// Converts the generic arguments with the default model into the model `M`
+    pub fn from_default_model(
+        generic_arguments: GenericArguments<Default>,
+    ) -> Self {
+        Self {
+            lifetimes: generic_arguments
+                .lifetimes
+                .into_iter()
+                .map(|x| M::from_default_lifetime(x))
+                .collect(),
+            types: generic_arguments
+                .types
+                .into_iter()
+                .map(|x| M::from_default_type(x))
+                .collect(),
+            constants: generic_arguments
+                .constants
+                .into_iter()
+                .map(|x| M::from_default_constant(x))
+                .collect(),
+        }
+    }
+}
+
 /// Represents a term where its value is stored as a symbol (i.e., `type` or
 /// `const` declaration).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Symbol<ID> {
+pub struct Symbol<M: Model, ID> {
     /// The ID of the symbol that contains the value of the term.
     pub id: ID,
 
     /// The generic arguments supplied to the symbol.
-    pub generic_arguments: GenericArguments,
+    pub generic_arguments: GenericArguments<M>,
 }
 
-impl<T: State, ID: Into<GlobalID> + Copy> table::Display<T> for Symbol<ID> {
+impl<T: State, ID: Into<GlobalID> + Copy, M: Model> table::Display<T>
+    for Symbol<M, ID>
+{
     fn fmt(
         &self,
         table: &Table<T>,
@@ -132,18 +161,18 @@ impl<T: State, ID: Into<GlobalID> + Copy> table::Display<T> for Symbol<ID> {
 /// Represents a term where its value is stored as a member of a particular
 /// symbol
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MemberSymbol<ID> {
+pub struct MemberSymbol<M: Model, ID> {
     /// The ID of the symbol that contains the value of the term.
     pub id: ID,
 
     /// The generic arguments supplied to the member.
-    pub member_generic_arguments: GenericArguments,
+    pub member_generic_arguments: GenericArguments<M>,
 
     /// The generic arguments supplied to the parent scope.
-    pub parent_generic_arguments: GenericArguments,
+    pub parent_generic_arguments: GenericArguments<M>,
 }
-impl<T: State, ID: Copy + Into<GlobalID>> table::Display<T>
-    for MemberSymbol<ID>
+impl<T: State, ID: Copy + Into<GlobalID>, M: Model> table::Display<T>
+    for MemberSymbol<M, ID>
 {
     fn fmt(
         &self,
@@ -246,9 +275,15 @@ pub enum Never {}
 
 /// The term under the `local` modifier.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Local<T>(pub Box<T>)
+pub struct Local<T: Term>(pub Box<T>)
 where
     Self: Into<T>;
+
+/// The trait used for specifying the model of a term.
+pub trait ModelOf {
+    /// In which model does the term belong to.
+    type Model: Model;
+}
 
 /// Contains the functionality for determining the properties of a term.
 #[allow(private_bounds)]
@@ -259,6 +294,7 @@ pub trait Term:
     + Sized
     + Clone
     + Ord
+    + ModelOf
     + visitor::Element
     + unification::Element
     + matching::Match
@@ -274,6 +310,9 @@ pub trait Term:
     /// The type of trait member symbol that stores this term kind.
     type TraitMember: Debug + Eq + Hash + Sized + Clone + Ord + 'static;
 
+    /// Rebinds this kind of term to another model.
+    type Rebind<M: Model>: Term<Model = M>;
+
     /// Normalizes the term.
     ///
     /// Normalization is the process of converting a term into more simpler
@@ -284,25 +323,25 @@ pub trait Term:
     /// See [`ExceedLimitError`] for more information.
     fn normalize(
         &self,
-        environment: &Environment<impl State>,
+        environment: &Environment<Self::Model, impl State>,
         limit: &mut Limit<
             impl Session<Self>
-                + Session<Lifetime>
-                + Session<Type>
-                + Session<Constant>,
+                + Session<Lifetime<Self::Model>>
+                + Session<Type<Self::Model>>
+                + Session<Constant<Self::Model>>,
         >,
     ) -> Result<Option<Self>, ExceedLimitError>;
 
     #[doc(hidden)]
     fn outlives_satisfiability(
         &self,
-        lifetime: &Lifetime,
-        environment: &Environment<impl State>,
+        lifetime: &Lifetime<Self::Model>,
+        environment: &Environment<Self::Model, impl State>,
         limit: &mut Limit<
             impl Session<Self>
-                + Session<Lifetime>
-                + Session<Type>
-                + Session<Constant>,
+                + Session<Lifetime<Self::Model>>
+                + Session<Type<Self::Model>>
+                + Session<Constant<Self::Model>>,
         >,
     ) -> Result<Satisfiability, ExceedLimitError>;
 
@@ -343,60 +382,67 @@ pub trait Term:
     fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>>;
 
     #[doc(hidden)]
-    fn as_outlive_predicate(predicate: &Predicate) -> Option<&Outlives<Self>>;
+    fn as_outlive_predicate(
+        predicate: &Predicate<Self::Model>,
+    ) -> Option<&Outlives<Self>>;
 
     #[doc(hidden)]
     fn as_outlive_predicate_mut(
-        predicate: &mut Predicate,
+        predicate: &mut Predicate<Self::Model>,
     ) -> Option<&mut Outlives<Self>>;
 
     #[doc(hidden)]
     fn into_outlive_predicate(
-        predicate: Predicate,
-    ) -> Result<Outlives<Self>, Predicate>;
+        predicate: Predicate<Self::Model>,
+    ) -> Result<Outlives<Self>, Predicate<Self::Model>>;
 
     #[doc(hidden)]
-    fn as_constant_type_predicate(predicate: &Predicate) -> Option<&Self>;
+    fn as_constant_type_predicate(
+        predicate: &Predicate<Self::Model>,
+    ) -> Option<&Self>;
 
     #[doc(hidden)]
     fn as_constant_type_predicate_mut(
-        predicate: &mut Predicate,
+        predicate: &mut Predicate<Self::Model>,
     ) -> Option<&mut Self>;
 
     #[doc(hidden)]
     fn into_constant_type_predicate(
-        predicate: Predicate,
-    ) -> Result<Self, Predicate>;
+        predicate: Predicate<Self::Model>,
+    ) -> Result<Self, Predicate<Self::Model>>;
 
     #[doc(hidden)]
     fn as_trait_member_equality_predicate(
-        predicate: &Predicate,
-    ) -> Option<&predicate::TraitMemberEquality<Self>>;
+        predicate: &Predicate<Self::Model>,
+    ) -> Option<&predicate::Equality<Self::TraitMember, Self>>;
 
     #[doc(hidden)]
     fn as_trait_member_equality_predicate_mut(
-        predicate: &mut Predicate,
-    ) -> Option<&mut predicate::TraitMemberEquality<Self>>;
+        predicate: &mut Predicate<Self::Model>,
+    ) -> Option<&mut predicate::Equality<Self::TraitMember, Self>>;
 
     #[doc(hidden)]
     fn into_trait_member_equality_predicate(
-        predicate: Predicate,
-    ) -> Result<predicate::TraitMemberEquality<Self>, Predicate>;
+        predicate: Predicate<Self::Model>,
+    ) -> Result<
+        predicate::Equality<Self::TraitMember, Self>,
+        Predicate<Self::Model>,
+    >;
 
     #[doc(hidden)]
     fn as_tuple_predicate(
-        predicate: &Predicate,
+        predicate: &Predicate<Self::Model>,
     ) -> Option<&predicate::Tuple<Self>>;
 
     #[doc(hidden)]
     fn as_tuple_predicate_mut(
-        predicate: &mut Predicate,
+        predicate: &mut Predicate<Self::Model>,
     ) -> Option<&mut predicate::Tuple<Self>>;
 
     #[doc(hidden)]
     fn into_tuple_predicate(
-        predicate: Predicate,
-    ) -> Result<predicate::Tuple<Self>, Predicate>;
+        predicate: Predicate<Self::Model>,
+    ) -> Result<predicate::Tuple<Self>, Predicate<Self::Model>>;
 
     #[doc(hidden)]
     fn definite_satisfiability(&self) -> Satisfiability;
@@ -405,36 +451,44 @@ pub trait Term:
     fn constant_type_satisfiability(&self) -> Satisfiability;
 
     #[doc(hidden)]
-    fn get_instantiation(instantiation: &Instantiation)
-        -> &HashMap<Self, Self>;
+    fn get_instantiation(
+        instantiation: &Instantiation<Self::Model>,
+    ) -> &HashMap<Self, Self>;
 
     #[doc(hidden)]
     fn get_instantiation_mut(
-        instantiation: &mut Instantiation,
+        instantiation: &mut Instantiation<Self::Model>,
     ) -> &mut HashMap<Self, Self>;
 
     #[doc(hidden)]
     fn get_substructural_unification<'a, T: Term>(
         substructural: &'a unification::Substructural<T>,
-    ) -> impl Iterator<Item = &'a Unification<Self>>
+    ) -> impl Iterator<Item = &'a Unification<Self::Rebind<T::Model>>>
     where
         Self: 'a;
 
     #[doc(hidden)]
-    fn get_mapping(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>>;
+    fn get_mapping(
+        mapping: &Mapping<Self::Model>,
+    ) -> &HashMap<Self, HashSet<Self>>;
 
     #[doc(hidden)]
     fn get_mapping_mut(
-        mapping: &mut Mapping,
+        mapping: &mut Mapping<Self::Model>,
     ) -> &mut HashMap<Self, HashSet<Self>>;
 
     #[doc(hidden)]
-    fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self];
+    fn get_generic_arguments(
+        generic_arguments: &GenericArguments<Self::Model>,
+    ) -> &[Self];
 
     #[doc(hidden)]
     fn get_generic_arguments_mut(
-        generic_arguments: &mut GenericArguments,
+        generic_arguments: &mut GenericArguments<Self::Model>,
     ) -> &mut Vec<Self>;
+
+    #[doc(hidden)]
+    fn from_default_model(term: Self::Rebind<Default>) -> Self;
 }
 
 impl<T: Term> Tuple<T>
@@ -448,6 +502,7 @@ where
         swap: bool,
     ) -> Option<
         matching::Substructural<
+            T::Model,
             T::SubLifetimeLocation,
             T::SubTypeLocation,
             T::SubConstantLocation,
@@ -462,6 +517,7 @@ where
             lhs_location: SubTupleLocation,
             rhs_location: SubTupleLocation,
             existing: &mut matching::Substructural<
+                T::Model,
                 T::SubLifetimeLocation,
                 T::SubTypeLocation,
                 T::SubConstantLocation,
@@ -637,6 +693,7 @@ where
         to: &'a Self,
     ) -> Option<
         matching::Substructural<
+            T::Model,
             T::SubLifetimeLocation,
             T::SubTypeLocation,
             T::SubConstantLocation,
@@ -650,7 +707,7 @@ where
     }
 }
 
-impl GenericArguments {
+impl<M: Model> GenericArguments<M> {
     /// Determines if two generic arguments are equal.
     ///
     /// # Errors
@@ -659,9 +716,9 @@ impl GenericArguments {
     pub fn equals(
         &self,
         other: &Self,
-        environment: &Environment<impl State>,
+        environment: &Environment<M, impl State>,
         limit: &mut Limit<
-            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
     ) -> Result<bool, ExceedLimitError> {
         if self.lifetimes.len() != other.lifetimes.len()
@@ -723,12 +780,12 @@ impl GenericArguments {
     pub fn unify_as_mapping(
         &self,
         other: &Self,
-        config: &mut impl unification::Config,
-        environment: &Environment<impl State>,
+        config: &mut impl unification::Config<M>,
+        environment: &Environment<M, impl State>,
         limit: &mut Limit<
-            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
-    ) -> Result<Option<Mapping>, ExceedLimitError> {
+    ) -> Result<Option<Mapping<M>>, ExceedLimitError> {
         let mut mapping = Mapping::default();
 
         if self.lifetimes.len() != other.lifetimes.len()
@@ -772,7 +829,7 @@ impl GenericArguments {
     }
 
     /// Applies the instantiation to all the generic arguments.
-    pub fn instantiate(&mut self, instantiation: &Instantiation) {
+    pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
         for lifetime in &mut self.lifetimes {
             instantiation::instantiate(lifetime, instantiation);
         }
@@ -795,9 +852,9 @@ impl GenericArguments {
     /// See [`ExceedLimitError`] for more information.
     pub fn definite(
         &self,
-        environment: &Environment<impl State>,
+        environment: &Environment<M, impl State>,
         limit: &mut Limit<
-            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
     ) -> Result<bool, ExceedLimitError> {
         for lifetime in &self.lifetimes {
@@ -824,9 +881,9 @@ impl GenericArguments {
     fn substructural_match<L, T, C, Y>(
         &self,
         other: &Self,
-        mut existing: matching::Substructural<L, T, C>,
+        mut existing: matching::Substructural<M, L, T, C>,
         to_location: impl Fn(usize) -> Y,
-    ) -> Option<matching::Substructural<L, T, C>>
+    ) -> Option<matching::Substructural<M, L, T, C>>
     where
         Y: Into<L> + Into<T> + Into<C> + Copy,
     {
@@ -840,8 +897,8 @@ impl GenericArguments {
         for (idx, (lhs, rhs)) in self
             .lifetimes
             .iter()
-            .copied()
-            .zip(other.lifetimes.iter().copied())
+            .cloned()
+            .zip(other.lifetimes.iter().cloned())
             .enumerate()
         {
             let location = to_location(idx);
@@ -904,10 +961,10 @@ impl GenericArguments {
     derive_more::From,
 )]
 #[allow(missing_docs)]
-pub enum Kind<'a> {
-    Lifetime(&'a Lifetime),
-    Type(&'a Type),
-    Constant(&'a Constant),
+pub enum Kind<'a, M: Model> {
+    Lifetime(&'a Lifetime<M>),
+    Type(&'a Type<M>),
+    Constant(&'a Constant<M>),
 }
 
 /// An enumeration of mutable references to all three kinds of terms:
@@ -916,10 +973,10 @@ pub enum Kind<'a> {
     Debug, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From,
 )]
 #[allow(missing_docs)]
-pub enum KindMut<'a> {
-    Lifetime(&'a mut Lifetime),
-    Type(&'a mut Type),
-    Constant(&'a mut Constant),
+pub enum KindMut<'a, M: Model> {
+    Lifetime(&'a mut Lifetime<M>),
+    Type(&'a mut Type<M>),
+    Constant(&'a mut Constant<M>),
 }
 
 #[cfg(test)]

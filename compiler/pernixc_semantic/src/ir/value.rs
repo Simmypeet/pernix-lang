@@ -3,6 +3,7 @@
 use enum_as_inner::EnumAsInner;
 
 use self::{literal::Literal, register::Register};
+use super::State;
 use crate::arena::ID;
 
 pub mod literal;
@@ -22,7 +23,7 @@ pub mod register;
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
 )]
 #[allow(missing_docs)]
-pub enum Value {
+pub enum Value<T: State> {
     Literal(Literal),
-    Register(ID<Register>),
+    Register(ID<Register<T>>),
 }

@@ -23,6 +23,7 @@ use crate::{
     semantic::{
         equality,
         instantiation::{self, Instantiation},
+        model::Default,
         predicate::{self, ConstantType, Outlives, Trait, Tuple},
         session::{self, ExceedLimitError, Limit, Session},
         term::{
@@ -46,11 +47,11 @@ impl Table<Finalizer> {
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     pub fn check_instantiation_predicates_from_generic_arguments(
         &self,
-        caller_premise: &Premise,
+        caller_premise: &Premise<Default>,
         instantiated: GenericID,
-        generic_arguments: GenericArguments,
+        generic_arguments: GenericArguments<Default>,
         instantiation_span: &Span,
-        session: &mut session::Default,
+        session: &mut session::Default<Default>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         self.check_instantiation_predicates(
@@ -75,17 +76,17 @@ impl Table<Finalizer> {
     #[allow(clippy::too_many_lines)]
     fn predicate_satisfied(
         &self,
-        caller_premise: &Premise,
-        predicate: &predicate::Predicate,
-        session: &mut session::Default,
+        caller_premise: &Premise<Default>,
+        predicate: &predicate::Predicate<Default>,
+        session: &mut session::Default<Default>,
     ) -> Result<bool, ExceedLimitError> {
         // check if the predicate is satisfied
         let environment = Environment { premise: caller_premise, table: self };
 
         let result = match &predicate {
             predicate::Predicate::TraitTypeEquality(eq) => equality::equals(
-                &r#type::Type::TraitMember(eq.trait_member.clone()),
-                &eq.equivalent,
+                &r#type::Type::TraitMember(eq.lhs.clone()),
+                &eq.rhs,
                 &environment,
                 &mut Limit::new(session),
             ),
@@ -176,11 +177,11 @@ impl Table<Finalizer> {
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     pub fn check_instantiation_predicates(
         &self,
-        caller_premise: &Premise,
+        caller_premise: &Premise<Default>,
         instantiated: GenericID,
-        instantiation: &Instantiation,
+        instantiation: &Instantiation<Default>,
         instantiation_span: &Span,
-        session: &mut session::Default,
+        session: &mut session::Default<Default>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         // get all the predicates and instantiate them with the given generic
@@ -221,11 +222,14 @@ impl Table<Finalizer> {
     #[allow(clippy::too_many_lines)]
     fn check_type_ocurrences<'a>(
         &self,
-        caller_active_premise: &Premise,
+        caller_active_premise: &Premise<Default>,
         occurrences: impl IntoIterator<
-            Item = (&'a term::r#type::Type, &'a syntax_tree::r#type::Type),
+            Item = (
+                &'a term::r#type::Type<Default>,
+                &'a syntax_tree::r#type::Type,
+            ),
         >,
-        session: &mut session::Default,
+        session: &mut session::Default<Default>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         let environment =
@@ -495,13 +499,13 @@ impl Table<Finalizer> {
 
     fn check_unpacked_ocurrences<'a, T: Term + 'a, Syn: SourceElement + 'a>(
         &self,
-        premise: &Premise,
+        premise: &Premise<Default>,
         occurrences: impl Iterator<Item = (&'a T, &'a Syn)>,
-        session: &mut session::Default,
+        session: &mut session::Default<Default>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        session::Default: Session<T>,
-        predicate::Predicate: From<Tuple<T>>,
+        session::Default<Default>: Session<T>,
+        predicate::Predicate<Default>: From<Tuple<T>>,
     {
         let environment = Environment { premise, table: self };
         for (term, ocurrence) in occurrences {
@@ -589,7 +593,7 @@ impl UnusedGenericParameters {
     pub fn get_unused_generic_parameters(
         generic_id: GenericID,
         generic_parameters: &GenericParameters,
-        generic_arguments: &GenericArguments,
+        generic_arguments: &GenericArguments<Default>,
     ) -> Self {
         let mut unused_generic_arguments = Self {
             lifetimes: generic_parameters
@@ -644,7 +648,7 @@ impl UnusedGenericParameters {
         }
     }
 
-    fn check_in_generic_arguments(&mut self, args: &GenericArguments) {
+    fn check_in_generic_arguments(&mut self, args: &GenericArguments<Default>) {
         for lt in &args.lifetimes {
             self.check_in_lifetime(lt);
         }
@@ -658,7 +662,7 @@ impl UnusedGenericParameters {
         }
     }
 
-    fn check_in_type(&mut self, ty: &r#type::Type) {
+    fn check_in_type(&mut self, ty: &r#type::Type<Default>) {
         match ty {
             r#type::Type::Parameter(parameter) => {
                 self.types.remove(parameter);
@@ -703,7 +707,7 @@ impl UnusedGenericParameters {
         }
     }
 
-    fn check_in_lifetime(&mut self, lt: &lifetime::Lifetime) {
+    fn check_in_lifetime(&mut self, lt: &lifetime::Lifetime<Default>) {
         match lt {
             lifetime::Lifetime::Parameter(parameter) => {
                 self.lifetimes.remove(parameter);
@@ -716,7 +720,7 @@ impl UnusedGenericParameters {
         }
     }
 
-    fn check_in_constant(&mut self, val: &constant::Constant) {
+    fn check_in_constant(&mut self, val: &constant::Constant<Default>) {
         match val {
             constant::Constant::Parameter(parameter) => {
                 self.constants.remove(parameter);
@@ -781,7 +785,7 @@ impl Table<Finalizer> {
         &self,
         implementation_member_id: TraitImplementationMemberID,
         trait_member_id: TraitMemberID,
-        mut trait_instantiation: Instantiation,
+        mut trait_instantiation: Instantiation<Default>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         let implementation_member_sym =

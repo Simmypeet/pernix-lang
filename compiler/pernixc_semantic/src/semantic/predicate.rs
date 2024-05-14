@@ -10,8 +10,14 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     instantiation::{self, Instantiation},
+    model::Model,
     sub_term::TermLocation,
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+    term::{
+        constant::Constant,
+        lifetime::Lifetime,
+        r#type::{self, Type},
+        Term,
+    },
     visitor::{accept_recursive, Recursive},
 };
 use crate::table::{self, DisplayObject, State};
@@ -21,10 +27,12 @@ struct ContainsForallLifetimeVisitor {
     contains_forall_lifetime: bool,
 }
 
-impl<'v> Recursive<'v, Lifetime> for ContainsForallLifetimeVisitor {
+impl<'v, M: Model> Recursive<'v, Lifetime<M>>
+    for ContainsForallLifetimeVisitor
+{
     fn visit(
         &mut self,
-        term: &'v Lifetime,
+        term: &'v Lifetime<M>,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         if term.is_forall() {
@@ -36,20 +44,22 @@ impl<'v> Recursive<'v, Lifetime> for ContainsForallLifetimeVisitor {
     }
 }
 
-impl<'v> Recursive<'v, Type> for ContainsForallLifetimeVisitor {
+impl<'v, M: Model> Recursive<'v, Type<M>> for ContainsForallLifetimeVisitor {
     fn visit(
         &mut self,
-        _: &'v Type,
+        _: &'v Type<M>,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         true
     }
 }
 
-impl<'v> Recursive<'v, Constant> for ContainsForallLifetimeVisitor {
+impl<'v, M: Model> Recursive<'v, Constant<M>>
+    for ContainsForallLifetimeVisitor
+{
     fn visit(
         &mut self,
-        _: &'v Constant,
+        _: &'v Constant<M>,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         true
@@ -68,9 +78,9 @@ fn contains_forall_lifetime<T: Term>(term: &T) -> bool {
 /// Enumeration containing either a lifetime or a type outlives predicate.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum LifetimeConstraint {
-    LifetimeOutlives(Outlives<Lifetime>),
-    TypeOutlives(Outlives<Type>),
+pub enum LifetimeConstraint<M: Model> {
+    LifetimeOutlives(Outlives<Lifetime<M>>),
+    TypeOutlives(Outlives<Type<M>>),
 }
 
 /// Describes a satisfiability of a certain predicate.
@@ -113,17 +123,17 @@ pub use tuple::{Query as TupleQuery, Tuple};
     derive_more::From,
 )]
 #[allow(missing_docs)]
-pub enum Predicate {
-    TraitTypeEquality(TraitMemberEquality<Type>),
-    ConstantType(ConstantType),
-    LifetimeOutlives(Outlives<Lifetime>),
-    TypeOutlives(Outlives<Type>),
-    TupleType(Tuple<Type>),
-    TupleConstant(Tuple<Constant>),
-    Trait(Trait),
+pub enum Predicate<M: Model> {
+    TraitTypeEquality(Equality<r#type::TraitMember<M>, Type<M>>),
+    ConstantType(ConstantType<M>),
+    LifetimeOutlives(Outlives<Lifetime<M>>),
+    TypeOutlives(Outlives<Type<M>>),
+    TupleType(Tuple<Type<M>>),
+    TupleConstant(Tuple<Constant<M>>),
+    Trait(Trait<M>),
 }
 
-impl<T: State> table::Display<T> for Predicate {
+impl<T: State, M: Model> table::Display<T> for Predicate<M> {
     fn fmt(
         &self,
         table: &table::Table<T>,
@@ -141,7 +151,7 @@ impl<T: State> table::Display<T> for Predicate {
     }
 }
 
-impl Predicate {
+impl<M: Model> Predicate<M> {
     /// Checks if the predicate contains a `forall` lifetime.
     #[must_use]
     pub fn contains_forall_lifetime(&self) -> bool {
@@ -163,7 +173,7 @@ impl Predicate {
     }
 
     /// Applies the instantiate to the predicate.
-    pub fn instantiate(&mut self, substitution: &Instantiation) {
+    pub fn instantiate(&mut self, substitution: &Instantiation<M>) {
         match self {
             Self::TraitTypeEquality(equality) => {
                 equality.instantiate(substitution);
@@ -184,18 +194,16 @@ impl Predicate {
 
 /// A predicate that two terms are equal.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitMemberEquality<T: Term> {
+pub struct Equality<T, U = T> {
     /// The trait member term under comparison.
-    pub trait_member: T::TraitMember,
+    pub lhs: T,
 
     /// The term that the trait member is equivalent to.
-    pub equivalent: T,
+    pub rhs: U,
 }
 
-impl<S: State, T: table::Display<S> + Term> table::Display<S>
-    for TraitMemberEquality<T>
-where
-    T::TraitMember: table::Display<S>,
+impl<S: State, T: table::Display<S>, U: table::Display<S>> table::Display<S>
+    for Equality<T, U>
 {
     fn fmt(
         &self,
@@ -205,28 +213,28 @@ where
         write!(
             f,
             "{} = {}",
-            DisplayObject { display: &self.trait_member, table },
-            DisplayObject { display: &self.equivalent, table }
+            DisplayObject { display: &self.lhs, table },
+            DisplayObject { display: &self.rhs, table }
         )
     }
 }
 
-impl<T: Term> TraitMemberEquality<T> {
+impl<T: Term> Equality<T::TraitMember, T> {
     /// Checks if the predicate has a `forall` lifetime.
     pub fn contains_forall_lifetime(&self) -> bool {
-        let trait_member = T::from(self.trait_member.clone());
+        let trait_member = T::from(self.lhs.clone());
 
         contains_forall_lifetime(&trait_member)
-            || contains_forall_lifetime(&self.equivalent)
+            || contains_forall_lifetime(&self.rhs)
     }
 }
 
-impl TraitMemberEquality<Type> {
-    /// Applies the instantiation to both [`TraitMemberEquality::trait_member`]
-    /// and [`TraitMemberEquality::equivalence`].
-    pub fn instantiate(&mut self, instantiation: &Instantiation) {
-        self.trait_member.member_generic_arguments.instantiate(instantiation);
-        self.trait_member.parent_generic_arguments.instantiate(instantiation);
-        instantiation::instantiate(&mut self.equivalent, instantiation);
+impl<M: Model> Equality<r#type::TraitMember<M>, Type<M>> {
+    /// Applies the instantiation to both [`Equality::lhs`] and
+    /// [`Equality::rhs`].
+    pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
+        self.lhs.member_generic_arguments.instantiate(instantiation);
+        self.lhs.parent_generic_arguments.instantiate(instantiation);
+        instantiation::instantiate(&mut self.rhs, instantiation);
     }
 }

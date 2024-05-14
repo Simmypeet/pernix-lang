@@ -28,12 +28,9 @@ use crate::{
             Value,
         },
     },
-    pattern::{
-        self, Irrefutable, Named, RegularTupleBinding, Structural, Tuple,
-        Wildcard,
-    },
     semantic::{
         instantiation::{self, Instantiation, MismatchedGenericParameterCount},
+        model::Default,
         term::{
             self,
             lifetime::{Lifetime, Local},
@@ -678,7 +675,7 @@ impl Representation {
         &mut self,
         table: &Table<impl State>,
         syntax_tree: &syntax_tree::pattern::Irrefutable,
-        simplified_type: &Type,
+        simplified_type: &Type<Default>,
         address: &Address,
         block_id: ID<Block>,
         referring_site: GlobalID,
@@ -779,8 +776,6 @@ impl Representation {
         for id in &removed_registers {
             assert!(register_reserved.remove(id).is_some());
         }
-
-        // TODO: eliminate the unused instructions, allocas, and registers
 
         // insert the new instructions
         let block = self.control_flow_graph.get_block_mut(block_id).unwrap();

@@ -27,23 +27,25 @@ use crate::{
         SymbolIsMoreAccessibleThanParent, TraitMemberKind,
         UnimplementedTraitMembers, UnknownTraitImplementationMember,
     },
-    pattern::NameBindingPoint,
-    semantic::term::{r#type, GenericArguments},
+    semantic::{
+        model::Model,
+        term::{r#type, GenericArguments},
+    },
     symbol::{
         Accessibility, AdtID, AdtImplementation, AdtImplementationConstant,
-        AdtImplementationData, AdtImplementationFunction,
+        AdtImplementationDefinition, AdtImplementationFunction,
         AdtImplementationMemberID, AdtImplementationType, Constant,
-        ConstantData, Enum, Function, FunctionData, FunctionIR,
+        ConstantDefinition, Enum, Function, FunctionDefinition, FunctionIR,
         GenericDeclaration, GenericParameterVariances, GlobalID,
         ImplementationSignature, Module, ModuleMemberID,
         NegativeTraitImplementation, Struct, Trait, TraitConstant,
-        TraitConstantData, TraitFunction, TraitFunctionData,
+        TraitConstantDefinition, TraitFunction, TraitFunctionDefinition,
         TraitImplementation, TraitImplementationConstant,
-        TraitImplementationConstantData, TraitImplementationData,
-        TraitImplementationFunction, TraitImplementationFunctionData,
+        TraitImplementationConstantDefinition, TraitImplementationDefinition,
+        TraitImplementationFunction, TraitImplementationFunctionDefinition,
         TraitImplementationMemberID, TraitImplementationType,
-        TraitImplementationTypeData, TraitMemberID, TraitType, TraitTypeData,
-        Type, TypeData, Variant,
+        TraitImplementationTypeDefinition, TraitMemberID, TraitType,
+        TraitTypeDefinition, Type, TypeDefinition, Variant,
     },
     table::{self, Element, GetMemberError, Index, RwLockContainer, Table},
 };
@@ -67,9 +69,9 @@ impl table::State for Drafter {
     ) {
     }
 
-    fn on_resolved(
+    fn on_resolved<M: Model>(
         _: &Table<Self>,
-        _: table::resolution::Resolution,
+        _: table::resolution::Resolution<M>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
     ) {
@@ -131,7 +133,7 @@ impl Table<Drafter> {
                     .to_owned(),
                 return_type: r#type::Type::default(),
                 generic_declaration: GenericDeclaration::default(),
-                data: TraitFunctionData {
+                definition: TraitFunctionDefinition {
                     accessibility: Accessibility::from_syntax_tree(
                         syntax_tree.access_modifier(),
                     ),
@@ -161,7 +163,7 @@ impl Table<Drafter> {
                     .str()
                     .to_owned(),
                 generic_declaration: GenericDeclaration::default(),
-                data: TraitTypeData {
+                definition: TraitTypeDefinition {
                     accessibility: Accessibility::from_syntax_tree(
                         syntax_tree.access_modifier(),
                     ),
@@ -192,7 +194,7 @@ impl Table<Drafter> {
                     .to_owned(),
                 r#type: r#type::Type::default(),
                 generic_declaration: GenericDeclaration::default(),
-                data: TraitConstantData {
+                definition: TraitConstantDefinition {
                     accessibility: Accessibility::from_syntax_tree(
                         syntax_tree.access_modifier(),
                     ),
@@ -288,13 +290,12 @@ impl Table<Drafter> {
                     .to_owned(),
                 return_type: r#type::Type::default(),
                 generic_declaration: GenericDeclaration::default(),
-                data: FunctionData {
+                definition: FunctionDefinition {
                     accessibility: Accessibility::from_syntax_tree(
                         syntax_tree.access_modifier(),
                     ),
                     const_function: syntax_tree.const_keyword().is_some(),
                     patterns_by_parameter_id: HashMap::new(),
-                    parameters_name_binding_point: NameBindingPoint::default(),
                     ir: FunctionIR::default(),
                 },
             })
@@ -322,7 +323,7 @@ impl Table<Drafter> {
                     .span
                     .str()
                     .to_owned(),
-                data: TypeData {
+                definition: TypeDefinition {
                     accessibility: Accessibility::from_syntax_tree(
                         syntax_tree.access_modifier(),
                     ),
@@ -449,7 +450,7 @@ impl Table<Drafter> {
                 r#type: r#type::Type::default(),
                 generic_declaration: GenericDeclaration::default(),
                 parent_id: parent_module_id,
-                data: ConstantData {
+                definition: ConstantDefinition {
                     accessibility: Accessibility::from_syntax_tree(
                         syntax_tree.access_modifier(),
                     ),
@@ -594,7 +595,7 @@ impl Table<Finalizer> {
                         .span
                         .str()
                         .to_owned(),
-                    data: TraitImplementationFunctionData {
+                    definition: TraitImplementationFunctionDefinition {
                         implemented_trait_function_id,
                         patterns_by_parameter_id: HashMap::new(),
                     },
@@ -652,7 +653,7 @@ impl Table<Finalizer> {
                         .span
                         .str()
                         .to_owned(),
-                    data: TraitImplementationTypeData {
+                    definition: TraitImplementationTypeDefinition {
                         r#type: r#type::Type::default(),
                         implemented_trait_type_id,
                         generic_parameter_variances:
@@ -711,7 +712,7 @@ impl Table<Finalizer> {
                         .str()
                         .to_owned(),
                     r#type: r#type::Type::default(),
-                    data: TraitImplementationConstantData {
+                    definition: TraitImplementationConstantDefinition {
                         implemented_trait_constant_id,
                     },
                 })
@@ -772,7 +773,7 @@ impl Table<Finalizer> {
                     },
                     implementation_name,
                     declared_in,
-                    data: TraitImplementationData {
+                    definition: TraitImplementationDefinition {
                         is_const: implementation_signature
                             .const_keyword()
                             .is_some(),
@@ -922,7 +923,6 @@ impl Table<Finalizer> {
                 }
 
                 (trait_member_id, member) => {
-                    // TODO: report the mismatch symbol kind error
                     let found_kind = match member {
                         ImplementationMember::Type(_) => TraitMemberKind::Type,
                         ImplementationMember::Function(_) => {
@@ -962,7 +962,6 @@ impl Table<Finalizer> {
                 .is_none());
         }
 
-        // TODO: check if the trait members are implemented
         let mut unimplemented_members = Vec::new();
 
         #[allow(clippy::significant_drop_in_scrutinee)]
@@ -1004,7 +1003,7 @@ impl Table<Finalizer> {
                             .span
                             .str()
                             .to_owned(),
-                        data: TypeData {
+                        definition: TypeDefinition {
                             accessibility: Accessibility::from_syntax_tree(
                                 syntax_tree.access_modifier(),
                             ),
@@ -1044,14 +1043,12 @@ impl Table<Finalizer> {
                         .span
                         .str()
                         .to_owned(),
-                    data: FunctionData {
+                    definition: FunctionDefinition {
                         accessibility: Accessibility::from_syntax_tree(
                             syntax_tree.access_modifier(),
                         ),
                         const_function: syntax_tree.const_keyword().is_some(),
                         patterns_by_parameter_id: HashMap::new(),
-                        parameters_name_binding_point:
-                            NameBindingPoint::default(),
                         ir: FunctionIR::default(),
                     },
                     parameters: Arena::default(),
@@ -1090,7 +1087,7 @@ impl Table<Finalizer> {
                         .str()
                         .to_owned(),
                     r#type: r#type::Type::default(),
-                    data: ConstantData {
+                    definition: ConstantDefinition {
                         accessibility: Accessibility::from_syntax_tree(
                             syntax_tree.access_modifier(),
                         ),
@@ -1147,7 +1144,7 @@ impl Table<Finalizer> {
                         },
                         implementation_name,
                         declared_in,
-                        data: AdtImplementationData {
+                        definition: AdtImplementationDefinition {
                             member_ids_by_name: HashMap::new(),
                         },
                     })
@@ -1266,8 +1263,8 @@ impl Table<Finalizer> {
                             },
                             implementation_name,
                             declared_in,
-                            data:
-                                crate::symbol::NegativeTraitImplementationData,
+                            definition:
+                                crate::symbol::NegativeTraitImplementationDefinition,
                         })
                     });
 

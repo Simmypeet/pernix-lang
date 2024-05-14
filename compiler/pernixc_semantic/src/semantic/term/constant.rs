@@ -10,8 +10,8 @@ use std::{
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    lifetime::Lifetime, r#type::Type, GenericArguments, Local, Never, Term,
-    TupleElement,
+    lifetime::Lifetime, r#type::Type, GenericArguments, Local, ModelOf, Never,
+    Term, TupleElement,
 };
 use crate::{
     arena::ID,
@@ -19,6 +19,7 @@ use crate::{
         instantiation::Instantiation,
         mapping::Mapping,
         matching::{self, Match},
+        model::{Default, Model},
         predicate::{self, Outlives, Predicate, Satisfiability},
         session::{ExceedLimitError, Limit, Session},
         sub_term::{AssignSubTermError, Location, SubTerm, SubTupleLocation},
@@ -101,37 +102,34 @@ pub enum Primitive {
 
 /// Represents a struct constant value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Struct {
+pub struct Struct<M: Model> {
     /// The ID to the struct.
     pub id: ID<symbol::Struct>,
 
     /// The fields of the struct constant value.
-    pub fields: Vec<Constant>,
+    pub fields: Vec<Constant<M>>,
 }
 
 /// Represents an enum constant value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Enum {
+pub struct Enum<M: Model> {
     /// The variant that the enum constant value is.
     pub variant_id: ID<Variant>,
 
     /// The associated value of the enum constant value (if any).
-    pub associated_value: Option<Box<Constant>>,
+    pub associated_value: Option<Box<Constant<M>>>,
 }
 
 /// Represents an array constant value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Array {
+pub struct Array<M: Model> {
     /// The value of each element in the array constant value.
-    pub elements: Vec<Constant>,
+    pub elements: Vec<Constant<M>>,
 }
 
 /// Represents a tuple constant value, denoted by `(value, value, ...value)`
 /// syntax.
-pub type Tuple = super::Tuple<Constant>;
-
-/// Represents a constant inference variable in hindley-milner type inference.
-pub type Inference = Never; /* will be changed */
+pub type Tuple<M: Model> = super::Tuple<Constant<M>>;
 
 /// Represents a constant value denoted by a `phantom` syntax.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -159,11 +157,11 @@ pub enum SubConstantLocation {
     Local,
 }
 
-impl Location<Constant, Constant> for SubConstantLocation {
+impl<M: Model> Location<Constant<M>, Constant<M>> for SubConstantLocation {
     fn assign_sub_term(
         self,
-        term: &mut Constant,
-        sub_term: Constant,
+        term: &mut Constant<M>,
+        sub_term: Constant<M>,
     ) -> Result<(), AssignSubTermError> {
         let reference = match (self, term) {
             (Self::Tuple(location), Constant::Tuple(tuple)) => {
@@ -197,7 +195,7 @@ impl Location<Constant, Constant> for SubConstantLocation {
         Ok(())
     }
 
-    fn get_sub_term(self, term: &Constant) -> Option<Constant> {
+    fn get_sub_term(self, term: &Constant<M>) -> Option<Constant<M>> {
         match (self, term) {
             (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
                 SubTupleLocation::Single(single) => {
@@ -232,7 +230,7 @@ impl Location<Constant, Constant> for SubConstantLocation {
         }
     }
 
-    fn get_sub_term_ref(self, term: &Constant) -> Option<&Constant> {
+    fn get_sub_term_ref(self, term: &Constant<M>) -> Option<&Constant<M>> {
         match (self, term) {
             (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
                 SubTupleLocation::Single(single) => {
@@ -262,7 +260,10 @@ impl Location<Constant, Constant> for SubConstantLocation {
         }
     }
 
-    fn get_sub_term_mut(self, term: &mut Constant) -> Option<&mut Constant> {
+    fn get_sub_term_mut(
+        self,
+        term: &mut Constant<M>,
+    ) -> Option<&mut Constant<M>> {
         match (self, term) {
             (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
                 SubTupleLocation::Single(single) => tuple
@@ -308,90 +309,111 @@ impl Location<Constant, Constant> for SubConstantLocation {
 )]
 #[allow(missing_docs)]
 #[non_exhaustive]
-pub enum Constant {
+pub enum Constant<M: Model> {
+    #[from]
     Primitive(Primitive),
-    Inference(Inference),
-    Struct(Struct),
-    Enum(Enum),
-    Array(Array),
+    Inference(M::ConstantInference),
+    #[from]
+    Struct(Struct<M>),
+    #[from]
+    Enum(Enum<M>),
+    #[from]
+    Array(Array<M>),
+    #[from]
     Parameter(ConstantParameterID),
+    #[from]
     Local(Local<Self>),
-    Tuple(Tuple),
+    #[from]
+    Tuple(Tuple<M>),
+    #[from]
     Phantom(Phantom),
 }
 
-impl TryFrom<Constant> for Tuple {
-    type Error = Constant;
+impl<M: Model> From<Never> for Constant<M> {
+    fn from(value: Never) -> Self { match value {} }
+}
 
-    fn try_from(value: Constant) -> Result<Self, Self::Error> {
+impl<M: Model> ModelOf for Constant<M> {
+    type Model = M;
+}
+
+impl<M: Model> TryFrom<Constant<M>> for Tuple<M> {
+    type Error = Constant<M>;
+
+    fn try_from(value: Constant<M>) -> Result<Self, Self::Error> {
         value.into_tuple()
     }
 }
 
-impl TryFrom<Constant> for ConstantParameterID {
-    type Error = Constant;
+impl<M: Model> TryFrom<Constant<M>> for ConstantParameterID {
+    type Error = Constant<M>;
 
-    fn try_from(value: Constant) -> Result<Self, Self::Error> {
+    fn try_from(value: Constant<M>) -> Result<Self, Self::Error> {
         value.into_parameter()
     }
 }
 
-impl Default for Constant {
+impl<M: Model> std::default::Default for Constant<M> {
     fn default() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
 }
 
-impl SubTerm for Constant {
+impl<M: Model> SubTerm for Constant<M> {
     type SubTypeLocation = Never;
     type SubConstantLocation = SubConstantLocation;
     type SubLifetimeLocation = Never;
     type ThisSubTermLocation = SubConstantLocation;
 }
 
-impl Location<Constant, Type> for Never {
+impl<M: Model> Location<Constant<M>, Type<M>> for Never {
     fn assign_sub_term(
         self,
-        _: &mut Constant,
-        _: Type,
+        _: &mut Constant<M>,
+        _: Type<M>,
     ) -> Result<(), AssignSubTermError> {
         match self {}
     }
 
-    fn get_sub_term(self, _: &Constant) -> Option<Type> { match self {} }
+    fn get_sub_term(self, _: &Constant<M>) -> Option<Type<M>> { match self {} }
 
-    fn get_sub_term_ref(self, _: &Constant) -> Option<&Type> { match self {} }
+    fn get_sub_term_ref(self, _: &Constant<M>) -> Option<&Type<M>> {
+        match self {}
+    }
 
-    fn get_sub_term_mut(self, _: &mut Constant) -> Option<&mut Type> {
+    fn get_sub_term_mut(self, _: &mut Constant<M>) -> Option<&mut Type<M>> {
         match self {}
     }
 }
 
-impl Location<Constant, Lifetime> for Never {
+impl<M: Model> Location<Constant<M>, Lifetime<M>> for Never {
     fn assign_sub_term(
         self,
-        _: &mut Constant,
-        _: Lifetime,
+        _: &mut Constant<M>,
+        _: Lifetime<M>,
     ) -> Result<(), AssignSubTermError> {
         match self {}
     }
 
-    fn get_sub_term(self, _: &Constant) -> Option<Lifetime> { match self {} }
-
-    fn get_sub_term_ref(self, _: &Constant) -> Option<&Lifetime> {
+    fn get_sub_term(self, _: &Constant<M>) -> Option<Lifetime<M>> {
         match self {}
     }
 
-    fn get_sub_term_mut(self, _: &mut Constant) -> Option<&mut Lifetime> {
+    fn get_sub_term_ref(self, _: &Constant<M>) -> Option<&Lifetime<M>> {
+        match self {}
+    }
+
+    fn get_sub_term_mut(self, _: &mut Constant<M>) -> Option<&mut Lifetime<M>> {
         match self {}
     }
 }
 
-impl Match for Constant {
+impl<M: Model> Match for Constant<M> {
     #[allow(clippy::too_many_lines)]
     fn substructural_match(
         &self,
         other: &Self,
     ) -> Option<
         matching::Substructural<
+            M,
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -483,6 +505,7 @@ impl Match for Constant {
 
     fn get_substructural(
         substructural: &matching::Substructural<
+            M,
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -493,6 +516,7 @@ impl Match for Constant {
 
     fn get_substructural_mut(
         substructural: &mut matching::Substructural<
+            M,
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -502,24 +526,31 @@ impl Match for Constant {
     }
 }
 
-impl Term for Constant {
+impl<M: Model> Term for Constant<M>
+where
+    Self: ModelOf<Model = M>,
+{
     type GenericParameter = ConstantParameter;
     type TraitMember = Never;
+    type Rebind<Ms: Model> = Constant<Ms>;
 
     fn normalize(
         &self,
-        _: &Environment<impl State>,
-        _: &mut Limit<impl Session<Lifetime> + Session<Type> + Session<Self>>,
+        _: &Environment<M, impl State>,
+        _: &mut Limit<
+            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Self>,
+        >,
     ) -> Result<Option<Self>, ExceedLimitError> {
-        // TODO: Implement this.
         Ok(None)
     }
 
     fn outlives_satisfiability(
         &self,
-        _: &Lifetime,
-        _: &Environment<impl State>,
-        _: &mut Limit<impl Session<Lifetime> + Session<Type> + Session<Self>>,
+        _: &Lifetime<M>,
+        _: &Environment<M, impl State>,
+        _: &mut Limit<
+            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Self>,
+        >,
     ) -> Result<Satisfiability, ExceedLimitError> {
         // constants value do not have lifetimes
         Ok(Satisfiability::Satisfied)
@@ -543,21 +574,21 @@ impl Term for Constant {
 
     fn into_trait_member(self) -> Result<Never, Self> { Err(self) }
 
-    fn as_tuple(&self) -> Option<&Tuple> {
+    fn as_tuple(&self) -> Option<&Tuple<M>> {
         match self {
             Self::Tuple(tuple) => Some(tuple),
             _ => None,
         }
     }
 
-    fn as_tuple_mut(&mut self) -> Option<&mut Tuple> {
+    fn as_tuple_mut(&mut self) -> Option<&mut Tuple<M>> {
         match self {
             Self::Tuple(tuple) => Some(tuple),
             _ => None,
         }
     }
 
-    fn into_tuple(self) -> Result<Tuple, Self> {
+    fn into_tuple(self) -> Result<Tuple<M>, Self> {
         match self {
             Self::Tuple(tuple) => Ok(tuple),
             x => Err(x),
@@ -568,65 +599,69 @@ impl Term for Constant {
         None
     }
 
-    fn as_outlive_predicate(_: &Predicate) -> Option<&Outlives<Self>> { None }
+    fn as_outlive_predicate(_: &Predicate<M>) -> Option<&Outlives<Self>> {
+        None
+    }
 
     fn as_outlive_predicate_mut(
-        _: &mut Predicate,
+        _: &mut Predicate<M>,
     ) -> Option<&mut Outlives<Self>> {
         None
     }
 
     fn into_outlive_predicate(
-        predicate: Predicate,
-    ) -> Result<Outlives<Self>, Predicate> {
+        predicate: Predicate<M>,
+    ) -> Result<Outlives<Self>, Predicate<M>> {
         Err(predicate)
     }
 
-    fn as_constant_type_predicate(_: &Predicate) -> Option<&Self> { None }
+    fn as_constant_type_predicate(_: &Predicate<M>) -> Option<&Self> { None }
 
-    fn as_constant_type_predicate_mut(_: &mut Predicate) -> Option<&mut Self> {
+    fn as_constant_type_predicate_mut(
+        _: &mut Predicate<M>,
+    ) -> Option<&mut Self> {
         None
     }
 
     fn into_constant_type_predicate(
-        predicate: Predicate,
-    ) -> Result<Self, Predicate> {
+        predicate: Predicate<M>,
+    ) -> Result<Self, Predicate<M>> {
         Err(predicate)
     }
 
     fn as_trait_member_equality_predicate(
-        _: &Predicate,
-    ) -> Option<&predicate::TraitMemberEquality<Self>> {
+        _: &Predicate<M>,
+    ) -> Option<&predicate::Equality<Never, Self>> {
         None
     }
 
     fn as_trait_member_equality_predicate_mut(
-        _: &mut Predicate,
-    ) -> Option<&mut predicate::TraitMemberEquality<Self>> {
+        _: &mut Predicate<M>,
+    ) -> Option<&mut predicate::Equality<Never, Self>> {
         None
     }
 
     fn into_trait_member_equality_predicate(
-        predicate: Predicate,
-    ) -> Result<predicate::TraitMemberEquality<Self>, Predicate> {
+        predicate: Predicate<M>,
+    ) -> Result<predicate::Equality<Never, Self>, Predicate<M>> {
         Err(predicate)
     }
 
     fn as_tuple_predicate(
-        predicate: &Predicate,
+        predicate: &Predicate<M>,
     ) -> Option<&predicate::Tuple<Self>> {
         predicate.as_tuple_constant()
     }
 
     fn as_tuple_predicate_mut(
-        predicate: &mut Predicate,
+        predicate: &mut Predicate<M>,
     ) -> Option<&mut predicate::Tuple<Self>> {
         predicate.as_tuple_constant_mut()
     }
 
     fn into_tuple_predicate(
-        predicate: Predicate,
-    ) -> Result<predicate::Tuple<Self>, Predicate> {
+        predicate: Predicate<M>,
+    ) -> Result<predicate::Tuple<Self>, Predicate<M>> {
         predicate.into_tuple_constant()
     }
 
@@ -653,48 +688,54 @@ impl Term for Constant {
     }
 
     fn get_instantiation(
-        instantiation: &Instantiation,
+        instantiation: &Instantiation<M>,
     ) -> &HashMap<Self, Self> {
         &instantiation.constants
     }
 
     fn get_instantiation_mut(
-        instantiation: &mut Instantiation,
+        instantiation: &mut Instantiation<M>,
     ) -> &mut HashMap<Self, Self> {
         &mut instantiation.constants
     }
 
     fn get_substructural_unification<'a, T: Term>(
         substructural: &'a unification::Substructural<T>,
-    ) -> impl Iterator<Item = &'a Unification<Self>>
+    ) -> impl Iterator<Item = &'a Unification<Constant<T::Model>>>
     where
         Self: 'a,
     {
         substructural.constants.values()
     }
 
-    fn get_mapping(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
+    fn get_mapping(mapping: &Mapping<M>) -> &HashMap<Self, HashSet<Self>> {
         &mapping.constants
     }
 
     fn get_mapping_mut(
-        mapping: &mut Mapping,
+        mapping: &mut Mapping<M>,
     ) -> &mut HashMap<Self, HashSet<Self>> {
         &mut mapping.constants
     }
 
-    fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self] {
+    fn get_generic_arguments(
+        generic_arguments: &GenericArguments<M>,
+    ) -> &[Self] {
         &generic_arguments.constants
     }
 
     fn get_generic_arguments_mut(
-        generic_arguments: &mut GenericArguments,
+        generic_arguments: &mut GenericArguments<M>,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.constants
     }
+
+    fn from_default_model(term: Constant<Default>) -> Self {
+        M::from_default_constant(term)
+    }
 }
 
-impl Constant {
+impl<M: Model> Constant<M> {
     /// Gets a list of [`GlobalID`]s that occur in the constant.
     #[must_use]
     #[allow(clippy::too_many_lines)]
@@ -767,7 +808,7 @@ impl Constant {
     }
 }
 
-impl<T: State> table::Display<T> for Constant {
+impl<T: State, M: Model> table::Display<T> for Constant<M> {
     fn fmt(
         &self,
         table: &Table<T>,

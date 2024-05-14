@@ -10,7 +10,7 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     constant::Constant, lifetime::Lifetime, GenericArguments, Local,
-    MemberSymbol, Never, Symbol, Term, TupleElement,
+    MemberSymbol, ModelOf, Never, Symbol, Term, TupleElement,
 };
 use crate::{
     arena::ID,
@@ -18,6 +18,7 @@ use crate::{
         instantiation::{self, Instantiation},
         mapping::Mapping,
         matching::{self, Match, Matching},
+        model::{Default, Model},
         predicate::{self, Outlives, Predicate, Satisfiability},
         session::{ExceedLimitError, Limit, Session},
         sub_term::{
@@ -124,35 +125,35 @@ pub enum Qualifier {
 
 /// Represents a pointer type, denoted by `*QUALIFIER TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Pointer {
+pub struct Pointer<M: Model> {
     /// The qualifier applied to the pointer.
     pub qualifier: Qualifier,
 
     /// The type that the pointer points to.
-    pub pointee: Box<Type>,
+    pub pointee: Box<Type<M>>,
 }
 
 /// Represents a reference type, denoted by `&'LIFETIME QUALIFIER TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Reference {
+pub struct Reference<M: Model> {
     /// The qualifier applied to the reference.
     pub qualifier: Qualifier,
 
     /// The lifetime that the reference lives in.
-    pub lifetime: Lifetime,
+    pub lifetime: Lifetime<M>,
 
     /// The type that the reference points to.
-    pub pointee: Box<Type>,
+    pub pointee: Box<Type<M>>,
 }
 
 /// Represents an array type, denoted by `[ELEMENT: LENGTH]` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Array {
+pub struct Array<M: Model> {
     /// Constant representing the length of the array.
-    pub length: Constant,
+    pub length: Constant<M>,
 
     /// The type of the elements in the array.
-    pub r#type: Box<Type>,
+    pub r#type: Box<Type<M>>,
 }
 
 /// Contains all primitive types in the language.
@@ -199,18 +200,15 @@ pub enum Primitive {
 }
 
 /// Represents a tuple type, denoted by `(type, type, ...type)` syntax.
-pub type Tuple = super::Tuple<Type>;
-
-/// Represents a type inference variable in Hindley Milner type inference.
-pub type Inference = Never; /* will be changed */
+pub type Tuple<M: Model> = super::Tuple<Type<M>>;
 
 /// Represents a trait-member type, denoted by `TRAIT[ARGS]::TYPE[ARGS]`
 /// syntax.
-pub type TraitMember = MemberSymbol<ID<symbol::TraitType>>;
+pub type TraitMember<M: Model> = MemberSymbol<M, ID<symbol::TraitType>>;
 
 /// Represents a phantom type, denoted by `phantom TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Phantom(pub Box<Type>);
+pub struct Phantom<M: Model>(pub Box<Type<M>>);
 
 /// The location pointing to a sub-lifetime term in a type.
 #[derive(
@@ -233,11 +231,11 @@ pub enum SubLifetimeLocation {
     TraitMember(SubTraitMemberLocation),
 }
 
-impl Location<Type, Lifetime> for SubLifetimeLocation {
+impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
     fn assign_sub_term(
         self,
-        term: &mut Type,
-        sub_term: Lifetime,
+        term: &mut Type<M>,
+        sub_term: Lifetime<M>,
     ) -> Result<(), AssignSubTermError> {
         let reference = match (term, self) {
             (Type::Reference(reference), Self::Reference) => {
@@ -266,30 +264,30 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
         Ok(())
     }
 
-    fn get_sub_term(self, term: &Type) -> Option<Lifetime> {
+    fn get_sub_term(self, term: &Type<M>) -> Option<Lifetime<M>> {
         match (term, self) {
             (Type::Reference(reference), Self::Reference) => {
                 Some(reference.lifetime)
             }
 
             (Type::Symbol(symbol), Self::Symbol(location)) => {
-                symbol.get_term(location).copied()
+                symbol.get_term(location).cloned()
             }
 
             (
                 Type::MemberSymbol(member_symbol),
                 Self::MemberSymbol(location),
-            ) => member_symbol.get_term(location).copied(),
+            ) => member_symbol.get_term(location).cloned(),
 
             (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.get_term(location.0).copied()
+                trait_member.get_term(location.0).cloned()
             }
 
             _ => None,
         }
     }
 
-    fn get_sub_term_ref(self, term: &Type) -> Option<&Lifetime> {
+    fn get_sub_term_ref(self, term: &Type<M>) -> Option<&Lifetime<M>> {
         match (term, self) {
             (Type::Reference(reference), Self::Reference) => {
                 Some(&reference.lifetime)
@@ -312,7 +310,7 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
         }
     }
 
-    fn get_sub_term_mut(self, term: &mut Type) -> Option<&mut Lifetime> {
+    fn get_sub_term_mut(self, term: &mut Type<M>) -> Option<&mut Lifetime<M>> {
         match (term, self) {
             (Type::Reference(reference), Self::Reference) => {
                 Some(&mut reference.lifetime)
@@ -373,11 +371,11 @@ pub enum SubTypeLocation {
     TraitMember(SubTraitMemberLocation),
 }
 
-impl Location<Type, Type> for SubTypeLocation {
+impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
     fn assign_sub_term(
         self,
-        term: &mut Type,
-        sub_term: Type,
+        term: &mut Type<M>,
+        sub_term: Type<M>,
     ) -> Result<(), AssignSubTermError> {
         let reference = match (self, term) {
             (Self::Symbol(location), Type::Symbol(symbol)) => symbol
@@ -419,7 +417,7 @@ impl Location<Type, Type> for SubTypeLocation {
         Ok(())
     }
 
-    fn get_sub_term(self, term: &Type) -> Option<Type> {
+    fn get_sub_term(self, term: &Type<M>) -> Option<Type<M>> {
         match (self, term) {
             (Self::Symbol(location), Type::Symbol(symbol)) => {
                 symbol.get_term(location).cloned()
@@ -459,7 +457,7 @@ impl Location<Type, Type> for SubTypeLocation {
         }
     }
 
-    fn get_sub_term_ref(self, term: &Type) -> Option<&Type> {
+    fn get_sub_term_ref(self, term: &Type<M>) -> Option<&Type<M>> {
         match (self, term) {
             (Self::Symbol(location), Type::Symbol(symbol)) => {
                 symbol.get_term(location)
@@ -494,7 +492,7 @@ impl Location<Type, Type> for SubTypeLocation {
         }
     }
 
-    fn get_sub_term_mut(self, term: &mut Type) -> Option<&mut Type> {
+    fn get_sub_term_mut(self, term: &mut Type<M>) -> Option<&mut Type<M>> {
         match (self, term) {
             (Self::Symbol(location), Type::Symbol(symbol)) => {
                 symbol.get_term_mut(location)
@@ -554,11 +552,11 @@ pub enum SubConstantLocation {
     TraitMember(SubTraitMemberLocation),
 }
 
-impl Location<Type, Constant> for SubConstantLocation {
+impl<M: Model> Location<Type<M>, Constant<M>> for SubConstantLocation {
     fn assign_sub_term(
         self,
-        term: &mut Type,
-        sub_term: Constant,
+        term: &mut Type<M>,
+        sub_term: Constant<M>,
     ) -> Result<(), AssignSubTermError> {
         let reference = match (self, term) {
             (Self::Symbol(location), Type::Symbol(symbol)) => symbol
@@ -586,7 +584,7 @@ impl Location<Type, Constant> for SubConstantLocation {
         Ok(())
     }
 
-    fn get_sub_term(self, term: &Type) -> Option<Constant> {
+    fn get_sub_term(self, term: &Type<M>) -> Option<Constant<M>> {
         match (self, term) {
             (Self::Symbol(location), Type::Symbol(symbol)) => {
                 symbol.get_term(location).cloned()
@@ -606,7 +604,7 @@ impl Location<Type, Constant> for SubConstantLocation {
         }
     }
 
-    fn get_sub_term_ref(self, term: &Type) -> Option<&Constant> {
+    fn get_sub_term_ref(self, term: &Type<M>) -> Option<&Constant<M>> {
         match (self, term) {
             (Self::Symbol(location), Type::Symbol(symbol)) => {
                 symbol.get_term(location)
@@ -626,7 +624,7 @@ impl Location<Type, Constant> for SubConstantLocation {
         }
     }
 
-    fn get_sub_term_mut(self, term: &mut Type) -> Option<&mut Constant> {
+    fn get_sub_term_mut(self, term: &mut Type<M>) -> Option<&mut Constant<M>> {
         match (self, term) {
             (Self::Symbol(location), Type::Symbol(symbol)) => {
                 symbol.get_term_mut(location)
@@ -647,19 +645,20 @@ impl Location<Type, Constant> for SubConstantLocation {
     }
 }
 
-impl SubTerm for Type {
+impl<M: Model> SubTerm for Type<M> {
     type SubLifetimeLocation = SubLifetimeLocation;
     type SubTypeLocation = SubTypeLocation;
     type SubConstantLocation = SubConstantLocation;
     type ThisSubTermLocation = SubTypeLocation;
 }
 
-impl Match for Type {
+impl<M: Model> Match for Type<M> {
     fn substructural_match(
         &self,
         other: &Self,
     ) -> Option<
         matching::Substructural<
+            M,
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -774,6 +773,7 @@ impl Match for Type {
 
     fn get_substructural(
         substructural: &matching::Substructural<
+            M,
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -784,6 +784,7 @@ impl Match for Type {
 
     fn get_substructural_mut(
         substructural: &mut matching::Substructural<
+            M,
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -806,17 +807,26 @@ impl Match for Type {
     derive_more::From,
 )]
 #[allow(missing_docs)]
-pub enum Type {
+pub enum Type<M: Model> {
+    #[from]
     Primitive(Primitive),
+    #[from]
     Parameter(TypeParameterID),
-    Inference(Inference),
-    Symbol(Symbol<SymbolID>),
-    Pointer(Pointer),
-    Reference(Reference),
-    Array(Array),
-    Tuple(Tuple),
+    Inference(M::TypeInference),
+    #[from]
+    Symbol(Symbol<M, SymbolID>),
+    #[from]
+    Pointer(Pointer<M>),
+    #[from]
+    Reference(Reference<M>),
+    #[from]
+    Array(Array<M>),
+    #[from]
+    Tuple(Tuple<M>),
+    #[from]
     Local(Local<Self>),
-    Phantom(Phantom),
+    #[from]
+    Phantom(Phantom<M>),
 
     /// Please notice this differences
     ///
@@ -826,39 +836,55 @@ pub enum Type {
     ///
     /// In the **TraitImplementation** case, the `parent_generic_arguments`
     /// field **is** deduced from the implementation.
-    MemberSymbol(MemberSymbol<MemberSymbolID>),
+    #[from]
+    MemberSymbol(MemberSymbol<M, MemberSymbolID>),
 
-    TraitMember(TraitMember),
+    #[from]
+    TraitMember(TraitMember<M>),
 }
 
-impl TryFrom<Type> for Tuple {
-    type Error = Type;
-
-    fn try_from(value: Type) -> Result<Self, Self::Error> { value.into_tuple() }
+impl<M: Model> From<Never> for Type<M> {
+    fn from(value: Never) -> Self { match value {} }
 }
 
-impl TryFrom<Type> for TypeParameterID {
-    type Error = Type;
+impl<M: Model> ModelOf for Type<M> {
+    type Model = M;
+}
 
-    fn try_from(value: Type) -> Result<Self, Self::Error> {
+impl<M: Model> TryFrom<Type<M>> for Tuple<M> {
+    type Error = Type<M>;
+
+    fn try_from(value: Type<M>) -> Result<Self, Self::Error> {
+        value.into_tuple()
+    }
+}
+
+impl<M: Model> TryFrom<Type<M>> for TypeParameterID {
+    type Error = Type<M>;
+
+    fn try_from(value: Type<M>) -> Result<Self, Self::Error> {
         value.into_parameter()
     }
 }
 
-impl Default for Type {
+impl<M: Model> std::default::Default for Type<M> {
     fn default() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
 }
 
-impl Term for Type {
+impl<M: Model> Term for Type<M>
+where
+    Self: ModelOf<Model = M>,
+{
     type GenericParameter = TypeParameter;
-    type TraitMember = TraitMember;
+    type TraitMember = TraitMember<M>;
+    type Rebind<Ms: Model> = Type<Ms>;
 
     #[allow(clippy::too_many_lines)]
     fn normalize(
         &self,
-        environment: &Environment<impl State>,
+        environment: &Environment<M, impl State>,
         limit: &mut Limit<
-            impl Session<Lifetime> + Session<Self> + Session<Constant>,
+            impl Session<Lifetime<M>> + Session<Self> + Session<Constant<M>>,
         >,
     ) -> Result<Option<Self>, ExceedLimitError> {
         match self {
@@ -871,7 +897,9 @@ impl Term for Type {
                     return Ok(None);
                 };
 
-                let mut type_aliased = type_sym.r#type.clone();
+                let mut type_aliased =
+                    M::from_default_type(type_sym.r#type.clone());
+
                 let Ok(inst) = Instantiation::from_generic_arguments(
                     generic_arguments.clone(),
                     (*id).into(),
@@ -1002,7 +1030,9 @@ impl Term for Type {
                     return Ok(None);
                 };
 
-                let mut aliased = implementation_type_symbol.r#type.clone();
+                let mut aliased = M::from_default_type(
+                    implementation_type_symbol.r#type.clone(),
+                );
 
                 let Ok(mut instantiation) =
                     Instantiation::from_generic_arguments(
@@ -1053,11 +1083,18 @@ impl Term for Type {
                     return Ok(None);
                 };
 
+                let adt_implementation_symbol_arguments =
+                    GenericArguments::from_default_model(
+                        adt_implementation_symbol.signature.arguments.clone(),
+                    );
+
                 // gets the decution for the parent generic arguments
-                let Some(mut deduction) = adt_implementation_symbol
-                    .signature
-                    .arguments
-                    .deduce(parent_generic_arguments, environment, limit)?
+                let Some(mut deduction) = adt_implementation_symbol_arguments
+                    .deduce(
+                    parent_generic_arguments,
+                    environment,
+                    limit,
+                )?
                 else {
                     return Ok(None);
                 };
@@ -1075,7 +1112,9 @@ impl Term for Type {
                     return Ok(None);
                 }
 
-                let mut aliased = implementation_type_symbol.r#type.clone();
+                let mut aliased = M::from_default_type(
+                    implementation_type_symbol.r#type.clone(),
+                );
 
                 instantiation::instantiate(&mut aliased, &deduction);
 
@@ -1119,13 +1158,13 @@ impl Term for Type {
 
     fn outlives_satisfiability(
         &self,
-        _: &Lifetime,
-        _: &Environment<impl State>,
+        _: &Lifetime<M>,
+        _: &Environment<M, impl State>,
         _: &mut Limit<
             impl Session<Self>
-                + Session<Lifetime>
+                + Session<Lifetime<M>>
                 + Session<Self>
-                + Session<Constant>,
+                + Session<Constant<M>>,
         >,
     ) -> Result<Satisfiability, ExceedLimitError> {
         match self {
@@ -1159,42 +1198,42 @@ impl Term for Type {
         self.into_parameter()
     }
 
-    fn as_trait_member(&self) -> Option<&TraitMember> {
+    fn as_trait_member(&self) -> Option<&TraitMember<M>> {
         match self {
             Self::TraitMember(trait_member) => Some(trait_member),
             _ => None,
         }
     }
 
-    fn as_trait_member_mut(&mut self) -> Option<&mut TraitMember> {
+    fn as_trait_member_mut(&mut self) -> Option<&mut TraitMember<M>> {
         match self {
             Self::TraitMember(trait_member) => Some(trait_member),
             _ => None,
         }
     }
 
-    fn into_trait_member(self) -> Result<TraitMember, Self> {
+    fn into_trait_member(self) -> Result<TraitMember<M>, Self> {
         match self {
             Self::TraitMember(trait_member) => Ok(trait_member),
             _ => Err(self),
         }
     }
 
-    fn as_tuple(&self) -> Option<&Tuple> {
+    fn as_tuple(&self) -> Option<&Tuple<M>> {
         match self {
             Self::Tuple(tuple) => Some(tuple),
             _ => None,
         }
     }
 
-    fn as_tuple_mut(&mut self) -> Option<&mut Tuple> {
+    fn as_tuple_mut(&mut self) -> Option<&mut Tuple<M>> {
         match self {
             Self::Tuple(tuple) => Some(tuple),
             _ => None,
         }
     }
 
-    fn into_tuple(self) -> Result<Tuple, Self> {
+    fn into_tuple(self) -> Result<Tuple<M>, Self> {
         match self {
             Self::Tuple(tuple) => Ok(tuple),
             _ => Err(self),
@@ -1222,7 +1261,8 @@ impl Term for Type {
                             .fields
                             .values()
                             .map(|field| {
-                                let mut ty = field.r#type.clone();
+                                let mut ty =
+                                    M::from_default_type(field.r#type.clone());
                                 instantiation::instantiate(
                                     &mut ty,
                                     &substitution,
@@ -1252,9 +1292,10 @@ impl Term for Type {
                             .copied()
                             .filter_map(|variant| table.get(variant))
                             .filter_map(|variant| {
-                                let ty = variant.associated_type.as_ref()?;
+                                let mut ty = M::from_default_type(
+                                    variant.associated_type.as_ref()?.clone(),
+                                );
 
-                                let mut ty = ty.clone();
                                 instantiation::instantiate(
                                     &mut ty,
                                     &substitution,
@@ -1271,71 +1312,73 @@ impl Term for Type {
         }
     }
 
-    fn as_outlive_predicate(predicate: &Predicate) -> Option<&Outlives<Self>> {
+    fn as_outlive_predicate(
+        predicate: &Predicate<M>,
+    ) -> Option<&Outlives<Self>> {
         predicate.as_type_outlives()
     }
 
     fn as_outlive_predicate_mut(
-        predicate: &mut Predicate,
+        predicate: &mut Predicate<M>,
     ) -> Option<&mut Outlives<Self>> {
         predicate.as_type_outlives_mut()
     }
 
     fn into_outlive_predicate(
-        predicate: Predicate,
-    ) -> Result<Outlives<Self>, Predicate> {
+        predicate: Predicate<M>,
+    ) -> Result<Outlives<Self>, Predicate<M>> {
         predicate.into_type_outlives()
     }
 
-    fn as_constant_type_predicate(predicate: &Predicate) -> Option<&Self> {
+    fn as_constant_type_predicate(predicate: &Predicate<M>) -> Option<&Self> {
         predicate.as_constant_type().map(|x| &x.0)
     }
 
     fn as_constant_type_predicate_mut(
-        predicate: &mut Predicate,
+        predicate: &mut Predicate<M>,
     ) -> Option<&mut Self> {
         predicate.as_constant_type_mut().map(|x| &mut x.0)
     }
 
     fn into_constant_type_predicate(
-        predicate: Predicate,
-    ) -> Result<Self, Predicate> {
+        predicate: Predicate<M>,
+    ) -> Result<Self, Predicate<M>> {
         predicate.into_constant_type().map(|x| x.0)
     }
 
     fn as_trait_member_equality_predicate(
-        predicate: &Predicate,
-    ) -> Option<&predicate::TraitMemberEquality<Self>> {
+        predicate: &Predicate<M>,
+    ) -> Option<&predicate::Equality<TraitMember<M>, Self>> {
         predicate.as_trait_type_equality()
     }
 
     fn as_trait_member_equality_predicate_mut(
-        predicate: &mut Predicate,
-    ) -> Option<&mut predicate::TraitMemberEquality<Self>> {
+        predicate: &mut Predicate<M>,
+    ) -> Option<&mut predicate::Equality<TraitMember<M>, Self>> {
         predicate.as_trait_type_equality_mut()
     }
 
     fn into_trait_member_equality_predicate(
-        predicate: Predicate,
-    ) -> Result<predicate::TraitMemberEquality<Self>, Predicate> {
+        predicate: Predicate<M>,
+    ) -> Result<predicate::Equality<TraitMember<M>, Self>, Predicate<M>> {
         predicate.into_trait_type_equality()
     }
 
     fn as_tuple_predicate(
-        predicate: &Predicate,
+        predicate: &Predicate<M>,
     ) -> Option<&predicate::Tuple<Self>> {
         predicate.as_tuple_type()
     }
 
     fn as_tuple_predicate_mut(
-        predicate: &mut Predicate,
+        predicate: &mut Predicate<M>,
     ) -> Option<&mut predicate::Tuple<Self>> {
         predicate.as_tuple_type_mut()
     }
 
     fn into_tuple_predicate(
-        predicate: Predicate,
-    ) -> Result<predicate::Tuple<Self>, Predicate> {
+        predicate: Predicate<M>,
+    ) -> Result<predicate::Tuple<Self>, Predicate<M>> {
         predicate.into_tuple_type()
     }
 
@@ -1402,48 +1445,54 @@ impl Term for Type {
     }
 
     fn get_instantiation(
-        instantiation: &Instantiation,
+        instantiation: &Instantiation<M>,
     ) -> &HashMap<Self, Self> {
         &instantiation.types
     }
 
     fn get_instantiation_mut(
-        instantiation: &mut Instantiation,
+        instantiation: &mut Instantiation<M>,
     ) -> &mut HashMap<Self, Self> {
         &mut instantiation.types
     }
 
     fn get_substructural_unification<'a, T: Term>(
         substructural: &'a unification::Substructural<T>,
-    ) -> impl Iterator<Item = &'a Unification<Self>>
+    ) -> impl Iterator<Item = &'a Unification<Type<T::Model>>>
     where
         Self: 'a,
     {
         substructural.types.values()
     }
 
-    fn get_mapping(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
+    fn get_mapping(mapping: &Mapping<M>) -> &HashMap<Self, HashSet<Self>> {
         &mapping.types
     }
 
     fn get_mapping_mut(
-        mapping: &mut Mapping,
+        mapping: &mut Mapping<M>,
     ) -> &mut HashMap<Self, HashSet<Self>> {
         &mut mapping.types
     }
 
-    fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self] {
+    fn get_generic_arguments(
+        generic_arguments: &GenericArguments<M>,
+    ) -> &[Self] {
         &generic_arguments.types
     }
 
     fn get_generic_arguments_mut(
-        generic_arguments: &mut GenericArguments,
+        generic_arguments: &mut GenericArguments<M>,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.types
     }
+
+    fn from_default_model(term: Type<Default>) -> Self {
+        M::from_default_type(term)
+    }
 }
 
-impl<T: State> table::Display<T> for Type {
+impl<T: State, M: Model> table::Display<T> for Type<M> {
     fn fmt(
         &self,
         table: &Table<T>,
@@ -1545,7 +1594,7 @@ impl<T: State> table::Display<T> for Type {
     }
 }
 
-impl Type {
+impl<M: Model> Type<M> {
     /// Gets a list of [`GlobalID`]s that occur in the type.
     #[must_use]
     pub fn get_global_id_dependencies(

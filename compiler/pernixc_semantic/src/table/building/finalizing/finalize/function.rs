@@ -1,14 +1,22 @@
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
 use super::Finalize;
 use crate::{
     arena::ID,
     error,
-    semantic::term::r#type::Type,
-    symbol::Function,
+    ir::{address::Address, Building, IR},
+    semantic::{
+        session::{self, Limit},
+        simplify::simplify,
+        term::r#type::Type,
+        Environment,
+    },
+    symbol::{Function, Parameter},
     table::{
-        building::finalizing::{occurrences::Occurrences, Finalizer},
+        building::finalizing::{
+            finalizer::build_preset, occurrences::Occurrences, Finalizer,
+        },
         resolution, Table,
     },
 };
@@ -19,18 +27,15 @@ pub const GENERIC_PARAMETER_STATE: usize = 0;
 /// Where cluase predicates are built
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
-/// The function signature information is built, including parameters and return
-/// type.
-pub const SIGNATURE_STATE: usize = 2;
-
 /// The intermediate representation of the function is built.
-pub const DEFINITION_AND_CHECK_STATE: usize = 3;
+pub const DEFINITION_AND_CHECK_STATE: usize = 2;
 
 impl Finalize for Function {
     type SyntaxTree = syntax_tree::item::Function;
     const FINAL_STATE: usize = DEFINITION_AND_CHECK_STATE;
     type Data = Occurrences;
 
+    #[allow(clippy::too_many_lines, clippy::significant_drop_in_scrutinee)]
     fn finalize(
         table: &Table<Finalizer>,
         symbol_id: ID<Self>,
@@ -58,7 +63,8 @@ impl Finalize for Function {
             ),
 
             DEFINITION_AND_CHECK_STATE => {
-                // build the parameters and return type
+                // build the parameters and return type on the local first to
+                // obtain the occurences then build them
                 let parameters = syntax_tree
                     .signature()
                     .parameters()
@@ -67,7 +73,7 @@ impl Finalize for Function {
                     .flat_map(ConnectedList::elements)
                     .map(|parameter| {
                         (
-                            parameter.irrefutable_pattern(),
+                            parameter,
                             table
                                 .resolve_type(
                                     parameter.r#type(),
@@ -86,7 +92,7 @@ impl Finalize for Function {
                     })
                     .collect::<Vec<_>>();
 
-                let return_type = syntax_tree
+                let mut return_type = syntax_tree
                     .signature()
                     .return_type()
                     .as_ref()
@@ -106,6 +112,100 @@ impl Finalize for Function {
                             )
                             .unwrap_or_default()
                     });
+
+                data.build_all_occurrences_to::<build_preset::Complete>(
+                    table,
+                    symbol_id.into(),
+                    false,
+                    handler,
+                );
+
+                let mut session = session::Default::default();
+                let premise =
+                    table.get_active_premise(symbol_id.into()).unwrap();
+
+                // simplify the return type
+                {
+                    if let Ok(simplified) = simplify(
+                        &return_type,
+                        &Environment { premise: &premise, table },
+                        &mut Limit::new(&mut session),
+                    ) {
+                        return_type = simplified;
+                    };
+
+                    let mut function_write = table
+                        .representation
+                        .functions
+                        .get(symbol_id)
+                        .unwrap()
+                        .write();
+
+                    function_write.return_type = return_type;
+                }
+
+                let mut ir = IR::<Building>::default();
+
+                // simplify the parameter type and create pattern
+                {
+                    for (parameter_syn, mut parameter_ty) in parameters {
+                        if let Ok(simplified) = simplify(
+                            &parameter_ty,
+                            &Environment { premise: &premise, table },
+                            &mut Limit::new(&mut session),
+                        ) {
+                            parameter_ty = simplified;
+                        }
+
+                        // assign the parameter type
+                        let parameter_id = {
+                            let mut function_write = table
+                                .representation
+                                .functions
+                                .get(symbol_id)
+                                .unwrap()
+                                .write();
+
+                            function_write.parameters.insert(Parameter {
+                                r#type: parameter_ty.clone(),
+                                span: Some(parameter_syn.r#type().span()),
+                            })
+                        };
+
+                        let pattern = ir
+                            .representation
+                            .create_irrefutable(
+                                table,
+                                parameter_syn.irrefutable_pattern(),
+                                &parameter_ty,
+                                &Address::Parameter(parameter_id),
+                                ir.control_flow_graph().entry_block_id(),
+                                symbol_id.into(),
+                                handler,
+                            )
+                            .unwrap();
+
+                        // assign the pattern of the parameter
+                        {
+                            let mut function_write = table
+                                .representation
+                                .functions
+                                .get(symbol_id)
+                                .unwrap()
+                                .write();
+
+                            assert!(function_write
+                                .patterns_by_parameter_id
+                                .insert(parameter_id, pattern)
+                                .is_none());
+
+                            drop(function_write);
+                        }
+                    }
+                }
+
+                // check all the occurrences
+                table.check_occurrences(symbol_id.into(), data, handler);
             }
 
             _ => panic!("invalid state flag"),

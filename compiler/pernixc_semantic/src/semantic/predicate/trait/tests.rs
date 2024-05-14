@@ -29,8 +29,9 @@ use crate::{
     symbol::{
         self, Accessibility, Generic, GenericDeclaration, GenericParameters,
         ImplementationSignature, LifetimeParameter, MemberID, Module,
-        NegativeTraitImplementation, NegativeTraitImplementationData, Trait,
-        TraitImplementation, TraitImplementationData, TypeParameter,
+        NegativeTraitImplementation, NegativeTraitImplementationDefinition,
+        Trait, TraitImplementation, TraitImplementationDefinition,
+        TypeParameter,
     },
     table::Table,
 };
@@ -236,7 +237,7 @@ impl SingleImplementation {
                     },
                     implementation_name: "Test".to_string(),
                     declared_in: module_id,
-                    data: TraitImplementationData {
+                    definition: TraitImplementationDefinition {
                         is_const: false,
                         member_ids_by_name: HashMap::new(),
                         implementation_type_ids_by_trait_type_id: HashMap::new(
@@ -571,7 +572,7 @@ impl SpecializedImplementation {
                     },
                     implementation_name: "Test".to_string(),
                     declared_in: module_id,
-                    data: TraitImplementationData {
+                    definition: TraitImplementationDefinition {
                         is_const: false,
                         member_ids_by_name: HashMap::new(),
                         implementation_type_ids_by_trait_type_id: HashMap::new(
@@ -1092,7 +1093,7 @@ impl Arbitrary for NegativeImplementation {
                             },
                             implementation_name: "Test".to_string(),
                             declared_in: prop.defined_in_module_id,
-                            data: NegativeTraitImplementationData,
+                            definition: NegativeTraitImplementationDefinition,
                         });
 
                     prop.table

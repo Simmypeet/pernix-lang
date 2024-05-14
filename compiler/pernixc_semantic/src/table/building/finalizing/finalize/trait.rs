@@ -5,7 +5,9 @@ use pernixc_syntax::syntax_tree;
 use super::Finalize;
 use crate::{
     arena::ID,
-    error::{self, AmbiguousImplementation},
+    error::{
+        self, AmbiguousImplementation, UndecidableImplementationSpecialization,
+    },
     semantic::{
         order,
         session::{self, Limit},
@@ -225,7 +227,13 @@ impl Finalize for Trait {
                             },
                             &mut Limit::new(&mut session::Default::default()),
                         ) else {
-                            todo!("report undecidable error")
+                            handler.receive(Box::new(
+                                UndecidableImplementationSpecialization {
+                                    first_implementation_id: lhs,
+                                    second_implementation_id: rhs,
+                                },
+                            ));
+                            continue;
                         };
 
                         drop(rhs_arguments);

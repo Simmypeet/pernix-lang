@@ -6,6 +6,7 @@ use super::{
     address::Address,
     alloca::Alloca,
     value::{register::Register, Value},
+    State,
 };
 use crate::arena::ID;
 
@@ -34,9 +35,9 @@ pub struct UnconditionalJump {
 
 /// Represents a jump to another block conditionally.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConditionalJump {
+pub struct ConditionalJump<T: State> {
     /// The condition of the jump.
-    pub condition: Value,
+    pub condition: Value<T>,
 
     /// The block to jump to if the condition is true.
     pub true_target: ID<Block>,
@@ -48,51 +49,51 @@ pub struct ConditionalJump {
 /// An enumeration containing all kinds of jump instructions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Jump {
+pub enum Jump<T: State> {
     Unconditional(UnconditionalJump),
-    Conditional(ConditionalJump),
+    Conditional(ConditionalJump<T>),
 }
 
 /// Represents a return instruction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Return {
+pub struct Return<T: State> {
     /// The value to return.
-    pub value: Value,
+    pub value: Value<T>,
 }
 
 /// Represents an assignment of a register.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RegisterAssignment {
+pub struct RegisterAssignment<T: State> {
     /// The register that is being assigned.
-    pub id: ID<Register>,
+    pub id: ID<Register<T>>,
 }
 
 /// An instruction that stores a value to the given memory address.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Store {
+pub struct Store<T: State> {
     /// The address where the value will be stored.
-    pub address: Address,
+    pub address: Address<T>,
 
     /// The value to store.
-    pub value: Value,
+    pub value: Value<T>,
 }
 
 /// An instruction that allocates a new `alloca` memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AllocaAllocation {
+pub struct AllocaAllocation<T: State> {
     /// The ID of the `alloca` that is being allocated.
-    pub id: ID<Alloca>,
+    pub id: ID<Alloca<T>>,
 }
 
 /// An instructions that packs the unpacked elements of a tuple into a packed
 /// element.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TuplePack {
+pub struct TuplePack<T: State> {
     /// The address where the unpacked tuple elements will be stored.
-    pub store_address: Address,
+    pub store_address: Address<T>,
 
     /// The address to the tuple where the unpacked elements are stored.
-    pub tuple_address: Address,
+    pub tuple_address: Address<T>,
 
     /// The number of elements in the tuple before the packed element.
     ///
@@ -114,18 +115,18 @@ pub struct TuplePack {
 /// flow of the program, so they are not considered basic.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Basic {
-    Store(Store),
-    RegisterAssignment(RegisterAssignment),
-    AllocaAllocation(AllocaAllocation),
-    TuplePack(TuplePack),
+pub enum Basic<T: State> {
+    Store(Store<T>),
+    RegisterAssignment(RegisterAssignment<T>),
+    AllocaAllocation(AllocaAllocation<T>),
+    TuplePack(TuplePack<T>),
 }
 
 /// Represents an instruction that will be executed in the IR.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Instruction {
-    Jump(Jump),
-    Return(Return),
-    Basic(Basic),
+pub enum Instruction<T: State> {
+    Jump(Jump<T>),
+    Return(Return<T>),
+    Basic(Basic<T>),
 }

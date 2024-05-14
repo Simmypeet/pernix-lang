@@ -9,6 +9,7 @@ use getset::CopyGetters;
 
 use super::{
     equality,
+    model::Model,
     predicate::{self, ConstantTypeQuerySource, TraitSatisfiability},
     simplify,
     term::{
@@ -201,8 +202,8 @@ pub trait Session<T: Term>:
         Result = Satisfied,
         InProgress = ConstantTypeQuerySource,
     > + for<'a> Cache<
-        predicate::TraitQuery<'a>,
-        Result = TraitSatisfiability,
+        predicate::TraitQuery<'a, T::Model>,
+        Result = TraitSatisfiability<T::Model>,
         InProgress = (),
     > + for<'a> Cache<simplify::Query<'a, T>, Result = T, InProgress = ()>
 {
@@ -234,8 +235,8 @@ impl<T: Term, U> Session<T> for U where
             Result = Satisfied,
             InProgress = ConstantTypeQuerySource,
         > + for<'a> Cache<
-            predicate::TraitQuery<'a>,
-            Result = TraitSatisfiability,
+            predicate::TraitQuery<'a, T::Model>,
+            Result = TraitSatisfiability<T::Model>,
             InProgress = (),
         > + for<'a> Cache<simplify::Query<'a, T>, Result = T, InProgress = ()>
 {
@@ -243,49 +244,55 @@ impl<T: Term, U> Session<T> for U where
 
 /// Default and preferred implementation of [`Session`].
 #[derive(Debug, Clone, Default)]
-pub struct Default {
-    lifetime_equals: HashMap<(Lifetime, Lifetime), Cached<(), Satisfied>>,
-    type_equals: HashMap<(Type, Type), Cached<(), Satisfied>>,
-    constant_equals: HashMap<(Constant, Constant), Cached<(), Satisfied>>,
+pub struct Default<M: Model> {
+    lifetime_equals: HashMap<(Lifetime<M>, Lifetime<M>), Cached<(), Satisfied>>,
+    type_equals: HashMap<(Type<M>, Type<M>), Cached<(), Satisfied>>,
+    constant_equals: HashMap<(Constant<M>, Constant<M>), Cached<(), Satisfied>>,
 
-    lifetime_is_definite: HashMap<Lifetime, Cached<(), Satisfied>>,
-    type_is_definite: HashMap<Type, Cached<(), Satisfied>>,
-    constant_is_definite: HashMap<Constant, Cached<(), Satisfied>>,
+    lifetime_is_definite: HashMap<Lifetime<M>, Cached<(), Satisfied>>,
+    type_is_definite: HashMap<Type<M>, Cached<(), Satisfied>>,
+    constant_is_definite: HashMap<Constant<M>, Cached<(), Satisfied>>,
 
-    lifetime_unifies:
-        HashMap<(Lifetime, Lifetime), Cached<(), Unification<Lifetime>>>,
-    type_unifies: HashMap<(Type, Type), Cached<(), Unification<Type>>>,
-    constant_unifies:
-        HashMap<(Constant, Constant), Cached<(), Unification<Constant>>>,
-
-    lifetime_is_tuple: HashMap<Lifetime, Cached<(), Satisfied>>,
-    type_is_tuple: HashMap<Type, Cached<(), Satisfied>>,
-    constant_is_tuple: HashMap<Constant, Cached<(), Satisfied>>,
-
-    lifetime_outlives: HashMap<(Lifetime, Lifetime), Cached<(), Satisfied>>,
-    type_outlives: HashMap<(Type, Lifetime), Cached<(), Satisfied>>,
-    constant_outlives: HashMap<(Constant, Lifetime), Cached<(), Satisfied>>,
-
-    lifetime_constant_type:
-        HashMap<Lifetime, Cached<ConstantTypeQuerySource, Satisfied>>,
-    type_constant_type:
-        HashMap<Type, Cached<ConstantTypeQuerySource, Satisfied>>,
-    constant_constant_type:
-        HashMap<Constant, Cached<ConstantTypeQuerySource, Satisfied>>,
-
-    trait_satisfiability: HashMap<
-        (ID<symbol::Trait>, bool, GenericArguments),
-        Cached<(), TraitSatisfiability>,
+    lifetime_unifies: HashMap<
+        (Lifetime<M>, Lifetime<M>),
+        Cached<(), Unification<Lifetime<M>>>,
+    >,
+    type_unifies: HashMap<(Type<M>, Type<M>), Cached<(), Unification<Type<M>>>>,
+    constant_unifies: HashMap<
+        (Constant<M>, Constant<M>),
+        Cached<(), Unification<Constant<M>>>,
     >,
 
-    lifetime_simplify: HashMap<Lifetime, Cached<(), Lifetime>>,
-    type_simplify: HashMap<Type, Cached<(), Type>>,
-    constant_simplify: HashMap<Constant, Cached<(), Constant>>,
+    lifetime_is_tuple: HashMap<Lifetime<M>, Cached<(), Satisfied>>,
+    type_is_tuple: HashMap<Type<M>, Cached<(), Satisfied>>,
+    constant_is_tuple: HashMap<Constant<M>, Cached<(), Satisfied>>,
+
+    lifetime_outlives:
+        HashMap<(Lifetime<M>, Lifetime<M>), Cached<(), Satisfied>>,
+    type_outlives: HashMap<(Type<M>, Lifetime<M>), Cached<(), Satisfied>>,
+    constant_outlives:
+        HashMap<(Constant<M>, Lifetime<M>), Cached<(), Satisfied>>,
+
+    lifetime_constant_type:
+        HashMap<Lifetime<M>, Cached<ConstantTypeQuerySource, Satisfied>>,
+    type_constant_type:
+        HashMap<Type<M>, Cached<ConstantTypeQuerySource, Satisfied>>,
+    constant_constant_type:
+        HashMap<Constant<M>, Cached<ConstantTypeQuerySource, Satisfied>>,
+
+    trait_satisfiability: HashMap<
+        (ID<symbol::Trait>, bool, GenericArguments<M>),
+        Cached<(), TraitSatisfiability<M>>,
+    >,
+
+    lifetime_simplify: HashMap<Lifetime<M>, Cached<(), Lifetime<M>>>,
+    type_simplify: HashMap<Type<M>, Cached<(), Type<M>>>,
+    constant_simplify: HashMap<Constant<M>, Cached<(), Constant<M>>>,
 }
 
 macro_rules! implements_cache {
     ($query:path, $result_t:path, $in_progress_t:ty, $param:ident, $field_name:ident, $expr_in:expr, $expr_out:expr) => {
-        impl<'a> Cache<$query> for Default {
+        impl<'a, M: Model> Cache<$query> for Default<M> {
             type Result = $result_t;
             type InProgress = $in_progress_t;
 
@@ -394,7 +401,7 @@ impl<Q: Eq + Hash, InProgress: Clone, Result: Clone> Cache<Q>
 }
 
 implements_cache!(
-    equality::Query<'a, Lifetime>,
+    equality::Query<'a, Lifetime<M>>,
     Satisfied,
     (),
     query,
@@ -404,7 +411,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    equality::Query<'a, Type>,
+    equality::Query<'a, Type<M>>,
     Satisfied,
     (),
     query,
@@ -414,7 +421,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    equality::Query<'a, Constant>,
+    equality::Query<'a, Constant<M>>,
     Satisfied,
     (),
     query,
@@ -424,7 +431,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::DefiniteQuery<'a, Lifetime>,
+    predicate::DefiniteQuery<'a, Lifetime<M>>,
     Satisfied,
     (),
     record,
@@ -434,7 +441,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::DefiniteQuery<'a, Type>,
+    predicate::DefiniteQuery<'a, Type<M>>,
     Satisfied,
     (),
     record,
@@ -444,7 +451,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::DefiniteQuery<'a, Constant>,
+    predicate::DefiniteQuery<'a, Constant<M>>,
     Satisfied,
     (),
     record,
@@ -454,8 +461,8 @@ implements_cache!(
 );
 
 implements_cache!(
-    unification::Query<'a, Lifetime>,
-    Unification<Lifetime>,
+    unification::Query<'a, Lifetime<M>>,
+    Unification<Lifetime<M>>,
     (),
     record,
     lifetime_unifies,
@@ -464,8 +471,8 @@ implements_cache!(
 );
 
 implements_cache!(
-    unification::Query<'a, Type>,
-    Unification<Type>,
+    unification::Query<'a, Type<M>>,
+    Unification<Type<M>>,
     (),
     record,
     type_unifies,
@@ -474,8 +481,8 @@ implements_cache!(
 );
 
 implements_cache!(
-    unification::Query<'a, Constant>,
-    Unification<Constant>,
+    unification::Query<'a, Constant<M>>,
+    Unification<Constant<M>>,
     (),
     record,
     constant_unifies,
@@ -484,7 +491,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::TupleQuery<'a, Lifetime>,
+    predicate::TupleQuery<'a, Lifetime<M>>,
     Satisfied,
     (),
     record,
@@ -494,7 +501,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::TupleQuery<'a, Type>,
+    predicate::TupleQuery<'a, Type<M>>,
     Satisfied,
     (),
     record,
@@ -504,7 +511,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::TupleQuery<'a, Constant>,
+    predicate::TupleQuery<'a, Constant<M>>,
     Satisfied,
     (),
     record,
@@ -514,7 +521,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::OutlivesQuery<'a, Lifetime>,
+    predicate::OutlivesQuery<'a, Lifetime<M>>,
     Satisfied,
     (),
     record,
@@ -524,7 +531,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::OutlivesQuery<'a, Type>,
+    predicate::OutlivesQuery<'a, Type<M>>,
     Satisfied,
     (),
     record,
@@ -534,7 +541,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::OutlivesQuery<'a, Constant>,
+    predicate::OutlivesQuery<'a, Constant<M>>,
     Satisfied,
     (),
     record,
@@ -544,7 +551,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::ConstantTypeQuery<'a, Lifetime>,
+    predicate::ConstantTypeQuery<'a, Lifetime<M>>,
     Satisfied,
     ConstantTypeQuerySource,
     record,
@@ -554,7 +561,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::ConstantTypeQuery<'a, Type>,
+    predicate::ConstantTypeQuery<'a, Type<M>>,
     Satisfied,
     ConstantTypeQuerySource,
     record,
@@ -564,7 +571,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::ConstantTypeQuery<'a, Constant>,
+    predicate::ConstantTypeQuery<'a, Constant<M>>,
     Satisfied,
     ConstantTypeQuerySource,
     record,
@@ -574,8 +581,8 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::TraitQuery<'a>,
-    TraitSatisfiability,
+    predicate::TraitQuery<'a, M>,
+    TraitSatisfiability<M>,
     (),
     record,
     trait_satisfiability,
@@ -584,8 +591,8 @@ implements_cache!(
 );
 
 implements_cache!(
-    simplify::Query<'a, Lifetime>,
-    Lifetime,
+    simplify::Query<'a, Lifetime<M>>,
+    Lifetime<M>,
     (),
     record,
     lifetime_simplify,
@@ -594,8 +601,8 @@ implements_cache!(
 );
 
 implements_cache!(
-    simplify::Query<'a, Type>,
-    Type,
+    simplify::Query<'a, Type<M>>,
+    Type<M>,
     (),
     record,
     type_simplify,
@@ -604,8 +611,8 @@ implements_cache!(
 );
 
 implements_cache!(
-    simplify::Query<'a, Constant>,
-    Constant,
+    simplify::Query<'a, Constant<M>>,
+    Constant<M>,
     (),
     record,
     constant_simplify,

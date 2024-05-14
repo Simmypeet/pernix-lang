@@ -36,7 +36,7 @@ impl<T: Term> Tuple<T> {
     }
 
     /// Applies a instantiation to the [`Tuple`] term.
-    pub fn instantiate(&mut self, instantiation: &Instantiation) {
+    pub fn instantiate(&mut self, instantiation: &Instantiation<T::Model>) {
         instantiation::instantiate(&mut self.0, instantiation);
     }
 }
@@ -49,9 +49,12 @@ impl<T: Term> Tuple<T> {
     /// See [`ExceedLimitError`] for more information.
     pub fn satisfies(
         term: &T,
-        environment: &Environment<impl State>,
+        environment: &Environment<T::Model, impl State>,
         limit: &mut Limit<
-            impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+            impl Session<T>
+                + Session<Lifetime<T::Model>>
+                + Session<Type<T::Model>>
+                + Session<Constant<T::Model>>,
         >,
     ) -> Result<bool, ExceedLimitError> {
         // trivially satisfied

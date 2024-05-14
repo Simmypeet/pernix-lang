@@ -22,11 +22,14 @@ use crate::{
         MoreThanOneUnpackedInTupleType, NoGenericArgumentsRequired,
         ResolutionAmbiguity, SymbolNotFound,
     },
-    semantic::term::{
-        self, constant,
-        lifetime::{Forall, Lifetime},
-        r#type::{self, Qualifier, SymbolID},
-        GenericArguments, Local, MemberSymbol, TupleElement,
+    semantic::{
+        model::{Default, Model},
+        term::{
+            self, constant,
+            lifetime::{Forall, Lifetime},
+            r#type::{self, Qualifier, SymbolID},
+            GenericArguments, Local, MemberSymbol, Term, TupleElement,
+        },
     },
     symbol::{
         self, AdtImplementationConstant, AdtImplementationFunction,
@@ -112,12 +115,12 @@ impl From<GenericID> for symbol::GenericID {
 /// A resolution for a symbol that accepts generic parameters and is not a
 /// member of another symbol.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Generic {
+pub struct Generic<M: Model> {
     /// The resolved symbol.
     pub id: GenericID,
 
     /// The generic arguments supplied to the symbol.
-    pub generic_arguments: GenericArguments,
+    pub generic_arguments: GenericArguments<M>,
 }
 
 /// An enumeration of the symbols that accepts generic parameters for both
@@ -157,68 +160,69 @@ impl From<MemberGenericID> for GlobalID {
 /// A resolution for a symbol that accepts generic parameters for both the
 /// symbol and the parent symbol that it is a member of.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MemberGeneric {
+pub struct MemberGeneric<M: Model> {
     /// The resolved symbol.
     pub id: MemberGenericID,
 
     /// The generic arguments supplied to the parent symbol.
-    pub parent_generic_arguments: GenericArguments,
+    pub parent_generic_arguments: GenericArguments<M>,
 
     /// The generic arguments supplied to the symbol.
-    pub generic_arguments: GenericArguments,
+    pub generic_arguments: GenericArguments<M>,
 }
 
 /// A resolution for an enum-variant.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Variant {
+pub struct Variant<M: Model> {
     /// The resolved variant.
     pub variant: ID<symbol::Variant>,
 
     /// The generic arguments supplied to the enum.
-    pub generic_arguments: GenericArguments,
+    pub generic_arguments: GenericArguments<M>,
 }
-trait GenericParameter: Sized + 'static {
+
+trait GenericParameter<M: Model>: Sized + 'static {
     type SyntaxTree;
-    type Argument;
+    type Argument: Term;
 
     fn resolve(
         table: &Table<impl State>,
         syntax_tree: &Self::SyntaxTree,
         referring_site: GlobalID,
-        config: Config,
+        config: Config<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Self::Argument, Error>;
 
     fn generic_kind() -> GenericKind;
 
     fn get_ellided_term_provider<'a>(
-        config: &'a mut Config,
+        config: &'a mut Config<M>,
     ) -> Option<&'a mut dyn EliidedTermProvider<Self::Argument>>;
 
     fn on_resolved(
         table: &Table<impl State>,
-        config: Config,
+        config: Config<M>,
         resolved: &Self::Argument,
         parameter: &Self::SyntaxTree,
     );
 }
 
-impl GenericParameter for LifetimeParameter {
+impl<M: Model> GenericParameter<M> for LifetimeParameter {
     type SyntaxTree = syntax_tree::Lifetime;
-    type Argument = Lifetime;
+    type Argument = Lifetime<M>;
 
     fn resolve(
         table: &Table<impl State>,
         syntax_tree: &Self::SyntaxTree,
         referring_site: GlobalID,
-        config: Config,
+        config: Config<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Self::Argument, Error> {
         table.resolve_lifetime(syntax_tree, referring_site, config, handler)
     }
 
     fn get_ellided_term_provider<'a>(
-        config: &'a mut Config,
+        config: &'a mut Config<M>,
     ) -> Option<&'a mut dyn EliidedTermProvider<Self::Argument>> {
         #[allow(clippy::option_if_let_else)]
         match &mut config.ellided_lifetime_provider {
@@ -231,29 +235,29 @@ impl GenericParameter for LifetimeParameter {
 
     fn on_resolved(
         _: &Table<impl State>,
-        _: Config,
+        _: Config<M>,
         _: &Self::Argument,
         _: &Self::SyntaxTree,
     ) {
     }
 }
 
-impl GenericParameter for TypeParameter {
+impl<M: Model> GenericParameter<M> for TypeParameter {
     type SyntaxTree = syntax_tree::r#type::Type;
-    type Argument = term::r#type::Type;
+    type Argument = term::r#type::Type<M>;
 
     fn resolve(
         table: &Table<impl State>,
         syntax_tree: &Self::SyntaxTree,
         referring_site: GlobalID,
-        config: Config,
+        config: Config<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Self::Argument, Error> {
         table.resolve_type(syntax_tree, referring_site, config, handler)
     }
 
     fn get_ellided_term_provider<'a>(
-        config: &'a mut Config,
+        config: &'a mut Config<M>,
     ) -> Option<&'a mut dyn EliidedTermProvider<Self::Argument>> {
         #[allow(clippy::option_if_let_else)]
         match &mut config.ellided_type_provider {
@@ -266,37 +270,38 @@ impl GenericParameter for TypeParameter {
 
     fn on_resolved(
         _: &Table<impl State>,
-        _: Config,
+        _: Config<M>,
         _: &Self::Argument,
         _: &Self::SyntaxTree,
     ) {
     }
 }
 
-impl GenericParameter for ConstantParameter {
+impl<M: Model> GenericParameter<M> for ConstantParameter {
     type SyntaxTree = syntax_tree::expression::Expression;
-    type Argument = term::constant::Constant;
+    type Argument = term::constant::Constant<M>;
 
     fn resolve(
         table: &Table<impl State>,
         syntax_tree: &Self::SyntaxTree,
         referring_site: GlobalID,
-        _: Config,
+        _: Config<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Self::Argument, Error> {
-        table.evaluate(syntax_tree, referring_site, handler).map_err(
-            |x| match x {
+        table
+            .evaluate(syntax_tree, referring_site, handler)
+            .map_err(|x| match x {
                 evaluate::Error::InvalidReferringSiteID => {
                     Error::InvalidReferringSiteID
                 }
                 evaluate::Error::Suboptimal
                 | evaluate::Error::SemanticError => Error::SemanticError,
-            },
-        )
+            })
+            .map(M::from_default_constant)
     }
 
     fn get_ellided_term_provider<'a>(
-        config: &'a mut Config,
+        config: &'a mut Config<M>,
     ) -> Option<&'a mut dyn EliidedTermProvider<Self::Argument>> {
         #[allow(clippy::option_if_let_else)]
         match &mut config.ellided_constant_provider {
@@ -309,7 +314,7 @@ impl GenericParameter for ConstantParameter {
 
     fn on_resolved(
         _: &Table<impl State>,
-        mut config: Config,
+        mut config: Config<M>,
         constant: &Self::Argument,
         syntax_tree: &Self::SyntaxTree,
     ) {
@@ -324,14 +329,14 @@ impl GenericParameter for ConstantParameter {
 /// Represents a resolution for a symbol.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
-pub enum Resolution {
+pub enum Resolution<M: Model> {
     Module(ID<Module>),
-    Variant(Variant),
-    Generic(Generic),
-    MemberGeneric(MemberGeneric),
+    Variant(Variant<M>),
+    Generic(Generic<M>),
+    MemberGeneric(MemberGeneric<M>),
 }
 
-impl Resolution {
+impl<M: Model> Resolution<M> {
     /// Gets the [`GlobalID`] of the resolved symbol.
     #[must_use]
     pub fn global_id(&self) -> GlobalID {
@@ -380,25 +385,25 @@ pub trait EliidedTermProvider<T>: Debug {
 ///
 /// The trait will be notified when a type, lifetime, or constant is resolved
 /// during the resolution process.
-pub trait Observer: Debug {
+pub trait Observer<M: Model>: Debug {
     /// Notifies the observer when a type is resolved.
     fn on_type_resolved(
         &mut self,
-        ty: &r#type::Type,
+        ty: &r#type::Type<M>,
         syntax_tree: &syntax_tree::r#type::Type,
     );
 
     /// Notifies the observer when a lifetime is resolved.
     fn on_lifetime_resolved(
         &mut self,
-        lifetime: &Lifetime,
+        lifetime: &Lifetime<M>,
         syntax_tree: &syntax_tree::Lifetime,
     );
 
     /// Notifies the observer when a constant is resolved.
     fn on_constant_arguments_resolved(
         &mut self,
-        constant: &constant::Constant,
+        constant: &constant::Constant<M>,
         syntax_tree: &syntax_tree::expression::Expression,
     );
 
@@ -406,7 +411,7 @@ pub trait Observer: Debug {
     /// in a tuple type.
     fn on_unpacked_type_resolved(
         &mut self,
-        ty: &r#type::Type,
+        ty: &r#type::Type<M>,
         syntax_tree: &syntax_tree::r#type::Type,
     );
 
@@ -414,42 +419,42 @@ pub trait Observer: Debug {
     /// in a tuple constant.
     fn on_unpacked_constant_resolved(
         &mut self,
-        constant: &constant::Constant,
+        constant: &constant::Constant<M>,
         syntax_tree: &syntax_tree::expression::Expression,
     );
 }
 
 /// The configuration struct specifying the behaviour of the resolution process.
 #[derive(Debug)]
-pub struct Config<'lp, 'tp, 'cp, 'ob, 'hrlt> {
+pub struct Config<'lp, 'tp, 'cp, 'ob, 'hrlt, M: Model> {
     /// If specified, when the lifetime argument is elided, the provider will
     /// be used to supply the missing required lifetimes.
     pub ellided_lifetime_provider:
-        Option<&'lp mut dyn EliidedTermProvider<Lifetime>>,
+        Option<&'lp mut dyn EliidedTermProvider<Lifetime<M>>>,
 
     /// If specified, when the type argument is elided, the provider will be
     /// used to supply the missing required types.
     pub ellided_type_provider:
-        Option<&'tp mut dyn EliidedTermProvider<term::r#type::Type>>,
+        Option<&'tp mut dyn EliidedTermProvider<term::r#type::Type<M>>>,
 
     /// If specified, when the constant argument is elided, the provider will
     /// be used to supply the missing required constants.
     pub ellided_constant_provider:
-        Option<&'cp mut dyn EliidedTermProvider<term::constant::Constant>>,
+        Option<&'cp mut dyn EliidedTermProvider<term::constant::Constant<M>>>,
 
     /// If specified, during the resolution process, the observer will be
     /// notified each time a type, lifetime, or constant is resolved.
-    pub observer: Option<&'ob mut dyn Observer>,
+    pub observer: Option<&'ob mut dyn Observer<M>>,
 
     /// If specified, when resolving a lifetime parameter, these higher-ranked
     /// lifetimes map will be taken into consideration.
     pub higher_ranked_liftimes: Option<&'hrlt HashMap<String, Forall>>,
 }
 
-impl<'lp, 'tp, 'cp, 'ob, 'hrlt> Config<'lp, 'tp, 'cp, 'ob, 'hrlt> {
+impl<'lp, 'tp, 'cp, 'ob, 'hrlt, M: Model> Config<'lp, 'tp, 'cp, 'ob, 'hrlt, M> {
     /// Creates a new instance of the config.
     #[allow(clippy::option_if_let_else)]
-    pub fn reborrow(&mut self) -> Config {
+    pub fn reborrow(&mut self) -> Config<M> {
         Config {
             ellided_lifetime_provider: match &mut self.ellided_lifetime_provider
             {
@@ -647,10 +652,10 @@ impl<T: State> Table<T> {
         self.resolve_root_down_the_tree(identifier, referring_site, handler)
     }
 
-    fn resolve_single_no_generics(
+    fn resolve_single_no_generics<M: Model>(
         &self,
         identifier: &Identifier,
-        latest_resolution: &Option<Resolution>,
+        latest_resolution: &Option<Resolution<M>>,
         referring_site: GlobalID,
         search_from_root: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
@@ -761,13 +766,13 @@ impl<T: State> Table<T> {
     /// # Errors
     ///
     /// See [`Error`] for more information.
-    pub fn resolve_lifetime(
+    pub fn resolve_lifetime<M: Model>(
         &self,
         lifetime_argument: &syntax_tree::Lifetime,
         referring_site: GlobalID,
-        config: Config,
+        config: Config<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Lifetime, Error> {
+    ) -> Result<Lifetime<M>, Error> {
         let lifetime = match lifetime_argument.identifier() {
             LifetimeIdentifier::Static(..) => Ok(Lifetime::Static),
             LifetimeIdentifier::Identifier(ident) => {
@@ -800,14 +805,14 @@ impl<T: State> Table<T> {
     ///
     /// See [`Error`] for more information.
     #[allow(clippy::too_many_lines)]
-    pub fn resolve_generic_arguments(
+    pub fn resolve_generic_arguments<M: Model>(
         &self,
         generic_identifier: &GenericIdentifier,
         referring_site: GlobalID,
         resolved_id: GlobalID,
-        mut config: Config,
+        mut config: Config<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Option<GenericArguments>, Error> {
+    ) -> Result<Option<GenericArguments<M>>, Error> {
         let Ok(generic_id) = symbol::GenericID::try_from(resolved_id) else {
             if let Some(generic_arguments) =
                 generic_identifier.generic_arguments()
@@ -927,10 +932,10 @@ impl<T: State> Table<T> {
         }))
     }
 
-    fn resolution_to_type(
+    fn resolution_to_type<M: Model>(
         &self,
-        resolution: Resolution,
-    ) -> Result<r#type::Type, Resolution> {
+        resolution: Resolution<M>,
+    ) -> Result<r#type::Type<M>, Resolution<M>> {
         match resolution {
             Resolution::Generic(symbol) => {
                 let id = match symbol.id {
@@ -995,13 +1000,13 @@ impl<T: State> Table<T> {
     ///
     /// See [`Error`] for more information.
     #[allow(clippy::too_many_lines)]
-    pub fn resolve_type(
+    pub fn resolve_type<M: Model>(
         &self,
         syntax_tree: &syntax_tree::r#type::Type,
         referring_site: GlobalID,
-        mut config: Config,
+        mut config: Config<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<r#type::Type, Error> {
+    ) -> Result<r#type::Type<M>, Error> {
         let ty = match syntax_tree {
             syntax_tree::r#type::Type::Primitive(primitive) => {
                 Ok(r#type::Type::Primitive(match primitive {
@@ -1183,15 +1188,18 @@ impl<T: State> Table<T> {
                 Ok(r#type::Type::Tuple(r#type::Tuple { elements }))
             }
             syntax_tree::r#type::Type::Array(array) => {
-                let length = self
-                    .evaluate(array.expression(), referring_site, handler)
-                    .map_err(|x| match x {
-                        evaluate::Error::InvalidReferringSiteID => {
-                            Error::InvalidReferringSiteID
-                        }
-                        evaluate::Error::SemanticError
-                        | evaluate::Error::Suboptimal => Error::SemanticError,
-                    })?;
+                let length = M::from_default_constant(
+                    self.evaluate(array.expression(), referring_site, handler)
+                        .map_err(|x| match x {
+                            evaluate::Error::InvalidReferringSiteID => {
+                                Error::InvalidReferringSiteID
+                            }
+                            evaluate::Error::SemanticError
+                            | evaluate::Error::Suboptimal => {
+                                Error::SemanticError
+                            }
+                        })?,
+                );
                 let element_ty = self.resolve_type(
                     array.operand(),
                     referring_site,
@@ -1223,13 +1231,13 @@ impl<T: State> Table<T> {
         Ok(ty)
     }
 
-    fn resolve_qualified_identifier_type(
+    fn resolve_qualified_identifier_type<M: Model>(
         &self,
         syntax_tree: &syntax_tree::QualifiedIdentifier,
         referring_site: GlobalID,
-        config: Config,
+        config: Config<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<r#type::Type, Error> {
+    ) -> Result<r#type::Type<M>, Error> {
         let is_simple_identifier = syntax_tree.rest().is_empty()
             && syntax_tree.leading_scope_separator().is_none()
             && syntax_tree.first().generic_arguments().is_none();
@@ -1279,14 +1287,18 @@ impl<T: State> Table<T> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn resolve_generic_arguments_kinds<'a, G: GenericParameter>(
+    fn resolve_generic_arguments_kinds<'a, M: Model, G: GenericParameter<M>>(
         &self,
         syntax_trees: impl ExactSizeIterator<Item = &'a G::SyntaxTree>,
         parameters: impl ExactSizeIterator<Item = &'a G>,
-        defaults: Option<impl ExactSizeIterator<Item = &'a G::Argument>>,
+        defaults: Option<
+            impl ExactSizeIterator<
+                Item = &'a <G::Argument as Term>::Rebind<Default>,
+            >,
+        >,
         generic_identifier_span: Span,
         referring_site: GlobalID,
-        mut config: Config,
+        mut config: Config<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Vec<G::Argument>, Error>
     where
@@ -1362,7 +1374,10 @@ impl<T: State> Table<T> {
                 let default_len = defaults.len();
 
                 arguments.extend(
-                    defaults.skip(default_len - default_fill_count).cloned(),
+                    defaults
+                        .skip(default_len - default_fill_count)
+                        .cloned()
+                        .map(G::Argument::from_default_model),
                 );
             }
 
@@ -1370,11 +1385,11 @@ impl<T: State> Table<T> {
         }
     }
 
-    fn get_parent_generic_arguments_from_latest_resolution(
+    fn get_parent_generic_arguments_from_latest_resolution<M: Model>(
         &self,
         parent_generic_id: symbol::GenericID,
-        latest_resolution: Option<Resolution>,
-    ) -> GenericArguments {
+        latest_resolution: Option<Resolution<M>>,
+    ) -> GenericArguments<M> {
         latest_resolution.map_or_else(
             || {
                 self.get_generic(parent_generic_id)
@@ -1388,12 +1403,12 @@ impl<T: State> Table<T> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn to_resolution(
+    fn to_resolution<M: Model>(
         &self,
         resolved_id: GlobalID,
-        generic_arguments: Option<GenericArguments>,
-        latest_resolution: Option<Resolution>,
-    ) -> Resolution {
+        generic_arguments: Option<GenericArguments<M>>,
+        latest_resolution: Option<Resolution<M>>,
+    ) -> Resolution<M> {
         match resolved_id {
             GlobalID::Module(id) => Resolution::Module(id),
             GlobalID::Struct(id) => Resolution::Generic(Generic {
@@ -1534,13 +1549,13 @@ impl<T: State> Table<T> {
     /// # Errors
     ///
     /// See [`Error`] for more information
-    pub fn resolve(
+    pub fn resolve<M: Model>(
         &self,
         qualified_identifier: &QualifiedIdentifier,
         referring_site: GlobalID,
-        mut config: Config,
+        mut config: Config<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Resolution, Error> {
+    ) -> Result<Resolution<M>, Error> {
         // check if the given `referring_site` is a valid ID.
         drop(
             self.get_global(referring_site)

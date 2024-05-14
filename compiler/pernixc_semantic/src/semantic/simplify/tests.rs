@@ -1,7 +1,7 @@
 use crate::{
     arena::ID,
     semantic::{
-        predicate::{Predicate, TraitMemberEquality},
+        predicate::{Equality, Predicate},
         session::{self, Limit},
         simplify::simplify,
         term::{
@@ -26,9 +26,9 @@ fn basic_case() {
     let table = Table::<State>::default();
 
     let premise = Premise::from_predicates(std::iter::once(
-        Predicate::TraitTypeEquality(TraitMemberEquality {
-            trait_member: trait_member.clone(),
-            equivalent: equivalent.clone(),
+        Predicate::TraitTypeEquality(Equality {
+            lhs: trait_member.clone(),
+            rhs: equivalent.clone(),
         }),
     ));
 
@@ -54,9 +54,9 @@ fn sub_term_case() {
     let table = Table::<State>::default();
 
     let premise = Premise::from_predicates(std::iter::once(
-        Predicate::TraitTypeEquality(TraitMemberEquality {
-            trait_member: trait_member.clone(),
-            equivalent: equivalent.clone(),
+        Predicate::TraitTypeEquality(Equality {
+            lhs: trait_member.clone(),
+            rhs: equivalent.clone(),
         }),
     ));
 
@@ -113,9 +113,9 @@ fn already_simplified_case() {
     let table = Table::<State>::default();
 
     let premise = Premise::from_predicates(std::iter::once(
-        Predicate::TraitTypeEquality(TraitMemberEquality {
-            trait_member,
-            equivalent: equivalent.clone(),
+        Predicate::TraitTypeEquality(Equality {
+            lhs: trait_member,
+            rhs: equivalent.clone(),
         }),
     ));
 
@@ -146,13 +146,13 @@ fn transitive_case() {
     let table = Table::<State>::default();
     let premise = Premise::from_predicates(
         [
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: first_trait_member.clone(),
-                equivalent: equivalent.clone(),
+            Predicate::TraitTypeEquality(Equality {
+                lhs: first_trait_member.clone(),
+                rhs: equivalent.clone(),
             }),
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: second_trait_member.clone(),
-                equivalent: equivalent.clone(),
+            Predicate::TraitTypeEquality(Equality {
+                lhs: second_trait_member.clone(),
+                rhs: equivalent.clone(),
             }),
         ]
         .into_iter(),
@@ -199,21 +199,21 @@ fn multiple_equivalent_but_same_case() {
     let table = Table::<State>::default();
     let premise = Premise::from_predicates(
         [
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: starting_trait_member.clone(),
-                equivalent: Type::TraitMember(first_trait_member.clone()),
+            Predicate::TraitTypeEquality(Equality {
+                lhs: starting_trait_member.clone(),
+                rhs: Type::TraitMember(first_trait_member.clone()),
             }),
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: starting_trait_member.clone(),
-                equivalent: Type::TraitMember(second_trait_member.clone()),
+            Predicate::TraitTypeEquality(Equality {
+                lhs: starting_trait_member.clone(),
+                rhs: Type::TraitMember(second_trait_member.clone()),
             }),
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: first_trait_member.clone(),
-                equivalent: equivalent.clone(),
+            Predicate::TraitTypeEquality(Equality {
+                lhs: first_trait_member.clone(),
+                rhs: equivalent.clone(),
             }),
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: second_trait_member.clone(),
-                equivalent: equivalent.clone(),
+            Predicate::TraitTypeEquality(Equality {
+                lhs: second_trait_member.clone(),
+                rhs: equivalent.clone(),
             }),
         ]
         .into_iter(),
@@ -268,21 +268,21 @@ fn ambiguous_case() {
     let table = Table::<State>::default();
     let premise = Premise::from_predicates(
         [
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: starting_trait_member.clone(),
-                equivalent: Type::TraitMember(first_trait_member.clone()),
+            Predicate::TraitTypeEquality(Equality {
+                lhs: starting_trait_member.clone(),
+                rhs: Type::TraitMember(first_trait_member.clone()),
             }),
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: starting_trait_member.clone(),
-                equivalent: Type::TraitMember(second_trait_member.clone()),
+            Predicate::TraitTypeEquality(Equality {
+                lhs: starting_trait_member.clone(),
+                rhs: Type::TraitMember(second_trait_member.clone()),
             }),
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: first_trait_member.clone(),
-                equivalent: first_equivalent,
+            Predicate::TraitTypeEquality(Equality {
+                lhs: first_trait_member.clone(),
+                rhs: first_equivalent,
             }),
-            Predicate::TraitTypeEquality(TraitMemberEquality {
-                trait_member: second_trait_member.clone(),
-                equivalent: second_equivalent,
+            Predicate::TraitTypeEquality(Equality {
+                lhs: second_trait_member.clone(),
+                rhs: second_equivalent,
             }),
         ]
         .into_iter(),

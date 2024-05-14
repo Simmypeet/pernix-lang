@@ -3,6 +3,7 @@ use crate::{
     semantic::{
         equality, get_equivalences,
         instantiation::{self, Instantiation},
+        model::Model,
         session::{self, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor, Environment, Satisfied,
@@ -16,10 +17,11 @@ struct Visitor<
     'r,
     'l,
     T: State,
-    R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
+    M: Model,
 > {
     constant_type: Result<bool, ExceedLimitError>,
-    environment: &'a Environment<'a, T>,
+    environment: &'a Environment<'a, M, T>,
     limit: &'l mut Limit<'r, R>,
 }
 
@@ -30,8 +32,11 @@ impl<
         'v,
         U: Term,
         T: State,
-        R: Session<U> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, R>
+        R: Session<U>
+            + Session<Lifetime<U::Model>>
+            + Session<Type<U::Model>>
+            + Session<Constant<U::Model>>,
+    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, R, U::Model>
 {
     fn visit(&mut self, term: &U, _: U::Location) -> bool {
         match satisfies_internal(
@@ -67,9 +72,9 @@ pub enum QuerySource {
 
 /// Represents a type can be used as a type of a compile-time constant value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConstantType(pub Type);
+pub struct ConstantType<M: Model>(pub Type<M>);
 
-impl<T: State> table::Display<T> for ConstantType {
+impl<T: State, M: Model> table::Display<T> for ConstantType<M> {
     fn fmt(
         &self,
         table: &Table<T>,
@@ -79,7 +84,7 @@ impl<T: State> table::Display<T> for ConstantType {
     }
 }
 
-impl ConstantType {
+impl<M: Model> ConstantType<M> {
     /// Checks if the type contains a `forall` lifetime.
     #[must_use]
     pub fn contains_forall_lifetime(&self) -> bool {
@@ -87,7 +92,7 @@ impl ConstantType {
     }
 
     /// Applies the instantiation to the type.
-    pub fn instantiate(&mut self, instantiation: &Instantiation) {
+    pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
         instantiation::instantiate(&mut self.0, instantiation);
     }
 }
@@ -95,9 +100,12 @@ impl ConstantType {
 fn satisfies_internal<T: Term>(
     term: &T,
     query_source: QuerySource,
-    environment: &Environment<impl State>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<bool, ExceedLimitError> {
     let satisfiability = term.definite_satisfiability();
@@ -184,17 +192,17 @@ fn satisfies_internal<T: Term>(
     Ok(false)
 }
 
-impl ConstantType {
+impl<M: Model> ConstantType<M> {
     /// Checks if the given type satisfies the predicate.
     ///
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
     pub fn satisfies(
-        ty: &Type,
-        environment: &Environment<impl State>,
+        ty: &Type<M>,
+        environment: &Environment<M, impl State>,
         limit: &mut Limit<
-            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
     ) -> Result<bool, ExceedLimitError> {
         satisfies_internal(ty, QuerySource::Normal, environment, limit)

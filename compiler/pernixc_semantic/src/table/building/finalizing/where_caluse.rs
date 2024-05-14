@@ -19,7 +19,8 @@ use crate::{
     },
     semantic::{
         instantiation::Instantiation,
-        predicate::{self, Outlives, TraitMemberEquality},
+        model::Default,
+        predicate::{self, Equality, Outlives},
         term::{self, lifetime::Forall},
     },
     symbol::{self, Generic, GenericID, GlobalID, PredicateKind, Trait},
@@ -37,7 +38,7 @@ impl Table<Finalizer> {
         &self,
         generic_id: ID<T>,
         syntax_tree: &syntax_tree::item::TraitMemberEqualityPredicate,
-        mut config: resolution::Config,
+        mut config: resolution::Config<Default>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
@@ -72,14 +73,14 @@ impl Table<Finalizer> {
                 generic_symbol.generic_declaration_mut().predicates.push(
                     symbol::Predicate {
                         predicate: predicate::Predicate::TraitTypeEquality(
-                            TraitMemberEquality {
-                                trait_member: term::r#type::TraitMember {
+                            Equality {
+                                lhs: term::r#type::TraitMember {
                                     member_generic_arguments: generic_arguments,
                                     id: trait_ty_id,
                                     parent_generic_arguments,
                                 },
 
-                                equivalent: resolve_ty,
+                                rhs: resolve_ty,
                             },
                         ),
                         kind: PredicateKind::Explicit(Some(syntax_tree.span())),
@@ -294,7 +295,7 @@ impl Table<Finalizer> {
         &self,
         generic_id: ID<T>,
         syntax_tree: &syntax_tree::item::LifetimePredicate,
-        mut config: resolution::Config,
+        mut config: resolution::Config<Default>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
@@ -389,7 +390,7 @@ impl Table<Finalizer> {
         &self,
         generic_id: ID<T>,
         syntax_tree: &syntax_tree::item::ConstantTypePredicate,
-        mut config: resolution::Config,
+        mut config: resolution::Config<Default>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
@@ -424,7 +425,7 @@ impl Table<Finalizer> {
         &self,
         generic_id: ID<T>,
         syntax_tree: &syntax_tree::item::TuplePredicate,
-        mut config: resolution::Config,
+        mut config: resolution::Config<Default>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,

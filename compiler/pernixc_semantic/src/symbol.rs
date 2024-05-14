@@ -14,9 +14,9 @@ use pernixc_syntax::syntax_tree::AccessModifier;
 
 use crate::{
     arena::{Arena, Map, ID},
-    ir::{self, Suboptimal, Success},
-    pattern::{Irrefutable, NameBindingPoint},
+    ir::{self, pattern::Irrefutable, Suboptimal, Success},
     semantic::{
+        model::{Default, Model},
         predicate,
         term::{constant, lifetime, r#type, GenericArguments, Never},
     },
@@ -113,7 +113,7 @@ impl PredicateKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Predicate {
     /// The predicate itself.
-    pub predicate: predicate::Predicate,
+    pub predicate: predicate::Predicate<Default>,
 
     /// The kind of the predicate.
     pub kind: PredicateKind,
@@ -560,7 +560,7 @@ pub struct ConstantParameter {
     pub name: Option<String>,
 
     /// The type of the constant parameter.
-    pub r#type: r#type::Type,
+    pub r#type: r#type::Type<Default>,
 
     /// The type of the constant parameter.
     pub span: Option<Span>,
@@ -653,12 +653,12 @@ pub struct GenericParameters {
     /// List of default type parameters to be used when the generic parameters
     /// are not specified.
     #[get = "pub"]
-    default_type_parameters: Vec<r#type::Type>,
+    default_type_parameters: Vec<r#type::Type<Default>>,
 
     /// List of default constant parameters to be used when the generic
     /// parameters are not
     #[get = "pub"]
-    default_constant_parameters: Vec<constant::Constant>,
+    default_constant_parameters: Vec<constant::Constant<Default>>,
 }
 
 macro_rules! implements_add_parameter {
@@ -752,10 +752,10 @@ impl GenericParameters {
     /// Creates a [`GenericArguments`] that all of its parameters are the
     /// generic parameters of this [`GenericParameters`].
     #[must_use]
-    pub fn create_identity_generic_arguments(
+    pub fn create_identity_generic_arguments<M: Model>(
         &self,
         generic_id: GenericID,
-    ) -> GenericArguments {
+    ) -> GenericArguments<M> {
         GenericArguments {
             lifetimes: self
                 .lifetime_order
@@ -802,7 +802,7 @@ pub struct Field {
     pub name: String,
 
     /// The type of the field.
-    pub r#type: r#type::Type,
+    pub r#type: r#type::Type<Default>,
 
     /// Location of where the field is declared.
     pub span: Option<Span>,
@@ -870,7 +870,7 @@ pub struct Variant {
     pub name: String,
 
     /// The type of the associated value of the variant (if any).
-    pub associated_type: Option<r#type::Type>,
+    pub associated_type: Option<r#type::Type<Default>>,
 
     /// The parent enum ID.
     pub parent_enum_id: ID<Enum>,
@@ -945,7 +945,7 @@ impl Adt for Enum {
 
 /// A template struct representing all kinds of type alias declarations.
 #[derive(Debug, Clone, PartialEq, Eq, Deref, DerefMut)]
-pub struct TypeTemplate<ParentID: 'static, Data: 'static> {
+pub struct TypeTemplate<ParentID: 'static, Definition: 'static> {
     /// The generic declaration of the type.
     pub generic_declaration: GenericDeclaration,
 
@@ -958,31 +958,32 @@ pub struct TypeTemplate<ParentID: 'static, Data: 'static> {
     /// The name of the type.
     pub name: String,
 
-    /// The additional data of the type.
+    /// The definition of the type.
     #[deref]
     #[deref_mut]
-    pub data: Data,
+    pub definition: Definition,
 }
 
 /// Contains the data for the regular type declaration i.e. those that are
 /// declared in the module level.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeData {
+pub struct TypeDefinition {
     /// The accessibility of the type.
     pub accessibility: Accessibility,
 
     /// Type type aliased
-    pub r#type: r#type::Type,
+    pub r#type: r#type::Type<Default>,
 }
 
 /// Represents a regular type declaration i.e. those that are declared in the
 /// module level. `type NAME = TYPE` syntax.
-pub type Type = TypeTemplate<ID<Module>, TypeData>;
+pub type Type = TypeTemplate<ID<Module>, TypeDefinition>;
 
 /// Represents an adt implementation type, denoted by `type NAME = TYPE` syntax.
-pub type AdtImplementationType = TypeTemplate<ID<AdtImplementation>, TypeData>;
+pub type AdtImplementationType =
+    TypeTemplate<ID<AdtImplementation>, TypeDefinition>;
 
-impl<ParentID, Data> Global for TypeTemplate<ParentID, Data>
+impl<ParentID, Definition> Global for TypeTemplate<ParentID, Definition>
 where
     ParentID: Into<GlobalID> + Copy,
     ID<Self>: Into<GlobalID>,
@@ -996,7 +997,7 @@ where
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
-impl<ParentID, Data> Generic for TypeTemplate<ParentID, Data>
+impl<ParentID, Definition> Generic for TypeTemplate<ParentID, Definition>
 where
     Self: Global,
     ID<Self>: Into<GenericID>,
@@ -1012,12 +1013,12 @@ where
 
 /// A template struct representing all kinds of constant declarations.
 #[derive(Debug, Clone, PartialEq, Eq, Deref, DerefMut)]
-pub struct ConstantTemplate<ParentID: 'static, Data: 'static> {
+pub struct ConstantTemplate<ParentID: 'static, Definition: 'static> {
     /// The name of the constant.
     pub name: String,
 
     /// The type of the constant.
-    pub r#type: r#type::Type,
+    pub r#type: r#type::Type<Default>,
 
     /// The generic declaration of the constant.
     pub generic_declaration: GenericDeclaration,
@@ -1028,13 +1029,13 @@ pub struct ConstantTemplate<ParentID: 'static, Data: 'static> {
     /// The ID of the parent module.
     pub parent_id: ParentID,
 
-    /// The additional data of the constant.
+    /// The definition of the constant.
     #[deref]
     #[deref_mut]
-    pub data: Data,
+    pub definition: Definition,
 }
 
-impl<ParentID, Data> Global for ConstantTemplate<ParentID, Data>
+impl<ParentID, Definition> Global for ConstantTemplate<ParentID, Definition>
 where
     ParentID: Into<GlobalID> + Copy,
     ID<Self>: Into<GlobalID>,
@@ -1048,7 +1049,7 @@ where
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
-impl<ParentID, Data> Generic for ConstantTemplate<ParentID, Data>
+impl<ParentID, Definition> Generic for ConstantTemplate<ParentID, Definition>
 where
     Self: Global,
     ID<Self>: Into<GenericID>,
@@ -1065,7 +1066,7 @@ where
 /// Contains the data for the regular constant declaration i.e. those that are
 /// declared in the module level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConstantData {
+pub struct ConstantDefinition {
     /// The accessibility of the constant.
     pub accessibility: Accessibility,
     // TODO: Constant IR
@@ -1073,16 +1074,16 @@ pub struct ConstantData {
 
 /// Represents a constant declaration, denoted by `const NAME: TYPE = VALUE`
 /// syntax.
-pub type Constant = ConstantTemplate<ID<Module>, ConstantData>;
+pub type Constant = ConstantTemplate<ID<Module>, ConstantDefinition>;
 
 /// Represents an adt implementation constant, denoted by `const NAME: TYPE =
 /// VALUE` syntax.
 pub type AdtImplementationConstant =
-    ConstantTemplate<ID<AdtImplementation>, ConstantData>;
+    ConstantTemplate<ID<AdtImplementation>, ConstantDefinition>;
 
 /// A template struct representing all kinds of function declarations.
 #[derive(Debug, Clone, PartialEq, Eq, Deref, DerefMut)]
-pub struct FunctionTemplate<ParentID: 'static, Data: 'static> {
+pub struct FunctionTemplate<ParentID: 'static, Definition: 'static> {
     /// The parameters of the function.
     pub parameters: Arena<Parameter>,
 
@@ -1096,15 +1097,24 @@ pub struct FunctionTemplate<ParentID: 'static, Data: 'static> {
     pub name: String,
 
     /// The return type of the function.
-    pub return_type: r#type::Type,
+    pub return_type: r#type::Type<Default>,
 
     /// The accessibility of the function.
     pub generic_declaration: GenericDeclaration,
 
-    /// The additional data of the function.
+    /// The definition of the function.
     #[deref]
     #[deref_mut]
-    pub data: Data,
+    pub definition: Definition,
+}
+
+/// An enumeration of all compiler intrinsics functions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Intrinsics {
+    /// `memcpy` the memory address stored in the given parameter id. This is
+    /// primarily used in the `core::Copy` trait implementation for primitive
+    /// types.
+    Memcpy(ID<Parameter>),
 }
 
 /// Represents an intermediate representation of the function.
@@ -1117,16 +1127,19 @@ pub enum FunctionIR {
     /// The function contains a semantic error, which causes the function may
     /// not be able to be compiled to its correct meaning.
     Suboptimal(ir::IR<Suboptimal>),
+
+    /// The funcrion is an intrinsic function.
+    Intrinsics(Intrinsics),
 }
 
-impl Default for FunctionIR {
+impl std::default::Default for FunctionIR {
     fn default() -> Self { Self::Suboptimal(ir::IR::default()) }
 }
 
 /// Contains the data for the regular function declaration i.e. those that are
 /// declared in the module level.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FunctionData {
+pub struct FunctionDefinition {
     /// The accessibility of the function.
     pub accessibility: Accessibility,
 
@@ -1134,10 +1147,7 @@ pub struct FunctionData {
     pub const_function: bool,
 
     /// Maps the parameter ID to its matching pattern.
-    pub patterns_by_parameter_id: HashMap<ID<Parameter>, Irrefutable>,
-
-    /// The named bindings occurred in the parameters of the function.
-    pub parameters_name_binding_point: NameBindingPoint,
+    pub patterns_by_parameter_id: HashMap<ID<Parameter>, Irrefutable<Success>>,
 
     /// The intermediate representation of the function.
     pub ir: FunctionIR,
@@ -1145,9 +1155,9 @@ pub struct FunctionData {
 
 /// Represents a regular function declaration i.e. those that are declared in
 /// the module level. `function NAME(...) {...}` syntax.
-pub type Function = FunctionTemplate<ID<Module>, FunctionData>;
+pub type Function = FunctionTemplate<ID<Module>, FunctionDefinition>;
 
-impl<ParentID, Data> Global for FunctionTemplate<ParentID, Data>
+impl<ParentID, Definition> Global for FunctionTemplate<ParentID, Definition>
 where
     ParentID: Into<GlobalID> + Copy,
     ID<Self>: Into<GlobalID>,
@@ -1161,7 +1171,7 @@ where
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
-impl<ParentID, Data> Generic for FunctionTemplate<ParentID, Data>
+impl<ParentID, Definition> Generic for FunctionTemplate<ParentID, Definition>
 where
     Self: Global,
     ID<Self>: Into<GenericID>,
@@ -1178,9 +1188,9 @@ where
 /// Represents an enum implementation function, denoted by `function NAME(...)
 /// {...}` syntax.
 pub type AdtImplementationFunction =
-    FunctionTemplate<ID<AdtImplementation>, FunctionData>;
+    FunctionTemplate<ID<AdtImplementation>, FunctionDefinition>;
 
-trait ImplementationData {
+trait ImplementationDefinition {
     type MemberID: Copy + Into<GlobalID>;
 
     fn get_member(&self, name: &str) -> Option<Self::MemberID>;
@@ -1194,7 +1204,7 @@ pub struct ImplementationSignature<ImplementedID> {
     pub generic_declaration: GenericDeclaration,
 
     /// The generic arguments supplied to the implemented symbol.
-    pub arguments: GenericArguments,
+    pub arguments: GenericArguments<Default>,
 
     /// The ID of the symbol that is being implemented.
     pub implemented_id: ImplementedID,
@@ -1202,7 +1212,7 @@ pub struct ImplementationSignature<ImplementedID> {
 
 /// A template struct representing all kinds of implementation declarations.
 #[derive(Debug, Clone, PartialEq, Eq, Deref, DerefMut)]
-pub struct ImplementationTemplate<ImplementedID, Data: 'static> {
+pub struct ImplementationTemplate<ImplementedID, Definition: 'static> {
     /// Location of where the implements is declared.
     pub span: Option<Span>,
 
@@ -1215,20 +1225,20 @@ pub struct ImplementationTemplate<ImplementedID, Data: 'static> {
     /// The ID module where the implementation is declared.
     pub declared_in: ID<Module>,
 
-    /// The additional data of the implementation.
+    /// The definition of the implementation.
     #[deref]
     #[deref_mut]
-    pub data: Data,
+    pub definition: Definition,
 }
 
-/// Contains the data for the adt implementation
+/// Contains the definition for the adt implementation
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct AdtImplementationData {
+pub struct AdtImplementationDefinition {
     /// Maps the name of the adt implementation member to its ID.
     pub member_ids_by_name: HashMap<String, AdtImplementationMemberID>,
 }
 
-impl ImplementationData for AdtImplementationData {
+impl ImplementationDefinition for AdtImplementationDefinition {
     type MemberID = AdtImplementationMemberID;
 
     fn get_member(&self, name: &str) -> Option<Self::MemberID> {
@@ -1250,13 +1260,13 @@ from_ids!(AdtID, GenericID, (Struct, Struct), (Enum, Enum));
 /// Represents a adt implementation, denoted by `implements<PARAM> adt<PARAM> {
 /// ... }` syntax.
 pub type AdtImplementation =
-    ImplementationTemplate<AdtID, AdtImplementationData>;
+    ImplementationTemplate<AdtID, AdtImplementationDefinition>;
 
 /// Negative trait implementation data tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct NegativeTraitImplementationData;
+pub struct NegativeTraitImplementationDefinition;
 
-impl ImplementationData for NegativeTraitImplementationData {
+impl ImplementationDefinition for NegativeTraitImplementationDefinition {
     type MemberID = Never;
 
     fn get_member(&self, _: &str) -> Option<Self::MemberID> { None }
@@ -1273,10 +1283,10 @@ impl From<Never> for GenericID {
 /// Represents a negative trait implementation, denoted by
 /// `implements<PARAM> TRAIT<PARAM> = delete;` syntax.
 pub type NegativeTraitImplementation =
-    ImplementationTemplate<ID<Trait>, NegativeTraitImplementationData>;
+    ImplementationTemplate<ID<Trait>, NegativeTraitImplementationDefinition>;
 
-impl<ImplementedID, Data: ImplementationData> Global
-    for ImplementationTemplate<ImplementedID, Data>
+impl<ImplementedID, Definition: ImplementationDefinition> Global
+    for ImplementationTemplate<ImplementedID, Definition>
 where
     ImplementedID: Into<GlobalID> + Copy,
     ID<Self>: Into<GlobalID>,
@@ -1290,8 +1300,8 @@ where
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
-impl<ImplementedID, Data: ImplementationData> Generic
-    for ImplementationTemplate<ImplementedID, Data>
+impl<ImplementedID, Definition: ImplementationDefinition> Generic
+    for ImplementationTemplate<ImplementedID, Definition>
 where
     Self: Global,
     ID<Self>: Into<GenericID>,
@@ -1307,29 +1317,32 @@ where
 
 /// Represents a function declaration as an implements member, denoted by
 /// `function NAME(...) {...}` syntax.
-pub type TraitImplementationFunction =
-    FunctionTemplate<ID<TraitImplementation>, TraitImplementationFunctionData>;
+pub type TraitImplementationFunction = FunctionTemplate<
+    ID<TraitImplementation>,
+    TraitImplementationFunctionDefinition,
+>;
 
-/// Contains the implementation data of a trait implementation function symbol
+/// Contains the implementation definition of a trait implementation function
+/// symbol
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TraitImplementationFunctionData {
+pub struct TraitImplementationFunctionDefinition {
     /// The trait function ID that is being implemented.
     pub implemented_trait_function_id: ID<TraitFunction>,
 
     /// Maps the parameter ID to its matching pattern.
-    pub patterns_by_parameter_id: HashMap<ID<Parameter>, Irrefutable>,
+    pub patterns_by_parameter_id: HashMap<ID<Parameter>, Irrefutable<Success>>,
 }
 
 /// Represents a type declaration as an implements member, denoted by `type NAME
 /// = TYPE;` syntax.
 pub type TraitImplementationType =
-    TypeTemplate<ID<TraitImplementation>, TraitImplementationTypeData>;
+    TypeTemplate<ID<TraitImplementation>, TraitImplementationTypeDefinition>;
 
-/// Contains the implementation data of a trait implementation type symbol
+/// Contains the implementation definition of a trait implementation type symbol
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TraitImplementationTypeData {
+pub struct TraitImplementationTypeDefinition {
     /// The aliased type.
-    pub r#type: r#type::Type,
+    pub r#type: r#type::Type<Default>,
 
     /// The trait type ID that is being implemented.
     pub implemented_trait_type_id: ID<TraitType>,
@@ -1340,12 +1353,15 @@ pub struct TraitImplementationTypeData {
 
 /// Represents a constant declaration as an implements member, denoted by `const
 /// NAME: TYPE` syntax.
-pub type TraitImplementationConstant =
-    ConstantTemplate<ID<TraitImplementation>, TraitImplementationConstantData>;
+pub type TraitImplementationConstant = ConstantTemplate<
+    ID<TraitImplementation>,
+    TraitImplementationConstantDefinition,
+>;
 
-/// Contains the implementation data of a trait implementation constant symbol
+/// Contains the implementation definition of a trait implementation constant
+/// symbol
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TraitImplementationConstantData {
+pub struct TraitImplementationConstantDefinition {
     // The IR of the constant.
     /// The trait constant ID that is being implemented.
     pub implemented_trait_constant_id: ID<TraitConstant>,
@@ -1408,11 +1424,11 @@ from_ids!(
 /// Represents a trait implementation, denoted by `implements<PARAM>
 /// TRAIT<PARAM> { ... }` syntax.
 pub type TraitImplementation =
-    ImplementationTemplate<ID<Trait>, TraitImplementationData>;
+    ImplementationTemplate<ID<Trait>, TraitImplementationDefinition>;
 
-/// Contains the implementation data of a trait implementation symbol
+/// Contains the implementation definition of a trait implementation symbol
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TraitImplementationData {
+pub struct TraitImplementationDefinition {
     /// Indicates whether the trait implementation is a constant
     /// implementation.
     pub is_const: bool,
@@ -1435,7 +1451,7 @@ pub struct TraitImplementationData {
         HashMap<ID<TraitConstant>, ID<TraitImplementationConstant>>,
 }
 
-impl ImplementationData for TraitImplementationData {
+impl ImplementationDefinition for TraitImplementationDefinition {
     type MemberID = TraitImplementationMemberID;
 
     fn get_member(&self, name: &str) -> Option<Self::MemberID> {
@@ -1448,7 +1464,7 @@ impl ImplementationData for TraitImplementationData {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parameter {
     /// The type of the parameter.
-    pub r#type: r#type::Type,
+    pub r#type: r#type::Type<Default>,
 
     /// Location of where the parameter is declared.
     pub span: Option<Span>,
@@ -1456,33 +1472,33 @@ pub struct Parameter {
 
 /// Represents a type declaration as a trait member, denoted by `type NAME;`
 /// syntax.
-pub type TraitType = TypeTemplate<ID<Trait>, TraitTypeData>;
+pub type TraitType = TypeTemplate<ID<Trait>, TraitTypeDefinition>;
 
 /// Trait type data tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitTypeData {
+pub struct TraitTypeDefinition {
     /// The accessibility of the type.
     pub accessibility: Accessibility,
 }
 
 /// Represents a function declaration as a trait member, denoted by `function
 /// NAME(...) {...}` syntax.
-pub type TraitFunction = FunctionTemplate<ID<Trait>, TraitFunctionData>;
+pub type TraitFunction = FunctionTemplate<ID<Trait>, TraitFunctionDefinition>;
 
 /// Trait function data tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TraitFunctionData {
+pub struct TraitFunctionDefinition {
     /// The accessibility of the function.
     pub accessibility: Accessibility,
 }
 
 /// Represents a constant declaration as a trait member, denoted by `const NAME:
 /// TYPE` syntax.
-pub type TraitConstant = ConstantTemplate<ID<Trait>, TraitConstantData>;
+pub type TraitConstant = ConstantTemplate<ID<Trait>, TraitConstantDefinition>;
 
 /// Trait constant data tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitConstantData {
+pub struct TraitConstantDefinition {
     /// The accessibility of the constant.
     pub accessibility: Accessibility,
 }
@@ -1637,7 +1653,7 @@ impl From<AlgebraicKind> for GlobalID {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlgebraicImplementation {
     /// Generic arguments applied to the adt.
-    pub arguments: GenericArguments,
+    pub arguments: GenericArguments<Default>,
 
     /// The kind of the algebraic type.
     pub kind: AlgebraicKind,

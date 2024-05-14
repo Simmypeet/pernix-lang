@@ -1,5 +1,6 @@
 use pernixc_base::diagnostic::Handler;
 
+use super::model::Model;
 use crate::{
     error,
     symbol::GlobalID,
@@ -20,9 +21,9 @@ impl table::State for State {
     ) {
     }
 
-    fn on_resolved(
+    fn on_resolved<M: Model>(
         _: &Table<Self>,
-        _: table::resolution::Resolution,
+        _: table::resolution::Resolution<M>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
     ) {

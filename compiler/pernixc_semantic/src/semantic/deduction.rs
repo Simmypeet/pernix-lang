@@ -9,6 +9,7 @@ use super::{
     equality,
     instantiation::{self, Instantiation},
     mapping::Mapping,
+    model::Model,
     session::{ExceedLimitError, Limit, Session},
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
@@ -21,27 +22,27 @@ use crate::table::State;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct DeductionUnifyingConfig;
 
-impl unification::Config for DeductionUnifyingConfig {
+impl<M: Model> unification::Config<M> for DeductionUnifyingConfig {
     fn lifetime_unifiable(
         &mut self,
-        from: &Lifetime,
-        _: &Lifetime,
+        from: &Lifetime<M>,
+        _: &Lifetime<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(from.is_parameter())
     }
 
     fn type_unifiable(
         &mut self,
-        from: &Type,
-        _: &Type,
+        from: &Type<M>,
+        _: &Type<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(matches!(from, Type::Parameter(_) | Type::TraitMember(_)))
     }
 
     fn constant_unifiable(
         &mut self,
-        from: &Constant,
-        _: &Constant,
+        from: &Constant<M>,
+        _: &Constant<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(matches!(from, Constant::Parameter(_)))
     }
@@ -50,12 +51,15 @@ impl unification::Config for DeductionUnifyingConfig {
 fn unify<T: Term>(
     lhs: &[T],
     rhs: &[T],
-    environment: &Environment<impl State>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
-    mut existing: Mapping,
-) -> Result<Option<Mapping>, ExceedLimitError> {
+    mut existing: Mapping<T::Model>,
+) -> Result<Option<Mapping<T::Model>>, ExceedLimitError> {
     for (lhs, rhs) in lhs.iter().zip(rhs.iter()) {
         let Some(new) = unification::unify(
             lhs,
@@ -94,10 +98,13 @@ fn extract<K: Eq + Hash, V>(
 
 fn mapping_equals<T: Term>(
     unification: HashMap<T, HashSet<T>>,
-    substitution: &Instantiation,
-    environment: &Environment<impl State>,
+    substitution: &Instantiation<T::Model>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<bool, ExceedLimitError> {
     for (mut key, values) in unification {
@@ -116,9 +123,12 @@ fn mapping_equals<T: Term>(
 #[allow(clippy::type_complexity)]
 fn from_unification_to_substitution<T: Term>(
     unification: HashMap<T, HashSet<T>>,
-    environment: &Environment<impl State>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<Option<HashMap<T, T>>, ExceedLimitError> {
     let mut result = HashMap::new();
@@ -139,7 +149,7 @@ fn from_unification_to_substitution<T: Term>(
     Ok(Some(result))
 }
 
-impl GenericArguments {
+impl<M: Model> GenericArguments<M> {
     /// Performs generic parameter deduction.
     ///
     /// # Errors
@@ -149,11 +159,11 @@ impl GenericArguments {
     pub fn deduce(
         &self,
         another: &Self,
-        environment: &Environment<impl State>,
+        environment: &Environment<M, impl State>,
         limit: &mut Limit<
-            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
-    ) -> Result<Option<Instantiation>, ExceedLimitError> {
+    ) -> Result<Option<Instantiation<M>>, ExceedLimitError> {
         // arity check
         if self.lifetimes.len() != another.lifetimes.len()
             || self.types.len() != another.types.len()

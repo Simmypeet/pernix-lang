@@ -256,7 +256,7 @@ impl Property<Type> for TypeAlias {
             parent_id: ID::new(0),
             span: None,
             name: "Test".to_string(),
-            data: symbol::TypeData {
+            definition: symbol::TypeDefinition {
                 accessibility: symbol::Accessibility::Public,
                 r#type: self.property.generate(),
             },

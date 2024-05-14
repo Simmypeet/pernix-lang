@@ -12,6 +12,7 @@ use crate::{
     semantic::{
         equality,
         instantiation::Instantiation,
+        model::Model,
         order,
         predicate::{ConstantType, LifetimeConstraint, Predicate, Tuple},
         session::{Cached, ExceedLimitError, Limit, Session},
@@ -31,7 +32,7 @@ use crate::{
 /// Represents a predicate stating that there exists an implementation for the
 /// given trait and generic arguments
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Trait {
+pub struct Trait<M: Model> {
     /// The trait to be implemented.
     pub id: ID<symbol::Trait>,
 
@@ -39,10 +40,10 @@ pub struct Trait {
     pub is_const: bool,
 
     /// The generic arguments supplied to the trait.
-    pub generic_arguments: GenericArguments,
+    pub generic_arguments: GenericArguments<M>,
 }
 
-impl<T: State> table::Display<T> for Trait {
+impl<T: State, M: Model> table::Display<T> for Trait<M> {
     fn fmt(
         &self,
         table: &Table<T>,
@@ -61,7 +62,7 @@ impl<T: State> table::Display<T> for Trait {
     }
 }
 
-impl Trait {
+impl<M: Model> Trait<M> {
     /// Checks if the trait contains a `forall` lifetime.
     #[must_use]
     pub fn contains_forall_lifetime(&self) -> bool {
@@ -78,36 +79,36 @@ impl Trait {
 /// A query for checking [`Trait`] predicate satisfiability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub struct Query<'a> {
+pub struct Query<'a, M: Model> {
     pub id: ID<symbol::Trait>,
     pub is_const: bool,
-    pub generic_arguments: &'a GenericArguments,
+    pub generic_arguments: &'a GenericArguments<M>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct HigherRankedLifetimeUnifyingConfig;
 
-impl unification::Config for HigherRankedLifetimeUnifyingConfig {
+impl<M: Model> unification::Config<M> for HigherRankedLifetimeUnifyingConfig {
     fn lifetime_unifiable(
         &mut self,
-        from: &Lifetime,
-        _: &Lifetime,
+        from: &Lifetime<M>,
+        _: &Lifetime<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(from.is_forall())
     }
 
     fn type_unifiable(
         &mut self,
-        _: &Type,
-        _: &Type,
+        _: &Type<M>,
+        _: &Type<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(false)
     }
 
     fn constant_unifiable(
         &mut self,
-        _: &Constant,
-        _: &Constant,
+        _: &Constant<M>,
+        _: &Constant<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(false)
     }
@@ -115,13 +116,13 @@ impl unification::Config for HigherRankedLifetimeUnifyingConfig {
 
 /// A result of a trait satisfiability query.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Satisfiability {
+pub struct Satisfiability<M: Model> {
     /// List of lifetime constraints that must be satisfied for the trait to be
     /// satisfied.
-    pub lifetime_constraints: HashSet<LifetimeConstraint>,
+    pub lifetime_constraints: HashSet<LifetimeConstraint<M>>,
 }
 
-impl Trait {
+impl<M: Model> Trait<M> {
     /// Determines whether there exists an implementation for the given trait
     /// and generic arguments.
     ///
@@ -132,12 +133,12 @@ impl Trait {
     pub fn satisfies(
         id: ID<symbol::Trait>,
         is_const: bool,
-        generic_arguments: &GenericArguments,
-        environment: &Environment<impl State>,
+        generic_arguments: &GenericArguments<M>,
+        environment: &Environment<M, impl State>,
         limit: &mut Limit<
-            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
-    ) -> Result<Option<Satisfiability>, ExceedLimitError> {
+    ) -> Result<Option<Satisfiability<M>>, ExceedLimitError> {
         match limit.mark_as_in_progress(
             Query { id, is_const, generic_arguments },
             (),
@@ -286,8 +287,8 @@ impl Trait {
 
                 if !match predicate {
                     Predicate::TraitTypeEquality(equality) => equality::equals(
-                        &Type::TraitMember(equality.trait_member.clone()),
-                        &equality.equivalent,
+                        &Type::TraitMember(equality.lhs.clone()),
+                        &equality.rhs,
                         environment,
                         limit,
                     )?,
@@ -374,26 +375,26 @@ impl Trait {
     }
 }
 
-impl Trait {
+impl<M: Model> Trait<M> {
     /// Applies an instantiation to the generic arguments.
-    pub fn instantiate(&mut self, instantiation: &Instantiation) {
+    pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
         self.generic_arguments.instantiate(instantiation);
     }
 }
 
 /// A result of a trait implementation resolution query.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Implementation {
+pub struct Implementation<M: Model> {
     /// The deduced substitution for the generic arguments of the trait
     /// implementation.
-    pub deduced_substitution: Instantiation,
+    pub deduced_substitution: Instantiation<M>,
 
     /// The ID of the resolved trait implementation.
     pub id: ID<symbol::TraitImplementation>,
 
     /// List of lifetime constraints that must be satisfied for the trait
     /// implementaton to be well-formed.
-    pub lifetime_constraints: HashSet<LifetimeConstraint>,
+    pub lifetime_constraints: HashSet<LifetimeConstraint<M>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
@@ -430,14 +431,14 @@ pub enum ResolveError {
 /// - [`ResolveError::ExceedLimitError`]: If the session limit was exceeded; see
 ///   [`ExceedLimitError`] for more information.
 #[allow(clippy::too_many_lines)]
-pub fn resolve_implementation(
+pub fn resolve_implementation<M: Model>(
     trait_id: ID<symbol::Trait>,
-    generic_arguments: &GenericArguments,
-    environment: &Environment<impl State>,
+    generic_arguments: &GenericArguments<M>,
+    environment: &Environment<M, impl State>,
     limit: &mut Limit<
-        impl Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
     >,
-) -> Result<Implementation, ResolveError> {
+) -> Result<Implementation<M>, ResolveError> {
     let trait_symbol =
         environment.table.get(trait_id).ok_or(ResolveError::InvalidID)?;
 
@@ -640,13 +641,14 @@ pub fn resolve_implementation(
 }
 
 fn predicate_satisfies<
-    R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    M: Model,
+    R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
 >(
     generic_symbol: &dyn Generic,
-    substitution: &Instantiation,
-    environment: &Environment<impl State>,
+    substitution: &Instantiation<M>,
+    environment: &Environment<M, impl State>,
     session: &mut Limit<R>,
-) -> Result<Option<HashSet<LifetimeConstraint>>, ExceedLimitError> {
+) -> Result<Option<HashSet<LifetimeConstraint<M>>>, ExceedLimitError> {
     let mut lifetime_constraints = HashSet::new();
 
     // check if satisfies all the predicate
@@ -662,8 +664,8 @@ fn predicate_satisfies<
         match predicate {
             Predicate::TraitTypeEquality(equality) => {
                 if !equality::equals(
-                    &Type::TraitMember(equality.trait_member.clone()),
-                    &equality.equivalent,
+                    &Type::TraitMember(equality.lhs.clone()),
+                    &equality.rhs,
                     environment,
                     session,
                 )? {
@@ -720,13 +722,13 @@ fn predicate_satisfies<
     Ok(Some(lifetime_constraints))
 }
 
-fn is_in_active_trait_implementation(
+fn is_in_active_trait_implementation<M: Model>(
     trait_id: ID<symbol::Trait>,
     need_implementation: bool,
-    generic_arguments: &GenericArguments,
-    environment: &Environment<impl State>,
+    generic_arguments: &GenericArguments<M>,
+    environment: &Environment<M, impl State>,
     limit: &mut Limit<
-        impl Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
     >,
 ) -> Result<bool, ExceedLimitError> {
     match environment.premise.trait_context {

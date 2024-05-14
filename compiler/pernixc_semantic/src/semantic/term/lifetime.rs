@@ -10,7 +10,7 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     constant::Constant, r#type::Type, AssignSubTermError, GenericArguments,
-    Never, Term, Tuple,
+    ModelOf, Never, Term, Tuple,
 };
 use crate::{
     arena::{Key, ID},
@@ -20,6 +20,7 @@ use crate::{
         instantiation::Instantiation,
         mapping::Mapping,
         matching::{self, Match, Matching},
+        model::{Default, Model},
         predicate::{self, Outlives, Predicate, Satisfiability},
         session::{ExceedLimitError, Limit, Session},
         sub_term::{Location, SubTerm},
@@ -66,85 +67,97 @@ pub struct Local(pub ID<Scope>); /* will be changed */
     derive_more::From,
 )]
 #[allow(missing_docs)]
-pub enum Lifetime {
+pub enum Lifetime<M: Model> {
     Static,
+    #[from]
     Parameter(LifetimeParameterID),
-    Inference(Inference),
-    Local(Local),
+    Inference(M::LifetimeInference),
+    #[from]
     Forall(Forall),
 }
 
-impl Location<Lifetime, Lifetime> for Never {
+impl<M: Model> ModelOf for Lifetime<M> {
+    type Model = M;
+}
+
+impl<M: Model> Location<Lifetime<M>, Lifetime<M>> for Never {
     fn assign_sub_term(
         self,
-        _: &mut Lifetime,
-        _: Lifetime,
+        _: &mut Lifetime<M>,
+        _: Lifetime<M>,
     ) -> Result<(), AssignSubTermError> {
         match self {}
     }
 
-    fn get_sub_term(self, _: &Lifetime) -> Option<Lifetime> { match self {} }
-
-    fn get_sub_term_ref(self, _: &Lifetime) -> Option<&Lifetime> {
+    fn get_sub_term(self, _: &Lifetime<M>) -> Option<Lifetime<M>> {
         match self {}
     }
 
-    fn get_sub_term_mut(self, _: &mut Lifetime) -> Option<&mut Lifetime> {
+    fn get_sub_term_ref(self, _: &Lifetime<M>) -> Option<&Lifetime<M>> {
+        match self {}
+    }
+
+    fn get_sub_term_mut(self, _: &mut Lifetime<M>) -> Option<&mut Lifetime<M>> {
         match self {}
     }
 }
 
-impl Location<Lifetime, Type> for Never {
+impl<M: Model> Location<Lifetime<M>, Type<M>> for Never {
     fn assign_sub_term(
         self,
-        _: &mut Lifetime,
-        _: Type,
+        _: &mut Lifetime<M>,
+        _: Type<M>,
     ) -> Result<(), AssignSubTermError> {
         match self {}
     }
 
-    fn get_sub_term(self, _: &Lifetime) -> Option<Type> { match self {} }
+    fn get_sub_term(self, _: &Lifetime<M>) -> Option<Type<M>> { match self {} }
 
-    fn get_sub_term_ref(self, _: &Lifetime) -> Option<&Type> { match self {} }
+    fn get_sub_term_ref(self, _: &Lifetime<M>) -> Option<&Type<M>> {
+        match self {}
+    }
 
-    fn get_sub_term_mut(self, _: &mut Lifetime) -> Option<&mut Type> {
+    fn get_sub_term_mut(self, _: &mut Lifetime<M>) -> Option<&mut Type<M>> {
         match self {}
     }
 }
 
-impl Location<Lifetime, Constant> for Never {
+impl<M: Model> Location<Lifetime<M>, Constant<M>> for Never {
     fn assign_sub_term(
         self,
-        _: &mut Lifetime,
-        _: Constant,
+        _: &mut Lifetime<M>,
+        _: Constant<M>,
     ) -> Result<(), AssignSubTermError> {
         match self {}
     }
 
-    fn get_sub_term(self, _: &Lifetime) -> Option<Constant> { match self {} }
-
-    fn get_sub_term_ref(self, _: &Lifetime) -> Option<&Constant> {
+    fn get_sub_term(self, _: &Lifetime<M>) -> Option<Constant<M>> {
         match self {}
     }
 
-    fn get_sub_term_mut(self, _: &mut Lifetime) -> Option<&mut Constant> {
+    fn get_sub_term_ref(self, _: &Lifetime<M>) -> Option<&Constant<M>> {
+        match self {}
+    }
+
+    fn get_sub_term_mut(self, _: &mut Lifetime<M>) -> Option<&mut Constant<M>> {
         match self {}
     }
 }
 
-impl SubTerm for Lifetime {
+impl<M: Model> SubTerm for Lifetime<M> {
     type SubTypeLocation = Never;
     type SubConstantLocation = Never;
     type SubLifetimeLocation = Never;
     type ThisSubTermLocation = Never;
 }
 
-impl Match for Lifetime {
+impl<M: Model> Match for Lifetime<M> {
     fn substructural_match(
         &self,
         _: &Self,
     ) -> Option<
         matching::Substructural<
+            M,
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -155,6 +168,7 @@ impl Match for Lifetime {
 
     fn get_substructural(
         substructural: &matching::Substructural<
+            M,
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -165,6 +179,7 @@ impl Match for Lifetime {
 
     fn get_substructural_mut(
         substructural: &mut matching::Substructural<
+            M,
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -174,28 +189,34 @@ impl Match for Lifetime {
     }
 }
 
-impl From<Never> for Lifetime {
+impl<M: Model> From<Never> for Lifetime<M> {
     fn from(value: Never) -> Self { match value {} }
 }
 
-impl Term for Lifetime {
+impl<M: Model> Term for Lifetime<M>
+where
+    Self: ModelOf<Model = M>,
+{
     type GenericParameter = LifetimeParameter;
     type TraitMember = Never;
+    type Rebind<Ms: Model> = Lifetime<Ms>;
 
     fn normalize(
         &self,
-        _: &Environment<impl State>,
-        _: &mut Limit<impl Session<Self> + Session<Type> + Session<Constant>>,
+        _: &Environment<M, impl State>,
+        _: &mut Limit<
+            impl Session<Self> + Session<Type<M>> + Session<Constant<M>>,
+        >,
     ) -> Result<Option<Self>, ExceedLimitError> {
         Ok(None)
     }
 
     fn outlives_satisfiability(
         &self,
-        lifetime: &Lifetime,
-        environment: &Environment<impl State>,
+        lifetime: &Lifetime<M>,
+        environment: &Environment<M, impl State>,
         limit: &mut Limit<
-            impl Session<Self> + Session<Type> + Session<Constant>,
+            impl Session<Self> + Session<Type<M>> + Session<Constant<M>>,
         >,
     ) -> Result<Satisfiability, ExceedLimitError> {
         if self.is_static() {
@@ -244,65 +265,69 @@ impl Term for Lifetime {
         None
     }
 
-    fn as_outlive_predicate(predicate: &Predicate) -> Option<&Outlives<Self>> {
+    fn as_outlive_predicate(
+        predicate: &Predicate<M>,
+    ) -> Option<&Outlives<Self>> {
         predicate.as_lifetime_outlives()
     }
 
     fn as_outlive_predicate_mut(
-        predicate: &mut Predicate,
+        predicate: &mut Predicate<M>,
     ) -> Option<&mut Outlives<Self>> {
         predicate.as_lifetime_outlives_mut()
     }
 
     fn into_outlive_predicate(
-        predicate: Predicate,
-    ) -> Result<Outlives<Self>, Predicate> {
+        predicate: Predicate<M>,
+    ) -> Result<Outlives<Self>, Predicate<M>> {
         predicate.into_lifetime_outlives()
     }
 
-    fn as_constant_type_predicate(_: &Predicate) -> Option<&Self> { None }
+    fn as_constant_type_predicate(_: &Predicate<M>) -> Option<&Self> { None }
 
-    fn as_constant_type_predicate_mut(_: &mut Predicate) -> Option<&mut Self> {
+    fn as_constant_type_predicate_mut(
+        _: &mut Predicate<M>,
+    ) -> Option<&mut Self> {
         None
     }
 
     fn into_constant_type_predicate(
-        predicate: Predicate,
-    ) -> Result<Self, Predicate> {
+        predicate: Predicate<M>,
+    ) -> Result<Self, Predicate<M>> {
         Err(predicate)
     }
 
     fn as_trait_member_equality_predicate(
-        _: &Predicate,
-    ) -> Option<&predicate::TraitMemberEquality<Self>> {
+        _: &Predicate<M>,
+    ) -> Option<&predicate::Equality<Never, Self>> {
         None
     }
 
     fn as_trait_member_equality_predicate_mut(
-        _: &mut Predicate,
-    ) -> Option<&mut predicate::TraitMemberEquality<Self>> {
+        _: &mut Predicate<M>,
+    ) -> Option<&mut predicate::Equality<Never, Self>> {
         None
     }
 
     fn into_trait_member_equality_predicate(
-        predicate: Predicate,
-    ) -> Result<predicate::TraitMemberEquality<Self>, Predicate> {
+        predicate: Predicate<M>,
+    ) -> Result<predicate::Equality<Never, Self>, Predicate<M>> {
         Err(predicate)
     }
 
-    fn as_tuple_predicate(_: &Predicate) -> Option<&predicate::Tuple<Self>> {
+    fn as_tuple_predicate(_: &Predicate<M>) -> Option<&predicate::Tuple<Self>> {
         None
     }
 
     fn as_tuple_predicate_mut(
-        _: &mut Predicate,
+        _: &mut Predicate<M>,
     ) -> Option<&mut predicate::Tuple<Self>> {
         None
     }
 
     fn into_tuple_predicate(
-        predicate: Predicate,
-    ) -> Result<predicate::Tuple<Self>, Predicate> {
+        predicate: Predicate<M>,
+    ) -> Result<predicate::Tuple<Self>, Predicate<M>> {
         Err(predicate)
     }
 
@@ -314,56 +339,61 @@ impl Term for Lifetime {
         match self {
             Self::Static => Satisfiability::Satisfied,
 
-            Self::Parameter(_)
-            | Self::Inference(_)
-            | Self::Local(_)
-            | Self::Forall(_) => Satisfiability::Unsatisfied,
+            Self::Parameter(_) | Self::Inference(_) | Self::Forall(_) => {
+                Satisfiability::Unsatisfied
+            }
         }
     }
 
     fn get_instantiation(
-        instantiation: &Instantiation,
+        instantiation: &Instantiation<M>,
     ) -> &HashMap<Self, Self> {
         &instantiation.lifetimes
     }
 
     fn get_instantiation_mut(
-        instantiation: &mut Instantiation,
+        instantiation: &mut Instantiation<M>,
     ) -> &mut HashMap<Self, Self> {
         &mut instantiation.lifetimes
     }
 
     fn get_substructural_unification<'a, T: Term>(
         substructural: &'a Substructural<T>,
-    ) -> impl Iterator<Item = &'a Unification<Self>>
+    ) -> impl Iterator<Item = &'a Unification<Lifetime<T::Model>>>
     where
         Self: 'a,
     {
         substructural.lifetimes.values()
     }
 
-    fn get_mapping(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
+    fn get_mapping(mapping: &Mapping<M>) -> &HashMap<Self, HashSet<Self>> {
         &mapping.lifetimes
     }
 
     fn get_mapping_mut(
-        mapping: &mut Mapping,
+        mapping: &mut Mapping<M>,
     ) -> &mut HashMap<Self, HashSet<Self>> {
         &mut mapping.lifetimes
     }
 
-    fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self] {
+    fn get_generic_arguments(
+        generic_arguments: &GenericArguments<M>,
+    ) -> &[Self] {
         &generic_arguments.lifetimes
     }
 
     fn get_generic_arguments_mut(
-        generic_arguments: &mut GenericArguments,
+        generic_arguments: &mut GenericArguments<M>,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.lifetimes
     }
+
+    fn from_default_model(term: Lifetime<Default>) -> Self {
+        M::from_default_lifetime(term)
+    }
 }
 
-impl<T: State> table::Display<T> for Lifetime {
+impl<T: State, M: Model> table::Display<T> for Lifetime<M> {
     fn fmt(
         &self,
         table: &Table<T>,
@@ -386,7 +416,7 @@ impl<T: State> table::Display<T> for Lifetime {
                     None => write!(f, "'{}", parameter.id.into_index()),
                 }
             }
-            Self::Forall(_) | Self::Inference(_) | Self::Local(_) => {
+            Self::Forall(_) | Self::Inference(_) => {
                 write!(f, "'?")
             }
         }

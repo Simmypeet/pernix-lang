@@ -3,20 +3,23 @@
 use pernixc_base::source_file::Span;
 
 use super::Value;
-use crate::{ir::address::Address, semantic::term::r#type::Qualifier};
+use crate::{
+    ir::{address::Address, State},
+    semantic::term::r#type::Qualifier,
+};
 
 /// Represents an element of a [`Tuple`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum TupleElement {
-    Regular(Value),
-    Unpacked(Value),
+pub enum TupleElement<T: State> {
+    Regular(Value<T>),
+    Unpacked(Value<T>),
 }
 
-impl TupleElement {
+impl<T: State> TupleElement<T> {
     /// Returns a reference to the value.
     #[must_use]
-    pub const fn as_value(&self) -> &Value {
+    pub const fn as_value(&self) -> &Value<T> {
         match self {
             Self::Regular(value) | Self::Unpacked(value) => value,
         }
@@ -24,7 +27,7 @@ impl TupleElement {
 
     /// Returns a mutable reference to the value.
     #[must_use]
-    pub fn as_value_mut(&mut self) -> &mut Value {
+    pub fn as_value_mut(&mut self) -> &mut Value<T> {
         match self {
             Self::Regular(value) | Self::Unpacked(value) => value,
         }
@@ -32,7 +35,7 @@ impl TupleElement {
 
     /// Consumes the element and returns the value.
     #[must_use]
-    pub const fn into_value(self) -> Value {
+    pub const fn into_value(self) -> Value<T> {
         match self {
             Self::Regular(value) | Self::Unpacked(value) => value,
         }
@@ -41,9 +44,9 @@ impl TupleElement {
 
 /// Represents a tuple of values.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tuple {
+pub struct Tuple<T: State> {
     /// The elements of the tuple.
-    pub elements: Vec<TupleElement>,
+    pub elements: Vec<TupleElement<T>>,
 
     /// The span where the tuple is created.
     pub span: Option<Span>,
@@ -62,9 +65,9 @@ pub enum LoadKind {
 
 /// Represents a load/read from an address in memory.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Load {
+pub struct Load<T: State> {
     /// The address where the value is stored and will be read from.
-    pub address: Address,
+    pub address: Address<T>,
 
     /// The kind of load.
     pub kind: LoadKind,
@@ -75,9 +78,9 @@ pub struct Load {
 
 /// Obtains a reference at the given address.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ReferenceOf {
+pub struct ReferenceOf<T: State> {
     /// The address to the value.
-    pub address: Address,
+    pub address: Address<T>,
 
     /// The qualfier of the reference.
     pub qualifier: Qualifier,
@@ -89,8 +92,8 @@ pub struct ReferenceOf {
 /// An enumeration of the different kinds of registers.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Register {
-    Tuple(Tuple),
-    Load(Load),
-    ReferenceOf(ReferenceOf),
+pub enum Register<T: State> {
+    Tuple(Tuple<T>),
+    Load(Load<T>),
+    ReferenceOf(ReferenceOf<T>),
 }

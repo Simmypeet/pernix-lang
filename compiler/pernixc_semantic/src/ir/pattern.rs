@@ -4,6 +4,7 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use pernixc_base::{diagnostic::Handler, source_file::Span};
 
+use super::State;
 use crate::{
     arena::ID,
     error::{AlreadyBoundName, Error},
@@ -44,13 +45,13 @@ pub struct Boolean {
 
 /// A pattern where the value is bound to a name
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Named {
+pub struct Named<T: State> {
     /// The name of the pattern.
     pub name: String,
 
     /// The address to the location where the value is stored with this name
     /// binding.
-    pub load_address: Address,
+    pub load_address: Address<T>,
 
     /// Determined if the underlying value is mutable or not.
     pub mutable: bool,
@@ -106,42 +107,42 @@ pub struct Wildcard;
 /// A pattern that cannot be refuted (always matches)
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
-pub enum Irrefutable {
-    Named(Named),
-    Tuple(Tuple<Irrefutable>),
-    Structural(Structural<Irrefutable>),
+pub enum Irrefutable<T: State> {
+    Named(Named<T>),
+    Tuple(Tuple<Irrefutable<T>>),
+    Structural(Structural<Irrefutable<T>>),
     Wildcard(Wildcard),
 }
 
 /// A pattern that can be refuted (may not always match)
 #[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Refutable {
+pub enum Refutable<T: State> {
     Boolean(Boolean),
     Numeric(Numeric),
-    Named(Named),
-    Tuple(Tuple<Refutable>),
-    Structural(Structural<Refutable>),
+    Named(Named<T>),
+    Tuple(Tuple<Refutable<T>>),
+    Structural(Structural<Refutable<T>>),
     Wildcard(Wildcard),
 }
 
-impl Pattern for Irrefutable {}
+impl<T: State> Pattern for Irrefutable<T> {}
 
-impl Pattern for Refutable {}
+impl<T: State> Pattern for Refutable<T> {}
 
 /// Contains all the named bindings in the patterns.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct NameBindingPoint {
+pub struct NameBindingPoint<T: State> {
     /// Mapping from the name of the binding to the named pattern.
-    pub named_patterns_by_name: HashMap<String, Named>,
+    pub named_patterns_by_name: HashMap<String, Named<T>>,
 }
 
-impl NameBindingPoint {
+impl<T: State> NameBindingPoint<T> {
     /// Adds all the named binding occurrences in the pattern to this binding
     /// point.
     pub fn add_irrefutable_binding(
         &mut self,
-        irrefutable: &Irrefutable,
+        irrefutable: &Irrefutable<T>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) {
         match irrefutable {

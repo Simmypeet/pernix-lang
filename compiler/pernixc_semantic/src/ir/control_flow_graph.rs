@@ -4,7 +4,10 @@ use std::collections::HashSet;
 
 use getset::{CopyGetters, Getters};
 
-use super::instruction::{self, Instruction};
+use super::{
+    instruction::{self, Instruction},
+    State,
+};
 use crate::arena::{Arena, ID};
 
 /// Represents a scope hierarchy that is used to determine the
@@ -24,25 +27,25 @@ pub struct Scope {
 
 /// Represents a list of instructions executed in sequence.
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
-pub struct Block {
+pub struct Block<T: State> {
     /// List of instructions that are executed in sequence.
     #[get = "pub"]
-    instructions: Vec<Instruction>,
+    instructions: Vec<Instruction<T>>,
     /// List of instructions that will never be executed.
     #[get = "pub"]
-    unreachables: Vec<Instruction>,
+    unreachables: Vec<Instruction<T>>,
     /// List of blocks that are successors of this block.
     #[get = "pub"]
-    successors: HashSet<ID<Block>>,
+    successors: HashSet<ID<Block<T>>>,
     /// List of blocks that are predecessors of this block.
     #[get = "pub"]
-    predecessors: HashSet<ID<Block>>,
+    predecessors: HashSet<ID<Block<T>>>,
     /// The scope in which this block is in.
     #[get_copy = "pub"]
     in_scope_id: ID<Scope>,
 }
 
-impl Block {
+impl<T: State> Block<T> {
     /// Returns `true` if any of the instructions that will be added in the
     /// future will be unreachable (never executed)
     #[must_use]
@@ -54,7 +57,7 @@ impl Block {
     }
 
     /// Adds a basic instruction to the block.
-    pub fn insert_basic(&mut self, instruction: instruction::Basic) {
+    pub fn insert_basic(&mut self, instruction: instruction::Basic<T>) {
         if self.is_unreachable() {
             self.unreachables.push(Instruction::Basic(instruction));
         } else {
@@ -77,16 +80,16 @@ impl Block {
     derive_more::Index,
     derive_more::IndexMut,
 )]
-pub struct ControlFlowGraph {
+pub struct ControlFlowGraph<T: State> {
     /// Contains all the blocks in the control flow graph.
     #[get = "pub"]
     #[index]
     #[index_mut]
-    blocks: Arena<Block>,
+    blocks: Arena<Block<T>>,
 
     /// The id of the entry block.
     #[get_copy = "pub"]
-    entry_block_id: ID<Block>,
+    entry_block_id: ID<Block<T>>,
 
     /// List of all the scopes in the control flow graph.
     #[get = "pub"]
@@ -97,21 +100,21 @@ pub struct ControlFlowGraph {
     starting_scope_id: ID<Scope>,
 }
 
-impl ControlFlowGraph {
+impl<T: State> ControlFlowGraph<T> {
     /// Gets the [`Block`] with the given ID.
     #[must_use]
-    pub fn get_block(&self, id: ID<Block>) -> Option<&Block> {
+    pub fn get_block(&self, id: ID<Block<T>>) -> Option<&Block<T>> {
         self.blocks.get(id)
     }
 
     /// Gets the mutable reference to the [`Block`] with the given ID.
     #[must_use]
-    pub fn get_block_mut(&mut self, id: ID<Block>) -> Option<&mut Block> {
+    pub fn get_block_mut(&mut self, id: ID<Block<T>>) -> Option<&mut Block<T>> {
         self.blocks.get_mut(id)
     }
 }
 
-impl Default for ControlFlowGraph {
+impl<T: State> Default for ControlFlowGraph<T> {
     fn default() -> Self {
         let mut scopes = Arena::new();
         let starting_scope_id = scopes.insert(Scope {

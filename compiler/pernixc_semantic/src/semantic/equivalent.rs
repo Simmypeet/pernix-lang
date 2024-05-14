@@ -5,51 +5,58 @@ use std::collections::HashSet;
 
 use getset::Getters;
 
-use super::term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term};
+use super::{
+    model::Model,
+    term::{
+        constant::Constant, lifetime::Lifetime, r#type::Type, ModelOf, Term,
+    },
+};
 
 /// A set of equivalent terms.
 #[derive(Debug, Clone, derive_more::Deref, derive_more::DerefMut)]
 pub struct Class<T>(HashSet<T>);
 
-pub(in crate::semantic) trait Get: Sized {
-    fn get_equivalent_classes(equivalent: &Equivalent) -> &Vec<Class<Self>>;
+pub(in crate::semantic) trait Get: Sized + ModelOf {
+    fn get_equivalent_classes(
+        equivalent: &Equivalent<Self::Model>,
+    ) -> &Vec<Class<Self>>;
 
     fn get_equivalent_classes_mut(
-        equivalent: &mut Equivalent,
+        equivalent: &mut Equivalent<Self::Model>,
     ) -> &mut Vec<Class<Self>>;
 }
 
-impl Get for Lifetime {
-    fn get_equivalent_classes(equivalent: &Equivalent) -> &Vec<Class<Self>> {
+impl<M: Model> Get for Lifetime<M> {
+    fn get_equivalent_classes(equivalent: &Equivalent<M>) -> &Vec<Class<Self>> {
         &equivalent.lifetime_classes
     }
 
     fn get_equivalent_classes_mut(
-        equivalent: &mut Equivalent,
+        equivalent: &mut Equivalent<M>,
     ) -> &mut Vec<Class<Self>> {
         &mut equivalent.lifetime_classes
     }
 }
 
-impl Get for Type {
-    fn get_equivalent_classes(equivalent: &Equivalent) -> &Vec<Class<Self>> {
+impl<M: Model> Get for Type<M> {
+    fn get_equivalent_classes(equivalent: &Equivalent<M>) -> &Vec<Class<Self>> {
         &equivalent.type_classes
     }
 
     fn get_equivalent_classes_mut(
-        equivalent: &mut Equivalent,
+        equivalent: &mut Equivalent<M>,
     ) -> &mut Vec<Class<Self>> {
         &mut equivalent.type_classes
     }
 }
 
-impl Get for Constant {
-    fn get_equivalent_classes(equivalent: &Equivalent) -> &Vec<Class<Self>> {
+impl<M: Model> Get for Constant<M> {
+    fn get_equivalent_classes(equivalent: &Equivalent<M>) -> &Vec<Class<Self>> {
         &equivalent.constant_classes
     }
 
     fn get_equivalent_classes_mut(
-        equivalent: &mut Equivalent,
+        equivalent: &mut Equivalent<M>,
     ) -> &mut Vec<Class<Self>> {
         &mut equivalent.constant_classes
     }
@@ -57,21 +64,21 @@ impl Get for Constant {
 
 /// Holds a set of equivalent classes for lifetimes, types, and constants.
 #[derive(Debug, Clone, Default, Getters)]
-pub struct Equivalent {
+pub struct Equivalent<M: Model> {
     /// The equivalent classes for lifetime terms
     #[get = "pub"]
-    lifetime_classes: Vec<Class<Lifetime>>,
+    lifetime_classes: Vec<Class<Lifetime<M>>>,
 
     /// The equivalent classes for type terms
     #[get = "pub"]
-    type_classes: Vec<Class<Type>>,
+    type_classes: Vec<Class<Type<M>>>,
 
     /// The equivalent classes for constant terms
     #[get = "pub"]
-    constant_classes: Vec<Class<Constant>>,
+    constant_classes: Vec<Class<Constant<M>>>,
 }
 
-impl Equivalent {
+impl<M: Model> Equivalent<M> {
     /// Creates a new empty equivalent set.
     #[must_use]
     pub fn new() -> Self {
@@ -85,7 +92,7 @@ impl Equivalent {
     /// Remove the class that contains the given term.
     ///
     /// This method returns the [`Class`] that contains the given term.
-    pub fn remove_matching_class<T: Term>(
+    pub fn remove_matching_class<T: Term<Model = M>>(
         &mut self,
         term: &T,
     ) -> Option<Class<T>> {
@@ -103,7 +110,7 @@ impl Equivalent {
     }
 
     /// Removes the class of the given kind at the given index.
-    pub fn remove_class<T: Term>(
+    pub fn remove_class<T: Term<Model = M>>(
         &mut self,
         class_index: usize,
     ) -> Option<Class<T>> {
@@ -117,7 +124,7 @@ impl Equivalent {
     }
 
     /// Inserts two equivalent terms into the equivalent set.
-    pub fn insert<T: Term>(&mut self, first: T, second: T) {
+    pub fn insert<T: Term<Model = M>>(&mut self, first: T, second: T) {
         let classes = T::get_equivalent_classes_mut(self);
 
         // find the index where it contains the first and second

@@ -19,9 +19,12 @@ pub struct Query<'a, T> {
 fn equals_by_unification<T: Term>(
     lhs: &T,
     rhs: &T,
-    environment: &Environment<impl State>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<bool, ExceedLimitError> {
     let Some(matching) = lhs.substructural_match(rhs) else {
@@ -52,9 +55,12 @@ fn equals_by_unification<T: Term>(
 fn equals_by_normalization<T: Term>(
     lhs: &T,
     rhs: &T,
-    environment: &Environment<impl State>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<bool, ExceedLimitError> {
     if let Some(lhs) = lhs.normalize(environment, limit)? {
@@ -75,9 +81,12 @@ fn equals_by_normalization<T: Term>(
 fn equals_without_mapping<T: Term>(
     lhs: &T,
     rhs: &T,
-    environment: &Environment<impl State>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<bool, ExceedLimitError> {
     if lhs == rhs
@@ -121,9 +130,12 @@ fn equals_without_mapping<T: Term>(
 pub fn equals<T: Term>(
     lhs: &T,
     rhs: &T,
-    environment: &Environment<impl State>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<bool, ExceedLimitError> {
     let query = Query { lhs, rhs };

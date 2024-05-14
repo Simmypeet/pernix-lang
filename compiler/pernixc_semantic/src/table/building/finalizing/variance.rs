@@ -7,6 +7,7 @@ use crate::{
     error::Error,
     semantic::{
         equality,
+        model::Default,
         session::{self, ExceedLimitError, Limit, Session},
         sub_term::{self, Location, TermLocation},
         term::{
@@ -32,24 +33,28 @@ struct TermCollector<
     'r,
     Term,
     T: State,
-    R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    R: Session<Lifetime<Default>>
+        + Session<Type<Default>>
+        + Session<Constant<Default>>,
 > {
     target: &'a Term,
     locations: Result<Vec<Vec<TermLocation>>, ExceedLimitError>,
 
-    environment: &'a Environment<'a, T>,
+    environment: &'a Environment<'a, Default, T>,
     limit: &'l mut Limit<'r, R>,
 }
 
 macro_rules! implements_visitor {
-    ($first_term:ident, $second_term:ident) => {
+    ($first_term:ty, $second_term:ty) => {
         impl<
                 'a,
                 'l,
                 'r,
                 'v,
                 T: State,
-                R: Session<Lifetime> + Session<Type> + Session<Constant>,
+                R: Session<Lifetime<Default>>
+                    + Session<Type<Default>>
+                    + Session<Constant<Default>>,
             > visitor::Recursive<'v, $first_term>
             for TermCollector<'a, 'l, 'r, $second_term, T, R>
         {
@@ -64,12 +69,12 @@ macro_rules! implements_visitor {
     };
 }
 
-implements_visitor!(Lifetime, Type);
-implements_visitor!(Lifetime, Constant);
-implements_visitor!(Type, Lifetime);
-implements_visitor!(Type, Constant);
-implements_visitor!(Constant, Lifetime);
-implements_visitor!(Constant, Type);
+implements_visitor!(Lifetime<Default>, Type<Default>);
+implements_visitor!(Lifetime<Default>, Constant<Default>);
+implements_visitor!(Type<Default>, Lifetime<Default>);
+implements_visitor!(Type<Default>, Constant<Default>);
+implements_visitor!(Constant<Default>, Lifetime<Default>);
+implements_visitor!(Constant<Default>, Type<Default>);
 
 impl<
         'a,
@@ -78,7 +83,10 @@ impl<
         'v,
         U: Term,
         T: State,
-        R: Session<U> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        R: Session<U>
+            + Session<Lifetime<Default>>
+            + Session<Type<Default>>
+            + Session<Constant<Default>>,
     > visitor::Recursive<'v, U> for TermCollector<'a, 'l, 'r, U, T, R>
 {
     fn visit(
@@ -113,17 +121,19 @@ impl<S: State> Table<S> {
     fn get_variance_for_locations<
         U: Term,
         T: State,
-        R: Session<Lifetime> + Session<Type> + Session<Constant>,
+        R: Session<Lifetime<Default>>
+            + Session<Type<Default>>
+            + Session<Constant<Default>>,
     >(
         &self,
-        respect_to_type: &Type,
+        respect_to_type: &Type<Default>,
         mut locations: Vec<TermLocation>,
     ) -> Result<Option<Variance>, ExceedLimitError>
     where
         for<'a, 'l, 'r, 'v> TermCollector<'a, 'l, 'r, U, T, R>:
-            visitor::Recursive<'v, Lifetime>
-                + visitor::Recursive<'v, Type>
-                + visitor::Recursive<'v, Constant>,
+            visitor::Recursive<'v, Lifetime<Default>>
+                + visitor::Recursive<'v, Type<Default>>
+                + visitor::Recursive<'v, Constant<Default>>,
     {
         let this_location = if locations.is_empty() {
             return Ok(Some(Variance::Bivariant));
@@ -357,17 +367,19 @@ impl<S: State> Table<S> {
 pub(super) fn get_variance_for<
     U: Term,
     T: State,
-    R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    R: Session<Lifetime<Default>>
+        + Session<Type<Default>>
+        + Session<Constant<Default>>,
 >(
     term: &U,
-    respect_to_type: &Type,
-    environment: &Environment<T>,
+    respect_to_type: &Type<Default>,
+    environment: &Environment<Default, T>,
     session: &mut Limit<R>,
 ) -> Result<Option<Variance>, ExceedLimitError>
 where
-    for<'a, 'l, 'r, 'v> TermCollector<'a, 'l, 'r, U, T, R>: visitor::Recursive<'v, Lifetime>
-        + visitor::Recursive<'v, Type>
-        + visitor::Recursive<'v, Constant>,
+    for<'a, 'l, 'r, 'v> TermCollector<'a, 'l, 'r, U, T, R>: visitor::Recursive<'v, Lifetime<Default>>
+        + visitor::Recursive<'v, Type<Default>>
+        + visitor::Recursive<'v, Constant<Default>>,
 {
     get_variance_for_internal(term, respect_to_type, true, environment, session)
 }
@@ -376,18 +388,20 @@ where
 fn get_variance_for_internal<
     U: Term,
     T: State,
-    R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    R: Session<Lifetime<Default>>
+        + Session<Type<Default>>
+        + Session<Constant<Default>>,
 >(
     term: &U,
-    respect_to_type: &Type,
+    respect_to_type: &Type<Default>,
     is_root: bool,
-    environment: &Environment<T>,
+    environment: &Environment<Default, T>,
     limit: &mut Limit<R>,
 ) -> Result<Option<Variance>, ExceedLimitError>
 where
-    for<'a, 'l, 'r, 'v> TermCollector<'a, 'l, 'r, U, T, R>: visitor::Recursive<'v, Lifetime>
-        + visitor::Recursive<'v, Type>
-        + visitor::Recursive<'v, Constant>,
+    for<'a, 'l, 'r, 'v> TermCollector<'a, 'l, 'r, U, T, R>: visitor::Recursive<'v, Lifetime<Default>>
+        + visitor::Recursive<'v, Type<Default>>
+        + visitor::Recursive<'v, Constant<Default>>,
 {
     let locations =
         get_all_term_locations(term, respect_to_type, environment, limit)?;
@@ -425,9 +439,9 @@ impl<T: State> Table<T> {
         &self,
         generic_parameters: &GenericParameters,
         generic_parameter_variances: &mut GenericParameterVariances,
-        active_premise: &Premise,
+        active_premise: &Premise<Default>,
         generic_id: GenericID,
-        type_usages: impl Iterator<Item = &'a Type> + Clone,
+        type_usages: impl Iterator<Item = &'a Type<Default>> + Clone,
         partial_variance: bool,
         _: &dyn Handler<Box<dyn Error>>,
     ) {
@@ -536,18 +550,20 @@ impl<T: State> Table<T> {
 fn get_all_term_locations<
     Term: visitor::Element,
     T: State,
-    R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    R: Session<Lifetime<Default>>
+        + Session<Type<Default>>
+        + Session<Constant<Default>>,
 >(
     target_term: &Term,
-    respect_to_type: &Type,
-    environment: &Environment<T>,
+    respect_to_type: &Type<Default>,
+    environment: &Environment<Default, T>,
     limit: &mut Limit<R>,
 ) -> Result<Vec<Vec<TermLocation>>, ExceedLimitError>
 where
     for<'a, 'l, 'r, 'v> TermCollector<'a, 'l, 'r, Term, T, R>:
-        visitor::Recursive<'v, Lifetime>
-            + visitor::Recursive<'v, Type>
-            + visitor::Recursive<'v, Constant>,
+        visitor::Recursive<'v, Lifetime<Default>>
+            + visitor::Recursive<'v, Type<Default>>
+            + visitor::Recursive<'v, Constant<Default>>,
 {
     let mut collector = TermCollector {
         target: target_term,

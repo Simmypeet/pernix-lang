@@ -6,6 +6,7 @@ use std::{
 };
 
 use super::{
+    model::Model,
     sub_term::TermLocation,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
@@ -24,17 +25,17 @@ use crate::{
 /// Represents an instantiation of generic parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[allow(missing_docs)]
-pub struct Instantiation {
-    pub lifetimes: HashMap<Lifetime, Lifetime>,
-    pub types: HashMap<Type, Type>,
-    pub constants: HashMap<Constant, Constant>,
+pub struct Instantiation<M: Model> {
+    pub lifetimes: HashMap<Lifetime<M>, Lifetime<M>>,
+    pub types: HashMap<Type<M>, Type<M>>,
+    pub constants: HashMap<Constant<M>, Constant<M>>,
 }
 
-struct Instantiater<'a> {
-    substitution: &'a Instantiation,
+struct Instantiater<'a, M: Model> {
+    substitution: &'a Instantiation<M>,
 }
 
-impl<'a, T: Term> MutableRecursive<T> for Instantiater<'a> {
+impl<'a, T: Term> MutableRecursive<T> for Instantiater<'a, T::Model> {
     fn visit(
         &mut self,
         term: &mut T,
@@ -51,7 +52,10 @@ impl<'a, T: Term> MutableRecursive<T> for Instantiater<'a> {
 }
 
 /// Applies the given substitution to the term.
-pub fn instantiate(term: &mut impl Term, instantiation: &Instantiation) {
+pub fn instantiate<T: Term>(
+    term: &mut T,
+    instantiation: &Instantiation<T::Model>,
+) {
     let mut instantiater = Instantiater { substitution: instantiation };
     visitor::accept_recursive_mut(term, &mut instantiater);
 }
@@ -84,9 +88,9 @@ pub enum FromGenericArgumentsError {
     MismatchedGenericParameterCount(MismatchedGenericParameterCount),
 }
 
-impl Instantiation {
+impl<M: Model> Instantiation<M> {
     fn append_from_arguments<
-        T: Term + From<MemberID<ID<T::GenericParameter>, GenericID>>,
+        T: Term<Model = M> + From<MemberID<ID<T::GenericParameter>, GenericID>>,
     >(
         &mut self,
         terms: impl Iterator<Item = T>,
@@ -118,7 +122,7 @@ impl Instantiation {
     /// might be partially modified.
     pub fn append_from_generic_arguments(
         &mut self,
-        generic_arguments: GenericArguments,
+        generic_arguments: GenericArguments<M>,
         generic_id: GenericID,
         generic_parameters: &GenericParameters,
     ) -> Result<(), FromGenericArgumentsError> {
@@ -164,7 +168,7 @@ impl Instantiation {
     ///
     /// # Errors
     pub fn from_generic_arguments(
-        generic_arguments: GenericArguments,
+        generic_arguments: GenericArguments<M>,
         generic_id: GenericID,
         generic_parameters: &GenericParameters,
     ) -> Result<Self, MismatchedGenericParameterCount> {

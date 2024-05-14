@@ -2,6 +2,7 @@ use super::Satisfiability;
 use crate::{
     semantic::{
         get_equivalences,
+        model::Model,
         session::{self, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor, Environment, Satisfied,
@@ -15,10 +16,11 @@ struct Visitor<
     'r,
     'l,
     T: State,
-    R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
+    M: Model,
 > {
     definite: Result<bool, ExceedLimitError>,
-    environment: &'a Environment<'a, T>,
+    environment: &'a Environment<'a, M, T>,
     limit: &'l mut Limit<'r, R>,
 }
 
@@ -29,8 +31,11 @@ impl<
         'v,
         U: Term,
         T: State,
-        R: Session<U> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, R>
+        R: Session<U>
+            + Session<Lifetime<U::Model>>
+            + Session<Type<U::Model>>
+            + Session<Constant<U::Model>>,
+    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, R, U::Model>
 {
     fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
         match definite(term, self.environment, self.limit) {
@@ -57,9 +62,12 @@ pub struct Query<'a, T>(pub &'a T);
 /// See [`ExceedLimitError`] for more information.
 pub fn definite<T: Term>(
     term: &T,
-    environment: &Environment<impl State>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<bool, ExceedLimitError> {
     let satisfiability = term.definite_satisfiability();

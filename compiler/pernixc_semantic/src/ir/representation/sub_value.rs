@@ -11,6 +11,7 @@ use crate::{
             register::{Register, TupleElement},
             Value,
         },
+        State,
     },
 };
 
@@ -18,12 +19,12 @@ use crate::{
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
-pub enum GetSubValuesError {
+pub enum GetSubValuesError<T: State> {
     #[error("contains an invalid register ID: {0:?}")]
-    InvalidRegisterID(ID<Register>),
+    InvalidRegisterID(ID<Register<T>>),
 }
 
-impl Representation {
+impl<T: State> Representation<T> {
     /// Gets all the sub-values of the given address recursively.
     ///
     /// # Errors
@@ -31,8 +32,8 @@ impl Representation {
     /// See [`GetSubValuesError`] for the possible errors that can occur.
     pub fn sub_values_of_address<'a>(
         &'a self,
-        address: &'a Address,
-    ) -> Result<HashSet<&'a Value>, GetSubValuesError> {
+        address: &'a Address<T>,
+    ) -> Result<HashSet<&'a Value<T>>, GetSubValuesError<T>> {
         match address {
             Address::Parameter(_) | Address::Alloca(_) => Ok(HashSet::new()),
 
@@ -64,8 +65,8 @@ impl Representation {
     /// See [`GetSubValuesError`] for the possible errors that can occur.
     pub fn sub_values_of_register(
         &self,
-        register: ID<Register>,
-    ) -> Result<HashSet<&Value>, GetSubValuesError> {
+        register: ID<Register<T>>,
+    ) -> Result<HashSet<&Value<T>>, GetSubValuesError<T>> {
         let register = self
             .registers
             .get(register)

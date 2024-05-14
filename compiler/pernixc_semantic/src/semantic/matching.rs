@@ -1,6 +1,7 @@
 //!
 
 use super::{
+    model::Model,
     sub_term::SubTerm,
     term::{constant::Constant, lifetime::Lifetime, r#type::Type},
 };
@@ -25,6 +26,7 @@ pub trait Match: Sized + SubTerm {
         other: &Self,
     ) -> Option<
         Substructural<
+            Self::Model,
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -34,6 +36,7 @@ pub trait Match: Sized + SubTerm {
     #[doc(hidden)]
     fn get_substructural(
         substructural: &Substructural<
+            Self::Model,
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -43,6 +46,7 @@ pub trait Match: Sized + SubTerm {
     #[doc(hidden)]
     fn get_substructural_mut(
         substructural: &mut Substructural<
+            Self::Model,
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -70,16 +74,17 @@ pub struct Matching<T, Location> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub struct Substructural<
+    M: Model,
     SubLifetimeLocation,
     SubTypeLocation,
     SubConstantLocation,
 > {
-    pub lifetimes: Vec<Matching<Lifetime, SubLifetimeLocation>>,
-    pub types: Vec<Matching<Type, SubTypeLocation>>,
-    pub constants: Vec<Matching<Constant, SubConstantLocation>>,
+    pub lifetimes: Vec<Matching<Lifetime<M>, SubLifetimeLocation>>,
+    pub types: Vec<Matching<Type<M>, SubTypeLocation>>,
+    pub constants: Vec<Matching<Constant<M>, SubConstantLocation>>,
 }
 
-impl<L, T, C> Default for Substructural<L, T, C> {
+impl<M: Model, L, T, C> Default for Substructural<M, L, T, C> {
     fn default() -> Self {
         Self { lifetimes: Vec::new(), types: Vec::new(), constants: Vec::new() }
     }

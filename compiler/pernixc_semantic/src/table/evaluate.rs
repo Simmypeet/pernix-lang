@@ -4,7 +4,11 @@ use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree::expression::Expression;
 
 use super::{State, Table};
-use crate::{error, semantic::term::constant::Constant, symbol::GlobalID};
+use crate::{
+    error,
+    semantic::{model::Default, term::constant::Constant},
+    symbol::GlobalID,
+};
 
 /// The error type for evaluating compile-time-constant expressions.
 #[derive(
@@ -33,7 +37,7 @@ impl<S: State> Table<S> {
         _: &Expression,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Constant, Error> {
+    ) -> Result<Constant<Default>, Error> {
         todo!()
     }
 }

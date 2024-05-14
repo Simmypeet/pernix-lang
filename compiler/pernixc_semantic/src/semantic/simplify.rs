@@ -1,6 +1,9 @@
 //! Contains the definition of [`simplify`].
+use std::marker::PhantomData;
+
 use super::{
     equality,
+    model::Model,
     session::{Cached, ExceedLimitError, Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     visitor::Mutable,
@@ -17,11 +20,13 @@ struct Visitor<
     'r,
     'l,
     T: State,
-    R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
+    M: Model,
 > {
     result: Result<(), ExceedLimitError>,
-    environment: &'a Environment<'a, T>,
+    environment: &'a Environment<'a, M, T>,
     limit: &'l mut Limit<'r, R>,
+    model: PhantomData<M>,
 }
 
 impl<
@@ -30,8 +35,11 @@ impl<
         'l,
         U: Term,
         T: State,
-        R: Session<Lifetime> + Session<Type> + Session<Constant> + Session<U>,
-    > Mutable<U> for Visitor<'a, 'r, 'l, T, R>
+        R: Session<Lifetime<U::Model>>
+            + Session<Type<U::Model>>
+            + Session<Constant<U::Model>>
+            + Session<U>,
+    > Mutable<U> for Visitor<'a, 'r, 'l, T, R, U::Model>
 {
     fn visit(
         &mut self,
@@ -61,9 +69,12 @@ impl<
 
 fn simplify_internal<T: Term>(
     term: &T,
-    environment: &Environment<impl State>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<Option<T>, ExceedLimitError> {
     match limit.mark_as_in_progress(Query(term), ())? {
@@ -83,9 +94,9 @@ fn simplify_internal<T: Term>(
                 .iter()
                 .filter_map(|x| T::as_trait_member_equality_predicate(x))
             {
-                let trait_member = T::from(equivalent.trait_member.clone());
+                let trait_member = T::from(equivalent.lhs.clone());
                 if equality::equals(&trait_member, term, environment, limit)? {
-                    equivalents.push(equivalent.equivalent.clone());
+                    equivalents.push(equivalent.rhs.clone());
                 }
             }
         }
@@ -113,7 +124,8 @@ fn simplify_internal<T: Term>(
     .unwrap_or_else(|| term.clone());
 
     // simplify the sub-terms
-    let mut visitor = Visitor { result: Ok(()), environment, limit };
+    let mut visitor =
+        Visitor { result: Ok(()), environment, limit, model: PhantomData };
     let _ = simplified.accept_one_level_mut(&mut visitor);
     visitor.result?;
 
@@ -128,9 +140,12 @@ fn simplify_internal<T: Term>(
 /// See [`ExceedLimitError`] for more information.
 pub fn simplify<T: Term>(
     term: &T,
-    environment: &Environment<impl State>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<T, ExceedLimitError> {
     simplify_internal(term, environment, limit)

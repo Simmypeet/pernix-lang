@@ -4,6 +4,7 @@ use crate::{
         get_equivalences,
         instantiation::{self, Instantiation},
         mapping::Mapping,
+        model::Model,
         predicate::Satisfiability,
         session::{Cached, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
@@ -15,25 +16,25 @@ use crate::{
 
 /// A query for checking [`Outlives`] predicate satisfiability.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Query<'a, T> {
+pub struct Query<'a, T: Term> {
     /// The term that must outlive the bound.
     pub operand: &'a T,
 
     /// The lifetime that the term must outlive.
-    pub bound: &'a Lifetime,
+    pub bound: &'a Lifetime<T::Model>,
 }
 
 /// A predicate that a term outlives a lifetime.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Outlives<T> {
+pub struct Outlives<T: Term> {
     /// The term that must outlive the bound.
     pub operand: T,
 
     /// The lifetime that the term must outlive.
-    pub bound: Lifetime,
+    pub bound: Lifetime<T::Model>,
 }
 
-impl<S: State, T: table::Display<S>> table::Display<S> for Outlives<T> {
+impl<S: State, T: table::Display<S> + Term> table::Display<S> for Outlives<T> {
     fn fmt(
         &self,
         table: &Table<S>,
@@ -57,7 +58,7 @@ impl<T: Term> Outlives<T> {
 
     /// Applies a instantiation to the [`Outlives::operand`] and
     /// [`Outlives::bound`].
-    pub fn instantiate(&mut self, instantiation: &Instantiation) {
+    pub fn instantiate(&mut self, instantiation: &Instantiation<T::Model>) {
         instantiation::instantiate(&mut self.operand, instantiation);
         instantiation::instantiate(&mut self.bound, instantiation);
     }
@@ -68,11 +69,12 @@ struct Visitor<
     'r,
     'l,
     T: State,
-    R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
+    M: Model,
 > {
     outlives: Result<bool, ExceedLimitError>,
-    bound: &'a Lifetime,
-    environment: &'a Environment<'a, T>,
+    bound: &'a Lifetime<M>,
+    environment: &'a Environment<'a, M, T>,
     limit: &'l mut Limit<'r, R>,
 }
 
@@ -83,8 +85,11 @@ impl<
         'v,
         U: Term,
         T: State,
-        R: Session<U> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, R>
+        R: Session<U>
+            + Session<Lifetime<U::Model>>
+            + Session<Type<U::Model>>
+            + Session<Constant<U::Model>>,
+    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, R, U::Model>
 {
     fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
         match Outlives::satisfies(
@@ -105,27 +110,27 @@ impl<
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct OutlivesUnifyingConfig;
 
-impl unification::Config for OutlivesUnifyingConfig {
+impl<M: Model> unification::Config<M> for OutlivesUnifyingConfig {
     fn lifetime_unifiable(
         &mut self,
-        _: &Lifetime,
-        _: &Lifetime,
+        _: &Lifetime<M>,
+        _: &Lifetime<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(true)
     }
 
     fn type_unifiable(
         &mut self,
-        _: &Type,
-        _: &Type,
+        _: &Type<M>,
+        _: &Type<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(false)
     }
 
     fn constant_unifiable(
         &mut self,
-        _: &Constant,
-        _: &Constant,
+        _: &Constant<M>,
+        _: &Constant<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(false)
     }
@@ -134,9 +139,12 @@ impl unification::Config for OutlivesUnifyingConfig {
 impl<T: Term> Outlives<T> {
     fn satisfies_by_lifetime_matching(
         unification: Unification<T>,
-        environment: &Environment<impl State>,
+        environment: &Environment<T::Model, impl State>,
         limit: &mut Limit<
-            impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+            impl Session<T>
+                + Session<Lifetime<T::Model>>
+                + Session<Type<T::Model>>
+                + Session<Constant<T::Model>>,
         >,
     ) -> Result<bool, ExceedLimitError> {
         let mapping = Mapping::from_unification(unification);
@@ -162,10 +170,13 @@ impl<T: Term> Outlives<T> {
     /// See [`ExceedLimitError`] for more information.
     pub fn satisfies(
         operand: &T,
-        bound: &Lifetime,
-        environment: &Environment<impl State>,
+        bound: &Lifetime<T::Model>,
+        environment: &Environment<T::Model, impl State>,
         limit: &mut Limit<
-            impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+            impl Session<T>
+                + Session<Lifetime<T::Model>>
+                + Session<Type<T::Model>>
+                + Session<Constant<T::Model>>,
         >,
     ) -> Result<bool, ExceedLimitError> {
         let satisfiability =

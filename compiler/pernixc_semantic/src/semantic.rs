@@ -5,6 +5,7 @@ use getset::{Getters, MutGetters};
 
 use self::{
     equivalent::Equivalent,
+    model::Model,
     predicate::Predicate,
     session::{ExceedLimitError, Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
@@ -21,6 +22,8 @@ pub mod equivalent;
 pub mod instantiation;
 pub mod mapping;
 pub mod matching;
+pub mod model;
+pub mod normalizer;
 pub mod order;
 pub mod predicate;
 pub mod session;
@@ -61,31 +64,29 @@ pub enum TraitContext {
 
 /// The foundation truth used to derive further arguments.
 #[derive(Debug, Clone, Default, Getters, MutGetters)]
-pub struct Premise {
+pub struct Premise<M: Model> {
     /// Contains the equivalent classes for lifetimes, types, and constants.
     #[get = "pub"]
-    equivalent: Equivalent,
+    equivalent: Equivalent<M>,
 
     /// The list of predicates
     #[get = "pub"]
-    predicates: Vec<Predicate>,
+    predicates: Vec<Predicate<M>>,
 
     /// The environment of the premise.
     pub trait_context: TraitContext,
 }
 
-impl Premise {
+impl<M: Model> Premise<M> {
     /// Appends the given predicates to the premise.
     pub fn append_from_predicates(
         &mut self,
-        predicates: impl Iterator<Item = Predicate>,
+        predicates: impl Iterator<Item = Predicate<M>>,
     ) {
         for predicate in predicates {
             if let Predicate::TraitTypeEquality(eq) = &predicate {
-                self.equivalent.insert(
-                    Type::TraitMember(eq.trait_member.clone()),
-                    eq.equivalent.clone(),
-                );
+                self.equivalent
+                    .insert(Type::TraitMember(eq.lhs.clone()), eq.rhs.clone());
             }
 
             self.predicates.push(predicate);
@@ -94,7 +95,7 @@ impl Premise {
 
     /// Creates a new [`Premise`] with the given predicates.
     pub fn from_predicates(
-        predicates: impl Iterator<Item = Predicate>,
+        predicates: impl Iterator<Item = Predicate<M>>,
     ) -> Self {
         let mut premise = Self::default();
         premise.append_from_predicates(predicates);
@@ -104,9 +105,9 @@ impl Premise {
 
 /// A structure that contains the environment of the semantic logic.
 #[derive(Debug, Clone, Copy)]
-pub struct Environment<'a, T: State> {
+pub struct Environment<'a, M: Model, T: State> {
     /// The premise of the semantic logic.
-    pub premise: &'a Premise,
+    pub premise: &'a Premise<M>,
 
     /// The table that contains the information of symbols.
     pub table: &'a Table<T>,
@@ -121,9 +122,12 @@ pub struct Environment<'a, T: State> {
 /// See [`ExceedLimitError`] for more information.
 pub fn get_equivalences<T: Term>(
     term: &T,
-    environment: &Environment<impl State>,
+    environment: &Environment<T::Model, impl State>,
     limit: &mut Limit<
-        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        impl Session<T>
+            + Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
     >,
 ) -> Result<Vec<T>, ExceedLimitError> {
     let mut equivalences = (term.normalize(environment, limit)?)

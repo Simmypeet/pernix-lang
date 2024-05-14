@@ -13,7 +13,7 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    semantic::{predicate::Predicate, term::r#type::Type},
+    semantic::{model::Model, predicate::Predicate, term::r#type::Type},
     symbol::{
         Accessibility, AdtID, ConstantParameterID, Field, GenericID,
         GenericKind, GenericParameter, GlobalID, LocalGenericParameterID,
@@ -234,6 +234,49 @@ impl<T: State> Display<T> for ExpectModule {
             span: &self.module_path,
             help_display: Option::<i32>::None,
         })?;
+
+        Ok(())
+    }
+}
+
+/// Calculating the specialization between the implementations was undecidable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UndecidableImplementationSpecialization {
+    /// The id of the first implementation.
+    pub first_implementation_id: TraitImplementationKindID,
+
+    /// The id of the second implementation.
+    pub second_implementation_id: TraitImplementationKindID,
+}
+
+impl<T: State> Display<T> for UndecidableImplementationSpecialization {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let first_sym = table
+            .get_global(self.first_implementation_id.into())
+            .ok_or(fmt::Error)?;
+        let second_sym = table
+            .get_global(self.second_implementation_id.into())
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "overflow calculating the specialization between these \
+                      two implementations",
+        })?;
+
+        if let Some(first_span) = first_sym.span() {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span: first_span,
+                help_display: Some("first implementation defined here"),
+            })?;
+        }
+
+        if let Some(second_span) = second_sym.span() {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span: second_span,
+                help_display: Some("second implementation defined here"),
+            })?;
+        }
 
         Ok(())
     }
@@ -795,18 +838,18 @@ impl<T: State> Display<T> for ExpectLifetime {
 /// The satisfiability of the predicate was undecidable (takes too long to
 /// solve).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UndecidablePredicate {
+pub struct UndecidablePredicate<M: Model> {
     /// The span where the predicate satisfiability was undecidable.
     pub instantiation_span: Span,
 
     /// The predicate that was undecidable.
-    pub predicate: Predicate,
+    pub predicate: Predicate<M>,
 
     /// The span where the predicate is defined.
     pub predicate_declaration_span: Option<Span>,
 }
 
-impl<T: State> Display<T> for UndecidablePredicate {
+impl<T: State, M: Model> Display<T> for UndecidablePredicate<M> {
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
@@ -1619,9 +1662,9 @@ impl<T: State> Display<T> for UnimplementedTraitMembers {
 
 /// The bound is not satisfied upon instantiation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnsatisifedPredicate {
+pub struct UnsatisifedPredicate<M: Model> {
     /// The unsatisfied bound.
-    pub predicate: Predicate,
+    pub predicate: Predicate<M>,
 
     /// The span of the instantiation that causes the bound check.
     pub instantiation_span: Span,
@@ -1630,7 +1673,7 @@ pub struct UnsatisifedPredicate {
     pub predicate_declaration_span: Option<Span>,
 }
 
-impl<S: State> Display<S> for UnsatisifedPredicate {
+impl<S: State, M: Model> Display<S> for UnsatisifedPredicate<M> {
     fn fmt(&self, table: &Table<S>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
@@ -1707,18 +1750,18 @@ impl<T: State> Display<T> for DuplicatedField {
 /// The trait implementation member does not include the predicate defined in
 /// the trait member.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnsatisfiedTraitMemberPredicate {
+pub struct UnsatisfiedTraitMemberPredicate<M: Model> {
     /// The ID of the trait implementation member.
     pub trait_implementation_id: TraitImplementationMemberID,
 
     /// The predicate that is missing in the trait implementation member.
-    pub predicate: Predicate,
+    pub predicate: Predicate<M>,
 
     /// The span of the predicate declaration.
     pub predicate_span: Option<Span>,
 }
 
-impl<T: State> Display<T> for UnsatisfiedTraitMemberPredicate {
+impl<T: State, M: Model> Display<T> for UnsatisfiedTraitMemberPredicate<M> {
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Some(trait_implementation_symbol) =
             table.get_global(self.trait_implementation_id.into())
@@ -1767,19 +1810,19 @@ impl<T: State> Display<T> for UnsatisfiedTraitMemberPredicate {
 /// The trait implementation member contains extraneous predicate--a predicate
 /// that is not defined in the trait member.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExtraneousTraitMemberPredicate {
+pub struct ExtraneousTraitMemberPredicate<M: Model> {
     /// The ID of the trait implementation member containing the extraneous
     /// predicate.
     pub trait_implementation_member_id: TraitImplementationMemberID,
 
     /// The extraneous predicate.
-    pub predicate: Predicate,
+    pub predicate: Predicate<M>,
 
     /// The declaration span of the extraneous predicate.
     pub predicate_span: Option<Span>,
 }
 
-impl<T: State> Display<T> for ExtraneousTraitMemberPredicate {
+impl<T: State, M: Model> Display<T> for ExtraneousTraitMemberPredicate<M> {
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Some(trait_implementation_symbol) =
             table.get_global(self.trait_implementation_member_id.into())
@@ -1848,18 +1891,18 @@ pub enum PatternBindingType {
 
 /// Pattern expects a different kind of binding.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MismatchedPatternBindingType {
+pub struct MismatchedPatternBindingType<M: Model> {
     /// The expected binding type of the pattern.
     pub expected_bindnig_type: PatternBindingType,
 
     /// The found type of the pattern.
-    pub found_type: Type,
+    pub found_type: Type<M>,
 
     /// The span of the pattern.
     pub pattern_span: Span,
 }
 
-impl<T: State> Display<T> for MismatchedPatternBindingType {
+impl<T: State, M: Model> Display<T> for MismatchedPatternBindingType<M> {
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,

@@ -2,7 +2,7 @@
 
 use enum_as_inner::EnumAsInner;
 
-use super::{alloca::Alloca, value::Value};
+use super::{alloca::Alloca, value::Value, State};
 use crate::{
     arena::ID,
     symbol::{self, Parameter},
@@ -10,9 +10,9 @@ use crate::{
 
 /// The address points to a field in a struct.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Field {
+pub struct Field<T: State> {
     /// The address to the struct.
-    pub struct_address: Box<Address>,
+    pub struct_address: Box<Address<T>>,
 
     /// The field that the address points to.
     pub id: ID<symbol::Field>,
@@ -32,9 +32,9 @@ pub enum Offset {
 
 /// The address points to an element in a tuple.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tuple {
+pub struct Tuple<T: State> {
     /// The address to the tuple.
-    pub tuple_address: Box<Address>,
+    pub tuple_address: Box<Address<T>>,
 
     /// The offset of the element to access.
     pub offset: Offset,
@@ -43,12 +43,12 @@ pub struct Tuple {
 /// Represents an address to a particular location in memory.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
-pub enum Address {
+pub enum Address<T: State> {
     Parameter(ID<Parameter>),
-    Alloca(ID<Alloca>),
-    Field(Field),
-    Tuple(Tuple),
+    Alloca(ID<Alloca<T>>),
+    Field(Field<T>),
+    Tuple(Tuple<T>),
 
     /// The address is stored in a value.
-    Value(Value),
+    Value(Value<T>),
 }

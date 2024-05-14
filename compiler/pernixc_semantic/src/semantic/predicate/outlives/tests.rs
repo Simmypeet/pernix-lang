@@ -10,7 +10,7 @@ use proptest::{
 use crate::{
     semantic::{
         equality,
-        predicate::{Outlives, Predicate, TraitMemberEquality},
+        predicate::{Equality, Outlives, Predicate},
         session::{self, ExceedLimitError, Limit, Session},
         term::{
             constant::Constant,
@@ -70,7 +70,7 @@ pub struct ByEquality<T: Term> {
 impl<T: Term> Property<T> for ByEquality<T>
 where
     session::Default: Session<T>,
-    TraitMemberEquality<T>: Into<Predicate>,
+    Equality<T::TraitMember, T>: Into<Predicate>,
 {
     fn apply(
         &self,
@@ -87,9 +87,9 @@ where
         }
 
         premise.append_from_predicates(std::iter::once(
-            TraitMemberEquality {
-                trait_member: self.equality.clone(),
-                equivalent: self.property.generate().0,
+            Equality {
+                lhs: self.equality.clone(),
+                rhs: self.property.generate().0,
             }
             .into(),
         ));
