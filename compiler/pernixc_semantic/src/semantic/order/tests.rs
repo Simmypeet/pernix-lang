@@ -10,6 +10,8 @@ use proptest::{
 use super::{Order, OrderUnifyingConfig};
 use crate::{
     semantic::{
+        model::Default,
+        normalizer::NoOp,
         session::{self, Limit, Session},
         term::{
             constant::Constant,
@@ -84,10 +86,14 @@ impl<T: Clone + Debug + 'static> Property<T> for Incompatible<T> {
     fn get_specialization_point(&self) -> Option<isize> { None }
 }
 
-impl<T: Debug + Arbitrary<Strategy = BoxedStrategy<T>> + Term + 'static>
-    Arbitrary for Incompatible<T>
+impl<
+        T: Debug
+            + Arbitrary<Strategy = BoxedStrategy<T>>
+            + Term<Model = Default>
+            + 'static,
+    > Arbitrary for Incompatible<T>
 where
-    session::Default: Session<T>,
+    session::Default<Default>: Session<T>,
 {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
@@ -105,6 +111,7 @@ where
                         &Environment {
                             table: &Table::<State>::default(),
                             premise: &Premise::default(),
+                            normalizer: &NoOp,
                         },
                         &mut Limit::new(&mut session::Default::default()),
                     )
@@ -250,32 +257,32 @@ impl<
     }
 }
 
-impl Arbitrary for Box<dyn Property<Type>> {
+impl Arbitrary for Box<dyn Property<Type<Default>>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            4 => Matching::<Type>::arbitrary().prop_map(|x| Box::new(x) as _),
-            1 => Incompatible::<Type>::arbitrary().prop_map(|x| Box::new(x) as _),
-            4 => Unified::<Type, TypeParameterID, r#type::TraitMember>::arbitrary()
+            4 => Matching::<Type<_>>::arbitrary().prop_map(|x| Box::new(x) as _),
+            1 => Incompatible::<Type<_>>::arbitrary().prop_map(|x| Box::new(x) as _),
+            4 => Unified::<Type<_>, TypeParameterID, r#type::TraitMember<_>>::arbitrary()
                 .prop_map(|x| Box::new(x) as _),
-            4 => Ambiguous::<TypeParameterID, r#type::TraitMember>::arbitrary().prop_map(|x| Box::new(x) as _),
+            4 => Ambiguous::<TypeParameterID, r#type::TraitMember<_>>::arbitrary().prop_map(|x| Box::new(x) as _),
         ].prop_recursive(3, 12, 4, move |inner| {
-            Congruent::arbitrary_with((Some(inner), Some(Box::<dyn Property<Constant>>::arbitrary()))).prop_map(|x| Box::new(x) as _)
+            Congruent::arbitrary_with((Some(inner), Some(Box::<dyn Property<Constant<_>>>::arbitrary()))).prop_map(|x| Box::new(x) as _)
         })
         .boxed()
     }
 }
 
-impl Arbitrary for Box<dyn Property<Constant>> {
+impl Arbitrary for Box<dyn Property<Constant<Default>>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            4 => Matching::<Constant>::arbitrary().prop_map(|x| Box::new(x) as _),
-            1 => Incompatible::<Constant>::arbitrary().prop_map(|x| Box::new(x) as _),
+            4 => Matching::<Constant<_>>::arbitrary().prop_map(|x| Box::new(x) as _),
+            1 => Incompatible::<Constant<_>>::arbitrary().prop_map(|x| Box::new(x) as _),
         ]
         .boxed()
     }
@@ -284,13 +291,15 @@ impl Arbitrary for Box<dyn Property<Constant>> {
 #[derive(Debug)]
 struct Congruent<ID> {
     id: ID,
-    lifetimes: Vec<(Lifetime, Lifetime)>,
-    types: Vec<Box<dyn Property<Type>>>,
-    constants: Vec<Box<dyn Property<Constant>>>,
+    lifetimes: Vec<(Lifetime<Default>, Lifetime<Default>)>,
+    types: Vec<Box<dyn Property<Type<Default>>>>,
+    constants: Vec<Box<dyn Property<Constant<Default>>>>,
 }
 
-impl<T: From<Symbol<ID>> + 'static + Debug, ID: Debug + Clone + 'static>
-    Property<T> for Congruent<ID>
+impl<
+        T: From<Symbol<Default, ID>> + 'static + Debug,
+        ID: Debug + Clone + 'static,
+    > Property<T> for Congruent<ID>
 {
     fn generate(&self) -> (T, T) {
         let mut lifetime_lhs = Vec::new();
@@ -361,15 +370,16 @@ impl<ID: Debug + Arbitrary<Strategy = BoxedStrategy<ID>> + 'static> Arbitrary
 {
     type Strategy = BoxedStrategy<Self>;
     type Parameters = (
-        Option<BoxedStrategy<Box<dyn Property<Type>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Constant>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Constant<Default>>>>>,
     );
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let lifetimes = Lifetime::arbitrary();
-        let types = args.0.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary);
+        let types =
+            args.0.unwrap_or_else(Box::<dyn Property<Type<_>>>::arbitrary);
         let constants =
-            args.1.unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary);
+            args.1.unwrap_or_else(Box::<dyn Property<Constant<_>>>::arbitrary);
 
         (
             ID::arbitrary(),
@@ -395,8 +405,8 @@ proptest! {
     #[test]
     fn property_based_testing(
         lifetimes in proptest::collection::vec((Lifetime::arbitrary(), Lifetime::arbitrary()), 0..=2),
-        types in proptest::collection::vec(Box::<dyn Property<Type>>::arbitrary(), 0..=2),
-        constants in proptest::collection::vec(Box::<dyn Property<Constant>>::arbitrary(), 0..=2),
+        types in proptest::collection::vec(Box::<dyn Property<Type<_>>>::arbitrary(), 0..=2),
+        constants in proptest::collection::vec(Box::<dyn Property<Constant<_>>>::arbitrary(), 0..=2),
     ) {
         let mut lifetime_lhs = Vec::new();
         let mut lifetime_rhs = Vec::new();
@@ -455,6 +465,7 @@ proptest! {
             &Environment {
                 table: &Table::<State>::default(),
                 premise: &Premise::default(),
+                normalizer: &NoOp,
             },
             &mut Limit::new(&mut session::Default::default()),
         )?;

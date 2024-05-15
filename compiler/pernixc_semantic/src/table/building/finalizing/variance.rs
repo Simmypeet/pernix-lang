@@ -8,6 +8,7 @@ use crate::{
     semantic::{
         equality,
         model::Default,
+        normalizer::NoOp,
         session::{self, ExceedLimitError, Limit, Session},
         sub_term::{self, Location, TermLocation},
         term::{
@@ -40,7 +41,7 @@ struct TermCollector<
     target: &'a Term,
     locations: Result<Vec<Vec<TermLocation>>, ExceedLimitError>,
 
-    environment: &'a Environment<'a, Default, T>,
+    environment: &'a Environment<'a, Default, T, NoOp>,
     limit: &'l mut Limit<'r, R>,
 }
 
@@ -81,7 +82,7 @@ impl<
         'l,
         'r,
         'v,
-        U: Term,
+        U: Term<Model = Default>,
         T: State,
         R: Session<U>
             + Session<Lifetime<Default>>
@@ -373,7 +374,7 @@ pub(super) fn get_variance_for<
 >(
     term: &U,
     respect_to_type: &Type<Default>,
-    environment: &Environment<Default, T>,
+    environment: &Environment<Default, T, NoOp>,
     session: &mut Limit<R>,
 ) -> Result<Option<Variance>, ExceedLimitError>
 where
@@ -395,7 +396,7 @@ fn get_variance_for_internal<
     term: &U,
     respect_to_type: &Type<Default>,
     is_root: bool,
-    environment: &Environment<Default, T>,
+    environment: &Environment<Default, T, NoOp>,
     limit: &mut Limit<R>,
 ) -> Result<Option<Variance>, ExceedLimitError>
 where
@@ -457,7 +458,11 @@ impl<T: State> Table<T> {
                 match get_variance_for(
                     &lifetime_term,
                     ty,
-                    &Environment { premise: active_premise, table: self },
+                    &Environment {
+                        premise: active_premise,
+                        table: self,
+                        normalizer: &NoOp,
+                    },
                     &mut Limit::new(&mut session),
                 ) {
                     Ok(variance) => {
@@ -505,7 +510,11 @@ impl<T: State> Table<T> {
                 match get_variance_for(
                     &type_term,
                     ty,
-                    &Environment { premise: active_premise, table: self },
+                    &Environment {
+                        premise: active_premise,
+                        table: self,
+                        normalizer: &NoOp,
+                    },
                     &mut Limit::new(&mut session),
                 ) {
                     Ok(variance) => {
@@ -556,7 +565,7 @@ fn get_all_term_locations<
 >(
     target_term: &Term,
     respect_to_type: &Type<Default>,
-    environment: &Environment<Default, T>,
+    environment: &Environment<Default, T, NoOp>,
     limit: &mut Limit<R>,
 ) -> Result<Vec<Vec<TermLocation>>, ExceedLimitError>
 where

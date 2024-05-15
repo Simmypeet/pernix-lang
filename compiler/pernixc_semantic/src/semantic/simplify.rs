@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use super::{
     equality,
     model::Model,
+    normalizer::Normalizer,
     session::{Cached, ExceedLimitError, Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     visitor::Mutable,
@@ -20,11 +21,12 @@ struct Visitor<
     'r,
     'l,
     T: State,
+    N: Normalizer<M>,
     R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
     M: Model,
 > {
     result: Result<(), ExceedLimitError>,
-    environment: &'a Environment<'a, M, T>,
+    environment: &'a Environment<'a, M, T, N>,
     limit: &'l mut Limit<'r, R>,
     model: PhantomData<M>,
 }
@@ -35,11 +37,12 @@ impl<
         'l,
         U: Term,
         T: State,
+        N: Normalizer<U::Model>,
         R: Session<Lifetime<U::Model>>
             + Session<Type<U::Model>>
             + Session<Constant<U::Model>>
             + Session<U>,
-    > Mutable<U> for Visitor<'a, 'r, 'l, T, R, U::Model>
+    > Mutable<U> for Visitor<'a, 'r, 'l, T, N, R, U::Model>
 {
     fn visit(
         &mut self,
@@ -69,7 +72,7 @@ impl<
 
 fn simplify_internal<T: Term>(
     term: &T,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>
@@ -140,7 +143,7 @@ fn simplify_internal<T: Term>(
 /// See [`ExceedLimitError`] for more information.
 pub fn simplify<T: Term>(
     term: &T,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>

@@ -24,6 +24,7 @@ use crate::{
         equality,
         instantiation::{self, Instantiation},
         model::Default,
+        normalizer::NoOp,
         predicate::{self, ConstantType, Outlives, Trait, Tuple},
         session::{self, ExceedLimitError, Limit, Session},
         term::{
@@ -81,7 +82,11 @@ impl Table<Finalizer> {
         session: &mut session::Default<Default>,
     ) -> Result<bool, ExceedLimitError> {
         // check if the predicate is satisfied
-        let environment = Environment { premise: caller_premise, table: self };
+        let environment = Environment {
+            premise: caller_premise,
+            table: self,
+            normalizer: &NoOp,
+        };
 
         let result = match &predicate {
             predicate::Predicate::TraitTypeEquality(eq) => equality::equals(
@@ -232,8 +237,11 @@ impl Table<Finalizer> {
         session: &mut session::Default<Default>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        let environment =
-            Environment { premise: caller_active_premise, table: self };
+        let environment = Environment {
+            premise: caller_active_premise,
+            table: self,
+            normalizer: &NoOp,
+        };
 
         for (ty, syn) in occurrences {
             match ty {
@@ -497,7 +505,11 @@ impl Table<Finalizer> {
         }
     }
 
-    fn check_unpacked_ocurrences<'a, T: Term + 'a, Syn: SourceElement + 'a>(
+    fn check_unpacked_ocurrences<
+        'a,
+        T: Term<Model = Default> + 'a,
+        Syn: SourceElement + 'a,
+    >(
         &self,
         premise: &Premise<Default>,
         occurrences: impl Iterator<Item = (&'a T, &'a Syn)>,
@@ -507,7 +519,8 @@ impl Table<Finalizer> {
         session::Default<Default>: Session<T>,
         predicate::Predicate<Default>: From<Tuple<T>>,
     {
-        let environment = Environment { premise, table: self };
+        let environment =
+            Environment { premise, table: self, normalizer: &NoOp };
         for (term, ocurrence) in occurrences {
             match Tuple::satisfies(term, &environment, &mut Limit::new(session))
             {
@@ -715,7 +728,6 @@ impl UnusedGenericParameters {
 
             lifetime::Lifetime::Inference(_)
             | lifetime::Lifetime::Static
-            | lifetime::Lifetime::Local(_)
             | lifetime::Lifetime::Forall(_) => {}
         }
     }
@@ -936,6 +948,7 @@ impl Table<Finalizer> {
                 &Environment {
                     table: self,
                     premise: &implementation_member_active_premise,
+                    normalizer: &NoOp,
                 },
                 &mut Limit::new(&mut session),
             ) {

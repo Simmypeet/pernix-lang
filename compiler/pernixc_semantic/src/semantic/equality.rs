@@ -2,6 +2,7 @@
 
 use super::{
     matching::Matching,
+    normalizer::Normalizer,
     session::{self, ExceedLimitError, Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     Environment, Satisfied,
@@ -19,7 +20,7 @@ pub struct Query<'a, T> {
 fn equals_by_unification<T: Term>(
     lhs: &T,
     rhs: &T,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>
@@ -55,7 +56,7 @@ fn equals_by_unification<T: Term>(
 fn equals_by_normalization<T: Term>(
     lhs: &T,
     rhs: &T,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>
@@ -81,7 +82,7 @@ fn equals_by_normalization<T: Term>(
 fn equals_without_mapping<T: Term>(
     lhs: &T,
     rhs: &T,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>
@@ -130,7 +131,7 @@ fn equals_without_mapping<T: Term>(
 pub fn equals<T: Term>(
     lhs: &T,
     rhs: &T,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>

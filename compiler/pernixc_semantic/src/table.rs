@@ -20,6 +20,7 @@ use crate::{
     error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
     semantic::{
         model::{Default, Model},
+        predicate::Predicate,
         term::{constant, lifetime::Lifetime, r#type, GenericArguments},
         Premise, TraitContext,
     },
@@ -1172,10 +1173,10 @@ impl<T: Container> Representation<T> {
     ///
     /// # Errors
     #[must_use]
-    pub fn get_active_premise(
+    pub fn get_active_premise<M: Model>(
         &self,
         global_id: GlobalID,
-    ) -> Option<Premise<Default>> {
+    ) -> Option<Premise<M>> {
         let mut premise = Premise::default();
 
         for global_id in self.scope_walker(global_id)? {
@@ -1200,11 +1201,9 @@ impl<T: Container> Representation<T> {
             let generic = self.get_generic(generic_id)?;
 
             premise.append_from_predicates(
-                generic
-                    .generic_declaration()
-                    .predicates
-                    .iter()
-                    .map(|x| x.predicate.clone()),
+                generic.generic_declaration().predicates.iter().map(|x| {
+                    Predicate::from_default_model(x.predicate.clone())
+                }),
             );
         }
 

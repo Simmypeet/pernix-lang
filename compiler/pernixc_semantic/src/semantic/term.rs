@@ -19,6 +19,7 @@ use super::{
     mapping::Mapping,
     matching,
     model::Model,
+    normalizer::Normalizer,
     predicate::{self, Outlives, Predicate, Satisfiability},
     session::{ExceedLimitError, Limit, Session},
     sub_term::{self, AssignSubTermError, SubTupleLocation},
@@ -323,7 +324,11 @@ pub trait Term:
     /// See [`ExceedLimitError`] for more information.
     fn normalize(
         &self,
-        environment: &Environment<Self::Model, impl State>,
+        environment: &Environment<
+            Self::Model,
+            impl State,
+            impl Normalizer<Self::Model>,
+        >,
         limit: &mut Limit<
             impl Session<Self>
                 + Session<Lifetime<Self::Model>>
@@ -336,7 +341,11 @@ pub trait Term:
     fn outlives_satisfiability(
         &self,
         lifetime: &Lifetime<Self::Model>,
-        environment: &Environment<Self::Model, impl State>,
+        environment: &Environment<
+            Self::Model,
+            impl State,
+            impl Normalizer<Self::Model>,
+        >,
         limit: &mut Limit<
             impl Session<Self>
                 + Session<Lifetime<Self::Model>>
@@ -716,7 +725,7 @@ impl<M: Model> GenericArguments<M> {
     pub fn equals(
         &self,
         other: &Self,
-        environment: &Environment<M, impl State>,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
         limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
@@ -781,7 +790,7 @@ impl<M: Model> GenericArguments<M> {
         &self,
         other: &Self,
         config: &mut impl unification::Config<M>,
-        environment: &Environment<M, impl State>,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
         limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
@@ -852,7 +861,7 @@ impl<M: Model> GenericArguments<M> {
     /// See [`ExceedLimitError`] for more information.
     pub fn definite(
         &self,
-        environment: &Environment<M, impl State>,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
         limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,

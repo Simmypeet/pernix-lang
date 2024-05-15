@@ -9,6 +9,7 @@ use crate::{
         self, AmbiguousImplementation, UndecidableImplementationSpecialization,
     },
     semantic::{
+        normalizer::NoOp,
         order,
         session::{self, Limit},
         Environment, Premise,
@@ -224,6 +225,7 @@ impl Finalize for Trait {
                             &Environment {
                                 table,
                                 premise: &Premise::default(),
+                                normalizer: &NoOp,
                             },
                             &mut Limit::new(&mut session::Default::default()),
                         ) else {

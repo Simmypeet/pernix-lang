@@ -5,6 +5,7 @@ use crate::{
         instantiation::{self, Instantiation},
         mapping::Mapping,
         model::Model,
+        normalizer::Normalizer,
         predicate::Satisfiability,
         session::{Cached, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
@@ -69,12 +70,13 @@ struct Visitor<
     'r,
     'l,
     T: State,
+    N: Normalizer<M>,
     R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
     M: Model,
 > {
     outlives: Result<bool, ExceedLimitError>,
     bound: &'a Lifetime<M>,
-    environment: &'a Environment<'a, M, T>,
+    environment: &'a Environment<'a, M, T, N>,
     limit: &'l mut Limit<'r, R>,
 }
 
@@ -85,11 +87,12 @@ impl<
         'v,
         U: Term,
         T: State,
+        N: Normalizer<U::Model>,
         R: Session<U>
             + Session<Lifetime<U::Model>>
             + Session<Type<U::Model>>
             + Session<Constant<U::Model>>,
-    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, R, U::Model>
+    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, N, R, U::Model>
 {
     fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
         match Outlives::satisfies(
@@ -139,7 +142,11 @@ impl<M: Model> unification::Config<M> for OutlivesUnifyingConfig {
 impl<T: Term> Outlives<T> {
     fn satisfies_by_lifetime_matching(
         unification: Unification<T>,
-        environment: &Environment<T::Model, impl State>,
+        environment: &Environment<
+            T::Model,
+            impl State,
+            impl Normalizer<T::Model>,
+        >,
         limit: &mut Limit<
             impl Session<T>
                 + Session<Lifetime<T::Model>>
@@ -171,7 +178,11 @@ impl<T: Term> Outlives<T> {
     pub fn satisfies(
         operand: &T,
         bound: &Lifetime<T::Model>,
-        environment: &Environment<T::Model, impl State>,
+        environment: &Environment<
+            T::Model,
+            impl State,
+            impl Normalizer<T::Model>,
+        >,
         limit: &mut Limit<
             impl Session<T>
                 + Session<Lifetime<T::Model>>

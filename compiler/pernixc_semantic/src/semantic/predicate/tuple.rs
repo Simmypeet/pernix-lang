@@ -3,6 +3,7 @@ use crate::{
     semantic::{
         equality, get_equivalences,
         instantiation::{self, Instantiation},
+        normalizer::Normalizer,
         session::{Cached, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         Environment, Satisfied,
@@ -49,7 +50,11 @@ impl<T: Term> Tuple<T> {
     /// See [`ExceedLimitError`] for more information.
     pub fn satisfies(
         term: &T,
-        environment: &Environment<T::Model, impl State>,
+        environment: &Environment<
+            T::Model,
+            impl State,
+            impl Normalizer<T::Model>,
+        >,
         limit: &mut Limit<
             impl Session<T>
                 + Session<Lifetime<T::Model>>

@@ -12,6 +12,8 @@ use crate::{
     semantic::{
         equality::equals,
         equivalent::Equivalent,
+        model::Default,
+        normalizer::NoOp,
         session::{self, ExceedLimitError, Limit, Session},
         sub_term::Location,
         term::{
@@ -28,27 +30,27 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct GenericParameterUnifyConfig;
 
-impl Config for GenericParameterUnifyConfig {
+impl Config<Default> for GenericParameterUnifyConfig {
     fn lifetime_unifiable(
         &mut self,
-        from: &Lifetime,
-        _: &Lifetime,
+        from: &Lifetime<Default>,
+        _: &Lifetime<Default>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(from.is_parameter())
     }
 
     fn type_unifiable(
         &mut self,
-        from: &Type,
-        _: &Type,
+        from: &Type<Default>,
+        _: &Type<Default>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(from.is_parameter())
     }
 
     fn constant_unifiable(
         &mut self,
-        from: &Constant,
-        _: &Constant,
+        from: &Constant<Default>,
+        _: &Constant<Default>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(from.is_parameter())
     }
@@ -68,7 +70,7 @@ pub trait Property<T>: 'static + Debug {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError>;
     fn generate(&self) -> (T, T);
 }
@@ -87,7 +89,7 @@ impl<
     fn apply(
         &self,
         _: &mut Table<State>,
-        _: &mut Premise,
+        _: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         Ok(())
     }
@@ -116,26 +118,26 @@ impl<
     }
 }
 
-impl Arbitrary for Box<dyn Property<Lifetime>> {
+impl Arbitrary for Box<dyn Property<Lifetime<Default>>> {
     type Parameters = (
-        Option<BoxedStrategy<Box<dyn Property<Type>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Constant>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Constant<Default>>>>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        Basic::<LifetimeParameterID, Lifetime>::arbitrary()
+        Basic::<LifetimeParameterID, Lifetime<_>>::arbitrary()
             .prop_map(|x| Box::new(x) as _)
             .boxed()
     }
 }
 
-impl Arbitrary for Box<dyn Property<Type>> {
+impl Arbitrary for Box<dyn Property<Type<Default>>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        let leaf = Basic::<TypeParameterID, Type>::arbitrary()
+        let leaf = Basic::<TypeParameterID, Type<_>>::arbitrary()
             .prop_map(|x| Box::new(x) as _)
             .boxed();
 
@@ -144,12 +146,12 @@ impl Arbitrary for Box<dyn Property<Type>> {
             prop_oneof![
                 6 => SymbolCongruence::arbitrary_with(
                     (
-                        Some(Box::<dyn Property<Lifetime>>::arbitrary()),
+                        Some(Box::<dyn Property<Lifetime<_>>>::arbitrary()),
                         Some(inner.clone()),
-                        Some(Box::<dyn Property<Constant>>::arbitrary())
+                        Some(Box::<dyn Property<Constant<_>>>::arbitrary())
                     )
                 ).prop_map(|x| Box::new(x) as _),
-                1 => Mapping::<Type>::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
+                1 => Mapping::<Type<_>>::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
                 4 => TupleCongruence::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _),
             ]
         })
@@ -157,12 +159,12 @@ impl Arbitrary for Box<dyn Property<Type>> {
     }
 }
 
-impl Arbitrary for Box<dyn Property<Constant>> {
+impl Arbitrary for Box<dyn Property<Constant<Default>>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        let leaf = Basic::<ConstantParameterID, Constant>::arbitrary()
+        let leaf = Basic::<ConstantParameterID, Constant<_>>::arbitrary()
             .prop_map(|x| Box::new(x) as _)
             .boxed();
 
@@ -183,13 +185,13 @@ pub struct TupleCongruence<T> {
 
 impl<T: Term> Property<T> for TupleCongruence<T>
 where
-    session::Default: Session<T>,
+    session::Default<Default>: Session<T>,
     Tuple<T>: Into<T>,
 {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         for property in &self.terms {
             property.apply(table, premise)?;
@@ -233,9 +235,9 @@ where
 
 #[derive(Debug)]
 pub struct SymbolCongruence<ID> {
-    lifetime_properties: Vec<Box<dyn Property<Lifetime>>>,
-    type_properties: Vec<Box<dyn Property<Type>>>,
-    constant_properties: Vec<Box<dyn Property<Constant>>>,
+    lifetime_properties: Vec<Box<dyn Property<Lifetime<Default>>>>,
+    type_properties: Vec<Box<dyn Property<Type<Default>>>>,
+    constant_properties: Vec<Box<dyn Property<Constant<Default>>>>,
 
     id: ID,
 }
@@ -243,13 +245,13 @@ pub struct SymbolCongruence<ID> {
 impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T>
     for SymbolCongruence<ID>
 where
-    Symbol<ID>: Into<T>,
-    session::Default: Session<T>,
+    Symbol<Default, ID>: Into<T>,
+    session::Default<Default>: Session<T>,
 {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         for property in &self.lifetime_properties {
             property.apply(table, premise)?;
@@ -313,24 +315,28 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
     Arbitrary for SymbolCongruence<ID>
 {
     type Parameters = (
-        Option<BoxedStrategy<Box<dyn Property<Lifetime>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Type>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Constant>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Lifetime<Default>>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Constant<Default>>>>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             proptest::collection::vec(
-                args.1.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary),
+                args.1.unwrap_or_else(Box::<dyn Property<Type<_>>>::arbitrary),
                 1..=2,
             ),
             proptest::collection::vec(
-                args.0.unwrap_or_else(Box::<dyn Property<Lifetime>>::arbitrary),
+                args.0.unwrap_or_else(
+                    Box::<dyn Property<Lifetime<_>>>::arbitrary,
+                ),
                 1..=2,
             ),
             proptest::collection::vec(
-                args.2.unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary),
+                args.2.unwrap_or_else(
+                    Box::<dyn Property<Constant<_>>>::arbitrary,
+                ),
                 1..=2,
             ),
             ID::arbitrary(),
@@ -351,11 +357,11 @@ pub struct Mapping<T: Term> {
     pub trait_member: T::TraitMember,
 }
 
-impl<T: Term + 'static> Property<T> for Mapping<T> {
+impl<T: Term<Model = Default> + 'static> Property<T> for Mapping<T> {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
 
@@ -401,9 +407,9 @@ where
     }
 }
 
-fn add_equality_mapping_from_unification<T: Term>(
+fn add_equality_mapping_from_unification<T: Term<Model = Default>>(
     unification: &Unification<T>,
-    equality_mapping: &mut Equivalent,
+    equality_mapping: &mut Equivalent<Default>,
 ) -> TestCaseResult {
     match &unification.r#match {
         super::Matching::Unifiable(lhs, rhs) => {
@@ -416,21 +422,21 @@ fn add_equality_mapping_from_unification<T: Term>(
         }
         super::Matching::Substructural(substructural) => {
             for lifetime_unification in substructural.lifetimes.values() {
-                add_equality_mapping_from_unification::<Lifetime>(
+                add_equality_mapping_from_unification::<Lifetime<_>>(
                     lifetime_unification,
                     equality_mapping,
                 )?;
             }
 
             for type_unification in substructural.types.values() {
-                add_equality_mapping_from_unification::<Type>(
+                add_equality_mapping_from_unification::<Type<_>>(
                     type_unification,
                     equality_mapping,
                 )?;
             }
 
             for constant_unification in substructural.constants.values() {
-                add_equality_mapping_from_unification::<Constant>(
+                add_equality_mapping_from_unification::<Constant<_>>(
                     constant_unification,
                     equality_mapping,
                 )?;
@@ -503,11 +509,11 @@ fn rewrite_term<T: Term + 'static>(
     }
 }
 
-pub fn property_based_testing<T: Term + 'static>(
+pub fn property_based_testing<T: Term<Model = Default> + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult
 where
-    session::Default: Session<T>,
+    session::Default<Default>: Session<T>,
 {
     let mut table = Table::default();
     let mut premise = Premise::default();
@@ -518,7 +524,7 @@ where
     if equals(
         &lhs,
         &rhs,
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )? {
         return Err(TestCaseError::reject("trivially equalities"));
@@ -530,7 +536,7 @@ where
         &lhs,
         &rhs,
         &mut config,
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .map_err(|_| TestCaseError::reject("too complex property"))?
@@ -544,8 +550,11 @@ where
             &mut premise_cloned.equivalent,
         )?;
 
-        let environment =
-            Environment { premise: &premise_cloned, table: &table };
+        let environment = Environment {
+            premise: &premise_cloned,
+            table: &table,
+            normalizer: &NoOp,
+        };
         prop_assert!(equals(
             &lhs,
             &rhs,
@@ -559,7 +568,8 @@ where
     {
         rewrite_term(&mut lhs, unification)?;
 
-        let environment = Environment { premise: &premise, table: &table };
+        let environment =
+            Environment { premise: &premise, table: &table, normalizer: &NoOp };
         prop_assert!(equals(
             &lhs,
             &rhs,
@@ -576,21 +586,21 @@ proptest! {
     #![proptest_config(proptest::test_runner::Config {
         max_shrink_iters: 100_000,
         cases: 8192,
-        ..Default::default()
+        ..std::default::Default::default()
     })]
 
     #[test]
-    fn property_based_testing_lifetime(property in Box::<dyn Property<Lifetime>>::arbitrary()) {
+    fn property_based_testing_lifetime(property in Box::<dyn Property<Lifetime<_>>>::arbitrary()) {
         property_based_testing(&*property)?;
     }
 
     #[test]
-    fn property_based_testing_type(property in Box::<dyn Property<Type>>::arbitrary()) {
+    fn property_based_testing_type(property in Box::<dyn Property<Type<_>>>::arbitrary()) {
         property_based_testing(&*property)?;
     }
 
     #[test]
-    fn property_based_testing_constant(property in Box::<dyn Property<Constant>>::arbitrary()) {
+    fn property_based_testing_constant(property in Box::<dyn Property<Constant<_>>>::arbitrary()) {
         property_based_testing(&*property)?;
     }
 }

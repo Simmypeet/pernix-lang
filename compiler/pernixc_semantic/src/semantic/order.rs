@@ -5,6 +5,7 @@
 
 use super::{
     model::Model,
+    normalizer::Normalizer,
     session::{ExceedLimitError, Limit, Session},
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
@@ -66,7 +67,7 @@ fn get_arguments_matching_count<T: Term>(
     this: &[T],
     other: &[T],
     predicate: &impl Fn(&T) -> bool,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     session: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>
@@ -97,7 +98,7 @@ fn get_arguments_matching_count<T: Term>(
 fn get_generic_arguments_matching_count<M: Model>(
     this: &GenericArguments<M>,
     other: &GenericArguments<M>,
-    environment: &Environment<M, impl State>,
+    environment: &Environment<M, impl State, impl Normalizer<M>>,
     limit: &mut Limit<
         impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
     >,
@@ -171,7 +172,7 @@ impl<M: Model> GenericArguments<M> {
     pub fn order(
         &self,
         other: &Self,
-        environment: &Environment<M, impl State>,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
         limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,

@@ -1,6 +1,8 @@
 use crate::{
     arena::ID,
     semantic::{
+        model::Default,
+        normalizer::NoOp,
         predicate::{Equality, Predicate},
         session::{self, Limit},
         simplify::simplify,
@@ -16,7 +18,7 @@ use crate::{
 
 #[test]
 fn basic_case() {
-    let trait_member = TraitMember {
+    let trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -34,7 +36,7 @@ fn basic_case() {
 
     let simplified = simplify(
         &Type::TraitMember(trait_member),
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
@@ -44,7 +46,7 @@ fn basic_case() {
 
 #[test]
 fn sub_term_case() {
-    let trait_member = TraitMember {
+    let trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -76,7 +78,7 @@ fn sub_term_case() {
                 constants: Vec::new(),
             },
         }),
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
@@ -103,7 +105,7 @@ fn sub_term_case() {
 
 #[test]
 fn already_simplified_case() {
-    let trait_member = TraitMember {
+    let trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -121,7 +123,7 @@ fn already_simplified_case() {
 
     let simplified = simplify(
         &equivalent,
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
@@ -131,7 +133,7 @@ fn already_simplified_case() {
 
 #[test]
 fn transitive_case() {
-    let first_trait_member = TraitMember {
+    let first_trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -160,14 +162,14 @@ fn transitive_case() {
 
     let result1 = simplify(
         &Type::TraitMember(first_trait_member),
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
 
     let result2 = simplify(
         &Type::TraitMember(second_trait_member),
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
@@ -179,7 +181,7 @@ fn transitive_case() {
 
 #[test]
 fn multiple_equivalent_but_same_case() {
-    let starting_trait_member = TraitMember {
+    let starting_trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -221,21 +223,21 @@ fn multiple_equivalent_but_same_case() {
 
     let result_from_starting = simplify(
         &Type::TraitMember(starting_trait_member),
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
 
     let result_from_first = simplify(
         &Type::TraitMember(first_trait_member),
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
 
     let result_from_second = simplify(
         &Type::TraitMember(second_trait_member),
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
@@ -247,7 +249,7 @@ fn multiple_equivalent_but_same_case() {
 
 #[test]
 fn ambiguous_case() {
-    let starting_trait_member = TraitMember {
+    let starting_trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -290,21 +292,21 @@ fn ambiguous_case() {
 
     let result_from_starting = simplify(
         &Type::TraitMember(starting_trait_member.clone()),
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
 
     let result_from_first = simplify(
         &Type::TraitMember(first_trait_member.clone()),
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
 
     let result_from_second = simplify(
         &Type::TraitMember(second_trait_member.clone()),
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();

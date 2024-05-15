@@ -1,18 +1,19 @@
-use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
+use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
 use super::Finalize;
 use crate::{
     arena::ID,
     error,
-    ir::{address::Address, Building, IR},
+    ir::{Building, IR},
     semantic::{
+        normalizer::NoOp,
         session::{self, Limit},
         simplify::simplify,
         term::r#type::Type,
         Environment,
     },
-    symbol::{Function, Parameter},
+    symbol::Function,
     table::{
         building::finalizing::{
             finalizer::build_preset, occurrences::Occurrences, Finalizer,
@@ -128,7 +129,11 @@ impl Finalize for Function {
                 {
                     if let Ok(simplified) = simplify(
                         &return_type,
-                        &Environment { premise: &premise, table },
+                        &Environment {
+                            premise: &premise,
+                            table,
+                            normalizer: &NoOp,
+                        },
                         &mut Limit::new(&mut session),
                     ) {
                         return_type = simplified;
@@ -148,6 +153,7 @@ impl Finalize for Function {
 
                 // simplify the parameter type and create pattern
                 {
+                    /*
                     for (parameter_syn, mut parameter_ty) in parameters {
                         if let Ok(simplified) = simplify(
                             &parameter_ty,
@@ -202,6 +208,8 @@ impl Finalize for Function {
                             drop(function_write);
                         }
                     }
+
+                    */
                 }
 
                 // check all the occurrences

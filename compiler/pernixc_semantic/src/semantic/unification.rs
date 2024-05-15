@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use super::{
     equality, get_equivalences, matching,
     model::Model,
+    normalizer::Normalizer,
     session::{self, ExceedLimitError, Limit, Session},
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, ModelOf, Term,
@@ -159,7 +160,7 @@ fn substructural_unify<T: Term>(
     lhs: &T,
     rhs: &T,
     config: &mut impl Config<T::Model>,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>
@@ -218,7 +219,7 @@ pub fn unify<T: Term>(
     from: &T,
     to: &T,
     config: &mut impl Config<T::Model>,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>

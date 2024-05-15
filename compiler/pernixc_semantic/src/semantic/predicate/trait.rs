@@ -12,7 +12,8 @@ use crate::{
     semantic::{
         equality,
         instantiation::Instantiation,
-        model::Model,
+        model::{Default, Model},
+        normalizer::Normalizer,
         order,
         predicate::{ConstantType, LifetimeConstraint, Predicate, Tuple},
         session::{Cached, ExceedLimitError, Limit, Session},
@@ -20,7 +21,7 @@ use crate::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments,
         },
-        unification, Environment, TraitContext,
+        unification, Environment, Premise, TraitContext,
     },
     symbol::{
         self, ConstantParameterID, Generic, LifetimeParameterID,
@@ -41,6 +42,20 @@ pub struct Trait<M: Model> {
 
     /// The generic arguments supplied to the trait.
     pub generic_arguments: GenericArguments<M>,
+}
+
+impl<M: Model> Trait<M> {
+    /// Converts the [`Trait`] predicate from the [`Default`] model to the model
+    /// `M`.
+    pub fn from_default_model(predicate: Trait<Default>) -> Self {
+        Self {
+            id: predicate.id,
+            is_const: predicate.is_const,
+            generic_arguments: GenericArguments::from_default_model(
+                predicate.generic_arguments,
+            ),
+        }
+    }
 }
 
 impl<T: State, M: Model> table::Display<T> for Trait<M> {
@@ -134,7 +149,7 @@ impl<M: Model> Trait<M> {
         id: ID<symbol::Trait>,
         is_const: bool,
         generic_arguments: &GenericArguments<M>,
-        environment: &Environment<M, impl State>,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
         limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
@@ -252,7 +267,8 @@ impl<M: Model> Trait<M> {
                     .predicates
                     .iter()
                     .filter_map(|x| {
-                        let mut predicate = x.predicate.clone();
+                        let mut predicate =
+                            Predicate::from_default_model(x.predicate.clone());
 
                         predicate.instantiate(&instantiation);
 
@@ -273,8 +289,8 @@ impl<M: Model> Trait<M> {
                         lifetimes
                             .iter()
                             .next()
-                            .copied()
-                            .map(|lifetime| (*forall, lifetime))
+                            .cloned()
+                            .map(|lifetime| (forall.clone(), lifetime))
                     })
                     .collect(),
                 types: HashMap::default(),
@@ -434,7 +450,7 @@ pub enum ResolveError {
 pub fn resolve_implementation<M: Model>(
     trait_id: ID<symbol::Trait>,
     generic_arguments: &GenericArguments<M>,
-    environment: &Environment<M, impl State>,
+    environment: &Environment<M, impl State, impl Normalizer<M>>,
     limit: &mut Limit<
         impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
     >,
@@ -480,7 +496,7 @@ pub fn resolve_implementation<M: Model>(
                                     id: x.0,
                                 });
 
-                            (lifetime, lifetime)
+                            (lifetime.clone(), lifetime)
                         })
                         .collect(),
 
@@ -541,8 +557,8 @@ pub fn resolve_implementation<M: Model>(
 
     let mut candidate: Option<(
         TraitImplementationKindID,
-        Instantiation,
-        HashSet<LifetimeConstraint>,
+        Instantiation<M>,
+        HashSet<LifetimeConstraint<M>>,
     )> = None;
 
     for (key, arguments) in trait_symbol
@@ -551,13 +567,29 @@ pub fn resolve_implementation<M: Model>(
         .map(|k| {
             (
                 TraitImplementationKindID::Positive(*k),
-                environment.table.get(*k).unwrap().signature.arguments.clone(),
+                GenericArguments::from_default_model(
+                    environment
+                        .table
+                        .get(*k)
+                        .unwrap()
+                        .signature
+                        .arguments
+                        .clone(),
+                ),
             )
         })
         .chain(trait_symbol.negative_implementations.iter().map(|k| {
             (
                 TraitImplementationKindID::Negative(*k),
-                environment.table.get(*k).unwrap().signature.arguments.clone(),
+                GenericArguments::from_default_model(
+                    environment
+                        .table
+                        .get(*k)
+                        .unwrap()
+                        .signature
+                        .arguments
+                        .clone(),
+                ),
             )
         }))
     {
@@ -587,21 +619,67 @@ pub fn resolve_implementation<M: Model>(
                 candidate_unification,
                 candidate_lifetime_constraints,
             )) => {
+                let combined_premise = {
+                    let mut combined_premise = Premise::default();
+
+                    let current_geenric_sym =
+                        environment.table.get_generic(key.into()).unwrap();
+                    let candidate_generic_sym = environment
+                        .table
+                        .get_generic((*candidate_id).into())
+                        .unwrap();
+
+                    combined_premise.append_from_predicates(
+                        current_geenric_sym
+                            .generic_declaration()
+                            .predicates
+                            .iter()
+                            .map(|x| {
+                                Predicate::from_default_model(
+                                    x.predicate.clone(),
+                                )
+                            }),
+                    );
+                    combined_premise.append_from_predicates(
+                        candidate_generic_sym
+                            .generic_declaration()
+                            .predicates
+                            .iter()
+                            .map(|x| {
+                                Predicate::from_default_model(
+                                    x.predicate.clone(),
+                                )
+                            }),
+                    );
+
+                    combined_premise
+                };
+
                 // check which one is more specific
-                match environment
-                    .table
-                    .get_trait_implementation_signature(key)
-                    .unwrap()
-                    .arguments
-                    .order(
-                        &environment
+                match GenericArguments::from_default_model(
+                    environment
+                        .table
+                        .get_trait_implementation_signature(key)
+                        .unwrap()
+                        .arguments
+                        .clone(),
+                )
+                .order(
+                    &GenericArguments::from_default_model(
+                        environment
                             .table
                             .get_trait_implementation_signature(*candidate_id)
                             .unwrap()
-                            .arguments,
-                        environment,
-                        limit,
-                    )? {
+                            .arguments
+                            .clone(),
+                    ),
+                    &Environment {
+                        premise: &combined_premise,
+                        table: environment.table,
+                        normalizer: environment.normalizer,
+                    },
+                    limit,
+                )? {
                     order::Order::Incompatible => {
                         return Err(ResolveError::AmbiguousTerm)
                     }
@@ -646,7 +724,7 @@ fn predicate_satisfies<
 >(
     generic_symbol: &dyn Generic,
     substitution: &Instantiation<M>,
-    environment: &Environment<M, impl State>,
+    environment: &Environment<M, impl State, impl Normalizer<M>>,
     session: &mut Limit<R>,
 ) -> Result<Option<HashSet<LifetimeConstraint<M>>>, ExceedLimitError> {
     let mut lifetime_constraints = HashSet::new();
@@ -656,8 +734,7 @@ fn predicate_satisfies<
         .generic_declaration()
         .predicates
         .iter()
-        .map(|x| &x.predicate)
-        .cloned()
+        .map(|x| Predicate::from_default_model(x.predicate.clone()))
     {
         predicate.instantiate(substitution);
 
@@ -726,7 +803,7 @@ fn is_in_active_trait_implementation<M: Model>(
     trait_id: ID<symbol::Trait>,
     need_implementation: bool,
     generic_arguments: &GenericArguments<M>,
-    environment: &Environment<M, impl State>,
+    environment: &Environment<M, impl State, impl Normalizer<M>>,
     limit: &mut Limit<
         impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
     >,
@@ -745,11 +822,10 @@ fn is_in_active_trait_implementation<M: Model>(
             }
 
             // check if the generic arguments are the same
-            implementation.signature.arguments.equals(
-                generic_arguments,
-                environment,
-                limit,
+            GenericArguments::from_default_model(
+                implementation.signature.arguments.clone(),
             )
+            .equals(generic_arguments, environment, limit)
         }
         TraitContext::InTrait(env_trait_id) => {
             if need_implementation || env_trait_id != trait_id {

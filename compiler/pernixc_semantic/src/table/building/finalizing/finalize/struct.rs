@@ -6,6 +6,7 @@ use crate::{
     arena::ID,
     error::{self, DuplicatedField, PrivateEntityLeakedToPublicInterface},
     semantic::{
+        normalizer::NoOp,
         session::{self, Limit},
         simplify::simplify,
         Environment,
@@ -173,7 +174,11 @@ impl Finalize for Struct {
                     for (id, field_type) in fields_to_simplify {
                         if let Ok(simplified) = simplify(
                             &field_type,
-                            &Environment { table, premise: &premise },
+                            &Environment {
+                                table,
+                                premise: &premise,
+                                normalizer: &NoOp,
+                            },
                             &mut Limit::new(&mut session),
                         ) {
                             let mut struct_sym = table

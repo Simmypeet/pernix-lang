@@ -19,6 +19,7 @@ use crate::{
         mapping::Mapping,
         matching::{self, Match, Matching},
         model::{Default, Model},
+        normalizer::Normalizer,
         predicate::{self, Outlives, Predicate, Satisfiability},
         session::{ExceedLimitError, Limit, Session},
         sub_term::{
@@ -267,7 +268,7 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
     fn get_sub_term(self, term: &Type<M>) -> Option<Lifetime<M>> {
         match (term, self) {
             (Type::Reference(reference), Self::Reference) => {
-                Some(reference.lifetime)
+                Some(reference.lifetime.clone())
             }
 
             (Type::Symbol(symbol), Self::Symbol(location)) => {
@@ -693,8 +694,8 @@ impl<M: Model> Match for Type<M> {
             {
                 Some(matching::Substructural {
                     lifetimes: vec![Matching {
-                        lhs: lhs.lifetime,
-                        rhs: rhs.lifetime,
+                        lhs: lhs.lifetime.clone(),
+                        rhs: rhs.lifetime.clone(),
                         lhs_location: SubLifetimeLocation::Reference,
                         rhs_location: SubLifetimeLocation::Reference,
                     }],
@@ -882,7 +883,7 @@ where
     #[allow(clippy::too_many_lines)]
     fn normalize(
         &self,
-        environment: &Environment<M, impl State>,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
         limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Self> + Session<Constant<M>>,
         >,
@@ -1152,6 +1153,10 @@ where
                 Ok(Some(Self::Tuple(Tuple { elements: result })))
             }
 
+            Self::Inference(inference) => {
+                Normalizer::normalize_type(inference, environment, limit)
+            }
+
             _ => Ok(None),
         }
     }
@@ -1159,7 +1164,7 @@ where
     fn outlives_satisfiability(
         &self,
         _: &Lifetime<M>,
-        _: &Environment<M, impl State>,
+        _: &Environment<M, impl State, impl Normalizer<M>>,
         _: &mut Limit<
             impl Session<Self>
                 + Session<Lifetime<M>>

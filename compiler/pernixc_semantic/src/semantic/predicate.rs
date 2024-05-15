@@ -10,13 +10,13 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     instantiation::{self, Instantiation},
-    model::Model,
+    model::{Default, Model},
     sub_term::TermLocation,
     term::{
         constant::Constant,
         lifetime::Lifetime,
         r#type::{self, Type},
-        Term,
+        GenericArguments, MemberSymbol, Term,
     },
     visitor::{accept_recursive, Recursive},
 };
@@ -131,6 +131,52 @@ pub enum Predicate<M: Model> {
     TupleType(Tuple<Type<M>>),
     TupleConstant(Tuple<Constant<M>>),
     Trait(Trait<M>),
+}
+
+impl<M: Model> Predicate<M> {
+    /// Converts the [`Predicate`] with [`Default`] model to the model `M`.
+    pub fn from_default_model(predicate: Predicate<Default>) -> Self {
+        match predicate {
+            Predicate::TraitTypeEquality(x) => {
+                Predicate::TraitTypeEquality(Equality {
+                    lhs: MemberSymbol {
+                        id: x.lhs.id,
+                        member_generic_arguments:
+                            GenericArguments::from_default_model(
+                                x.lhs.member_generic_arguments,
+                            ),
+                        parent_generic_arguments:
+                            GenericArguments::from_default_model(
+                                x.lhs.parent_generic_arguments,
+                            ),
+                    },
+                    rhs: M::from_default_type(x.rhs),
+                })
+            }
+            Predicate::ConstantType(x) => {
+                Predicate::ConstantType(ConstantType(M::from_default_type(x.0)))
+            }
+            Predicate::LifetimeOutlives(x) => {
+                Predicate::LifetimeOutlives(Outlives {
+                    operand: M::from_default_lifetime(x.operand),
+                    bound: M::from_default_lifetime(x.bound),
+                })
+            }
+            Predicate::TypeOutlives(x) => Predicate::TypeOutlives(Outlives {
+                operand: M::from_default_type(x.operand),
+                bound: M::from_default_lifetime(x.bound),
+            }),
+            Predicate::TupleType(x) => {
+                Predicate::TupleType(Tuple(M::from_default_type(x.0)))
+            }
+            Predicate::TupleConstant(x) => {
+                Predicate::TupleConstant(Tuple(M::from_default_constant(x.0)))
+            }
+            Predicate::Trait(x) => {
+                Predicate::Trait(Trait::from_default_model(x))
+            }
+        }
+    }
 }
 
 impl<T: State, M: Model> table::Display<T> for Predicate<M> {

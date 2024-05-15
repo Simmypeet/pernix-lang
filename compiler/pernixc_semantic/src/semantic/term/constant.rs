@@ -20,6 +20,7 @@ use crate::{
         mapping::Mapping,
         matching::{self, Match},
         model::{Default, Model},
+        normalizer::Normalizer,
         predicate::{self, Outlives, Predicate, Satisfiability},
         session::{ExceedLimitError, Limit, Session},
         sub_term::{AssignSubTermError, Location, SubTerm, SubTupleLocation},
@@ -536,18 +537,22 @@ where
 
     fn normalize(
         &self,
-        _: &Environment<M, impl State>,
-        _: &mut Limit<
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
+        limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Self>,
         >,
     ) -> Result<Option<Self>, ExceedLimitError> {
-        Ok(None)
+        if let Constant::Inference(inference) = self {
+            Normalizer::normalize_constant(inference, environment, limit)
+        } else {
+            Ok(None)
+        }
     }
 
     fn outlives_satisfiability(
         &self,
         _: &Lifetime<M>,
-        _: &Environment<M, impl State>,
+        _: &Environment<M, impl State, impl Normalizer<M>>,
         _: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Self>,
         >,

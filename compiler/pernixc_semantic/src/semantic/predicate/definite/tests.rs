@@ -10,6 +10,8 @@ use proptest::{
 use crate::{
     arena::ID,
     semantic::{
+        model::Default,
+        normalizer::NoOp,
         predicate::definite,
         session::{self, ExceedLimitError, Limit, Session},
         term::{
@@ -48,7 +50,7 @@ pub trait Property<T>: 'static + Debug {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError>;
 
     /// Generate a term for checking
@@ -78,7 +80,7 @@ impl<T: Into<U> + Clone + Debug + 'static, U> Property<U>
     fn apply(
         &self,
         _: &mut Table<State>,
-        _: &mut Premise,
+        _: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         Ok(())
     }
@@ -88,8 +90,8 @@ impl<T: Into<U> + Clone + Debug + 'static, U> Property<U>
 
 #[derive(Debug)]
 pub struct SymbolCongruence<ID> {
-    type_strategies: Vec<Box<dyn Property<Type>>>,
-    constant_strategies: Vec<Box<dyn Property<Constant>>>,
+    type_strategies: Vec<Box<dyn Property<Type<Default>>>>,
+    constant_strategies: Vec<Box<dyn Property<Constant<Default>>>>,
 
     id: ID,
 }
@@ -98,19 +100,21 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
     Arbitrary for SymbolCongruence<ID>
 {
     type Parameters = (
-        Option<BoxedStrategy<Box<dyn Property<Type>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Constant>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Constant<Default>>>>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             proptest::collection::vec(
-                args.0.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary),
+                args.0.unwrap_or_else(Box::<dyn Property<Type<_>>>::arbitrary),
                 0..=2,
             ),
             proptest::collection::vec(
-                args.1.unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary),
+                args.1.unwrap_or_else(
+                    Box::<dyn Property<Constant<_>>>::arbitrary,
+                ),
                 0..=2,
             ),
             ID::arbitrary(),
@@ -127,12 +131,12 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
 impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T>
     for SymbolCongruence<ID>
 where
-    Symbol<ID>: Into<T>,
+    Symbol<Default, ID>: Into<T>,
 {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         for type_strategy in &self.type_strategies {
             type_strategy.apply(table, premise)?;
@@ -166,8 +170,9 @@ where
     }
 }
 
-impl Arbitrary for Box<dyn Property<Type>> {
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<Constant>>>>;
+impl Arbitrary for Box<dyn Property<Type<Default>>> {
+    type Parameters =
+        Option<BoxedStrategy<Box<dyn Property<Constant<Default>>>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
@@ -177,7 +182,7 @@ impl Arbitrary for Box<dyn Property<Type>> {
 
         leaf.prop_recursive(16, 64, 4, move |inner| {
             let const_strat = args.clone().unwrap_or_else(
-                Box::<dyn Property<Constant>>::arbitrary
+                Box::<dyn Property<Constant<_>>>::arbitrary
             );
 
             prop_oneof![
@@ -192,7 +197,7 @@ impl Arbitrary for Box<dyn Property<Type>> {
     }
 }
 
-impl Arbitrary for Box<dyn Property<Constant>> {
+impl Arbitrary for Box<dyn Property<Constant<Default>>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -205,18 +210,18 @@ impl Arbitrary for Box<dyn Property<Constant>> {
 
 #[derive(Debug)]
 pub struct TypeAlias {
-    property: Box<dyn Property<Type>>,
+    property: Box<dyn Property<Type<Default>>>,
     type_id: ID<symbol::Type>,
     type_parameter: TypeParameterID,
 }
 
 impl Arbitrary for TypeAlias {
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type>>>>;
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
-            args.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary),
+            args.unwrap_or_else(Box::<dyn Property<Type<_>>>::arbitrary),
             ID::arbitrary(),
             TypeParameterID::arbitrary(),
         )
@@ -229,11 +234,11 @@ impl Arbitrary for TypeAlias {
     }
 }
 
-impl Property<Type> for TypeAlias {
+impl Property<Type<Default>> for TypeAlias {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         self.property.apply(table, premise)?;
 
@@ -274,7 +279,7 @@ impl Property<Type> for TypeAlias {
         Ok(())
     }
 
-    fn generate(&self) -> Type {
+    fn generate(&self) -> Type<Default> {
         Type::Symbol(Symbol {
             id: SymbolID::Type(self.type_id),
             generic_arguments: GenericArguments {
@@ -286,11 +291,11 @@ impl Property<Type> for TypeAlias {
     }
 }
 
-fn property_based_testing<T: Term + 'static>(
+fn property_based_testing<T: Term<Model = Default> + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult
 where
-    session::Default: Session<T>,
+    session::Default<Default>: Session<T>,
 {
     let term = property.generate();
     let mut premise = Premise::default();
@@ -305,7 +310,8 @@ where
         }
     })?;
 
-    let environment = &Environment { table: &table, premise: &premise };
+    let environment =
+        &Environment { table: &table, premise: &premise, normalizer: &NoOp };
     prop_assert!(definite(
         &term,
         environment,
@@ -316,11 +322,17 @@ where
     // remove one of the mappings and check if the term is still definite
     {
         let mut premise_removed = premise.clone();
-        if premise_removed.equivalent.remove_class::<Type>(0).is_some()
-            || premise_removed.equivalent.remove_class::<Constant>(0).is_some()
+        if premise_removed.equivalent.remove_class::<Type<_>>(0).is_some()
+            || premise_removed
+                .equivalent
+                .remove_class::<Constant<_>>(0)
+                .is_some()
         {
-            let environment =
-                &Environment { table: &table, premise: &premise_removed };
+            let environment = &Environment {
+                table: &table,
+                premise: &premise_removed,
+                normalizer: &NoOp,
+            };
             prop_assert!(!definite(
                 &term,
                 environment,
@@ -339,20 +351,20 @@ proptest! {
     #![proptest_config(proptest::test_runner::Config {
         max_shrink_iters: 100_000,
         cases: 8192,
-        ..Default::default()
+        ..std::default::Default::default()
     })]
 
     #[test]
     fn property_based_testing_constant(
-       property in Box::<dyn Property<Constant>>::arbitrary(),
+       property in Box::<dyn Property<Constant<Default>>>::arbitrary(),
     ) {
-        property_based_testing::<Constant>(&*property)?;
+        property_based_testing::<Constant<_>>(&*property)?;
     }
 
     #[test]
     fn property_based_testing_type(
-        property in Box::<dyn Property<Type>>::arbitrary(),
+        property in Box::<dyn Property<Type<Default>>>::arbitrary(),
     ) {
-        property_based_testing::<Type>(&*property)?;
+        property_based_testing::<Type<_>>(&*property)?;
     }
 }

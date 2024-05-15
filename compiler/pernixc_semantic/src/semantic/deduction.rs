@@ -10,6 +10,7 @@ use super::{
     instantiation::{self, Instantiation},
     mapping::Mapping,
     model::Model,
+    normalizer::Normalizer,
     session::{ExceedLimitError, Limit, Session},
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
@@ -51,7 +52,7 @@ impl<M: Model> unification::Config<M> for DeductionUnifyingConfig {
 fn unify<T: Term>(
     lhs: &[T],
     rhs: &[T],
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>
@@ -99,7 +100,7 @@ fn extract<K: Eq + Hash, V>(
 fn mapping_equals<T: Term>(
     unification: HashMap<T, HashSet<T>>,
     substitution: &Instantiation<T::Model>,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>
@@ -123,7 +124,7 @@ fn mapping_equals<T: Term>(
 #[allow(clippy::type_complexity)]
 fn from_unification_to_substitution<T: Term>(
     unification: HashMap<T, HashSet<T>>,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>
@@ -159,7 +160,7 @@ impl<M: Model> GenericArguments<M> {
     pub fn deduce(
         &self,
         another: &Self,
-        environment: &Environment<M, impl State>,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
         limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,

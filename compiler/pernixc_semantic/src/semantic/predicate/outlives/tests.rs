@@ -10,6 +10,8 @@ use proptest::{
 use crate::{
     semantic::{
         equality,
+        model::Default,
+        normalizer::NoOp,
         predicate::{Equality, Outlives, Predicate},
         session::{self, ExceedLimitError, Limit, Session},
         term::{
@@ -53,12 +55,12 @@ pub trait Property<T>: 'static + Debug {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError>;
 
     /// Generates the term for testing.
     #[must_use]
-    fn generate(&self) -> (T, Lifetime);
+    fn generate(&self) -> (T, Lifetime<Default>);
 }
 
 #[derive(Debug)]
@@ -67,20 +69,20 @@ pub struct ByEquality<T: Term> {
     pub property: Box<dyn Property<T>>,
 }
 
-impl<T: Term> Property<T> for ByEquality<T>
+impl<T: Term<Model = Default>> Property<T> for ByEquality<T>
 where
-    session::Default: Session<T>,
-    Equality<T::TraitMember, T>: Into<Predicate>,
+    session::Default<Default>: Session<T>,
+    Equality<T::TraitMember, T>: Into<Predicate<Default>>,
 {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         if Outlives::satisfies(
             &T::from(self.equality.clone()),
             &self.property.generate().1,
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -99,7 +101,7 @@ where
         Ok(())
     }
 
-    fn generate(&self) -> (T, Lifetime) {
+    fn generate(&self) -> (T, Lifetime<Default>) {
         let (_, bound) = self.property.generate();
 
         (T::from(self.equality.clone()), bound)
@@ -127,15 +129,15 @@ where
 #[derive(Debug)]
 pub struct LifetimeMatching {
     pub id: r#type::SymbolID,
-    pub lifetime_properties: Vec<Box<dyn Property<Lifetime>>>,
-    pub bound: Lifetime,
+    pub lifetime_properties: Vec<Box<dyn Property<Lifetime<Default>>>>,
+    pub bound: Lifetime<Default>,
 }
 
-impl Property<Type> for LifetimeMatching {
+impl Property<Type<Default>> for LifetimeMatching {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         let (ty, bound) = self.generate();
         let mut bound_lifetimes = Vec::new();
@@ -143,7 +145,7 @@ impl Property<Type> for LifetimeMatching {
             if Outlives::satisfies(
                 &ty,
                 &bound,
-                &Environment { premise, table },
+                &Environment { premise, table, normalizer: &NoOp },
                 &mut Limit::new(&mut session::Default::default()),
             )? {
                 return Ok(());
@@ -156,7 +158,7 @@ impl Property<Type> for LifetimeMatching {
         if !Outlives::satisfies(
             &ty,
             &bound,
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             premise.append_from_predicates(std::iter::once(
@@ -177,7 +179,7 @@ impl Property<Type> for LifetimeMatching {
         Ok(())
     }
 
-    fn generate(&self) -> (Type, Lifetime) {
+    fn generate(&self) -> (Type<Default>, Lifetime<Default>) {
         let mut operand_lifetimes = Vec::new();
 
         for lifetime in &self.lifetime_properties {
@@ -206,7 +208,7 @@ impl Arbitrary for LifetimeMatching {
         (
             r#type::SymbolID::arbitrary(),
             proptest::collection::vec(
-                Box::<dyn Property<Lifetime>>::arbitrary(),
+                Box::<dyn Property<Lifetime<_>>>::arbitrary(),
                 1..=8,
             ),
             Lifetime::arbitrary(),
@@ -222,21 +224,21 @@ impl Arbitrary for LifetimeMatching {
 
 #[derive(Debug)]
 pub struct Reflexive {
-    pub term: Box<dyn equality::tests::Property<Lifetime>>,
+    pub term: Box<dyn equality::tests::Property<Lifetime<Default>>>,
 }
 
-impl Property<Lifetime> for Reflexive {
+impl Property<Lifetime<Default>> for Reflexive {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
 
         if Outlives::satisfies(
             &lhs,
             &rhs,
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -246,7 +248,7 @@ impl Property<Lifetime> for Reflexive {
         Ok(())
     }
 
-    fn generate(&self) -> (Lifetime, Lifetime) {
+    fn generate(&self) -> (Lifetime<Default>, Lifetime<Default>) {
         let (term, bound) = self.term.generate();
         (term, bound)
     }
@@ -257,7 +259,7 @@ impl Arbitrary for Reflexive {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Box::<dyn equality::tests::Property<Lifetime>>::arbitrary()
+        Box::<dyn equality::tests::Property<Lifetime<_>>>::arbitrary()
             .prop_map(|term| Self { term })
             .boxed()
     }
@@ -266,7 +268,7 @@ impl Arbitrary for Reflexive {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ByPremise<T> {
     pub term: T,
-    pub bound: Lifetime,
+    pub bound: Lifetime<Default>,
 }
 
 impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + 'static> Arbitrary
@@ -282,20 +284,20 @@ impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + 'static> Arbitrary
     }
 }
 
-impl<T: Term> Property<T> for ByPremise<T>
+impl<T: Term<Model = Default>> Property<T> for ByPremise<T>
 where
-    session::Default: Session<T>,
-    Outlives<T>: Into<Predicate>,
+    session::Default<Default>: Session<T>,
+    Outlives<T>: Into<Predicate<Default>>,
 {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         if Outlives::satisfies(
             &self.term,
             &self.bound,
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -308,23 +310,25 @@ where
         Ok(())
     }
 
-    fn generate(&self) -> (T, Lifetime) { (self.term.clone(), self.bound) }
+    fn generate(&self) -> (T, Lifetime<Default>) {
+        (self.term.clone(), self.bound)
+    }
 }
 
 #[derive(Debug)]
 pub struct Transitive<T> {
     pub inner_property: Box<dyn Property<T>>,
-    pub bound: Lifetime,
+    pub bound: Lifetime<Default>,
 }
 
-impl<T: Term> Property<T> for Transitive<T>
+impl<T: Term<Model = Default>> Property<T> for Transitive<T>
 where
-    session::Default: Session<T>,
+    session::Default<Default>: Session<T>,
 {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         let (operand, bound) = self.generate();
         let (inner_operand, inner_bound) = self.inner_property.generate();
@@ -332,7 +336,7 @@ where
         if Outlives::satisfies(
             &operand,
             &bound,
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -341,7 +345,7 @@ where
         if !Outlives::satisfies(
             &inner_bound,
             &self.bound,
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             premise.append_from_predicates(std::iter::once(
@@ -355,7 +359,7 @@ where
         if !Outlives::satisfies(
             &inner_operand,
             &inner_bound,
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             self.inner_property.apply(table, premise)?;
@@ -365,7 +369,7 @@ where
         Ok(())
     }
 
-    fn generate(&self) -> (T, Lifetime) {
+    fn generate(&self) -> (T, Lifetime<Default>) {
         let (operand, _) = self.inner_property.generate();
 
         (operand, self.bound)
@@ -390,7 +394,7 @@ where
     }
 }
 
-impl Arbitrary for Box<dyn Property<Type>> {
+impl Arbitrary for Box<dyn Property<Type<Default>>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -410,7 +414,7 @@ impl Arbitrary for Box<dyn Property<Type>> {
     }
 }
 
-impl Arbitrary for Box<dyn Property<Lifetime>> {
+impl Arbitrary for Box<dyn Property<Lifetime<Default>>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -428,11 +432,11 @@ impl Arbitrary for Box<dyn Property<Lifetime>> {
     }
 }
 
-fn property_based_testing<T: Term + 'static>(
+fn property_based_testing<T: Term<Model = Default> + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult
 where
-    session::Default: Session<T>,
+    session::Default<Default>: Session<T>,
 {
     let (term1, term2) = property.generate();
     let mut premise = Premise::default();
@@ -447,7 +451,8 @@ where
         }
     })?;
 
-    let environment = &Environment { table: &table, premise: &premise };
+    let environment =
+        &Environment { table: &table, premise: &premise, normalizer: &NoOp };
     prop_assert!(Outlives::satisfies(
         &term1,
         &term2,
@@ -459,12 +464,18 @@ where
     {
         let mut premise_cloned = premise.clone();
 
-        if premise_cloned.equivalent.remove_class::<Lifetime>(0).is_some()
-            || premise_cloned.equivalent.remove_class::<Type>(0).is_some()
-            || premise_cloned.equivalent.remove_class::<Constant>(0).is_some()
+        if premise_cloned.equivalent.remove_class::<Lifetime<_>>(0).is_some()
+            || premise_cloned.equivalent.remove_class::<Type<_>>(0).is_some()
+            || premise_cloned
+                .equivalent
+                .remove_class::<Constant<_>>(0)
+                .is_some()
         {
-            let environment =
-                &Environment { table: &table, premise: &premise_cloned };
+            let environment = &Environment {
+                table: &table,
+                premise: &premise_cloned,
+                normalizer: &NoOp,
+            };
             prop_assert!(!Outlives::satisfies(
                 &term1,
                 &term2,
@@ -482,19 +493,19 @@ proptest! {
     #![proptest_config(proptest::test_runner::Config {
         max_shrink_iters: 100_000,
         max_global_rejects: 8192,
-        ..Default::default()
+        ..std::default::Default::default()
     })]
 
     #[test]
     fn property_based_testing_lifetime(
-        property in Box::<dyn Property<Lifetime>>::arbitrary()
+        property in Box::<dyn Property<Lifetime<Default>>>::arbitrary()
     ) {
         property_based_testing(&*property)?;
     }
 
     #[test]
     fn property_based_testing_type(
-        property in Box::<dyn Property<Type>>::arbitrary()
+        property in Box::<dyn Property<Type<Default>>>::arbitrary()
     ) {
         property_based_testing(&*property)?;
     }
@@ -506,7 +517,8 @@ proptest! {
     ) {
         let environment = &Environment {
             table: &Table::<State>::default(),
-            premise: &Premise::default()
+            premise: &Premise::default(),
+            normalizer: &NoOp
         };
         prop_assert!(
             Outlives::satisfies(

@@ -4,6 +4,7 @@ use crate::{
         equality, get_equivalences,
         instantiation::{self, Instantiation},
         model::Model,
+        normalizer::Normalizer,
         session::{self, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor, Environment, Satisfied,
@@ -17,11 +18,12 @@ struct Visitor<
     'r,
     'l,
     T: State,
+    N: Normalizer<M>,
     R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
     M: Model,
 > {
     constant_type: Result<bool, ExceedLimitError>,
-    environment: &'a Environment<'a, M, T>,
+    environment: &'a Environment<'a, M, T, N>,
     limit: &'l mut Limit<'r, R>,
 }
 
@@ -32,11 +34,12 @@ impl<
         'v,
         U: Term,
         T: State,
+        N: Normalizer<U::Model>,
         R: Session<U>
             + Session<Lifetime<U::Model>>
             + Session<Type<U::Model>>
             + Session<Constant<U::Model>>,
-    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, R, U::Model>
+    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, N, R, U::Model>
 {
     fn visit(&mut self, term: &U, _: U::Location) -> bool {
         match satisfies_internal(
@@ -97,10 +100,10 @@ impl<M: Model> ConstantType<M> {
     }
 }
 
-fn satisfies_internal<T: Term>(
+fn satisfies_internal<T: Term, N: Normalizer<T::Model>>(
     term: &T,
     query_source: QuerySource,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, N>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>
@@ -200,7 +203,7 @@ impl<M: Model> ConstantType<M> {
     /// See [`ExceedLimitError`] for more information.
     pub fn satisfies(
         ty: &Type<M>,
-        environment: &Environment<M, impl State>,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
         limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,

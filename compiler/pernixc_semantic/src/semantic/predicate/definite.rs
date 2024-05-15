@@ -3,6 +3,7 @@ use crate::{
     semantic::{
         get_equivalences,
         model::Model,
+        normalizer::Normalizer,
         session::{self, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor, Environment, Satisfied,
@@ -16,11 +17,12 @@ struct Visitor<
     'r,
     'l,
     T: State,
+    N: Normalizer<M>,
     R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
     M: Model,
 > {
     definite: Result<bool, ExceedLimitError>,
-    environment: &'a Environment<'a, M, T>,
+    environment: &'a Environment<'a, M, T, N>,
     limit: &'l mut Limit<'r, R>,
 }
 
@@ -31,11 +33,12 @@ impl<
         'v,
         U: Term,
         T: State,
+        N: Normalizer<U::Model>,
         R: Session<U>
             + Session<Lifetime<U::Model>>
             + Session<Type<U::Model>>
             + Session<Constant<U::Model>>,
-    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, R, U::Model>
+    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, N, R, U::Model>
 {
     fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
         match definite(term, self.environment, self.limit) {
@@ -62,7 +65,7 @@ pub struct Query<'a, T>(pub &'a T);
 /// See [`ExceedLimitError`] for more information.
 pub fn definite<T: Term>(
     term: &T,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>

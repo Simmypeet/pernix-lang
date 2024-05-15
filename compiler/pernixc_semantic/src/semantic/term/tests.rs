@@ -8,11 +8,11 @@ use proptest::{
 
 use super::{
     constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
-    Local, MemberSymbol, Symbol, Tuple,
+    Local, MemberSymbol, Symbol, Term, Tuple,
 };
 use crate::{
     arena::ID,
-    semantic::term::TupleElement,
+    semantic::{model::Default, term::TupleElement},
     symbol::{GenericID, MemberID},
 };
 
@@ -70,14 +70,14 @@ impl Arbitrary for GenericID {
     }
 }
 
-impl<ID: Arbitrary> Arbitrary for Symbol<ID>
+impl<ID: Arbitrary> Arbitrary for Symbol<Default, ID>
 where
     ID::Strategy: 'static,
 {
     type Parameters = (
-        Option<BoxedStrategy<Lifetime>>,
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<Constant>>,
+        Option<BoxedStrategy<Lifetime<Default>>>,
+        Option<BoxedStrategy<Type<Default>>>,
+        Option<BoxedStrategy<Constant<Default>>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
@@ -106,7 +106,8 @@ where
     }
 }
 
-impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + 'static> Arbitrary for Local<T>
+impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + Term + 'static> Arbitrary
+    for Local<T>
 where
     Self: Into<T>,
 {
@@ -120,14 +121,14 @@ where
     }
 }
 
-impl<ID: Debug + Arbitrary> Arbitrary for MemberSymbol<ID>
+impl<ID: Debug + Arbitrary> Arbitrary for MemberSymbol<Default, ID>
 where
     ID::Strategy: 'static,
 {
     type Parameters = (
-        Option<BoxedStrategy<Lifetime>>,
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<Constant>>,
+        Option<BoxedStrategy<Lifetime<Default>>>,
+        Option<BoxedStrategy<Type<Default>>>,
+        Option<BoxedStrategy<Constant<Default>>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
@@ -184,12 +185,12 @@ where
     }
 }
 
-impl Arbitrary for GenericArguments {
+impl Arbitrary for GenericArguments<Default> {
     type Strategy = BoxedStrategy<Self>;
     type Parameters = (
-        Option<BoxedStrategy<Lifetime>>,
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<Constant>>,
+        Option<BoxedStrategy<Lifetime<Default>>>,
+        Option<BoxedStrategy<Type<Default>>>,
+        Option<BoxedStrategy<Constant<Default>>>,
     );
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {

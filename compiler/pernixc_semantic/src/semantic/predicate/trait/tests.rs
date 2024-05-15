@@ -15,6 +15,8 @@ use crate::{
     arena::ID,
     semantic::{
         instantiation::{self, Instantiation},
+        model::Default,
+        normalizer::NoOp,
         order::Order,
         predicate::{self, definite, TraitResolveError},
         session::{self, Limit},
@@ -40,12 +42,16 @@ lazy_static! {
     static ref TABLE: Table<State> = Table::default();
 }
 
-fn definite_lifetime() -> impl Strategy<Value = Lifetime> {
+fn definite_lifetime() -> impl Strategy<Value = Lifetime<Default>> {
     Lifetime::arbitrary().prop_filter("filter out non-definite terms", |term| {
         matches!(
             definite::definite(
                 term,
-                &Environment { premise: &Premise::default(), table: &*TABLE },
+                &Environment {
+                    premise: &Premise::default(),
+                    table: &*TABLE,
+                    normalizer: &NoOp
+                },
                 &mut Limit::new(&mut session::Default::default())
             ),
             Ok(true)
@@ -54,12 +60,16 @@ fn definite_lifetime() -> impl Strategy<Value = Lifetime> {
     })
 }
 
-fn definite_type() -> impl Strategy<Value = Type> {
+fn definite_type() -> impl Strategy<Value = Type<Default>> {
     Type::arbitrary().prop_filter("filter out non-definite terms", |term| {
         matches!(
             definite::definite(
                 term,
-                &Environment { premise: &Premise::default(), table: &*TABLE },
+                &Environment {
+                    premise: &Premise::default(),
+                    table: &*TABLE,
+                    normalizer: &NoOp
+                },
                 &mut Limit::new(&mut session::Default::default())
             ),
             Ok(true)
@@ -68,12 +78,16 @@ fn definite_type() -> impl Strategy<Value = Type> {
     })
 }
 
-fn definite_constant() -> impl Strategy<Value = Constant> {
+fn definite_constant() -> impl Strategy<Value = Constant<Default>> {
     Constant::arbitrary().prop_filter("filter out non-definite terms", |term| {
         matches!(
             definite::definite(
                 term,
-                &Environment { premise: &Premise::default(), table: &*TABLE },
+                &Environment {
+                    premise: &Premise::default(),
+                    table: &*TABLE,
+                    normalizer: &NoOp
+                },
                 &mut Limit::new(&mut session::Default::default())
             ),
             Ok(true)
@@ -82,7 +96,8 @@ fn definite_constant() -> impl Strategy<Value = Constant> {
     })
 }
 
-fn definite_generic_arguments() -> impl Strategy<Value = GenericArguments> {
+fn definite_generic_arguments(
+) -> impl Strategy<Value = GenericArguments<Default>> {
     (
         proptest::collection::vec(definite_lifetime(), 0..4),
         proptest::collection::vec(definite_type(), 0..4),
@@ -100,9 +115,9 @@ pub struct SingleImplementation {
     pub trait_id: ID<Trait>,
     pub defined_in_module_id: ID<Module>,
     pub target_implementation_id: ID<TraitImplementation>,
-    pub generic_arguments: GenericArguments,
+    pub generic_arguments: GenericArguments<Default>,
     pub table: Table<State>,
-    pub expected_instantiation: Instantiation,
+    pub expected_instantiation: Instantiation<Default>,
 }
 
 impl SingleImplementation {
@@ -113,7 +128,11 @@ impl SingleImplementation {
         let result = super::resolve_implementation(
             self.trait_id,
             &self.generic_arguments,
-            &Environment { premise: &premise, table: &self.table },
+            &Environment {
+                premise: &premise,
+                table: &self.table,
+                normalizer: &NoOp,
+            },
             &mut Limit::new(&mut session),
         )?;
 
@@ -128,7 +147,7 @@ impl SingleImplementation {
     }
 
     fn create_table_from_generic_arguments(
-        generic_arguments: &GenericArguments,
+        generic_arguments: &GenericArguments<Default>,
     ) -> (Table<State>, ID<Module>, ID<Trait>) {
         let mut table = Table::<State>::default();
 
@@ -221,10 +240,10 @@ impl SingleImplementation {
         table: &mut Table<State>,
         module_id: ID<Module>,
         trait_id: ID<Trait>,
-        mut generic_arguments: GenericArguments,
-        to_be_substituted_type: Vec<Type>,
-        to_be_substituted_constant: Vec<Constant>,
-    ) -> (ID<TraitImplementation>, Instantiation) {
+        mut generic_arguments: GenericArguments<Default>,
+        to_be_substituted_type: Vec<Type<Default>>,
+        to_be_substituted_constant: Vec<Constant<Default>>,
+    ) -> (ID<TraitImplementation>, Instantiation<Default>) {
         // the trait implementation id which will be resolved to
         let implementation_id = {
             table.representation.trait_implementations.insert_with(|_| {
@@ -518,10 +537,10 @@ pub struct SpecializedImplementation {
     #[allow(clippy::struct_field_names)]
     pub specialized_implementation_id: ID<TraitImplementation>,
 
-    pub expected_specialized_instantitation: Instantiation,
-    pub expected_general_instantitation: Instantiation,
+    pub expected_specialized_instantitation: Instantiation<Default>,
+    pub expected_general_instantitation: Instantiation<Default>,
 
-    pub generic_arguments: GenericArguments,
+    pub generic_arguments: GenericArguments<Default>,
 }
 
 impl SpecializedImplementation {
@@ -533,7 +552,11 @@ impl SpecializedImplementation {
         let result = super::resolve_implementation(
             self.trait_id,
             &self.generic_arguments,
-            &Environment { premise: &premise, table: &self.table },
+            &Environment {
+                premise: &premise,
+                table: &self.table,
+                normalizer: &NoOp,
+            },
             &mut Limit::new(&mut session),
         )?;
 
@@ -552,11 +575,11 @@ impl SpecializedImplementation {
         table: &mut Table<State>,
         module_id: ID<Module>,
         trait_id: ID<Trait>,
-        mut generic_arguments: GenericArguments,
-        expected_specialized_instantiation: &Instantiation,
-        to_be_substituted_type: Vec<Type>,
-        to_be_substituted_constant: Vec<Constant>,
-    ) -> Option<(ID<TraitImplementation>, Instantiation)> {
+        mut generic_arguments: GenericArguments<Default>,
+        expected_specialized_instantiation: &Instantiation<Default>,
+        to_be_substituted_type: Vec<Type<Default>>,
+        to_be_substituted_constant: Vec<Constant<Default>>,
+    ) -> Option<(ID<TraitImplementation>, Instantiation<Default>)> {
         let starting_generic_arguments = generic_arguments.clone();
         let mut expected_instantitation = Instantiation::default();
 
@@ -778,7 +801,7 @@ impl SpecializedImplementation {
 
         if general_implementation.signature.arguments.clone().order(
             &starting_generic_arguments,
-            &Environment { premise: &premise, table },
+            &Environment { premise: &premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session),
         ) != Ok(Order::MoreGeneral)
         {
@@ -921,7 +944,11 @@ impl FallbackToGeneralImplementation {
         let result = super::resolve_implementation(
             self.0.trait_id,
             &self.0.generic_arguments,
-            &Environment { premise: &premise, table: &self.0.table },
+            &Environment {
+                premise: &premise,
+                table: &self.0.table,
+                normalizer: &NoOp,
+            },
             &mut Limit::new(&mut session),
         )?;
 
@@ -1003,7 +1030,7 @@ pub struct NegativeImplementation {
     pub table: Table<State>,
     pub trait_id: ID<Trait>,
 
-    pub generic_arguments: GenericArguments,
+    pub generic_arguments: GenericArguments<Default>,
 }
 
 impl NegativeImplementation {
@@ -1014,7 +1041,11 @@ impl NegativeImplementation {
         let result = super::resolve_implementation(
             self.trait_id,
             &self.generic_arguments,
-            &Environment { premise: &premise, table: &self.table },
+            &Environment {
+                premise: &premise,
+                table: &self.table,
+                normalizer: &NoOp,
+            },
             &mut Limit::new(&mut session),
         );
 

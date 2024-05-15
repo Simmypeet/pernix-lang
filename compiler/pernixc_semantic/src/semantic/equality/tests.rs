@@ -12,6 +12,8 @@ use crate::{
     arena::ID,
     semantic::{
         instantiation::{self, Instantiation},
+        model::Default,
+        normalizer::NoOp,
         predicate::{Equality, Predicate},
         session::{self, ExceedLimitError, Limit, Session},
         sub_term::TermLocation,
@@ -34,7 +36,7 @@ use crate::{
 
 #[test]
 fn reflexive() {
-    let premise = Premise::default();
+    let premise = Premise::<Default>::default();
     let table = Table::<State>::default();
 
     let term = Type::Primitive(Primitive::Bool);
@@ -42,7 +44,7 @@ fn reflexive() {
     assert!(equals(
         &term,
         &term,
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
@@ -50,7 +52,7 @@ fn reflexive() {
 
 #[test]
 fn symmetric() {
-    let trait_member = TraitMember {
+    let trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -70,21 +72,21 @@ fn symmetric() {
     assert!(equals(
         &Type::TraitMember(trait_member.clone()),
         &equivalence,
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
     assert!(equals(
         &Type::TraitMember(trait_member),
         &equivalence,
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
 }
 #[test]
 fn transitivity() {
-    let first_trait_member = TraitMember {
+    let first_trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -116,14 +118,14 @@ fn transitivity() {
     assert!(equals(
         &Type::TraitMember(first_trait_member.clone()),
         &equivalence,
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
     assert!(equals(
         &equivalence,
         &Type::TraitMember(first_trait_member),
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
@@ -131,7 +133,7 @@ fn transitivity() {
 
 #[test]
 fn congruence() {
-    let first_trait_member = TraitMember {
+    let first_trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -183,14 +185,14 @@ fn congruence() {
     assert!(equals(
         &lhs,
         &rhs,
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
     assert!(equals(
         &rhs,
         &lhs,
-        &Environment { premise: &premise, table: &table },
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
@@ -212,7 +214,7 @@ pub trait Property<T>: 'static + Debug {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError>;
 
     /// Generates the term for testing.
@@ -220,7 +222,7 @@ pub trait Property<T>: 'static + Debug {
     fn generate(&self) -> (T, T);
 }
 
-impl Arbitrary for Box<dyn Property<Type>> {
+impl Arbitrary for Box<dyn Property<Type<Default>>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -228,8 +230,8 @@ impl Arbitrary for Box<dyn Property<Type>> {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
         leaf.prop_recursive(10, 60, 6, move |inner| {
-            let constant_strategy = Box::<dyn Property<Constant>>::arbitrary();
-            let lifetime_strategy = Box::<dyn Property<Lifetime>>::arbitrary();
+            let constant_strategy = Box::<dyn Property<Constant::<Default>>>::arbitrary();
+            let lifetime_strategy = Box::<dyn Property<Lifetime::<Default>>>::arbitrary();
 
             prop_oneof![
                 2 => Mapping::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
@@ -247,7 +249,7 @@ impl Arbitrary for Box<dyn Property<Type>> {
     }
 }
 
-impl Arbitrary for Box<dyn Property<Lifetime>> {
+impl Arbitrary for Box<dyn Property<Lifetime<Default>>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -256,7 +258,7 @@ impl Arbitrary for Box<dyn Property<Lifetime>> {
     }
 }
 
-impl Arbitrary for Box<dyn Property<Constant>> {
+impl Arbitrary for Box<dyn Property<Constant<Default>>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -293,7 +295,7 @@ impl<T: Term + Debug + 'static> Property<T> for Identity<T> {
     fn apply(
         &self,
         _: &mut Table<State>,
-        _: &mut Premise,
+        _: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         Ok(())
     }
@@ -314,7 +316,7 @@ where
     Box<dyn Property<T>>:
         Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
     T::TraitMember: Arbitrary<Strategy = BoxedStrategy<T::TraitMember>>,
-    session::Default: Session<T>,
+    session::Default<Default>: Session<T>,
 {
     type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
     type Strategy = BoxedStrategy<Self>;
@@ -332,22 +334,22 @@ where
     }
 }
 
-impl<T: Term + Debug + 'static> Property<T> for Mapping<T>
+impl<T: Term<Model = Default> + Debug + 'static> Property<T> for Mapping<T>
 where
-    session::Default: Session<T>,
-    Equality<T::TraitMember, T>: Into<Predicate>,
+    session::Default<Default>: Session<T>,
+    Equality<T::TraitMember, T>: Into<Predicate<Default>>,
 {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
 
         if equals(
             &lhs,
             &rhs,
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -362,12 +364,12 @@ where
         if equals(
             &lhs,
             &rhs,
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? || equals(
             &to_be_mapped,
             &T::from(self.target_trait_member.clone()),
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -411,7 +413,7 @@ where
     Local<T>: Into<T>,
     Box<dyn Property<T>>:
         Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
-    session::Default: Session<T>,
+    session::Default<Default>: Session<T>,
 {
     type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
     type Strategy = BoxedStrategy<Self>;
@@ -423,21 +425,22 @@ where
     }
 }
 
-impl<T: Term + Debug + 'static> Property<T> for LocalCongruence<T>
+impl<T: Term<Model = Default> + Debug + 'static> Property<T>
+    for LocalCongruence<T>
 where
     Local<T>: Into<T>,
-    session::Default: Session<T>,
+    session::Default<Default>: Session<T>,
 {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
         if equals(
             &lhs,
             &rhs,
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -455,9 +458,9 @@ where
 
 #[derive(Debug)]
 pub struct SymbolCongruence<ID> {
-    lifetime_properties: Vec<Box<dyn Property<Lifetime>>>,
-    type_properties: Vec<Box<dyn Property<Type>>>,
-    constant_properties: Vec<Box<dyn Property<Constant>>>,
+    lifetime_properties: Vec<Box<dyn Property<Lifetime<Default>>>>,
+    type_properties: Vec<Box<dyn Property<Type<Default>>>>,
+    constant_properties: Vec<Box<dyn Property<Constant<Default>>>>,
 
     id: ID,
 }
@@ -466,24 +469,28 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
     Arbitrary for SymbolCongruence<ID>
 {
     type Parameters = (
-        Option<BoxedStrategy<Box<dyn Property<Lifetime>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Type>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Constant>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Lifetime<Default>>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Constant<Default>>>>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             proptest::collection::vec(
-                args.1.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary),
+                args.1.unwrap_or_else(Box::<dyn Property<Type<_>>>::arbitrary),
                 0..=2,
             ),
             proptest::collection::vec(
-                args.0.unwrap_or_else(Box::<dyn Property<Lifetime>>::arbitrary),
+                args.0.unwrap_or_else(
+                    Box::<dyn Property<Lifetime<_>>>::arbitrary,
+                ),
                 0..=2,
             ),
             proptest::collection::vec(
-                args.2.unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary),
+                args.2.unwrap_or_else(
+                    Box::<dyn Property<Constant<_>>>::arbitrary,
+                ),
                 0..=2,
             ),
             ID::arbitrary(),
@@ -505,16 +512,16 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
     }
 }
 
-impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T>
-    for SymbolCongruence<ID>
+impl<ID: Debug + 'static + Clone, T: Term<Model = Default> + 'static>
+    Property<T> for SymbolCongruence<ID>
 where
-    Symbol<ID>: Into<T>,
-    session::Default: Session<T>,
+    Symbol<Default, ID>: Into<T>,
+    session::Default<Default>: Session<T>,
 {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         for strategy in &self.type_properties {
             strategy.apply(table, premise)?;
@@ -580,23 +587,23 @@ where
 }
 
 struct TermCollector {
-    terms: Vec<Type>,
+    terms: Vec<Type<Default>>,
 }
 
-impl<'v> Recursive<'v, Lifetime> for TermCollector {
+impl<'v> Recursive<'v, Lifetime<Default>> for TermCollector {
     fn visit(
         &mut self,
-        _: &'v Lifetime,
+        _: &'v Lifetime<Default>,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         true
     }
 }
 
-impl<'v> Recursive<'v, Type> for TermCollector {
+impl<'v> Recursive<'v, Type<Default>> for TermCollector {
     fn visit(
         &mut self,
-        term: &'v Type,
+        term: &'v Type<Default>,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         self.terms.push(term.clone());
@@ -604,10 +611,10 @@ impl<'v> Recursive<'v, Type> for TermCollector {
     }
 }
 
-impl<'v> Recursive<'v, Constant> for TermCollector {
+impl<'v> Recursive<'v, Constant<Default>> for TermCollector {
     fn visit(
         &mut self,
-        _: &'v Constant,
+        _: &'v Constant<Default>,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         true
@@ -616,20 +623,20 @@ impl<'v> Recursive<'v, Constant> for TermCollector {
 
 #[derive(Debug)]
 pub struct TypeAlias {
-    property: Box<dyn Property<Type>>,
+    property: Box<dyn Property<Type<Default>>>,
     type_id: ID<symbol::Type>,
-    argument: Type,
+    argument: Type<Default>,
     aliased_at_lhs: bool,
     at_lhs: bool,
 }
 
 impl Arbitrary for TypeAlias {
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type>>>>;
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let strategy =
-            args.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary);
+            args.unwrap_or_else(Box::<dyn Property<Type<_>>>::arbitrary);
 
         (
             (proptest::bool::ANY, strategy).prop_ind_flat_map2(
@@ -657,18 +664,18 @@ impl Arbitrary for TypeAlias {
     }
 }
 
-impl Property<Type> for TypeAlias {
+impl Property<Type<Default>> for TypeAlias {
     fn apply(
         &self,
         table: &mut Table<State>,
-        premise: &mut Premise,
+        premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
 
         if equals(
             &lhs,
             &rhs,
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -679,7 +686,7 @@ impl Property<Type> for TypeAlias {
         if !equals(
             &lhs,
             &rhs,
-            &Environment { premise, table },
+            &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             let type_symbol = symbol::Type {
@@ -743,7 +750,7 @@ impl Property<Type> for TypeAlias {
         Ok(())
     }
 
-    fn generate(&self) -> (Type, Type) {
+    fn generate(&self) -> (Type<Default>, Type<Default>) {
         let (lhs, rhs) = self.property.generate();
         let non_aliased = if self.aliased_at_lhs { rhs } else { lhs };
         let aliased = Type::Symbol(Symbol {
@@ -764,12 +771,12 @@ impl Property<Type> for TypeAlias {
 }
 
 #[allow(clippy::too_many_lines)]
-fn property_based_testing<T: Term + 'static>(
+fn property_based_testing<T: Term<Model = Default> + 'static>(
     property: &dyn Property<T>,
     decoy: Decoy,
 ) -> TestCaseResult
 where
-    session::Default: Session<T>,
+    session::Default<Default>: Session<T>,
 {
     let (term1, term2) = property.generate();
     let mut premise = Premise::default();
@@ -784,7 +791,8 @@ where
         }
     })?;
 
-    let environment = &Environment { premise: &premise, table: &table };
+    let environment =
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp };
     prop_assert!(equals(
         &term1,
         &term2,
@@ -810,12 +818,18 @@ where
     {
         let mut premise_removed = premise.clone();
 
-        if premise_removed.equivalent.remove_class::<Lifetime>(0).is_some()
-            || premise_removed.equivalent.remove_class::<Type>(0).is_some()
-            || premise_removed.equivalent.remove_class::<Constant>(0).is_some()
+        if premise_removed.equivalent.remove_class::<Lifetime<_>>(0).is_some()
+            || premise_removed.equivalent.remove_class::<Type<_>>(0).is_some()
+            || premise_removed
+                .equivalent
+                .remove_class::<Constant<_>>(0)
+                .is_some()
         {
-            let environment =
-                &Environment { premise: &premise_removed, table: &table };
+            let environment = &Environment {
+                premise: &premise_removed,
+                table: &table,
+                normalizer: &NoOp,
+            };
 
             prop_assert!(!equals(
                 &term1,
@@ -839,7 +853,11 @@ where
         let id = table.representation.types.ids().next();
         if let Some(id) = id {
             let removed = table.representation.types.remove(id).unwrap();
-            let environment = &Environment { premise: &premise, table: &table };
+            let environment = &Environment {
+                premise: &premise,
+                table: &table,
+                normalizer: &NoOp,
+            };
 
             prop_assert!(!equals(
                 &term1,
@@ -881,7 +899,8 @@ where
         );
     }
 
-    let environment = &Environment { premise: &premise, table: &table };
+    let environment =
+        &Environment { premise: &premise, table: &table, normalizer: &NoOp };
     prop_assert!(equals(
         &term1,
         &term2,
@@ -902,9 +921,9 @@ where
 
 #[derive(Debug, Default)]
 pub struct Decoy {
-    lifetimes: Vec<DecoyEquality<Lifetime>>,
-    types: Vec<DecoyEquality<Type>>,
-    constants: Vec<DecoyEquality<Constant>>,
+    lifetimes: Vec<DecoyEquality<Lifetime<Default>>>,
+    types: Vec<DecoyEquality<Type<Default>>>,
+    constants: Vec<DecoyEquality<Constant<Default>>>,
 }
 
 impl Arbitrary for Decoy {
@@ -950,12 +969,12 @@ proptest! {
         max_shrink_iters: 100_000,
         max_global_rejects: 8192,
         cases: 8192,
-        ..Default::default()
+        ..std::default::Default::default()
     })]
 
     #[test]
     fn property_based_testing_constant(
-       property in Box::<dyn Property<Constant>>::arbitrary(),
+       property in Box::<dyn Property<Constant<Default>>>::arbitrary(),
         decoy in Decoy::arbitrary()
     ) {
         property_based_testing(&*property, decoy)?;
@@ -963,7 +982,7 @@ proptest! {
 
     #[test]
     fn property_based_testing_type(
-        property in Box::<dyn Property<Type>>::arbitrary(),
+        property in Box::<dyn Property<Type<Default>>>::arbitrary(),
         decoy in Decoy::arbitrary()
     ) {
         property_based_testing(&*property, decoy)?;
@@ -971,7 +990,7 @@ proptest! {
 
     #[test]
     fn property_based_testing_lifetime(
-        property in Box::<dyn Property<Lifetime>>::arbitrary(),
+        property in Box::<dyn Property<Lifetime<Default>>>::arbitrary(),
         decoy in Decoy::arbitrary()
     ) {
         property_based_testing(&*property, decoy)?;

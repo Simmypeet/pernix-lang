@@ -6,6 +6,7 @@ use crate::{
     arena::ID,
     error,
     semantic::{
+        normalizer::NoOp,
         session::{self, Limit},
         simplify, Environment,
     },
@@ -109,7 +110,11 @@ impl Finalize for Enum {
                     if let Some(associated_ty) = &mut variant.associated_type {
                         if let Ok(simplified) = simplify::simplify(
                             associated_ty,
-                            &Environment { premise: &premise, table },
+                            &Environment {
+                                premise: &premise,
+                                table,
+                                normalizer: &NoOp,
+                            },
                             &mut Limit::new(&mut session),
                         ) {
                             *associated_ty = simplified;

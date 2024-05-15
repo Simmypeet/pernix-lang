@@ -12,9 +12,12 @@ use super::{
 };
 use crate::{
     arena::ID,
-    semantic::term::{
-        constant::Constant, lifetime::Lifetime, Local, MemberSymbol, Symbol,
-        Tuple,
+    semantic::{
+        model::Default,
+        term::{
+            constant::Constant, lifetime::Lifetime, Local, MemberSymbol,
+            Symbol, Tuple,
+        },
     },
     symbol::TypeParameterID,
 };
@@ -57,8 +60,8 @@ impl Arbitrary for Qualifier {
     }
 }
 
-impl Arbitrary for Pointer {
-    type Parameters = Option<BoxedStrategy<Type>>;
+impl Arbitrary for Pointer<Default> {
+    type Parameters = Option<BoxedStrategy<Type<Default>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(type_strategy: Self::Parameters) -> Self::Strategy {
@@ -72,9 +75,11 @@ impl Arbitrary for Pointer {
     }
 }
 
-impl Arbitrary for Reference {
-    type Parameters =
-        (Option<BoxedStrategy<Lifetime>>, Option<BoxedStrategy<Type>>);
+impl Arbitrary for Reference<Default> {
+    type Parameters = (
+        Option<BoxedStrategy<Lifetime<Default>>>,
+        Option<BoxedStrategy<Type<Default>>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(
@@ -120,9 +125,11 @@ impl Arbitrary for MemberSymbolID {
     }
 }
 
-impl Arbitrary for Array {
-    type Parameters =
-        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Constant>>);
+impl Arbitrary for Array<Default> {
+    type Parameters = (
+        Option<BoxedStrategy<Type<Default>>>,
+        Option<BoxedStrategy<Constant<Default>>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(
@@ -137,9 +144,11 @@ impl Arbitrary for Array {
     }
 }
 
-impl Arbitrary for Type {
-    type Parameters =
-        (Option<BoxedStrategy<Lifetime>>, Option<BoxedStrategy<Constant>>);
+impl Arbitrary for Type<Default> {
+    type Parameters = (
+        Option<BoxedStrategy<Lifetime<Default>>>,
+        Option<BoxedStrategy<Constant<Default>>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(param: Self::Parameters) -> Self::Strategy {

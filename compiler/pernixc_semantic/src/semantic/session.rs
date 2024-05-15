@@ -406,8 +406,8 @@ implements_cache!(
     (),
     query,
     lifetime_equals,
-    (*query.lhs, *query.rhs),
-    &(*query.lhs, *query.rhs)
+    (query.lhs.clone(), query.rhs.clone()),
+    &(query.lhs.clone(), query.rhs.clone())
 );
 
 implements_cache!(
@@ -436,7 +436,7 @@ implements_cache!(
     (),
     record,
     lifetime_is_definite,
-    *record.0,
+    record.0.clone(),
     record.0
 );
 
@@ -466,8 +466,8 @@ implements_cache!(
     (),
     record,
     lifetime_unifies,
-    (*record.lhs, *record.rhs),
-    &(*record.lhs, *record.rhs)
+    (record.lhs.clone(), record.rhs.clone()),
+    &(record.lhs.clone(), record.rhs.clone())
 );
 
 implements_cache!(
@@ -496,7 +496,7 @@ implements_cache!(
     (),
     record,
     lifetime_is_tuple,
-    *record.0,
+    record.0.clone(),
     record.0
 );
 
@@ -526,8 +526,8 @@ implements_cache!(
     (),
     record,
     lifetime_outlives,
-    (*record.operand, *record.bound),
-    &(*record.operand, *record.bound)
+    (record.operand.clone(), record.bound.clone()),
+    &(record.operand.clone(), record.bound.clone())
 );
 
 implements_cache!(
@@ -536,8 +536,8 @@ implements_cache!(
     (),
     record,
     type_outlives,
-    (record.operand.clone(), *record.bound),
-    &(record.operand.clone(), *record.bound)
+    (record.operand.clone(), record.bound.clone()),
+    &(record.operand.clone(), record.bound.clone())
 );
 
 implements_cache!(
@@ -546,8 +546,8 @@ implements_cache!(
     (),
     record,
     constant_outlives,
-    (record.operand.clone(), *record.bound),
-    &(record.operand.clone(), *record.bound)
+    (record.operand.clone(), record.bound.clone()),
+    &(record.operand.clone(), record.bound.clone())
 );
 
 implements_cache!(
@@ -556,7 +556,7 @@ implements_cache!(
     ConstantTypeQuerySource,
     record,
     lifetime_constant_type,
-    *record.0,
+    record.0.clone(),
     record.0
 );
 
@@ -596,7 +596,7 @@ implements_cache!(
     (),
     record,
     lifetime_simplify,
-    *record.0,
+    record.0.clone(),
     record.0
 );
 

@@ -7,13 +7,18 @@ use proptest::{
 use super::Lifetime;
 use crate::{
     arena::ID,
-    semantic::term::{constant::Constant, r#type::Type},
+    semantic::{
+        model::Default,
+        term::{constant::Constant, r#type::Type},
+    },
     symbol::{GenericID, LifetimeParameterID},
 };
 
-impl Arbitrary for Lifetime {
-    type Parameters =
-        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Constant>>);
+impl Arbitrary for Lifetime<Default> {
+    type Parameters = (
+        Option<BoxedStrategy<Type<Default>>>,
+        Option<BoxedStrategy<Constant<Default>>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((_, _): Self::Parameters) -> Self::Strategy {

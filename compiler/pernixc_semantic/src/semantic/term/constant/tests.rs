@@ -7,7 +7,10 @@ use proptest::{
 use super::{Array, Constant, Enum, MemberSymbolID, Primitive, Struct};
 use crate::{
     arena::ID,
-    semantic::term::{Local, Tuple},
+    semantic::{
+        model::Default,
+        term::{Local, Tuple},
+    },
     symbol::ConstantParameterID,
 };
 
@@ -46,8 +49,8 @@ impl Arbitrary for MemberSymbolID {
     }
 }
 
-impl Arbitrary for Struct {
-    type Parameters = Option<BoxedStrategy<Constant>>;
+impl Arbitrary for Struct<Default> {
+    type Parameters = Option<BoxedStrategy<Constant<Default>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
@@ -63,8 +66,8 @@ impl Arbitrary for Struct {
     }
 }
 
-impl Arbitrary for Enum {
-    type Parameters = Option<BoxedStrategy<Constant>>;
+impl Arbitrary for Enum<Default> {
+    type Parameters = Option<BoxedStrategy<Constant<Default>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
@@ -80,8 +83,8 @@ impl Arbitrary for Enum {
     }
 }
 
-impl Arbitrary for Array {
-    type Parameters = Option<BoxedStrategy<Constant>>;
+impl Arbitrary for Array<Default> {
+    type Parameters = Option<BoxedStrategy<Constant<Default>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
@@ -94,7 +97,7 @@ impl Arbitrary for Array {
     }
 }
 
-impl Arbitrary for Constant {
+impl Arbitrary for Constant<Default> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 

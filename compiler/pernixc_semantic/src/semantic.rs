@@ -1,11 +1,14 @@
 //! Contains the semantic logic of the compiler (i.e. type checking/system).
 
+use std::collections::HashSet;
+
 use enum_as_inner::EnumAsInner;
 use getset::{Getters, MutGetters};
 
 use self::{
     equivalent::Equivalent,
     model::Model,
+    normalizer::Normalizer,
     predicate::Predicate,
     session::{ExceedLimitError, Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
@@ -71,7 +74,7 @@ pub struct Premise<M: Model> {
 
     /// The list of predicates
     #[get = "pub"]
-    predicates: Vec<Predicate<M>>,
+    predicates: HashSet<Predicate<M>>,
 
     /// The environment of the premise.
     pub trait_context: TraitContext,
@@ -89,7 +92,7 @@ impl<M: Model> Premise<M> {
                     .insert(Type::TraitMember(eq.lhs.clone()), eq.rhs.clone());
             }
 
-            self.predicates.push(predicate);
+            self.predicates.insert(predicate);
         }
     }
 
@@ -105,12 +108,15 @@ impl<M: Model> Premise<M> {
 
 /// A structure that contains the environment of the semantic logic.
 #[derive(Debug, Clone, Copy)]
-pub struct Environment<'a, M: Model, T: State> {
+pub struct Environment<'a, M: Model, T: State, N: Normalizer<M>> {
     /// The premise of the semantic logic.
     pub premise: &'a Premise<M>,
 
     /// The table that contains the information of symbols.
     pub table: &'a Table<T>,
+
+    /// The normalizer used to normalize the inference variables.
+    pub normalizer: &'a N,
 }
 
 /// Gets the list of equivalent terms for the given term.
@@ -122,7 +128,7 @@ pub struct Environment<'a, M: Model, T: State> {
 /// See [`ExceedLimitError`] for more information.
 pub fn get_equivalences<T: Term>(
     term: &T,
-    environment: &Environment<T::Model, impl State>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
             + Session<Lifetime<T::Model>>

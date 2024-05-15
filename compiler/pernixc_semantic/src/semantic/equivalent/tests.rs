@@ -1,9 +1,12 @@
 use super::Equivalent;
-use crate::semantic::term::r#type::{Primitive, Type};
+use crate::semantic::{
+    model::Default,
+    term::r#type::{Primitive, Type},
+};
 
 #[test]
 fn default_case() {
-    let first = Type::Primitive(Primitive::Int32);
+    let first = Type::Primitive::<Default>(Primitive::Int32);
     let second = Type::Primitive(Primitive::Int64);
 
     let mut equivalent = Equivalent::new();
@@ -21,7 +24,7 @@ fn default_case() {
 
 #[test]
 fn duplicating_case() {
-    let first = Type::Primitive(Primitive::Int32);
+    let first = Type::Primitive::<Default>(Primitive::Int32);
     let second = Type::Primitive(Primitive::Int32);
 
     let mut equivalent = Equivalent::new();
@@ -39,7 +42,7 @@ fn duplicating_case() {
 
 #[test]
 fn add_to_existing_class_case() {
-    let first = Type::Primitive(Primitive::Int64);
+    let first = Type::Primitive::<Default>(Primitive::Int64);
     let second = Type::Primitive(Primitive::Int32);
 
     let mut equivalent = Equivalent::new();
@@ -70,7 +73,7 @@ fn add_to_existing_class_case() {
 
 #[test]
 fn merging_case() {
-    let first = Type::Primitive(Primitive::Int64);
+    let first = Type::Primitive::<Default>(Primitive::Int64);
     let second = Type::Primitive(Primitive::Int32);
 
     let mut equivalent = Equivalent::new();
