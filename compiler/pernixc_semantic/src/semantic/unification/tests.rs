@@ -20,11 +20,12 @@ use crate::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments, Symbol, Term, Tuple, TupleElement,
         },
-        tests::State,
         Environment, Premise,
     },
-    symbol::{ConstantParameterID, LifetimeParameterID, TypeParameterID},
-    table::Table,
+    symbol::{
+        table::{Building, Table},
+        ConstantParameterID, LifetimeParameterID, TypeParameterID,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -69,7 +70,7 @@ pub enum ApplyPropertyError {
 pub trait Property<T>: 'static + Debug {
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError>;
     fn generate(&self) -> (T, T);
@@ -88,7 +89,7 @@ impl<
 {
     fn apply(
         &self,
-        _: &mut Table<State>,
+        _: &mut Table<Building>,
         _: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         Ok(())
@@ -190,7 +191,7 @@ where
 {
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         for property in &self.terms {
@@ -250,7 +251,7 @@ where
 {
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         for property in &self.lifetime_properties {
@@ -360,7 +361,7 @@ pub struct Mapping<T: Term> {
 impl<T: Term<Model = Default> + 'static> Property<T> for Mapping<T> {
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();

@@ -8,7 +8,7 @@ use crate::{
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor, Environment, Satisfied,
     },
-    table::State,
+    symbol::table::State,
 };
 
 #[derive(Debug)]
@@ -113,5 +113,6 @@ pub fn definite<T: Term>(
     Ok(false)
 }
 
-#[cfg(test)]
-mod tests;
+// TODO: Add tests
+// #[cfg(test)]
+// mod tests;

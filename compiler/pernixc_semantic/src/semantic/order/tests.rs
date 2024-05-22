@@ -19,11 +19,12 @@ use crate::{
             r#type::{self, Type},
             GenericArguments, Symbol, Term,
         },
-        tests::State,
         unification, Environment, Premise,
     },
-    symbol::TypeParameterID,
-    table::Table,
+    symbol::{
+        table::{Building, Table},
+        TypeParameterID,
+    },
 };
 
 /// Property checks for the order of terms.
@@ -109,7 +110,7 @@ where
                         &rhs,
                         &mut OrderUnifyingConfig,
                         &Environment {
-                            table: &Table::<State>::default(),
+                            table: &Table::<Building>::default(),
                             premise: &Premise::default(),
                             normalizer: &NoOp,
                         },
@@ -463,7 +464,7 @@ proptest! {
         let result = lhs.order(
             &rhs,
             &Environment {
-                table: &Table::<State>::default(),
+                table: &Table::<Building>::default(),
                 premise: &Premise::default(),
                 normalizer: &NoOp,
             },

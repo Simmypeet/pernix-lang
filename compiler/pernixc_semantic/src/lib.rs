@@ -5,4 +5,3 @@ pub mod error;
 pub mod ir;
 pub mod semantic;
 pub mod symbol;
-pub mod table;

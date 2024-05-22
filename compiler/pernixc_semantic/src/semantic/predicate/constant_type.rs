@@ -9,7 +9,7 @@ use crate::{
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor, Environment, Satisfied,
     },
-    table::{self, DisplayObject, State, Table},
+    symbol::table::{self, DisplayObject, State, Table},
 };
 
 #[derive(Debug)]

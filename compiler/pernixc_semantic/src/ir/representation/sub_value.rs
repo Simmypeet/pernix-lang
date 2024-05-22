@@ -11,20 +11,20 @@ use crate::{
             register::{Register, TupleElement},
             Value,
         },
-        State,
     },
+    semantic::model::Model,
 };
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
-pub enum GetSubValuesError<T: State> {
+pub enum GetSubValuesError<M: Model> {
     #[error("contains an invalid register ID: {0:?}")]
-    InvalidRegisterID(ID<Register<T>>),
+    InvalidRegisterID(ID<Register<M>>),
 }
 
-impl<T: State> Representation<T> {
+impl<M: Model> Representation<M> {
     /// Gets all the sub-values of the given address recursively.
     ///
     /// # Errors
@@ -32,8 +32,8 @@ impl<T: State> Representation<T> {
     /// See [`GetSubValuesError`] for the possible errors that can occur.
     pub fn sub_values_of_address<'a>(
         &'a self,
-        address: &'a Address<T>,
-    ) -> Result<HashSet<&'a Value<T>>, GetSubValuesError<T>> {
+        address: &'a Address<M>,
+    ) -> Result<HashSet<&'a Value<M>>, GetSubValuesError<M>> {
         match address {
             Address::Parameter(_) | Address::Alloca(_) => Ok(HashSet::new()),
 
@@ -65,8 +65,8 @@ impl<T: State> Representation<T> {
     /// See [`GetSubValuesError`] for the possible errors that can occur.
     pub fn sub_values_of_register(
         &self,
-        register: ID<Register<T>>,
-    ) -> Result<HashSet<&Value<T>>, GetSubValuesError<T>> {
+        register: ID<Register<M>>,
+    ) -> Result<HashSet<&Value<M>>, GetSubValuesError<M>> {
         let register = self
             .registers
             .get(register)

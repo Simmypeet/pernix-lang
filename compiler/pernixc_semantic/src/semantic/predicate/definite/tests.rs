@@ -19,14 +19,13 @@ use crate::{
             r#type::{self, SymbolID, Type},
             GenericArguments, Symbol, Term,
         },
-        tests::State,
         Environment, Premise,
     },
     symbol::{
-        self, GenericDeclaration, GenericParameters, TypeParameter,
-        TypeParameterID,
+        self,
+        table::{Building, Table},
+        GenericDeclaration, GenericParameters, TypeParameter, TypeParameterID,
     },
-    table::Table,
 };
 
 #[derive(
@@ -49,7 +48,7 @@ pub trait Property<T>: 'static + Debug {
     /// Returns `false` if failed to apply the environment to the
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError>;
 
@@ -79,7 +78,7 @@ impl<T: Into<U> + Clone + Debug + 'static, U> Property<U>
 {
     fn apply(
         &self,
-        _: &mut Table<State>,
+        _: &mut Table<Building>,
         _: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         Ok(())
@@ -135,7 +134,7 @@ where
 {
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         for type_strategy in &self.type_strategies {
@@ -237,7 +236,7 @@ impl Arbitrary for TypeAlias {
 impl Property<Type<Default>> for TypeAlias {
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         self.property.apply(table, premise)?;
@@ -299,7 +298,7 @@ where
 {
     let term = property.generate();
     let mut premise = Premise::default();
-    let mut table = Table::<State>::default();
+    let mut table = Table::<Building>::default();
 
     property.apply(&mut table, &mut premise).map_err(|x| match x {
         ApplyPropertyError::ExceedLimitError(_) => {

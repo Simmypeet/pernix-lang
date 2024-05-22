@@ -18,7 +18,7 @@ use super::{
     },
     unification, Environment,
 };
-use crate::table::State;
+use crate::symbol::table::State;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct DeductionUnifyingConfig;

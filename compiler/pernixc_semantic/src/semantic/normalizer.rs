@@ -6,7 +6,7 @@ use super::{
     term::{constant::Constant, lifetime::Lifetime, r#type::Type},
     Environment,
 };
-use crate::table::State;
+use crate::symbol::table::State;
 
 /// The object used to normalize the inference variables into the concrete term.
 pub trait Normalizer<M: Model>: Sized {

@@ -28,10 +28,10 @@ use crate::{
         Environment,
     },
     symbol::{
-        self, ConstantParameter, ConstantParameterID, GenericID, GlobalID,
-        Variant,
+        self,
+        table::{self, representation::Index, DisplayObject, State, Table},
+        ConstantParameter, ConstantParameterID, GenericID, GlobalID, Variant,
     },
-    table::{self, DisplayObject, Index, State, Table},
 };
 
 /// Enumeration of either a trait implementation constant or an ADT
@@ -130,7 +130,7 @@ pub struct Array<M: Model> {
 
 /// Represents a tuple constant value, denoted by `(value, value, ...value)`
 /// syntax.
-pub type Tuple<M: Model> = super::Tuple<Constant<M>>;
+pub type Tuple<M> = super::Tuple<Constant<M>>;
 
 /// Represents a constant value denoted by a `phantom` syntax.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -769,7 +769,8 @@ impl<M: Model> Constant<M> {
                 occurrences
             }
             Self::Enum(val) => {
-                let parent_enum_id = table.get(val.variant_id)?.parent_enum_id;
+                let parent_enum_id =
+                    table.get(val.variant_id)?.parent_enum_id();
 
                 let mut occurrences =
                     vec![parent_enum_id.into(), val.variant_id.into()];

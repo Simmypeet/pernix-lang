@@ -10,7 +10,7 @@ use super::{
     visitor::Mutable,
     Environment,
 };
-use crate::table::State;
+use crate::symbol::table::State;
 
 /// A query for simplifying a term.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

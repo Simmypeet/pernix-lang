@@ -1,7 +1,10 @@
 //! Contains all the definition of errors that can be emitted by the semantic
 //! analyzer.
 
-use std::fmt::{self, Debug};
+use std::{
+    collections::HashSet,
+    fmt::{self, Debug},
+};
 
 use pernixc_base::{
     log::{
@@ -15,12 +18,15 @@ use crate::{
     arena::ID,
     semantic::{model::Model, predicate::Predicate, term::r#type::Type},
     symbol::{
+        table::{
+            representation::Index, Display, DisplayObject, State, Suboptimal,
+            Table,
+        },
         Accessibility, AdtID, ConstantParameterID, Field, GenericID,
         GenericKind, GenericParameter, GlobalID, LocalGenericParameterID,
-        MemberID, Module, Struct, Trait, TraitImplementation,
-        TraitImplementationKindID, TraitImplementationMemberID, TraitMemberID,
+        MemberID, Module, PositiveTraitImplementation, Struct, Trait,
+        TraitImplementationID, TraitImplementationMemberID, TraitMemberID,
     },
-    table::{Display, DisplayObject, Index, State, Suboptimal, Table},
 };
 
 /// The global symbol with the same name already exists in the given scope.
@@ -88,6 +94,24 @@ pub struct SymbolIsMoreAccessibleThanParent {
     pub parent_id: GlobalID,
 }
 
+impl<T: State> Table<T> {
+    fn accessibility_description(
+        &self,
+        accessibility: Accessibility,
+    ) -> Result<String, fmt::Error> {
+        match accessibility {
+            Accessibility::Public => Ok("publicly accessible".to_owned()),
+            Accessibility::Scoped(module_id) => {
+                let module_qualified_name = self
+                    .get_qualified_name(module_id.into())
+                    .ok_or(fmt::Error)?;
+
+                Ok(format!("accessible in `{module_qualified_name}`"))
+            }
+        }
+    }
+}
+
 impl<T: State> Display<T> for SymbolIsMoreAccessibleThanParent {
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (Some(symbol_name), Some(parent_qualified_name)) = (
@@ -96,6 +120,22 @@ impl<T: State> Display<T> for SymbolIsMoreAccessibleThanParent {
         ) else {
             return Err(fmt::Error);
         };
+
+        let accessibility_description =
+            |accessibility: Accessibility| -> Result<String, fmt::Error> {
+                match accessibility {
+                    Accessibility::Public => {
+                        Ok("publicly accessibility".to_owned())
+                    }
+                    Accessibility::Scoped(module_id) => {
+                        let module_qualified_name = table
+                            .get_qualified_name(module_id.into())
+                            .ok_or(fmt::Error)?;
+
+                        Ok(format!("accessible in `{module_qualified_name}`"))
+                    }
+                }
+            };
 
         let (Some(symbol_accessibility), Some(parent_accessibility)) = (
             table.get_accessibility(self.symbol_id),
@@ -111,6 +151,12 @@ impl<T: State> Display<T> for SymbolIsMoreAccessibleThanParent {
             return Err(fmt::Error);
         };
 
+        let symbol_accessibility_description =
+            accessibility_description(symbol_accessibility)?;
+
+        let parent_accessibility_description =
+            accessibility_description(parent_accessibility)?;
+
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
@@ -123,7 +169,8 @@ impl<T: State> Display<T> for SymbolIsMoreAccessibleThanParent {
             write!(f, "\n{}", SourceCodeDisplay {
                 span: &symbol_span,
                 help_display: Some(format!(
-                    "the symbol `{symbol_name}` is {symbol_accessibility}",
+                    "the symbol `{symbol_name}` is \
+                     {symbol_accessibility_description}",
                 )),
             })?;
         }
@@ -132,7 +179,7 @@ impl<T: State> Display<T> for SymbolIsMoreAccessibleThanParent {
             write!(f, "\n{}", SourceCodeDisplay {
                 span: &parent_span,
                 help_display: Some(format!(
-                    "the parent symbol is {parent_accessibility}",
+                    "the parent symbol is {parent_accessibility_description}",
                 )),
             })?;
         }
@@ -192,7 +239,7 @@ impl GlobalID {
             Self::Type(_) => "type",
             Self::Constant(_) => "constant",
             Self::Trait(_) => "trait",
-            Self::TraitImplementation(_) => "trait implementation",
+            Self::PositiveTraitImplementation(_) => "trait implementation",
             Self::TraitFunction(_) => "trait function",
             Self::TraitType(_) => "trait type",
             Self::TraitConstant(_) => "trait constant",
@@ -243,10 +290,10 @@ impl<T: State> Display<T> for ExpectModule {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UndecidableImplementationSpecialization {
     /// The id of the first implementation.
-    pub first_implementation_id: TraitImplementationKindID,
+    pub first_implementation_id: TraitImplementationID,
 
     /// The id of the second implementation.
-    pub second_implementation_id: TraitImplementationKindID,
+    pub second_implementation_id: TraitImplementationID,
 }
 
 impl<T: State> Display<T> for UndecidableImplementationSpecialization {
@@ -719,13 +766,17 @@ impl<S: State, T: Display<S>> Display<S>
             .get_accessibility(self.public_interface_id)
             .ok_or(fmt::Error)?;
 
+        let entity_accessibility_description = table
+            .accessibility_description(self.entity_overall_accessibility)?;
+        let parent_accessibility_description =
+            table.accessibility_description(public_interface_accessibility)?;
+
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "`{entity_display}` is `{}` accessible but it was declared in \
-                 a `{public_interface_qualified_name}` interface, which is \
-                 `{public_interface_accessibility}` accessible",
-                self.entity_overall_accessibility
+                "`{entity_display}` is {entity_accessibility_description} but \
+                 it was declared in a `{public_interface_qualified_name}` \
+                 interface, which is {parent_accessibility_description}",
             ),
         })?;
 
@@ -1216,10 +1267,10 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AmbiguousImplementation {
     /// The ID of the first implementation.
-    pub first_implementation_id: TraitImplementationKindID,
+    pub first_implementation_id: TraitImplementationID,
 
     /// The ID of the second implementation.
-    pub second_implementation_id: TraitImplementationKindID,
+    pub second_implementation_id: TraitImplementationID,
 }
 
 impl<T: State> Display<T> for AmbiguousImplementation {
@@ -1486,67 +1537,6 @@ impl<T: State> Display<T> for FieldIsNotAccessible {
     }
 }
 
-/// The trait member is implemented with different accessibility in the
-/// implementation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MismatchedTraitMemberAndImplementationMemberAccessibility {
-    /// The ID of the trait member.
-    pub trait_member_id: TraitMemberID,
-
-    /// The accessibility defined in the implementation.
-    pub implementation_member_accessibility: Accessibility,
-
-    /// The trait implementation member that has different accessibility.
-    pub implementation_member_id: TraitImplementationMemberID,
-}
-
-impl<T: State> Display<T>
-    for MismatchedTraitMemberAndImplementationMemberAccessibility
-{
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let trait_member_qualified_name = table
-            .get_qualified_name(self.trait_member_id.into())
-            .ok_or(fmt::Error)?;
-        let trait_member_accessibility = table
-            .get_accessibility(self.trait_member_id.into())
-            .ok_or(fmt::Error)?;
-
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
-                "the trait member `{trait_member_qualified_name}` is defined \
-                 with accessibility `{trait_member_accessibility}` but the \
-                 implementation member is defined with accessibility `{}`",
-                self.implementation_member_accessibility
-            ),
-        })?;
-
-        if let Some(span) = table
-            .get_global(self.implementation_member_id.into())
-            .ok_or(fmt::Error)?
-            .span()
-        {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("the implementation member is defined here"),
-            })?;
-        }
-
-        if let Some(span) = table
-            .get_global(self.trait_member_id.into())
-            .ok_or(fmt::Error)?
-            .span()
-        {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("the trait member is defined here"),
-            })?;
-        }
-
-        Ok(())
-    }
-}
-
 /// The type of the constant parameter in the implementation doesn't match the
 /// type of the constant parameter in the trait.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1610,13 +1600,13 @@ impl<T: State> Display<T> for MismatchedImplementationConstantTypeParameter {
 }
 
 /// Not all trait members are implemented in the implementation.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnimplementedTraitMembers {
     /// The list of trait members that are not implemented.
-    pub unimplemented_trait_member_ids: Vec<TraitMemberID>,
+    pub unimplemented_trait_member_ids: HashSet<TraitMemberID>,
 
     /// The ID of the implementation in which the trait members are not
-    pub implementation_id: ID<TraitImplementation>,
+    pub implementation_id: ID<PositiveTraitImplementation>,
 }
 
 impl<T: State> Display<T> for UnimplementedTraitMembers {

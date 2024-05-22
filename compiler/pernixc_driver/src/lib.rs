@@ -13,7 +13,7 @@ use pernixc_base::{
     log::{Message, Severity},
     source_file::{self, SourceFile},
 };
-use pernixc_semantic::table::{self, BuildTableError, DisplayObject};
+use pernixc_semantic::symbol::table::{self, BuildTableError, DisplayObject};
 use pernixc_syntax::syntax_tree::target::Target;
 
 /// The arguments to the program.
@@ -121,7 +121,7 @@ pub fn run(argument: Arguments) -> ExitCode {
     let storage: Storage<Box<dyn pernixc_semantic::error::Error>> =
         Storage::new();
 
-    let result = table::build(rayon::iter::once(target), &storage);
+    let result = table::build(std::iter::once(target), &storage);
 
     let table = match result {
         Ok(table) => table,

@@ -31,10 +31,11 @@ use crate::{
         Environment,
     },
     symbol::{
-        self, Enum, GenericID, GlobalID, MemberID, Struct, TypeParameter,
+        self,
+        table::{self, representation::Index, DisplayObject, State, Table},
+        Enum, GenericID, GlobalID, MemberID, Struct, TypeParameter,
         TypeParameterID,
     },
-    table::{self, DisplayObject, Index, State, Table},
 };
 
 /// Enumeration of all symbol kinds (as a type term).
@@ -201,11 +202,11 @@ pub enum Primitive {
 }
 
 /// Represents a tuple type, denoted by `(type, type, ...type)` syntax.
-pub type Tuple<M: Model> = super::Tuple<Type<M>>;
+pub type Tuple<M> = super::Tuple<Type<M>>;
 
 /// Represents a trait-member type, denoted by `TRAIT[ARGS]::TYPE[ARGS]`
 /// syntax.
-pub type TraitMember<M: Model> = MemberSymbol<M, ID<symbol::TraitType>>;
+pub type TraitMember<M> = MemberSymbol<M, ID<symbol::TraitType>>;
 
 /// Represents a phantom type, denoted by `phantom TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -916,8 +917,10 @@ where
             // transform the trait-member into trait-implementation-type
             // equivalent
             Self::TraitMember(trait_member) => {
-                let Some(trait_id) =
-                    environment.table.get(trait_member.id).map(|x| x.parent_id)
+                let Some((trait_id, name)) = environment
+                    .table
+                    .get(trait_member.id)
+                    .map(|x| (x.parent_id(), x.name().to_owned()))
                 else {
                     // invalid id
                     return Ok(None);
@@ -935,9 +938,10 @@ where
 
                 let Some(implementation_type_id) =
                     environment.table.get(result.id).and_then(|x| {
-                        x.implementation_type_ids_by_trait_type_id
-                            .get(&trait_member.id)
-                            .copied()
+                        x.member_ids_by_name()
+                            .get(&name)
+                            .cloned()
+                            .and_then(|x| x.into_type().ok())
                     })
                 else {
                     return Ok(None);
@@ -950,7 +954,6 @@ where
                 };
 
                 let parent_lifetimes = implementation_symbol
-                    .signature
                     .generic_declaration
                     .parameters
                     .lifetime_order()
@@ -963,7 +966,6 @@ where
                     })
                     .collect::<Option<Vec<_>>>();
                 let parent_types = implementation_symbol
-                    .signature
                     .generic_declaration
                     .parameters
                     .type_order()
@@ -976,7 +978,6 @@ where
                     })
                     .collect::<Option<Vec<_>>>();
                 let parent_constants = implementation_symbol
-                    .signature
                     .generic_declaration
                     .parameters
                     .constant_order()
@@ -1025,8 +1026,9 @@ where
                 else {
                     return Ok(None);
                 };
-                let Some(implementation_symbol) =
-                    environment.table.get(implementation_type_symbol.parent_id)
+                let Some(implementation_symbol) = environment
+                    .table
+                    .get(implementation_type_symbol.parent_id())
                 else {
                     return Ok(None);
                 };
@@ -1038,11 +1040,8 @@ where
                 let Ok(mut instantiation) =
                     Instantiation::from_generic_arguments(
                         parent_generic_arguments.clone(),
-                        implementation_type_symbol.parent_id.into(),
-                        &implementation_symbol
-                            .signature
-                            .generic_declaration
-                            .parameters,
+                        implementation_type_symbol.parent_id().into(),
+                        &implementation_symbol.generic_declaration.parameters,
                     )
                 else {
                     return Ok(None);
@@ -1078,15 +1077,16 @@ where
                     return Ok(None);
                 };
 
-                let Some(adt_implementation_symbol) =
-                    environment.table.get(implementation_type_symbol.parent_id)
+                let Some(adt_implementation_symbol) = environment
+                    .table
+                    .get(implementation_type_symbol.parent_id())
                 else {
                     return Ok(None);
                 };
 
                 let adt_implementation_symbol_arguments =
                     GenericArguments::from_default_model(
-                        adt_implementation_symbol.signature.arguments.clone(),
+                        adt_implementation_symbol.arguments.clone(),
                     );
 
                 // gets the decution for the parent generic arguments
@@ -1292,7 +1292,7 @@ where
 
                     Some(
                         enum_sym
-                            .variant_ids_by_name
+                            .variant_ids_by_name()
                             .values()
                             .copied()
                             .filter_map(|variant| table.get(variant))
@@ -1661,21 +1661,17 @@ impl<M: Model> Type<M> {
 
                 match member_symbol.id {
                     MemberSymbolID::TraitImplementation(id) => {
-                        let implementation_id = table.get(id)?.parent_id;
-                        let trait_id = table
-                            .get(implementation_id)?
-                            .signature
-                            .implemented_id;
+                        let implementation_id = table.get(id)?.parent_id();
+                        let trait_id =
+                            table.get(implementation_id)?.implemented_id();
 
                         occurrences.push(implementation_id.into());
                         occurrences.push(trait_id.into());
                     }
                     MemberSymbolID::AdtImplementation(id) => {
-                        let implementation_id = table.get(id)?.parent_id;
-                        let adt_kind_id = table
-                            .get(implementation_id)?
-                            .signature
-                            .implemented_id;
+                        let implementation_id = table.get(id)?.parent_id();
+                        let adt_kind_id =
+                            table.get(implementation_id)?.implemented_id();
 
                         occurrences.push(implementation_id.into());
                         occurrences.push(adt_kind_id.into());
@@ -1695,7 +1691,8 @@ impl<M: Model> Type<M> {
                 );
 
                 occurrences.push(member_symbol.id.into());
-                occurrences.push(table.get(member_symbol.id)?.parent_id.into());
+                occurrences
+                    .push(table.get(member_symbol.id)?.parent_id().into());
 
                 occurrences
             }

@@ -6,9 +6,8 @@ use super::{
     address::Address,
     alloca::Alloca,
     value::{register::Register, Value},
-    State,
 };
-use crate::arena::ID;
+use crate::{arena::ID, semantic::model::Model};
 
 /// An enumeration containing all the possible sources of an unconditional jump.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -35,9 +34,9 @@ pub struct UnconditionalJump {
 
 /// Represents a jump to another block conditionally.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConditionalJump<T: State> {
+pub struct ConditionalJump<M: Model> {
     /// The condition of the jump.
-    pub condition: Value<T>,
+    pub condition: Value<M>,
 
     /// The block to jump to if the condition is true.
     pub true_target: ID<Block>,
@@ -49,51 +48,51 @@ pub struct ConditionalJump<T: State> {
 /// An enumeration containing all kinds of jump instructions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Jump<T: State> {
+pub enum Jump<M: Model> {
     Unconditional(UnconditionalJump),
-    Conditional(ConditionalJump<T>),
+    Conditional(ConditionalJump<M>),
 }
 
 /// Represents a return instruction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Return<T: State> {
+pub struct Return<M: Model> {
     /// The value to return.
-    pub value: Value<T>,
+    pub value: Value<M>,
 }
 
 /// Represents an assignment of a register.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RegisterAssignment<T: State> {
+pub struct RegisterAssignment<M: Model> {
     /// The register that is being assigned.
-    pub id: ID<Register<T>>,
+    pub id: ID<Register<M>>,
 }
 
 /// An instruction that stores a value to the given memory address.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Store<T: State> {
+pub struct Store<M: Model> {
     /// The address where the value will be stored.
-    pub address: Address<T>,
+    pub address: Address<M>,
 
     /// The value to store.
-    pub value: Value<T>,
+    pub value: Value<M>,
 }
 
 /// An instruction that allocates a new `alloca` memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AllocaAllocation<T: State> {
+pub struct AllocaAllocation<M: Model> {
     /// The ID of the `alloca` that is being allocated.
-    pub id: ID<Alloca<T>>,
+    pub id: ID<Alloca<M>>,
 }
 
 /// An instructions that packs the unpacked elements of a tuple into a packed
 /// element.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TuplePack<T: State> {
+pub struct TuplePack<M: Model> {
     /// The address where the unpacked tuple elements will be stored.
-    pub store_address: Address<T>,
+    pub store_address: Address<M>,
 
     /// The address to the tuple where the unpacked elements are stored.
-    pub tuple_address: Address<T>,
+    pub tuple_address: Address<M>,
 
     /// The number of elements in the tuple before the packed element.
     ///
@@ -115,18 +114,18 @@ pub struct TuplePack<T: State> {
 /// flow of the program, so they are not considered basic.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Basic<T: State> {
-    Store(Store<T>),
-    RegisterAssignment(RegisterAssignment<T>),
-    AllocaAllocation(AllocaAllocation<T>),
-    TuplePack(TuplePack<T>),
+pub enum Basic<M: Model> {
+    Store(Store<M>),
+    RegisterAssignment(RegisterAssignment<M>),
+    AllocaAllocation(AllocaAllocation<M>),
+    TuplePack(TuplePack<M>),
 }
 
 /// Represents an instruction that will be executed in the IR.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Instruction<T: State> {
-    Jump(Jump<T>),
-    Return(Return<T>),
-    Basic(Basic<T>),
+pub enum Instruction<M: Model> {
+    Jump(Jump<M>),
+    Return(Return<M>),
+    Basic(Basic<M>),
 }

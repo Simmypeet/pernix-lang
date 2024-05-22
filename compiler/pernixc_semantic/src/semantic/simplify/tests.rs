@@ -10,10 +10,9 @@ use crate::{
             r#type::{Primitive, SymbolID, TraitMember, Type},
             GenericArguments, Symbol,
         },
-        tests::State,
         Environment, Premise,
     },
-    table::Table,
+    symbol::table::{Building, Table},
 };
 
 #[test]
@@ -25,7 +24,7 @@ fn basic_case() {
     };
 
     let equivalent = Type::Primitive(Primitive::Bool);
-    let table = Table::<State>::default();
+    let table = Table::<Building>::default();
 
     let premise = Premise::from_predicates(std::iter::once(
         Predicate::TraitTypeEquality(Equality {
@@ -53,7 +52,7 @@ fn sub_term_case() {
     };
 
     let equivalent = Type::Primitive(Primitive::Bool);
-    let table = Table::<State>::default();
+    let table = Table::<Building>::default();
 
     let premise = Premise::from_predicates(std::iter::once(
         Predicate::TraitTypeEquality(Equality {
@@ -112,7 +111,7 @@ fn already_simplified_case() {
     };
 
     let equivalent = Type::Primitive(Primitive::Bool);
-    let table = Table::<State>::default();
+    let table = Table::<Building>::default();
 
     let premise = Premise::from_predicates(std::iter::once(
         Predicate::TraitTypeEquality(Equality {
@@ -145,7 +144,7 @@ fn transitive_case() {
     };
     let equivalent = Type::Primitive(Primitive::Bool);
 
-    let table = Table::<State>::default();
+    let table = Table::<Building>::default();
     let premise = Premise::from_predicates(
         [
             Predicate::TraitTypeEquality(Equality {
@@ -198,7 +197,7 @@ fn multiple_equivalent_but_same_case() {
     };
     let equivalent = Type::Primitive(Primitive::Bool);
 
-    let table = Table::<State>::default();
+    let table = Table::<Building>::default();
     let premise = Premise::from_predicates(
         [
             Predicate::TraitTypeEquality(Equality {
@@ -267,7 +266,7 @@ fn ambiguous_case() {
     let first_equivalent = Type::Primitive(Primitive::Float32);
     let second_equivalent = Type::Primitive(Primitive::Float64);
 
-    let table = Table::<State>::default();
+    let table = Table::<Building>::default();
     let premise = Premise::from_predicates(
         [
             Predicate::TraitTypeEquality(Equality {

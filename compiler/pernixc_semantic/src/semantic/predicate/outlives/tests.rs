@@ -20,10 +20,9 @@ use crate::{
             r#type::{self, Type},
             GenericArguments, Symbol, Term,
         },
-        tests::State,
         Environment, Premise,
     },
-    table::Table,
+    symbol::table::{Building, Table},
 };
 
 #[derive(
@@ -54,7 +53,7 @@ pub trait Property<T>: 'static + Debug {
     /// Applies this property to the environment.
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError>;
 
@@ -76,7 +75,7 @@ where
 {
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         if Outlives::satisfies(
@@ -136,7 +135,7 @@ pub struct LifetimeMatching {
 impl Property<Type<Default>> for LifetimeMatching {
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         let (ty, bound) = self.generate();
@@ -230,7 +229,7 @@ pub struct Reflexive {
 impl Property<Lifetime<Default>> for Reflexive {
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
@@ -244,7 +243,7 @@ impl Property<Lifetime<Default>> for Reflexive {
             return Ok(());
         }
 
-        self.term.apply(table, premise)?;
+        self.term.generate(table, premise)?;
         Ok(())
     }
 
@@ -291,7 +290,7 @@ where
 {
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         if Outlives::satisfies(
@@ -327,7 +326,7 @@ where
 {
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         let (operand, bound) = self.generate();
@@ -440,7 +439,7 @@ where
 {
     let (term1, term2) = property.generate();
     let mut premise = Premise::default();
-    let mut table = Table::<State>::default();
+    let mut table = Table::<Building>::default();
 
     property.apply(&mut table, &mut premise).map_err(|x| match x {
         ApplyPropertyError::ExceedLimitError(_) => {
@@ -516,7 +515,7 @@ proptest! {
         lifetime in Lifetime::arbitrary()
     ) {
         let environment = &Environment {
-            table: &Table::<State>::default(),
+            table: &Table::<Building>::default(),
             premise: &Premise::default(),
             normalizer: &NoOp
         };

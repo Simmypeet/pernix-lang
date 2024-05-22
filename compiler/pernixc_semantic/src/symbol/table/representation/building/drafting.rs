@@ -1,0 +1,774 @@
+//! Contains the code related to drafting phase of the table.
+//!
+//! The drafting phase is the first phase of the table. It builds all the
+//! so that their names appear in the table. The symbols are not yet built
+//! with full/correct information.
+
+use std::collections::{hash_map::Entry, HashMap, HashSet};
+
+use parking_lot::RwLock;
+use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
+use pernixc_lexical::token::Identifier;
+use pernixc_syntax::syntax_tree::{
+    self,
+    item::{ImplementationKind, ImplementationMember},
+    target::ModuleTree,
+    GenericIdentifier,
+};
+
+use super::finalizing::{self, Finalize, Finalizer};
+use crate::{
+    arena::ID,
+    error::{
+        self, InvalidSymbolInImplementation,
+        MismatchedTraitMemberAndImplementationMember, RedefinedGlobal,
+        SymbolIsMoreAccessibleThanParent, UnimplementedTraitMembers,
+        UnknownTraitImplementationMember,
+    },
+    semantic::term::GenericArguments,
+    symbol::{
+        self,
+        table::{
+            representation::{self, Index, RwLockContainer},
+            Building, Table,
+        },
+        Accessibility, AdtID, AdtImplementationConstant,
+        AdtImplementationDefinition, AdtImplementationFunction,
+        AdtImplementationType, Constant, Enum, Function, GenericDeclaration,
+        GenericTemplate, GlobalID, HierarchyRelationship, Module,
+        ModuleMemberID, NegativeTraitImplementationDefinition,
+        PositiveTraitImplementationDefinition, Struct, Trait,
+        TraitImplementationMemberID, TraitMemberID, Type, Variant,
+    },
+};
+
+#[derive(Debug, Default)]
+pub struct Drafter {
+    pub usings_by_module_id: HashMap<ID<Module>, Vec<syntax_tree::item::Using>>,
+    pub implementations_by_module_id:
+        HashMap<ID<Module>, Vec<syntax_tree::item::Implementation>>,
+    pub finalizer: Finalizer,
+}
+
+impl Table<Building<RwLockContainer, Drafter>> {
+    fn draft_enum(
+        &mut self,
+        syntax_tree: syntax_tree::item::Enum,
+        parent_module_id: ID<Module>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        let (access_modifier, signature, body) = syntax_tree.dissolve();
+        let enum_accessibility = self
+            .create_accessibility(parent_module_id.into(), &access_modifier)
+            .unwrap();
+
+        let enum_id: ID<Enum> = self.draft_member(
+            signature,
+            parent_module_id,
+            |syn| syn.identifier(),
+            enum_accessibility,
+            handler,
+        );
+
+        // draft each variant
+        for variant_syn in
+            body.dissolve().1.into_iter().flat_map(|x| x.into_elements())
+        {
+            let name = variant_syn.identifier().span.str().to_owned();
+
+            // gets the variant id
+            let variant_id =
+                self.representation.variants.insert(RwLock::new(Variant {
+                    name: name.clone(),
+                    associated_type: None,
+                    parent_enum_id: enum_id,
+                    span: Some(variant_syn.identifier().span.clone()),
+                }));
+
+            // iraft the variant
+            self.state.finalizer.draft_symbol(variant_id, variant_syn);
+
+            let enum_sym =
+                self.representation.enums.get_mut(enum_id).unwrap().get_mut();
+
+            // check for duplication
+            match enum_sym.variant_ids_by_name.entry(name) {
+                Entry::Occupied(entry) => {
+                    handler.receive(Box::new(RedefinedGlobal {
+                        existing_global_id: (*entry.get()).into(),
+                        new_global_id: variant_id.into(),
+                        in_global_id: enum_id.into(),
+                    }));
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(variant_id);
+                }
+            }
+        }
+    }
+
+    fn draft_trait(
+        &mut self,
+        syntax_tree: syntax_tree::item::Trait,
+        parent_module_id: ID<Module>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        let (access_modifier, signature, body) = syntax_tree.dissolve();
+        let (_, member_list, _) = body.dissolve();
+        let trait_accessibility = self
+            .create_accessibility(parent_module_id.into(), &access_modifier)
+            .unwrap();
+
+        let trait_id = self.draft_member(
+            signature,
+            parent_module_id,
+            |syn| syn.identifier(),
+            trait_accessibility,
+            handler,
+        );
+
+        for trait_member in member_list {
+            let trait_member_id = match trait_member {
+                syntax_tree::item::TraitMember::Function(syn) => {
+                    let accessibility = self
+                        .create_accessibility(
+                            trait_id.into(),
+                            syn.access_modifier(),
+                        )
+                        .unwrap();
+
+                    TraitMemberID::Function(self.draft_member(
+                        syn,
+                        trait_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    ))
+                }
+                syntax_tree::item::TraitMember::Type(syn) => {
+                    let accessibility = self
+                        .create_accessibility(
+                            trait_id.into(),
+                            syn.access_modifier(),
+                        )
+                        .unwrap();
+
+                    TraitMemberID::Type(self.draft_member(
+                        syn,
+                        trait_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    ))
+                }
+                syntax_tree::item::TraitMember::Constant(syn) => {
+                    let accessibility = self
+                        .create_accessibility(
+                            trait_id.into(),
+                            syn.access_modifier(),
+                        )
+                        .unwrap();
+
+                    TraitMemberID::Constant(self.draft_member(
+                        syn,
+                        trait_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    ))
+                }
+            };
+
+            // check if the member is more accessible than the trait
+            let member_accessibility =
+                self.get_accessibility(trait_member_id.into()).unwrap();
+
+            if self
+                .accessibility_hierarchy_relationship(
+                    member_accessibility,
+                    trait_accessibility,
+                )
+                .unwrap()
+                == HierarchyRelationship::Parent
+            {
+                handler.receive(Box::new(SymbolIsMoreAccessibleThanParent {
+                    symbol_id: trait_member_id.into(),
+                    parent_id: trait_id.into(),
+                }))
+            }
+        }
+    }
+
+    /// Drafts aodule member.
+    fn draft_member<
+        S,
+        Definition: std::default::Default,
+        Parent: symbol::ParentSealed + representation::Element,
+        ParentID: Copy + From<ID<Parent>>,
+    >(
+        &mut self,
+        syntax_tree: S,
+        parent_id: ID<Parent>,
+        identifier_fn: impl FnOnce(&S) -> &Identifier,
+        accessibility: Accessibility,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> ID<GenericTemplate<ParentID, Definition>>
+    where
+        GenericTemplate<ParentID, Definition>: representation::Element
+            + Finalize<SyntaxTree = S>
+            + finalizing::Element,
+
+        ID<GenericTemplate<ParentID, Definition>>:
+            Into<GlobalID> + Into<Parent::MemberID>,
+
+        Parent::MemberID: Into<GlobalID>,
+        ID<Parent>: Into<GlobalID>,
+    {
+        // extract the identifier and access modifier
+        let identifier = identifier_fn(&syntax_tree);
+
+        let insertion = self
+            .insert_member(
+                identifier.span.str().to_owned(),
+                accessibility,
+                parent_id,
+                Some(identifier.span.clone()),
+                GenericDeclaration::default(),
+                Definition::default(),
+            )
+            .unwrap();
+
+        // check for duplication
+        if let Some(existing) = insertion.duplication {
+            handler.receive(Box::new(RedefinedGlobal {
+                existing_global_id: existing.into(),
+                new_global_id: insertion.id.into(),
+                in_global_id: parent_id.into(),
+            }));
+        }
+
+        self.state.finalizer.draft_symbol(insertion.id, syntax_tree);
+
+        insertion.id
+    }
+
+    pub(in crate::symbol::table::representation) fn draft_module(
+        &mut self,
+        syntax_tree: ModuleTree,
+        name: String,
+        parent_module_id: Option<ID<Module>>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> ID<Module> {
+        let module_id = {
+            self.representation.modules.insert(RwLock::new(Module {
+                name,
+                accessibility: syntax_tree.signature().as_ref().map_or(
+                    Accessibility::Public,
+                    |x| {
+                        self.create_accessibility(
+                            parent_module_id.unwrap().into(),
+                            &x.access_modifier,
+                        )
+                        .unwrap()
+                    },
+                ),
+                parent_module_id,
+                member_ids_by_name: HashMap::new(),
+                span: syntax_tree
+                    .signature()
+                    .as_ref()
+                    .map(|x| x.signature.identifier().span()),
+                usings: HashSet::new(),
+            }))
+        };
+
+        let (_, content, submodule_by_name) = syntax_tree.dissolve();
+        let (usings, items) = content.dissolve();
+
+        self.state.usings_by_module_id.insert(module_id, usings);
+
+        // recursive draft submodules
+        for (name, submodule) in submodule_by_name {
+            let submodule_id = self.draft_module(
+                submodule,
+                name.clone(),
+                Some(module_id),
+                handler,
+            );
+
+            self.representation
+                .modules
+                .get(module_id)
+                .unwrap()
+                .write()
+                .member_ids_by_name
+                .insert(name, ModuleMemberID::Module(submodule_id));
+        }
+
+        for item in items {
+            match item {
+                syntax_tree::item::Item::Trait(syn) => {
+                    self.draft_trait(syn, module_id, handler);
+                }
+                syntax_tree::item::Item::Function(syn) => {
+                    let accessibility = self
+                        .create_accessibility(
+                            module_id.into(),
+                            syn.access_modifier(),
+                        )
+                        .unwrap();
+
+                    let _: ID<Function> = self.draft_member(
+                        syn,
+                        module_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    );
+                }
+                syntax_tree::item::Item::Type(syn) => {
+                    let accessibility = self
+                        .create_accessibility(
+                            module_id.into(),
+                            syn.access_modifier(),
+                        )
+                        .unwrap();
+
+                    let _: ID<Type> = self.draft_member(
+                        syn,
+                        module_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    );
+                }
+                syntax_tree::item::Item::Struct(syn) => {
+                    let accessibility = self
+                        .create_accessibility(
+                            module_id.into(),
+                            syn.access_modifier(),
+                        )
+                        .unwrap();
+
+                    let _: ID<Struct> = self.draft_member(
+                        syn,
+                        module_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    );
+                }
+                syntax_tree::item::Item::Implementation(syn) => {
+                    // remember the implementation, will be processed later
+                    self.state
+                        .implementations_by_module_id
+                        .entry(module_id)
+                        .or_default()
+                        .push(syn);
+                }
+                syntax_tree::item::Item::Enum(syn) => {
+                    self.draft_enum(syn, module_id, handler);
+                }
+                syntax_tree::item::Item::Module(_) => {
+                    unreachable!("submodules should've been extracted out")
+                }
+                syntax_tree::item::Item::Constant(syn) => {
+                    let accessibility = self
+                        .create_accessibility(
+                            module_id.into(),
+                            syn.access_modifier(),
+                        )
+                        .unwrap();
+
+                    let _: ID<Constant> = self.draft_member(
+                        syn,
+                        module_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    );
+                }
+            };
+        }
+
+        module_id
+    }
+}
+
+impl Table<Building<RwLockContainer, Drafter>> {
+    #[allow(clippy::too_many_lines)]
+    fn draft_positive_trait_implementation(
+        &mut self,
+        implementation_signature: syntax_tree::item::ImplementationSignature,
+        implementation_body: syntax_tree::item::ImplementationBody,
+        declared_in: ID<Module>,
+        trait_id: ID<Trait>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        let (_, members, _) = implementation_body.dissolve();
+
+        // the implementation id
+        let implementation_id = self
+            .insert_implementation(
+                trait_id,
+                declared_in,
+                GenericDeclaration::default(),
+                Some(implementation_signature.qualified_identifier().span()),
+                GenericArguments::default(),
+                PositiveTraitImplementationDefinition::default(),
+            )
+            .unwrap();
+
+        assert!(self
+            .state
+            .finalizer
+            .draft_symbol(implementation_id, implementation_signature));
+
+        for member in members {
+            let trait_implementation_member_id = match member {
+                ImplementationMember::Type(syn) => {
+                    let accessibility = self
+                        .get(trait_id)
+                        .unwrap()
+                        .member_ids_by_name
+                        .get(syn.signature().identifier().span.str())
+                        .copied()
+                        .map(|x| self.get_accessibility(x.into()).unwrap())
+                        .unwrap_or(Accessibility::Public);
+
+                    TraitImplementationMemberID::Type(self.draft_member(
+                        syn,
+                        implementation_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    ))
+                }
+                ImplementationMember::Function(syn) => {
+                    let accessibility = self
+                        .get(trait_id)
+                        .unwrap()
+                        .member_ids_by_name
+                        .get(syn.signature().identifier().span.str())
+                        .copied()
+                        .map(|x| self.get_accessibility(x.into()).unwrap())
+                        .unwrap_or(Accessibility::Public);
+
+                    TraitImplementationMemberID::Function(self.draft_member(
+                        syn,
+                        implementation_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    ))
+                }
+                ImplementationMember::Constant(syn) => {
+                    let accessibility = self
+                        .get(trait_id)
+                        .unwrap()
+                        .member_ids_by_name
+                        .get(syn.signature().identifier().span.str())
+                        .copied()
+                        .map(|x| self.get_accessibility(x.into()).unwrap())
+                        .unwrap_or(Accessibility::Public);
+
+                    TraitImplementationMemberID::Constant(self.draft_member(
+                        syn,
+                        implementation_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    ))
+                }
+            };
+
+            // find the cooresponding trait member id
+            let Some(trait_member_id) = self
+                .get(trait_id)
+                .unwrap()
+                .member_ids_by_name
+                .get(
+                    self.get_global(trait_implementation_member_id.into())
+                        .unwrap()
+                        .name(),
+                )
+                .copied()
+            else {
+                handler.receive(Box::new(UnknownTraitImplementationMember {
+                    identifier_span: self
+                        .get_global(trait_implementation_member_id.into())
+                        .unwrap()
+                        .span()
+                        .cloned()
+                        .unwrap(),
+                    trait_id,
+                }));
+                continue;
+            };
+
+            match (trait_member_id, trait_implementation_member_id) {
+                (
+                    TraitMemberID::Type(_),
+                    TraitImplementationMemberID::Type(_),
+                )
+                | (
+                    TraitMemberID::Function(_),
+                    TraitImplementationMemberID::Function(_),
+                )
+                | (
+                    TraitMemberID::Constant(_),
+                    TraitImplementationMemberID::Constant(_),
+                ) => { /*do nothing, correct implementation*/ }
+
+                _ => handler.receive(Box::new(
+                    MismatchedTraitMemberAndImplementationMember {
+                        trait_member_id,
+                        found_kind: match trait_implementation_member_id {
+                            TraitImplementationMemberID::Type(_) => {
+                                error::TraitMemberKind::Type
+                            }
+                            TraitImplementationMemberID::Function(_) => {
+                                error::TraitMemberKind::Function
+                            }
+                            TraitImplementationMemberID::Constant(_) => {
+                                error::TraitMemberKind::Constant
+                            }
+                        },
+                        implementation_member_identifer_span: self
+                            .get_global(trait_implementation_member_id.into())
+                            .unwrap()
+                            .span()
+                            .cloned()
+                            .unwrap(),
+                    },
+                )),
+            }
+        }
+
+        let trait_sym = self.get(trait_id).unwrap();
+        let implementation_sym = self.get(implementation_id).unwrap();
+
+        // check if there are any missing members
+        let unimplemented_trait_member_ids = trait_sym
+            .member_ids_by_name
+            .iter()
+            .filter_map(|(name, id)| {
+                implementation_sym
+                    .member_ids_by_name
+                    .get(name)
+                    .is_none()
+                    .then_some(*id)
+            })
+            .collect::<HashSet<_>>();
+
+        if !unimplemented_trait_member_ids.is_empty() {
+            handler.receive(Box::new(UnimplementedTraitMembers {
+                unimplemented_trait_member_ids,
+                implementation_id,
+            }));
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn draft_adt_implementation(
+        &mut self,
+        implementation: syntax_tree::item::Implementation,
+        declared_in: ID<Module>,
+        adt_id: AdtID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        let (signature, kind) = implementation.dissolve();
+        let implementation_body = match kind {
+            ImplementationKind::Negative(_) => {
+                handler.receive(Box::new(error::NegativeImplementationOnAdt {
+                    negative_implementation_span: signature
+                        .qualified_identifier()
+                        .span(),
+                    adt_id,
+                }));
+                return;
+            }
+            ImplementationKind::Positive(body) => body,
+        };
+        let (_, members, _) = implementation_body.dissolve();
+
+        // the implementation id
+        let adt_implementation_id = match adt_id {
+            AdtID::Struct(id) => self.insert_implementation(
+                id,
+                declared_in,
+                GenericDeclaration::default(),
+                Some(signature.qualified_identifier().span()),
+                GenericArguments::default(),
+                AdtImplementationDefinition::default(),
+            ),
+            AdtID::Enum(id) => self.insert_implementation(
+                id,
+                declared_in,
+                GenericDeclaration::default(),
+                Some(signature.qualified_identifier().span()),
+                GenericArguments::default(),
+                AdtImplementationDefinition::default(),
+            ),
+        }
+        .unwrap();
+
+        assert!(self
+            .state
+            .finalizer
+            .draft_symbol(adt_implementation_id, signature));
+
+        for member in members {
+            match member {
+                ImplementationMember::Type(syn) => {
+                    let accessibility = self
+                        .create_accessibility(
+                            adt_implementation_id.into(),
+                            syn.access_modifier(),
+                        )
+                        .unwrap();
+
+                    let _: ID<AdtImplementationType> = self.draft_member(
+                        syn,
+                        adt_implementation_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    );
+                }
+                ImplementationMember::Function(syn) => {
+                    let accessibility = self
+                        .create_accessibility(
+                            adt_implementation_id.into(),
+                            syn.access_modifier(),
+                        )
+                        .unwrap();
+
+                    let _: ID<AdtImplementationFunction> = self.draft_member(
+                        syn,
+                        adt_implementation_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    );
+                }
+                ImplementationMember::Constant(syn) => {
+                    let accessibility = self
+                        .create_accessibility(
+                            adt_implementation_id.into(),
+                            syn.access_modifier(),
+                        )
+                        .unwrap();
+
+                    let _: ID<AdtImplementationConstant> = self.draft_member(
+                        syn,
+                        adt_implementation_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    );
+                }
+            };
+        }
+    }
+
+    fn draft_trait_implementation(
+        &mut self,
+        implementation: syntax_tree::item::Implementation,
+        declared_in: ID<Module>,
+        trait_id: ID<Trait>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        let (signature, kind) = implementation.dissolve();
+
+        match kind {
+            ImplementationKind::Negative(..) => {
+                let negative_trait_id = self
+                    .insert_implementation(
+                        trait_id,
+                        declared_in,
+                        GenericDeclaration::default(),
+                        Some(signature.qualified_identifier().span()),
+                        GenericArguments::default(),
+                        NegativeTraitImplementationDefinition,
+                    )
+                    .unwrap();
+
+                // draft the symbol
+                assert!(self
+                    .state
+                    .finalizer
+                    .draft_symbol(negative_trait_id, signature));
+            }
+            ImplementationKind::Positive(body) => {
+                self.draft_positive_trait_implementation(
+                    signature,
+                    body,
+                    declared_in,
+                    trait_id,
+                    handler,
+                );
+            }
+        }
+    }
+
+    pub(in crate::symbol::table::representation) fn draft_implementation(
+        &mut self,
+        implementation: syntax_tree::item::Implementation,
+        defined_in_module_id: ID<Module>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        let Ok(id) = self.resolve_simple_path(
+            implementation
+                .signature()
+                .qualified_identifier()
+                .generic_identifiers()
+                .map(GenericIdentifier::identifier),
+            defined_in_module_id.into(),
+            implementation
+                .signature()
+                .qualified_identifier()
+                .leading_scope_separator()
+                .is_some(),
+            handler,
+        ) else {
+            return;
+        };
+
+        match id {
+            GlobalID::Trait(id) => self.draft_trait_implementation(
+                implementation,
+                defined_in_module_id,
+                id,
+                handler,
+            ),
+
+            adt_id @ (GlobalID::Enum(_) | GlobalID::Struct(_)) => {
+                self.draft_adt_implementation(
+                    implementation,
+                    defined_in_module_id,
+                    match adt_id {
+                        GlobalID::Struct(struct_id) => AdtID::Struct(struct_id),
+                        GlobalID::Enum(enum_id) => AdtID::Enum(enum_id),
+                        _ => unreachable!(),
+                    },
+                    handler,
+                );
+            }
+
+            // invalid id
+            invalid_global_id => {
+                handler.receive(Box::new(InvalidSymbolInImplementation {
+                    invalid_global_id,
+                    qualified_identifier_span: implementation
+                        .signature()
+                        .qualified_identifier()
+                        .span(),
+                }));
+            }
+        }
+    }
+}
+
+// #[cfg(test)]
+// mod tests;

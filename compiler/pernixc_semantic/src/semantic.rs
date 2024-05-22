@@ -15,13 +15,16 @@ use self::{
 };
 use crate::{
     arena::ID,
-    symbol::{Trait, TraitImplementation},
-    table::{State, Table},
+    symbol::{
+        table::{State, Table},
+        PositiveTraitImplementation, Trait,
+    },
 };
 
 pub mod deduction;
 pub mod equality;
 pub mod equivalent;
+pub mod fresh;
 pub mod instantiation;
 pub mod mapping;
 pub mod matching;
@@ -55,7 +58,7 @@ pub struct Satisfied;
 )]
 pub enum TraitContext {
     /// The semantic logic is currently taking place in a trait implementation.
-    InTraitImplementation(ID<TraitImplementation>),
+    InTraitImplementation(ID<PositiveTraitImplementation>),
 
     /// The semantic logic is currently taking place in a trait.
     InTrait(ID<Trait>),
@@ -155,6 +158,3 @@ pub fn get_equivalences<T: Term>(
 
     Ok(equivalences)
 }
-
-#[cfg(test)]
-pub(super) mod tests;

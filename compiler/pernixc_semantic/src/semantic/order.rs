@@ -14,7 +14,7 @@ use super::{
     unification::{self, Unification},
     Environment,
 };
-use crate::table::State;
+use crate::symbol::table::State;
 
 /// The order in terms of specificity of the generic arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

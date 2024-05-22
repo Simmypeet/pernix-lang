@@ -8,7 +8,7 @@ use crate::{
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         Environment, Satisfied,
     },
-    table::{self, DisplayObject, State, Table},
+    symbol::table::{self, DisplayObject, State, Table},
 };
 
 /// A query for checking [`Tuple`] predicate satisfiability.

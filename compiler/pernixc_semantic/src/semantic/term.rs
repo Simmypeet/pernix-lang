@@ -29,8 +29,10 @@ use super::{
 use crate::{
     arena::ID,
     semantic::model::Default,
-    symbol::{GenericID, GenericParameter, GlobalID, MemberID},
-    table::{self, DisplayObject, State, Table},
+    symbol::{
+        table::{self, DisplayObject, State, Table},
+        GenericID, GenericParameter, GlobalID, MemberID,
+    },
 };
 
 pub mod constant;

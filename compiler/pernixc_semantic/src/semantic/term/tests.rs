@@ -57,7 +57,7 @@ impl Arbitrary for GenericID {
             ID::arbitrary().prop_map(Self::TraitFunction),
             ID::arbitrary().prop_map(Self::TraitConstant),
             ID::arbitrary().prop_map(Self::NegativeTraitImplementation),
-            ID::arbitrary().prop_map(Self::TraitImplementation),
+            ID::arbitrary().prop_map(Self::PositiveTraitImplementation),
             ID::arbitrary().prop_map(Self::TraitImplementationFunction),
             ID::arbitrary().prop_map(Self::TraitImplementationType),
             ID::arbitrary().prop_map(Self::TraitImplementationConstant),

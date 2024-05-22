@@ -12,7 +12,7 @@ use super::{
     },
     Environment,
 };
-use crate::table::State;
+use crate::symbol::table::State;
 
 /// Represents a record of unifying two terms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

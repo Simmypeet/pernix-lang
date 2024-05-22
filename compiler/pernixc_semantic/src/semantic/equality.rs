@@ -7,7 +7,7 @@ use super::{
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     Environment, Satisfied,
 };
-use crate::table::State;
+use crate::symbol::table::State;
 
 /// A query for checking equality
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

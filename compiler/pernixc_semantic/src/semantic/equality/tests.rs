@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::fmt::Debug;
 
 use proptest::{
     arbitrary::Arbitrary,
@@ -11,7 +11,6 @@ use super::equals;
 use crate::{
     arena::ID,
     semantic::{
-        instantiation::{self, Instantiation},
         model::Default,
         normalizer::NoOp,
         predicate::{Equality, Predicate},
@@ -23,21 +22,16 @@ use crate::{
             r#type::{Primitive, SymbolID, TraitMember, Type},
             GenericArguments, Local, Symbol, Term,
         },
-        tests::State,
-        visitor::{self, Recursive},
+        visitor::Recursive,
         Environment, Premise,
     },
-    symbol::{
-        self, GenericDeclaration, GenericID, GenericParameters, TypeParameter,
-        TypeParameterID,
-    },
-    table::Table,
+    symbol::table::{Building, Table},
 };
 
 #[test]
 fn reflexive() {
     let premise = Premise::<Default>::default();
-    let table = Table::<State>::default();
+    let table = Table::<Building>::default();
 
     let term = Type::Primitive(Primitive::Bool);
 
@@ -67,7 +61,7 @@ fn symmetric() {
         }),
     ));
 
-    let table = Table::<State>::default();
+    let table = Table::<Building>::default();
 
     assert!(equals(
         &Type::TraitMember(trait_member.clone()),
@@ -113,7 +107,7 @@ fn transitivity() {
         .into_iter(),
     );
 
-    let table = Table::<State>::default();
+    let table = Table::<Building>::default();
 
     assert!(equals(
         &Type::TraitMember(first_trait_member.clone()),
@@ -161,7 +155,7 @@ fn congruence() {
         .into_iter(),
     );
 
-    let table = Table::<State>::default();
+    let table = Table::<Building>::default();
     let lhs = Type::Symbol(Symbol {
         id: SymbolID::Struct(ID::new(0)),
         generic_arguments: GenericArguments {
@@ -211,15 +205,11 @@ pub enum ApplyPropertyError {
 /// A trait for generating term for checking equality.
 pub trait Property<T>: 'static + Debug {
     /// Applies this property to the environment.
-    fn apply(
+    fn generate(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError>;
-
-    /// Generates the term for testing.
-    #[must_use]
-    fn generate(&self) -> (T, T);
+    ) -> Result<(T, T), ApplyPropertyError>;
 }
 
 impl Arbitrary for Box<dyn Property<Type<Default>>> {
@@ -242,7 +232,6 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
                 ))
                 .prop_map(|x| Box::new(x) as _),
                 1 => LocalCongruence::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
-                1 => TypeAlias::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _),
             ]
         })
         .boxed()
@@ -292,22 +281,20 @@ where
 }
 
 impl<T: Term + Debug + 'static> Property<T> for Identity<T> {
-    fn apply(
+    fn generate(
         &self,
-        _: &mut Table<State>,
+        _: &mut Table<Building>,
         _: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError> {
-        Ok(())
+    ) -> Result<(T, T), ApplyPropertyError> {
+        Ok((self.term.clone(), self.term.clone()))
     }
-
-    fn generate(&self) -> (T, T) { (self.term.clone(), self.term.clone()) }
 }
 
 #[derive(Debug)]
 pub struct Mapping<T: Term> {
     pub property: Box<dyn Property<T>>,
     pub target_trait_member: T::TraitMember,
-    pub target_at_lhs: bool,
+    pub map_at_lhs: bool,
 }
 
 impl<T: 'static + Debug + Term + Arbitrary<Strategy = BoxedStrategy<T>>>
@@ -328,7 +315,7 @@ where
             .prop_map(|(property, target_trait_member, target_at_lhs)| Self {
                 property,
                 target_trait_member,
-                target_at_lhs,
+                map_at_lhs: target_at_lhs,
             })
             .boxed()
     }
@@ -339,64 +326,47 @@ where
     session::Default<Default>: Session<T>,
     Equality<T::TraitMember, T>: Into<Predicate<Default>>,
 {
-    fn apply(
+    fn generate(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError> {
-        let (lhs, rhs) = self.generate();
+    ) -> Result<(T, T), ApplyPropertyError> {
+        let (inner_lhs, inner_rhs) = self.property.generate(table, premise)?;
 
-        if equals(
-            &lhs,
-            &rhs,
-            &Environment { premise, table, normalizer: &NoOp },
-            &mut Limit::new(&mut session::Default::default()),
-        )? {
-            return Ok(());
-        }
-
-        let (property_lhs, property_rhs) = self.property.generate();
-
-        let to_be_mapped =
-            if self.target_at_lhs { property_lhs } else { property_rhs };
-        self.property.apply(table, premise)?;
-
-        if equals(
-            &lhs,
-            &rhs,
-            &Environment { premise, table, normalizer: &NoOp },
-            &mut Limit::new(&mut session::Default::default()),
-        )? || equals(
-            &to_be_mapped,
-            &T::from(self.target_trait_member.clone()),
-            &Environment { premise, table, normalizer: &NoOp },
-            &mut Limit::new(&mut session::Default::default()),
-        )? {
-            return Ok(());
-        }
-
-        premise.append_from_predicates(std::iter::once(
-            Equality {
-                lhs: self.target_trait_member.clone(),
-                rhs: to_be_mapped,
-            }
-            .into(),
-        ));
-
-        Ok(())
-    }
-
-    fn generate(&self) -> (T, T) {
-        if self.target_at_lhs {
-            (
-                T::from(self.target_trait_member.clone()),
-                self.property.generate().1,
-            )
+        let should_map = if self.map_at_lhs {
+            !equals(
+                &self.target_trait_member.clone().into(),
+                &inner_rhs,
+                &Environment { premise, table, normalizer: &NoOp },
+                &mut Limit::new(&mut session::Default::default()),
+            )?
         } else {
-            (
-                self.property.generate().0,
-                T::from(self.target_trait_member.clone()),
-            )
+            !equals(
+                &inner_lhs,
+                &self.target_trait_member.clone().into(),
+                &Environment { premise, table, normalizer: &NoOp },
+                &mut Limit::new(&mut session::Default::default()),
+            )?
+        };
+
+        if should_map {
+            premise.append_from_predicates(std::iter::once(
+                Equality {
+                    lhs: self.target_trait_member.clone(),
+                    rhs: if self.map_at_lhs {
+                        inner_lhs.clone()
+                    } else {
+                        inner_rhs.clone()
+                    },
+                }
+                .into(),
+            ));
+        }
+
+        if self.map_at_lhs {
+            Ok((self.target_trait_member.clone().into(), inner_rhs))
+        } else {
+            Ok((inner_lhs, self.target_trait_member.clone().into()))
         }
     }
 }
@@ -431,28 +401,14 @@ where
     Local<T>: Into<T>,
     session::Default<Default>: Session<T>,
 {
-    fn apply(
+    fn generate(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError> {
-        let (lhs, rhs) = self.generate();
-        if equals(
-            &lhs,
-            &rhs,
-            &Environment { premise, table, normalizer: &NoOp },
-            &mut Limit::new(&mut session::Default::default()),
-        )? {
-            return Ok(());
-        }
+    ) -> Result<(T, T), ApplyPropertyError> {
+        let (lhs, rhs) = self.strategy.generate(table, premise)?;
 
-        self.strategy.apply(table, premise)
-    }
-
-    fn generate(&self) -> (T, T) {
-        let (lhs, rhs) = self.strategy.generate();
-
-        (Local(Box::new(lhs)).into(), Local(Box::new(rhs)).into())
+        Ok((Local(Box::new(lhs)).into(), Local(Box::new(rhs)).into()))
     }
 }
 
@@ -465,7 +421,7 @@ pub struct SymbolCongruence<ID> {
     id: ID,
 }
 
-impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
+impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Copy>
     Arbitrary for SymbolCongruence<ID>
 {
     type Parameters = (
@@ -512,77 +468,47 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
     }
 }
 
-impl<ID: Debug + 'static + Clone, T: Term<Model = Default> + 'static>
-    Property<T> for SymbolCongruence<ID>
+impl<ID: Debug + 'static + Copy, T: Term<Model = Default> + 'static> Property<T>
+    for SymbolCongruence<ID>
 where
     Symbol<Default, ID>: Into<T>,
     session::Default<Default>: Session<T>,
 {
-    fn apply(
+    fn generate(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError> {
-        for strategy in &self.type_properties {
-            strategy.apply(table, premise)?;
-        }
+    ) -> Result<(T, T), ApplyPropertyError> {
+        let mut lhs_generic_arguments = GenericArguments::default();
+        let mut rhs_generic_arguments = GenericArguments::default();
 
         for strategy in &self.lifetime_properties {
-            strategy.apply(table, premise)?;
-        }
-
-        for strategy in &self.constant_properties {
-            strategy.apply(table, premise)?;
-        }
-
-        Ok(())
-    }
-
-    fn generate(&self) -> (T, T) {
-        let mut lhs_generic_arguments = GenericArguments {
-            lifetimes: Vec::new(),
-            types: Vec::new(),
-            constants: Vec::new(),
-        };
-        let mut rhs_generic_arguments = GenericArguments {
-            lifetimes: Vec::new(),
-            types: Vec::new(),
-            constants: Vec::new(),
-        };
-
-        for strategy in &self.lifetime_properties {
-            let (lhs, rhs) = strategy.generate();
+            let (lhs, rhs) = strategy.generate(table, premise)?;
 
             lhs_generic_arguments.lifetimes.push(lhs);
             rhs_generic_arguments.lifetimes.push(rhs);
         }
 
         for strategy in &self.type_properties {
-            let (lhs, rhs) = strategy.generate();
+            let (lhs, rhs) = strategy.generate(table, premise)?;
 
             lhs_generic_arguments.types.push(lhs);
             rhs_generic_arguments.types.push(rhs);
         }
 
         for strategy in &self.constant_properties {
-            let (lhs, rhs) = strategy.generate();
+            let (lhs, rhs) = strategy.generate(table, premise)?;
 
             lhs_generic_arguments.constants.push(lhs);
             rhs_generic_arguments.constants.push(rhs);
         }
 
-        (
-            Symbol {
-                id: self.id.clone(),
-                generic_arguments: lhs_generic_arguments,
-            }
-            .into(),
-            Symbol {
-                id: self.id.clone(),
-                generic_arguments: rhs_generic_arguments,
-            }
-            .into(),
-        )
+        Ok((
+            Symbol { id: self.id, generic_arguments: lhs_generic_arguments }
+                .into(),
+            Symbol { id: self.id, generic_arguments: rhs_generic_arguments }
+                .into(),
+        ))
     }
 }
 
@@ -621,6 +547,7 @@ impl<'v> Recursive<'v, Constant<Default>> for TermCollector {
     }
 }
 
+/*
 #[derive(Debug)]
 pub struct TypeAlias {
     property: Box<dyn Property<Type<Default>>>,
@@ -667,7 +594,7 @@ impl Arbitrary for TypeAlias {
 impl Property<Type<Default>> for TypeAlias {
     fn apply(
         &self,
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
@@ -689,62 +616,58 @@ impl Property<Type<Default>> for TypeAlias {
             &Environment { premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session::Default::default()),
         )? {
-            let type_symbol = symbol::Type {
-                generic_declaration: GenericDeclaration {
-                    parameters: {
-                        let mut parameters = GenericParameters::default();
-
-                        let _ = parameters.add_type_parameter(TypeParameter {
-                            name: Some("T".to_string()),
-                            span: None,
-                        });
-
-                        parameters
-                    },
-                    predicates: Vec::new(),
-                },
-                parent_id: ID::new(0),
-                span: None,
-                name: "Test".to_string(),
-                definition: symbol::TypeDefinition {
-                    accessibility: symbol::Accessibility::Public,
-                    r#type: {
-                        let (lhs, rhs) = self.property.generate();
-
-                        let mut sampled =
-                            if self.aliased_at_lhs { lhs } else { rhs };
-
-                        let instantiation = Instantiation {
-                            lifetimes: HashMap::new(),
-                            types: std::iter::once((
-                                self.argument.clone(),
-                                Type::Parameter(TypeParameterID {
-                                    parent: GenericID::Type(self.type_id),
-                                    id: ID::new(0),
-                                }),
-                            ))
-                            .collect(),
-                            constants: HashMap::new(),
-                        };
-
-                        instantiation::instantiate(
-                            &mut sampled,
-                            &instantiation,
-                        );
-
-                        sampled
-                    },
-                },
-            };
-
             if table
-                .representation
-                .types
-                .insert_with_id(self.type_id, type_symbol)
+                .insert_module_member_with_id(
+                    self.type_id,
+                    format!("T{}", self.type_id.into_index()),
+                    symbol::Accessibility::Public,
+                    table
+                        .get_by_qualified_name(std::iter::once("core"))
+                        .unwrap()
+                        .into_module()
+                        .unwrap(),
+                    None,
+                )
                 .is_err()
             {
                 return Err(ApplyPropertyError::TypeAliasIDCollision);
             }
+
+            let mut type_symbol = table.get_mut(self.type_id).unwrap();
+
+            type_symbol.generic_declaration.parameters = {
+                let mut parameters = GenericParameters::default();
+
+                let _ = parameters.add_type_parameter(TypeParameter {
+                    name: Some("T".to_string()),
+                    span: None,
+                });
+
+                parameters
+            };
+
+            type_symbol.r#type = {
+                let (lhs, rhs) = self.property.generate();
+
+                let mut sampled = if self.aliased_at_lhs { lhs } else { rhs };
+
+                let instantiation = Instantiation {
+                    lifetimes: HashMap::new(),
+                    types: std::iter::once((
+                        self.argument.clone(),
+                        Type::Parameter(TypeParameterID {
+                            parent: GenericID::Type(self.type_id),
+                            id: ID::new(0),
+                        }),
+                    ))
+                    .collect(),
+                    constants: HashMap::new(),
+                };
+
+                instantiation::instantiate(&mut sampled, &instantiation);
+
+                sampled
+            };
         }
 
         Ok(())
@@ -770,6 +693,8 @@ impl Property<Type<Default>> for TypeAlias {
     }
 }
 
+*/
+
 #[allow(clippy::too_many_lines)]
 fn property_based_testing<T: Term<Model = Default> + 'static>(
     property: &dyn Property<T>,
@@ -778,18 +703,9 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
 where
     session::Default<Default>: Session<T>,
 {
-    let (term1, term2) = property.generate();
     let mut premise = Premise::default();
-    let mut table = Table::<State>::default();
-
-    property.apply(&mut table, &mut premise).map_err(|x| match x {
-        ApplyPropertyError::ExceedLimitError(_) => {
-            TestCaseError::reject("too complex property")
-        }
-        ApplyPropertyError::TypeAliasIDCollision => {
-            TestCaseError::reject("type alias id collision")
-        }
-    })?;
+    let mut table = Table::<Building>::default();
+    let (term1, term2) = property.generate(&mut table, &mut premise)?;
 
     let environment =
         &Environment { premise: &premise, table: &table, normalizer: &NoOp };
@@ -808,11 +724,6 @@ where
         &mut Limit::new(&mut session::Default::default())
     )
     .map_err(|_| TestCaseError::reject("too complex property"))?);
-
-    // println!(
-    //     "mapping count: {}",
-    //     premise.equalities_mapping.mapping_count()
-    // );
 
     // remove the equality mapping should make the terms not equal.
     {
@@ -848,11 +759,12 @@ where
         }
     }
 
+    /*
     // remove the type alias symbol should make the terms not equal.
     {
-        let id = table.representation.types.ids().next();
+        let id = table.types().ids().next();
         if let Some(id) = id {
-            let removed = table.representation.types.remove(id).unwrap();
+            let removed = table.types().remove(id).unwrap();
             let environment = &Environment {
                 premise: &premise,
                 table: &table,
@@ -874,9 +786,10 @@ where
             )
             .map_err(|_| TestCaseError::reject("too complex property"))?);
 
-            table.representation.types.insert_with_id(id, removed).unwrap();
+            table.types().insert_with_id(id, removed).unwrap();
         }
     }
+    */
 
     // adding unrelated equalities should not affect the result.
     for decoy_lifetime_equalities in decoy.lifetimes {

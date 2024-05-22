@@ -24,22 +24,21 @@ use crate::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments, Kind,
         },
-        tests::State,
         visitor::RecursiveIterator,
         Environment, Premise,
     },
     symbol::{
-        self, Accessibility, Generic, GenericDeclaration, GenericParameters,
-        ImplementationSignature, LifetimeParameter, MemberID, Module,
-        NegativeTraitImplementation, NegativeTraitImplementationDefinition,
-        Trait, TraitImplementation, TraitImplementationDefinition,
-        TypeParameter,
+        self,
+        table::{Building, Table},
+        Accessibility, Generic, GenericDeclaration, GenericParameters,
+        LifetimeParameter, MemberID, Module, NegativeTraitImplementation,
+        NegativeTraitImplementationDefinition, PositiveTraitImplementation,
+        PositiveTraitImplementationDefinition, Trait, TypeParameter,
     },
-    table::Table,
 };
 
 lazy_static! {
-    static ref TABLE: Table<State> = Table::default();
+    static ref TABLE: Table<Building> = Table::default();
 }
 
 fn definite_lifetime() -> impl Strategy<Value = Lifetime<Default>> {
@@ -114,9 +113,9 @@ fn definite_generic_arguments(
 pub struct SingleImplementation {
     pub trait_id: ID<Trait>,
     pub defined_in_module_id: ID<Module>,
-    pub target_implementation_id: ID<TraitImplementation>,
+    pub target_implementation_id: ID<PositiveTraitImplementation>,
     pub generic_arguments: GenericArguments<Default>,
-    pub table: Table<State>,
+    pub table: Table<Building>,
     pub expected_instantiation: Instantiation<Default>,
 }
 
@@ -148,8 +147,8 @@ impl SingleImplementation {
 
     fn create_table_from_generic_arguments(
         generic_arguments: &GenericArguments<Default>,
-    ) -> (Table<State>, ID<Module>, ID<Trait>) {
-        let mut table = Table::<State>::default();
+    ) -> (Table<Building>, ID<Module>, ID<Trait>) {
+        let mut table = Table::<Building>::default();
 
         // the module where the trait is defined
         let module_id = {
@@ -243,11 +242,11 @@ impl SingleImplementation {
         mut generic_arguments: GenericArguments<Default>,
         to_be_substituted_type: Vec<Type<Default>>,
         to_be_substituted_constant: Vec<Constant<Default>>,
-    ) -> (ID<TraitImplementation>, Instantiation<Default>) {
+    ) -> (ID<PositiveTraitImplementation>, Instantiation<Default>) {
         // the trait implementation id which will be resolved to
         let implementation_id = {
             table.representation.trait_implementations.insert_with(|_| {
-                TraitImplementation {
+                PositiveTraitImplementation {
                     span: None,
                     signature: ImplementationSignature {
                         generic_declaration: GenericDeclaration::default(),
@@ -256,7 +255,7 @@ impl SingleImplementation {
                     },
                     implementation_name: "Test".to_string(),
                     declared_in: module_id,
-                    definition: TraitImplementationDefinition {
+                    definition: PositiveTraitImplementationDefinition {
                         is_const: false,
                         member_ids_by_name: HashMap::new(),
                         implementation_type_ids_by_trait_type_id: HashMap::new(
@@ -532,10 +531,10 @@ pub struct SpecializedImplementation {
     pub trait_id: ID<Trait>,
     pub defined_in_module_id: ID<Module>,
 
-    pub general_implementation_id: ID<TraitImplementation>,
+    pub general_implementation_id: ID<PositiveTraitImplementation>,
 
     #[allow(clippy::struct_field_names)]
-    pub specialized_implementation_id: ID<TraitImplementation>,
+    pub specialized_implementation_id: ID<PositiveTraitImplementation>,
 
     pub expected_specialized_instantitation: Instantiation<Default>,
     pub expected_general_instantitation: Instantiation<Default>,
@@ -579,14 +578,14 @@ impl SpecializedImplementation {
         expected_specialized_instantiation: &Instantiation<Default>,
         to_be_substituted_type: Vec<Type<Default>>,
         to_be_substituted_constant: Vec<Constant<Default>>,
-    ) -> Option<(ID<TraitImplementation>, Instantiation<Default>)> {
+    ) -> Option<(ID<PositiveTraitImplementation>, Instantiation<Default>)> {
         let starting_generic_arguments = generic_arguments.clone();
         let mut expected_instantitation = Instantiation::default();
 
         // the trait implementation id which will is more general
         let general_implementation_id = {
             table.representation.trait_implementations.insert_with(|_| {
-                TraitImplementation {
+                PositiveTraitImplementation {
                     span: None,
                     signature: ImplementationSignature {
                         generic_declaration: GenericDeclaration::default(),
@@ -595,7 +594,7 @@ impl SpecializedImplementation {
                     },
                     implementation_name: "Test".to_string(),
                     declared_in: module_id,
-                    definition: TraitImplementationDefinition {
+                    definition: PositiveTraitImplementationDefinition {
                         is_const: false,
                         member_ids_by_name: HashMap::new(),
                         implementation_type_ids_by_trait_type_id: HashMap::new(

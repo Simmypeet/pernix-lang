@@ -20,7 +20,7 @@ use super::{
     },
     visitor::{accept_recursive, Recursive},
 };
-use crate::table::{self, DisplayObject, State};
+use crate::symbol::table::{self, DisplayObject, State};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct ContainsForallLifetimeVisitor {

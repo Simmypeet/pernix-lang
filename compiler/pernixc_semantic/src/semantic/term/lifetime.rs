@@ -28,8 +28,10 @@ use crate::{
         unification::{Substructural, Unification},
         Environment,
     },
-    symbol::{GenericID, LifetimeParameter, LifetimeParameterID, MemberID},
-    table::{self, State, Table},
+    symbol::{
+        table::{self, State, Table},
+        GenericID, LifetimeParameter, LifetimeParameterID, MemberID,
+    },
 };
 
 /// Represents a for-all quantified lifetime, denoted by `for<'a>` syntax, used

@@ -871,7 +871,7 @@ impl<M: Model> Element for Constant<M> {
     }
 }
 
-type Storage<'a, M: Model> = Vec<(Kind<'a, M>, Vec<TermLocation>)>;
+type Storage<'a, M> = Vec<(Kind<'a, M>, Vec<TermLocation>)>;
 
 #[derive(Debug, Clone)]
 struct Collector<'a, M: Model> {
