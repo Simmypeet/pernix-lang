@@ -160,16 +160,14 @@ impl BuildPreset for Complete {
         Some(adt_implementation_constant::COMPLETE_STATE)
     }
     fn adt_implementation_function() -> Option<StateFlag> {
-        Some(adt_implementation_function::DEFINITION_AND_CHECK_STATE)
+        Some(adt_implementation_function::SIGNATURE_STATE)
     }
     fn adt_implementation_type() -> Option<StateFlag> {
         Some(adt_implementation_type::COMPLETE_STATE)
     }
     fn constant() -> Option<StateFlag> { Some(constant::COMPLETE_STATE) }
     fn r#enum() -> Option<StateFlag> { Some(r#enum::COMPLETE_STATE) }
-    fn function() -> Option<StateFlag> {
-        Some(function::DEFINITION_AND_CHECK_STATE)
-    }
+    fn function() -> Option<StateFlag> { Some(function::SIGNATURE_STATE) }
     fn negative_trait_implementation() -> Option<StateFlag> {
         Some(negative_trait_implementation::COMPLETE_STATE)
     }
@@ -188,7 +186,7 @@ impl BuildPreset for Complete {
         Some(trait_implementation_constant::COMPLETE_STATE)
     }
     fn trait_implementation_function() -> Option<StateFlag> {
-        Some(trait_implementation_function::DEFINITION_AND_CHECK_STATE)
+        Some(trait_implementation_function::SIGNATURE_STATE)
     }
     fn trait_implementation_type() -> Option<StateFlag> {
         Some(trait_implementation_type::COMPLETE_STATE)

@@ -74,7 +74,7 @@ impl Finalize for Variant {
                         .unwrap_or_default();
 
                     let ty_accessible =
-                        table.get_type_overall_accessibility(&ty).unwrap();
+                        table.get_type_accessibility(&ty).unwrap();
 
                     // private entity leaked to public interface
                     if ty_accessible

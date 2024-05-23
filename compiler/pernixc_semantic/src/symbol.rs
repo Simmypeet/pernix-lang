@@ -25,18 +25,6 @@ use crate::{
 pub mod table;
 
 /// Represents an accessibility of a symbol.
-///
-/// ```
-/// use pernixc_semantic::symbol::Accessibility;
-///
-/// let private = Accessibility::Private;
-/// let internal = Accessibility::Internal;
-/// let public = Accessibility::Public;
-///
-/// assert!(private < internal);
-/// assert!(internal < public);
-/// assert!(private < public);
-/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Accessibility {
     /// The symbol is accessible from anywhere.

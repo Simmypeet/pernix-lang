@@ -186,7 +186,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     .unwrap_or_default();
 
                 let ty_accessibility = self
-                    .get_type_overall_accessibility(&constant_type)
+                    .get_type_accessibility(&constant_type)
                     .expect("should be valid");
 
                 // no private type in public interface

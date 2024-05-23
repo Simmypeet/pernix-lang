@@ -451,6 +451,46 @@ pub enum GetMemberError {
     MemberNotFound,
 }
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[allow(missing_docs)]
+pub enum MergeAccessibilityError {
+    #[error("the accessibility objects contain an invalid module ID")]
+    InvalidModuleID,
+
+    #[error("two accessibility objects are scoped to different modules")]
+    Unrelated,
+}
+
+impl From<MergeAccessibilityError> for GetTermAccessibilityError {
+    fn from(err: MergeAccessibilityError) -> Self {
+        match err {
+            MergeAccessibilityError::InvalidModuleID => {
+                GetTermAccessibilityError::InvalidID
+            }
+            MergeAccessibilityError::Unrelated => {
+                GetTermAccessibilityError::Unrealated
+            }
+        }
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[allow(missing_docs)]
+pub enum GetTermAccessibilityError {
+    #[error("the term contains an invalid ID")]
+    InvalidID,
+
+    #[error(
+        "the term contains two or more accessibilities that are scoped to \
+         different modules"
+    )]
+    Unrealated,
+}
+
 impl<T: Container> Representation<T> {
     /// Computes the [`HierarchyRelationship`] between the two given
     /// accessibilities.
@@ -873,227 +913,324 @@ impl<T: Container> Representation<T> {
         }
     }
 
+    /// Merges two accessibilities down the hierarchy.
+    ///
+    /// The resulting accessibility is the least accessible of the two given
+    /// accessibilities.
+    ///
+    /// # Errors
+    ///
+    /// See [`MergeAccessibilityError`] for more information.
+    pub fn merge_accessibility_down(
+        &self,
+        first: Accessibility,
+        second: Accessibility,
+    ) -> Result<Accessibility, MergeAccessibilityError> {
+        Ok(match (first, second) {
+            (Accessibility::Public, Accessibility::Public) => {
+                Accessibility::Public
+            }
+            (Accessibility::Public, Accessibility::Scoped(scope)) => {
+                Accessibility::Scoped(scope)
+            }
+            (Accessibility::Scoped(scope), Accessibility::Public) => {
+                Accessibility::Scoped(scope)
+            }
+            (Accessibility::Scoped(first), Accessibility::Scoped(second)) => {
+                match self
+                    .symbol_hierarchy_relationship(first.into(), second.into())
+                    .ok_or(MergeAccessibilityError::InvalidModuleID)?
+                {
+                    HierarchyRelationship::Parent => {
+                        Accessibility::Scoped(second)
+                    }
+                    HierarchyRelationship::Child => {
+                        Accessibility::Scoped(first)
+                    }
+                    HierarchyRelationship::Equivalent => {
+                        Accessibility::Scoped(first)
+                    }
+                    HierarchyRelationship::Unrelated => {
+                        return Err(MergeAccessibilityError::Unrelated)
+                    }
+                }
+            }
+        })
+    }
+
     /// Gets overall accessibility of the given [`r#type::Type`].
     ///
-    /// **Overall Accessibility** describes the **least** accessibility of the
-    /// least accessible type component of the given [`r#type::Type`].
+    /// # Errors
     ///
-    /// Example:
-    ///
-    /// ``` txt
-    /// private struct Foo{}
-    /// internal struct Bar{}
-    ///
-    /// // The overall accessibility of `Spam<Foo, Bar>` is `private`.
-    /// ```
-    ///
-    /// # Returns
-    ///
-    /// `None` if the type contains an invalid id as its component.
+    /// See [`GetTermAccessibilityError`] for more information.
     #[must_use]
     #[allow(clippy::uninhabited_references)]
-    pub fn get_type_overall_accessibility(
+    pub fn get_type_accessibility(
         &self,
         ty: &r#type::Type<Default>,
-    ) -> Option<Accessibility> {
+    ) -> Result<Accessibility, GetTermAccessibilityError> {
         match ty {
-            r#type::Type::Local(local) => {
-                self.get_type_overall_accessibility(&local.0)
-            }
+            r#type::Type::Local(local) => self.get_type_accessibility(&local.0),
+
             r#type::Type::Inference(never) => match *never {},
+
             r#type::Type::Symbol(adt) => {
-                Some(self.get_accessibility(adt.id.into())?.min(
-                    self.get_generic_arguments_overall_accessibility(
+                let symbol_accessibility = self
+                    .get_accessibility(adt.id.into())
+                    .ok_or(GetTermAccessibilityError::InvalidID)?;
+                let generic_arguments_accessibility = self
+                    .get_generic_arguments_accessibility(
                         &adt.generic_arguments,
-                    )?,
-                ))
+                    )?;
+
+                Ok(self.merge_accessibility_down(
+                    symbol_accessibility,
+                    generic_arguments_accessibility,
+                )?)
             }
+
             r#type::Type::Pointer(pointer) => {
-                self.get_type_overall_accessibility(&pointer.pointee)
+                self.get_type_accessibility(&pointer.pointee)
             }
-            r#type::Type::Reference(reference) => Some(
-                self.get_lifetime_overall_accessibility(&reference.lifetime)?
-                    .min(
-                        self.get_type_overall_accessibility(
-                            &reference.pointee,
-                        )?,
-                    ),
-            ),
-            r#type::Type::Array(array) => Some(
-                self.get_constant_overall_accessibility(&array.length)?
-                    .min(self.get_type_overall_accessibility(&array.r#type)?),
-            ),
-            r#type::Type::Parameter(parameter) => {
-                self.get_accessibility(parameter.parent.into())
+
+            r#type::Type::Reference(reference) => {
+                let lt_accessibility =
+                    self.get_lifetime_accessibility(&reference.lifetime)?;
+                let ty_accessibility =
+                    self.get_type_accessibility(&reference.pointee)?;
+
+                Ok(self.merge_accessibility_down(
+                    lt_accessibility,
+                    ty_accessibility,
+                )?)
             }
-            r#type::Type::Primitive(_) => Some(Accessibility::Public),
+
+            r#type::Type::Array(array) => {
+                let ty_accessibility =
+                    self.get_type_accessibility(&array.r#type)?;
+                let length_accessibility =
+                    self.get_constant_accessibility(&array.length)?;
+
+                Ok(self.merge_accessibility_down(
+                    ty_accessibility,
+                    length_accessibility,
+                )?)
+            }
+
+            r#type::Type::Parameter(parameter) => self
+                .get_accessibility(parameter.parent.into())
+                .ok_or(GetTermAccessibilityError::InvalidID),
+
+            r#type::Type::Primitive(_) => Ok(Accessibility::Public),
+
             r#type::Type::Tuple(tuple) => {
                 let mut current_min = Accessibility::Public;
 
                 for element in &tuple.elements {
-                    current_min = current_min.min(
-                        self.get_type_overall_accessibility(element.as_term())?,
-                    );
+                    current_min = self.merge_accessibility_down(
+                        current_min,
+                        self.get_type_accessibility(element.as_term())?,
+                    )?;
                 }
 
-                Some(current_min)
+                Ok(current_min)
             }
-            r#type::Type::MemberSymbol(member_symbol) => Some(
-                self.get_accessibility(member_symbol.id.into())?
-                    .min(self.get_generic_arguments_overall_accessibility(
-                        &member_symbol.parent_generic_arguments,
-                    )?)
-                    .min(self.get_generic_arguments_overall_accessibility(
+
+            r#type::Type::MemberSymbol(member_symbol) => {
+                let symbol_accessibility = self
+                    .get_accessibility(member_symbol.id.into())
+                    .ok_or(GetTermAccessibilityError::InvalidID)?;
+                let member_generic_accessibility = self
+                    .get_generic_arguments_accessibility(
                         &member_symbol.member_generic_arguments,
-                    )?),
-            ),
-            r#type::Type::TraitMember(member_symbol) => Some(
-                self.get_accessibility(member_symbol.id.into())?.min(
-                    self.get_generic_arguments_overall_accessibility(
+                    )?;
+                let parent_generic_accessibility = self
+                    .get_generic_arguments_accessibility(
                         &member_symbol.parent_generic_arguments,
-                    )?
-                    .min(
-                        self.get_generic_arguments_overall_accessibility(
-                            &member_symbol.member_generic_arguments,
-                        )?,
-                    ),
-                ),
-            ),
+                    )?;
+
+                let generic_arguments_accessibility = self
+                    .merge_accessibility_down(
+                        member_generic_accessibility,
+                        parent_generic_accessibility,
+                    )?;
+
+                Ok(self.merge_accessibility_down(
+                    symbol_accessibility,
+                    generic_arguments_accessibility,
+                )?)
+            }
+
+            r#type::Type::TraitMember(member_symbol) => {
+                let symbol_accessibility = self
+                    .get_accessibility(member_symbol.id.into())
+                    .ok_or(GetTermAccessibilityError::InvalidID)?;
+
+                let member_generic_accessibility = self
+                    .get_generic_arguments_accessibility(
+                        &member_symbol.member_generic_arguments,
+                    )?;
+
+                let parent_generic_accessibility = self
+                    .get_generic_arguments_accessibility(
+                        &member_symbol.parent_generic_arguments,
+                    )?;
+
+                let generic_arguments_accessibility = self
+                    .merge_accessibility_down(
+                        member_generic_accessibility,
+                        parent_generic_accessibility,
+                    )?;
+
+                Ok(self.merge_accessibility_down(
+                    symbol_accessibility,
+                    generic_arguments_accessibility,
+                )?)
+            }
+
             r#type::Type::Phantom(phantom) => {
-                self.get_type_overall_accessibility(&phantom.0)
+                self.get_type_accessibility(&phantom.0)
             }
         }
     }
 
     /// Gets overall accessibility of the given [`constant::Constant`].
     ///
-    /// **Overall Accessibility** describes the **least** accessibility of the
-    /// least accessible component of the given [`constant::Constant`].
+    /// # Errors
     ///
-    /// # Returns
-    ///
-    /// `None` if the constant contains an invalid id as its component.
+    /// See [`GetTermAccessibilityError`] for more information.
     #[must_use]
     #[allow(clippy::uninhabited_references)]
-    pub fn get_constant_overall_accessibility(
+    pub fn get_constant_accessibility(
         &self,
         constant: &constant::Constant<Default>,
-    ) -> Option<Accessibility> {
+    ) -> Result<Accessibility, GetTermAccessibilityError> {
         match constant {
             constant::Constant::Local(local) => {
-                self.get_constant_overall_accessibility(&local.0)
+                self.get_constant_accessibility(&local.0)
             }
             constant::Constant::Inference(never) => match *never {},
 
             constant::Constant::Struct(constant) => {
-                let mut current_min =
-                    self.get_accessibility(constant.id.into())?;
+                let mut current_min = self
+                    .get_accessibility(constant.id.into())
+                    .ok_or(GetTermAccessibilityError::InvalidID)?;
 
                 for field in &constant.fields {
-                    current_min = current_min
-                        .min(self.get_constant_overall_accessibility(field)?);
+                    current_min = self.merge_accessibility_down(
+                        current_min,
+                        self.get_constant_accessibility(field)?,
+                    )?;
                 }
 
-                Some(current_min)
+                Ok(current_min)
             }
 
-            constant::Constant::Array(constant) => constant
-                .elements
-                .iter()
-                .map(|x| self.get_constant_overall_accessibility(x))
-                .try_fold(Accessibility::Public, |acc, x| Some(acc.min(x?))),
+            constant::Constant::Array(constant) => {
+                let mut current_min = Accessibility::Public;
 
-            constant::Constant::Phantom(_)
-            | constant::Constant::Parameter(_)
-            | constant::Constant::Primitive(_) => Some(Accessibility::Public),
-
-            constant::Constant::Enum(constant) => {
-                let mut current_min =
-                    self.get_accessibility(constant.variant_id.into())?;
-
-                if let Some(associated_value) = &constant.associated_value {
-                    current_min = current_min.min(
-                        self.get_constant_overall_accessibility(
-                            associated_value,
-                        )?,
-                    );
+                for element in &constant.elements {
+                    current_min = self.merge_accessibility_down(
+                        current_min,
+                        self.get_constant_accessibility(element)?,
+                    )?;
                 }
 
-                Some(current_min)
+                Ok(current_min)
+            }
+
+            constant::Constant::Parameter(id) => Ok(self
+                .get_accessibility(id.parent.into())
+                .ok_or(GetTermAccessibilityError::InvalidID)?),
+
+            constant::Constant::Phantom(_)
+            | constant::Constant::Primitive(_) => Ok(Accessibility::Public),
+
+            constant::Constant::Enum(constant) => {
+                let mut current_min = self
+                    .get_accessibility(constant.variant_id.into())
+                    .ok_or(GetTermAccessibilityError::InvalidID)?;
+
+                if let Some(associated_value) = &constant.associated_value {
+                    current_min = self.merge_accessibility_down(
+                        current_min,
+                        self.get_constant_accessibility(&*associated_value)?,
+                    )?
+                }
+
+                Ok(current_min)
             }
 
             constant::Constant::Tuple(tuple) => {
                 let mut current_min = Accessibility::Public;
 
                 for element in &tuple.elements {
-                    current_min = current_min.min(
-                        self.get_constant_overall_accessibility(
-                            element.as_term(),
-                        )?,
-                    );
+                    current_min = self.merge_accessibility_down(
+                        current_min,
+                        self.get_constant_accessibility(element.as_term())?,
+                    )?;
                 }
 
-                Some(current_min)
+                Ok(current_min)
             }
         }
     }
 
     /// Gets overall accessibility of the given [`Lifetime`].
     ///
-    /// # Returns
+    /// # Errors
     ///
-    /// `None` if the lifetime contains an invalid id as its component.
+    /// See [`GetTermAccessibilityError`] for more information.
     #[must_use]
-    pub fn get_lifetime_overall_accessibility(
+    pub fn get_lifetime_accessibility(
         &self,
         lifetime: &Lifetime<Default>,
-    ) -> Option<Accessibility> {
+    ) -> Result<Accessibility, GetTermAccessibilityError> {
         match lifetime {
-            Lifetime::Parameter(lifetime_parameter_id) => {
-                self.get_accessibility(lifetime_parameter_id.parent.into())
-            }
+            Lifetime::Parameter(lifetime_parameter_id) => self
+                .get_accessibility(lifetime_parameter_id.parent.into())
+                .ok_or(GetTermAccessibilityError::InvalidID),
 
             Lifetime::Inference(never) => match *never {},
 
-            Lifetime::Forall(_) | Lifetime::Static => {
-                Some(Accessibility::Public)
-            }
+            Lifetime::Forall(_) | Lifetime::Static => Ok(Accessibility::Public),
         }
     }
 
     /// Gets overall accessibility of the given [`GenericArguments`].
     ///
-    /// **Overall Accessibility** describes the **least** accessibility of the
-    /// least accessible component of the given [`GenericArguments`].
+    /// # Errors
     ///
-    /// # Returns
-    ///
-    /// `None` if the generic arguments contains an invalid id as its component.
-    /// If the generic arguments is empty, returns
-    /// `Some(Accessibility::Public)`.
+    /// See [`GetTermAccessibilityError`] for more information.
     #[must_use]
-    pub fn get_generic_arguments_overall_accessibility(
+    pub fn get_generic_arguments_accessibility(
         &self,
         generic_arguments: &GenericArguments<Default>,
-    ) -> Option<Accessibility> {
+    ) -> Result<Accessibility, GetTermAccessibilityError> {
         let mut current_min = Accessibility::Public;
 
         for lifetime in &generic_arguments.lifetimes {
-            current_min = current_min
-                .min(self.get_lifetime_overall_accessibility(lifetime)?);
+            current_min = self.merge_accessibility_down(
+                current_min,
+                self.get_lifetime_accessibility(lifetime)?,
+            )?
         }
 
         for ty in &generic_arguments.types {
-            current_min =
-                current_min.min(self.get_type_overall_accessibility(ty)?);
+            current_min = self.merge_accessibility_down(
+                current_min,
+                self.get_type_accessibility(ty)?,
+            )?
         }
 
         for constant in &generic_arguments.constants {
-            current_min = current_min
-                .min(self.get_constant_overall_accessibility(constant)?);
+            current_min = self.merge_accessibility_down(
+                current_min,
+                self.get_constant_accessibility(constant)?,
+            )?
         }
 
-        Some(current_min)
+        Ok(current_min)
     }
 
     /// Gets the active [`Premise`] starting at the given [`GlobalID`] scope.

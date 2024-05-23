@@ -113,6 +113,5 @@ pub fn definite<T: Term>(
     Ok(false)
 }
 
-// TODO: Add tests
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

@@ -85,8 +85,8 @@ impl Table<Building<RwLockContainer, Drafter>> {
                     span: Some(variant_syn.identifier().span.clone()),
                 }));
 
-            // iraft the variant
-            self.state.finalizer.draft_symbol(variant_id, variant_syn);
+            // draft the variant
+            assert!(self.state.finalizer.draft_symbol(variant_id, variant_syn));
 
             let enum_sym =
                 self.representation.enums.get_mut(enum_id).unwrap().get_mut();
@@ -247,7 +247,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
             }));
         }
 
-        self.state.finalizer.draft_symbol(insertion.id, syntax_tree);
+        assert!(self.state.finalizer.draft_symbol(insertion.id, syntax_tree));
 
         insertion.id
     }
@@ -285,7 +285,11 @@ impl Table<Building<RwLockContainer, Drafter>> {
         let (_, content, submodule_by_name) = syntax_tree.dissolve();
         let (usings, items) = content.dissolve();
 
-        self.state.usings_by_module_id.insert(module_id, usings);
+        assert!(self
+            .state
+            .usings_by_module_id
+            .insert(module_id, usings)
+            .is_none());
 
         // recursive draft submodules
         for (name, submodule) in submodule_by_name {
@@ -770,5 +774,5 @@ impl Table<Building<RwLockContainer, Drafter>> {
     }
 }
 
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

@@ -37,8 +37,12 @@ pub const GENERIC_PARAMETER_STATE: usize = 0;
 /// Where cluase predicates are built
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
+/// The function signature information is built, including parameters and return
+/// type.
+pub const SIGNATURE_STATE: usize = 2;
+
 /// The intermediate representation of the function is built.
-pub const DEFINITION_AND_CHECK_STATE: usize = 2;
+pub const DEFINITION_AND_CHECK_STATE: usize = 3;
 
 impl Finalize for Function {
     type SyntaxTree = syntax_tree::item::Function;

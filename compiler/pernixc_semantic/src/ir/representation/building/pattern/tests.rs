@@ -278,19 +278,25 @@ fn value_bound_struct() {
 
         let struct_sym = table.get_mut(struct_id).unwrap();
 
-        struct_sym.fields.insert("a".to_string(), symbol::Field {
-            accessibility: Accessibility::Public,
-            r#type: Type::Primitive(Primitive::Int32),
-            name: "a".to_string(),
-            span: None,
-        });
+        struct_sym
+            .fields
+            .insert("a".to_string(), symbol::Field {
+                accessibility: Accessibility::Public,
+                r#type: Type::Primitive(Primitive::Int32),
+                name: "a".to_string(),
+                span: None,
+            })
+            .unwrap();
 
-        struct_sym.fields.insert("b".to_string(), symbol::Field {
-            accessibility: Accessibility::Public,
-            r#type: Type::Primitive(Primitive::Float32),
-            name: "b".to_string(),
-            span: None,
-        });
+        struct_sym
+            .fields
+            .insert("b".to_string(), symbol::Field {
+                accessibility: Accessibility::Public,
+                r#type: Type::Primitive(Primitive::Float32),
+                name: "b".to_string(),
+                span: None,
+            })
+            .unwrap();
 
         (table, root_module, struct_id)
     };
@@ -398,19 +404,25 @@ fn reference_bound_struct() {
 
         let struct_sym = table.get_mut(struct_id).unwrap();
 
-        struct_sym.fields.insert("a".to_string(), symbol::Field {
-            accessibility: Accessibility::Public,
-            r#type: Type::Primitive(Primitive::Int32),
-            name: "a".to_string(),
-            span: None,
-        });
+        struct_sym
+            .fields
+            .insert("a".to_string(), symbol::Field {
+                accessibility: Accessibility::Public,
+                r#type: Type::Primitive(Primitive::Int32),
+                name: "a".to_string(),
+                span: None,
+            })
+            .unwrap();
 
-        struct_sym.fields.insert("b".to_string(), symbol::Field {
-            accessibility: Accessibility::Public,
-            r#type: Type::Primitive(Primitive::Float32),
-            name: "b".to_string(),
-            span: None,
-        });
+        struct_sym
+            .fields
+            .insert("b".to_string(), symbol::Field {
+                accessibility: Accessibility::Public,
+                r#type: Type::Primitive(Primitive::Float32),
+                name: "b".to_string(),
+                span: None,
+            })
+            .unwrap();
 
         (table, root_module, struct_id)
     };

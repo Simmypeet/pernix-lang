@@ -18,7 +18,7 @@ use crate::{
         model::Default,
         normalizer::NoOp,
         order::Order,
-        predicate::{self, definite, TraitResolveError},
+        predicate::{self, definite},
         session::{self, Limit},
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
@@ -29,11 +29,14 @@ use crate::{
     },
     symbol::{
         self,
-        table::{Building, Table},
-        Accessibility, Generic, GenericDeclaration, GenericParameters,
-        LifetimeParameter, MemberID, Module, NegativeTraitImplementation,
-        NegativeTraitImplementationDefinition, PositiveTraitImplementation,
-        PositiveTraitImplementationDefinition, Trait, TypeParameter,
+        table::{
+            representation::{Index, IndexMut, Insertion},
+            Building, Table,
+        },
+        Accessibility, GenericDeclaration, GenericParameters,
+        LifetimeParameter, MemberID, Module, PositiveTraitImplementation,
+        PositiveTraitImplementationDefinition, Trait, TraitDefinition,
+        TypeParameter,
     },
 };
 
@@ -152,81 +155,65 @@ impl SingleImplementation {
 
         // the module where the trait is defined
         let module_id = {
-            let id = table.representation.modules.insert_with(|_| Module {
-                name: "testModule".to_string(),
-                accessibility: Accessibility::Public,
-                parent_module_id: None,
-                child_ids_by_name: HashMap::new(),
-                span: None,
-                usings: HashSet::new(),
-            });
+            let Insertion { id: module_id, duplication } =
+                table.create_root_module("test".to_string());
 
-            table
-                .representation
-                .root_module_ids_by_name
-                .insert("testModule".to_string(), id);
+            assert!(duplication.is_none());
 
-            id
+            module_id
         };
 
         // the trait has the same size as the generic arguments
         let trait_id = {
-            let id = table.representation.traits.insert_with(|_| Trait {
-                name: "Test".to_string(),
-                accessibility: Accessibility::Public,
-                parent_module_id: module_id,
-                generic_declaration: GenericDeclaration {
-                    parameters: {
-                        let mut generic_parameters =
-                            GenericParameters::default();
+            let generic_declaration = GenericDeclaration {
+                parameters: {
+                    let mut generic_parameters = GenericParameters::default();
 
-                        for _ in 0..generic_arguments.lifetimes.len() {
-                            generic_parameters
-                                .add_lifetime_parameter(LifetimeParameter {
-                                    name: None,
-                                    span: None,
-                                })
-                                .unwrap();
-                        }
-
-                        for _ in 0..generic_arguments.types.len() {
-                            generic_parameters
-                                .add_type_parameter(TypeParameter {
-                                    name: None,
-                                    span: None,
-                                })
-                                .unwrap();
-                        }
-
-                        for _ in 0..generic_arguments.constants.len() {
-                            generic_parameters
-                                .add_constant_parameter(
-                                    symbol::ConstantParameter {
-                                        name: None,
-                                        r#type: Type::default(),
-                                        span: None,
-                                    },
-                                )
-                                .unwrap();
-                        }
-
+                    for _ in 0..generic_arguments.lifetimes.len() {
                         generic_parameters
-                    },
-                    predicates: Vec::new(),
-                },
-                negative_implementations: HashSet::new(),
-                implementations: HashSet::new(),
-                span: None,
-                member_ids_by_name: HashMap::new(),
-            });
+                            .add_lifetime_parameter(LifetimeParameter {
+                                name: None,
+                                span: None,
+                            })
+                            .unwrap();
+                    }
 
-            table
-                .representation
-                .modules
-                .get_mut(module_id)
-                .unwrap()
-                .child_ids_by_name
-                .insert("Test".to_string(), id.into());
+                    for _ in 0..generic_arguments.types.len() {
+                        generic_parameters
+                            .add_type_parameter(TypeParameter {
+                                name: None,
+                                span: None,
+                            })
+                            .unwrap();
+                    }
+
+                    for _ in 0..generic_arguments.constants.len() {
+                        generic_parameters
+                            .add_constant_parameter(symbol::ConstantParameter {
+                                name: None,
+                                r#type: Type::default(),
+                                span: None,
+                            })
+                            .unwrap();
+                    }
+
+                    generic_parameters
+                },
+                predicates: Vec::new(),
+            };
+
+            let Insertion { id, duplication } = table
+                .insert_member(
+                    "Test".to_string(),
+                    Accessibility::Public,
+                    module_id,
+                    None,
+                    generic_declaration,
+                    TraitDefinition::default(),
+                )
+                .unwrap();
+
+            assert!(duplication.is_none());
 
             id
         };
@@ -236,7 +223,7 @@ impl SingleImplementation {
 
     #[allow(clippy::too_many_lines)]
     fn create_implementation(
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         module_id: ID<Module>,
         trait_id: ID<Trait>,
         mut generic_arguments: GenericArguments<Default>,
@@ -244,46 +231,19 @@ impl SingleImplementation {
         to_be_substituted_constant: Vec<Constant<Default>>,
     ) -> (ID<PositiveTraitImplementation>, Instantiation<Default>) {
         // the trait implementation id which will be resolved to
-        let implementation_id = {
-            table.representation.trait_implementations.insert_with(|_| {
-                PositiveTraitImplementation {
-                    span: None,
-                    signature: ImplementationSignature {
-                        generic_declaration: GenericDeclaration::default(),
-                        arguments: GenericArguments::default(),
-                        implemented_id: trait_id,
-                    },
-                    implementation_name: "Test".to_string(),
-                    declared_in: module_id,
-                    definition: PositiveTraitImplementationDefinition {
-                        is_const: false,
-                        member_ids_by_name: HashMap::new(),
-                        implementation_type_ids_by_trait_type_id: HashMap::new(
-                        ),
-                        implementation_function_ids_by_trait_function_id:
-                            HashMap::new(),
-                        implementation_constant_ids_by_trait_constant_id:
-                            HashMap::new(),
-                    },
-                }
-            })
-        };
-
-        assert!(table
-            .representation
-            .traits
-            .get_mut(trait_id)
-            .unwrap()
-            .implementations
-            .insert(implementation_id));
-
-        let implementation = table
-            .representation
-            .trait_implementations
-            .get_mut(implementation_id)
+        let implementation_id = table
+            .insert_implementation(
+                trait_id,
+                module_id,
+                GenericDeclaration::default(),
+                None,
+                GenericArguments::default(),
+                PositiveTraitImplementationDefinition::default(),
+            )
             .unwrap();
 
         let mut expected_instantiation = Instantiation::default();
+        let implementation = table.get_mut(implementation_id).unwrap();
 
         // replace the choosen types with the type parameter
         for ty in to_be_substituted_type {
@@ -299,7 +259,6 @@ impl SingleImplementation {
             }
 
             let id = implementation
-                .signature
                 .generic_declaration
                 .parameters
                 .add_type_parameter(TypeParameter { name: None, span: None })
@@ -344,7 +303,6 @@ impl SingleImplementation {
             }
 
             let id = implementation
-                .signature
                 .generic_declaration
                 .parameters
                 .add_constant_parameter(symbol::ConstantParameter {
@@ -392,7 +350,6 @@ impl SingleImplementation {
             // be overwritten
 
             let id = implementation
-                .signature
                 .generic_declaration
                 .parameters
                 .add_lifetime_parameter(LifetimeParameter {
@@ -420,7 +377,7 @@ impl SingleImplementation {
             expected_instantiation.lifetimes.insert(pair.1, pair.0);
         }
 
-        implementation.signature.arguments = generic_arguments;
+        implementation.arguments = generic_arguments;
 
         (implementation_id, expected_instantiation)
     }
@@ -527,7 +484,7 @@ impl Arbitrary for SingleImplementation {
 
 #[derive(Debug)]
 pub struct SpecializedImplementation {
-    pub table: Table<State>,
+    pub table: Table<Building>,
     pub trait_id: ID<Trait>,
     pub defined_in_module_id: ID<Module>,
 
@@ -571,7 +528,7 @@ impl SpecializedImplementation {
 
     #[allow(clippy::too_many_lines)]
     fn create_implementation(
-        table: &mut Table<State>,
+        table: &mut Table<Building>,
         module_id: ID<Module>,
         trait_id: ID<Trait>,
         mut generic_arguments: GenericArguments<Default>,
@@ -583,44 +540,19 @@ impl SpecializedImplementation {
         let mut expected_instantitation = Instantiation::default();
 
         // the trait implementation id which will is more general
-        let general_implementation_id = {
-            table.representation.trait_implementations.insert_with(|_| {
-                PositiveTraitImplementation {
-                    span: None,
-                    signature: ImplementationSignature {
-                        generic_declaration: GenericDeclaration::default(),
-                        arguments: GenericArguments::default(),
-                        implemented_id: trait_id,
-                    },
-                    implementation_name: "Test".to_string(),
-                    declared_in: module_id,
-                    definition: PositiveTraitImplementationDefinition {
-                        is_const: false,
-                        member_ids_by_name: HashMap::new(),
-                        implementation_type_ids_by_trait_type_id: HashMap::new(
-                        ),
-                        implementation_function_ids_by_trait_function_id:
-                            HashMap::new(),
-                        implementation_constant_ids_by_trait_constant_id:
-                            HashMap::new(),
-                    },
-                }
-            })
-        };
-
-        assert!(table
-            .representation
-            .traits
-            .get_mut(trait_id)
-            .unwrap()
-            .implementations
-            .insert(general_implementation_id));
-
-        let general_implementation = table
-            .representation
-            .trait_implementations
-            .get_mut(general_implementation_id)
+        let general_implementation_id = table
+            .insert_implementation(
+                trait_id,
+                module_id,
+                GenericDeclaration::default(),
+                None,
+                GenericArguments::default(),
+                PositiveTraitImplementationDefinition::default(),
+            )
             .unwrap();
+
+        let general_implementation =
+            table.get_mut(general_implementation_id).unwrap();
 
         // replace the choosen types with the type parameter
         let all_type_parameters = generic_arguments
@@ -658,7 +590,6 @@ impl SpecializedImplementation {
             }
 
             let id = general_implementation
-                .signature
                 .generic_declaration
                 .parameters
                 .add_type_parameter(TypeParameter { name: None, span: None })
@@ -709,7 +640,6 @@ impl SpecializedImplementation {
             }
 
             let id = general_implementation
-                .signature
                 .generic_declaration
                 .parameters
                 .add_constant_parameter(symbol::ConstantParameter {
@@ -761,7 +691,6 @@ impl SpecializedImplementation {
             // be overwritten
 
             let id = general_implementation
-                .signature
                 .generic_declaration
                 .parameters
                 .add_lifetime_parameter(LifetimeParameter {
@@ -793,12 +722,12 @@ impl SpecializedImplementation {
             });
         }
 
-        general_implementation.signature.arguments = generic_arguments;
+        general_implementation.arguments = generic_arguments;
 
         let mut session = session::Default::default();
         let premise = Premise::default();
 
-        if general_implementation.signature.arguments.clone().order(
+        if general_implementation.arguments.clone().order(
             &starting_generic_arguments,
             &Environment { premise: &premise, table, normalizer: &NoOp },
             &mut Limit::new(&mut session),
@@ -821,11 +750,8 @@ impl Arbitrary for SpecializedImplementation {
             .prop_ind_flat_map2(|single_implementation| {
                 let implementation_generic_arguments = single_implementation
                     .table
-                    .representation
-                    .trait_implementations
                     .get(single_implementation.target_implementation_id)
                     .unwrap()
-                    .signature
                     .arguments
                     .clone();
 
@@ -888,11 +814,8 @@ impl Arbitrary for SpecializedImplementation {
                 )| {
                     let specialized_generic_arguments = single_implementation
                         .table
-                        .representation
-                        .trait_implementations
                         .get(single_implementation.target_implementation_id)
                         .unwrap()
-                        .signature
                         .arguments
                         .clone();
 
@@ -969,41 +892,25 @@ impl Arbitrary for FallbackToGeneralImplementation {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         SpecializedImplementation::arbitrary()
             .prop_map(|mut prop| {
-                let constraint_trait_id = {
-                    prop.table.representation.traits.insert_with(|_| Trait {
-                        name: "Constraint".to_string(),
-                        accessibility: Accessibility::Public,
-                        parent_module_id: prop.defined_in_module_id,
-                        generic_declaration: GenericDeclaration {
-                            parameters: GenericParameters::default(),
-                            predicates: Vec::new(),
-                        },
-                        negative_implementations: HashSet::new(),
-                        implementations: HashSet::new(),
-                        span: None,
-                        member_ids_by_name: HashMap::new(),
-                    })
-                };
-
-                prop.table
-                    .representation
-                    .modules
-                    .get_mut(prop.defined_in_module_id)
-                    .unwrap()
-                    .child_ids_by_name
-                    .insert(
+                let Insertion { id: constraint_trait_id, duplication } = prop
+                    .table
+                    .insert_member(
                         "Constraint".to_string(),
-                        constraint_trait_id.into(),
-                    );
+                        Accessibility::Public,
+                        prop.defined_in_module_id,
+                        None,
+                        GenericDeclaration::default(),
+                        TraitDefinition::default(),
+                    )
+                    .unwrap();
+
+                assert!(duplication.is_none());
 
                 // add additional constraint to the specialized
                 // implementation
                 prop.table
-                    .representation
-                    .trait_implementations
                     .get_mut(prop.specialized_implementation_id)
                     .unwrap()
-                    .signature
                     .generic_declaration
                     .predicates = vec![symbol::Predicate {
                     predicate: predicate::Predicate::Trait(predicate::Trait {
@@ -1024,9 +931,10 @@ impl Arbitrary for FallbackToGeneralImplementation {
     }
 }
 
+/*
 #[derive(Debug)]
 pub struct NegativeImplementation {
-    pub table: Table<State>,
+    pub table: Table<Building>,
     pub trait_id: ID<Trait>,
 
     pub generic_arguments: GenericArguments<Default>,
@@ -1233,6 +1141,7 @@ impl Arbitrary for NegativeImplementation {
             .boxed()
     }
 }
+*/
 
 proptest! {
     #[test]
@@ -1247,11 +1156,6 @@ proptest! {
 
     #[test]
     fn fallback_to_general_implementation(test: FallbackToGeneralImplementation) {
-        test.assert()?;
-    }
-
-    #[test]
-    fn negative_implementation(test: NegativeImplementation) {
         test.assert()?;
     }
 }

@@ -1,10 +1,10 @@
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
 use super::Finalize;
 use crate::{
     arena::ID,
-    error::{self, DuplicatedField},
+    error::{self, DuplicatedField, PrivateEntityLeakedToPublicInterface},
     semantic::{
         normalizer::NoOp,
         session::{self, Limit},
@@ -22,7 +22,7 @@ use crate::{
             },
             resolution, Building,
         },
-        Field, GenericParameterVariances, Struct,
+        Field, GenericParameterVariances, HierarchyRelationship, Struct,
     },
 };
 
@@ -106,10 +106,26 @@ impl Finalize for Struct {
                         )
                         .unwrap();
 
-                    let ty_accessibility =
-                        table.get_type_overall_accessibility(&ty).unwrap();
-
-                    // TODO: private entity leaked to public interface
+                    if let Ok(ty_accessibility) =
+                        table.get_type_accessibility(&ty)
+                    {
+                        if let Some(HierarchyRelationship::Child) = table
+                            .accessibility_hierarchy_relationship(
+                                ty_accessibility,
+                                field_accessibility,
+                            )
+                        {
+                            handler.receive(Box::new(
+                                PrivateEntityLeakedToPublicInterface {
+                                    entity: ty.clone(),
+                                    entity_overall_accessibility:
+                                        ty_accessibility,
+                                    leaked_span: field_syn.r#type().span(),
+                                    public_interface_id: symbol_id.into(),
+                                },
+                            ))
+                        }
+                    }
 
                     #[allow(clippy::significant_drop_in_scrutinee)]
                     match table

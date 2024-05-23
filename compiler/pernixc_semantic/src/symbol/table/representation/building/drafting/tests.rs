@@ -24,11 +24,12 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::Finalizer, draft_table,
-                transition_to_building, HandlerAdaptor, Index, RwLockContainer,
+                transition_to_building, Container, HandlerAdaptor, Index,
+                Representation, RwLockContainer,
             },
             Building, Table,
         },
-        Accessibility, ModuleMemberID, TraitMemberID,
+        Accessibility, GlobalID, ModuleMemberID, TraitMemberID,
     },
 };
 
@@ -36,6 +37,90 @@ fn name_strategy() -> impl Strategy<Value = String> {
     "[a-zA-Z_][a-zA-Z0-9_]*".prop_filter("filter out keywords", |str| {
         KeywordKind::from_str(str).is_err()
     })
+}
+
+impl<T: Container> Representation<T> {
+    pub fn validate_access_modifier(
+        &self,
+        access_modifier: AccessModifier,
+        global_id: GlobalID,
+    ) -> TestCaseResult {
+        let found_accessibility = self.get_accessibility(global_id).unwrap();
+
+        match (found_accessibility, access_modifier) {
+            (Accessibility::Public, AccessModifier::Public) => Ok(()),
+
+            (
+                Accessibility::Scoped(scoped),
+                access_modifier @ (AccessModifier::Internal
+                | AccessModifier::Private),
+            ) => {
+                let expected = match access_modifier {
+                    AccessModifier::Private => self.get_closet_module_id(
+                        self.get_global(global_id)
+                            .unwrap()
+                            .parent_global_id()
+                            .unwrap(),
+                    ),
+                    AccessModifier::Internal => self.get_root_module_id(
+                        self.get_global(global_id)
+                            .unwrap()
+                            .parent_global_id()
+                            .unwrap(),
+                    ),
+                    AccessModifier::Public => unreachable!(),
+                };
+
+                if expected.unwrap() == scoped {
+                    Ok(())
+                } else {
+                    Err(TestCaseError::fail(format!(
+                        "expected {expected:?} but found {scoped:?}"
+                    )))
+                }
+            }
+
+            (found, expected) => Err(TestCaseError::fail(format!(
+                "expected {expected:?} but found {found:?}"
+            ))),
+        }
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::Display,
+)]
+pub enum AccessModifier {
+    #[display(fmt = "private")]
+    Private,
+
+    #[display(fmt = "internal")]
+    Internal,
+
+    #[display(fmt = "public")]
+    Public,
+}
+
+impl Arbitrary for AccessModifier {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Just(Self::Public),
+            Just(Self::Private),
+            Just(Self::Internal)
+        ]
+        .boxed()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,14 +185,14 @@ impl Item {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TraitMember {
-    Function(Accessibility),
-    Constant(Accessibility),
-    Type(Accessibility),
+    Function(AccessModifier),
+    Constant(AccessModifier),
+    Type(AccessModifier),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trait {
-    pub accessibility: Accessibility,
+    pub access_modifier: AccessModifier,
     pub trait_members: HashMap<String, TraitMember>,
 }
 
@@ -123,8 +208,10 @@ impl Trait {
 
         // verify name, parent module, and accessibility
         prop_assert_eq!(&sym.name, expected_name);
-        prop_assert_eq!(sym.parent_module_id, parent_module_id);
-        prop_assert_eq!(sym.accessibility, self.accessibility);
+        prop_assert_eq!(sym.parent_id, parent_module_id);
+
+        drafting_table
+            .validate_access_modifier(self.access_modifier, self_id.into())?;
 
         prop_assert_eq!(self.trait_members.len(), sym.member_ids_by_name.len());
 
@@ -132,36 +219,51 @@ impl Trait {
             let member_id = sym.member_ids_by_name.get(name).copied().unwrap();
 
             match (member_id, kind) {
-                (TraitMemberID::Type(id), TraitMember::Type(accessibility)) => {
+                (
+                    TraitMemberID::Type(id),
+                    TraitMember::Type(access_modifier),
+                ) => {
                     let sym = drafting_table.get(id).unwrap();
 
                     prop_assert_eq!(&sym.name, name);
                     prop_assert_eq!(sym.parent_id, self_id);
-                    prop_assert_eq!(sym.accessibility, *accessibility);
+
+                    drafting_table.validate_access_modifier(
+                        *access_modifier,
+                        id.into(),
+                    )?;
 
                     drop(sym);
                 }
                 (
                     TraitMemberID::Function(id),
-                    TraitMember::Function(accessibility),
+                    TraitMember::Function(access_modifier),
                 ) => {
                     let sym = drafting_table.get(id).unwrap();
 
                     prop_assert_eq!(&sym.name, name);
                     prop_assert_eq!(sym.parent_id, self_id);
-                    prop_assert_eq!(sym.accessibility, *accessibility);
+
+                    drafting_table.validate_access_modifier(
+                        *access_modifier,
+                        id.into(),
+                    )?;
 
                     drop(sym);
                 }
                 (
                     TraitMemberID::Constant(id),
-                    TraitMember::Constant(accessibility),
+                    TraitMember::Constant(access_modifier),
                 ) => {
                     let sym = drafting_table.get(id).unwrap();
 
                     prop_assert_eq!(&sym.name, name);
                     prop_assert_eq!(sym.parent_id, self_id);
-                    prop_assert_eq!(sym.accessibility, *accessibility);
+
+                    drafting_table.validate_access_modifier(
+                        *access_modifier,
+                        id.into(),
+                    )?;
 
                     drop(sym);
                 }
@@ -185,10 +287,10 @@ impl Arbitrary for Trait {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            Accessibility::arbitrary(),
+            AccessModifier::arbitrary(),
             proptest::collection::hash_map(
                 name_strategy(),
-                Accessibility::arbitrary().prop_flat_map(|accessibility| {
+                AccessModifier::arbitrary().prop_flat_map(|accessibility| {
                     prop_oneof![
                         Just(TraitMember::Function(accessibility)),
                         Just(TraitMember::Constant(accessibility)),
@@ -198,7 +300,7 @@ impl Arbitrary for Trait {
                 0..=4,
             ),
         )
-            .prop_map(|(accessibility, mut trait_members)| {
+            .prop_map(|(access_modifier, mut trait_members)| {
                 for mut trait_member in trait_members.values_mut() {
                     let trait_member_acc = match &mut trait_member {
                         TraitMember::Function(accessibility)
@@ -206,10 +308,11 @@ impl Arbitrary for Trait {
                         | TraitMember::Type(accessibility) => accessibility,
                     };
 
-                    *trait_member_acc = (*trait_member_acc).min(accessibility);
+                    *trait_member_acc =
+                        (*trait_member_acc).min(access_modifier);
                 }
 
-                Self { accessibility, trait_members }
+                Self { access_modifier, trait_members }
             })
             .boxed()
     }
@@ -217,7 +320,7 @@ impl Arbitrary for Trait {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Function {
-    pub accessibility: Accessibility,
+    pub access_modifier: AccessModifier,
 }
 
 impl Function {
@@ -233,7 +336,9 @@ impl Function {
         // verify name, parent module, and accessibility
         prop_assert_eq!(&sym.name, expected_name);
         prop_assert_eq!(sym.parent_id, parent_module_id);
-        prop_assert_eq!(sym.accessibility, self.accessibility);
+
+        drafting_table
+            .validate_access_modifier(self.access_modifier, self_id.into())?;
 
         drop(sym);
 
@@ -246,15 +351,15 @@ impl Arbitrary for Function {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Accessibility::arbitrary()
-            .prop_map(|accessibility| Self { accessibility })
+        AccessModifier::arbitrary()
+            .prop_map(|access_modifier| Self { access_modifier })
             .boxed()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Type {
-    pub accessibility: Accessibility,
+    pub access_modifier: AccessModifier,
 }
 
 impl Type {
@@ -270,7 +375,9 @@ impl Type {
         // verify name, parent module, and accessibility
         prop_assert_eq!(&sym.name, expected_name);
         prop_assert_eq!(sym.parent_id, parent_module_id);
-        prop_assert_eq!(sym.accessibility, self.accessibility);
+
+        drafting_table
+            .validate_access_modifier(self.access_modifier, self_id.into())?;
 
         drop(sym);
 
@@ -283,15 +390,15 @@ impl Arbitrary for Type {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Accessibility::arbitrary()
-            .prop_map(|accessibility| Self { accessibility })
+        AccessModifier::arbitrary()
+            .prop_map(|access_modifier| Self { access_modifier })
             .boxed()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Struct {
-    pub accessibility: Accessibility,
+    pub access_modifier: AccessModifier,
 }
 
 impl Struct {
@@ -306,8 +413,10 @@ impl Struct {
 
         // verify name, parent module, and accessibility
         prop_assert_eq!(&sym.name, expected_name);
-        prop_assert_eq!(sym.parent_module_id, parent_module_id);
-        prop_assert_eq!(sym.accessibility, self.accessibility);
+        prop_assert_eq!(sym.parent_id, parent_module_id);
+
+        drafting_table
+            .validate_access_modifier(self.access_modifier, self_id.into())?;
 
         drop(sym);
 
@@ -320,15 +429,15 @@ impl Arbitrary for Struct {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Accessibility::arbitrary()
-            .prop_map(|accessibility| Self { accessibility })
+        AccessModifier::arbitrary()
+            .prop_map(|access_modifier| Self { access_modifier })
             .boxed()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Enum {
-    pub accessibility: Accessibility,
+    pub access_modifier: AccessModifier,
     pub variants: HashSet<String>,
 }
 
@@ -344,8 +453,10 @@ impl Enum {
 
         // verify name, parent module, and accessibility
         prop_assert_eq!(&sym.name, expected_name);
-        prop_assert_eq!(sym.parent_module_id, parent_module_id);
-        prop_assert_eq!(sym.accessibility, self.accessibility);
+        prop_assert_eq!(sym.parent_id, parent_module_id);
+
+        drafting_table
+            .validate_access_modifier(self.access_modifier, self_id.into())?;
 
         prop_assert_eq!(self.variants.len(), sym.variant_ids_by_name.len());
 
@@ -373,11 +484,11 @@ impl Arbitrary for Enum {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            Accessibility::arbitrary(),
+            AccessModifier::arbitrary(),
             proptest::collection::hash_set(name_strategy(), 0..=4),
         )
-            .prop_map(|(accessibility, variants)| Self {
-                accessibility,
+            .prop_map(|(access_modifier, variants)| Self {
+                access_modifier,
                 variants,
             })
             .boxed()
@@ -386,7 +497,7 @@ impl Arbitrary for Enum {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Constant {
-    pub accessibility: Accessibility,
+    pub access_modifier: AccessModifier,
 }
 
 impl Constant {
@@ -402,7 +513,9 @@ impl Constant {
         // verify name, parent module, and accessibility
         prop_assert_eq!(&sym.name, expected_name);
         prop_assert_eq!(sym.parent_id, parent_module_id);
-        prop_assert_eq!(sym.accessibility, self.accessibility);
+
+        drafting_table
+            .validate_access_modifier(self.access_modifier, self_id.into())?;
 
         drop(sym);
 
@@ -415,8 +528,8 @@ impl Arbitrary for Constant {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Accessibility::arbitrary()
-            .prop_map(|accessibility| Self { accessibility })
+        AccessModifier::arbitrary()
+            .prop_map(|access_modifier| Self { access_modifier })
             .boxed()
     }
 }
@@ -424,7 +537,7 @@ impl Arbitrary for Constant {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
     pub usings: HashSet<Vec<String>>,
-    pub accessibility: Accessibility,
+    pub access_modifier: AccessModifier,
     pub items: HashMap<String, Item>,
 }
 
@@ -453,7 +566,9 @@ impl Module {
         // verify name, parent module, and accessibility
         prop_assert_eq!(&sym.name, expected_name);
         prop_assert_eq!(sym.parent_module_id, parent_module_id);
-        prop_assert_eq!(sym.accessibility, self.accessibility);
+
+        drafting_table
+            .validate_access_modifier(self.access_modifier, self_id.into())?;
 
         prop_assert_eq!(self.items.len(), sym.member_ids_by_name.len());
 
@@ -487,37 +602,37 @@ impl Arbitrary for Module {
         }
 
         let leaf = (
-            Accessibility::arbitrary(),
+            AccessModifier::arbitrary(),
             proptest::collection::hash_map(
                 name_strategy(),
-                item_strategy(Accessibility::arbitrary().prop_map(
-                    |accessibility| Self {
+                item_strategy(AccessModifier::arbitrary().prop_map(
+                    |access_modifier| Self {
                         usings: HashSet::new(),
-                        accessibility,
+                        access_modifier,
                         items: HashMap::new(),
                     },
                 )),
                 0..=4,
             ),
         )
-            .prop_map(|(accessibility, items)| Self {
+            .prop_map(|(access_modifier, items)| Self {
                 usings: HashSet::new(),
-                accessibility,
+                access_modifier,
                 items,
             });
 
         leaf.prop_recursive(4, 16, 4, |inner| {
             (
-                Accessibility::arbitrary(),
+                AccessModifier::arbitrary(),
                 proptest::collection::hash_map(
                     name_strategy(),
                     item_strategy(inner),
                     0..=4,
                 ),
             )
-                .prop_map(|(accessibility, items)| Self {
+                .prop_map(|(access_modifier, items)| Self {
                     usings: HashSet::new(),
-                    accessibility,
+                    access_modifier,
                     items,
                 })
         })
@@ -533,7 +648,7 @@ pub struct WithName<'a, T> {
 
 impl<'a> Display for WithName<'a, Module> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} module {} {{ ", self.value.accessibility, self.name)?;
+        write!(f, "{} module {} {{ ", self.value.access_modifier, self.name)?;
 
         for using in &self.value.usings {
             write!(f, "using {};", using.join("::"))?;
@@ -551,7 +666,7 @@ impl<'a> Display for WithName<'a, Module> {
 
 impl<'a> Display for WithName<'a, Trait> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} trait {} {{ ", self.value.accessibility, self.name)?;
+        write!(f, "{} trait {} {{ ", self.value.access_modifier, self.name)?;
         for (name, member) in &self.value.trait_members {
             match member {
                 TraitMember::Function(accessibility) => {
@@ -574,25 +689,29 @@ impl<'a> Display for WithName<'a, Trait> {
 
 impl<'a> Display for WithName<'a, Function> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} function {}() {{}}", self.value.accessibility, self.name)
+        write!(
+            f,
+            "{} function {}() {{}}",
+            self.value.access_modifier, self.name
+        )
     }
 }
 
 impl<'a> Display for WithName<'a, Type> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} type {} = bool;", self.value.accessibility, self.name)
+        write!(f, "{} type {} = bool;", self.value.access_modifier, self.name)
     }
 }
 
 impl<'a> Display for WithName<'a, Struct> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} struct {} {{}}", self.value.accessibility, self.name)
+        write!(f, "{} struct {} {{}}", self.value.access_modifier, self.name)
     }
 }
 
 impl<'a> Display for WithName<'a, Enum> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} enum {} {{ ", self.value.accessibility, self.name)?;
+        write!(f, "{} enum {} {{ ", self.value.access_modifier, self.name)?;
         for variant in &self.value.variants {
             write!(f, "{variant}, ")?;
         }
@@ -607,7 +726,7 @@ impl<'a> Display for WithName<'a, Constant> {
         write!(
             f,
             "{} const {}: int32 = 32;",
-            self.value.accessibility, self.name
+            self.value.access_modifier, self.name
         )
     }
 }
@@ -685,7 +804,7 @@ fn property_based_testing_impl(module: &Module) -> TestCaseResult {
         HandlerAdaptor { handler: &storage, received: RwLock::new(false) };
 
     let building_table = transition_to_building(
-        draft_table(rayon::iter::once(target), &handler_adapter)?,
+        draft_table(std::iter::once(target), &handler_adapter)?,
         &handler_adapter,
     );
 
@@ -738,13 +857,13 @@ fn get_module_by_name<'a>(
 
 fn get_all_modules_name(
     parent_module_name: &[String],
-    parent_accessibility: Accessibility,
+    parent_accessibility: AccessModifier,
     current_module_name: String,
     module: &Module,
-    all_modules_name: &mut Vec<(Vec<String>, Accessibility)>,
+    all_modules_name: &mut Vec<(Vec<String>, AccessModifier)>,
 ) {
     let intrinsic_accessibility =
-        parent_accessibility.min(module.accessibility);
+        parent_accessibility.min(module.access_modifier);
 
     let mut current_full_module_name = parent_module_name.to_vec();
     current_full_module_name.push(current_module_name);
@@ -772,7 +891,7 @@ fn module_strategy_with_usings() -> impl Strategy<Value = Module> {
 
         get_all_modules_name(
             &[],
-            Accessibility::Public,
+            AccessModifier::Public,
             ROOT_MODULE_NAME.to_string(),
             &module,
             &mut all_module_name,
@@ -807,7 +926,7 @@ fn module_strategy_with_usings() -> impl Strategy<Value = Module> {
                 .expect("should be found");
 
                 for using in usings {
-                    if using.1 == Accessibility::Private {
+                    if using.1 != AccessModifier::Public {
                         continue;
                     }
 
@@ -833,7 +952,7 @@ proptest! {
     fn property_based_testing(
         mut module in module_strategy_with_usings()
     ) {
-        module.accessibility = Accessibility::Public;
+        module.access_modifier = AccessModifier::Public;
         property_based_testing_impl(&module)?;
     }
 }

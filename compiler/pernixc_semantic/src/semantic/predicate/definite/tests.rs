@@ -8,7 +8,7 @@ use proptest::{
 };
 
 use crate::{
-    arena::ID,
+    arena::{self, Key, ID},
     semantic::{
         model::Default,
         normalizer::NoOp,
@@ -22,9 +22,9 @@ use crate::{
         Environment, Premise,
     },
     symbol::{
-        self,
-        table::{Building, Table},
-        GenericDeclaration, GenericParameters, TypeParameter, TypeParameterID,
+        table::{representation::Insertion, Building, Table},
+        Accessibility, GenericDeclaration, MemberID, Module, TypeDefinition,
+        TypeParameter,
     },
 };
 
@@ -34,27 +34,15 @@ use crate::{
 pub enum ApplyPropertyError {
     #[error("{0}")]
     ExceedLimitError(#[from] ExceedLimitError),
-
-    #[error("type alias id collision")]
-    TypeAliasIDCollision,
 }
 
-/// A trait for generating term for checking definite predicate satisfiability.
 pub trait Property<T>: 'static + Debug {
-    /// Applies this property to the environment.
-    ///
-    /// # Returns
-    ///
-    /// Returns `false` if failed to apply the environment to the
-    fn apply(
+    fn generate(
         &self,
+        module_id: ID<Module>,
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError>;
-
-    /// Generate a term for checking
-    #[must_use]
-    fn generate(&self) -> T;
+    ) -> Result<T, ApplyPropertyError>;
 }
 
 /// The term is trivially satisfiable without the environment.
@@ -76,15 +64,14 @@ where
 impl<T: Into<U> + Clone + Debug + 'static, U> Property<U>
     for TriviallySatisfiable<T>
 {
-    fn apply(
+    fn generate(
         &self,
+        _: ID<Module>,
         _: &mut Table<Building>,
         _: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError> {
-        Ok(())
+    ) -> Result<U, ApplyPropertyError> {
+        Ok(self.0.clone().into())
     }
-
-    fn generate(&self) -> U { self.0.clone().into() }
 }
 
 #[derive(Debug)]
@@ -95,7 +82,7 @@ pub struct SymbolCongruence<ID> {
     id: ID,
 }
 
-impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
+impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Copy>
     Arbitrary for SymbolCongruence<ID>
 {
     type Parameters = (
@@ -127,45 +114,32 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
     }
 }
 
-impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T>
+impl<ID: Debug + 'static + Copy, T: Term + 'static> Property<T>
     for SymbolCongruence<ID>
 where
     Symbol<Default, ID>: Into<T>,
 {
-    fn apply(
+    fn generate(
         &self,
+        module_id: arena::ID<Module>,
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError> {
+    ) -> Result<T, ApplyPropertyError> {
+        let mut generic_arguments = GenericArguments::default();
+
         for type_strategy in &self.type_strategies {
-            type_strategy.apply(table, premise)?;
+            generic_arguments
+                .types
+                .push(type_strategy.generate(module_id, table, premise)?);
         }
 
         for constant_strategy in &self.constant_strategies {
-            constant_strategy.apply(table, premise)?;
+            generic_arguments
+                .constants
+                .push(constant_strategy.generate(module_id, table, premise)?);
         }
 
-        Ok(())
-    }
-
-    fn generate(&self) -> T {
-        Symbol {
-            id: self.id.clone(),
-            generic_arguments: GenericArguments {
-                lifetimes: Vec::new(),
-                types: self
-                    .type_strategies
-                    .iter()
-                    .map(|x| x.generate())
-                    .collect(),
-                constants: self
-                    .constant_strategies
-                    .iter()
-                    .map(|x| x.generate())
-                    .collect(),
-            },
-        }
-        .into()
+        Ok(Symbol { id: self.id, generic_arguments }.into())
     }
 }
 
@@ -210,8 +184,6 @@ impl Arbitrary for Box<dyn Property<Constant<Default>>> {
 #[derive(Debug)]
 pub struct TypeAlias {
     property: Box<dyn Property<Type<Default>>>,
-    type_id: ID<symbol::Type>,
-    type_parameter: TypeParameterID,
 }
 
 impl Arbitrary for TypeAlias {
@@ -219,74 +191,64 @@ impl Arbitrary for TypeAlias {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        (
-            args.unwrap_or_else(Box::<dyn Property<Type<_>>>::arbitrary),
-            ID::arbitrary(),
-            TypeParameterID::arbitrary(),
-        )
-            .prop_map(|(property, type_id, type_parameter)| Self {
-                property,
-                type_id,
-                type_parameter,
-            })
+        args.unwrap_or_else(Box::<dyn Property<Type<_>>>::arbitrary)
+            .prop_map(|property| Self { property })
             .boxed()
     }
 }
 
 impl Property<Type<Default>> for TypeAlias {
-    fn apply(
+    fn generate(
         &self,
+        module_id: ID<Module>,
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError> {
-        self.property.apply(table, premise)?;
+    ) -> Result<Type<Default>, ApplyPropertyError> {
+        let inner_term = self.property.generate(module_id, table, premise)?;
 
-        let type_symbol = symbol::Type {
-            generic_declaration: GenericDeclaration {
-                parameters: {
-                    let mut generic_parameters = GenericParameters::default();
+        let mut generic_declaration = GenericDeclaration::default();
+        let type_parameter_id = generic_declaration
+            .parameters
+            .add_type_parameter(TypeParameter { name: None, span: None })
+            .unwrap();
 
-                    assert!(generic_parameters
-                        .add_type_parameter(TypeParameter {
-                            name: Some("T".to_string()),
-                            span: None,
-                        })
-                        .is_ok());
+        let expected_type_id = table.types().get_available_id();
 
-                    generic_parameters
-                },
-                predicates: Vec::new(),
-            },
-            parent_id: ID::new(0),
-            span: None,
-            name: "Test".to_string(),
-            definition: symbol::TypeDefinition {
-                accessibility: symbol::Accessibility::Public,
-                r#type: self.property.generate(),
-            },
-        };
-
-        if table
-            .representation
-            .types
-            .insert_with_id(self.type_id, type_symbol)
-            .is_err()
-        {
-            return Err(ApplyPropertyError::TypeAliasIDCollision);
-        }
-
-        Ok(())
-    }
-
-    fn generate(&self) -> Type<Default> {
-        Type::Symbol(Symbol {
-            id: SymbolID::Type(self.type_id),
+        let generated_term = Type::Symbol(Symbol {
+            id: SymbolID::Type(expected_type_id),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
-                types: vec![Type::Parameter(self.type_parameter)],
+                types: vec![Type::Parameter(MemberID {
+                    parent: expected_type_id.into(),
+                    id: type_parameter_id,
+                })],
                 constants: Vec::new(),
             },
-        })
+        });
+
+        let should_add = !definite(
+            &generated_term,
+            &Environment { premise, table, normalizer: &NoOp },
+            &mut Limit::new(&mut session::Default::default()),
+        )?;
+
+        if should_add {
+            let Insertion { id, duplication } = table
+                .insert_member(
+                    format!("T{}", expected_type_id.into_index()),
+                    Accessibility::Public,
+                    module_id,
+                    None,
+                    generic_declaration,
+                    TypeDefinition { r#type: inner_term },
+                )
+                .unwrap();
+
+            assert_eq!(id, expected_type_id);
+            assert!(duplication.is_none());
+        }
+
+        Ok(generated_term)
     }
 }
 
@@ -296,21 +258,19 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
 where
     session::Default<Default>: Session<T>,
 {
-    let term = property.generate();
     let mut premise = Premise::default();
     let mut table = Table::<Building>::default();
 
-    property.apply(&mut table, &mut premise).map_err(|x| match x {
-        ApplyPropertyError::ExceedLimitError(_) => {
-            TestCaseError::reject("too complex property to test")
-        }
-        ApplyPropertyError::TypeAliasIDCollision => {
-            TestCaseError::reject("type alias id collision")
-        }
-    })?;
+    let Insertion { id: module_id, duplication } =
+        table.create_root_module("test".to_string());
+
+    assert!(duplication.is_none());
+
+    let term = property.generate(module_id, &mut table, &mut premise)?;
 
     let environment =
         &Environment { table: &table, premise: &premise, normalizer: &NoOp };
+
     prop_assert!(definite(
         &term,
         environment,
