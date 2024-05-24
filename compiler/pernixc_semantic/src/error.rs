@@ -1659,7 +1659,7 @@ pub struct UnsatisifedPredicate<M: Model> {
     /// The span of the instantiation that causes the bound check.
     pub instantiation_span: Span,
 
-    /// The span of the trait member bound declaration.
+    /// The span of the predicate declaration.
     pub predicate_declaration_span: Option<Span>,
 }
 

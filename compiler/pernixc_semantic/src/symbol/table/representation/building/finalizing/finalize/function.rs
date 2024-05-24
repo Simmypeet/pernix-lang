@@ -76,6 +76,8 @@ impl Finalize for Function {
                 handler,
             ),
 
+            SIGNATURE_STATE => {}
+
             DEFINITION_AND_CHECK_STATE => {
                 // build the parameters and return type on the local first to
                 // obtain the occurences then build them

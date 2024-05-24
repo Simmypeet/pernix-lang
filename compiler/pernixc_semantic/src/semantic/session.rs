@@ -281,7 +281,7 @@ pub struct Default<M: Model> {
         HashMap<Constant<M>, Cached<ConstantTypeQuerySource, Satisfied>>,
 
     trait_satisfiability: HashMap<
-        (ID<symbol::Trait>, bool, GenericArguments<M>),
+        (ID<symbol::Trait>, GenericArguments<M>),
         Cached<(), TraitSatisfiability<M>>,
     >,
 
@@ -586,8 +586,8 @@ implements_cache!(
     (),
     record,
     trait_satisfiability,
-    (record.id, record.is_const, record.generic_arguments.clone()),
-    &(record.id, record.is_const, record.generic_arguments.clone())
+    (record.id, record.generic_arguments.clone()),
+    &(record.id, record.generic_arguments.clone())
 );
 
 implements_cache!(

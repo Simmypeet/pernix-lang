@@ -32,7 +32,7 @@ use crate::{
             self, constant,
             lifetime::{Forall, Lifetime},
             r#type::{self, Qualifier, SymbolID},
-            GenericArguments, Local, MemberSymbol, Term, TupleElement,
+            GenericArguments, Local, Term, TupleElement,
         },
     },
     symbol::{
@@ -59,17 +59,6 @@ pub enum GenericID {
     Trait(ID<Trait>),
     Constant(ID<Constant>),
     Type(ID<Type>),
-
-    /*
-    Even though the the trait implementation symbols are members of the trait
-    implementation, they can never be resolved directly using the full path
-    of the trait implementation. They can only be resolved by referencing from
-    the trait implementation scope, which doesn't require supplying the generic
-    arguments of the trait implementation.
-     */
-    TraitImplementationFunction(ID<TraitImplementationFunction>),
-    TraitImplementationType(ID<TraitImplementationType>),
-    TraitImplementationConstant(ID<TraitImplementationConstant>),
 }
 
 impl From<GenericID> for GlobalID {
@@ -81,15 +70,6 @@ impl From<GenericID> for GlobalID {
             GenericID::Trait(id) => Self::Trait(id),
             GenericID::Constant(id) => Self::Constant(id),
             GenericID::Type(id) => Self::Type(id),
-            GenericID::TraitImplementationFunction(id) => {
-                Self::TraitImplementationFunction(id)
-            }
-            GenericID::TraitImplementationType(id) => {
-                Self::TraitImplementationType(id)
-            }
-            GenericID::TraitImplementationConstant(id) => {
-                Self::TraitImplementationConstant(id)
-            }
         }
     }
 }
@@ -103,15 +83,6 @@ impl From<GenericID> for symbol::GenericID {
             GenericID::Trait(id) => Self::Trait(id),
             GenericID::Constant(id) => Self::Constant(id),
             GenericID::Type(id) => Self::Type(id),
-            GenericID::TraitImplementationFunction(id) => {
-                Self::TraitImplementationFunction(id)
-            }
-            GenericID::TraitImplementationType(id) => {
-                Self::TraitImplementationType(id)
-            }
-            GenericID::TraitImplementationConstant(id) => {
-                Self::TraitImplementationConstant(id)
-            }
         }
     }
 }
@@ -140,6 +111,37 @@ pub enum MemberGenericID {
     AdtImplementationFunction(ID<AdtImplementationFunction>),
     AdtImplementationType(ID<AdtImplementationType>),
     AdtImplementationConstant(ID<AdtImplementationConstant>),
+    TraitImplementationFunction(ID<TraitImplementationFunction>),
+    TraitImplementationType(ID<TraitImplementationType>),
+    TraitImplementationConstant(ID<TraitImplementationConstant>),
+}
+
+impl From<MemberGenericID> for symbol::GenericID {
+    fn from(value: MemberGenericID) -> Self {
+        match value {
+            MemberGenericID::TraitFunction(id) => Self::TraitFunction(id),
+            MemberGenericID::TraitType(id) => Self::TraitType(id),
+            MemberGenericID::TraitConstant(id) => Self::TraitConstant(id),
+            MemberGenericID::AdtImplementationFunction(id) => {
+                Self::AdtImplementationFunction(id)
+            }
+            MemberGenericID::AdtImplementationType(id) => {
+                Self::AdtImplementationType(id)
+            }
+            MemberGenericID::AdtImplementationConstant(id) => {
+                Self::AdtImplementationConstant(id)
+            }
+            MemberGenericID::TraitImplementationFunction(id) => {
+                Self::TraitImplementationFunction(id)
+            }
+            MemberGenericID::TraitImplementationType(id) => {
+                Self::TraitImplementationType(id)
+            }
+            MemberGenericID::TraitImplementationConstant(id) => {
+                Self::TraitImplementationConstant(id)
+            }
+        }
+    }
 }
 
 impl From<MemberGenericID> for GlobalID {
@@ -156,6 +158,15 @@ impl From<MemberGenericID> for GlobalID {
             }
             MemberGenericID::AdtImplementationConstant(id) => {
                 Self::AdtImplementationConstant(id)
+            }
+            MemberGenericID::TraitImplementationFunction(id) => {
+                Self::TraitImplementationFunction(id)
+            }
+            MemberGenericID::TraitImplementationType(id) => {
+                Self::TraitImplementationType(id)
+            }
+            MemberGenericID::TraitImplementationConstant(id) => {
+                Self::TraitImplementationConstant(id)
             }
         }
     }
@@ -412,6 +423,16 @@ pub trait Observer<T: State, M: Model>: Debug {
         handler: &dyn Handler<Box<dyn error::Error>>,
         global_id: GlobalID,
         identifier: &Identifier,
+    );
+
+    /// Notifies the observer when a resolution is resolved.
+    fn on_resolution_resolved(
+        &mut self,
+        table: &Table<T>,
+        referring_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+        resolution: &Resolution<M>,
+        generic_identifier: &GenericIdentifier,
     );
 
     /// Notifies the observer when a type is resolved.
@@ -850,7 +871,7 @@ impl<S: State> Table<S> {
     }
 
     /// Resolves a [`GenericArguments`] from the given generic arguments syntax
-    /// tree.
+    /// tree
     ///
     /// # Errors
     ///
@@ -994,24 +1015,6 @@ impl<S: State> Table<S> {
                     GenericID::Enum(id) => SymbolID::Enum(id),
                     GenericID::Type(id) => SymbolID::Type(id),
 
-                    GenericID::TraitImplementationType(id) => {
-                        return Ok(r#type::Type::MemberSymbol(MemberSymbol {
-                            id: id.into(),
-                            member_generic_arguments: symbol.generic_arguments,
-                            parent_generic_arguments: {
-                                let implementation_id =
-                                    self.get(id).unwrap().parent_id;
-
-                                self.get(implementation_id)
-                                    .unwrap()
-                                    .generic_declaration
-                                    .parameters
-                                    .create_identity_generic_arguments(
-                                        implementation_id.into(),
-                                    )
-                            },
-                        }));
-                    }
                     _ => return Err(Resolution::Generic(symbol)),
                 };
 
@@ -1032,6 +1035,15 @@ impl<S: State> Table<S> {
                 MemberGenericID::AdtImplementationType(id) => {
                     Ok(r#type::Type::MemberSymbol(term::MemberSymbol {
                         id: r#type::MemberSymbolID::AdtImplementation(id),
+                        member_generic_arguments: symbol.generic_arguments,
+                        parent_generic_arguments: symbol
+                            .parent_generic_arguments,
+                    }))
+                }
+
+                MemberGenericID::TraitImplementationType(id) => {
+                    Ok(r#type::Type::MemberSymbol(term::MemberSymbol {
+                        id: r#type::MemberSymbolID::TraitImplementation(id),
                         member_generic_arguments: symbol.generic_arguments,
                         parent_generic_arguments: symbol
                             .parent_generic_arguments,
@@ -1537,29 +1549,13 @@ impl<S: State> Table<S> {
                     generic_arguments: generic_arguments.unwrap(),
                 })
             }
+
             GlobalID::AdtImplementation(_)
             | GlobalID::NegativeTraitImplementation(_)
             | GlobalID::PositiveTraitImplementation(_) => {
                 unreachable!("impossible to refer to a trait implementation")
             }
-            GlobalID::TraitImplementationFunction(id) => {
-                Resolution::Generic(Generic {
-                    id: id.into(),
-                    generic_arguments: generic_arguments.unwrap(),
-                })
-            }
-            GlobalID::TraitImplementationType(id) => {
-                Resolution::Generic(Generic {
-                    id: id.into(),
-                    generic_arguments: generic_arguments.unwrap(),
-                })
-            }
-            GlobalID::TraitImplementationConstant(id) => {
-                Resolution::Generic(Generic {
-                    id: id.into(),
-                    generic_arguments: generic_arguments.unwrap(),
-                })
-            }
+
             GlobalID::AdtImplementationFunction(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
@@ -1590,6 +1586,57 @@ impl<S: State> Table<S> {
                             self.get(id).unwrap().parent_id.into(),
                             latest_resolution,
                         ),
+                    generic_arguments: generic_arguments.unwrap(),
+                })
+            }
+
+            GlobalID::TraitImplementationFunction(id) => {
+                assert!(latest_resolution.is_none());
+
+                let parent_arguments = GenericArguments::from_default_model(
+                    self.get(self.get(id).unwrap().parent_id)
+                        .unwrap()
+                        .arguments
+                        .clone(),
+                );
+
+                Resolution::MemberGeneric(MemberGeneric {
+                    id: id.into(),
+                    parent_generic_arguments: parent_arguments,
+                    generic_arguments: generic_arguments.unwrap(),
+                })
+            }
+
+            GlobalID::TraitImplementationType(id) => {
+                assert!(latest_resolution.is_none());
+
+                let parent_arguments = GenericArguments::from_default_model(
+                    self.get(self.get(id).unwrap().parent_id)
+                        .unwrap()
+                        .arguments
+                        .clone(),
+                );
+
+                Resolution::MemberGeneric(MemberGeneric {
+                    id: id.into(),
+                    parent_generic_arguments: parent_arguments,
+                    generic_arguments: generic_arguments.unwrap(),
+                })
+            }
+
+            GlobalID::TraitImplementationConstant(id) => {
+                assert!(latest_resolution.is_none());
+
+                let parent_arguments = GenericArguments::from_default_model(
+                    self.get(self.get(id).unwrap().parent_id)
+                        .unwrap()
+                        .arguments
+                        .clone(),
+                );
+
+                Resolution::MemberGeneric(MemberGeneric {
+                    id: id.into(),
+                    parent_generic_arguments: parent_arguments,
                     generic_arguments: generic_arguments.unwrap(),
                 })
             }
@@ -1662,6 +1709,16 @@ impl<S: State> Table<S> {
                 generic_arguments,
                 latest_resolution,
             );
+
+            if let Some(observer) = config.observer.as_mut() {
+                observer.on_resolution_resolved(
+                    self,
+                    referring_site,
+                    handler,
+                    &next_resolution,
+                    generic_identifier,
+                )
+            }
 
             latest_resolution = Some(next_resolution);
         }

@@ -7,7 +7,6 @@ use pernixc_base::{
     diagnostic::Handler,
     source_file::{SourceElement, Span},
 };
-use pernixc_syntax::syntax_tree;
 
 use super::{occurrences::Occurrences, Finalizer};
 use crate::{
@@ -22,9 +21,9 @@ use crate::{
     semantic::{
         equality,
         instantiation::{self, Instantiation},
-        model::Default,
-        normalizer::NoOp,
-        predicate::{self, ConstantType, Outlives, Trait, Tuple},
+        model::{Default, Model},
+        normalizer::{NoOp, Normalizer},
+        predicate::{self, ConstantType, Outlives, Predicate, Trait, Tuple},
         session::{self, ExceedLimitError, Limit, Session},
         term::{
             self, constant,
@@ -36,7 +35,7 @@ use crate::{
     symbol::{
         table::{
             representation::{Element, Index, RwLockContainer},
-            Building, Table,
+            resolution, Building, State, Table,
         },
         ConstantParameter, ConstantParameterID, GenericID, GenericParameter,
         GenericParameters, GenericTemplate, GlobalID, ImplementationTemplate,
@@ -45,25 +44,166 @@ use crate::{
     },
 };
 
-impl Table<Building<RwLockContainer, Finalizer>> {
-    /// Do predicates check for the given instantiation.
-    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-    pub fn check_instantiation_predicates_from_generic_arguments(
+impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
+    /// Checks if the given `resolution` is well-formed. The errors are reported
+    /// to the `handler`.
+    ///
+    /// # Parameters
+    ///
+    /// - `resolution`: The resolution to check.
+    /// - `resolution_span`: The span location of the `resolution`.
+    /// - `do_outlives_check`: Determines if the outlives predicates should be
+    ///  checked.
+    /// - `session`: The session to use for caching and limiting the
+    ///   computation.
+    /// - `handler`: The handler to report the errors.
+    pub fn check_resolution_occurrence(
         &self,
-        caller_premise: &Premise<Default>,
-        instantiated: GenericID,
-        generic_arguments: GenericArguments<Default>,
-        instantiation_span: &Span,
-        session: &mut session::Default<Default>,
+        resolution: &resolution::Resolution<M>,
+        resolution_span: &Span,
+        do_outlives_check: bool,
+        session: &mut session::Default<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
+        match resolution {
+            resolution::Resolution::Module(_) => {}
+            resolution::Resolution::Variant(_) => {}
+            resolution::Resolution::Generic(generic) => {
+                // check for trait predicates
+                if let resolution::GenericID::Trait(trait_id) = generic.id {
+                    let predicate =
+                        predicate::Predicate::Trait(predicate::Trait {
+                            id: trait_id,
+                            generic_arguments: generic
+                                .generic_arguments
+                                .clone(),
+                        });
+
+                    match self.predicate_satisfied(
+                        &predicate,
+                        do_outlives_check,
+                        session,
+                    ) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            handler.receive(Box::new(UnsatisifedPredicate {
+                                predicate,
+                                instantiation_span: resolution_span.clone(),
+                                predicate_declaration_span: None,
+                            }));
+                        }
+                        Err(ExceedLimitError) => {
+                            handler.receive(Box::new(UndecidablePredicate {
+                                instantiation_span: resolution_span.clone(),
+                                predicate,
+                                predicate_declaration_span: None,
+                            }));
+                        }
+                    }
+                }
+
+                self.check_instantiation_predicates_by_generic_arguments(
+                    generic.id.into(),
+                    generic.generic_arguments.clone(),
+                    resolution_span,
+                    do_outlives_check,
+                    session,
+                    handler,
+                )
+            }
+            resolution::Resolution::MemberGeneric(member_generic) => {
+                // additional adt implementation check
+
+                // the trait implementation doesn't need to be checked here
+                // because it can never be referred directly in the source code
+                let adt_implementation_check = match member_generic.id {
+                    resolution::MemberGenericID::AdtImplementationFunction(
+                        id,
+                    ) => Some(self.table.get(id).unwrap().parent_id),
+                    resolution::MemberGenericID::AdtImplementationType(id) => {
+                        Some(self.table.get(id).unwrap().parent_id)
+                    }
+                    resolution::MemberGenericID::AdtImplementationConstant(
+                        id,
+                    ) => Some(self.table.get(id).unwrap().parent_id),
+
+                    _ => None,
+                };
+
+                if let Some(adt_implementation_id) = adt_implementation_check {
+                    let adt_implementation =
+                        self.table.get(adt_implementation_id).unwrap();
+
+                    let deduced = match GenericArguments::from_default_model(
+                        adt_implementation.arguments.clone(),
+                    )
+                    .deduce(
+                        &member_generic.parent_generic_arguments,
+                        self,
+                        &mut Limit::new(session),
+                    ) {
+                        Ok(deduced) => {
+                            deduced.expect("should be able to deduce")
+                        }
+                        Err(_) => todo!("report undecidable error"),
+                    };
+
+                    // check if the deduced generic arguments are correct
+                    self.check_instantiation_predicates(
+                        adt_implementation_id.into(),
+                        &deduced,
+                        resolution_span,
+                        do_outlives_check,
+                        session,
+                        handler,
+                    );
+                }
+
+                self.check_instantiation_predicates_by_generic_arguments(
+                    member_generic.id.into(),
+                    member_generic.generic_arguments.clone(),
+                    resolution_span,
+                    do_outlives_check,
+                    session,
+                    handler,
+                )
+            }
+        }
+    }
+
+    /// Do where clause predicates check for the given instantiation. The errors
+    /// are reported to the `handler`.
+    ///
+    /// # Parameters
+    ///
+    /// - `instantiated`: The [`GenericID`] of the instantiated symbol.
+    /// - `generic_arguments`: The generic arguments supplied to the
+    ///   `instantiated`.
+    /// - `instantiation_span`: The span location of the instantiation, used for
+    ///   error reporting
+    /// - `do_outlives_check`: Determines if the outlives predicates should be
+    ///   checked.
+    /// - `session`: The session to use for caching and limiting the
+    ///   computation.
+    /// - `handler`: The handler to report the errors.
+    pub fn check_instantiation_predicates_by_generic_arguments(
+        &self,
+        instantiated: GenericID,
+        generic_arguments: GenericArguments<M>,
+        instantiation_span: &Span,
+        do_outlives_check: bool,
+        session: &mut session::Default<M>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        // convert the generic arguments to an instantiation and delegate the
+        // check to the `check_instantiation_predicates` method
         self.check_instantiation_predicates(
-            caller_premise,
             instantiated,
             &Instantiation::from_generic_arguments(
                 generic_arguments,
                 instantiated,
                 &self
+                    .table
                     .get_generic(instantiated)
                     .unwrap()
                     .generic_declaration()
@@ -71,138 +211,52 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             )
             .unwrap(),
             instantiation_span,
+            do_outlives_check,
             session,
             handler,
-        );
+        )
     }
 
-    #[allow(clippy::too_many_lines)]
-    fn predicate_satisfied(
-        &self,
-        caller_premise: &Premise<Default>,
-        predicate: &predicate::Predicate<Default>,
-        session: &mut session::Default<Default>,
-    ) -> Result<bool, ExceedLimitError> {
-        // check if the predicate is satisfied
-        let environment = Environment {
-            premise: caller_premise,
-            table: self,
-            normalizer: &NoOp,
-        };
-
-        let result = match &predicate {
-            predicate::Predicate::TraitTypeEquality(eq) => equality::equals(
-                &r#type::Type::TraitMember(eq.lhs.clone()),
-                &eq.rhs,
-                &environment,
-                &mut Limit::new(session),
-            ),
-            predicate::Predicate::ConstantType(pred) => {
-                ConstantType::satisfies(
-                    &pred.0,
-                    &environment,
-                    &mut Limit::new(session),
-                )
-            }
-            predicate::Predicate::LifetimeOutlives(pred) => {
-                Outlives::satisfies(
-                    &pred.operand,
-                    &pred.bound,
-                    &environment,
-                    &mut Limit::new(session),
-                )
-            }
-            predicate::Predicate::TypeOutlives(pred) => Outlives::satisfies(
-                &pred.operand,
-                &pred.bound,
-                &environment,
-                &mut Limit::new(session),
-            ),
-            predicate::Predicate::TupleType(pred) => Tuple::satisfies(
-                &pred.0,
-                &environment,
-                &mut Limit::new(session),
-            ),
-            predicate::Predicate::TupleConstant(pred) => Tuple::satisfies(
-                &pred.0,
-                &environment,
-                &mut Limit::new(session),
-            ),
-            predicate::Predicate::Trait(pred) => {
-                || -> Result<bool, ExceedLimitError> {
-                    let Some(lifetime_constraints) = Trait::satisfies(
-                        pred.id,
-                        pred.is_const,
-                        &pred.generic_arguments,
-                        &environment,
-                        &mut Limit::new(session),
-                    )?
-                    else {
-                        return Ok(false);
-                    };
-
-                    // check if the lifetime constraints are satisfied
-                    for constraint in lifetime_constraints.lifetime_constraints
-                    {
-                        match constraint {
-                            predicate::LifetimeConstraint::LifetimeOutlives(
-                                pred,
-                            ) => {
-                                if !Outlives::satisfies(
-                                    &pred.operand,
-                                    &pred.bound,
-                                    &environment,
-                                    &mut Limit::new(session),
-                                )? {
-                                    return Ok(false);
-                                }
-                            }
-                            predicate::LifetimeConstraint::TypeOutlives(
-                                pred,
-                            ) => {
-                                if !Outlives::satisfies(
-                                    &pred.operand,
-                                    &pred.bound,
-                                    &environment,
-                                    &mut Limit::new(session),
-                                )? {
-                                    return Ok(false);
-                                }
-                            }
-                        }
-                    }
-
-                    Ok(true)
-                }()
-            }
-        };
-
-        result
-    }
-
-    /// Do predicates check for the given instantiation.
-    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    /// Do where clause predicates check for the given instantiation. The errors
+    /// are reported to the `handler`.
+    ///
+    /// # Parameters
+    ///
+    /// - `instantiated`: The [`GenericID`] of the instantiated symbol.
+    /// - `instantiation`: The instantiation of the `instantiated`.
+    /// - `instantiation_span`: The span location of the instantiation, used for
+    ///  error reporting
+    /// - `do_outlives_check`: Determines if the outlives predicates should be
+    ///   checked.
+    /// - `session`: The session to use for caching and limiting the
+    ///  computation.
+    /// - `handler`: The handler to report the errors.
     pub fn check_instantiation_predicates(
         &self,
-        caller_premise: &Premise<Default>,
         instantiated: GenericID,
-        instantiation: &Instantiation<Default>,
+        instantiation: &Instantiation<M>,
         instantiation_span: &Span,
-        session: &mut session::Default<Default>,
+        do_outlives_check: bool,
+        session: &mut session::Default<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         // get all the predicates and instantiate them with the given generic
         // arguments
-        let instantiated_sym = self.get_generic(instantiated).unwrap();
+        let instantiated_sym = self.table.get_generic(instantiated).unwrap();
 
         #[allow(clippy::significant_drop_in_scrutinee)]
         for predicate_info in &instantiated_sym.generic_declaration().predicates
         {
-            let mut predicate = predicate_info.predicate.clone();
+            let mut predicate =
+                Predicate::from_default_model(predicate_info.predicate.clone());
+
             predicate.instantiate(instantiation);
 
-            match self.predicate_satisfied(caller_premise, &predicate, session)
-            {
+            match self.predicate_satisfied(
+                &predicate,
+                do_outlives_check,
+                session,
+            ) {
                 Ok(false) => handler.receive(Box::new(UnsatisifedPredicate {
                     predicate,
                     instantiation_span: instantiation_span.clone(),
@@ -226,56 +280,133 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
-    fn check_type_ocurrences<'a>(
+    fn predicate_satisfied(
         &self,
-        caller_active_premise: &Premise<Default>,
-        occurrences: impl IntoIterator<
-            Item = (
-                &'a term::r#type::Type<Default>,
-                &'a syntax_tree::r#type::Type,
+        predicate: &Predicate<M>,
+        do_outlives_check: bool,
+        session: &mut session::Default<M>,
+    ) -> Result<bool, ExceedLimitError> {
+        let result = match &predicate {
+            predicate::Predicate::TraitTypeEquality(eq) => equality::equals(
+                &r#type::Type::TraitMember(eq.lhs.clone()),
+                &eq.rhs,
+                self,
+                &mut Limit::new(session),
             ),
-        >,
-        session: &mut session::Default<Default>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) {
-        let environment = Environment {
-            premise: caller_active_premise,
-            table: self,
-            normalizer: &NoOp,
+            predicate::Predicate::ConstantType(pred) => {
+                ConstantType::satisfies(&pred.0, self, &mut Limit::new(session))
+            }
+            predicate::Predicate::LifetimeOutlives(pred) => {
+                if !do_outlives_check {
+                    return Ok(true);
+                }
+
+                Outlives::satisfies(
+                    &pred.operand,
+                    &pred.bound,
+                    self,
+                    &mut Limit::new(session),
+                )
+            }
+            predicate::Predicate::TypeOutlives(pred) => {
+                if !do_outlives_check {
+                    return Ok(true);
+                }
+
+                Outlives::satisfies(
+                    &pred.operand,
+                    &pred.bound,
+                    self,
+                    &mut Limit::new(session),
+                )
+            }
+            predicate::Predicate::TupleType(pred) => {
+                Tuple::satisfies(&pred.0, self, &mut Limit::new(session))
+            }
+            predicate::Predicate::TupleConstant(pred) => {
+                Tuple::satisfies(&pred.0, self, &mut Limit::new(session))
+            }
+            predicate::Predicate::Trait(pred) => {
+                || -> Result<bool, ExceedLimitError> {
+                    let Some(lifetime_constraints) = Trait::satisfies(
+                        pred.id,
+                        &pred.generic_arguments,
+                        self,
+                        &mut Limit::new(session),
+                    )?
+                    else {
+                        return Ok(false);
+                    };
+
+                    if do_outlives_check {
+                        // check if the lifetime constraints are satisfied
+                        for constraint in
+                            lifetime_constraints.lifetime_constraints
+                        {
+                            match constraint {
+                            predicate::LifetimeConstraint::LifetimeOutlives(
+                                pred,
+                            ) => {
+                                if !Outlives::satisfies(
+                                    &pred.operand,
+                                    &pred.bound,
+                                    self,
+                                    &mut Limit::new(session),
+                                )? {
+                                    return Ok(false);
+                                }
+                            }
+                            predicate::LifetimeConstraint::TypeOutlives(
+                                pred,
+                            ) => {
+                                if !Outlives::satisfies(
+                                    &pred.operand,
+                                    &pred.bound,
+                                    self,
+                                    &mut Limit::new(session),
+                                )? {
+                                    return Ok(false);
+                                }
+                            }
+                        }
+                        }
+                    }
+
+                    Ok(true)
+                }()
+            }
         };
 
-        for (ty, syn) in occurrences {
-            match ty {
-                term::r#type::Type::Tuple(_)
-                | term::r#type::Type::Local(_)
-                | term::r#type::Type::Phantom(_)
-                | term::r#type::Type::Pointer(_)
-                | term::r#type::Type::Primitive(_)
-                | term::r#type::Type::Parameter(_)
-                | term::r#type::Type::Inference(_) => {
-                    /* no additional check */
-                }
+        result
+    }
 
-                term::r#type::Type::Symbol(term::Symbol {
-                    id,
-                    generic_arguments,
-                }) => {
-                    self.check_instantiation_predicates_from_generic_arguments(
-                        caller_active_premise,
-                        (*id).into(),
-                        generic_arguments.clone(),
-                        &syn.span(),
-                        session,
-                        handler,
-                    );
-                }
+    /// Do predicates check for the given type occurrences.
+    pub fn check_type_ocurrence(
+        &self,
+        ty: &r#type::Type<M>,
+        instantiation_span: &Span,
+        do_outlives_check: bool,
+        session: &mut session::Default<M>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        match ty {
+            term::r#type::Type::Tuple(_)
+            | term::r#type::Type::Local(_)
+            | term::r#type::Type::Phantom(_)
+            | term::r#type::Type::Pointer(_)
+            | term::r#type::Type::Primitive(_)
+            | term::r#type::Type::Parameter(_)
+            | term::r#type::Type::Symbol(_)
+            | term::r#type::Type::MemberSymbol(_)
+            | term::r#type::Type::TraitMember(_)
+            | term::r#type::Type::Inference(_) => { /* no additional check */ }
 
-                term::r#type::Type::Reference(reference) => {
+            term::r#type::Type::Reference(reference) => {
+                if do_outlives_check {
                     match Outlives::satisfies(
                         &*reference.pointee,
                         &reference.lifetime,
-                        &environment,
+                        self,
                         &mut Limit::new(session),
                     ) {
                         Ok(true) => {}
@@ -287,23 +418,23 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                                             .pointee
                                             .deref()
                                             .clone(),
-                                        bound: reference.lifetime,
+                                        bound: reference.lifetime.clone(),
                                     },
                                 ),
-                                instantiation_span: syn.span(),
+                                instantiation_span: instantiation_span.clone(),
                                 predicate_declaration_span: None,
                             }));
                         }
                         Err(_) => {
                             handler.receive(Box::new(UndecidablePredicate {
-                                instantiation_span: syn.span(),
+                                instantiation_span: instantiation_span.clone(),
                                 predicate: predicate::Predicate::TypeOutlives(
                                     Outlives {
                                         operand: reference
                                             .pointee
                                             .deref()
                                             .clone(),
-                                        bound: reference.lifetime,
+                                        bound: reference.lifetime.clone(),
                                     },
                                 ),
                                 predicate_declaration_span: None,
@@ -311,239 +442,44 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         }
                     }
                 }
-                term::r#type::Type::Array(_) => {
-                    todo!("check if the length is type of usize")
-                }
-
-                term::r#type::Type::MemberSymbol(member_symbol) => {
-                    match member_symbol.id {
-                        term::r#type::MemberSymbolID::TraitImplementation(
-                            trait_implementation_type,
-                        ) => {
-                            let implementation_id = self
-                                .get(trait_implementation_type)
-                                .unwrap()
-                                .parent_id;
-
-                            self.check_instantiation_predicates_from_generic_arguments(
-                                caller_active_premise,
-                                implementation_id.into(),
-                                member_symbol.parent_generic_arguments.clone(),
-                                &syn.span(),
-                                session,
-                                handler,
-                            );
-                            self.check_instantiation_predicates_from_generic_arguments(
-                                caller_active_premise,
-                                trait_implementation_type.into(),
-                                member_symbol.member_generic_arguments.clone(),
-                                &syn.span(),
-                                session,
-                                handler,
-                            );
-                        }
-                        term::r#type::MemberSymbolID::AdtImplementation(
-                            adt_implementation_type,
-                        ) => {
-                            let adt_implementation_id = self
-                                .get(adt_implementation_type)
-                                .unwrap()
-                                .parent_id;
-
-                            let Ok(Some(deduction)) =
-                                member_symbol.parent_generic_arguments.deduce(
-                                    &self
-                                        .get(adt_implementation_id)
-                                        .unwrap()
-                                        .arguments,
-                                    &environment,
-                                    &mut Limit::new(session),
-                                )
-                            else {
-                                todo!("report overflow deducing");
-                            };
-
-                            self.check_instantiation_predicates(
-                                caller_active_premise,
-                                adt_implementation_id.into(),
-                                &deduction,
-                                &syn.span(),
-                                session,
-                                handler,
-                            );
-                            self.check_instantiation_predicates_from_generic_arguments(
-                                caller_active_premise,
-                                adt_implementation_type.into(),
-                                member_symbol.member_generic_arguments.clone(),
-                                &syn.span(),
-                                session,
-                                handler,
-                            );
-                        }
-                    }
-                }
-
-                term::r#type::Type::TraitMember(trait_member) => {
-                    let parent_trait_id =
-                        self.get(trait_member.id).unwrap().parent_id;
-
-                    // check if the trait predicate is satisfied
-                    Trait::satisfies(
-                        parent_trait_id,
-                        false,
-                        &trait_member.parent_generic_arguments,
-                        &environment,
-                        &mut Limit::new(session),
-                    ).map_or_else(|_| {
-                            handler.receive(Box::new(UndecidablePredicate {
-                                instantiation_span: syn.span(),
-                                predicate: predicate::Predicate::Trait(Trait {
-                                    id: parent_trait_id,
-                                    is_const: false,
-                                    generic_arguments: trait_member
-                                        .parent_generic_arguments
-                                        .clone(),
-                                }),
-                                predicate_declaration_span: None,
-                            }));
-                        }, |satisfiability| satisfiability.map_or_else(|| {
-                                handler.receive(Box::new(
-                                    UnsatisifedPredicate {
-                                        predicate: predicate::Predicate::Trait(
-                                            Trait {
-                                                id: parent_trait_id,
-                                                is_const: false,
-                                                generic_arguments: trait_member
-                                                    .parent_generic_arguments
-                                                    .clone(),
-                                            },
-                                        ),
-                                        instantiation_span: syn.span(),
-                                        predicate_declaration_span: None,
-                                    },
-                                ));
-                            }, |satisfiability| {
-                                let satisfied =
-                                    || -> Result<bool, ExceedLimitError> {
-                                        for constraint in
-                                            satisfiability.lifetime_constraints
-                                        {
-                                            if !match constraint {
-                                                predicate::LifetimeConstraint::LifetimeOutlives(outlives) => {
-                                                    Outlives::satisfies(
-                                                        &outlives.operand,
-                                                        &outlives.bound,
-                                                        &environment,
-                                                        &mut Limit::new(session),
-                                                    )
-                                                },
-                                                predicate::LifetimeConstraint::TypeOutlives(outlives) => {
-                                                    Outlives::satisfies(
-                                                        &outlives.operand,
-                                                        &outlives.bound,
-                                                        &environment,
-                                                        &mut Limit::new(session),
-                                                    )
-                                                },
-                                            }? {
-                                                return Ok(false);
-                                            }
-                                        }
-
-                                        Ok(true)
-                                    }();
-                                match satisfied {
-                                    Ok(false) => {
-                                        handler.receive(Box::new(UnsatisifedPredicate {
-                                            predicate: predicate::Predicate::Trait(
-                                                Trait {
-                                                    id: parent_trait_id,
-                                                    is_const: false,
-                                                    generic_arguments: trait_member
-                                                        .parent_generic_arguments
-                                                        .clone(),
-                                                },
-                                            ),
-                                            instantiation_span: syn.span(),
-                                            predicate_declaration_span: None,
-                                        }));
-                                    },
-                                    Ok(true) => {},
-                                    Err(_) => {
-                                        handler.receive(Box::new(UndecidablePredicate {
-                                            instantiation_span: syn.span(),
-                                            predicate: predicate::Predicate::Trait(Trait {
-                                                id: parent_trait_id,
-                                                is_const: false,
-                                                generic_arguments: trait_member
-                                                    .parent_generic_arguments
-                                                    .clone(),
-                                            }),
-                                            predicate_declaration_span: None,
-                                        }));
-                                    }
-                                }
-                            }));
-
-                    self.check_instantiation_predicates_from_generic_arguments(
-                        caller_active_premise,
-                        parent_trait_id.into(),
-                        trait_member.parent_generic_arguments.clone(),
-                        &syn.span(),
-                        session,
-                        handler,
-                    );
-                    self.check_instantiation_predicates_from_generic_arguments(
-                        caller_active_premise,
-                        trait_member.id.into(),
-                        trait_member.member_generic_arguments.clone(),
-                        &syn.span(),
-                        session,
-                        handler,
-                    );
-                }
+            }
+            term::r#type::Type::Array(_) => {
+                todo!("check if the length is type of usize")
             }
         }
     }
 
-    fn check_unpacked_ocurrences<
-        'a,
-        T: Term<Model = Default> + 'a,
-        Syn: SourceElement + 'a,
-    >(
+    fn check_unpacked_ocurrences<U: Term<Model = M> + 'a>(
         &self,
-        premise: &Premise<Default>,
-        occurrences: impl Iterator<Item = (&'a T, &'a Syn)>,
-        session: &mut session::Default<Default>,
+        unpacked_term: &U,
+        instantiation_span: &Span,
+        session: &mut session::Default<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        session::Default<Default>: Session<T>,
-        predicate::Predicate<Default>: From<Tuple<T>>,
+        session::Default<M>: Session<U>,
+        predicate::Predicate<M>: From<Tuple<U>>,
     {
-        let environment =
-            Environment { premise, table: self, normalizer: &NoOp };
-        for (term, ocurrence) in occurrences {
-            match Tuple::satisfies(term, &environment, &mut Limit::new(session))
-            {
-                Ok(true) => {}
-                Ok(false) => {
-                    handler.receive(Box::new(error::UnsatisifedPredicate {
-                        predicate: Tuple(term.clone()).into(),
-                        instantiation_span: ocurrence.span(),
-                        predicate_declaration_span: None,
-                    }));
-                }
-                Err(ExceedLimitError) => {
-                    handler.receive(Box::new(error::UndecidablePredicate {
-                        instantiation_span: ocurrence.span(),
-                        predicate: Tuple(term.clone()).into(),
-                        predicate_declaration_span: None,
-                    }));
-                }
+        match Tuple::satisfies(unpacked_term, self, &mut Limit::new(session)) {
+            Ok(true) => {}
+            Ok(false) => {
+                handler.receive(Box::new(error::UnsatisifedPredicate {
+                    predicate: Tuple(unpacked_term.clone()).into(),
+                    instantiation_span: instantiation_span.clone(),
+                    predicate_declaration_span: None,
+                }));
+            }
+            Err(ExceedLimitError) => {
+                handler.receive(Box::new(error::UndecidablePredicate {
+                    instantiation_span: instantiation_span.clone(),
+                    predicate: Tuple(unpacked_term.clone()).into(),
+                    predicate_declaration_span: None,
+                }));
             }
         }
     }
+}
 
+impl Table<Building<RwLockContainer, Finalizer>> {
     /// Checks if the occurrences of symbols are valid (i.e. they satisfy the
     /// where clause predicates).
     pub fn check_occurrences(
@@ -554,36 +490,53 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     ) {
         let active_premise = self.get_active_premise(id).unwrap();
         let mut session = session::Default::default();
+        let environment = Environment {
+            premise: &active_premise,
+            table: self,
+            normalizer: &NoOp,
+        };
 
-        #[allow(clippy::map_identity)]
-        self.check_type_ocurrences(
-            &active_premise,
-            occurrences.types().iter().map(|(ty, syn)| (ty, syn)),
-            &mut session,
-            handler,
-        );
+        // check resolution occurrences
+        for (resolution, generic_identifier) in occurrences.resolutions() {
+            environment.check_resolution_occurrence(
+                resolution,
+                &generic_identifier.span(),
+                true,
+                &mut session,
+                handler,
+            )
+        }
 
-        #[allow(clippy::map_identity)]
-        self.check_unpacked_ocurrences(
-            &active_premise,
-            occurrences
-                .unpacked_types()
-                .iter()
-                .map(|(tuple, syn)| (tuple, syn)),
-            &mut session,
-            handler,
-        );
+        // check type occurrences
+        for (ty, syn) in occurrences.types() {
+            environment.check_type_ocurrence(
+                ty,
+                &syn.span(),
+                true,
+                &mut session,
+                handler,
+            )
+        }
 
-        #[allow(clippy::map_identity)]
-        self.check_unpacked_ocurrences(
-            &active_premise,
-            occurrences
-                .unpacked_constants()
-                .iter()
-                .map(|(tuple, syn)| (tuple, syn)),
-            &mut session,
-            handler,
-        );
+        // check unpacked type occurrences
+        for (unpacked, syn) in occurrences.unpacked_types() {
+            environment.check_unpacked_ocurrences(
+                unpacked,
+                &syn.span(),
+                &mut session,
+                handler,
+            )
+        }
+
+        // check unpacked constant occurrences
+        for (unpacked, syn) in occurrences.unpacked_constants() {
+            environment.check_unpacked_ocurrences(
+                unpacked,
+                &syn.span(),
+                &mut session,
+                handler,
+            )
+        }
     }
 }
 
@@ -971,15 +924,20 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 Err(_) => todo!(),
             }
         }
+        let implementation_member_environment = Environment {
+            premise: &implementation_member_active_premise,
+            table: self,
+            normalizer: &NoOp,
+        };
 
         // check if the predicates match
         for predicate in &trait_member_sym.generic_declaration().predicates {
             let mut predicate_instantiated = predicate.predicate.clone();
             predicate_instantiated.instantiate(&trait_instantiation);
 
-            match self.predicate_satisfied(
-                &implementation_member_active_premise,
+            match implementation_member_environment.predicate_satisfied(
                 &predicate_instantiated,
+                true,
                 &mut session,
             ) {
                 Ok(false) => {
@@ -1020,15 +978,20 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
             trait_member_active_premise
         };
+        let trait_member_environment = Environment {
+            premise: &trait_member_active_premise,
+            table: self,
+            normalizer: &NoOp,
+        };
 
         // check for any extraneous predicates defined in the implementation
         // member that are not in the trait member
         for predicate in
             &implementation_member_sym.generic_declaration().predicates
         {
-            match self.predicate_satisfied(
-                &trait_member_active_premise,
+            match trait_member_environment.predicate_satisfied(
                 &predicate.predicate,
+                true,
                 &mut session,
             ) {
                 Ok(false) => {
@@ -1171,11 +1134,14 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let premise =
             self.get_active_premise(implementation_id.into()).unwrap();
 
-        self.check_instantiation_predicates_from_generic_arguments(
-            &premise,
+        let environment =
+            Environment { premise: &premise, table: self, normalizer: &NoOp };
+
+        environment.check_instantiation_predicates_by_generic_arguments(
             implementation_sym.implemented_id.into(),
             implementation_sym.arguments.clone(),
             implementation_sym.span().as_ref().unwrap(),
+            true,
             &mut session,
             handler,
         );

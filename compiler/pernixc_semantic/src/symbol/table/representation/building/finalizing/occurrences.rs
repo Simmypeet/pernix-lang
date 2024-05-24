@@ -2,7 +2,7 @@
 
 use getset::Getters;
 use pernixc_base::diagnostic::Handler;
-use pernixc_syntax::syntax_tree;
+use pernixc_syntax::syntax_tree::{self, GenericIdentifier};
 
 use super::finalizer::build_preset::{self, BuildPreset};
 use crate::{
@@ -13,7 +13,7 @@ use crate::{
             representation::{
                 building::finalizing::Finalizer, RwLockContainer,
             },
-            resolution::Observer,
+            resolution::{Observer, Resolution},
             Building, State, Table,
         },
         GlobalID,
@@ -36,6 +36,9 @@ pub struct Occurrences {
         term::constant::Constant<Default>,
         syntax_tree::expression::Expression,
     )>,
+
+    #[get = "pub"]
+    resolutions: Vec<(Resolution<Default>, GenericIdentifier)>,
 
     #[get = "pub"]
     unpacked_types:
@@ -138,6 +141,33 @@ impl Occurrences {
 }
 
 impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
+    fn on_global_id_resolved(
+        &mut self,
+        table: &Table<Building<RwLockContainer, Finalizer>>,
+        referring_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+        global_id: GlobalID,
+        _: &pernixc_lexical::token::Identifier,
+    ) {
+        let _ = table.build_preset::<build_preset::GenericParameter>(
+            global_id,
+            Some(referring_site),
+            true,
+            handler,
+        );
+    }
+
+    fn on_resolution_resolved(
+        &mut self,
+        _: &Table<Building<RwLockContainer, Finalizer>>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        resolution: &Resolution<Default>,
+        generic_identifier: &GenericIdentifier,
+    ) {
+        self.resolutions.push((resolution.clone(), generic_identifier.clone()));
+    }
+
     fn on_type_resolved(
         &mut self,
         _: &Table<Building<RwLockContainer, Finalizer>>,
@@ -191,21 +221,5 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
         syntax_tree: &syntax_tree::expression::Expression,
     ) {
         self.unpacked_constants.push((constant.clone(), syntax_tree.clone()));
-    }
-
-    fn on_global_id_resolved(
-        &mut self,
-        table: &Table<Building<RwLockContainer, Finalizer>>,
-        referring_site: GlobalID,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-        global_id: GlobalID,
-        _: &pernixc_lexical::token::Identifier,
-    ) {
-        let _ = table.build_preset::<build_preset::GenericParameter>(
-            global_id,
-            Some(referring_site),
-            true,
-            handler,
-        );
     }
 }

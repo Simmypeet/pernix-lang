@@ -33,8 +33,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index, DisplayObject, State, Table},
-        Enum, GenericID, GlobalID, MemberID, Struct, TypeParameter,
-        TypeParameterID,
+        Enum, GenericID, GlobalID, Struct, TypeParameter, TypeParameterID,
     },
 };
 
@@ -829,18 +828,8 @@ pub enum Type<M: Model> {
     Local(Local<Self>),
     #[from]
     Phantom(Phantom<M>),
-
-    /// Please notice this differences
-    ///
-    /// In the **AdtImplementation** case, the `parent_generic_arguments` field
-    /// is **not** deduced from the implementation directly, bur rather
-    /// from the ADT that the implementation is for.
-    ///
-    /// In the **TraitImplementation** case, the `parent_generic_arguments`
-    /// field **is** deduced from the implementation.
     #[from]
     MemberSymbol(MemberSymbol<M, MemberSymbolID>),
-
     #[from]
     TraitMember(TraitMember<M>),
 }
@@ -947,68 +936,14 @@ where
                     return Ok(None);
                 };
 
-                let Some(implementation_symbol) =
-                    environment.table.get(result.id)
-                else {
-                    return Ok(None);
-                };
-
-                let parent_lifetimes = implementation_symbol
-                    .generic_declaration
-                    .parameters
-                    .lifetime_order()
-                    .iter()
-                    .map(|x| {
-                        result.deduced_substitution.lifetimes.remove(
-                            &MemberID { id: *x, parent: result.id.into() }
-                                .into(),
-                        )
-                    })
-                    .collect::<Option<Vec<_>>>();
-                let parent_types = implementation_symbol
-                    .generic_declaration
-                    .parameters
-                    .type_order()
-                    .iter()
-                    .map(|x| {
-                        result.deduced_substitution.types.remove(
-                            &MemberID { id: *x, parent: result.id.into() }
-                                .into(),
-                        )
-                    })
-                    .collect::<Option<Vec<_>>>();
-                let parent_constants = implementation_symbol
-                    .generic_declaration
-                    .parameters
-                    .constant_order()
-                    .iter()
-                    .map(|x| {
-                        result.deduced_substitution.constants.remove(
-                            &MemberID { id: *x, parent: result.id.into() }
-                                .into(),
-                        )
-                    })
-                    .collect::<Option<Vec<_>>>();
-
-                let (
-                    Some(parent_lifetimes),
-                    Some(parent_types),
-                    Some(parent_constants),
-                ) = (parent_lifetimes, parent_types, parent_constants)
-                else {
-                    return Ok(None);
-                };
-
                 let result_ty = Self::MemberSymbol(MemberSymbol {
                     id: implementation_type_id.into(),
                     member_generic_arguments: trait_member
                         .member_generic_arguments
                         .clone(),
-                    parent_generic_arguments: GenericArguments {
-                        lifetimes: parent_lifetimes,
-                        types: parent_types,
-                        constants: parent_constants,
-                    },
+                    parent_generic_arguments: trait_member
+                        .parent_generic_arguments
+                        .clone(),
                 });
 
                 // append the deduced generic arguments
@@ -1026,6 +961,7 @@ where
                 else {
                     return Ok(None);
                 };
+
                 let Some(implementation_symbol) = environment
                     .table
                     .get(implementation_type_symbol.parent_id())
@@ -1033,21 +969,23 @@ where
                     return Ok(None);
                 };
 
-                let mut aliased = M::from_default_type(
-                    implementation_type_symbol.r#type.clone(),
-                );
+                let adt_implementation_symbol_arguments =
+                    GenericArguments::from_default_model(
+                        implementation_symbol.arguments.clone(),
+                    );
 
-                let Ok(mut instantiation) =
-                    Instantiation::from_generic_arguments(
-                        parent_generic_arguments.clone(),
-                        implementation_type_symbol.parent_id().into(),
-                        &implementation_symbol.generic_declaration.parameters,
-                    )
+                // gets the decution for the parent generic arguments
+                let Some(mut deduction) = adt_implementation_symbol_arguments
+                    .deduce(
+                    parent_generic_arguments,
+                    environment,
+                    limit,
+                )?
                 else {
                     return Ok(None);
                 };
 
-                if instantiation
+                if deduction
                     .append_from_generic_arguments(
                         member_generic_arguments.clone(),
                         (*id).into(),
@@ -1060,7 +998,11 @@ where
                     return Ok(None);
                 }
 
-                instantiation::instantiate(&mut aliased, &instantiation);
+                let mut aliased = M::from_default_type(
+                    implementation_type_symbol.r#type.clone(),
+                );
+
+                instantiation::instantiate(&mut aliased, &deduction);
 
                 Ok(Some(aliased))
             }
