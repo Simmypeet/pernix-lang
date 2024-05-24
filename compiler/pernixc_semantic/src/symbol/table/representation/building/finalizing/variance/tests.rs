@@ -117,19 +117,19 @@ fn basic_variances() {
 }
 
 const RECURSIVE_INVARIANT: &str = r"
-public enum A[T] 
+public enum A['a, T] 
 where
-    T: 'static
+    T: 'a
 {
-    Invariant(&'static mutable T),
-    Covariant(B[T]),
+    Invariant(&'a mutable T),
+    Covariant(B['a, T]),
 }
 
-public struct B[T]
+public struct B['a, T]
 where
-    T: 'static
+    T: 'a
 {
-    public a: A[T],
+    public a: A['a, T],
 }
 ";
 
@@ -152,7 +152,23 @@ fn recurisve_invariant() {
             .and_then(|x| table.get(x.into_struct().unwrap()))
             .unwrap();
 
-        let struct_a_t_param = enum_a_sym
+        let enum_a_lt_param = enum_a_sym
+            .generic_declaration
+            .parameters
+            .lifetime_parameter_ids_by_name()
+            .get("a")
+            .copied()
+            .unwrap();
+
+        let struct_b_lt_param = struct_b_sym
+            .generic_declaration
+            .parameters
+            .lifetime_parameter_ids_by_name()
+            .get("a")
+            .copied()
+            .unwrap();
+
+        let enum_a_t_param = enum_a_sym
             .generic_declaration
             .parameters
             .type_parameter_ids_by_name()
@@ -171,7 +187,7 @@ fn recurisve_invariant() {
             enum_a_sym
                 .generic_parameter_variances
                 .variances_by_type_ids
-                .get(&struct_a_t_param)
+                .get(&enum_a_t_param)
                 .copied()
                 .unwrap(),
             Variance::Invariant
@@ -184,6 +200,26 @@ fn recurisve_invariant() {
                 .copied()
                 .unwrap(),
             Variance::Invariant
+        );
+
+        assert_eq!(
+            enum_a_sym
+                .generic_parameter_variances
+                .variances_by_lifetime_ids
+                .get(&enum_a_lt_param)
+                .copied()
+                .unwrap(),
+            Variance::Covariant
+        );
+
+        assert_eq!(
+            struct_b_sym
+                .generic_parameter_variances
+                .variances_by_lifetime_ids
+                .get(&struct_b_lt_param)
+                .copied()
+                .unwrap(),
+            Variance::Covariant
         );
     }
 }

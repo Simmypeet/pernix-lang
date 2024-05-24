@@ -915,12 +915,12 @@ impl Arbitrary for FallbackToGeneralImplementation {
                     .predicates = vec![symbol::Predicate {
                     predicate: predicate::Predicate::Trait(predicate::Trait {
                         id: constraint_trait_id,
-                        is_const: false,
                         generic_arguments: GenericArguments {
                             lifetimes: Vec::new(),
                             types: Vec::new(),
                             constants: Vec::new(),
                         },
+                        is_const: false,
                     }),
                     kind: symbol::PredicateKind::Explicit(None),
                 }];

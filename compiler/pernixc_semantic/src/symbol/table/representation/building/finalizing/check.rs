@@ -74,6 +74,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                     let predicate =
                         predicate::Predicate::Trait(predicate::Trait {
                             id: trait_id,
+                            is_const: false,
                             generic_arguments: generic
                                 .generic_arguments
                                 .clone(),
@@ -330,6 +331,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                 || -> Result<bool, ExceedLimitError> {
                     let Some(lifetime_constraints) = Trait::satisfies(
                         pred.id,
+                        pred.is_const,
                         &pred.generic_arguments,
                         self,
                         &mut Limit::new(session),

@@ -222,6 +222,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
                     let trait_predicate = predicate::Trait {
                         id: trait_id,
+                        is_const: syntax_tree.const_keyword().is_some(),
                         generic_arguments: generic_arguments.clone(),
                     };
 

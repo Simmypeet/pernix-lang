@@ -13,7 +13,7 @@ use crate::{
         normalizer::NoOp,
         session::{self, Limit},
         simplify::simplify,
-        term::r#type::Type,
+        term::r#type::{self, Type},
         Environment,
     },
     symbol::{
@@ -23,7 +23,7 @@ use crate::{
                     finalizer::build_preset, occurrences::Occurrences,
                     Finalizer,
                 },
-                RwLockContainer,
+                Index, RwLockContainer,
             },
             resolution, Building, Table,
         },
@@ -76,7 +76,158 @@ impl Finalize for Function {
                 handler,
             ),
 
-            SIGNATURE_STATE => {}
+            SIGNATURE_STATE => {
+                // build the parameters
+                for parameter in syntax_tree
+                    .signature()
+                    .parameters()
+                    .parameter_list()
+                    .iter()
+                    .flat_map(ConnectedList::elements)
+                {
+                    let parameter_ty = table
+                        .resolve_type(
+                            parameter.r#type(),
+                            symbol_id.into(),
+                            resolution::Config {
+                                ellided_lifetime_provider: None,
+                                ellided_type_provider: None,
+                                ellided_constant_provider: None,
+                                observer: Some(data),
+                                higher_ranked_liftimes: None,
+                            },
+                            handler,
+                        )
+                        .unwrap_or(r#type::Type::default());
+
+                    let mut function_write = table
+                        .representation
+                        .functions
+                        .get(symbol_id)
+                        .unwrap()
+                        .write();
+
+                    let parameter_id =
+                        function_write.parameters.insert(Parameter {
+                            r#type: parameter_ty,
+                            span: Some(parameter.span()),
+                        });
+                    function_write.parameter_order.push(parameter_id);
+                }
+
+                // build the return type
+                {
+                    let return_ty = syntax_tree
+                        .signature()
+                        .return_type()
+                        .as_ref()
+                        .map_or_else(Type::default, |ty| {
+                            table
+                                .resolve_type(
+                                    ty.r#type(),
+                                    symbol_id.into(),
+                                    resolution::Config {
+                                        ellided_lifetime_provider: None,
+                                        ellided_type_provider: None,
+                                        ellided_constant_provider: None,
+                                        observer: Some(data),
+                                        higher_ranked_liftimes: None,
+                                    },
+                                    handler,
+                                )
+                                .unwrap_or_default()
+                        });
+
+                    table
+                        .representation
+                        .functions
+                        .get(symbol_id)
+                        .unwrap()
+                        .write()
+                        .return_type = return_ty
+                }
+
+                // build the occurrences
+                data.build_all_occurrences_to::<build_preset::Complete>(
+                    table,
+                    symbol_id.into(),
+                    false,
+                    handler,
+                );
+
+                // simplify the parameter types
+                let mut session = session::Default::default();
+                {
+                    let parameter_ids = {
+                        let function_sym = table.get(symbol_id.into()).unwrap();
+
+                        function_sym
+                            .parameters
+                            .iter()
+                            .map(|(id, parameter)| {
+                                (id, parameter.r#type.clone())
+                            })
+                            .collect::<Vec<_>>()
+                    };
+
+                    for (parameter_id, parameter_ty) in parameter_ids {
+                        if let Ok(simplified) = simplify(
+                            &parameter_ty,
+                            &Environment {
+                                premise: &table
+                                    .get_active_premise(symbol_id.into())
+                                    .unwrap(),
+                                table,
+                                normalizer: &NoOp,
+                            },
+                            &mut Limit::new(&mut session),
+                        ) {
+                            let mut function_write = table
+                                .representation
+                                .functions
+                                .get(symbol_id)
+                                .unwrap()
+                                .write();
+
+                            function_write
+                                .parameters
+                                .get_mut(parameter_id)
+                                .unwrap()
+                                .r#type = simplified;
+                        }
+                    }
+                }
+
+                // simplify the return type
+                {
+                    let return_ty = {
+                        let function_sym = table.get(symbol_id.into()).unwrap();
+
+                        function_sym.return_type.clone()
+                    };
+
+                    if let Ok(simplified) = simplify(
+                        &return_ty,
+                        &Environment {
+                            premise: &table
+                                .get_active_premise(symbol_id.into())
+                                .unwrap(),
+                            table,
+                            normalizer: &NoOp,
+                        },
+                        &mut Limit::new(&mut session),
+                    ) {
+                        let mut function_write = table
+                            .representation
+                            .functions
+                            .get(symbol_id)
+                            .unwrap()
+                            .write();
+
+                        function_write.return_type = simplified;
+                    }
+                }
+            }
 
             DEFINITION_AND_CHECK_STATE => {
                 // build the parameters and return type on the local first to

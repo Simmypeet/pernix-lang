@@ -916,7 +916,7 @@ where
                 };
 
                 // resolve for the appropriate trait-implementation
-                let Ok(mut result) = predicate::resolve_implementation(
+                let Ok(result) = predicate::resolve_implementation(
                     trait_id,
                     &trait_member.parent_generic_arguments,
                     environment,
