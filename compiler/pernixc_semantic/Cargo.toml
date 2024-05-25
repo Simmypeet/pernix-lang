@@ -25,6 +25,8 @@ bitflags = { workspace = true }
 typestate = { workspace = true }
 enum_dispatch = { workspace = true }
 static_assertions = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

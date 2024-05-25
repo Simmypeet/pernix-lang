@@ -1694,9 +1694,10 @@ pub fn build(
 ) -> Result<Table<Success>, BuildTableError> {
     let handler = HandlerAdaptor { handler, received: RwLock::new(false) };
 
-    let building_table =
+    let mut building_table =
         transition_to_building(draft_table(targets, &handler)?, &handler);
 
+    building_table.initialize_core();
     building_table.build_all(&handler);
 
     // unwrap mutexes and convert to the final table

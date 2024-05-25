@@ -1058,10 +1058,22 @@ pub type AdtImplementationConstant = GenericTemplate<
 
 /// A template struct representing all kinds of function declarations.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, Deref, DerefMut, Getters, CopyGetters,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Deref,
+    DerefMut,
+    Getters,
+    CopyGetters,
+    derive_more::Index,
+    derive_more::IndexMut,
 )]
 pub struct FunctionTemplate<Definition> {
     /// The parameters of the function.
+    #[index]
+    #[index_mut]
     #[get = "pub"]
     parameters: Arena<Parameter>,
 
@@ -1078,13 +1090,51 @@ pub struct FunctionTemplate<Definition> {
     pub definition: Definition,
 }
 
+impl<Definition> FunctionTemplate<Definition> {
+    /// Iterates through the parameters of the function and their IDs in order.
+    pub fn parameter_as_order(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (ID<Parameter>, &'_ Parameter)> {
+        self.parameter_order
+            .iter()
+            .copied()
+            .map(|id| (id, self.parameters.get(id).unwrap()))
+    }
+
+    /// Iterates through the IDs of the parameters of the function in order.
+    pub fn parameter_ids(&self) -> impl Iterator<Item = ID<Parameter>> + '_ {
+        self.parameter_order.iter().copied()
+    }
+
+    /// Inserts a new parameter to the function.
+    pub fn insert_parameter(&mut self, parameter: Parameter) -> ID<Parameter> {
+        let id = self.parameters.insert(parameter);
+        self.parameter_order.push(id);
+        id
+    }
+}
+
 /// An enumeration of all compiler intrinsics functions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Intrinsics {
-    /// `memcpy` the memory address stored in the given parameter id. This is
-    /// primarily used in the `core::Copy` trait implementation for primitive
+    /// `memcpy` from the reference stored im the first parameter and returns
+    /// it.
+    ///
+    /// This primarily used for `core::Copy` trait implementation for primitive
     /// types.
-    Memcpy(ID<Parameter>),
+    Memcpy,
+
+    /// Invokes each `core::Copy` trait implementation for each element in the
+    /// array and returns the copied array.
+    ///
+    /// This is used for `core::Copy` trait implementation for array types.
+    ArrayCopy,
+
+    /// Invokes each `core::Copy` trait implementation for each element in
+    /// the tuple and returns the copied tuple.
+    ///
+    /// This is used for `core::Copy` trait implementation for tuple types.
+    TupleCopy,
 }
 
 /// Represents an intermediate representation of the function.
@@ -1233,23 +1283,38 @@ pub type NegativeTraitImplementation = GenericTemplate<
     ImplementationTemplate<ID<Trait>, NegativeTraitImplementationDefinition>,
 >;
 
+/// Contains the data for the trait implementation function declaration.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TraitImplementationFunctionDefinition {
+    /// The intermediate representation of the function.
+    pub ir: FunctionIR,
+}
+
+/// Contains the data for the trait implementation type declaration.
+pub type TraitImplementationTypeDefinition = TypeDefinition;
+
+/// Contains the data for the trait implementation constant declaration.
+pub type TraitImplementationConstantDefinition = ConstantDefinition;
+
 /// Represents a function declaration as an implements member, denoted by
 /// `function NAME(...) {...}` syntax.
 pub type TraitImplementationFunction = GenericTemplate<
     ID<PositiveTraitImplementation>,
-    FunctionTemplate<FunctionDefinition>,
+    FunctionTemplate<TraitImplementationFunctionDefinition>,
 >;
 
 /// Represents a type declaration as an implements member, denoted by `type NAME
 /// = TYPE;` syntax.
-pub type TraitImplementationType =
-    GenericTemplate<ID<PositiveTraitImplementation>, TypeDefinition>;
+pub type TraitImplementationType = GenericTemplate<
+    ID<PositiveTraitImplementation>,
+    TraitImplementationTypeDefinition,
+>;
 
 /// Represents a constant declaration as an implements member, denoted by `const
 /// NAME: TYPE` syntax.
 pub type TraitImplementationConstant = GenericTemplate<
     ID<PositiveTraitImplementation>,
-    ConstantTemplate<ConstantDefinition>,
+    ConstantTemplate<TraitImplementationConstantDefinition>,
 >;
 
 /// An ID to all kinds of symbols that can be defined in a adt implementation.

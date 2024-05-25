@@ -39,7 +39,9 @@ impl<
         T: State,
         N: Normalizer<U::Model>,
         R: Session<Lifetime<U::Model>>
-            + Session<Type<U::Model>> + Session<Constant<U::Model>> + Session<U>,
+            + Session<Type<U::Model>>
+            + Session<Constant<U::Model>>
+            + Session<U>,
     > Mutable<U> for Visitor<'a, 'r, 'l, T, N, R, U::Model>
 {
     fn visit(

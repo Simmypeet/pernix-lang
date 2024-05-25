@@ -7,6 +7,7 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
+use strum_macros::EnumIter;
 
 use super::{
     constant::Constant, lifetime::Lifetime, GenericArguments, Local,
@@ -169,6 +170,7 @@ pub struct Array<M: Model> {
     Hash,
     EnumAsInner,
     derive_more::Display,
+    EnumIter,
 )]
 #[allow(missing_docs)]
 pub enum Primitive {
