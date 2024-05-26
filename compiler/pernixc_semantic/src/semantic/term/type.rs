@@ -1493,6 +1493,11 @@ impl<T: State, M: Model> table::Display<T> for Type<M> {
             Self::Reference(reference) => {
                 write!(f, "&")?;
 
+                write!(f, "{} ", DisplayObject {
+                    table,
+                    display: &reference.lifetime
+                })?;
+
                 match reference.qualifier {
                     Qualifier::Immutable => {}
                     Qualifier::Mutable => {
@@ -1503,16 +1508,12 @@ impl<T: State, M: Model> table::Display<T> for Type<M> {
                     }
                 }
 
-                write!(f, "{} ", DisplayObject {
-                    table,
-                    display: &reference.lifetime
-                })?;
-
                 write!(f, "{}", DisplayObject {
                     table,
                     display: &*reference.pointee
                 })
             }
+
             Self::Array(array) => {
                 write!(
                     f,

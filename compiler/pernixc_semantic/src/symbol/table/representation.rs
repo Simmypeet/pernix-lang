@@ -1564,6 +1564,8 @@ fn transition_to_building(
     >,
     handler: &dyn Handler<Box<dyn error::Error>>,
 ) -> Table<Building<RwLockContainer, building::finalizing::Finalizer>> {
+    drafting_table.initialize_core();
+
     let usings_by_module_id =
         std::mem::take(&mut drafting_table.state.usings_by_module_id);
     let implementations_by_module_id =
@@ -1694,10 +1696,9 @@ pub fn build(
 ) -> Result<Table<Success>, BuildTableError> {
     let handler = HandlerAdaptor { handler, received: RwLock::new(false) };
 
-    let mut building_table =
+    let building_table =
         transition_to_building(draft_table(targets, &handler)?, &handler);
 
-    building_table.initialize_core();
     building_table.build_all(&handler);
 
     // unwrap mutexes and convert to the final table

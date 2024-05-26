@@ -52,6 +52,7 @@ impl Finalize for Type {
                 data,
                 handler,
             ),
+
             WHERE_CLAUSE_STATE => {
                 table.create_where_clause_predicates(
                     symbol_id,
@@ -60,6 +61,7 @@ impl Finalize for Type {
                     handler,
                 );
             }
+
             COMPLETE_STATE => {
                 let ty = table
                     .resolve_type(

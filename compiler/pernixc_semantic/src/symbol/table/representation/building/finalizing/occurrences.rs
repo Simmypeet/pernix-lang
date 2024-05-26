@@ -7,7 +7,7 @@ use pernixc_syntax::syntax_tree::{self, GenericIdentifier};
 use super::finalizer::build_preset::{self, BuildPreset};
 use crate::{
     error,
-    semantic::{model::Default, predicate, term},
+    semantic::{model::Default, term},
     symbol::{
         table::{
             representation::{
@@ -52,10 +52,6 @@ pub struct Occurrences {
     #[get = "pub"]
     constant_types:
         Vec<(term::r#type::Type<Default>, syntax_tree::r#type::Type)>,
-
-    #[get = "pub"]
-    trait_predicates:
-        Vec<(predicate::Trait<Default>, syntax_tree::QualifiedIdentifier)>,
 }
 
 impl Occurrences {
@@ -106,13 +102,8 @@ impl Occurrences {
             global_ids.extend(ty.get_global_id_dependencies(table)?);
         }
 
-        for (predicate, _) in &self.trait_predicates {
-            global_ids.push(predicate.id.into());
-            global_ids.extend(
-                predicate
-                    .generic_arguments
-                    .get_global_id_dependencies(table)?,
-            );
+        for (resolution, _) in &self.resolutions {
+            global_ids.push(resolution.global_id())
         }
 
         global_ids.sort_unstable();
@@ -128,15 +119,6 @@ impl Occurrences {
         syntax_tree: syntax_tree::r#type::Type,
     ) {
         self.constant_types.push((ty, syntax_tree));
-    }
-
-    /// Add a trait predicate.
-    pub fn add_trait_predicate(
-        &mut self,
-        predicate: predicate::Trait<Default>,
-        syntax_tree: syntax_tree::QualifiedIdentifier,
-    ) {
-        self.trait_predicates.push((predicate, syntax_tree));
     }
 }
 

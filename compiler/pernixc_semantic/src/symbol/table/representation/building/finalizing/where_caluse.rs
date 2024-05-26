@@ -207,29 +207,19 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     generic_arguments,
                 }) => {
                     // make sure the trait is built to have the where clause
-                    match self.build_to::<Trait>(
+                    let _ = self.build_to::<Trait>(
                         trait_id,
                         Some(generic_id.into()),
                         r#trait::WHERE_CLAUSE_STATE,
                         true,
                         handler,
-                    ) {
-                        Ok(()) => {}
-                        Err(_) => {
-                            continue;
-                        }
-                    }
+                    );
 
                     let trait_predicate = predicate::Trait {
                         id: trait_id,
                         is_const: syntax_tree.const_keyword().is_some(),
                         generic_arguments: generic_arguments.clone(),
                     };
-
-                    occurrences.add_trait_predicate(
-                        trait_predicate.clone(),
-                        qualified_identifier.clone(),
-                    );
 
                     T::get_arena(self)
                         .get(generic_id)
