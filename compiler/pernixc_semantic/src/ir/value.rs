@@ -1,12 +1,47 @@
 //! Contains the definition of [`Value`] and its variants.
 
 use enum_as_inner::EnumAsInner;
+use pernixc_base::source_file::Span;
 
 use self::{literal::Literal, register::Register};
-use crate::{arena::ID, semantic::model::Model};
+use super::representation::Representation;
+use crate::{
+    arena::ID,
+    semantic::{model::Model, term::r#type::Type},
+};
 
 pub mod literal;
 pub mod register;
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error("the value doesn't belong to the given IR object")]
+#[allow(missing_docs)]
+pub struct InvalidValueError;
+
+/// A trait for retrieving the type and span of the value.
+pub trait Inspect<M: Model> {
+    /// Returns the type of the value.
+    ///
+    /// # Errors
+    ///
+    /// See [`InvalidValueError`] for more information.
+    fn type_of(
+        &self,
+        ir: &Representation<M>,
+    ) -> Result<Type<M>, InvalidValueError>;
+
+    /// Returns the span of the value.
+    ///
+    /// # Errors
+    ///
+    /// See [`InvalidValueError`] for more information.
+    fn get_span(
+        &self,
+        ir: &Representation<M>,
+    ) -> Result<Option<Span>, InvalidValueError>;
+}
 
 /// Represents a value in the IR.
 ///
@@ -18,11 +53,9 @@ pub mod register;
 ///
 /// For example, the expression `32` is a literal, while the expression
 /// `a + 32` is a register.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Value<M: Model> {
-    Literal(Literal),
+    Literal(Literal<M>),
     Register(ID<Register<M>>),
 }

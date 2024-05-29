@@ -2,6 +2,7 @@
 //! analyzer.
 
 use std::{
+    any::Any,
     collections::HashSet,
     fmt::{self, Debug},
 };
@@ -1061,12 +1062,12 @@ impl<T: State> Display<T> for DefaultGenericParameterMustBeTrailing {
 
 /// The trait member was expected but the non-trait member was found.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitMemberExpected {
+pub struct ExpectedTraitMember {
     /// The span where the non-trait member was found.
     pub non_trait_member_span: Span,
 }
 
-impl<T: State> Display<T> for TraitMemberExpected {
+impl<T: State> Display<T> for ExpectedTraitMember {
     fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
@@ -2040,6 +2041,31 @@ impl<T: State> Display<T> for FoundUnpackedElementInReferenceBoundTupleType {
     }
 }
 
+/// The numeric suffix is unknown.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InvalidNumericSuffix {
+    /// The span of the numeric suffix.
+    pub suffix_span: Span,
+}
+
+impl<T: State> Display<T> for InvalidNumericSuffix {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let suffix_str = self.suffix_span.str();
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!("the numeric suffix `{suffix_str}` is unknown"),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.suffix_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
 /// A particular name has already been bound in the given scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AlreadyBoundName {
@@ -2075,15 +2101,75 @@ impl<T: State> Display<T> for AlreadyBoundName {
     }
 }
 
-/// Implemented by all semantic errors.
-pub trait Error: Debug + Display<Suboptimal> + Send + Sync + 'static {
-    #[allow(missing_docs, clippy::missing_errors_doc)]
-    fn as_display_with_table(&self) -> &dyn Display<Suboptimal>;
+/// Thee numeric expression has a suffix of an integral type but the expression
+/// has decimal point.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FloatingPointLiteralHasIntegralSuffix {
+    /// The span of the numeric literal.
+    pub numeric_literal_span: Span,
 }
 
-impl<U: Debug + Display<Suboptimal> + Send + Sync + 'static> Error for U
+impl<T: State> Display<T> for FloatingPointLiteralHasIntegralSuffix {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the numeric expression has a suffix of an integral type \
+                      but the expression has decimal point",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.numeric_literal_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// Expected an l-value but found an r-value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectedLValue {
+    /// The span of the r-value.
+    pub expression_span: Span,
+}
+
+impl<T: State> Display<T> for ExpectedLValue {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "expected an l-value",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.expression_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// Implemented by all semantic errors.
+pub trait Error:
+    Debug + Display<Suboptimal> + Any + Send + Sync + 'static
+{
+    #[allow(missing_docs, clippy::missing_errors_doc)]
+    fn as_display_with_table(&self) -> &dyn Display<Suboptimal>;
+
+    #[allow(missing_docs)]
+    fn as_any(&self) -> &dyn Any;
+
+    #[allow(missing_docs)]
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+impl<U: Debug + Display<Suboptimal> + Any + Send + Sync + 'static> Error for U
 where
     for<'a> DisplayObject<'a, U, Suboptimal>: fmt::Display,
 {
     fn as_display_with_table(&self) -> &dyn Display<Suboptimal> { self }
+
+    fn as_any(&self) -> &dyn Any { self }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

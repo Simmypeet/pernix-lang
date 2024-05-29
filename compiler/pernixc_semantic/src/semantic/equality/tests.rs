@@ -15,14 +15,12 @@ use crate::{
         normalizer::NoOp,
         predicate::{Equality, Predicate},
         session::{self, ExceedLimitError, Limit, Session},
-        sub_term::TermLocation,
         term::{
             constant::Constant,
             lifetime::Lifetime,
             r#type::{Primitive, SymbolID, TraitMember, Type},
             GenericArguments, Local, Symbol, Term,
         },
-        visitor::Recursive,
         Environment, Premise,
     },
     symbol::{
@@ -513,41 +511,6 @@ where
             Symbol { id: self.id, generic_arguments: rhs_generic_arguments }
                 .into(),
         ))
-    }
-}
-
-struct TermCollector {
-    terms: Vec<Type<Default>>,
-}
-
-impl<'v> Recursive<'v, Lifetime<Default>> for TermCollector {
-    fn visit(
-        &mut self,
-        _: &'v Lifetime<Default>,
-        _: impl Iterator<Item = TermLocation>,
-    ) -> bool {
-        true
-    }
-}
-
-impl<'v> Recursive<'v, Type<Default>> for TermCollector {
-    fn visit(
-        &mut self,
-        term: &'v Type<Default>,
-        _: impl Iterator<Item = TermLocation>,
-    ) -> bool {
-        self.terms.push(term.clone());
-        true
-    }
-}
-
-impl<'v> Recursive<'v, Constant<Default>> for TermCollector {
-    fn visit(
-        &mut self,
-        _: &'v Constant<Default>,
-        _: impl Iterator<Item = TermLocation>,
-    ) -> bool {
-        true
     }
 }
 

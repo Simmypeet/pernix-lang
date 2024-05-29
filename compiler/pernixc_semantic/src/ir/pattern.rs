@@ -57,6 +57,9 @@ pub struct Named<M: Model> {
     pub mutable: bool,
 
     /// The type of the value.
+    ///
+    /// The type is typically the freshened version of the underlying
+    /// [`Self::load_address`] type.
     pub r#type: Type<M>,
 
     /// The span to the identifier of the name binding.

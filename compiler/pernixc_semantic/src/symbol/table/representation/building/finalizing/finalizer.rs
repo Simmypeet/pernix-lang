@@ -4,6 +4,7 @@ use std::{
     collections::{hash_map::Entry, BTreeSet, HashMap, HashSet},
     fmt::Debug,
     hash::Hash,
+    marker::PhantomData,
     sync::{
         atomic::{self, AtomicBool},
         Arc,
@@ -20,8 +21,13 @@ use super::finalize::{Finalize, StateFlag};
 use crate::{
     arena::ID,
     error::{self, CyclicDependency},
+    semantic::model::Model,
     symbol::{
-        table::{representation::RwLockContainer, Building, Table},
+        table::{
+            representation::RwLockContainer,
+            resolution::{self, Resolution},
+            Building, Table,
+        },
         AdtImplementation, AdtImplementationConstant,
         AdtImplementationFunction, AdtImplementationType, Constant, Enum,
         Function, GlobalID, NegativeTraitImplementation,
@@ -981,5 +987,85 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             AdtImplementationFunction,
             AdtImplementationType
         );
+    }
+}
+
+/// The observer used for building the symbols just before resolving them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Observer<T: BuildPreset>(PhantomData<T>);
+
+impl<T: BuildPreset, M: Model>
+    resolution::Observer<Building<RwLockContainer, Finalizer>, M>
+    for Observer<T>
+{
+    fn on_global_id_resolved(
+        &mut self,
+        table: &Table<Building<RwLockContainer, Finalizer>>,
+        referring_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+        global_id: GlobalID,
+        _: &pernixc_lexical::token::Identifier,
+    ) {
+        table.build_preset::<T>(global_id, Some(referring_site), true, handler);
+    }
+
+    fn on_resolution_resolved(
+        &mut self,
+        _: &Table<Building<RwLockContainer, Finalizer>>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &Resolution<M>,
+        _: &pernixc_syntax::syntax_tree::GenericIdentifier,
+    ) {
+    }
+
+    fn on_type_resolved(
+        &mut self,
+        _: &Table<Building<RwLockContainer, Finalizer>>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &crate::semantic::term::r#type::Type<M>,
+        _: &pernixc_syntax::syntax_tree::r#type::Type,
+    ) {
+    }
+
+    fn on_lifetime_resolved(
+        &mut self,
+        _: &Table<Building<RwLockContainer, Finalizer>>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &crate::semantic::term::lifetime::Lifetime<M>,
+        _: &pernixc_syntax::syntax_tree::Lifetime,
+    ) {
+    }
+
+    fn on_constant_arguments_resolved(
+        &mut self,
+        _: &Table<Building<RwLockContainer, Finalizer>>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &crate::semantic::term::constant::Constant<M>,
+        _: &pernixc_syntax::syntax_tree::expression::Expression,
+    ) {
+    }
+
+    fn on_unpacked_type_resolved(
+        &mut self,
+        _: &Table<Building<RwLockContainer, Finalizer>>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &crate::semantic::term::r#type::Type<M>,
+        _: &pernixc_syntax::syntax_tree::r#type::Type,
+    ) {
+    }
+
+    fn on_unpacked_constant_resolved(
+        &mut self,
+        _: &Table<Building<RwLockContainer, Finalizer>>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &crate::semantic::term::constant::Constant<M>,
+        _: &pernixc_syntax::syntax_tree::expression::Expression,
+    ) {
     }
 }

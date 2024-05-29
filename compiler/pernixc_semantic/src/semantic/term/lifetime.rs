@@ -202,6 +202,7 @@ where
 {
     type GenericParameter = LifetimeParameter;
     type TraitMember = Never;
+    type InferenceVariable = M::LifetimeInference;
     type Rebind<Ms: Model> = Lifetime<Ms>;
 
     fn normalize(
@@ -267,6 +268,27 @@ where
     fn as_tuple_mut(&mut self) -> Option<&mut Tuple<Self>> { None }
 
     fn into_tuple(self) -> Result<Tuple<Self>, Self> { Err(self) }
+
+    fn as_inference(&self) -> Option<&Self::InferenceVariable> {
+        match self {
+            Self::Inference(inference) => Some(inference),
+            _ => None,
+        }
+    }
+
+    fn as_inference_mut(&mut self) -> Option<&mut Self::InferenceVariable> {
+        match self {
+            Self::Inference(inference) => Some(inference),
+            _ => None,
+        }
+    }
+
+    fn into_inference(self) -> Result<Self::InferenceVariable, Self> {
+        match self {
+            Self::Inference(inference) => Ok(inference),
+            _ => Err(self),
+        }
+    }
 
     fn get_adt_fields(&self, _: &Table<impl State>) -> Option<Vec<Self>> {
         None

@@ -15,7 +15,7 @@ use super::{
 use crate::{
     arena::ID,
     error::{
-        self, ExpectTrait, RedefinedHigherRankedLifetime, TraitMemberExpected,
+        self, ExpectTrait, ExpectedTraitMember, RedefinedHigherRankedLifetime,
     },
     semantic::{
         instantiation::Instantiation,
@@ -96,7 +96,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             }
 
             _ => {
-                handler.receive(Box::new(TraitMemberExpected {
+                handler.receive(Box::new(ExpectedTraitMember {
                     non_trait_member_span: syntax_tree
                         .qualified_identifier()
                         .span(),

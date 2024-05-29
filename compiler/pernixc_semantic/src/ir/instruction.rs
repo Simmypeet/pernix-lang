@@ -33,7 +33,7 @@ pub struct UnconditionalJump {
 }
 
 /// Represents a jump to another block conditionally.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConditionalJump<M: Model> {
     /// The condition of the jump.
     pub condition: Value<M>,
@@ -46,7 +46,7 @@ pub struct ConditionalJump<M: Model> {
 }
 
 /// An enumeration containing all kinds of jump instructions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Jump<M: Model> {
     Unconditional(UnconditionalJump),
@@ -54,7 +54,7 @@ pub enum Jump<M: Model> {
 }
 
 /// Represents a return instruction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Return<M: Model> {
     /// The value to return.
     pub value: Value<M>,
@@ -67,9 +67,12 @@ pub struct RegisterAssignment<M: Model> {
     pub id: ID<Register<M>>,
 }
 
-/// An instruction that stores a value to the given memory address.
+/// An instruction that initializes a memory location with a value.
+///
+/// This is instruction is typically translated from a `let` statement in the
+/// source code.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Store<M: Model> {
+pub struct Initialize<M: Model> {
     /// The address where the value will be stored.
     pub address: Address<M>,
 
@@ -115,7 +118,7 @@ pub struct TuplePack<M: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Basic<M: Model> {
-    Store(Store<M>),
+    Initialize(Initialize<M>),
     RegisterAssignment(RegisterAssignment<M>),
     AllocaAllocation(AllocaAllocation<M>),
     TuplePack(TuplePack<M>),

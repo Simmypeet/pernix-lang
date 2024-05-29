@@ -488,6 +488,82 @@ pub trait Observer<T: State, M: Model>: Debug {
     );
 }
 
+/// The struct implementing the [`Observer`] trait that does nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct NoOpObserver;
+
+impl<T: State, M: Model> Observer<T, M> for NoOpObserver {
+    fn on_global_id_resolved(
+        &mut self,
+        _: &Table<T>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: GlobalID,
+        _: &Identifier,
+    ) {
+    }
+
+    fn on_resolution_resolved(
+        &mut self,
+        _: &Table<T>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &Resolution<M>,
+        _: &GenericIdentifier,
+    ) {
+    }
+
+    fn on_type_resolved(
+        &mut self,
+        _: &Table<T>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &r#type::Type<M>,
+        _: &syntax_tree::r#type::Type,
+    ) {
+    }
+
+    fn on_lifetime_resolved(
+        &mut self,
+        _: &Table<T>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &Lifetime<M>,
+        _: &syntax_tree::Lifetime,
+    ) {
+    }
+
+    fn on_constant_arguments_resolved(
+        &mut self,
+        _: &Table<T>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &constant::Constant<M>,
+        _: &syntax_tree::expression::Expression,
+    ) {
+    }
+
+    fn on_unpacked_type_resolved(
+        &mut self,
+        _: &Table<T>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &r#type::Type<M>,
+        _: &syntax_tree::r#type::Type,
+    ) {
+    }
+
+    fn on_unpacked_constant_resolved(
+        &mut self,
+        _: &Table<T>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &constant::Constant<M>,
+        _: &syntax_tree::expression::Expression,
+    ) {
+    }
+}
+
 /// The configuration struct specifying the behaviour of the resolution process.
 #[derive(Debug)]
 pub struct Config<'lp, 'tp, 'cp, 'ob, 'hrlt, S: State, M: Model> {

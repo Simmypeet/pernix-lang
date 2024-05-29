@@ -1849,7 +1849,7 @@ impl<T: Container> Representation<T> {
     #[allow(private_bounds)]
     pub fn insert_implementation<
         Definition,
-        Implemented: symbol::ImplementedSealed,
+        Implemented: symbol::ImplementedSealed + Element + Global,
         ImplementedID: Copy + From<ID<Implemented>>,
     >(
         &mut self,
@@ -1880,8 +1880,6 @@ impl<T: Container> Representation<T> {
             ID<Module>,
             ImplementationTemplate<ImplementedID, Definition>,
         >: Element,
-
-        Implemented: Element + Global,
 
         ID<Implemented>: Into<GlobalID>,
     {
@@ -1934,7 +1932,7 @@ impl<T: Container> Representation<T> {
     #[allow(private_bounds)]
     pub fn insert_member<
         Definition,
-        Parent: symbol::ParentSealed,
+        Parent: symbol::ParentSealed + Element,
         ParentID: Copy + From<ID<Parent>>,
     >(
         &mut self,
@@ -1950,7 +1948,6 @@ impl<T: Container> Representation<T> {
     where
         ID<GenericTemplate<ParentID, Definition>>: Into<Parent::MemberID>,
         GenericTemplate<ParentID, Definition>: Element,
-        Parent: Element,
     {
         // the given `parent_id` does not exist, fatal error
         if self.get(parent_id).is_none() {

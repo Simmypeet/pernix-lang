@@ -53,3 +53,4 @@ pub enum Address<M: Model> {
     /// The address is stored in a value.
     Value(Value<M>),
 }
+

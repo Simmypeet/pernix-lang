@@ -132,8 +132,10 @@ pub enum KeywordKind {
     Ref,
 }
 
-impl ToString for KeywordKind {
-    fn to_string(&self) -> String { self.as_str().to_string() }
+impl std::fmt::Display for KeywordKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 /// Is an error that is returned when a string cannot be parsed into a

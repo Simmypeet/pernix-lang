@@ -20,7 +20,7 @@ use crate::{
         alloca::Alloca,
         control_flow_graph::Block,
         instruction::{
-            self, AllocaAllocation, Basic, RegisterAssignment, Store,
+            self, AllocaAllocation, Basic, Initialize, RegisterAssignment,
         },
         pattern::{
             self, Irrefutable, Named, RegularTupleBinding, Structural, Wildcard,
@@ -102,18 +102,29 @@ where
 {
     fn create_reference_bound_named_pattern(
         &mut self,
-        mut pointee: Type<M>,
+        mut address_type: Type<M>,
         qualifier: Qualifier,
         span: Span,
         address: &Address<M>,
         identifier: &Identifier,
         mutable: bool,
     ) -> Named<M> {
-        fresh::replace_with_fresh_lifeteime_inference(&mut pointee);
-        let alloca_ty = Type::Reference(Reference {
+        // address_type <= alloca_type <= named_type
+        let register_id = self.register_reserved.reserve(
+            Register::ReferenceOf(ReferenceOf {
+                address: address.clone(),
+                address_type: address_type.clone(),
+                qualifier,
+                span: None,
+                lifetime: Lifetime::Inference(M::LifetimeInference::fresh()),
+            }),
+        );
+
+        fresh::replace_with_fresh_lifeteime_inference(&mut address_type);
+        let mut alloca_ty = Type::Reference(Reference {
             qualifier,
             lifetime: Lifetime::Inference(M::LifetimeInference::fresh()),
-            pointee: Box::new(pointee),
+            pointee: Box::new(address_type),
         });
 
         let alloca_id = self
@@ -122,32 +133,28 @@ where
 
         // create a register that holds the reference of the
         // value
-        let register_id = self.register_reserved.reserve(
-            Register::ReferenceOf(ReferenceOf {
-                address: address.clone(),
-                qualifier,
-                span: None,
-                lifetime: Lifetime::Inference(M::LifetimeInference::fresh()),
-            }),
-        );
-
         self.new_instructions.push(instruction::Basic::AllocaAllocation(
             AllocaAllocation { id: alloca_id },
         ));
         self.new_instructions.push(instruction::Basic::RegisterAssignment(
             RegisterAssignment { id: register_id },
         ));
-        self.new_instructions.push(instruction::Basic::Store(Store {
-            address: Address::Alloca(alloca_id),
-            value: Value::Register(register_id),
-        }));
+        self.new_instructions.push(instruction::Basic::Initialize(
+            Initialize {
+                address: Address::Alloca(alloca_id),
+                value: Value::Register(register_id),
+            },
+        ));
 
         Named {
             name: identifier.span.str().to_owned(),
             load_address: Address::Alloca(alloca_id),
             mutable,
             span: Some(identifier.span.clone()),
-            r#type: alloca_ty,
+            r#type: {
+                fresh::replace_with_fresh_lifeteime_inference(&mut alloca_ty);
+                alloca_ty
+            },
         }
     }
 
@@ -169,6 +176,7 @@ where
                     let register =
                         self.register_reserved.reserve(Register::Load(Load {
                             address: address.clone(),
+                            address_type: current_ty.clone(),
                             kind: LoadKind::Copy,
                             span: None,
                         }));
@@ -578,12 +586,14 @@ where
                     }?;
 
                     let packed_element = {
-                        let ty = tuple_ty
+                        let mut ty = tuple_ty
                             .elements
                             .get(unpacked_position)
                             .unwrap()
                             .as_unpacked()
-                            .unwrap();
+                            .unwrap()
+                            .clone();
+                        fresh::replace_with_fresh_lifeteime_inference(&mut ty);
 
                         // create a new alloca where all the unpacked elements
                         // will be stoered.
@@ -617,7 +627,7 @@ where
                             tuple_element_patterns
                                 .get(unpacked_position)
                                 .unwrap(),
-                            TypeBinding::Value(ty),
+                            TypeBinding::Value(&ty),
                             &Address::Alloca(alloca_id),
                             referring_site,
                             handler,
@@ -758,7 +768,7 @@ where
         // remove the instructions that are involved in the removed allocas and
         // registers
         new_instructions.retain(|inst| match inst {
-            Basic::Store(store) => {
+            Basic::Initialize(store) => {
                 !to_be_removed_alloca_ids
                     .iter()
                     .any(|x| store.address.contains_alloca_id(*x))

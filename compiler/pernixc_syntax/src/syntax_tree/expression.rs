@@ -2,6 +2,7 @@
 
 #![allow(missing_docs)]
 
+use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_base::{
     diagnostic::{Dummy, Handler},
@@ -30,7 +31,7 @@ use crate::{
 ///     | Brace
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Expression {
     Binary(Binary),
     Terminator(Terminator),
@@ -714,7 +715,7 @@ impl SourceElement for Phantom {
 ///     | Phantom
 ///    ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Unit {
     Boolean(Boolean),
     Numeric(Numeric),
@@ -908,7 +909,7 @@ impl SourceElement for Postfix {
 ///     | Postfix
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Postfixable {
     Unit(Unit),
     Postfix(Postfix),
@@ -1035,7 +1036,7 @@ impl SourceElement for Prefix {
 ///     | Prefix
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Prefixable {
     Postfixable(Postfixable),
     Prefix(Prefix),
@@ -1195,6 +1196,16 @@ pub struct Binary {
     first: Box<Prefixable>,
     #[get = "pub"]
     chain: Vec<(BinaryOperator, Prefixable)>,
+}
+
+impl Binary {
+    /// Destructs the binary into its components
+    #[must_use]
+    pub fn destruct(
+        self,
+    ) -> (Box<Prefixable>, Vec<(BinaryOperator, Prefixable)>) {
+        (self.first, self.chain)
+    }
 }
 
 impl SourceElement for Binary {

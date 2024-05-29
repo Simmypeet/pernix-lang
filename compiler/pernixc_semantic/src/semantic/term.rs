@@ -313,6 +313,19 @@ pub trait Term:
     /// The type of trait member symbol that stores this term kind.
     type TraitMember: Debug + Eq + Hash + Sized + Clone + Ord + 'static;
 
+    /// The inference variable type of this term kind.
+    type InferenceVariable: Debug
+        + Clone
+        + PartialEq
+        + Eq
+        + PartialOrd
+        + Ord
+        + Hash
+        + 'static
+        + Send
+        + Sync
+        + Into<Self>;
+
     /// Rebinds this kind of term to another model.
     type Rebind<M: Model>: Term<Model = M>;
 
@@ -388,6 +401,15 @@ pub trait Term:
 
     #[doc(hidden)]
     fn into_tuple(self) -> Result<Tuple<Self>, Self>;
+
+    #[doc(hidden)]
+    fn as_inference(&self) -> Option<&Self::InferenceVariable>;
+
+    #[doc(hidden)]
+    fn as_inference_mut(&mut self) -> Option<&mut Self::InferenceVariable>;
+
+    #[doc(hidden)]
+    fn into_inference(self) -> Result<Self::InferenceVariable, Self>;
 
     #[doc(hidden)]
     fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>>;

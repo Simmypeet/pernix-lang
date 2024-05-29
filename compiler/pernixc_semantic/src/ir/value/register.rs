@@ -7,12 +7,15 @@ use crate::{
     ir::address::Address,
     semantic::{
         model::Model,
-        term::{lifetime::Lifetime, r#type::Qualifier},
+        term::{
+            lifetime::Lifetime,
+            r#type::{Qualifier, Type},
+        },
     },
 };
 
 /// Represents an element of a [`Tuple`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum TupleElement<M: Model> {
     Regular(Value<M>),
@@ -38,7 +41,7 @@ impl<M: Model> TupleElement<M> {
 
     /// Consumes the element and returns the value.
     #[must_use]
-    pub const fn into_value(self) -> Value<M> {
+    pub fn into_value(self) -> Value<M> {
         match self {
             Self::Regular(value) | Self::Unpacked(value) => value,
         }
@@ -72,6 +75,9 @@ pub struct Load<M: Model> {
     /// The address where the value is stored and will be read from.
     pub address: Address<M>,
 
+    /// The type of the value stored at the address.
+    pub address_type: Type<M>,
+
     /// The kind of load.
     pub kind: LoadKind,
 
@@ -84,6 +90,9 @@ pub struct Load<M: Model> {
 pub struct ReferenceOf<M: Model> {
     /// The address to the value.
     pub address: Address<M>,
+
+    /// The type of the value stored at the address.
+    pub address_type: Type<M>,
 
     /// The qualfier of the reference.
     pub qualifier: Qualifier,

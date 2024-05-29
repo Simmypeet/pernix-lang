@@ -5,7 +5,7 @@ use super::Finalize;
 use crate::{
     arena::ID,
     error,
-    ir::representation::building::Binder,
+    ir::representation::building::binder::Binder,
     semantic::{
         normalizer::NoOp,
         session::{self, Limit},
@@ -17,7 +17,11 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::build_preset, occurrences::Occurrences,
+                    finalizer::{
+                        self,
+                        build_preset::{self, Complete},
+                    },
+                    occurrences::Occurrences,
                     Finalizer,
                 },
                 Index, RwLockContainer,
@@ -251,13 +255,19 @@ impl Finalize for Function {
                         .map(|x| x.irrefutable_pattern())
                         .collect::<Vec<_>>();
 
-                    let mut binder = Binder::new(
+                    let mut binder = Binder::new_function(
                         table,
+                        finalizer::Observer::<Complete>::default(),
                         symbol_id,
                         irrefutable_patterns.into_iter(),
                         syntax_tree.const_keyword().is_some(),
                         handler,
-                    );
+                    )
+                    .unwrap();
+
+                    for statement in syntax_tree.body().statements() {
+                        binder.bind_statement(statement);
+                    }
                 }
             }
 

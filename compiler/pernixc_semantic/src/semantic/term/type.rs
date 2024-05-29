@@ -870,6 +870,7 @@ where
 {
     type GenericParameter = TypeParameter;
     type TraitMember = TraitMember<M>;
+    type InferenceVariable = M::TypeInference;
     type Rebind<Ms: Model> = Type<Ms>;
 
     #[allow(clippy::too_many_lines)]
@@ -1185,6 +1186,27 @@ where
     fn into_tuple(self) -> Result<Tuple<M>, Self> {
         match self {
             Self::Tuple(tuple) => Ok(tuple),
+            _ => Err(self),
+        }
+    }
+
+    fn as_inference(&self) -> Option<&Self::InferenceVariable> {
+        match self {
+            Self::Inference(inference) => Some(inference),
+            _ => None,
+        }
+    }
+
+    fn as_inference_mut(&mut self) -> Option<&mut Self::InferenceVariable> {
+        match self {
+            Self::Inference(inference) => Some(inference),
+            _ => None,
+        }
+    }
+
+    fn into_inference(self) -> Result<Self::InferenceVariable, Self> {
+        match self {
+            Self::Inference(inference) => Ok(inference),
             _ => Err(self),
         }
     }

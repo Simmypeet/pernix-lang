@@ -533,6 +533,7 @@ where
 {
     type GenericParameter = ConstantParameter;
     type TraitMember = Never;
+    type InferenceVariable = M::ConstantInference;
     type Rebind<Ms: Model> = Constant<Ms>;
 
     fn normalize(
@@ -596,6 +597,27 @@ where
     fn into_tuple(self) -> Result<Tuple<M>, Self> {
         match self {
             Self::Tuple(tuple) => Ok(tuple),
+            x => Err(x),
+        }
+    }
+
+    fn as_inference(&self) -> Option<&Self::InferenceVariable> {
+        match self {
+            Self::Inference(inference) => Some(inference),
+            _ => None,
+        }
+    }
+
+    fn as_inference_mut(&mut self) -> Option<&mut Self::InferenceVariable> {
+        match self {
+            Self::Inference(inference) => Some(inference),
+            _ => None,
+        }
+    }
+
+    fn into_inference(self) -> Result<Self::InferenceVariable, Self> {
+        match self {
+            Self::Inference(inference) => Ok(inference),
             x => Err(x),
         }
     }

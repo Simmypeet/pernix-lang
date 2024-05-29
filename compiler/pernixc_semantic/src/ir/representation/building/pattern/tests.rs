@@ -132,7 +132,8 @@ impl Representation<SimpleModel> {
             .unwrap();
 
         assert!(block.instructions().iter().any(|instruction| {
-            let Instruction::Basic(Basic::Store(store)) = instruction else {
+            let Instruction::Basic(Basic::Initialize(store)) = instruction
+            else {
                 return false;
             };
 
@@ -473,7 +474,9 @@ fn reference_bound_struct() {
                 return None;
             };
 
-            if load.address == Address::Alloca(struct_alloca_id) {
+            if load.address == Address::Alloca(struct_alloca_id)
+                && load.address_type == reference_struct_ty
+            {
                 Some(idx)
             } else {
                 None
@@ -615,7 +618,7 @@ fn reference_bound_tuple() {
     let (table, referring_site) = create_table();
 
     let pattern = create_pattern(REFERENCE_BOUND_TUPLE);
-    let tuple_ty = Type::Reference(Reference {
+    let reference_tuple_ty = Type::Reference(Reference {
         qualifier: Qualifier::Mutable,
         lifetime: Lifetime::Static,
         pointee: Box::new(Type::Tuple(Tuple {
@@ -628,7 +631,7 @@ fn reference_bound_tuple() {
 
     let tuple_alloca_id = representation
         .allocas
-        .insert(Alloca { r#type: tuple_ty.clone(), span: None });
+        .insert(Alloca { r#type: reference_tuple_ty.clone(), span: None });
 
     let counter = Counter::default();
 
@@ -636,7 +639,7 @@ fn reference_bound_tuple() {
         .create_irrefutable(
             &table,
             &pattern,
-            &tuple_ty,
+            &reference_tuple_ty,
             &Address::Alloca(tuple_alloca_id),
             representation.control_flow_graph.entry_block_id(),
             referring_site.into(),
@@ -659,7 +662,9 @@ fn reference_bound_tuple() {
                 return None;
             };
 
-            if load.address == Address::Alloca(tuple_alloca_id) {
+            if load.address == Address::Alloca(tuple_alloca_id)
+                && load.address_type == reference_tuple_ty
+            {
                 Some(idx)
             } else {
                 None

@@ -241,6 +241,7 @@ pub trait Implemented {
 
 trait ImplementedSealed: Implemented {
     /// The list of implementations on the symbol.
+    #[allow(unused)]
     fn implementations(&self) -> &HashSet<Self::ImplementationID>;
 
     /// The list of implementations on the symbol.
@@ -263,6 +264,7 @@ pub trait Parent {
 
 trait ParentSealed: Parent {
     /// Maps the name of the member to its ID.
+    #[allow(unused)]
     fn member_ids_by_name(&self) -> &HashMap<String, Self::MemberID>;
 
     /// Maps the name of the member to its ID.
