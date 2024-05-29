@@ -26,7 +26,7 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
                         syntax_tree::statement::SemiExpression::Binary(
                             syntax_tree,
                         ) => {
-                            self.bind_binary(syntax_tree, Config {
+                            let _ = self.bind_binary(syntax_tree, Config {
                                 target: Target::Statement,
                             });
                         }

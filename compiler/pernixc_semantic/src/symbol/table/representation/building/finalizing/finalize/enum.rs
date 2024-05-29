@@ -5,11 +5,6 @@ use super::{variant, Finalize};
 use crate::{
     arena::ID,
     error,
-    semantic::{
-        normalizer::NoOp,
-        session::{self, Limit},
-        simplify, Environment,
-    },
     symbol::{
         table::{
             representation::{
@@ -94,39 +89,18 @@ impl Finalize for Enum {
                 }
 
                 // build all the occurrences to partial complete
-                data.build_all_occurrences_to::<build_preset::PartialComplete>(
-                    table,
-                    symbol_id.into(),
-                    false,
-                    handler,
-                );
+                let _ = data
+                    .build_all_occurrences_to::<build_preset::PartialComplete>(
+                        table,
+                        symbol_id.into(),
+                        false,
+                        handler,
+                    );
 
                 // build the variance
                 let premise =
                     table.get_active_premise(symbol_id.into()).unwrap();
                 let enum_sym = table.get(symbol_id).unwrap();
-                let mut session = session::Default::default();
-
-                // simplify the type of variants
-                for mut variant in
-                    enum_sym.variant_ids_by_name.values().copied().map(|x| {
-                        table.representation.variants.get(x).unwrap().write()
-                    })
-                {
-                    if let Some(associated_ty) = &mut variant.associated_type {
-                        if let Ok(simplified) = simplify::simplify(
-                            associated_ty,
-                            &Environment {
-                                premise: &premise,
-                                table,
-                                normalizer: &NoOp,
-                            },
-                            &mut Limit::new(&mut session),
-                        ) {
-                            *associated_ty = simplified;
-                        }
-                    }
-                }
 
                 #[allow(clippy::needless_collect)]
                 let type_usages = enum_sym

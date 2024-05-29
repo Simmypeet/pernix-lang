@@ -15,16 +15,13 @@ use crate::{
     },
     ir::{
         address::Address,
-        representation::building::{
-            infer::{self, InferenceVariable},
-            Model,
-        },
+        representation::building::{infer::InferenceVariable, Model},
         value::{
             literal::{Boolean, Literal, Numeric},
             Value,
         },
     },
-    semantic::term::r#type::{self, Type},
+    semantic::term::r#type::{self, Inferring, Type},
     symbol::table::{self, resolution::Observer},
 };
 
@@ -65,7 +62,16 @@ pub enum Expression {
     Value(Value<Model>),
 
     /// The expression is bound as an l-value.
-    Address { address: Address<Model>, address_type: Type<Model>, span: Span },
+    Address {
+        /// The address of the l-value.
+        address: Address<Model>,
+
+        /// The type of the address.
+        address_type: Type<Model>,
+
+        /// The span of the expression.
+        span: Span,
+    },
 
     /// The expression is bound as a statement.
     SideEffect(Type<Model>),
@@ -147,9 +153,9 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
                 let inference_variable = InferenceVariable::new();
 
                 let constraint = if syntax_tree.decimal().is_some() {
-                    infer::TypeConstraint::Floating
+                    Inferring::Floating
                 } else {
-                    infer::TypeConstraint::Number
+                    Inferring::Number
                 };
 
                 assert!(self

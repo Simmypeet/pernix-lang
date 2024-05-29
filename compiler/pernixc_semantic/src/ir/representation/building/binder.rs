@@ -176,3 +176,11 @@ where
         })
     }
 }
+
+impl<'t, 'h, P: Copy, D, S: table::State, O: Observer<S, super::Model>>
+    Binder<'t, 'h, FunctionBindingContext<P, D>, S, O>
+where
+    GlobalID: From<P> + From<ID<GenericTemplate<P, FunctionTemplate<D>>>>,
+    GenericTemplate<P, FunctionTemplate<D>>: table::representation::Element,
+{
+}

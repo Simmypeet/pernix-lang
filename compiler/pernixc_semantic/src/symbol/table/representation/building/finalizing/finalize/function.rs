@@ -24,7 +24,7 @@ use crate::{
                     occurrences::Occurrences,
                     Finalizer,
                 },
-                Index, RwLockContainer,
+                RwLockContainer,
             },
             resolution, Building, Table,
         },
@@ -87,6 +87,10 @@ impl Finalize for Function {
                     .write()
                     .const_function = syntax_tree.const_keyword().is_some();
 
+                let active_premise =
+                    table.get_active_premise(symbol_id.into()).unwrap();
+                let mut session = session::Default::default();
+
                 // build the parameters
                 for parameter in syntax_tree
                     .signature()
@@ -117,9 +121,27 @@ impl Finalize for Function {
                         .unwrap()
                         .write();
 
+                    // build the occurrences
+                    let _ = data
+                        .build_all_occurrences_to::<build_preset::Complete>(
+                            table,
+                            symbol_id.into(),
+                            false,
+                            handler,
+                        );
+
                     let parameter_id =
                         function_write.parameters.insert(Parameter {
-                            r#type: parameter_ty,
+                            r#type: simplify(
+                                &parameter_ty,
+                                &Environment {
+                                    premise: &active_premise,
+                                    table,
+                                    normalizer: &NoOp,
+                                },
+                                &mut Limit::new(&mut session),
+                            )
+                            .unwrap_or(parameter_ty),
                             span: Some(parameter.span()),
                         });
                     function_write.parameter_order.push(parameter_id);
@@ -148,95 +170,40 @@ impl Finalize for Function {
                                 .unwrap_or_default()
                         });
 
+                    let _ = data
+                        .build_all_occurrences_to::<build_preset::Complete>(
+                            table,
+                            symbol_id.into(),
+                            false,
+                            handler,
+                        );
+
                     table
                         .representation
                         .functions
                         .get(symbol_id)
                         .unwrap()
                         .write()
-                        .return_type = return_ty
-                }
-
-                // build the occurrences
-                data.build_all_occurrences_to::<build_preset::Complete>(
-                    table,
-                    symbol_id.into(),
-                    false,
-                    handler,
-                );
-
-                // simplify the parameter types
-                let mut session = session::Default::default();
-                {
-                    let parameter_ids = {
-                        let function_sym = table.get(symbol_id.into()).unwrap();
-
-                        function_sym
-                            .parameters
-                            .iter()
-                            .map(|(id, parameter)| {
-                                (id, parameter.r#type.clone())
-                            })
-                            .collect::<Vec<_>>()
-                    };
-
-                    for (parameter_id, parameter_ty) in parameter_ids {
-                        if let Ok(simplified) = simplify(
-                            &parameter_ty,
-                            &Environment {
-                                premise: &table
-                                    .get_active_premise(symbol_id.into())
-                                    .unwrap(),
-                                table,
-                                normalizer: &NoOp,
-                            },
-                            &mut Limit::new(&mut session),
-                        ) {
-                            let mut function_write = table
-                                .representation
-                                .functions
-                                .get(symbol_id)
-                                .unwrap()
-                                .write();
-
-                            function_write
-                                .parameters
-                                .get_mut(parameter_id)
-                                .unwrap()
-                                .r#type = simplified;
-                        }
-                    }
-                }
-
-                // simplify the return type
-                {
-                    let return_ty = {
-                        let function_sym = table.get(symbol_id.into()).unwrap();
-
-                        function_sym.return_type.clone()
-                    };
-
-                    if let Ok(simplified) = simplify(
+                        .return_type = simplify(
                         &return_ty,
                         &Environment {
-                            premise: &table
-                                .get_active_premise(symbol_id.into())
-                                .unwrap(),
+                            premise: &active_premise,
                             table,
                             normalizer: &NoOp,
                         },
                         &mut Limit::new(&mut session),
-                    ) {
-                        let mut function_write = table
-                            .representation
-                            .functions
-                            .get(symbol_id)
-                            .unwrap()
-                            .write();
-
-                        function_write.return_type = simplified;
-                    }
+                    )
+                    .unwrap_or(return_ty)
                 }
+
+                // build the occurrences
+                let _ = data
+                    .build_all_occurrences_to::<build_preset::Complete>(
+                        table,
+                        symbol_id.into(),
+                        false,
+                        handler,
+                    );
             }
 
             DEFINITION_AND_CHECK_STATE => {

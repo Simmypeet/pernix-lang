@@ -1006,7 +1006,12 @@ impl<T: BuildPreset, M: Model>
         global_id: GlobalID,
         _: &pernixc_lexical::token::Identifier,
     ) {
-        table.build_preset::<T>(global_id, Some(referring_site), true, handler);
+        let _ = table.build_preset::<T>(
+            global_id,
+            Some(referring_site),
+            true,
+            handler,
+        );
     }
 
     fn on_resolution_resolved(

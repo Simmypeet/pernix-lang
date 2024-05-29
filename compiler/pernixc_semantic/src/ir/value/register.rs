@@ -2,16 +2,19 @@
 
 use pernixc_base::source_file::Span;
 
-use super::Value;
+use super::{Inspect, InvalidValueError, Value};
 use crate::{
-    ir::address::Address,
+    arena::ID,
+    ir::{address::Address, representation::Representation},
     semantic::{
         model::Model,
         term::{
+            self,
             lifetime::Lifetime,
-            r#type::{Qualifier, Type},
+            r#type::{Qualifier, Reference, Type},
         },
     },
+    symbol::table::{self, Table},
 };
 
 /// Represents an element of a [`Tuple`].
@@ -58,6 +61,37 @@ pub struct Tuple<M: Model> {
     pub span: Option<Span>,
 }
 
+impl<M: Model> Inspect<M> for Tuple<M> {
+    fn type_of(
+        &self,
+        ir: &Representation<M>,
+        table: &Table<impl table::State>,
+    ) -> Result<Type<M>, InvalidValueError> {
+        let tuple_elements = self
+            .elements
+            .iter()
+            .map(|element| match element {
+                TupleElement::Regular(regular) => {
+                    regular.type_of(ir, table).map(term::TupleElement::Regular)
+                }
+                TupleElement::Unpacked(unpacked) => unpacked
+                    .type_of(ir, table)
+                    .map(term::TupleElement::Unpacked),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Type::Tuple(term::Tuple { elements: tuple_elements }))
+    }
+
+    fn get_span(
+        &self,
+        _: &Representation<M>,
+        _: &Table<impl table::State>,
+    ) -> Result<Option<Span>, InvalidValueError> {
+        Ok(self.span.clone())
+    }
+}
+
 /// An enumeration of either moving or copying loads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LoadKind {
@@ -85,6 +119,24 @@ pub struct Load<M: Model> {
     pub span: Option<Span>,
 }
 
+impl<M: Model> Inspect<M> for Load<M> {
+    fn type_of(
+        &self,
+        _: &Representation<M>,
+        _: &Table<impl table::State>,
+    ) -> Result<Type<M>, InvalidValueError> {
+        Ok(self.address_type.clone())
+    }
+
+    fn get_span(
+        &self,
+        _: &Representation<M>,
+        _: &Table<impl table::State>,
+    ) -> Result<Option<Span>, InvalidValueError> {
+        Ok(self.span.clone())
+    }
+}
+
 /// Obtains a reference at the given address.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReferenceOf<M: Model> {
@@ -104,6 +156,28 @@ pub struct ReferenceOf<M: Model> {
     pub lifetime: Lifetime<M>,
 }
 
+impl<M: Model> Inspect<M> for ReferenceOf<M> {
+    fn type_of(
+        &self,
+        _: &Representation<M>,
+        _: &Table<impl table::State>,
+    ) -> Result<Type<M>, InvalidValueError> {
+        Ok(Type::Reference(Reference {
+            qualifier: self.qualifier,
+            lifetime: self.lifetime.clone(),
+            pointee: Box::new(self.address_type.clone()),
+        }))
+    }
+
+    fn get_span(
+        &self,
+        _: &Representation<M>,
+        _: &Table<impl table::State>,
+    ) -> Result<Option<Span>, InvalidValueError> {
+        Ok(self.span.clone())
+    }
+}
+
 /// An enumeration of the different kinds of registers.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
@@ -111,4 +185,34 @@ pub enum Register<M: Model> {
     Tuple(Tuple<M>),
     Load(Load<M>),
     ReferenceOf(ReferenceOf<M>),
+}
+
+impl<M: Model> Inspect<M> for ID<Register<M>> {
+    fn type_of(
+        &self,
+        ir: &Representation<M>,
+        table: &Table<impl table::State>,
+    ) -> Result<Type<M>, InvalidValueError> {
+        let register = ir.registers().get(*self).ok_or(InvalidValueError)?;
+
+        match register {
+            Register::Tuple(reg) => reg.type_of(ir, table),
+            Register::Load(reg) => reg.type_of(ir, table),
+            Register::ReferenceOf(reg) => reg.type_of(ir, table),
+        }
+    }
+
+    fn get_span(
+        &self,
+        ir: &Representation<M>,
+        table: &Table<impl table::State>,
+    ) -> Result<Option<Span>, InvalidValueError> {
+        let register = ir.registers().get(*self).ok_or(InvalidValueError)?;
+
+        match register {
+            Register::Tuple(reg) => reg.get_span(ir, table),
+            Register::Load(reg) => reg.get_span(ir, table),
+            Register::ReferenceOf(reg) => reg.get_span(ir, table),
+        }
+    }
 }

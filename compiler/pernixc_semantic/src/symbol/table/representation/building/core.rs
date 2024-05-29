@@ -163,7 +163,8 @@ impl<C: Container, S: std::fmt::Debug + Send + Sync> Table<Building<C, S>> {
                 },
             );
 
-            drop_function.return_type = Type::default();
+            drop_function.return_type =
+                Type::Tuple(Tuple { elements: Vec::new() });
         };
     }
 

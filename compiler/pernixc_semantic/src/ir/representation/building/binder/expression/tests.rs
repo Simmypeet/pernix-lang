@@ -12,14 +12,11 @@ use crate::{
     error::{
         Error, FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
     },
-    ir::representation::building::{
-        binder::{
-            expression::{Config, Target},
-            Binder,
-        },
-        infer::TypeConstraint,
+    ir::representation::building::binder::{
+        expression::{Config, Target},
+        Binder,
     },
-    semantic::term::r#type::{Primitive, Type},
+    semantic::term::r#type::{Inferring, Primitive, Type},
     symbol::{
         table::{
             representation::{
@@ -173,7 +170,7 @@ fn bind_numeric_literal_float_infer() {
 
     assert_eq!(
         binder.inference_context.get_constraint::<Type<_>>(constraint_id),
-        Some(&TypeConstraint::Floating)
+        Some(&Inferring::Floating)
     );
 }
 
@@ -229,7 +226,7 @@ fn bind_numeric_literal_number_infer() {
 
     assert_eq!(
         binder.inference_context.get_constraint::<Type<_>>(constraint_id),
-        Some(&TypeConstraint::Number)
+        Some(&Inferring::Number)
     );
 }
 

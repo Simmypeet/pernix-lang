@@ -14,8 +14,12 @@ use crate::{
         model::Model,
         normalizer::Normalizer,
         session::{self, ExceedLimitError, Limit, Session},
-        simplify::simplify,
-        term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+        term::{
+            constant::Constant,
+            lifetime::Lifetime,
+            r#type::{Inferring, Type},
+            Term,
+        },
         unification, Environment, Premise,
     },
     symbol::table::{self, Table},
@@ -267,24 +271,7 @@ impl<T: Term, C: Constraint<T> + 'static> ContextImpl<T, C> {
     }
 }
 
-/// The constraints used for type inference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub enum TypeConstraint {
-    /// The type can be inferred into any type.
-    #[default]
-    All,
-
-    /// The type can be any number type. (signed/unsigned/floating)
-    Number,
-
-    /// The type can be signed number type. (signed integer/floating)
-    Signed,
-
-    /// The type can be only floating number type. (float32/float64)
-    Floating,
-}
-
-impl<M: Model> Constraint<Type<M>> for TypeConstraint {
+impl<M: Model> Constraint<Type<M>> for Inferring {
     fn satisfies(&self, term: &Type<M>) -> bool {
         use crate::semantic::term::r#type::Primitive;
 
@@ -373,14 +360,14 @@ pub enum UnifyError {
 
     #[error(transparent)]
     UnsatisfiedConstraint(
-        UnsatisfiedConstraintError<Type<super::Model>, TypeConstraint>,
+        UnsatisfiedConstraintError<Type<super::Model>, Inferring>,
     ),
 }
 
 /// The inference context storing the inference variables and constraints.
 #[derive(Debug, Clone, PartialEq, Eq, Getters, MutGetters, Default)]
 pub struct Context {
-    type_inference_context: ContextImpl<Type<super::Model>, TypeConstraint>,
+    type_inference_context: ContextImpl<Type<super::Model>, Inferring>,
     constant_inference_context:
         ContextImpl<Constant<super::Model>, NoConstraint>,
 }
@@ -391,7 +378,7 @@ pub trait Inferable: Term<InferenceVariable = InferenceVariable<Self>> {
 }
 
 impl Inferable for Type<super::Model> {
-    type Constraint = TypeConstraint;
+    type Constraint = Inferring;
 }
 
 impl Inferable for Constant<super::Model> {
@@ -438,6 +425,7 @@ impl Context {
     /// Returns `true` if the inference variable was not already registered in
     /// this context.
     #[must_use]
+    #[allow(private_bounds)]
     pub fn register<T: InferableSealed>(
         &mut self,
         inference_variable: InferenceVariable<T>,
@@ -448,6 +436,7 @@ impl Context {
 
     /// Gets the [`Inference`] for an inference variable.
     #[must_use]
+    #[allow(private_bounds)]
     pub fn get_inference<T: InferableSealed>(
         &self,
         inference_variable: InferenceVariable<T>,
@@ -457,6 +446,7 @@ impl Context {
 
     /// Gets the constraint for a constraint ID.
     #[must_use]
+    #[allow(private_bounds)]
     pub fn get_constraint<T: InferableSealed>(
         &self,
         constraint_id: ID<T::Constraint>,
@@ -470,6 +460,7 @@ impl Context {
     ///
     /// Returns `true` if the inference variable was successfully unified with
     /// the constraint. Otherwise, `false` if the constraint was not satisfied.
+    #[allow(private_bounds)]
     pub fn unify_with_constraint<T: InferableSealed>(
         &mut self,
         inference_variable: InferenceVariable<T>,
@@ -484,6 +475,7 @@ impl Context {
     /// If the given known value satsifies the constraint, every occurrence of
     /// the `constraint_id` in the inference context will be replaced with the
     /// known value.
+    #[allow(private_bounds)]
     pub fn assign_infer_to_known<T: InferableSealed>(
         &mut self,
         constraint_id: ID<T::Constraint>,
@@ -594,15 +586,10 @@ impl Context {
     where
         session::Default<super::Model>: Session<T>,
     {
-        // simplify the known value. idk, if this is
-        // necessary
-        let known = simplify(
-            known,
-            &Environment { premise, table, normalizer: self },
-            &mut Limit::new(&mut session::Default::default()),
-        )?;
+        // shouldn't be another inference variable
+        assert!(known.as_inference().is_none());
 
-        match context(self).assign_infer_to_known(inferring, known) {
+        match context(self).assign_infer_to_known(inferring, known.clone()) {
             Ok(()) => Ok(()),
             Err(AssignKnownValueError::InvalidConstraintID(id)) => {
                 panic!(
@@ -617,6 +604,7 @@ impl Context {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn handle_mapping<
         T: Term<Model = super::Model, InferenceVariable = InferenceVariable<T>>,
         S: table::State,
@@ -646,22 +634,16 @@ impl Context {
             .iter()
             .flat_map(|(lhs, rhs)| std::iter::once(lhs).zip(rhs.iter()))
         {
-            match (lhs.as_inference().cloned(), rhs.as_inference().cloned()) {
+            match (lhs.as_inference().copied(), rhs.as_inference().copied()) {
                 (Some(lhs), Some(rhs)) => {
                     let lhs_inference = inference_context(self)
                         .get_inference(lhs)
-                        .ok_or(
-                            UnregisteredInferenceVariableError(lhs.clone())
-                                .into(),
-                        )?
+                        .ok_or(UnregisteredInferenceVariableError(lhs))?
                         .clone();
 
                     let rhs_inference = inference_context(self)
                         .get_inference(rhs)
-                        .ok_or(
-                            UnregisteredInferenceVariableError(rhs.clone())
-                                .into(),
-                        )?
+                        .ok_or(UnregisteredInferenceVariableError(rhs))?
                         .clone();
 
                     match (lhs_inference, rhs_inference) {
@@ -743,10 +725,8 @@ impl Context {
                     match inference_context(self)
                         .get_inference(inference)
                         .cloned()
-                        .ok_or(
-                            UnregisteredInferenceVariableError(inference)
-                                .into(),
-                        )? {
+                        .ok_or(UnregisteredInferenceVariableError(inference))?
+                    {
                         Inference::Known(known) => {
                             unify(self, &known, another_known, premise, table)?;
                         }
@@ -772,7 +752,7 @@ impl Context {
 
     fn type_inference_context_mut(
         &mut self,
-    ) -> &mut ContextImpl<Type<super::Model>, TypeConstraint> {
+    ) -> &mut ContextImpl<Type<super::Model>, Inferring> {
         &mut self.type_inference_context
     }
 

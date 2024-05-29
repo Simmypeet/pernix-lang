@@ -1,4 +1,5 @@
-//! Contains the definition of [`simplify`].
+//! Contains the definition of [`Simplify`].
+
 use std::marker::PhantomData;
 
 use super::{

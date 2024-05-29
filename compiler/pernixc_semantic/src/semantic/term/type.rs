@@ -202,6 +202,33 @@ pub enum Primitive {
     Isize,
 }
 
+/// The set of types that can be inferred. Used in type inference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum Inferring {
+    /// The type can be inferred into any type.
+    #[default]
+    All,
+
+    /// The type can be any number type. (signed/unsigned/floating)
+    Number,
+
+    /// The type can be signed number type. (signed integer/floating)
+    Signed,
+
+    /// The type can be only floating number type. (float32/float64)
+    Floating,
+}
+
+/// An enumeration of either a known type or an inferring type.
+///
+/// This is used in type inference to represent the expected type of a term.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum Expected<M: Model> {
+    Known(Type<M>),
+    Inferring(Inferring),
+}
+
 /// Represents a tuple type, denoted by `(type, type, ...type)` syntax.
 pub type Tuple<M> = super::Tuple<Type<M>>;
 

@@ -13,6 +13,7 @@ use crate::{
             Tuple,
         },
     },
+    symbol::table::{self, Table},
 };
 
 /// Represents a numeric literal.
@@ -35,6 +36,7 @@ impl<M: Model> Inspect<M> for Numeric<M> {
     fn type_of(
         &self,
         _: &Representation<M>,
+        _: &Table<impl table::State>,
     ) -> Result<Type<M>, InvalidValueError> {
         Ok(self.r#type.clone())
     }
@@ -42,6 +44,7 @@ impl<M: Model> Inspect<M> for Numeric<M> {
     fn get_span(
         &self,
         _: &Representation<M>,
+        _: &Table<impl table::State>,
     ) -> Result<Option<Span>, InvalidValueError> {
         Ok(self.span.clone())
     }
@@ -61,6 +64,7 @@ impl<M: Model> Inspect<M> for Boolean {
     fn type_of(
         &self,
         _: &Representation<M>,
+        _: &Table<impl table::State>,
     ) -> Result<Type<M>, InvalidValueError> {
         Ok(Type::Primitive(Primitive::Bool))
     }
@@ -68,6 +72,7 @@ impl<M: Model> Inspect<M> for Boolean {
     fn get_span(
         &self,
         _: &Representation<M>,
+        _: &Table<impl table::State>,
     ) -> Result<Option<Span>, InvalidValueError> {
         Ok(self.span.clone())
     }
@@ -84,6 +89,7 @@ impl<M: Model> Inspect<M> for EmptyTuple {
     fn type_of(
         &self,
         _: &Representation<M>,
+        _: &Table<impl table::State>,
     ) -> Result<Type<M>, InvalidValueError> {
         Ok(Type::Tuple(Tuple { elements: Vec::new() }))
     }
@@ -91,6 +97,7 @@ impl<M: Model> Inspect<M> for EmptyTuple {
     fn get_span(
         &self,
         _: &Representation<M>,
+        _: &Table<impl table::State>,
     ) -> Result<Option<Span>, InvalidValueError> {
         Ok(self.span.clone())
     }
@@ -109,22 +116,24 @@ impl<M: Model> Inspect<M> for Literal<M> {
     fn type_of(
         &self,
         ir: &Representation<M>,
+        table: &Table<impl table::State>,
     ) -> Result<Type<M>, InvalidValueError> {
         match self {
-            Self::EmptyTuple(value) => value.type_of(ir),
-            Self::Numeric(value) => value.type_of(ir),
-            Self::Boolean(value) => value.type_of(ir),
+            Self::EmptyTuple(value) => value.type_of(ir, table),
+            Self::Numeric(value) => value.type_of(ir, table),
+            Self::Boolean(value) => value.type_of(ir, table),
         }
     }
 
     fn get_span(
         &self,
         ir: &Representation<M>,
+        table: &Table<impl table::State>,
     ) -> Result<Option<Span>, InvalidValueError> {
         match self {
-            Self::EmptyTuple(value) => value.get_span(ir),
-            Self::Numeric(value) => value.get_span(ir),
-            Self::Boolean(value) => value.get_span(ir),
+            Self::EmptyTuple(value) => value.get_span(ir, table),
+            Self::Numeric(value) => value.get_span(ir, table),
+            Self::Boolean(value) => value.get_span(ir, table),
         }
     }
 }

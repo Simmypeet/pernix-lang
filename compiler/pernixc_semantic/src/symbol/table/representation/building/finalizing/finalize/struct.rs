@@ -78,6 +78,10 @@ impl Finalize for Struct {
             }
 
             STRUCTURAL_AND_PARTIAL_VARIANCE_STATE => {
+                let active_premise =
+                    table.get_active_premise(symbol_id.into()).unwrap();
+                let mut session = session::Default::default();
+
                 for field_syn in syntax_tree
                     .body()
                     .field_list()
@@ -127,6 +131,14 @@ impl Finalize for Struct {
                         }
                     }
 
+                    // build all the occurrences to partial
+                    let _ =data.build_all_occurrences_to::<build_preset::PartialComplete>(
+                        table,
+                        symbol_id.into(),
+                        false,
+                        handler,
+                    );
+
                     #[allow(clippy::significant_drop_in_scrutinee)]
                     match table
                         .representation
@@ -144,7 +156,16 @@ impl Finalize for Struct {
                                     .span
                                     .str()
                                     .to_owned(),
-                                r#type: ty,
+                                r#type: simplify(
+                                    &ty,
+                                    &Environment {
+                                        premise: &active_premise,
+                                        table,
+                                        normalizer: &NoOp,
+                                    },
+                                    &mut Limit::new(&mut session),
+                                )
+                                .unwrap_or(ty),
                                 span: Some(field_syn.identifier().span.clone()),
                             },
                         ) {
@@ -170,45 +191,6 @@ impl Finalize for Struct {
                     handler,
                 );
 
-                let premise =
-                    table.get_active_premise(symbol_id.into()).unwrap();
-                let mut session = session::Default::default();
-
-                // simplify all the field types
-                {
-                    let fields_to_simplify = {
-                        let struct_sym = table.get(symbol_id).unwrap();
-
-                        struct_sym
-                            .fields
-                            .iter_primary()
-                            .map(|(id, field)| (id, field.r#type.clone()))
-                            .collect::<Vec<_>>()
-                    };
-
-                    for (id, field_type) in fields_to_simplify {
-                        if let Ok(simplified) = simplify(
-                            &field_type,
-                            &Environment {
-                                table,
-                                premise: &premise,
-                                normalizer: &NoOp,
-                            },
-                            &mut Limit::new(&mut session),
-                        ) {
-                            let mut struct_sym = table
-                                .representation
-                                .structs
-                                .get(symbol_id)
-                                .unwrap()
-                                .write();
-
-                            struct_sym.fields.get_mut(id).unwrap().r#type =
-                                simplified;
-                        }
-                    }
-                }
-
                 // partial variance information
                 {
                     let mut generic_parameter_variances =
@@ -225,7 +207,7 @@ impl Finalize for Struct {
                     table.build_variance(
                         &struct_sym.generic_declaration.parameters,
                         &mut generic_parameter_variances,
-                        &premise,
+                        &active_premise,
                         symbol_id.into(),
                         type_usages.iter(),
                         true,

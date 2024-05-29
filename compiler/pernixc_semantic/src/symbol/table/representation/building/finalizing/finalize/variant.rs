@@ -5,6 +5,12 @@ use super::{r#enum, Finalize};
 use crate::{
     arena::ID,
     error::{self, PrivateEntityLeakedToPublicInterface},
+    semantic::{
+        normalizer::NoOp,
+        session::{self, Limit},
+        simplify::simplify,
+        Environment,
+    },
     symbol::{
         table::{
             representation::{
@@ -90,21 +96,37 @@ impl Finalize for Variant {
                         ));
                     }
 
+                    data.build_all_occurrences_to::<build_preset::PartialComplete>(
+                        table,
+                        symbol_id.into(),
+                        false,
+                        handler,
+                    );
+
+                    let active_premise =
+                        table.get_active_premise(symbol_id.into()).unwrap();
+                    let mut session = session::Default::default();
+
+                    // assign the simplfiied type to the variant
                     table
                         .representation
                         .variants
                         .get(symbol_id)
                         .unwrap()
                         .write()
-                        .associated_type = Some(ty);
+                        .associated_type = Some(
+                        simplify(
+                            &ty,
+                            &Environment {
+                                premise: &active_premise,
+                                table,
+                                normalizer: &NoOp,
+                            },
+                            &mut Limit::new(&mut session),
+                        )
+                        .unwrap_or(ty),
+                    );
                 }
-
-                data.build_all_occurrences_to::<build_preset::PartialComplete>(
-                    table,
-                    symbol_id.into(),
-                    false,
-                    handler,
-                );
             }
 
             CHECK_STATE => {
