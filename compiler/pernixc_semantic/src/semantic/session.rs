@@ -12,14 +12,129 @@ use super::{
     model::Model,
     predicate::{self, ConstantTypeQuerySource, TraitSatisfiability},
     simplify,
+    sub_term::SubTerm,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
     },
     unification::{self, Unification},
-    Satisfied,
+    ExceedLimitError, Satisfied,
 };
 use crate::{arena::ID, symbol};
+
+pub(super) trait Get: SubTerm {
+    type Session<T: Session<Lifetime<Self::Model>>
+            + Session<Type<Self::Model>>
+            + Session<Constant<Self::Model>>>: Session<Self>;
+
+    fn get_session<
+        'a,
+        T: Session<Lifetime<Self::Model>>
+            + Session<Type<Self::Model>>
+            + Session<Constant<Self::Model>>,
+    >(
+        session: &'a T,
+    ) -> &'a Self::Session<T>;
+
+    fn get_session_mut<
+        'a,
+        T: Session<Lifetime<Self::Model>>
+            + Session<Type<Self::Model>>
+            + Session<Constant<Self::Model>>,
+    >(
+        session: &'a mut T,
+    ) -> &'a mut Self::Session<T>;
+}
+
+impl<M: Model> Get for Lifetime<M> {
+    type Session<
+        T: Session<Lifetime<Self::Model>>
+            + Session<Type<Self::Model>>
+            + Session<Constant<Self::Model>>,
+    > = T;
+
+    fn get_session<
+        'a,
+        T: Session<Lifetime<Self::Model>>
+            + Session<Type<Self::Model>>
+            + Session<Constant<Self::Model>>,
+    >(
+        session: &'a T,
+    ) -> &'a Self::Session<T> {
+        session
+    }
+
+    fn get_session_mut<
+        'a,
+        T: Session<Lifetime<Self::Model>>
+            + Session<Type<Self::Model>>
+            + Session<Constant<Self::Model>>,
+    >(
+        session: &'a mut T,
+    ) -> &'a mut Self::Session<T> {
+        session
+    }
+}
+
+impl<M: Model> Get for Type<M> {
+    type Session<
+        T: Session<Lifetime<Self::Model>>
+            + Session<Type<Self::Model>>
+            + Session<Constant<Self::Model>>,
+    > = T;
+
+    fn get_session<
+        'a,
+        T: Session<Lifetime<Self::Model>>
+            + Session<Type<Self::Model>>
+            + Session<Constant<Self::Model>>,
+    >(
+        session: &'a T,
+    ) -> &'a Self::Session<T> {
+        session
+    }
+
+    fn get_session_mut<
+        'a,
+        T: Session<Lifetime<Self::Model>>
+            + Session<Type<Self::Model>>
+            + Session<Constant<Self::Model>>,
+    >(
+        session: &'a mut T,
+    ) -> &'a mut Self::Session<T> {
+        session
+    }
+}
+
+impl<M: Model> Get for Constant<M> {
+    type Session<
+        T: Session<Lifetime<Self::Model>>
+            + Session<Type<Self::Model>>
+            + Session<Constant<Self::Model>>,
+    > = T;
+
+    fn get_session<
+        'a,
+        T: Session<Lifetime<Self::Model>>
+            + Session<Type<Self::Model>>
+            + Session<Constant<Self::Model>>,
+    >(
+        session: &'a T,
+    ) -> &'a Self::Session<T> {
+        session
+    }
+
+    fn get_session_mut<
+        'a,
+        T: Session<Lifetime<Self::Model>>
+            + Session<Type<Self::Model>>
+            + Session<Constant<Self::Model>>,
+    >(
+        session: &'a mut T,
+    ) -> &'a mut Self::Session<T> {
+        session
+    }
+}
 
 /// The result of a query.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -30,19 +145,6 @@ pub enum Cached<I, T> {
     /// The query is done and the result is stored.
     Done(T),
 }
-
-/// An error that occurs when the number of queries exceeds the limit.
-///
-/// Due to the fact that the semantic system is partially-decidable, it is
-/// possible that the number of queries can be infinite. To prevent this, a
-/// limit is set to the number of queries that can be made. However, in most
-/// cases, the number of queries should not exceed the limit.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[error("exceeded the limit of the number of queries")]
-#[allow(missing_docs)]
-pub struct ExceedLimitError;
 
 /// Used to limit the number of queries that can be made.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, CopyGetters)]
@@ -78,62 +180,104 @@ impl<'a, R> Limit<'a, R> {
     ///
     /// Returns an error if the number of queries exceeds the limit.
     #[allow(clippy::type_complexity)]
-    pub fn mark_as_in_progress<Q>(
+    pub fn mark_as_in_progress<T: Get, Q>(
         &mut self,
         query: Q,
-        metadata: R::InProgress,
-    ) -> Result<Option<Cached<R::InProgress, R::Result>>, ExceedLimitError>
+        metadata: <T::Session<R> as Cache<Q>>::InProgress,
+    ) -> Result<
+        Option<
+            Cached<
+                <T::Session<R> as Cache<Q>>::InProgress,
+                <T::Session<R> as Cache<Q>>::Result,
+            >,
+        >,
+        ExceedLimitError,
+    >
     where
-        R: Cache<Q>,
+        R: Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
+
+        T::Session<R>: Cache<Q>,
     {
         // limit exceeded, reset the state and return an error
         if self.count >= self.limit {
             self.count = 0;
-            self.session.delete_all_work_in_progress();
+            T::get_session_mut(self.session).delete_all_work_in_progress();
             return Err(ExceedLimitError);
         }
 
         self.count += 1;
 
-        Ok(self.session.mark_as_in_progress(query, metadata))
+        Ok(T::get_session_mut(self.session)
+            .mark_as_in_progress(query, metadata))
     }
 
     /// Marks the given query as done and stores the result.
-    pub fn mark_as_done<Q>(&mut self, query: Q, result: R::Result)
-    where
-        R: Cache<Q>,
+    pub fn mark_as_done<T: Get, Q>(
+        &mut self,
+        query: Q,
+        result: <T::Session<R> as Cache<Q>>::Result,
+    ) where
+        R: Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
+
+        T::Session<R>: Cache<Q>,
     {
-        self.session.mark_as_done(query, result);
+        T::get_session_mut(self.session).mark_as_done(query, result);
     }
 
     /// Clears the cached result of the given query.
-    pub fn clear_query<Q>(
+    pub fn clear_query<T: Get, Q>(
         &mut self,
         query: Q,
-    ) -> Option<Cached<R::InProgress, R::Result>>
+    ) -> Option<
+        Cached<
+            <T::Session<R> as Cache<Q>>::InProgress,
+            <T::Session<R> as Cache<Q>>::Result,
+        >,
+    >
     where
-        R: Cache<Q>,
+        R: Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
+
+        T::Session<R>: Cache<Q>,
     {
-        self.session.clear_query(query)
+        T::get_session_mut(self.session).clear_query(query)
     }
 
     /// Returns the result of the given query.
-    pub fn get_result<Q>(
+    pub fn get_result<T: Get, Q>(
         &self,
         query: Q,
-    ) -> Option<&Cached<R::InProgress, R::Result>>
+    ) -> Option<
+        &Cached<
+            <T::Session<R> as Cache<Q>>::InProgress,
+            <T::Session<R> as Cache<Q>>::Result,
+        >,
+    >
     where
-        R: Cache<Q>,
+        R: Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
+
+        T::Session<R>: Cache<Q> + 'a,
     {
-        self.session.get_result(query)
+        T::get_session(self.session).get_result(query)
     }
 
     /// Clears all the queries that are in progress state.
-    pub fn delete_all_work_in_progress<Q>(&mut self)
+    pub fn delete_all_work_in_progress<T: Get, Q>(&mut self)
     where
-        R: Cache<Q>,
+        R: Session<Lifetime<T::Model>>
+            + Session<Type<T::Model>>
+            + Session<Constant<T::Model>>,
+
+        T::Session<R>: Cache<Q>,
     {
-        self.session.delete_all_work_in_progress();
+        T::get_session_mut(self.session).delete_all_work_in_progress();
     }
 }
 
@@ -179,7 +323,7 @@ pub trait Cache<Query> {
 ///
 /// Most of the time, you should use [`Default`] as the implementation of this
 /// trait.
-pub trait Session<T: Term>:
+pub trait Session<T: SubTerm>:
     for<'a> Cache<equality::Query<'a, T>, Result = Satisfied, InProgress = ()>
     + for<'a> Cache<
         predicate::DefiniteQuery<'a, T>,

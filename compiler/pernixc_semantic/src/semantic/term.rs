@@ -21,10 +21,10 @@ use super::{
     model::Model,
     normalizer::Normalizer,
     predicate::{self, Outlives, Predicate, Satisfiability},
-    session::{ExceedLimitError, Limit, Session},
+    session::{self, Limit, Session},
     sub_term::{self, AssignSubTermError, SubTupleLocation},
     unification::{self, Unification},
-    visitor, Environment,
+    visitor, Environment, ExceedLimitError,
 };
 use crate::{
     arena::ID,
@@ -303,6 +303,7 @@ pub trait Term:
     + matching::Match
     + sub_term::SubTerm
     + equivalent::Get
+    + session::Get
     + From<MemberID<ID<Self::GenericParameter>, GenericID>>
     + From<Self::TraitMember>
     + 'static
@@ -762,19 +763,19 @@ impl<M: Model> GenericArguments<M> {
         }
 
         for (lhs, rhs) in self.lifetimes.iter().zip(&other.lifetimes) {
-            if !equality::equals(lhs, rhs, environment, limit)? {
+            if !equality::equals_impl(lhs, rhs, environment, limit)? {
                 return Ok(false);
             }
         }
 
         for (lhs, rhs) in self.types.iter().zip(&other.types) {
-            if !equality::equals(lhs, rhs, environment, limit)? {
+            if !equality::equals_impl(lhs, rhs, environment, limit)? {
                 return Ok(false);
             }
         }
 
         for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
-            if !equality::equals(lhs, rhs, environment, limit)? {
+            if !equality::equals_impl(lhs, rhs, environment, limit)? {
                 return Ok(false);
             }
         }
@@ -813,7 +814,9 @@ impl<M: Model> GenericArguments<M> {
     pub fn unify_as_mapping(
         &self,
         other: &Self,
-        config: &mut impl unification::Config<M>,
+        config: &mut (impl unification::Config<Lifetime<M>>
+                  + unification::Config<Type<M>>
+                  + unification::Config<Constant<M>>),
         environment: &Environment<M, impl State, impl Normalizer<M>>,
         limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,

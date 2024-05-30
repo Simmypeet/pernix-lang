@@ -2,9 +2,9 @@
 
 use super::{
     model::Model,
-    session::{ExceedLimitError, Limit, Session},
+    session::{Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type},
-    Environment,
+    Environment, ExceedLimitError,
 };
 use crate::symbol::table::State;
 

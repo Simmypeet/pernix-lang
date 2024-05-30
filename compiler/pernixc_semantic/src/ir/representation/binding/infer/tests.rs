@@ -1,7 +1,7 @@
 use super::{Context, InferenceVariable};
 use crate::{
-    ir::representation::building::Model,
-    semantic::term::r#type::{Inferring, Primitive, Type},
+    ir::representation::binding::Model,
+    semantic::term::r#type::{self, Primitive, Type},
     symbol::table::{representation::Insertion, Building, Table},
 };
 
@@ -9,7 +9,7 @@ impl Context {
     fn assert_all_same_constraint<'a>(
         &self,
         inference_types: impl IntoIterator<Item = &'a Type<Model>>,
-        expected_constraint: Inferring,
+        expected_constraint: r#type::Constraint,
     ) {
         let mut inference_variables = inference_types.into_iter();
         let Some(first) = inference_variables.next() else {
@@ -97,24 +97,29 @@ fn simple_inferring_constraint() {
     let mut inference = Context::default();
 
     let a = Type::Inference(InferenceVariable::new());
-    assert!(inference
-        .type_inference_context
-        .register(a.as_inference().copied().unwrap(), Inferring::Number,));
+    assert!(inference.type_inference_context.register(
+        a.as_inference().copied().unwrap(),
+        r#type::Constraint::Number,
+    ));
     let b = Type::Inference(InferenceVariable::new());
-    assert!(inference
-        .type_inference_context
-        .register(b.as_inference().copied().unwrap(), Inferring::Floating,));
+    assert!(inference.type_inference_context.register(
+        b.as_inference().copied().unwrap(),
+        r#type::Constraint::Floating,
+    ));
     assert!(inference.unify_type(&a, &b, &active_premise, &table).is_ok());
 
-    inference.assert_all_same_constraint([&a, &b], Inferring::Floating);
+    inference
+        .assert_all_same_constraint([&a, &b], r#type::Constraint::Floating);
 
     let c = Type::Inference(InferenceVariable::new());
-    assert!(inference
-        .type_inference_context
-        .register(c.as_inference().copied().unwrap(), Inferring::Number,));
+    assert!(inference.type_inference_context.register(
+        c.as_inference().copied().unwrap(),
+        r#type::Constraint::Number,
+    ));
     assert!(inference.unify_type(&b, &c, &active_premise, &table).is_ok());
 
-    inference.assert_all_same_constraint([&a, &b, &c], Inferring::Floating);
+    inference
+        .assert_all_same_constraint([&a, &b, &c], r#type::Constraint::Floating);
 
     assert!(inference
         .unify_type(

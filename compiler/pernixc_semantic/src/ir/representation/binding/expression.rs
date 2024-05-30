@@ -10,18 +10,18 @@ use pernixc_syntax::syntax_tree;
 use super::Binder;
 use crate::{
     error::{
-        ExpectedLValue, FloatingPointLiteralHasIntegralSuffix,
+        self, ExpectedLValue, FloatingPointLiteralHasIntegralSuffix,
         InvalidNumericSuffix,
     },
     ir::{
         address::Address,
-        representation::building::{infer::InferenceVariable, Model},
+        representation::binding::{infer::InferenceVariable, Model},
         value::{
             literal::{Boolean, Literal, Numeric},
             Value,
         },
     },
-    semantic::term::r#type::{self, Inferring, Type},
+    semantic::term::r#type::{self, Type},
     symbol::table::{self, resolution::Observer},
 };
 
@@ -41,7 +41,10 @@ pub enum Target {
     /// Binds the syntax tree for the underlying address.
     ///
     /// This is used for obtaining the address of some l-value.
-    Address { is_mutable: bool },
+    Address {
+        /// Determines whether the underlying address is mutable.
+        is_mutable: bool,
+    },
 
     /// The expression is being bound for a statement, therefore the produced
     /// value will be discarded right away.
@@ -77,22 +80,19 @@ pub enum Expression {
     SideEffect(Type<Model>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Expected<T, C> {
-    Concrete(T),
-    Constraint(C),
-}
-
-impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
-    Binder<'t, 'h, C, S, O>
-{
+impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
     ////////////////////////////////////////////////////////////////////////////
 
     /// Binds the given [`syntax_tree::expression::Numeric`]
+    ///
+    /// # Errors
+    ///
+    /// See [`Error`] for more information.
     pub fn bind_numeric(
         &mut self,
         syntax_tree: &syntax_tree::expression::Numeric,
         config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let numeric_ty = match syntax_tree.suffix() {
             Some(suffix) => {
@@ -111,9 +111,9 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
                     "us" => r#type::Primitive::Usize,
                     "is" => r#type::Primitive::Isize,
                     _ => {
-                        self.handler.receive(Box::new(InvalidNumericSuffix {
-                            suffix_span: suffix.span(),
-                        }));
+                        self.create_handler_wrapper(handler).receive(Box::new(
+                            InvalidNumericSuffix { suffix_span: suffix.span() },
+                        ));
 
                         return Err(Error(syntax_tree.span()));
                     }
@@ -138,7 +138,7 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
 
                 if syntax_tree.decimal().is_some() && primitive_type_is_integral
                 {
-                    self.handler.receive(Box::new(
+                    self.create_handler_wrapper(handler).receive(Box::new(
                         FloatingPointLiteralHasIntegralSuffix {
                             numeric_literal_span: syntax_tree.span(),
                         },
@@ -153,9 +153,9 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
                 let inference_variable = InferenceVariable::new();
 
                 let constraint = if syntax_tree.decimal().is_some() {
-                    Inferring::Floating
+                    r#type::Constraint::Floating
                 } else {
-                    Inferring::Number
+                    r#type::Constraint::Number
                 };
 
                 assert!(self
@@ -179,9 +179,9 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
                 }),
             ))),
             Target::Address { .. } => {
-                self.handler.receive(Box::new(ExpectedLValue {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_handler_wrapper(handler).receive(Box::new(
+                    ExpectedLValue { expression_span: syntax_tree.span() },
+                ));
                 Err(Error(syntax_tree.span()))
             }
             Target::Statement => Ok(Expression::SideEffect(numeric_ty)),
@@ -191,10 +191,15 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
     ////////////////////////////////////////////////////////////////////////////
 
     /// Binds the given [`syntax_tree::expression::Boolean`]
+    ///
+    /// # Errors
+    ///
+    /// See [`Error`] for more information.
     pub fn bind_boolean(
         &mut self,
         syntax_tree: &syntax_tree::expression::Boolean,
         config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let value = match syntax_tree {
             syntax_tree::expression::Boolean::True(_) => true,
@@ -208,9 +213,9 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
                 ))))
             }
             Target::Address { .. } => {
-                self.handler.receive(Box::new(ExpectedLValue {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_handler_wrapper(handler).receive(Box::new(
+                    ExpectedLValue { expression_span: syntax_tree.span() },
+                ));
                 Err(Error(syntax_tree.span()))
             }
             Target::Statement => Ok(Expression::SideEffect(Type::Primitive(
@@ -222,10 +227,15 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
     ////////////////////////////////////////////////////////////////////////////
 
     /// Binds the given [`syntax_tree::expression::Prefix`]
+    ///
+    /// # Errors
+    ///
+    /// See [`Error`] for more information.
     pub fn bind_prefix(
         &mut self,
         syntax_tree: &syntax_tree::expression::Prefix,
         config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         todo!()
     }
@@ -233,17 +243,22 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
     ////////////////////////////////////////////////////////////////////////////
 
     /// Binds the given [`syntax_tree::expression::Prefixable`]
+    ///
+    /// # Errors
+    ///
+    /// See [`Error`] for more information.
     pub fn bind_prefixable(
         &mut self,
         syntax_tree: &syntax_tree::expression::Prefixable,
         config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             syntax_tree::expression::Prefixable::Postfixable(syn) => {
-                self.bind_postfixable(syn, config)
+                self.bind_postfixable(syn, config, handler)
             }
             syntax_tree::expression::Prefixable::Prefix(syn) => {
-                self.bind_prefix(syn, config)
+                self.bind_prefix(syn, config, handler)
             }
         }
     }
@@ -251,10 +266,15 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
     ////////////////////////////////////////////////////////////////////////////
 
     /// Binds the given [`syntax_tree::expression::Postfix`]
+    ///
+    /// # Errors
+    ///
+    /// See [`Error`] for more information.
     pub fn bind_postfix(
         &mut self,
         syntax_tree: &syntax_tree::expression::Postfix,
         config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         todo!()
     }
@@ -262,17 +282,22 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
     ////////////////////////////////////////////////////////////////////////////
 
     /// Binds the given [`syntax_tree::expression::Postfixable`]
+    ///
+    /// # Errors
+    ///
+    /// See [`Error`] for more information.
     pub fn bind_postfixable(
         &mut self,
         syntax_tree: &syntax_tree::expression::Postfixable,
         config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             syntax_tree::expression::Postfixable::Unit(syn) => {
-                self.bind_unit(syn, config)
+                self.bind_unit(syn, config, handler)
             }
             syntax_tree::expression::Postfixable::Postfix(syn) => {
-                self.bind_postfix(syn, config)
+                self.bind_postfix(syn, config, handler)
             }
         }
     }
@@ -280,17 +305,22 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
     ////////////////////////////////////////////////////////////////////////////
 
     /// Binds the given [`syntax_tree::expression::Unit`]
+    ///
+    /// # Errors
+    ///
+    /// See [`Error`] for more information.
     pub fn bind_unit(
         &mut self,
         syntax_tree: &syntax_tree::expression::Unit,
         config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             syntax_tree::expression::Unit::Boolean(syn) => {
-                self.bind_boolean(syn, config)
+                self.bind_boolean(syn, config, handler)
             }
             syntax_tree::expression::Unit::Numeric(syn) => {
-                self.bind_numeric(syn, config)
+                self.bind_numeric(syn, config, handler)
             }
             syntax_tree::expression::Unit::QualifiedIdentifier(_) => todo!(),
             syntax_tree::expression::Unit::Parenthesized(_) => todo!(),
@@ -302,10 +332,16 @@ impl<'t, 'h, C, S: table::State, O: Observer<S, super::Model>>
 
     ////////////////////////////////////////////////////////////////////////////
 
+    /// Binds the given [`syntax_tree::expression::Binary`]
+    ///
+    /// # Errors
+    ///
+    /// See [`Error`] for more information.
     pub fn bind_binary(
         &mut self,
         syntax_tree: &syntax_tree::expression::Binary,
         config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         todo!()
     }

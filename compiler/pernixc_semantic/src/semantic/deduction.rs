@@ -11,36 +11,40 @@ use super::{
     mapping::Mapping,
     model::Model,
     normalizer::Normalizer,
-    session::{ExceedLimitError, Limit, Session},
+    session::{Limit, Session},
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
     },
-    unification, Environment,
+    unification, Environment, ExceedLimitError,
 };
 use crate::symbol::table::State;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct DeductionUnifyingConfig;
 
-impl<M: Model> unification::Config<M> for DeductionUnifyingConfig {
-    fn lifetime_unifiable(
+impl<M: Model> unification::Config<Lifetime<M>> for DeductionUnifyingConfig {
+    fn unifiable(
         &mut self,
         from: &Lifetime<M>,
         _: &Lifetime<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(from.is_parameter())
     }
+}
 
-    fn type_unifiable(
+impl<M: Model> unification::Config<Type<M>> for DeductionUnifyingConfig {
+    fn unifiable(
         &mut self,
         from: &Type<M>,
         _: &Type<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(matches!(from, Type::Parameter(_) | Type::TraitMember(_)))
     }
+}
 
-    fn constant_unifiable(
+impl<M: Model> unification::Config<Constant<M>> for DeductionUnifyingConfig {
+    fn unifiable(
         &mut self,
         from: &Constant<M>,
         _: &Constant<M>,
@@ -112,7 +116,7 @@ fn mapping_equals<T: Term>(
         instantiation::instantiate(&mut key, substitution);
 
         for value in values {
-            if !equality::equals(&key, &value, environment, limit)? {
+            if !equality::equals_impl(&key, &value, environment, limit)? {
                 return Ok(false);
             }
         }
@@ -139,7 +143,7 @@ fn from_unification_to_substitution<T: Term>(
         let sampled = values.next().expect("should at least have one element");
 
         for value in values {
-            if !equality::equals(&sampled, &value, environment, limit)? {
+            if !equality::equals_impl(&sampled, &value, environment, limit)? {
                 return Ok(None);
             }
         }

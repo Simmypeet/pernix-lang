@@ -6,13 +6,13 @@
 use super::{
     model::Model,
     normalizer::Normalizer,
-    session::{ExceedLimitError, Limit, Session},
+    session::{Limit, Session},
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
     },
     unification::{self, Unification},
-    Environment,
+    Environment, ExceedLimitError,
 };
 use crate::symbol::table::State;
 
@@ -37,24 +37,28 @@ fn constant_predicate<M: Model>(x: &Constant<M>) -> bool { x.is_parameter() }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct OrderUnifyingConfig;
 
-impl<M: Model> unification::Config<M> for OrderUnifyingConfig {
-    fn lifetime_unifiable(
+impl<M: Model> unification::Config<Lifetime<M>> for OrderUnifyingConfig {
+    fn unifiable(
         &mut self,
         _: &Lifetime<M>,
         _: &Lifetime<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(true)
     }
+}
 
-    fn type_unifiable(
+impl<M: Model> unification::Config<Type<M>> for OrderUnifyingConfig {
+    fn unifiable(
         &mut self,
         from: &Type<M>,
         to: &Type<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(type_predicate(from) || type_predicate(to))
     }
+}
 
-    fn constant_unifiable(
+impl<M: Model> unification::Config<Constant<M>> for OrderUnifyingConfig {
+    fn unifiable(
         &mut self,
         from: &Constant<M>,
         to: &Constant<M>,

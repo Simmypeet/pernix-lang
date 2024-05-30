@@ -7,10 +7,10 @@ use crate::{
         model::Model,
         normalizer::Normalizer,
         predicate::Satisfiability,
-        session::{Cached, ExceedLimitError, Limit, Session},
+        session::{Cached, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         unification::{self, Unification},
-        visitor, Environment, Satisfied,
+        visitor, Environment, ExceedLimitError, Satisfied,
     },
     symbol::table::{self, DisplayObject, State, Table},
 };
@@ -113,24 +113,28 @@ impl<
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct OutlivesUnifyingConfig;
 
-impl<M: Model> unification::Config<M> for OutlivesUnifyingConfig {
-    fn lifetime_unifiable(
+impl<M: Model> unification::Config<Lifetime<M>> for OutlivesUnifyingConfig {
+    fn unifiable(
         &mut self,
         _: &Lifetime<M>,
         _: &Lifetime<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(true)
     }
+}
 
-    fn type_unifiable(
+impl<M: Model> unification::Config<Type<M>> for OutlivesUnifyingConfig {
+    fn unifiable(
         &mut self,
         _: &Type<M>,
         _: &Type<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(false)
     }
+}
 
-    fn constant_unifiable(
+impl<M: Model> unification::Config<Constant<M>> for OutlivesUnifyingConfig {
+    fn unifiable(
         &mut self,
         _: &Constant<M>,
         _: &Constant<M>,

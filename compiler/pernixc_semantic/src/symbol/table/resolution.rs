@@ -22,7 +22,7 @@ use crate::{
     arena::ID,
     error::{
         self, ExpectLifetime, ExpectType, LifetimeParameterNotFound,
-        MisMatchedGenericArgumentCount, MisOrderedGenericArgument,
+        MisOrderedGenericArgument, MismatchedGenericArgumentCount,
         MoreThanOneUnpackedInTupleType, NoGenericArgumentsRequired,
         ResolutionAmbiguity, SymbolNotFound,
     },
@@ -1458,7 +1458,7 @@ impl<S: State> Table<S> {
 
             let Some(provider) = G::get_ellided_term_provider(&mut config)
             else {
-                handler.receive(Box::new(MisMatchedGenericArgumentCount {
+                handler.receive(Box::new(MismatchedGenericArgumentCount {
                     generic_kind: G::generic_kind(),
                     generic_identifier_span,
                     expected_count: parameters.len(),
@@ -1481,7 +1481,7 @@ impl<S: State> Table<S> {
 
             // check if the number of supplied generic arugmnets is valid
             if !valid_count {
-                handler.receive(Box::new(MisMatchedGenericArgumentCount {
+                handler.receive(Box::new(MismatchedGenericArgumentCount {
                     generic_identifier_span,
                     generic_kind: G::generic_kind(),
                     expected_count: parameters.len(),

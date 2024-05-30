@@ -6,10 +6,10 @@ use super::{
     equality,
     model::Model,
     normalizer::Normalizer,
-    session::{Cached, ExceedLimitError, Limit, Session},
+    session::{Cached, Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     visitor::Mutable,
-    Environment,
+    Environment, ExceedLimitError,
 };
 use crate::symbol::table::State;
 
@@ -99,7 +99,12 @@ fn simplify_internal<T: Term>(
                 .filter_map(|x| T::as_trait_member_equality_predicate(x))
             {
                 let trait_member = T::from(equivalent.lhs.clone());
-                if equality::equals(&trait_member, term, environment, limit)? {
+                if equality::equals_impl(
+                    &trait_member,
+                    term,
+                    environment,
+                    limit,
+                )? {
                     equivalents.push(equivalent.rhs.clone());
                 }
             }

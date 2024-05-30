@@ -23,10 +23,10 @@ use crate::{
         model::{Default, Model},
         normalizer::Normalizer,
         predicate::{self, Outlives, Predicate, Satisfiability},
-        session::{ExceedLimitError, Limit, Session},
+        session::{Limit, Session},
         sub_term::{Location, SubTerm},
         unification::{Substructural, Unification},
-        Environment,
+        Environment, ExceedLimitError,
     },
     symbol::{
         table::{self, State, Table},
@@ -231,7 +231,7 @@ where
             Ok(Satisfiability::Satisfied)
         } else {
             // reflexivity
-            if equality::equals(self, lifetime, environment, limit)? {
+            if equality::equals_impl(self, lifetime, environment, limit)? {
                 Ok(Satisfiability::Satisfied)
             } else {
                 Ok(Satisfiability::Unsatisfied)

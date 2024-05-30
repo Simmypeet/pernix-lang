@@ -13,13 +13,13 @@ use crate::{
         model::Default,
         normalizer::NoOp,
         predicate::definite,
-        session::{self, ExceedLimitError, Limit, Session},
+        session::{self, Limit, Session},
         term::{
             constant::{self, Constant},
             r#type::{self, SymbolID, Type},
             GenericArguments, Symbol, Term,
         },
-        Environment, Premise,
+        Environment, ExceedLimitError, Premise,
     },
     symbol::{
         table::{representation::Insertion, Building, Table},

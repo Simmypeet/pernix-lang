@@ -24,13 +24,13 @@ use crate::{
         model::{Default, Model},
         normalizer::{NoOp, Normalizer},
         predicate::{self, ConstantType, Outlives, Predicate, Trait, Tuple},
-        session::{self, ExceedLimitError, Limit, Session},
+        session::{self, Limit, Session},
         term::{
             self, constant,
             lifetime::{self, Lifetime},
             r#type, GenericArguments, Term,
         },
-        Environment, Premise,
+        Environment, ExceedLimitError, Premise,
     },
     symbol::{
         table::{
@@ -288,12 +288,14 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
         session: &mut session::Default<M>,
     ) -> Result<bool, ExceedLimitError> {
         let result = match &predicate {
-            predicate::Predicate::TraitTypeEquality(eq) => equality::equals(
-                &r#type::Type::TraitMember(eq.lhs.clone()),
-                &eq.rhs,
-                self,
-                &mut Limit::new(session),
-            ),
+            predicate::Predicate::TraitTypeEquality(eq) => {
+                equality::equals_impl(
+                    &r#type::Type::TraitMember(eq.lhs.clone()),
+                    &eq.rhs,
+                    self,
+                    &mut Limit::new(session),
+                )
+            }
             predicate::Predicate::ConstantType(pred) => {
                 ConstantType::satisfies(&pred.0, self, &mut Limit::new(session))
             }
@@ -898,7 +900,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             let mut tr_const_ty = tr_const_param.r#type.clone();
             instantiation::instantiate(&mut tr_const_ty, &trait_instantiation);
 
-            match equality::equals(
+            match equality::equals_impl(
                 &tr_const_ty,
                 &im_const_param.r#type,
                 &Environment {

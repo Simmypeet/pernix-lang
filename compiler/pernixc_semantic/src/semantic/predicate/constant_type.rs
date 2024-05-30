@@ -5,9 +5,9 @@ use crate::{
         instantiation::{self, Instantiation},
         model::Model,
         normalizer::Normalizer,
-        session::{self, ExceedLimitError, Limit, Session},
+        session::{self, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-        visitor, Environment, Satisfied,
+        visitor, Environment, ExceedLimitError, Satisfied,
     },
     symbol::table::{self, DisplayObject, State, Table},
 };
@@ -172,7 +172,7 @@ fn satisfies_internal<T: Term, N: Normalizer<T::Model>>(
         .iter()
         .filter_map(|x| T::as_constant_type_predicate(x))
     {
-        if equality::equals(term, premise_term, environment, limit)? {
+        if equality::equals_impl(term, premise_term, environment, limit)? {
             limit.mark_as_done(Query(term), Satisfied);
             return Ok(true);
         }

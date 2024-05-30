@@ -4,9 +4,9 @@ use crate::{
         get_equivalences,
         model::Model,
         normalizer::Normalizer,
-        session::{self, ExceedLimitError, Limit, Session},
+        session::{self, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-        visitor, Environment, Satisfied,
+        visitor, Environment, ExceedLimitError, Satisfied,
     },
     symbol::table::State,
 };

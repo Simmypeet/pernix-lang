@@ -6,11 +6,12 @@ use super::{
     equality, get_equivalences, matching,
     model::Model,
     normalizer::Normalizer,
-    session::{self, ExceedLimitError, Limit, Session},
+    session::{self, Limit, Session},
+    sub_term::SubTerm,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, ModelOf, Term,
     },
-    Environment,
+    Environment, ExceedLimitError,
 };
 use crate::symbol::table::State;
 
@@ -22,40 +23,11 @@ pub struct Query<'a, T> {
     pub rhs: &'a T,
 }
 
-/// A customization point for the unification logic.
-pub trait Config<M: Model> {
-    /// Determines if the two given lifetimes are unifiable.
-    ///
-    /// # Errors
-    ///
-    /// See [`ExceedLimitError`].
-    fn lifetime_unifiable(
-        &mut self,
-        from: &Lifetime<M>,
-        to: &Lifetime<M>,
-    ) -> Result<bool, ExceedLimitError>;
-
-    /// Determines if the two given types are unifiable.
-    ///
-    /// # Errors
-    ///
-    /// See [`ExceedLimitError`].
-    fn type_unifiable(
-        &mut self,
-        from: &Type<M>,
-        to: &Type<M>,
-    ) -> Result<bool, ExceedLimitError>;
-
-    /// Determines if the two given constants are unifiable.
-    ///
-    /// # Errors
-    ///
-    /// See [`ExceedLimitError`].
-    fn constant_unifiable(
-        &mut self,
-        from: &Constant<M>,
-        to: &Constant<M>,
-    ) -> Result<bool, ExceedLimitError>;
+/// An object used for determining if two terms are unifiable.
+pub trait Config<T: Term> {
+    /// Determines if the two given terms are unifiable.
+    fn unifiable(&mut self, from: &T, to: &T)
+        -> Result<bool, ExceedLimitError>;
 }
 
 /// A trait implemented by terms that can be unified.
@@ -68,7 +40,9 @@ pub trait Element: ModelOf {
     fn unifiable(
         from: &Self,
         to: &Self,
-        config: &mut impl Config<Self::Model>,
+        config: &mut (impl Config<Lifetime<Self::Model>>
+                  + Config<Type<Self::Model>>
+                  + Config<Constant<Self::Model>>),
     ) -> Result<bool, ExceedLimitError>;
 }
 
@@ -76,9 +50,11 @@ impl<M: Model> Element for Lifetime<M> {
     fn unifiable(
         from: &Self,
         to: &Self,
-        config: &mut impl Config<M>,
+        config: &mut (impl Config<Lifetime<Self::Model>>
+                  + Config<Type<Self::Model>>
+                  + Config<Constant<Self::Model>>),
     ) -> Result<bool, ExceedLimitError> {
-        config.lifetime_unifiable(from, to)
+        config.unifiable(from, to)
     }
 }
 
@@ -86,9 +62,11 @@ impl<M: Model> Element for Type<M> {
     fn unifiable(
         from: &Self,
         to: &Self,
-        config: &mut impl Config<M>,
+        config: &mut (impl Config<Lifetime<Self::Model>>
+                  + Config<Type<Self::Model>>
+                  + Config<Constant<Self::Model>>),
     ) -> Result<bool, ExceedLimitError> {
-        config.type_unifiable(from, to)
+        config.unifiable(from, to)
     }
 }
 
@@ -96,16 +74,18 @@ impl<M: Model> Element for Constant<M> {
     fn unifiable(
         from: &Self,
         to: &Self,
-        config: &mut impl Config<M>,
+        config: &mut (impl Config<Lifetime<Self::Model>>
+                  + Config<Type<Self::Model>>
+                  + Config<Constant<Self::Model>>),
     ) -> Result<bool, ExceedLimitError> {
-        config.constant_unifiable(from, to)
+        config.unifiable(from, to)
     }
 }
 
 /// Contains all the unification of substructural components.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
-pub struct Substructural<T: Term> {
+pub struct Substructural<T: SubTerm> {
     pub lifetimes:
         HashMap<T::SubLifetimeLocation, Unification<Lifetime<T::Model>>>,
     pub types: HashMap<T::SubTypeLocation, Unification<Type<T::Model>>>,
@@ -128,7 +108,7 @@ where
 
 /// Specifies how a term matches another term.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Matching<T: Term> {
+pub enum Matching<T: SubTerm> {
     /// The two terms are unified by passing the predicate check in the
     /// [`Config`].
     Unifiable(T, T),
@@ -143,7 +123,7 @@ pub enum Matching<T: Term> {
 
 /// Represents a unification between two terms.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Unification<T: Term> {
+pub struct Unification<T: SubTerm> {
     /// If the `lhs` has been rewritten into another form, this field will be
     /// `Some` of the rewritten term.
     pub rewritten_lhs: Option<T>,
@@ -159,7 +139,9 @@ pub struct Unification<T: Term> {
 fn substructural_unify<T: Term>(
     lhs: &T,
     rhs: &T,
-    config: &mut impl Config<T::Model>,
+    config: &mut (impl Config<Lifetime<T::Model>>
+              + Config<Type<T::Model>>
+              + Config<Constant<T::Model>>),
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
@@ -218,7 +200,9 @@ fn substructural_unify<T: Term>(
 pub fn unify<T: Term>(
     from: &T,
     to: &T,
-    config: &mut impl Config<T::Model>,
+    config: &mut (impl Config<Lifetime<T::Model>>
+              + Config<Type<T::Model>>
+              + Config<Constant<T::Model>>),
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
         impl Session<T>
@@ -227,7 +211,7 @@ pub fn unify<T: Term>(
             + Session<Constant<T::Model>>,
     >,
 ) -> Result<Option<Unification<T>>, ExceedLimitError> {
-    if equality::equals(from, to, environment, limit)? {
+    if equality::equals_impl(from, to, environment, limit)? {
         return Ok(Some(Unification {
             rewritten_lhs: None,
             rewritten_rhs: None,

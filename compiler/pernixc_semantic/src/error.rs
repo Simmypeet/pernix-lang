@@ -17,7 +17,11 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    semantic::{model::Model, predicate::Predicate, term::r#type::Type},
+    semantic::{
+        model::Model,
+        predicate::Predicate,
+        term::r#type::{Expected, Type},
+    },
     symbol::{
         table::{
             representation::Index, Display, DisplayObject, State, Suboptimal,
@@ -792,7 +796,7 @@ impl<S: State, T: Display<S>> Display<S>
 
 /// Generic arguments count mismatch.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MisMatchedGenericArgumentCount {
+pub struct MismatchedGenericArgumentCount {
     /// The kind of the generic parameter.
     pub generic_kind: GenericKind,
 
@@ -806,7 +810,7 @@ pub struct MisMatchedGenericArgumentCount {
     pub supplied_count: usize,
 }
 
-impl<T: State> Display<T> for MisMatchedGenericArgumentCount {
+impl<T: State> Display<T> for MismatchedGenericArgumentCount {
     fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let generic_kind = match self.generic_kind {
             GenericKind::Type => "type",
@@ -2142,6 +2146,53 @@ impl<T: State> Display<T> for ExpectedLValue {
 
         write!(f, "\n{}", SourceCodeDisplay {
             span: &self.expression_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// Mismatched type error.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedType<M: Model> {
+    /// The expected type.
+    pub expected_type: Expected<M>,
+
+    /// The found type.
+    pub found_type: Type<M>,
+
+    /// The sapn where the type check occurred.
+    pub span: Span,
+}
+
+impl<T: State, M: Model> Display<T> for MismatchedType<M> {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.expected_type {
+            Expected::Known(known) => {
+                write!(f, "{}", Message {
+                    severity: Severity::Error,
+                    display: format!(
+                        "mismatched type: expected `{}` but found `{}`",
+                        DisplayObject { display: known, table },
+                        DisplayObject { display: &self.found_type, table }
+                    ),
+                })?;
+            }
+            Expected::Inferring(constraint) => {
+                write!(f, "{}", Message {
+                    severity: Severity::Error,
+                    display: format!(
+                        "mismatched type: expected `{constraint}` but found \
+                         `{}`",
+                        DisplayObject { display: &self.found_type, table }
+                    ),
+                })?;
+            }
+        }
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
             help_display: Option::<i32>::None,
         })?;
 

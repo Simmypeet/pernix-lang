@@ -22,14 +22,14 @@ use crate::{
         model::{Default, Model},
         normalizer::Normalizer,
         predicate::{self, Outlives, Predicate, Satisfiability},
-        session::{ExceedLimitError, Limit, Session},
+        session::{Limit, Session},
         sub_term::{
             AssignSubTermError, Location, SubMemberSymbolLocation,
             SubSymbolLocation, SubTerm, SubTraitMemberLocation,
             SubTupleLocation,
         },
         unification::{self, Unification},
-        Environment,
+        Environment, ExceedLimitError,
     },
     symbol::{
         self,
@@ -200,33 +200,6 @@ pub enum Primitive {
     Usize,
     #[display(fmt = "isize")]
     Isize,
-}
-
-/// The set of types that can be inferred. Used in type inference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub enum Inferring {
-    /// The type can be inferred into any type.
-    #[default]
-    All,
-
-    /// The type can be any number type. (signed/unsigned/floating)
-    Number,
-
-    /// The type can be signed number type. (signed integer/floating)
-    Signed,
-
-    /// The type can be only floating number type. (float32/float64)
-    Floating,
-}
-
-/// An enumeration of either a known type or an inferring type.
-///
-/// This is used in type inference to represent the expected type of a term.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum Expected<M: Model> {
-    Known(Type<M>),
-    Inferring(Inferring),
 }
 
 /// Represents a tuple type, denoted by `(type, type, ...type)` syntax.
@@ -861,6 +834,48 @@ pub enum Type<M: Model> {
     MemberSymbol(MemberSymbol<M, MemberSymbolID>),
     #[from]
     TraitMember(TraitMember<M>),
+}
+
+/// The set of types that can be inferred. Used in type inference.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    derive_more::Display,
+)]
+pub enum Constraint {
+    /// The type can be inferred into any type.
+    #[default]
+    #[display(fmt = "{{any}}")]
+    All,
+
+    /// The type can be any number type. (signed/unsigned/floating)
+    #[display(fmt = "{{number}}")]
+    Number,
+
+    /// The type can be signed number type. (signed integer/floating)
+    #[display(fmt = "{{signed}}")]
+    Signed,
+
+    /// The type can be only floating number type. (float32/float64)
+    #[display(fmt = "{{floating}}")]
+    Floating,
+}
+
+/// An enumeration of either a known type or an inferring type.
+///
+/// This is used for type checking and type inference.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum Expected<M: Model> {
+    Known(Type<M>),
+    Inferring(Constraint),
 }
 
 impl<M: Model> From<Never> for Type<M> {

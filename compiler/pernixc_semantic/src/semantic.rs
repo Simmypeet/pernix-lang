@@ -10,7 +10,7 @@ use self::{
     model::Model,
     normalizer::Normalizer,
     predicate::Predicate,
-    session::{ExceedLimitError, Limit, Session},
+    session::{Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
 };
 use crate::{
@@ -38,6 +38,19 @@ pub mod sub_term;
 pub mod term;
 pub mod unification;
 pub mod visitor;
+
+/// An error that occurs when the number of queries exceeds the limit.
+///
+/// Due to the fact that the semantic system is partially-decidable, it is
+/// possible that the number of queries can be infinite. To prevent this, a
+/// limit is set to the number of queries that can be made. However, in most
+/// cases, the number of queries should not exceed the limit.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error("exceeded the limit of the number of queries")]
+#[allow(missing_docs)]
+pub struct ExceedLimitError;
 
 /// A tag type signaling that the predicate/query is satisfied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -145,7 +158,7 @@ pub fn get_equivalences<T: Term>(
     for values in T::get_equivalent_classes(&environment.premise.equivalent) {
         let mut equals = false;
         for value in values.iter() {
-            if equality::equals(value, term, environment, limit)? {
+            if equality::equals_impl(value, term, environment, limit)? {
                 equals = true;
                 break;
             }

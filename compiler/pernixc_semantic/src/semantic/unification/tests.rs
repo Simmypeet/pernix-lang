@@ -10,17 +10,17 @@ use proptest::{
 use super::{unify, Config, Unification};
 use crate::{
     semantic::{
-        equality::equals,
+        equality::equals_impl,
         equivalent::Equivalent,
         model::Default,
         normalizer::NoOp,
-        session::{self, ExceedLimitError, Limit, Session},
+        session::{self, Limit, Session},
         sub_term::Location,
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments, Symbol, Term, Tuple, TupleElement,
         },
-        Environment, Premise,
+        Environment, ExceedLimitError, Premise,
     },
     symbol::{
         table::{Building, Table},
@@ -31,24 +31,28 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct GenericParameterUnifyConfig;
 
-impl Config<Default> for GenericParameterUnifyConfig {
-    fn lifetime_unifiable(
+impl Config<Lifetime<Default>> for GenericParameterUnifyConfig {
+    fn unifiable(
         &mut self,
         from: &Lifetime<Default>,
         _: &Lifetime<Default>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(from.is_parameter())
     }
+}
 
-    fn type_unifiable(
+impl Config<Type<Default>> for GenericParameterUnifyConfig {
+    fn unifiable(
         &mut self,
         from: &Type<Default>,
         _: &Type<Default>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(from.is_parameter())
     }
+}
 
-    fn constant_unifiable(
+impl Config<Constant<Default>> for GenericParameterUnifyConfig {
+    fn unifiable(
         &mut self,
         from: &Constant<Default>,
         _: &Constant<Default>,
@@ -522,7 +526,7 @@ where
 
     let (mut lhs, rhs) = property.generate();
 
-    if equals(
+    if equals_impl(
         &lhs,
         &rhs,
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
@@ -556,7 +560,7 @@ where
             table: &table,
             normalizer: &NoOp,
         };
-        prop_assert!(equals(
+        prop_assert!(equals_impl(
             &lhs,
             &rhs,
             &environment,
@@ -571,7 +575,7 @@ where
 
         let environment =
             Environment { premise: &premise, table: &table, normalizer: &NoOp };
-        prop_assert!(equals(
+        prop_assert!(equals_impl(
             &lhs,
             &rhs,
             &environment,

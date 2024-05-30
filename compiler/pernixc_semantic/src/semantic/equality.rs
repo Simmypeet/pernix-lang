@@ -3,9 +3,9 @@
 use super::{
     matching::Matching,
     normalizer::Normalizer,
-    session::{self, ExceedLimitError, Limit, Session},
+    session::{self, Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-    Environment, Satisfied,
+    Environment, ExceedLimitError, Satisfied,
 };
 use crate::symbol::table::State;
 
@@ -22,8 +22,7 @@ fn equals_by_unification<T: Term>(
     rhs: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
-        impl Session<T>
-            + Session<Lifetime<T::Model>>
+        impl Session<Lifetime<T::Model>>
             + Session<Type<T::Model>>
             + Session<Constant<T::Model>>,
     >,
@@ -33,19 +32,19 @@ fn equals_by_unification<T: Term>(
     };
 
     for Matching { lhs, rhs, .. } in matching.lifetimes {
-        if !equals(&lhs, &rhs, environment, limit)? {
+        if !equals_impl(&lhs, &rhs, environment, limit)? {
             return Ok(false);
         }
     }
 
     for Matching { lhs, rhs, .. } in matching.types {
-        if !equals(&lhs, &rhs, environment, limit)? {
+        if !equals_impl(&lhs, &rhs, environment, limit)? {
             return Ok(false);
         }
     }
 
     for Matching { lhs, rhs, .. } in matching.constants {
-        if !equals(&lhs, &rhs, environment, limit)? {
+        if !equals_impl(&lhs, &rhs, environment, limit)? {
             return Ok(false);
         }
     }
@@ -58,20 +57,19 @@ fn equals_by_normalization<T: Term>(
     rhs: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
-        impl Session<T>
-            + Session<Lifetime<T::Model>>
+        impl Session<Lifetime<T::Model>>
             + Session<Type<T::Model>>
             + Session<Constant<T::Model>>,
     >,
 ) -> Result<bool, ExceedLimitError> {
     if let Some(lhs) = lhs.normalize(environment, limit)? {
-        if equals(&lhs, rhs, environment, limit)? {
+        if equals_impl(&lhs, rhs, environment, limit)? {
             return Ok(true);
         }
     }
 
     if let Some(rhs) = rhs.normalize(environment, limit)? {
-        if equals(lhs, &rhs, environment, limit)? {
+        if equals_impl(lhs, &rhs, environment, limit)? {
             return Ok(true);
         }
     }
@@ -84,8 +82,7 @@ fn equals_without_mapping<T: Term>(
     rhs: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
-        impl Session<T>
-            + Session<Lifetime<T::Model>>
+        impl Session<Lifetime<T::Model>>
             + Session<Type<T::Model>>
             + Session<Constant<T::Model>>,
     >,
@@ -99,6 +96,13 @@ fn equals_without_mapping<T: Term>(
     }
 
     Ok(false)
+}
+
+pub fn equals<T: Term>(
+    lhs: &T,
+    rhs: &T,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+) -> Result<bool, ExceedLimitError> {
 }
 
 /// Checks if the two given terms are equal.
@@ -128,13 +132,12 @@ fn equals_without_mapping<T: Term>(
 /// # Errors
 ///
 /// See [`ExceedLimitError`] for more information.
-pub fn equals<T: Term>(
+pub(super) fn equals_impl<T: Term>(
     lhs: &T,
     rhs: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
-        impl Session<T>
-            + Session<Lifetime<T::Model>>
+        impl Session<Lifetime<T::Model>>
             + Session<Type<T::Model>>
             + Session<Constant<T::Model>>,
     >,
@@ -145,7 +148,7 @@ pub fn equals<T: Term>(
         return Ok(true);
     }
 
-    match limit.mark_as_in_progress(query.clone(), ())? {
+    match limit.mark_as_in_progress::<T, _>(query.clone(), ())? {
         Some(session::Cached::Done(Satisfied)) => return Ok(true),
         Some(session::Cached::InProgress(())) => {
             return Ok(false);
@@ -156,7 +159,7 @@ pub fn equals<T: Term>(
     if equals_by_normalization(lhs, rhs, environment, limit)?
         || equals_by_unification(lhs, rhs, environment, limit)?
     {
-        limit.mark_as_done(query, Satisfied);
+        limit.mark_as_done::<T, _>(query, Satisfied);
         return Ok(true);
     }
 
@@ -164,8 +167,8 @@ pub fn equals<T: Term>(
         for value in class.iter() {
             if equals_without_mapping(lhs, value, environment, limit)? {
                 for value in class.iter() {
-                    if equals(value, rhs, environment, limit)? {
-                        limit.mark_as_done(query, Satisfied);
+                    if equals_impl(value, rhs, environment, limit)? {
+                        limit.mark_as_done::<T, _>(query, Satisfied);
                         return Ok(true);
                     }
                 }
@@ -173,8 +176,8 @@ pub fn equals<T: Term>(
 
             if equals_without_mapping(value, rhs, environment, limit)? {
                 for value in class.iter() {
-                    if equals(lhs, value, environment, limit)? {
-                        limit.mark_as_done(query, Satisfied);
+                    if equals_impl(lhs, value, environment, limit)? {
+                        limit.mark_as_done::<T, _>(query, Satisfied);
                         return Ok(true);
                     }
                 }
@@ -182,7 +185,7 @@ pub fn equals<T: Term>(
         }
     }
 
-    limit.clear_query(query);
+    limit.clear_query::<T, _>(query);
     Ok(false)
 }
 

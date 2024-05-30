@@ -9,7 +9,7 @@ use crate::{
         equality,
         model::Default,
         normalizer::NoOp,
-        session::{self, ExceedLimitError, Limit, Session},
+        session::{self, Limit, Session},
         sub_term::{self, Location, TermLocation},
         term::{
             constant::Constant,
@@ -19,7 +19,7 @@ use crate::{
             },
             Term,
         },
-        visitor, Environment, Premise,
+        visitor, Environment, ExceedLimitError, Premise,
     },
     symbol::{
         table::{State, Table},
@@ -99,8 +99,12 @@ impl<
             return false;
         };
 
-        match equality::equals(term, self.target, self.environment, self.limit)
-        {
+        match equality::equals_impl(
+            term,
+            self.target,
+            self.environment,
+            self.limit,
+        ) {
             Ok(ok) => {
                 if ok {
                     locations_list.push(locations.collect());

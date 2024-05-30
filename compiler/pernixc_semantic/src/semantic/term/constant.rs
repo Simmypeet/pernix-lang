@@ -22,10 +22,10 @@ use crate::{
         model::{Default, Model},
         normalizer::Normalizer,
         predicate::{self, Outlives, Predicate, Satisfiability},
-        session::{ExceedLimitError, Limit, Session},
+        session::{Limit, Session},
         sub_term::{AssignSubTermError, Location, SubTerm, SubTupleLocation},
         unification::{self, Unification},
-        Environment,
+        Environment, ExceedLimitError,
     },
     symbol::{
         self,

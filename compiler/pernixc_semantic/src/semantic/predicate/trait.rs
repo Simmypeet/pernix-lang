@@ -16,12 +16,12 @@ use crate::{
         normalizer::Normalizer,
         order,
         predicate::{ConstantType, LifetimeConstraint, Predicate, Tuple},
-        session::{Cached, ExceedLimitError, Limit, Session},
+        session::{Cached, Limit, Session},
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments,
         },
-        unification, Environment, Premise, TraitContext,
+        unification, Environment, ExceedLimitError, Premise, TraitContext,
     },
     symbol::{
         self,
@@ -104,24 +104,34 @@ pub struct Query<'a, M: Model> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct HigherRankedLifetimeUnifyingConfig;
 
-impl<M: Model> unification::Config<M> for HigherRankedLifetimeUnifyingConfig {
-    fn lifetime_unifiable(
+impl<M: Model> unification::Config<Lifetime<M>>
+    for HigherRankedLifetimeUnifyingConfig
+{
+    fn unifiable(
         &mut self,
         from: &Lifetime<M>,
         _: &Lifetime<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(from.is_forall())
     }
+}
 
-    fn type_unifiable(
+impl<M: Model> unification::Config<Type<M>>
+    for HigherRankedLifetimeUnifyingConfig
+{
+    fn unifiable(
         &mut self,
         _: &Type<M>,
         _: &Type<M>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(false)
     }
+}
 
-    fn constant_unifiable(
+impl<M: Model> unification::Config<Constant<M>>
+    for HigherRankedLifetimeUnifyingConfig
+{
+    fn unifiable(
         &mut self,
         _: &Constant<M>,
         _: &Constant<M>,
@@ -238,7 +248,7 @@ impl<M: Model> Trait<M> {
                 };
 
                 for lifetime in lifetimes_iter {
-                    if !equality::equals(
+                    if !equality::equals_impl(
                         first_lifetime,
                         lifetime,
                         environment,
@@ -303,12 +313,14 @@ impl<M: Model> Trait<M> {
                 predicate.instantiate(&forall_lifetime_instantiation);
 
                 if !match predicate {
-                    Predicate::TraitTypeEquality(equality) => equality::equals(
-                        &Type::TraitMember(equality.lhs.clone()),
-                        &equality.rhs,
-                        environment,
-                        limit,
-                    )?,
+                    Predicate::TraitTypeEquality(equality) => {
+                        equality::equals_impl(
+                            &Type::TraitMember(equality.lhs.clone()),
+                            &equality.rhs,
+                            environment,
+                            limit,
+                        )?
+                    }
                     Predicate::ConstantType(constant_type) => {
                         ConstantType::satisfies(
                             &constant_type.0,
@@ -721,7 +733,7 @@ fn predicate_satisfies<
 
         match predicate {
             Predicate::TraitTypeEquality(equality) => {
-                if !equality::equals(
+                if !equality::equals_impl(
                     &Type::TraitMember(equality.lhs.clone()),
                     &equality.rhs,
                     environment,

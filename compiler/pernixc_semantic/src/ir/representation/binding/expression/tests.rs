@@ -12,11 +12,11 @@ use crate::{
     error::{
         Error, FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
     },
-    ir::representation::building::binder::{
+    ir::representation::binding::{
         expression::{Config, Target},
         Binder,
     },
-    semantic::term::r#type::{Inferring, Primitive, Type},
+    semantic::term::r#type::{self, Primitive, Type},
     symbol::{
         table::{
             representation::{
@@ -104,7 +104,7 @@ fn bind_numeric_literal_suffix() {
     .unwrap();
 
     let numeric_value = binder
-        .bind_numeric(&expression, Config { target: Target::Value })
+        .bind_numeric(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
         .unwrap()
@@ -147,7 +147,7 @@ fn bind_numeric_literal_float_infer() {
     .unwrap();
 
     let numeric_value = binder
-        .bind_numeric(&expression, Config { target: Target::Value })
+        .bind_numeric(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
         .unwrap()
@@ -170,7 +170,7 @@ fn bind_numeric_literal_float_infer() {
 
     assert_eq!(
         binder.inference_context.get_constraint::<Type<_>>(constraint_id),
-        Some(&Inferring::Floating)
+        Some(&r#type::Constraint::Floating)
     );
 }
 
@@ -203,7 +203,7 @@ fn bind_numeric_literal_number_infer() {
     .unwrap();
 
     let numeric_value = binder
-        .bind_numeric(&expression, Config { target: Target::Value })
+        .bind_numeric(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
         .unwrap()
@@ -226,7 +226,7 @@ fn bind_numeric_literal_number_infer() {
 
     assert_eq!(
         binder.inference_context.get_constraint::<Type<_>>(constraint_id),
-        Some(&Inferring::Number)
+        Some(&r#type::Constraint::Number)
     );
 }
 
@@ -259,7 +259,7 @@ fn invalid_numeric_literal_suffix() {
     .unwrap();
 
     assert!(binder
-        .bind_numeric(&expression, Config { target: Target::Value })
+        .bind_numeric(&expression, Config { target: Target::Value }, &storage)
         .is_err());
 
     let mut storage = storage.into_vec();
@@ -299,7 +299,7 @@ fn floating_point_literal_has_integral_suffix() {
     .unwrap();
 
     assert!(binder
-        .bind_numeric(&expression, Config { target: Target::Value })
+        .bind_numeric(&expression, Config { target: Target::Value }, &storage)
         .is_err());
 
     let mut storage = storage.into_vec();
@@ -354,10 +354,18 @@ fn bind_boolean_literal() {
     .unwrap();
 
     let true_literal = binder
-        .bind_boolean(&true_expression, Config { target: Target::Value })
+        .bind_boolean(
+            &true_expression,
+            Config { target: Target::Value },
+            &storage,
+        )
         .unwrap();
     let false_literal = binder
-        .bind_boolean(&false_expression, Config { target: Target::Value })
+        .bind_boolean(
+            &false_expression,
+            Config { target: Target::Value },
+            &storage,
+        )
         .unwrap();
 
     assert!(

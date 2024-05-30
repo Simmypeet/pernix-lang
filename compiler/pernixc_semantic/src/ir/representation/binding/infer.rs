@@ -13,14 +13,14 @@ use crate::{
         mapping::Mapping,
         model::Model,
         normalizer::Normalizer,
-        session::{self, ExceedLimitError, Limit, Session},
+        session::{self, Limit, Session},
         term::{
             constant::Constant,
             lifetime::Lifetime,
-            r#type::{Inferring, Type},
+            r#type::{self, Type},
             Term,
         },
-        unification, Environment, Premise,
+        unification, Environment, ExceedLimitError, Premise,
     },
     symbol::table::{self, Table},
 };
@@ -271,7 +271,7 @@ impl<T: Term, C: Constraint<T> + 'static> ContextImpl<T, C> {
     }
 }
 
-impl<M: Model> Constraint<Type<M>> for Inferring {
+impl<M: Model> Constraint<Type<M>> for r#type::Constraint {
     fn satisfies(&self, term: &Type<M>) -> bool {
         use crate::semantic::term::r#type::Primitive;
 
@@ -360,14 +360,14 @@ pub enum UnifyError {
 
     #[error(transparent)]
     UnsatisfiedConstraint(
-        UnsatisfiedConstraintError<Type<super::Model>, Inferring>,
+        UnsatisfiedConstraintError<Type<super::Model>, r#type::Constraint>,
     ),
 }
 
 /// The inference context storing the inference variables and constraints.
 #[derive(Debug, Clone, PartialEq, Eq, Getters, MutGetters, Default)]
 pub struct Context {
-    type_inference_context: ContextImpl<Type<super::Model>, Inferring>,
+    type_inference_context: ContextImpl<Type<super::Model>, r#type::Constraint>,
     constant_inference_context:
         ContextImpl<Constant<super::Model>, NoConstraint>,
 }
@@ -378,7 +378,7 @@ pub trait Inferable: Term<InferenceVariable = InferenceVariable<Self>> {
 }
 
 impl Inferable for Type<super::Model> {
-    type Constraint = Inferring;
+    type Constraint = r#type::Constraint;
 }
 
 impl Inferable for Constant<super::Model> {
@@ -488,24 +488,28 @@ impl Context {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct UnificationConfig;
 
-impl unification::Config<super::Model> for UnificationConfig {
-    fn lifetime_unifiable(
+impl unification::Config<Lifetime<super::Model>> for UnificationConfig {
+    fn unifiable(
         &mut self,
         from: &Lifetime<super::Model>,
         to: &Lifetime<super::Model>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(from.is_inference() || to.is_inference())
     }
+}
 
-    fn type_unifiable(
+impl unification::Config<Type<super::Model>> for UnificationConfig {
+    fn unifiable(
         &mut self,
         from: &Type<super::Model>,
         to: &Type<super::Model>,
     ) -> Result<bool, ExceedLimitError> {
         Ok(from.is_inference() || to.is_inference())
     }
+}
 
-    fn constant_unifiable(
+impl unification::Config<Constant<super::Model>> for UnificationConfig {
+    fn unifiable(
         &mut self,
         from: &Constant<super::Model>,
         to: &Constant<super::Model>,
@@ -578,8 +582,6 @@ impl Context {
         &mut self,
         inferring: ID<C>,
         known: &T,
-        premise: &Premise<super::Model>,
-        table: &Table<impl table::State>,
         context: &impl Fn(&mut Self) -> &mut ContextImpl<T, C>,
         into_unify_error: &impl Fn(UnsatisfiedConstraintError<T, C>) -> UnifyError,
     ) -> Result<(), UnifyError>
@@ -668,8 +670,6 @@ impl Context {
                         ) => self.handle_known_and_infer::<T, C>(
                             inferring,
                             &known,
-                            premise,
-                            table,
                             inference_context,
                             constraint_error,
                         )?,
@@ -734,8 +734,6 @@ impl Context {
                             self.handle_known_and_infer(
                                 inferring,
                                 another_known,
-                                premise,
-                                table,
                                 inference_context,
                                 constraint_error,
                             )?;
@@ -752,7 +750,7 @@ impl Context {
 
     fn type_inference_context_mut(
         &mut self,
-    ) -> &mut ContextImpl<Type<super::Model>, Inferring> {
+    ) -> &mut ContextImpl<Type<super::Model>, r#type::Constraint> {
         &mut self.type_inference_context
     }
 

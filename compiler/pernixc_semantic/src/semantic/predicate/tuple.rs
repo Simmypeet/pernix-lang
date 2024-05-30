@@ -4,9 +4,9 @@ use crate::{
         equality, get_equivalences,
         instantiation::{self, Instantiation},
         normalizer::Normalizer,
-        session::{Cached, ExceedLimitError, Limit, Session},
+        session::{Cached, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-        Environment, Satisfied,
+        Environment, ExceedLimitError, Satisfied,
     },
     symbol::table::{self, DisplayObject, State, Table},
 };
@@ -80,7 +80,7 @@ impl<T: Term> Tuple<T> {
             .iter()
             .filter_map(|x| T::as_tuple_predicate(x))
         {
-            if equality::equals(&predicate.0, term, environment, limit)? {
+            if equality::equals_impl(&predicate.0, term, environment, limit)? {
                 limit.mark_as_done(Query(term), Satisfied);
                 return Ok(true);
             }
