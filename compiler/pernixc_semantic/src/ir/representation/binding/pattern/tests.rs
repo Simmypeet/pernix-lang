@@ -78,18 +78,6 @@ impl From<Never> for SimpleInference {
     fn from(value: Never) -> Self { match value {} }
 }
 
-impl From<SimpleInference> for Lifetime<SimpleModel> {
-    fn from(val: SimpleInference) -> Self { Self::Inference(val) }
-}
-
-impl From<SimpleInference> for Type<SimpleModel> {
-    fn from(val: SimpleInference) -> Self { Self::Inference(val) }
-}
-
-impl From<SimpleInference> for Constant<SimpleModel> {
-    fn from(val: SimpleInference) -> Self { Self::Inference(val) }
-}
-
 impl Model for SimpleModel {
     type LifetimeInference = SimpleInference;
     type TypeInference = SimpleInference;

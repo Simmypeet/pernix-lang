@@ -35,7 +35,7 @@ pub struct Outlives<T: Term> {
     pub bound: Lifetime<T::Model>,
 }
 
-impl<S: State, T: table::Display<S> + Term> table::Display<S> for Outlives<T> 
+impl<S: State, T: table::Display<S> + Term> table::Display<S> for Outlives<T>
 where
     Lifetime<T::Model>: table::Display<S>,
 {
@@ -291,6 +291,5 @@ impl<T: Term> Outlives<T> {
     }
 }
 
-// TODO: Add tests
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

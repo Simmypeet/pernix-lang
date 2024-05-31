@@ -34,7 +34,7 @@ use crate::{
 };
 
 pub mod expression;
-mod infer;
+pub mod infer;
 mod pattern;
 pub mod statement;
 
@@ -68,18 +68,6 @@ impl model::Model for Model {
     ) -> Constant<Self> {
         Constant::from_other_model(constant)
     }
-}
-
-impl From<InferenceVariable<Self>> for Lifetime<Model> {
-    fn from(value: InferenceVariable<Self>) -> Self { Self::Inference(value) }
-}
-
-impl From<InferenceVariable<Self>> for Type<Model> {
-    fn from(value: InferenceVariable<Self>) -> Self { Self::Inference(value) }
-}
-
-impl From<InferenceVariable<Self>> for Constant<Model> {
-    fn from(value: InferenceVariable<Self>) -> Self { Self::Inference(value) }
 }
 
 impl<T: table::State, U> table::Display<T> for InferenceVariable<U> {
@@ -333,8 +321,14 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
                 if !result {
                     self.create_handler_wrapper(handler).receive(Box::new(
                         MismatchedType {
-                            expected_type: Expected::Known(simplified_expected),
-                            found_type: simplified_ty,
+                            expected_type: self
+                                .inference_context
+                                .into_constraint_model(simplified_expected)
+                                .unwrap(),
+                            found_type: self
+                                .inference_context
+                                .into_constraint_model(simplified_ty)
+                                .unwrap(),
                             span: type_check_span,
                         },
                     ))

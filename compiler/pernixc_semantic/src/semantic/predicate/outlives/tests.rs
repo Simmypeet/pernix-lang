@@ -13,40 +13,17 @@ use crate::{
         model::Default,
         normalizer::NoOp,
         predicate::{Equality, Outlives, Predicate},
-        session::{self, ExceedLimitError, Limit, Session},
+        session::{self, Limit, Session},
         term::{
             constant::Constant,
             lifetime::Lifetime,
             r#type::{self, Type},
             GenericArguments, Symbol, Term,
         },
-        Environment, Premise,
+        Environment, ExceedLimitError, Premise,
     },
     symbol::table::{Building, Table},
 };
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-pub enum ApplyPropertyError {
-    #[error(transparent)]
-    ExceedLimitError(#[from] ExceedLimitError),
-    #[error("failed to apply the environment")]
-    TypeAliasIDCollision,
-}
-
-impl From<equality::tests::ApplyPropertyError> for ApplyPropertyError {
-    fn from(value: equality::tests::ApplyPropertyError) -> Self {
-        match value {
-            equality::tests::ApplyPropertyError::ExceedLimitError(e) => {
-                Self::ExceedLimitError(e)
-            }
-            equality::tests::ApplyPropertyError::TypeAliasIDCollision => {
-                Self::TypeAliasIDCollision
-            }
-        }
-    }
-}
 
 /// A trait for generating term for checking predicate
 pub trait Property<T>: 'static + Debug {
@@ -55,11 +32,7 @@ pub trait Property<T>: 'static + Debug {
         &self,
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError>;
-
-    /// Generates the term for testing.
-    #[must_use]
-    fn generate(&self) -> (T, Lifetime<Default>);
+    ) -> Result<(T, Lifetime<Default>), ExceedLimitError>;
 }
 
 #[derive(Debug)]
@@ -70,40 +43,28 @@ pub struct ByEquality<T: Term> {
 
 impl<T: Term<Model = Default>> Property<T> for ByEquality<T>
 where
-    session::Default<Default>: Session<T>,
     Equality<T::TraitMember, T>: Into<Predicate<Default>>,
 {
     fn apply(
         &self,
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError> {
-        if Outlives::satisfies(
+    ) -> Result<(T, Lifetime<Default>), ExceedLimitError> {
+        let (inner_operand, inner_bound) =
+            self.property.apply(table, premise)?;
+
+        if !Outlives::satisfies(
             &T::from(self.equality.clone()),
-            &self.property.generate().1,
+            &inner_bound,
             &Environment { premise, table, normalizer: &NoOp },
-            &mut Limit::new(&mut session::Default::default()),
         )? {
-            return Ok(());
+            premise.append_from_predicates(std::iter::once(
+                Equality { lhs: self.equality.clone(), rhs: inner_operand }
+                    .into(),
+            ));
         }
 
-        premise.append_from_predicates(std::iter::once(
-            Equality {
-                lhs: self.equality.clone(),
-                rhs: self.property.generate().0,
-            }
-            .into(),
-        ));
-
-        self.property.apply(table, premise)?;
-
-        Ok(())
-    }
-
-    fn generate(&self) -> (T, Lifetime<Default>) {
-        let (_, bound) = self.property.generate();
-
-        (T::from(self.equality.clone()), bound)
+        Ok((T::from(self.equality.clone()), inner_bound))
     }
 }
 

@@ -319,7 +319,7 @@ pub fn accept_recursive_mut<
 macro_rules! implements_tuple {
     ($self:ident, $visitor:ident, $accept_single:ident, $iter:ident) => {{
         for (idx, element) in $self.elements.$iter().enumerate() {
-            if element.term.$accept_single(
+            if !element.term.$accept_single(
                 $visitor,
                 SubTupleLocation::Single(idx).into().into(),
             ) {

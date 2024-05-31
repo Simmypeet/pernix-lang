@@ -1,3 +1,5 @@
+//! Contains logic related to hindley-milner type inference algorithm.
+
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     sync::atomic::{AtomicUsize, Ordering},
@@ -5,23 +7,25 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use getset::{Getters, MutGetters};
+use lazy_static::lazy_static;
 
 use crate::{
     arena::{Arena, ID},
     semantic::{
         fresh::Fresh,
         mapping::Mapping,
-        model::Model,
+        model::{self, Model},
         normalizer::Normalizer,
+        simplify::simplify,
         term::{
             constant::Constant,
             lifetime::Lifetime,
             r#type::{self, Type},
-            Term,
+            Never, Term,
         },
         unification, Environment, ExceedLimitError, Premise,
     },
-    symbol::table::{self, Table},
+    symbol::table::{self, Building, Table},
 };
 
 /// A unique identifier for an inference variable.
@@ -149,6 +153,7 @@ impl<T: Term, C: 'static> ContextImpl<T, C> {
     "failed to unify the inference variable with the constraint due to \
      unsatisfiable constraint"
 )]
+#[allow(missing_docs)]
 pub struct UnsatisfiedConstraintError<T, C> {
     /// The term that failed to satisfy the constraint.
     pub term: T,
@@ -163,11 +168,13 @@ pub struct UnsatisfiedConstraintError<T, C> {
 #[error(
     "the inference variable is used before being registered in the context"
 )]
+#[allow(missing_docs)]
 pub struct UnregisteredInferenceVariableError<ID>(pub ID);
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
+#[allow(missing_docs)]
 pub enum UnifyConstraintError<T: Term, C> {
     #[error(transparent)]
     UnsatisfiedConstraintError(#[from] UnsatisfiedConstraintError<T, C>),
@@ -181,6 +188,7 @@ pub enum UnifyConstraintError<T: Term, C> {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
+#[allow(missing_docs)]
 pub enum AssignKnownValueError<T, C> {
     #[error(transparent)]
     UnsatisfiedConstraintError(#[from] UnsatisfiedConstraintError<T, C>),
@@ -387,6 +395,7 @@ impl<M: Model> Constraint<Type<M>> for r#type::Constraint {
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[error("the two constraints cannot be combined")]
+#[allow(missing_docs)]
 pub struct CombineConstraintError<C> {
     /// The left-hand side constraint.
     pub lhs: C,
@@ -408,6 +417,7 @@ impl<T> Constraint<T> for NoConstraint {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
+#[allow(missing_docs)]
 pub enum UnifyError {
     #[error(transparent)]
     UnregisteredTypeInferenceVariable(
@@ -459,6 +469,7 @@ pub struct Context {
 
 /// Implemented by types and constants, which can be inferree.
 pub trait Inferable: Term<InferenceVariable = InferenceVariable<Self>> {
+    /// The type of the constraint for the inference.
     type Constraint: Constraint<Self> + 'static;
 }
 
@@ -541,10 +552,9 @@ impl Context {
 
     /// Unifies the given inference variable with a constraint.
     ///
-    /// # Returns
+    /// # Errors
     ///
-    /// Returns `true` if the inference variable was successfully unified with
-    /// the constraint. Otherwise, `false` if the constraint was not satisfied.
+    /// See [`UnifyConstraintError`] for more information.
     #[allow(private_bounds)]
     pub fn unify_with_constraint<T: InferableSealed>(
         &mut self,
@@ -560,6 +570,10 @@ impl Context {
     /// If the given known value satsifies the constraint, every occurrence of
     /// the `constraint_id` in the inference context will be replaced with the
     /// known value.
+    ///
+    /// # Errors
+    ///
+    /// See [`AssignKnownValueError`] for more information.
     #[allow(private_bounds)]
     pub fn assign_infer_to_known<T: InferableSealed>(
         &mut self,
@@ -571,7 +585,7 @@ impl Context {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct UnificationConfig;
+struct UnificationConfig;
 
 impl unification::Config<Lifetime<super::Model>> for UnificationConfig {
     fn unifiable(
@@ -923,6 +937,352 @@ impl Context {
         };
 
         self.handle_unification(unification, premise, table)
+    }
+}
+
+/// The model that uses the [`r#type::Constraint`] as the inference type for
+/// type term and [`NoConstraint`]  as the inference type for constant and
+/// lifetime terms.
+///
+/// This is primarily used for reporting the type inference errors, which can
+/// display the current state of the inference context.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct ConstraintModel;
+
+impl From<Never> for NoConstraint {
+    fn from(never: Never) -> Self { match never {} }
+}
+
+impl<T: table::State> table::Display<T> for NoConstraint {
+    fn fmt(
+        &self,
+        _: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "?")
+    }
+}
+
+impl<T: table::State> table::Display<T> for r#type::Constraint {
+    fn fmt(
+        &self,
+        _: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        use r#type::Constraint::*;
+
+        match self {
+            All => write!(f, "?"),
+            Number => write!(f, "{{number}}"),
+            Signed => write!(f, "{{signed}}"),
+            Floating => write!(f, "{{floating}}"),
+            Integer => write!(f, "{{integer}}"),
+            SignedInteger => write!(f, "{{signed integer}}"),
+        }
+    }
+}
+
+impl model::Model for ConstraintModel {
+    type LifetimeInference = NoConstraint;
+    type TypeInference = r#type::Constraint;
+    type ConstantInference = NoConstraint;
+
+    fn from_default_type(ty: Type<model::Default>) -> Type<Self> {
+        Type::from_other_model(ty)
+    }
+
+    fn from_default_lifetime(
+        lifetime: Lifetime<model::Default>,
+    ) -> Lifetime<Self> {
+        Lifetime::from_other_model(lifetime)
+    }
+
+    fn from_default_constant(
+        constant: Constant<model::Default>,
+    ) -> Constant<Self> {
+        Constant::from_other_model(constant)
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[allow(missing_docs)]
+pub enum IntoConstraintModelError {
+    #[error(transparent)]
+    UnregisteredTypeInferenceVariable(
+        UnregisteredInferenceVariableError<
+            InferenceVariable<Type<super::Model>>,
+        >,
+    ),
+
+    #[error(transparent)]
+    UnregisteredConstantInferenceVariable(
+        UnregisteredInferenceVariableError<
+            InferenceVariable<Constant<super::Model>>,
+        >,
+    ),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum InferenceOrConstraint<ID, C> {
+    InferenceID(ID),
+    Constraint(C),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+struct IntermediaryModel;
+
+impl<ID, C> From<Never> for InferenceOrConstraint<ID, C> {
+    fn from(value: Never) -> Self { match value {} }
+}
+
+impl From<InferenceVariable<Lifetime<super::Model>>> for NoConstraint {
+    fn from(_: InferenceVariable<Lifetime<super::Model>>) -> Self {
+        NoConstraint
+    }
+}
+
+impl From<InferenceVariable<Type<super::Model>>>
+    for InferenceOrConstraint<
+        InferenceVariable<Type<super::Model>>,
+        r#type::Constraint,
+    >
+{
+    fn from(value: InferenceVariable<Type<super::Model>>) -> Self {
+        InferenceOrConstraint::InferenceID(value)
+    }
+}
+
+impl From<InferenceVariable<Constant<super::Model>>>
+    for InferenceOrConstraint<
+        InferenceVariable<Constant<super::Model>>,
+        NoConstraint,
+    >
+{
+    fn from(value: InferenceVariable<Constant<super::Model>>) -> Self {
+        InferenceOrConstraint::InferenceID(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+struct ErasedInference;
+
+impl From<Never> for ErasedInference {
+    fn from(never: Never) -> Self { match never {} }
+}
+
+impl From<InferenceVariable<Lifetime<super::Model>>> for ErasedInference {
+    fn from(_: InferenceVariable<Lifetime<super::Model>>) -> Self {
+        ErasedInference
+    }
+}
+
+impl model::Model for IntermediaryModel {
+    type LifetimeInference = ErasedInference;
+    type TypeInference = InferenceOrConstraint<
+        InferenceVariable<Type<super::Model>>,
+        r#type::Constraint,
+    >;
+    type ConstantInference = InferenceOrConstraint<
+        InferenceVariable<Constant<super::Model>>,
+        NoConstraint,
+    >;
+
+    fn from_default_type(ty: Type<model::Default>) -> Type<Self> {
+        Type::from_other_model(ty)
+    }
+
+    fn from_default_lifetime(
+        lifetime: Lifetime<model::Default>,
+    ) -> Lifetime<Self> {
+        Lifetime::from_other_model(lifetime)
+    }
+
+    fn from_default_constant(
+        constant: Constant<model::Default>,
+    ) -> Constant<Self> {
+        Constant::from_other_model(constant)
+    }
+}
+
+struct ConstraintNormalizer<'a> {
+    context: &'a Context,
+}
+
+impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
+    fn normalize_lifetime(
+        _: &<IntermediaryModel as Model>::LifetimeInference,
+        _: &Environment<IntermediaryModel, impl table::State, Self>,
+    ) -> Result<Option<Lifetime<IntermediaryModel>>, ExceedLimitError> {
+        Ok(Some(Lifetime::Inference(ErasedInference)))
+    }
+
+    fn normalize_type(
+        ty: &<IntermediaryModel as Model>::TypeInference,
+        environment: &Environment<IntermediaryModel, impl table::State, Self>,
+    ) -> Result<Option<Type<IntermediaryModel>>, ExceedLimitError> {
+        match ty {
+            InferenceOrConstraint::InferenceID(inference_id) => {
+                match environment
+                    .normalizer
+                    .context
+                    .get_inference(*inference_id)
+                {
+                    Some(inference) => match inference {
+                        Inference::Known(known) => {
+                            Ok(Some(Type::from_other_model(known.clone())))
+                        }
+                        Inference::Inferring(constraint_id) => Ok(Some(
+                            Type::Inference(InferenceOrConstraint::Constraint(
+                                *environment
+                                    .normalizer
+                                    .context
+                                    .get_constraint::<Type<_>>(*constraint_id)
+                                    .unwrap(),
+                            )),
+                        )),
+                    },
+                    None => Ok(None),
+                }
+            }
+            InferenceOrConstraint::Constraint(_) => Ok(None), /* no need to
+                                                               * normalize */
+        }
+    }
+
+    fn normalize_constant(
+        constant: &<IntermediaryModel as Model>::ConstantInference,
+        environment: &Environment<IntermediaryModel, impl table::State, Self>,
+    ) -> Result<Option<Constant<IntermediaryModel>>, ExceedLimitError> {
+        match constant {
+            InferenceOrConstraint::InferenceID(inference_id) => {
+                match environment
+                    .normalizer
+                    .context
+                    .get_inference(*inference_id)
+                {
+                    Some(inference) => match inference {
+                        Inference::Known(known) => {
+                            Ok(Some(Constant::from_other_model(known.clone())))
+                        }
+                        Inference::Inferring(constraint_id) => {
+                            Ok(Some(Constant::Inference(
+                                InferenceOrConstraint::Constraint(
+                                    *environment
+                                        .normalizer
+                                        .context
+                                        .get_constraint::<Constant<_>>(
+                                            *constraint_id,
+                                        )
+                                        .unwrap(),
+                                ),
+                            )))
+                        }
+                    },
+                    None => Ok(None),
+                }
+            }
+            InferenceOrConstraint::Constraint(_) => Ok(None), /* no need to
+                                                               * normalize */
+        }
+    }
+}
+
+impl TryFrom<ErasedInference> for NoConstraint {
+    type Error = IntoConstraintModelError;
+
+    fn try_from(_: ErasedInference) -> Result<Self, Self::Error> {
+        Ok(NoConstraint)
+    }
+}
+
+impl
+    TryFrom<
+        InferenceOrConstraint<
+            InferenceVariable<Type<super::Model>>,
+            r#type::Constraint,
+        >,
+    > for r#type::Constraint
+{
+    type Error = IntoConstraintModelError;
+
+    fn try_from(
+        value: InferenceOrConstraint<
+            InferenceVariable<Type<super::Model>>,
+            r#type::Constraint,
+        >,
+    ) -> Result<Self, Self::Error> {
+        match value {
+            InferenceOrConstraint::InferenceID(inference_id) => Err(
+                IntoConstraintModelError::UnregisteredTypeInferenceVariable(
+                    UnregisteredInferenceVariableError(inference_id),
+                ),
+            ),
+            InferenceOrConstraint::Constraint(constraint) => Ok(constraint),
+        }
+    }
+}
+
+impl
+    TryFrom<
+        InferenceOrConstraint<
+            InferenceVariable<Constant<super::Model>>,
+            NoConstraint,
+        >,
+    > for NoConstraint
+{
+    type Error = IntoConstraintModelError;
+
+    fn try_from(
+        value: InferenceOrConstraint<
+            InferenceVariable<Constant<super::Model>>,
+            NoConstraint,
+        >,
+    ) -> Result<Self, Self::Error> {
+        match value {
+            InferenceOrConstraint::InferenceID(inference_id) => Err(
+                IntoConstraintModelError::UnregisteredConstantInferenceVariable(
+                    UnregisteredInferenceVariableError(inference_id),
+                ),
+            ),
+            InferenceOrConstraint::Constraint(constraint) => Ok(constraint),
+        }
+    }
+}
+
+impl Context {
+    /// Converts the type with [`super::Model`] into the type with the
+    /// [`ConstraintModel`] model.
+    ///
+    /// All type inference variables will be replaced with the constraints they
+    /// currently infer.
+    ///
+    /// # Errors
+    ///
+    /// See [`IntoConstraintModelError`] for the possible errors.
+    pub fn into_constraint_model(
+        &self,
+        ty: Type<super::Model>,
+    ) -> Result<Type<ConstraintModel>, IntoConstraintModelError> {
+        let mut intermediary_type =
+            Type::<IntermediaryModel>::from_other_model(ty);
+
+        lazy_static! {
+            static ref DUMMY_TABLE: Table<Building> = Table::default();
+            static ref DUMMY_PREMISE: Premise<IntermediaryModel> =
+                Premise::default();
+        };
+
+        // normalze all the inference variables
+        intermediary_type = simplify(&intermediary_type, &Environment {
+            premise: &DUMMY_PREMISE,
+            table: &DUMMY_TABLE,
+            normalizer: &ConstraintNormalizer { context: self },
+        })
+        .unwrap_or(intermediary_type);
+
+        Type::try_from_other_model(intermediary_type)
     }
 }
 

@@ -137,30 +137,30 @@ impl<M: Model> GenericArguments<M> {
 
     /// Tries to convert a generic arguments with the model `U` into the model
     /// `M`.
-    pub fn try_from_other_model<U: Model>(
+    pub fn try_from_other_model<U: Model, E>(
         term: GenericArguments<U>,
-    ) -> Option<Self>
+    ) -> Result<Self, E>
     where
-        M::LifetimeInference: TryFrom<U::LifetimeInference>,
-        M::TypeInference: TryFrom<U::TypeInference>,
-        M::ConstantInference: TryFrom<U::ConstantInference>,
+        M::LifetimeInference: TryFrom<U::LifetimeInference, Error = E>,
+        M::TypeInference: TryFrom<U::TypeInference, Error = E>,
+        M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
     {
-        Some(Self {
+        Ok(Self {
             lifetimes: term
                 .lifetimes
                 .into_iter()
                 .map(Lifetime::try_from_other_model)
-                .collect::<Option<Vec<_>>>()?,
+                .collect::<Result<Vec<_>, _>>()?,
             types: term
                 .types
                 .into_iter()
                 .map(Type::try_from_other_model)
-                .collect::<Option<Vec<_>>>()?,
+                .collect::<Result<Vec<_>, _>>()?,
             constants: term
                 .constants
                 .into_iter()
                 .map(Constant::try_from_other_model)
-                .collect::<Option<Vec<_>>>()?,
+                .collect::<Result<Vec<_>, _>>()?,
         })
     }
 
@@ -216,13 +216,15 @@ impl<M: Model, ID> Symbol<M, ID> {
     }
 
     /// Tries to convert a symbol from model `U` to model `M`.
-    pub fn try_from_other_model<U: Model>(symbol: Symbol<U, ID>) -> Option<Self>
+    pub fn try_from_other_model<U: Model, E>(
+        symbol: Symbol<U, ID>,
+    ) -> Result<Self, E>
     where
-        M::LifetimeInference: TryFrom<U::LifetimeInference>,
-        M::TypeInference: TryFrom<U::TypeInference>,
-        M::ConstantInference: TryFrom<U::ConstantInference>,
+        M::LifetimeInference: TryFrom<U::LifetimeInference, Error = E>,
+        M::TypeInference: TryFrom<U::TypeInference, Error = E>,
+        M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
     {
-        Some(Self {
+        Ok(Self {
             id: symbol.id,
             generic_arguments: GenericArguments::try_from_other_model(
                 symbol.generic_arguments,
@@ -287,15 +289,15 @@ impl<M: Model, ID> MemberSymbol<M, ID> {
     }
 
     /// Tries to convert a member symbol from model `U` to model `M`.
-    pub fn try_from_other_model<U: Model>(
+    pub fn try_from_other_model<U: Model, E>(
         member_symbol: MemberSymbol<U, ID>,
-    ) -> Option<Self>
+    ) -> Result<Self, E>
     where
-        M::LifetimeInference: TryFrom<U::LifetimeInference>,
-        M::TypeInference: TryFrom<U::TypeInference>,
-        M::ConstantInference: TryFrom<U::ConstantInference>,
+        M::LifetimeInference: TryFrom<U::LifetimeInference, Error = E>,
+        M::TypeInference: TryFrom<U::TypeInference, Error = E>,
+        M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
     {
-        Some(Self {
+        Ok(Self {
             id: member_symbol.id,
             member_generic_arguments: GenericArguments::try_from_other_model(
                 member_symbol.member_generic_arguments,
@@ -372,15 +374,18 @@ impl<T: Term> Tuple<T> {
     }
 
     /// Tries to convert a tuple from model `U` to model `M`.
-    pub fn try_from_other_model<U: Model>(
+    pub fn try_from_other_model<U: Model, E>(
         tuple: Tuple<T::Rebind<U>>,
-    ) -> Option<Self>
+    ) -> Result<Self, E>
     where
-        <T::Model as Model>::LifetimeInference: TryFrom<U::LifetimeInference>,
-        <T::Model as Model>::TypeInference: TryFrom<U::TypeInference>,
-        <T::Model as Model>::ConstantInference: TryFrom<U::ConstantInference>,
+        <T::Model as Model>::LifetimeInference:
+            TryFrom<U::LifetimeInference, Error = E>,
+        <T::Model as Model>::TypeInference:
+            TryFrom<U::TypeInference, Error = E>,
+        <T::Model as Model>::ConstantInference:
+            TryFrom<U::ConstantInference, Error = E>,
     {
-        Some(Self {
+        Ok(Self {
             elements: tuple
                 .elements
                 .into_iter()
@@ -390,7 +395,7 @@ impl<T: Term> Tuple<T> {
                         is_unpacked: x.is_unpacked,
                     })
                 })
-                .collect::<Option<_>>()?,
+                .collect::<Result<_, _>>()?,
         })
     }
 }
@@ -461,17 +466,20 @@ where
     }
 
     /// Tries to convert a local term from model `U` to model `M`.
-    pub fn try_from_other_model<U: Model>(
+    pub fn try_from_other_model<U: Model, E>(
         local: Local<T::Rebind<U>>,
-    ) -> Option<Self>
+    ) -> Result<Self, E>
     where
         Local<T::Rebind<U>>: Into<T::Rebind<U>>,
 
-        <T::Model as Model>::LifetimeInference: TryFrom<U::LifetimeInference>,
-        <T::Model as Model>::TypeInference: TryFrom<U::TypeInference>,
-        <T::Model as Model>::ConstantInference: TryFrom<U::ConstantInference>,
+        <T::Model as Model>::LifetimeInference:
+            TryFrom<U::LifetimeInference, Error = E>,
+        <T::Model as Model>::TypeInference:
+            TryFrom<U::TypeInference, Error = E>,
+        <T::Model as Model>::ConstantInference:
+            TryFrom<U::ConstantInference, Error = E>,
     {
-        Some(Self(Box::new(T::try_from_other_model(*local.0)?)))
+        Ok(Self(Box::new(T::try_from_other_model(*local.0)?)))
     }
 }
 
@@ -517,8 +525,7 @@ pub trait Term:
         + Hash
         + 'static
         + Send
-        + Sync
-        + Into<Self>;
+        + Sync;
 
     /// Rebinds this kind of term to another model.
     type Rebind<M: Model>: Term<Model = M>;
@@ -531,13 +538,16 @@ pub trait Term:
         <Self::Model as Model>::ConstantInference: From<U::ConstantInference>;
 
     /// Tries to convert a term from another model to this model.
-    fn try_from_other_model<U: Model>(term: Self::Rebind<U>) -> Option<Self>
+    fn try_from_other_model<U: Model, E>(
+        term: Self::Rebind<U>,
+    ) -> Result<Self, E>
     where
         <Self::Model as Model>::LifetimeInference:
-            TryFrom<U::LifetimeInference>,
-        <Self::Model as Model>::TypeInference: TryFrom<U::TypeInference>,
+            TryFrom<U::LifetimeInference, Error = E>,
+        <Self::Model as Model>::TypeInference:
+            TryFrom<U::TypeInference, Error = E>,
         <Self::Model as Model>::ConstantInference:
-            TryFrom<U::ConstantInference>;
+            TryFrom<U::ConstantInference, Error = E>;
 
     #[doc(hidden)]
     #[allow(private_interfaces)]
@@ -571,6 +581,9 @@ pub trait Term:
                 + Session<Constant<Self::Model>>,
         >,
     ) -> Result<Satisfiability, ExceedLimitError>;
+
+    #[doc(hidden)]
+    fn from_inference(inference: Self::InferenceVariable) -> Self;
 
     #[doc(hidden)]
     fn as_generic_parameter(
@@ -869,7 +882,7 @@ where
         {
             let from_element = &from_element.term;
 
-            if !to_element.is_unpacked {
+            if to_element.is_unpacked {
                 return None;
             }
 
@@ -892,7 +905,7 @@ where
         {
             let from_element = &from_element.term;
 
-            if !to_element.is_unpacked {
+            if to_element.is_unpacked {
                 return None;
             }
 

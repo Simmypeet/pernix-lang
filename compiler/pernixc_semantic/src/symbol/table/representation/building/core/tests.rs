@@ -102,6 +102,6 @@ proptest! {
     fn check_primitives_tuple_copyable(
         tuple in PrimitivesTuple::arbitrary()
     ) {
-        check_primitives_tuple_copyable_impl(tuple).unwrap();
+        check_primitives_tuple_copyable_impl(tuple)?;
    }
 }

@@ -875,6 +875,10 @@ pub enum Constraint {
     Floating,
 }
 
+impl From<Never> for Constraint {
+    fn from(value: Never) -> Self { match value {} }
+}
+
 /// An enumeration of either a known type or an inferring type.
 ///
 /// This is used for type checking and type inference.
@@ -924,9 +928,9 @@ where
 
     fn from_other_model<U: Model>(term: Self::Rebind<U>) -> Self
     where
-        <Self::Model as Model>::LifetimeInference: From<U::LifetimeInference>,
-        <Self::Model as Model>::TypeInference: From<U::TypeInference>,
-        <Self::Model as Model>::ConstantInference: From<U::ConstantInference>,
+        M::LifetimeInference: From<U::LifetimeInference>,
+        M::TypeInference: From<U::TypeInference>,
+        M::ConstantInference: From<U::ConstantInference>,
     {
         match term {
             Type::Primitive(primitive) => Self::Primitive(primitive),
@@ -964,20 +968,20 @@ where
         }
     }
 
-    fn try_from_other_model<U: Model>(term: Self::Rebind<U>) -> Option<Self>
+    fn try_from_other_model<U: Model, E>(
+        term: Self::Rebind<U>,
+    ) -> Result<Self, E>
     where
-        <Self::Model as Model>::LifetimeInference:
-            TryFrom<U::LifetimeInference>,
-        <Self::Model as Model>::TypeInference: TryFrom<U::TypeInference>,
-        <Self::Model as Model>::ConstantInference:
-            TryFrom<U::ConstantInference>,
+        M::LifetimeInference: TryFrom<U::LifetimeInference, Error = E>,
+        M::TypeInference: TryFrom<U::TypeInference, Error = E>,
+        M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
     {
-        Some(match term {
+        Ok(match term {
             Type::Primitive(primitive) => Self::Primitive(primitive),
             Type::Parameter(parameter) => Self::Parameter(parameter),
-            Type::Inference(inference) => {
-                Self::Inference(M::TypeInference::try_from(inference).ok()?)
-            }
+            Type::Inference(inference) => Self::Inference(
+                M::TypeInference::try_from(inference).map_err(Into::into)?,
+            ),
             Type::Symbol(symbol) => {
                 Self::Symbol(Symbol::try_from_other_model(symbol)?)
             }
@@ -1605,6 +1609,10 @@ where
 
     fn from_default_model(term: Type<Default>) -> Self {
         M::from_default_type(term)
+    }
+
+    fn from_inference(inference: Self::InferenceVariable) -> Self {
+        Self::Inference(inference)
     }
 }
 

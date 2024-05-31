@@ -17,11 +17,7 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    semantic::{
-        model::Model,
-        predicate::Predicate,
-        term::r#type::{Expected, Type},
-    },
+    semantic::{model::Model, predicate::Predicate, term::r#type::Type},
     symbol::{
         table::{
             self, representation::Index, Display, DisplayObject, State,
@@ -2172,7 +2168,7 @@ impl<T: State> Display<T> for ExpectedLValue {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MismatchedType<M: Model> {
     /// The expected type.
-    pub expected_type: Expected<M>,
+    pub expected_type: Type<M>,
 
     /// The found type.
     pub found_type: Type<M>,
@@ -2188,28 +2184,14 @@ where
     M::ConstantInference: Display<T>,
 {
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.expected_type {
-            Expected::Known(known) => {
-                write!(f, "{}", Message {
-                    severity: Severity::Error,
-                    display: format!(
-                        "mismatched type: expected `{}` but found `{}`",
-                        DisplayObject { display: known, table },
-                        DisplayObject { display: &self.found_type, table }
-                    ),
-                })?;
-            }
-            Expected::Inferring(constraint) => {
-                write!(f, "{}", Message {
-                    severity: Severity::Error,
-                    display: format!(
-                        "mismatched type: expected `{constraint}` but found \
-                         `{}`",
-                        DisplayObject { display: &self.found_type, table }
-                    ),
-                })?;
-            }
-        }
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "mismatched type: expected `{}` but found `{}`",
+                DisplayObject { display: &self.expected_type, table },
+                DisplayObject { display: &self.found_type, table }
+            ),
+        })?;
 
         write!(f, "\n{}", SourceCodeDisplay {
             span: &self.span,

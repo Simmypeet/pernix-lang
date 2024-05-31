@@ -207,9 +207,9 @@ where
 
     fn from_other_model<U: Model>(term: Self::Rebind<U>) -> Self
     where
-        <Self::Model as Model>::LifetimeInference: From<U::LifetimeInference>,
-        <Self::Model as Model>::TypeInference: From<U::TypeInference>,
-        <Self::Model as Model>::ConstantInference: From<U::ConstantInference>,
+        M::LifetimeInference: From<U::LifetimeInference>,
+        M::TypeInference: From<U::TypeInference>,
+        M::ConstantInference: From<U::ConstantInference>,
     {
         match term {
             Lifetime::Static => Self::Static,
@@ -221,23 +221,21 @@ where
         }
     }
 
-    fn try_from_other_model<U: Model>(term: Self::Rebind<U>) -> Option<Self>
+    fn try_from_other_model<U: Model, E>(
+        term: Self::Rebind<U>,
+    ) -> Result<Self, E>
     where
-        <Self::Model as Model>::LifetimeInference:
-            TryFrom<U::LifetimeInference>,
-        <Self::Model as Model>::TypeInference: TryFrom<U::TypeInference>,
-        <Self::Model as Model>::ConstantInference:
-            TryFrom<U::ConstantInference>,
+        M::LifetimeInference: TryFrom<U::LifetimeInference, Error = E>,
+        M::TypeInference: TryFrom<U::TypeInference, Error = E>,
+        M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
     {
         match term {
-            Lifetime::Static => Some(Self::Static),
-            Lifetime::Parameter(parameter) => Some(Self::Parameter(parameter)),
+            Lifetime::Static => Ok(Self::Static),
+            Lifetime::Parameter(parameter) => Ok(Self::Parameter(parameter)),
             Lifetime::Inference(inference) => {
-                M::LifetimeInference::try_from(inference)
-                    .map(Self::Inference)
-                    .ok()
+                Ok(Self::Inference(M::LifetimeInference::try_from(inference)?))
             }
-            Lifetime::Forall(forall) => Some(Self::Forall(forall)),
+            Lifetime::Forall(forall) => Ok(Self::Forall(forall)),
         }
     }
 
@@ -275,6 +273,10 @@ where
                 Ok(Satisfiability::Unsatisfied)
             }
         }
+    }
+
+    fn from_inference(inference: Self::InferenceVariable) -> Self {
+        Self::Inference(inference)
     }
 
     fn as_generic_parameter(
