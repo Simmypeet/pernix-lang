@@ -18,9 +18,8 @@ use crate::{
     },
     symbol::{
         self,
-        table::{
-            representation::{Container, Element, IndexMut, Insertion},
-            Building, Table,
+        table::representation::{
+            Container, Element, IndexMut, Insertion, Representation,
         },
         Accessibility, ConstantParameter, FunctionIR, FunctionTemplate,
         GenericDeclaration, GenericID, GenericTemplate, Intrinsics,
@@ -31,7 +30,7 @@ use crate::{
     },
 };
 
-impl<C: Container, S: std::fmt::Debug + Send + Sync> Table<Building<C, S>> {
+impl<C: Container> Representation<C> {
     /// Initializehjs the core symbols to the symbol table.
     pub(in crate::symbol::table::representation) fn initialize_core(&mut self) {
         let Insertion { id: core_module_id, duplication } =

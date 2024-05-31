@@ -607,8 +607,9 @@ where
 
     let module_id = table.create_root_module("test".to_string());
 
-    let (term1, term2) =
-        property.generate(&mut table, &mut premise, module_id.id)?;
+    let (term1, term2) = property
+        .generate(&mut table, &mut premise, module_id.id)
+        .map_err(|_| TestCaseError::reject("too complex property"))?;
 
     let environment =
         &Environment { premise: &premise, table: &table, normalizer: &NoOp };

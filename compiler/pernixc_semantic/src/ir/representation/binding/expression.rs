@@ -7,7 +7,7 @@ use pernixc_base::{
 };
 use pernixc_syntax::syntax_tree;
 
-use super::Binder;
+use super::{Binder, Error};
 use crate::{
     error::{
         self, ExpectedLValue, FloatingPointLiteralHasIntegralSuffix,
@@ -18,19 +18,13 @@ use crate::{
         representation::binding::{infer::InferenceVariable, Model},
         value::{
             literal::{Boolean, Literal, Numeric},
-            Value,
+            register::{Prefix, PrefixOperator, Register},
+            Inspect, Value,
         },
     },
-    semantic::term::r#type::{self, Type},
+    semantic::term::r#type::{self, Expected, Type},
     symbol::table::{self, resolution::Observer},
 };
-
-/// Is an error occurred while binding the expression syntax tree.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[error("encountered a fatal semantic error")]
-pub struct Error(pub Span);
 
 /// An enumeration describes the intended purpose of binding the expression.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -77,7 +71,7 @@ pub enum Expression {
     },
 
     /// The expression is bound as a statement.
-    SideEffect(Type<Model>),
+    SideEffect,
 }
 
 impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
@@ -184,7 +178,7 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
                 ));
                 Err(Error(syntax_tree.span()))
             }
-            Target::Statement => Ok(Expression::SideEffect(numeric_ty)),
+            Target::Statement => Ok(Expression::SideEffect),
         }
     }
 
@@ -218,9 +212,7 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
                 ));
                 Err(Error(syntax_tree.span()))
             }
-            Target::Statement => Ok(Expression::SideEffect(Type::Primitive(
-                r#type::Primitive::Bool,
-            ))),
+            Target::Statement => Ok(Expression::SideEffect),
         }
     }
 
@@ -238,14 +230,83 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         match syntax_tree.operator() {
-            syntax_tree::expression::PrefixOperator::LogicalNot(_) => todo!(),
-            syntax_tree::expression::PrefixOperator::Negate(operator) => {
-                todo!()
+            syntax_tree::expression::PrefixOperator::Local(_)
+            | syntax_tree::expression::PrefixOperator::LogicalNot(_)
+            | syntax_tree::expression::PrefixOperator::Negate(_)
+            | syntax_tree::expression::PrefixOperator::BitwiseNot(_) => {
+                let (expected_type, operator) = match syntax_tree.operator() {
+                    syntax_tree::expression::PrefixOperator::Local(_) => {
+                        (None, PrefixOperator::Local)
+                    }
+                    syntax_tree::expression::PrefixOperator::LogicalNot(_) => (
+                        Some(Expected::Known(Type::Primitive(
+                            r#type::Primitive::Bool,
+                        ))),
+                        PrefixOperator::LogicalNot,
+                    ),
+                    syntax_tree::expression::PrefixOperator::Negate(_) => (
+                        Some(Expected::Constraint(r#type::Constraint::Signed)),
+                        PrefixOperator::Negate,
+                    ),
+                    syntax_tree::expression::PrefixOperator::BitwiseNot(_) => (
+                        Some(Expected::Constraint(r#type::Constraint::Integer)),
+                        PrefixOperator::BitwiseNot,
+                    ),
+                    _ => unreachable!(),
+                };
+
+                let operand = self
+                    .bind_prefixable(
+                        syntax_tree.prefixable(),
+                        Config { target: Target::Value },
+                        handler,
+                    )?
+                    .into_value()
+                    .unwrap();
+
+                // if required, type check the operand
+                if let Some(expected_type) = expected_type {
+                    let operand_type = operand
+                        .type_of(&self.intermediate_representation, self.table)
+                        .unwrap();
+
+                    self.type_check(
+                        operand_type,
+                        expected_type,
+                        syntax_tree.span(),
+                        handler,
+                    )?;
+                }
+
+                let register_id = self
+                    .intermediate_representation
+                    .registers
+                    .insert(Register::Prefix(Prefix {
+                        operand,
+                        operator,
+                        span: Some(syntax_tree.span()),
+                    }));
+
+                match config.target {
+                    Target::Value => {
+                        Ok(Expression::Value(Value::Register(register_id)))
+                    }
+                    Target::Address { .. } => {
+                        self.create_handler_wrapper(handler).receive(Box::new(
+                            ExpectedLValue {
+                                expression_span: syntax_tree.span(),
+                            },
+                        ));
+                        Err(Error(syntax_tree.span()))
+                    }
+                    Target::Statement => Ok(Expression::SideEffect),
+                }
             }
-            syntax_tree::expression::PrefixOperator::BitwiseNot(_) => todo!(),
-            syntax_tree::expression::PrefixOperator::Dereference(_) => todo!(),
-            syntax_tree::expression::PrefixOperator::Local(_) => todo!(),
+
             syntax_tree::expression::PrefixOperator::Unlocal(_) => todo!(),
+
+            syntax_tree::expression::PrefixOperator::Dereference(_) => todo!(),
+
             syntax_tree::expression::PrefixOperator::ReferenceOf(_) => todo!(),
         }
     }
@@ -353,7 +414,7 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
         config: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
-        todo!()
+        self.bind_prefixable(syntax_tree.first(), config, handler)
     }
 
     ////////////////////////////////////////////////////////////////////////////

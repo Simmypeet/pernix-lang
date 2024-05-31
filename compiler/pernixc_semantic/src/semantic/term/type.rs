@@ -886,7 +886,7 @@ impl From<Never> for Constraint {
 #[allow(missing_docs)]
 pub enum Expected<M: Model> {
     Known(Type<M>),
-    Inferring(Constraint),
+    Constraint(Constraint),
 }
 
 impl<M: Model> From<Never> for Type<M> {

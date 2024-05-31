@@ -130,21 +130,5 @@ impl<T: Container, S: Debug + Sized + Send + Sync + 'static> DerefMut
 
 pub use representation::{build, BuildTableError};
 
-impl<T: State + std::default::Default> std::default::Default for Table<T> {
-    fn default() -> Self {
-        Self { representation: Representation::default(), state: T::default() }
-    }
-}
-
-impl<T: State> Table<T> {
-    /// Creates a new table with the given representation and state.
-    pub const fn new(
-        representation: Representation<T::Container>,
-        state: T,
-    ) -> Self {
-        Self { representation, state }
-    }
-}
-
 #[cfg(test)]
 mod tests;

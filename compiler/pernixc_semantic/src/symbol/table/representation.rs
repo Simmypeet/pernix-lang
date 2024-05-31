@@ -17,7 +17,7 @@ use pernixc_syntax::syntax_tree::{target::Target, AccessModifier};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use self::building::drafting::Drafter;
-use super::{Building, Suboptimal, Success, Table};
+use super::{Building, State, Suboptimal, Success, Table};
 use crate::{
     arena::{Arena, ID},
     error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
@@ -1564,8 +1564,6 @@ fn transition_to_building(
     >,
     handler: &dyn Handler<Box<dyn error::Error>>,
 ) -> Table<Building<RwLockContainer, building::finalizing::Finalizer>> {
-    drafting_table.initialize_core();
-
     let usings_by_module_id =
         std::mem::take(&mut drafting_table.state.usings_by_module_id);
     let implementations_by_module_id =
@@ -2021,5 +2019,14 @@ impl<T: Container> Representation<T> {
         };
 
         Some(Insertion { id: member_id, duplication })
+    }
+}
+
+impl<T: State + std::default::Default> std::default::Default for Table<T> {
+    fn default() -> Self {
+        let mut representation = Representation::default();
+        representation.initialize_core();
+
+        Self { representation, state: T::default() }
     }
 }

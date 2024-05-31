@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use infer::{Context, UnifyError};
+use infer::{Constraint, Context, UnifyError};
 use parking_lot::RwLock;
 use pernixc_base::{diagnostic::Handler, source_file::Span};
 use pernixc_syntax::syntax_tree;
@@ -247,6 +247,13 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
     }
 }
 
+/// Is an error occurred while binding the syntax tree
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error("encountered a fatal semantic error")]
+pub struct Error(pub Span);
+
 impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
     /// Performs type checking on the given `ty`.
     ///
@@ -265,10 +272,14 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
     ///
     /// This function panics if an unregistered inference variable is found.
     ///
+    /// # Errors
+    ///
+    /// If the type check fails, an error is returned with the span of
+    /// `type_check_span`
+    ///
     /// # Returns
     ///
-    /// Returns `true` if no error was found during type checking, `false`
-    /// otherwise.
+    /// Returns the simplified version of `ty` if the type check is successful.
     #[must_use]
     fn type_check(
         &mut self,
@@ -276,17 +287,17 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
         expected_ty: Expected<Model>,
         type_check_span: Span,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> bool {
+    ) -> Result<Type<Model>, Error> {
+        // simplify the types
+        let simplified_ty = simplify(&ty, &Environment {
+            premise: &self.premise,
+            table: self.table,
+            normalizer: &self.inference_context,
+        })
+        .unwrap_or(ty);
+
         match expected_ty {
             Expected::Known(expected_ty) => {
-                // simplify the types
-                let simplified_ty = simplify(&ty, &Environment {
-                    premise: &self.premise,
-                    table: self.table,
-                    normalizer: &self.inference_context,
-                })
-                .unwrap_or(ty);
-
                 let simplified_expected =
                     simplify(&expected_ty, &Environment {
                         premise: &self.premise,
@@ -318,7 +329,9 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
                 };
 
                 // report the error
-                if !result {
+                if result {
+                    Ok(simplified_ty)
+                } else {
                     self.create_handler_wrapper(handler).receive(Box::new(
                         MismatchedType {
                             expected_type: self
@@ -329,14 +342,41 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
                                 .inference_context
                                 .into_constraint_model(simplified_ty)
                                 .unwrap(),
-                            span: type_check_span,
+                            span: type_check_span.clone(),
                         },
-                    ))
-                }
+                    ));
 
-                result
+                    Err(Error(type_check_span))
+                }
             }
-            Expected::Inferring(_) => todo!(),
+            Expected::Constraint(constraint) => {
+                let result =
+                    if let Type::Inference(inference_var) = simplified_ty {
+                        self.inference_context
+                            .unify_with_constraint(inference_var, &constraint)
+                            .is_ok()
+                    } else {
+                        constraint.satisfies(&simplified_ty)
+                    };
+
+                // report the error
+                if result {
+                    Ok(simplified_ty)
+                } else {
+                    self.create_handler_wrapper(handler).receive(Box::new(
+                        MismatchedType {
+                            expected_type: Type::Inference(constraint),
+                            found_type: self
+                                .inference_context
+                                .into_constraint_model(simplified_ty)
+                                .unwrap(),
+                            span: type_check_span.clone(),
+                        },
+                    ));
+
+                    Err(Error(type_check_span))
+                }
+            }
         }
     }
 }

@@ -57,8 +57,7 @@ impl Arbitrary for PrimitivesTuple {
 fn check_primitives_tuple_copyable_impl(
     tuple: PrimitivesTuple,
 ) -> TestCaseResult {
-    let mut table = Table::<Building>::default();
-    table.initialize_core();
+    let table = Table::<Building>::default();
 
     let core_module_id =
         table.root_module_ids_by_name.get("core").copied().unwrap();

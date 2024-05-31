@@ -93,6 +93,7 @@ pub trait Constraint<T>: std::fmt::Debug + Clone {
     fn satisfies(&self, term: &T) -> bool;
 
     /// Combines two constraints into a single one.
+    #[must_use]
     fn combine(&self, another: &Self) -> Option<Self>;
 }
 
@@ -177,12 +178,15 @@ pub struct UnregisteredInferenceVariableError<ID>(pub ID);
 #[allow(missing_docs)]
 pub enum UnifyConstraintError<T: Term, C> {
     #[error(transparent)]
-    UnsatisfiedConstraintError(#[from] UnsatisfiedConstraintError<T, C>),
+    UnsatisfiedConstraint(#[from] UnsatisfiedConstraintError<T, C>),
 
     #[error(transparent)]
-    UnregisteredInferenceVariableError(
+    UnregisteredInferenceVariable(
         #[from] UnregisteredInferenceVariableError<T::InferenceVariable>,
     ),
+
+    #[error(transparent)]
+    CombineConstraint(#[from] CombineConstraintError<C>),
 }
 
 #[derive(
@@ -207,21 +211,19 @@ impl<T: Term, C: Constraint<T> + 'static> ContextImpl<T, C> {
         let inference = self
             .inference_by_ids
             .get_mut(&inference_variable)
-            .ok_or(UnifyConstraintError::UnregisteredInferenceVariableError(
+            .ok_or(UnifyConstraintError::UnregisteredInferenceVariable(
                 UnregisteredInferenceVariableError(inference_variable.clone()),
             ))?;
 
         match inference {
             Inference::Known(inferred) => {
                 if !constraint.satisfies(inferred) {
-                    return Err(
-                        UnifyConstraintError::UnsatisfiedConstraintError(
-                            UnsatisfiedConstraintError {
-                                term: inferred.clone(),
-                                constraint: constraint.clone(),
-                            },
-                        ),
-                    );
+                    return Err(UnifyConstraintError::UnsatisfiedConstraint(
+                        UnsatisfiedConstraintError {
+                            term: inferred.clone(),
+                            constraint: constraint.clone(),
+                        },
+                    ));
                 }
             }
 
@@ -229,7 +231,14 @@ impl<T: Term, C: Constraint<T> + 'static> ContextImpl<T, C> {
                 let current_constraint =
                     self.constraints.get_mut(*constraint_id).unwrap();
 
-                current_constraint.combine(constraint);
+                *current_constraint = current_constraint
+                    .combine(constraint)
+                    .ok_or(UnifyConstraintError::CombineConstraint(
+                        CombineConstraintError::<C> {
+                            lhs: current_constraint.clone(),
+                            rhs: constraint.clone(),
+                        },
+                    ))?;
             }
         }
 

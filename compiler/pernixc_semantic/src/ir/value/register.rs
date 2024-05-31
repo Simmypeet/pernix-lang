@@ -12,6 +12,7 @@ use crate::{
             self,
             lifetime::Lifetime,
             r#type::{Qualifier, Reference, Type},
+            Local,
         },
     },
     symbol::table::{self, Table},
@@ -166,9 +167,6 @@ pub enum PrefixOperator {
 
     /// The value can be any type.
     Local,
-
-    /// The value must be a local type.
-    Unlocal,
 }
 
 /// A value applied with a prefix operator.
@@ -193,16 +191,12 @@ impl<M: Model> Inspect<M> for Prefix<M> {
         match self.operator {
             PrefixOperator::Negate
             | PrefixOperator::LogicalNot
-            | PrefixOperator::BitwiseNot
-            | PrefixOperator::Local => self.operand.type_of(ir, table),
-            PrefixOperator::Unlocal => {
-                // must be `local` type
-                let Type::Local(local) = self.operand.type_of(ir, table)?
-                else {
-                    return Err(InvalidValueError);
-                };
+            | PrefixOperator::BitwiseNot => self.operand.type_of(ir, table),
 
-                Ok(*local.0)
+            PrefixOperator::Local => {
+                let operand_type = self.operand.type_of(ir, table)?;
+
+                Ok(Type::Local(Local(Box::new(operand_type))))
             }
         }
     }
