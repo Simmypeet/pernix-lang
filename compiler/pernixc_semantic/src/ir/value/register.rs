@@ -20,35 +20,9 @@ use crate::{
 /// Represents an element of a [`Tuple`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum TupleElement<M: Model> {
-    Regular(Value<M>),
-    Unpacked(Value<M>),
-}
-
-impl<M: Model> TupleElement<M> {
-    /// Returns a reference to the value.
-    #[must_use]
-    pub const fn as_value(&self) -> &Value<M> {
-        match self {
-            Self::Regular(value) | Self::Unpacked(value) => value,
-        }
-    }
-
-    /// Returns a mutable reference to the value.
-    #[must_use]
-    pub fn as_value_mut(&mut self) -> &mut Value<M> {
-        match self {
-            Self::Regular(value) | Self::Unpacked(value) => value,
-        }
-    }
-
-    /// Consumes the element and returns the value.
-    #[must_use]
-    pub fn into_value(self) -> Value<M> {
-        match self {
-            Self::Regular(value) | Self::Unpacked(value) => value,
-        }
-    }
+pub struct TupleElement<M: Model> {
+    pub value: Value<M>,
+    pub is_unpacked: bool,
 }
 
 /// Represents a tuple of values.
@@ -70,13 +44,11 @@ impl<M: Model> Inspect<M> for Tuple<M> {
         let tuple_elements = self
             .elements
             .iter()
-            .map(|element| match element {
-                TupleElement::Regular(regular) => {
-                    regular.type_of(ir, table).map(term::TupleElement::Regular)
-                }
-                TupleElement::Unpacked(unpacked) => unpacked
-                    .type_of(ir, table)
-                    .map(term::TupleElement::Unpacked),
+            .map(|element| {
+                element.value.type_of(ir, table).map(|t| term::TupleElement {
+                    term: t,
+                    is_unpacked: element.is_unpacked,
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -139,7 +111,7 @@ impl<M: Model> Inspect<M> for Load<M> {
 
 /// Obtains a reference at the given address.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ReferenceOf<M: Model> {
+pub struct AddressOf<M: Model> {
     /// The address to the value.
     pub address: Address<M>,
 
@@ -156,7 +128,7 @@ pub struct ReferenceOf<M: Model> {
     pub lifetime: Lifetime<M>,
 }
 
-impl<M: Model> Inspect<M> for ReferenceOf<M> {
+impl<M: Model> Inspect<M> for AddressOf<M> {
     fn type_of(
         &self,
         _: &Representation<M>,
@@ -178,13 +150,80 @@ impl<M: Model> Inspect<M> for ReferenceOf<M> {
     }
 }
 
+/// An enumeration of the different kinds of prefix operators.
+///
+/// Except for dereference (`*`) and address-of (`&`) are not included here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PrefixOperator {
+    /// The value must be the signed numbers type.
+    Negate,
+
+    /// The value must be the boolean type.
+    LogicalNot,
+
+    /// The value must be integers.
+    BitwiseNot,
+
+    /// The value can be any type.
+    Local,
+
+    /// The value must be a local type.
+    Unlocal,
+}
+
+/// A value applied with a prefix operator.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Prefix<M: Model> {
+    /// The operand of the prefix operator.
+    pub operand: Value<M>,
+
+    /// The operator applied to the operand.
+    pub operator: PrefixOperator,
+
+    /// The span where the prefix is created.
+    pub span: Option<Span>,
+}
+
+impl<M: Model> Inspect<M> for Prefix<M> {
+    fn type_of(
+        &self,
+        ir: &Representation<M>,
+        table: &Table<impl table::State>,
+    ) -> Result<Type<M>, InvalidValueError> {
+        match self.operator {
+            PrefixOperator::Negate
+            | PrefixOperator::LogicalNot
+            | PrefixOperator::BitwiseNot
+            | PrefixOperator::Local => self.operand.type_of(ir, table),
+            PrefixOperator::Unlocal => {
+                // must be `local` type
+                let Type::Local(local) = self.operand.type_of(ir, table)?
+                else {
+                    return Err(InvalidValueError);
+                };
+
+                Ok(*local.0)
+            }
+        }
+    }
+
+    fn get_span(
+        &self,
+        _: &Representation<M>,
+        _: &Table<impl table::State>,
+    ) -> Result<Option<Span>, InvalidValueError> {
+        Ok(self.span.clone())
+    }
+}
+
 /// An enumeration of the different kinds of registers.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Register<M: Model> {
     Tuple(Tuple<M>),
     Load(Load<M>),
-    ReferenceOf(ReferenceOf<M>),
+    AddressOf(AddressOf<M>),
+    Prefix(Prefix<M>),
 }
 
 impl<M: Model> Inspect<M> for ID<Register<M>> {
@@ -198,7 +237,8 @@ impl<M: Model> Inspect<M> for ID<Register<M>> {
         match register {
             Register::Tuple(reg) => reg.type_of(ir, table),
             Register::Load(reg) => reg.type_of(ir, table),
-            Register::ReferenceOf(reg) => reg.type_of(ir, table),
+            Register::AddressOf(reg) => reg.type_of(ir, table),
+            Register::Prefix(reg) => reg.type_of(ir, table),
         }
     }
 
@@ -212,7 +252,8 @@ impl<M: Model> Inspect<M> for ID<Register<M>> {
         match register {
             Register::Tuple(reg) => reg.get_span(ir, table),
             Register::Load(reg) => reg.get_span(ir, table),
-            Register::ReferenceOf(reg) => reg.get_span(ir, table),
+            Register::AddressOf(reg) => reg.get_span(ir, table),
+            Register::Prefix(reg) => reg.get_span(ir, table),
         }
     }
 }

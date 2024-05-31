@@ -29,7 +29,7 @@ use crate::{
         Environment, ExceedLimitError,
     },
     symbol::{
-        table::{self, State, Table},
+        table::{self, DisplayObject, State, Table},
         GenericID, LifetimeParameter, LifetimeParameterID, MemberID,
     },
 };
@@ -205,20 +205,58 @@ where
     type InferenceVariable = M::LifetimeInference;
     type Rebind<Ms: Model> = Lifetime<Ms>;
 
+    fn from_other_model<U: Model>(term: Self::Rebind<U>) -> Self
+    where
+        <Self::Model as Model>::LifetimeInference: From<U::LifetimeInference>,
+        <Self::Model as Model>::TypeInference: From<U::TypeInference>,
+        <Self::Model as Model>::ConstantInference: From<U::ConstantInference>,
+    {
+        match term {
+            Lifetime::Static => Self::Static,
+            Lifetime::Parameter(parameter) => Self::Parameter(parameter),
+            Lifetime::Inference(inference) => {
+                Self::Inference(M::LifetimeInference::from(inference))
+            }
+            Lifetime::Forall(forall) => Self::Forall(forall),
+        }
+    }
+
+    fn try_from_other_model<U: Model>(term: Self::Rebind<U>) -> Option<Self>
+    where
+        <Self::Model as Model>::LifetimeInference:
+            TryFrom<U::LifetimeInference>,
+        <Self::Model as Model>::TypeInference: TryFrom<U::TypeInference>,
+        <Self::Model as Model>::ConstantInference:
+            TryFrom<U::ConstantInference>,
+    {
+        match term {
+            Lifetime::Static => Some(Self::Static),
+            Lifetime::Parameter(parameter) => Some(Self::Parameter(parameter)),
+            Lifetime::Inference(inference) => {
+                M::LifetimeInference::try_from(inference)
+                    .map(Self::Inference)
+                    .ok()
+            }
+            Lifetime::Forall(forall) => Some(Self::Forall(forall)),
+        }
+    }
+
+    #[allow(private_bounds, private_interfaces)]
     fn normalize(
         &self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-        limit: &mut Limit<
+        _: &mut Limit<
             impl Session<Self> + Session<Type<M>> + Session<Constant<M>>,
         >,
     ) -> Result<Option<Self>, ExceedLimitError> {
         if let Lifetime::Inference(inference) = self {
-            Normalizer::normalize_lifetime(inference, environment, limit)
+            Normalizer::normalize_lifetime(inference, environment)
         } else {
             Ok(None)
         }
     }
 
+    #[allow(private_bounds, private_interfaces)]
     fn outlives_satisfiability(
         &self,
         lifetime: &Lifetime<M>,
@@ -422,7 +460,10 @@ where
     }
 }
 
-impl<T: State, M: Model> table::Display<T> for Lifetime<M> {
+impl<T: State, M: Model> table::Display<T> for Lifetime<M>
+where
+    M::LifetimeInference: table::Display<T>,
+{
     fn fmt(
         &self,
         table: &Table<T>,
@@ -445,7 +486,10 @@ impl<T: State, M: Model> table::Display<T> for Lifetime<M> {
                     None => write!(f, "'{}", parameter.id.into_index()),
                 }
             }
-            Self::Forall(_) | Self::Inference(_) => {
+            Self::Inference(inference) => {
+                write!(f, "{}", DisplayObject { display: inference, table })
+            }
+            Self::Forall(_) => {
                 write!(f, "'?")
             }
         }

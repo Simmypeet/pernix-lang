@@ -1310,16 +1310,22 @@ impl<S: State> Table<S> {
                                     );
                                 }
 
-                                elements.push(TupleElement::Unpacked(ty));
+                                elements.push(TupleElement {
+                                    term: ty,
+                                    is_unpacked: true,
+                                });
                             }
                         }
                     } else {
-                        elements.push(TupleElement::Regular(ty));
+                        elements.push(TupleElement {
+                            term: ty,
+                            is_unpacked: false,
+                        });
                     }
                 }
 
                 // check if there is more than one unpacked type
-                if elements.iter().filter(|x| x.is_unpacked()).count() > 1 {
+                if elements.iter().filter(|x| x.is_unpacked).count() > 1 {
                     handler.receive(Box::new(MoreThanOneUnpackedInTupleType {
                         illegal_tuple_type_span: syntax_tree.span(),
                     }));

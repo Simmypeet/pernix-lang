@@ -5,12 +5,7 @@ use super::{r#enum, Finalize};
 use crate::{
     arena::ID,
     error::{self, PrivateEntityLeakedToPublicInterface},
-    semantic::{
-        normalizer::NoOp,
-        session::{self, Limit},
-        simplify::simplify,
-        Environment,
-    },
+    semantic::{normalizer::NoOp, simplify::simplify, Environment},
     symbol::{
         table::{
             representation::{
@@ -105,7 +100,6 @@ impl Finalize for Variant {
 
                     let active_premise =
                         table.get_active_premise(symbol_id.into()).unwrap();
-                    let mut session = session::Default::default();
 
                     // assign the simplfiied type to the variant
                     table
@@ -115,15 +109,11 @@ impl Finalize for Variant {
                         .unwrap()
                         .write()
                         .associated_type = Some(
-                        simplify(
-                            &ty,
-                            &Environment {
-                                premise: &active_premise,
-                                table,
-                                normalizer: &NoOp,
-                            },
-                            &mut Limit::new(&mut session),
-                        )
+                        simplify(&ty, &Environment {
+                            premise: &active_premise,
+                            table,
+                            normalizer: &NoOp,
+                        })
                         .unwrap_or(ty),
                     );
                 }

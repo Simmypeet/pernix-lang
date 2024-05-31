@@ -504,8 +504,8 @@ impl<C: Container, S: std::fmt::Debug + Send + Sync> Table<Building<C, S>> {
 
             let tuple_type = Type::Tuple(Tuple {
                 elements: vec![
-                    TupleElement::Regular(t_type.clone()),
-                    TupleElement::Unpacked(rest_type.clone()),
+                    TupleElement { term: t_type.clone(), is_unpacked: false },
+                    TupleElement { term: rest_type.clone(), is_unpacked: true },
                 ],
             });
 

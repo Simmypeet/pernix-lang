@@ -11,7 +11,7 @@ use super::{
     mapping::Mapping,
     model::Model,
     normalizer::Normalizer,
-    session::{Limit, Session},
+    session::{self, Limit, Session},
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
@@ -66,7 +66,7 @@ fn unify<T: Term>(
     mut existing: Mapping<T::Model>,
 ) -> Result<Option<Mapping<T::Model>>, ExceedLimitError> {
     for (lhs, rhs) in lhs.iter().zip(rhs.iter()) {
-        let Some(new) = unification::unify(
+        let Some(new) = unification::unify_impl(
             lhs,
             rhs,
             &mut DeductionUnifyingConfig,
@@ -160,8 +160,17 @@ impl<M: Model> GenericArguments<M> {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    #[allow(clippy::too_many_lines)]
     pub fn deduce(
+        &self,
+        another: &Self,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
+    ) -> Result<Option<Instantiation<M>>, ExceedLimitError> {
+        let mut limit = Limit::<session::Default<_>>::default();
+        self.deduce_impl(another, environment, &mut limit)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(super) fn deduce_impl(
         &self,
         another: &Self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,

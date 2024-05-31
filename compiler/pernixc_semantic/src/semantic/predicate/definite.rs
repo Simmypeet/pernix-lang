@@ -1,7 +1,7 @@
 use super::Satisfiability;
 use crate::{
     semantic::{
-        get_equivalences,
+        get_equivalences_impl,
         model::Model,
         normalizer::Normalizer,
         session::{self, Limit, Session},
@@ -14,7 +14,6 @@ use crate::{
 #[derive(Debug)]
 struct Visitor<
     'a,
-    'r,
     'l,
     T: State,
     N: Normalizer<M>,
@@ -23,12 +22,11 @@ struct Visitor<
 > {
     definite: Result<bool, ExceedLimitError>,
     environment: &'a Environment<'a, M, T, N>,
-    limit: &'l mut Limit<'r, R>,
+    limit: &'l mut Limit<R>,
 }
 
 impl<
         'a,
-        'r,
         'l,
         'v,
         U: Term,
@@ -38,10 +36,10 @@ impl<
             + Session<Lifetime<U::Model>>
             + Session<Type<U::Model>>
             + Session<Constant<U::Model>>,
-    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, N, R, U::Model>
+    > visitor::Visitor<'v, U> for Visitor<'a, 'l, T, N, R, U::Model>
 {
     fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
-        match definite(term, self.environment, self.limit) {
+        match definite_impl(term, self.environment, self.limit) {
             result @ (Err(_) | Ok(false)) => {
                 self.definite = result;
                 false
@@ -66,9 +64,16 @@ pub struct Query<'a, T>(pub &'a T);
 pub fn definite<T: Term>(
     term: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+) -> Result<bool, ExceedLimitError> {
+    let mut limit = Limit::<session::Default<_>>::default();
+    definite_impl(term, environment, &mut limit)
+}
+
+pub(in crate::semantic) fn definite_impl<T: Term>(
+    term: &T,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
-        impl Session<T>
-            + Session<Lifetime<T::Model>>
+        impl Session<Lifetime<T::Model>>
             + Session<Type<T::Model>>
             + Session<Constant<T::Model>>,
     >,
@@ -77,11 +82,11 @@ pub fn definite<T: Term>(
 
     // trivially satisfiable
     if satisfiability == Satisfiability::Satisfied {
-        limit.mark_as_done(Query(term), Satisfied);
+        limit.mark_as_done::<T, _>(Query(term), Satisfied);
         return Ok(true);
     }
 
-    match limit.mark_as_in_progress(Query(term), ())? {
+    match limit.mark_as_in_progress::<T, _>(Query(term), ())? {
         Some(session::Cached::Done(Satisfied)) => return Ok(true),
         Some(session::Cached::InProgress(())) => {
             return Ok(false);
@@ -96,20 +101,20 @@ pub fn definite<T: Term>(
         let _ = term.accept_one_level(&mut visitor);
 
         if visitor.definite? {
-            limit.mark_as_done(Query(term), Satisfied);
+            limit.mark_as_done::<T, _>(Query(term), Satisfied);
             return Ok(true);
         }
     }
 
     // get the equivalences
-    for eq in get_equivalences(term, environment, limit)? {
-        if definite(&eq, environment, limit)? {
-            limit.mark_as_done(Query(term), Satisfied);
+    for eq in get_equivalences_impl(term, environment, limit)? {
+        if definite_impl(&eq, environment, limit)? {
+            limit.mark_as_done::<T, _>(Query(term), Satisfied);
             return Ok(true);
         }
     }
 
-    limit.clear_query(Query(term));
+    limit.clear_query::<T, _>(Query(term));
     Ok(false)
 }
 

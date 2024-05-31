@@ -5,12 +5,7 @@ use super::Finalize;
 use crate::{
     arena::ID,
     error::{self, DuplicatedField, PrivateEntityLeakedToPublicInterface},
-    semantic::{
-        normalizer::NoOp,
-        session::{self, Limit},
-        simplify::simplify,
-        Environment,
-    },
+    semantic::{normalizer::NoOp, simplify::simplify, Environment},
     symbol::{
         table::{
             representation::{
@@ -80,7 +75,6 @@ impl Finalize for Struct {
             STRUCTURAL_AND_PARTIAL_VARIANCE_STATE => {
                 let active_premise =
                     table.get_active_premise(symbol_id.into()).unwrap();
-                let mut session = session::Default::default();
 
                 for field_syn in syntax_tree
                     .body()
@@ -156,15 +150,11 @@ impl Finalize for Struct {
                                     .span
                                     .str()
                                     .to_owned(),
-                                r#type: simplify(
-                                    &ty,
-                                    &Environment {
-                                        premise: &active_premise,
-                                        table,
-                                        normalizer: &NoOp,
-                                    },
-                                    &mut Limit::new(&mut session),
-                                )
+                                r#type: simplify(&ty, &Environment {
+                                    premise: &active_premise,
+                                    table,
+                                    normalizer: &NoOp,
+                                })
                                 .unwrap_or(ty),
                                 span: Some(field_syn.identifier().span.clone()),
                             },

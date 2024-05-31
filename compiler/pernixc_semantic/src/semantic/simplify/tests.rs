@@ -4,7 +4,6 @@ use crate::{
         model::Default,
         normalizer::NoOp,
         predicate::{Equality, Predicate},
-        session::{self, Limit},
         simplify::simplify,
         term::{
             r#type::{Primitive, SymbolID, TraitMember, Type},
@@ -33,11 +32,11 @@ fn basic_case() {
         }),
     ));
 
-    let simplified = simplify(
-        &Type::TraitMember(trait_member),
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
-    )
+    let simplified = simplify(&Type::TraitMember(trait_member), &Environment {
+        premise: &premise,
+        table: &table,
+        normalizer: &NoOp,
+    })
     .unwrap();
 
     assert_eq!(simplified, equivalent);
@@ -78,7 +77,6 @@ fn sub_term_case() {
             },
         }),
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
 
@@ -120,11 +118,11 @@ fn already_simplified_case() {
         }),
     ));
 
-    let simplified = simplify(
-        &equivalent,
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
-    )
+    let simplified = simplify(&equivalent, &Environment {
+        premise: &premise,
+        table: &table,
+        normalizer: &NoOp,
+    })
     .unwrap();
 
     assert_eq!(simplified, equivalent);
@@ -159,19 +157,21 @@ fn transitive_case() {
         .into_iter(),
     );
 
-    let result1 = simplify(
-        &Type::TraitMember(first_trait_member),
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
-    )
-    .unwrap();
+    let result1 =
+        simplify(&Type::TraitMember(first_trait_member), &Environment {
+            premise: &premise,
+            table: &table,
+            normalizer: &NoOp,
+        })
+        .unwrap();
 
-    let result2 = simplify(
-        &Type::TraitMember(second_trait_member),
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
-    )
-    .unwrap();
+    let result2 =
+        simplify(&Type::TraitMember(second_trait_member), &Environment {
+            premise: &premise,
+            table: &table,
+            normalizer: &NoOp,
+        })
+        .unwrap();
 
     assert_eq!(result1, result2);
     assert_eq!(result1, equivalent);
@@ -220,26 +220,29 @@ fn multiple_equivalent_but_same_case() {
         .into_iter(),
     );
 
-    let result_from_starting = simplify(
-        &Type::TraitMember(starting_trait_member),
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
-    )
-    .unwrap();
+    let result_from_starting =
+        simplify(&Type::TraitMember(starting_trait_member), &Environment {
+            premise: &premise,
+            table: &table,
+            normalizer: &NoOp,
+        })
+        .unwrap();
 
-    let result_from_first = simplify(
-        &Type::TraitMember(first_trait_member),
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
-    )
-    .unwrap();
+    let result_from_first =
+        simplify(&Type::TraitMember(first_trait_member), &Environment {
+            premise: &premise,
+            table: &table,
+            normalizer: &NoOp,
+        })
+        .unwrap();
 
-    let result_from_second = simplify(
-        &Type::TraitMember(second_trait_member),
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
-    )
-    .unwrap();
+    let result_from_second =
+        simplify(&Type::TraitMember(second_trait_member), &Environment {
+            premise: &premise,
+            table: &table,
+            normalizer: &NoOp,
+        })
+        .unwrap();
 
     assert_eq!(result_from_starting, result_from_first);
     assert_eq!(result_from_starting, result_from_second);
@@ -292,21 +295,18 @@ fn ambiguous_case() {
     let result_from_starting = simplify(
         &Type::TraitMember(starting_trait_member.clone()),
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
 
     let result_from_first = simplify(
         &Type::TraitMember(first_trait_member.clone()),
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
 
     let result_from_second = simplify(
         &Type::TraitMember(second_trait_member.clone()),
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap();
 

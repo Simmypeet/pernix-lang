@@ -8,12 +8,7 @@ use crate::{
     error::{
         self, AmbiguousImplementation, UndecidableImplementationSpecialization,
     },
-    semantic::{
-        normalizer::NoOp,
-        order,
-        session::{self, Limit},
-        Environment, Premise,
-    },
+    semantic::{normalizer::NoOp, order, Environment, Premise},
     symbol::{
         table::{
             representation::{
@@ -209,15 +204,13 @@ impl Finalize for Trait {
                             continue;
                         }
 
-                        let Ok(result) = lhs_arguments.order(
-                            &rhs_arguments,
-                            &Environment {
+                        let Ok(result) =
+                            lhs_arguments.order(&rhs_arguments, &Environment {
                                 table,
                                 premise: &Premise::default(),
                                 normalizer: &NoOp,
-                            },
-                            &mut Limit::new(&mut session::Default::default()),
-                        ) else {
+                            })
+                        else {
                             handler.receive(Box::new(
                                 UndecidableImplementationSpecialization {
                                     first_implementation_id: lhs,

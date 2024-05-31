@@ -7,14 +7,14 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use super::equals_impl;
+use super::equals;
 use crate::{
     arena::{self, Key, ID},
     semantic::{
         model::Default,
         normalizer::NoOp,
         predicate::{Equality, Predicate},
-        session::{self, Limit, Session},
+        session::{self, Session},
         term::{
             constant::Constant,
             lifetime::Lifetime,
@@ -36,12 +36,11 @@ fn reflexive() {
 
     let term = Type::Primitive(Primitive::Bool);
 
-    assert!(equals_impl(
-        &term,
-        &term,
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
-    )
+    assert!(equals(&term, &term, &Environment {
+        premise: &premise,
+        table: &table,
+        normalizer: &NoOp
+    },)
     .unwrap());
 }
 
@@ -64,18 +63,16 @@ fn symmetric() {
 
     let table = Table::<Building>::default();
 
-    assert!(equals_impl(
+    assert!(equals(
         &Type::TraitMember(trait_member.clone()),
         &equivalence,
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
-    assert!(equals_impl(
+    assert!(equals(
         &Type::TraitMember(trait_member),
         &equivalence,
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
 }
@@ -110,18 +107,16 @@ fn transitivity() {
 
     let table = Table::<Building>::default();
 
-    assert!(equals_impl(
+    assert!(equals(
         &Type::TraitMember(first_trait_member.clone()),
         &equivalence,
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
-    assert!(equals_impl(
+    assert!(equals(
         &equivalence,
         &Type::TraitMember(first_trait_member),
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
 }
@@ -177,19 +172,17 @@ fn congruence() {
         },
     });
 
-    assert!(equals_impl(
-        &lhs,
-        &rhs,
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
-    )
+    assert!(equals(&lhs, &rhs, &Environment {
+        premise: &premise,
+        table: &table,
+        normalizer: &NoOp
+    })
     .unwrap());
-    assert!(equals_impl(
-        &rhs,
-        &lhs,
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
-    )
+    assert!(equals(&rhs, &lhs, &Environment {
+        premise: &premise,
+        table: &table,
+        normalizer: &NoOp
+    })
     .unwrap());
 }
 
@@ -330,18 +323,16 @@ where
             self.property.generate(table, premise, root_module_id)?;
 
         let should_map = if self.map_at_lhs {
-            !equals_impl(
+            !equals(
                 &self.target_trait_member.clone().into(),
                 &inner_rhs,
                 &Environment { premise, table, normalizer: &NoOp },
-                &mut Limit::new(&mut session::Default::default()),
             )?
         } else {
-            !equals_impl(
+            !equals(
                 &inner_lhs,
                 &self.target_trait_member.clone().into(),
                 &Environment { premise, table, normalizer: &NoOp },
-                &mut Limit::new(&mut session::Default::default()),
             )?
         };
 
@@ -554,19 +545,17 @@ impl Property<Type<Default>> for TypeAlias {
         });
 
         let should_add_symbol = if self.aliased_at_lhs {
-            !equals_impl(
-                &ty_alias,
-                &inner_rhs,
-                &Environment { premise, table, normalizer: &NoOp },
-                &mut Limit::new(&mut session::Default::default()),
-            )?
+            !equals(&ty_alias, &inner_rhs, &Environment {
+                premise,
+                table,
+                normalizer: &NoOp,
+            })?
         } else {
-            !equals_impl(
-                &inner_lhs,
-                &ty_alias,
-                &Environment { premise, table, normalizer: &NoOp },
-                &mut Limit::new(&mut session::Default::default()),
-            )?
+            !equals(&inner_lhs, &ty_alias, &Environment {
+                premise,
+                table,
+                normalizer: &NoOp,
+            })?
         };
 
         if should_add_symbol {
@@ -623,21 +612,11 @@ where
 
     let environment =
         &Environment { premise: &premise, table: &table, normalizer: &NoOp };
-    prop_assert!(equals_impl(
-        &term1,
-        &term2,
-        environment,
-        &mut Limit::new(&mut session::Default::default())
-    )
-    .map_err(|_| TestCaseError::reject("too complex property"))?);
+    prop_assert!(equals(&term1, &term2, environment,)
+        .map_err(|_| TestCaseError::reject("too complex property"))?);
 
-    prop_assert!(equals_impl(
-        &term2,
-        &term1,
-        environment,
-        &mut Limit::new(&mut session::Default::default())
-    )
-    .map_err(|_| TestCaseError::reject("too complex property"))?);
+    prop_assert!(equals(&term2, &term1, environment,)
+        .map_err(|_| TestCaseError::reject("too complex property"))?);
 
     // remove the equality mapping should make the terms not equal.
     {
@@ -656,20 +635,10 @@ where
                 normalizer: &NoOp,
             };
 
-            prop_assert!(!equals_impl(
-                &term1,
-                &term2,
-                environment,
-                &mut Limit::new(&mut session::Default::default())
-            )
-            .map_err(|_| TestCaseError::reject("too complex property"))?);
-            prop_assert!(!equals_impl(
-                &term2,
-                &term1,
-                environment,
-                &mut Limit::new(&mut session::Default::default())
-            )
-            .map_err(|_| TestCaseError::reject("too complex property"))?);
+            prop_assert!(!equals(&term1, &term2, environment,)
+                .map_err(|_| TestCaseError::reject("too complex property"))?);
+            prop_assert!(!equals(&term2, &term1, environment,)
+                .map_err(|_| TestCaseError::reject("too complex property"))?);
         }
     }
 
@@ -728,20 +697,10 @@ where
 
     let environment =
         &Environment { premise: &premise, table: &table, normalizer: &NoOp };
-    prop_assert!(equals_impl(
-        &term1,
-        &term2,
-        environment,
-        &mut Limit::new(&mut session::Default::default())
-    )
-    .map_err(|_| TestCaseError::reject("too complex property"))?);
-    prop_assert!(equals_impl(
-        &term2,
-        &term1,
-        environment,
-        &mut Limit::new(&mut session::Default::default())
-    )
-    .map_err(|_| TestCaseError::reject("too complex property"))?);
+    prop_assert!(equals(&term1, &term2, environment,)
+        .map_err(|_| TestCaseError::reject("too complex property"))?);
+    prop_assert!(equals(&term2, &term1, environment,)
+        .map_err(|_| TestCaseError::reject("too complex property"))?);
 
     Ok(())
 }

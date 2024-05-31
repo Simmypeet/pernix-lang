@@ -8,7 +8,6 @@ use crate::{
     ir::representation::binding::Binder,
     semantic::{
         normalizer::NoOp,
-        session::{self, Limit},
         simplify::simplify,
         term::r#type::{self, Type},
         Environment,
@@ -89,7 +88,6 @@ impl Finalize for Function {
 
                 let active_premise =
                     table.get_active_premise(symbol_id.into()).unwrap();
-                let mut session = session::Default::default();
 
                 // build the parameters
                 for parameter in syntax_tree
@@ -132,15 +130,11 @@ impl Finalize for Function {
 
                     let parameter_id =
                         function_write.parameters.insert(Parameter {
-                            r#type: simplify(
-                                &parameter_ty,
-                                &Environment {
-                                    premise: &active_premise,
-                                    table,
-                                    normalizer: &NoOp,
-                                },
-                                &mut Limit::new(&mut session),
-                            )
+                            r#type: simplify(&parameter_ty, &Environment {
+                                premise: &active_premise,
+                                table,
+                                normalizer: &NoOp,
+                            })
                             .unwrap_or(parameter_ty),
                             span: Some(parameter.span()),
                         });
@@ -184,15 +178,11 @@ impl Finalize for Function {
                         .get(symbol_id)
                         .unwrap()
                         .write()
-                        .return_type = simplify(
-                        &return_ty,
-                        &Environment {
-                            premise: &active_premise,
-                            table,
-                            normalizer: &NoOp,
-                        },
-                        &mut Limit::new(&mut session),
-                    )
+                        .return_type = simplify(&return_ty, &Environment {
+                        premise: &active_premise,
+                        table,
+                        normalizer: &NoOp,
+                    })
                     .unwrap_or(return_ty)
                 }
 

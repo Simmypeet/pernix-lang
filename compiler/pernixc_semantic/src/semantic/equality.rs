@@ -91,47 +91,13 @@ fn equals_without_mapping<T: Term>(
         || equals_by_unification(lhs, rhs, environment, limit)?
         || equals_by_normalization(lhs, rhs, environment, limit)?
     {
-        limit.mark_as_done(Query { lhs, rhs }, Satisfied);
+        limit.mark_as_done::<T, _>(Query { lhs, rhs }, Satisfied);
         return Ok(true);
     }
 
     Ok(false)
 }
 
-pub fn equals<T: Term>(
-    lhs: &T,
-    rhs: &T,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
-) -> Result<bool, ExceedLimitError> {
-}
-
-/// Checks if the two given terms are equal.
-///
-/// Equality is one of the most important parts of the type system. The equality
-/// model is based on the first-order logic of equality.
-///
-/// These are the axioms of equality:
-///
-/// - Reflexivity: for all `x`, `x = x`.
-/// - Symmetry: for all `x` and `y`, if `x = y`, then `y = x`.
-/// - Transitivity: for all `x`, `y`, and `z`, if `x = y` and `y = z`, then `x =
-///   z`.
-/// - Congruence: for all `x, ..., xn` and `y, ..., yn`, if `x = y`, ..., and
-///   `xn = yn`, then `f(x, ..., xn) = f(y, ..., yn)`.
-///
-/// # Decidability
-///
-/// Equality is **partially-decidable**. In other words, the function can halt
-/// in the case of equal terms, but it might output `false` or never halt in the
-/// case of unequal terms.
-///
-/// However, the function has a **soundness** guarantee. In other words, the
-/// function will never output `true` in the case of unequal terms. Also, the
-/// algorithm has a hard-limit on the number of recursive calls.
-///
-/// # Errors
-///
-/// See [`ExceedLimitError`] for more information.
 pub(super) fn equals_impl<T: Term>(
     lhs: &T,
     rhs: &T,
@@ -187,6 +153,42 @@ pub(super) fn equals_impl<T: Term>(
 
     limit.clear_query::<T, _>(query);
     Ok(false)
+}
+
+/// Checks if the two given terms are equal.
+///
+/// Equality is one of the most important parts of the type system. The equality
+/// model is based on the first-order logic of equality.
+///
+/// These are the axioms of equality:
+///
+/// - Reflexivity: for all `x`, `x = x`.
+/// - Symmetry: for all `x` and `y`, if `x = y`, then `y = x`.
+/// - Transitivity: for all `x`, `y`, and `z`, if `x = y` and `y = z`, then `x =
+///   z`.
+/// - Congruence: for all `x, ..., xn` and `y, ..., yn`, if `x = y`, ..., and
+///   `xn = yn`, then `f(x, ..., xn) = f(y, ..., yn)`.
+///
+/// # Decidability
+///
+/// Equality is **partially-decidable**. In other words, the function can halt
+/// in the case of equal terms, but it might output `false` or never halt in the
+/// case of unequal terms.
+///
+/// However, the function has a **soundness** guarantee. In other words, the
+/// function will never output `true` in the case of unequal terms. Also, the
+/// algorithm has a hard-limit on the number of recursive calls.
+///
+/// # Errors
+///
+/// See [`ExceedLimitError`] for more information.
+pub fn equals<T: Term>(
+    lhs: &T,
+    rhs: &T,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+) -> Result<bool, ExceedLimitError> {
+    let mut limit = Limit::<session::Default<_>>::default();
+    equals_impl(lhs, rhs, environment, &mut limit)
 }
 
 #[cfg(test)]

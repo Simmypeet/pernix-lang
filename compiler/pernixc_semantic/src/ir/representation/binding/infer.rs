@@ -13,7 +13,6 @@ use crate::{
         mapping::Mapping,
         model::Model,
         normalizer::Normalizer,
-        session::{self, Limit, Session},
         term::{
             constant::Constant,
             lifetime::Lifetime,
@@ -90,7 +89,7 @@ pub trait Constraint<T>: std::fmt::Debug + Clone {
     fn satisfies(&self, term: &T) -> bool;
 
     /// Combines two constraints into a single one.
-    fn combine(&self, another: &Self) -> Self;
+    fn combine(&self, another: &Self) -> Option<Self>;
 }
 
 /// An enumeration of either a known value or an inference in progress.
@@ -307,10 +306,93 @@ impl<M: Model> Constraint<Type<M>> for r#type::Constraint {
                 term,
                 Type::Primitive(Primitive::Float32 | Primitive::Float64)
             ),
+            Self::Integer => matches!(
+                term,
+                Type::Primitive(
+                    Primitive::Int8
+                        | Primitive::Int16
+                        | Primitive::Int32
+                        | Primitive::Int64
+                        | Primitive::Uint8
+                        | Primitive::Uint16
+                        | Primitive::Uint32
+                        | Primitive::Uint64
+                )
+            ),
+            Self::SignedInteger => matches!(
+                term,
+                Type::Primitive(
+                    Primitive::Int8
+                        | Primitive::Int16
+                        | Primitive::Int32
+                        | Primitive::Int64
+                )
+            ),
         }
     }
 
-    fn combine(&self, another: &Self) -> Self { *self.max(another) }
+    fn combine(&self, another: &Self) -> Option<Self> {
+        match self {
+            Self::All => Some(*another),
+
+            Self::Number => Some(match *another {
+                Self::All => Self::Number,
+                another => another,
+            }),
+
+            Self::Integer => match *another {
+                Self::All | Self::Number => Some(Self::Integer),
+
+                Self::Signed => Some(Self::SignedInteger),
+
+                another @ (Self::Integer | Self::SignedInteger) => {
+                    Some(another)
+                }
+
+                Self::Floating => None,
+            },
+
+            Self::SignedInteger => match *another {
+                Self::All
+                | Self::Number
+                | Self::Integer
+                | Self::SignedInteger
+                | Self::Signed => Some(Self::SignedInteger),
+
+                Self::Floating => None,
+            },
+
+            Self::Signed => match *another {
+                Self::Signed | Self::All | Self::Number => Some(Self::Signed),
+
+                Self::SignedInteger | Self::Integer => {
+                    Some(Self::SignedInteger)
+                }
+
+                Self::Floating => Some(Self::Floating),
+            },
+
+            Self::Floating => match *another {
+                Self::All | Self::Number | Self::Signed | Self::Floating => {
+                    Some(Self::Floating)
+                }
+
+                Self::Integer | Self::SignedInteger => None,
+            },
+        }
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error("the two constraints cannot be combined")]
+pub struct CombineConstraintError<C> {
+    /// The left-hand side constraint.
+    pub lhs: C,
+
+    /// The right-hand side constraint.
+    pub rhs: C,
 }
 
 /// The struct implementing the [`Constraint`] trait for no restriction.
@@ -320,7 +402,7 @@ pub struct NoConstraint;
 impl<T> Constraint<T> for NoConstraint {
     fn satisfies(&self, _: &T) -> bool { true }
 
-    fn combine(&self, _: &Self) -> Self { Self }
+    fn combine(&self, _: &Self) -> Option<Self> { Some(Self) }
 }
 
 #[derive(
@@ -362,6 +444,9 @@ pub enum UnifyError {
     UnsatisfiedConstraint(
         UnsatisfiedConstraintError<Type<super::Model>, r#type::Constraint>,
     ),
+
+    #[error(transparent)]
+    CombineConstraint(#[from] CombineConstraintError<r#type::Constraint>),
 }
 
 /// The inference context storing the inference variables and constraints.
@@ -522,11 +607,6 @@ impl Normalizer<super::Model> for Context {
     fn normalize_lifetime(
         _: &InferenceVariable<Lifetime<super::Model>>,
         _: &Environment<super::Model, impl table::State, Self>,
-        _: &mut Limit<
-            impl Session<Lifetime<super::Model>>
-                + Session<Type<super::Model>>
-                + Session<Constant<super::Model>>,
-        >,
     ) -> Result<Option<Lifetime<super::Model>>, ExceedLimitError> {
         Ok(None)
     }
@@ -534,11 +614,6 @@ impl Normalizer<super::Model> for Context {
     fn normalize_type(
         ty: &InferenceVariable<Type<super::Model>>,
         environment: &Environment<super::Model, impl table::State, Self>,
-        _: &mut Limit<
-            impl Session<Lifetime<super::Model>>
-                + Session<Type<super::Model>>
-                + Session<Constant<super::Model>>,
-        >,
     ) -> Result<Option<Type<super::Model>>, ExceedLimitError> {
         Ok(
             if let Some(Inference::Known(normalized)) =
@@ -554,11 +629,6 @@ impl Normalizer<super::Model> for Context {
     fn normalize_constant(
         constant: &InferenceVariable<Constant<super::Model>>,
         environment: &Environment<super::Model, impl table::State, Self>,
-        _: &mut Limit<
-            impl Session<Lifetime<super::Model>>
-                + Session<Type<super::Model>>
-                + Session<Constant<super::Model>>,
-        >,
     ) -> Result<Option<Constant<super::Model>>, ExceedLimitError> {
         Ok(
             if let Some(Inference::Known(normalized)) = environment
@@ -584,10 +654,7 @@ impl Context {
         known: &T,
         context: &impl Fn(&mut Self) -> &mut ContextImpl<T, C>,
         into_unify_error: &impl Fn(UnsatisfiedConstraintError<T, C>) -> UnifyError,
-    ) -> Result<(), UnifyError>
-    where
-        session::Default<super::Model>: Session<T>,
-    {
+    ) -> Result<(), UnifyError> {
         // shouldn't be another inference variable
         assert!(known.as_inference().is_none());
 
@@ -606,7 +673,7 @@ impl Context {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     fn handle_mapping<
         T: Term<Model = super::Model, InferenceVariable = InferenceVariable<T>>,
         S: table::State,
@@ -625,10 +692,9 @@ impl Context {
             &Table<S>,
         ) -> Result<(), UnifyError>,
         constraint_error: &impl Fn(UnsatisfiedConstraintError<T, C>) -> UnifyError,
+        combine_constraint_error: &impl Fn(CombineConstraintError<C>) -> UnifyError,
     ) -> Result<(), UnifyError>
     where
-        session::Default<super::Model>: Session<T>,
-
         UnifyError:
             From<UnregisteredInferenceVariableError<InferenceVariable<T>>>,
     {
@@ -692,8 +758,14 @@ impl Context {
                                 .get_mut(lhs_inferring_id)
                                 .unwrap();
 
-                            *lhs_constraint =
-                                lhs_constraint.combine(&rhs_constraint);
+                            *lhs_constraint = lhs_constraint
+                                .combine(&rhs_constraint)
+                                .ok_or(combine_constraint_error(
+                                    CombineConstraintError {
+                                        lhs: lhs_constraint.clone(),
+                                        rhs: rhs_constraint.clone(),
+                                    },
+                                ))?;
 
                             // replace all the occurrences of rhs's constraint
                             // id with
@@ -779,6 +851,7 @@ impl Context {
             &Self::type_inference_context_mut,
             &Self::unify_type,
             &UnifyError::UnsatisfiedConstraint,
+            &UnifyError::CombineConstraint,
         )?;
 
         self.handle_mapping(
@@ -788,11 +861,17 @@ impl Context {
             &Self::constant_inference_context_mut,
             &Self::unify_constant,
             &(|_| unreachable!("constant can always be unified")),
+            &(|_| unreachable!("constant has no constraint to combine")),
         )?;
 
         Ok(())
     }
 
+    /// Unifies the two constants and updates the inference context.
+    ///
+    /// # Errors
+    ///
+    /// See [`UnifyError`] for the possible errors.
     pub fn unify_constant(
         &mut self,
         lhs: &Constant<super::Model>,
@@ -806,7 +885,6 @@ impl Context {
             rhs,
             &mut UnificationConfig,
             &Environment { premise, table, normalizer: self },
-            &mut Limit::new(&mut session::Default::default()),
         )?
         else {
             return Err(UnifyError::IncompatibleConstants {
@@ -818,6 +896,11 @@ impl Context {
         self.handle_unification(unification, premise, table)
     }
 
+    /// Unifies the two types and updates the inference context.
+    ///
+    /// # Errors
+    ///
+    /// See [`UnifyError`] for the possible errors.
     pub fn unify_type(
         &mut self,
         lhs: &Type<super::Model>,
@@ -831,7 +914,6 @@ impl Context {
             rhs,
             &mut UnificationConfig,
             &Environment { premise, table, normalizer: self },
-            &mut Limit::new(&mut session::Default::default()),
         )?
         else {
             return Err(UnifyError::IncompatibleTypes {

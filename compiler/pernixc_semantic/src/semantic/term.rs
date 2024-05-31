@@ -52,7 +52,12 @@ pub struct GenericArguments<M: Model> {
     pub constants: Vec<Constant<M>>,
 }
 
-impl<T: State, M: Model> table::Display<T> for GenericArguments<M> {
+impl<T: State, M: Model> table::Display<T> for GenericArguments<M>
+where
+    Lifetime<M>: table::Display<T>,
+    Type<M>: table::Display<T>,
+    Constant<M>: table::Display<T>,
+{
     fn fmt(
         &self,
         table: &Table<T>,
@@ -108,6 +113,57 @@ impl<T: State, M: Model> table::Display<T> for GenericArguments<M> {
 }
 
 impl<M: Model> GenericArguments<M> {
+    /// Converts a generic arguments with the model `U` into the model `M`.
+    pub fn from_other_model<U: Model>(term: GenericArguments<U>) -> Self
+    where
+        M::LifetimeInference: From<U::LifetimeInference>,
+        M::TypeInference: From<U::TypeInference>,
+        M::ConstantInference: From<U::ConstantInference>,
+    {
+        Self {
+            lifetimes: term
+                .lifetimes
+                .into_iter()
+                .map(Lifetime::from_other_model)
+                .collect(),
+            types: term.types.into_iter().map(Type::from_other_model).collect(),
+            constants: term
+                .constants
+                .into_iter()
+                .map(Constant::from_other_model)
+                .collect(),
+        }
+    }
+
+    /// Tries to convert a generic arguments with the model `U` into the model
+    /// `M`.
+    pub fn try_from_other_model<U: Model>(
+        term: GenericArguments<U>,
+    ) -> Option<Self>
+    where
+        M::LifetimeInference: TryFrom<U::LifetimeInference>,
+        M::TypeInference: TryFrom<U::TypeInference>,
+        M::ConstantInference: TryFrom<U::ConstantInference>,
+    {
+        Some(Self {
+            lifetimes: term
+                .lifetimes
+                .into_iter()
+                .map(Lifetime::try_from_other_model)
+                .collect::<Option<Vec<_>>>()?,
+            types: term
+                .types
+                .into_iter()
+                .map(Type::try_from_other_model)
+                .collect::<Option<Vec<_>>>()?,
+            constants: term
+                .constants
+                .into_iter()
+                .map(Constant::try_from_other_model)
+                .collect::<Option<Vec<_>>>()?,
+        })
+    }
+
     /// Converts the generic arguments with the default model into the model `M`
     pub fn from_default_model(
         generic_arguments: GenericArguments<Default>,
@@ -143,8 +199,42 @@ pub struct Symbol<M: Model, ID> {
     pub generic_arguments: GenericArguments<M>,
 }
 
+impl<M: Model, ID> Symbol<M, ID> {
+    /// Converts a symbol from model `U` to model `M`.
+    pub fn from_other_model<U: Model>(symbol: Symbol<U, ID>) -> Self
+    where
+        M::LifetimeInference: From<U::LifetimeInference>,
+        M::TypeInference: From<U::TypeInference>,
+        M::ConstantInference: From<U::ConstantInference>,
+    {
+        Self {
+            id: symbol.id,
+            generic_arguments: GenericArguments::from_other_model(
+                symbol.generic_arguments,
+            ),
+        }
+    }
+
+    /// Tries to convert a symbol from model `U` to model `M`.
+    pub fn try_from_other_model<U: Model>(symbol: Symbol<U, ID>) -> Option<Self>
+    where
+        M::LifetimeInference: TryFrom<U::LifetimeInference>,
+        M::TypeInference: TryFrom<U::TypeInference>,
+        M::ConstantInference: TryFrom<U::ConstantInference>,
+    {
+        Some(Self {
+            id: symbol.id,
+            generic_arguments: GenericArguments::try_from_other_model(
+                symbol.generic_arguments,
+            )?,
+        })
+    }
+}
+
 impl<T: State, ID: Into<GlobalID> + Copy, M: Model> table::Display<T>
     for Symbol<M, ID>
+where
+    GenericArguments<M>: table::Display<T>,
 {
     fn fmt(
         &self,
@@ -174,8 +264,53 @@ pub struct MemberSymbol<M: Model, ID> {
     /// The generic arguments supplied to the parent scope.
     pub parent_generic_arguments: GenericArguments<M>,
 }
+
+impl<M: Model, ID> MemberSymbol<M, ID> {
+    /// Converts a member symbol from model `U` to model `M`.
+    pub fn from_other_model<U: Model>(
+        member_symbol: MemberSymbol<U, ID>,
+    ) -> Self
+    where
+        M::LifetimeInference: From<U::LifetimeInference>,
+        M::TypeInference: From<U::TypeInference>,
+        M::ConstantInference: From<U::ConstantInference>,
+    {
+        Self {
+            id: member_symbol.id,
+            member_generic_arguments: GenericArguments::from_other_model(
+                member_symbol.member_generic_arguments,
+            ),
+            parent_generic_arguments: GenericArguments::from_other_model(
+                member_symbol.parent_generic_arguments,
+            ),
+        }
+    }
+
+    /// Tries to convert a member symbol from model `U` to model `M`.
+    pub fn try_from_other_model<U: Model>(
+        member_symbol: MemberSymbol<U, ID>,
+    ) -> Option<Self>
+    where
+        M::LifetimeInference: TryFrom<U::LifetimeInference>,
+        M::TypeInference: TryFrom<U::TypeInference>,
+        M::ConstantInference: TryFrom<U::ConstantInference>,
+    {
+        Some(Self {
+            id: member_symbol.id,
+            member_generic_arguments: GenericArguments::try_from_other_model(
+                member_symbol.member_generic_arguments,
+            )?,
+            parent_generic_arguments: GenericArguments::try_from_other_model(
+                member_symbol.parent_generic_arguments,
+            )?,
+        })
+    }
+}
+
 impl<T: State, ID: Copy + Into<GlobalID>, M: Model> table::Display<T>
     for MemberSymbol<M, ID>
+where
+    GenericArguments<M>: table::Display<T>,
 {
     fn fmt(
         &self,
@@ -200,39 +335,13 @@ impl<T: State, ID: Copy + Into<GlobalID>, M: Model> table::Display<T>
 }
 
 /// Represents a single element of a tuple.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum TupleElement<Term> {
-    /// A regular term.
-    Regular(Term),
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TupleElement<Term> {
+    /// The term stored in this element.
+    pub term: Term,
 
-    /// A term that can be unpacked into multiple terms.
-    Unpacked(Term),
-}
-
-impl<Term> TupleElement<Term> {
-    /// Returns a reference to the term in this element.
-    #[must_use]
-    pub const fn as_term(&self) -> &Term {
-        match self {
-            Self::Unpacked(term) | Self::Regular(term) => term,
-        }
-    }
-
-    /// Returns a mutable reference to the term stored in this element.
-    #[must_use]
-    pub fn as_term_mut(&mut self) -> &mut Term {
-        match self {
-            Self::Unpacked(term) | Self::Regular(term) => term,
-        }
-    }
-
-    /// Returns the term stored in this element.
-    #[must_use]
-    pub fn into_term(self) -> Term {
-        match self {
-            Self::Unpacked(term) | Self::Regular(term) => term,
-        }
-    }
+    /// Whether the term is unpacked.
+    pub is_unpacked: bool,
 }
 
 /// Represents a tuple of terms.
@@ -240,6 +349,50 @@ impl<Term> TupleElement<Term> {
 pub struct Tuple<Term: Clone> {
     /// The elements of the tuple.
     pub elements: Vec<TupleElement<Term>>,
+}
+
+impl<T: Term> Tuple<T> {
+    /// Converts a tuple from model `U` to model `M`.
+    pub fn from_other_model<U: Model>(tuple: Tuple<T::Rebind<U>>) -> Self
+    where
+        <T::Model as Model>::LifetimeInference: From<U::LifetimeInference>,
+        <T::Model as Model>::TypeInference: From<U::TypeInference>,
+        <T::Model as Model>::ConstantInference: From<U::ConstantInference>,
+    {
+        Self {
+            elements: tuple
+                .elements
+                .into_iter()
+                .map(|x| TupleElement {
+                    term: T::from_other_model(x.term),
+                    is_unpacked: x.is_unpacked,
+                })
+                .collect(),
+        }
+    }
+
+    /// Tries to convert a tuple from model `U` to model `M`.
+    pub fn try_from_other_model<U: Model>(
+        tuple: Tuple<T::Rebind<U>>,
+    ) -> Option<Self>
+    where
+        <T::Model as Model>::LifetimeInference: TryFrom<U::LifetimeInference>,
+        <T::Model as Model>::TypeInference: TryFrom<U::TypeInference>,
+        <T::Model as Model>::ConstantInference: TryFrom<U::ConstantInference>,
+    {
+        Some(Self {
+            elements: tuple
+                .elements
+                .into_iter()
+                .map(|x| {
+                    T::try_from_other_model(x.term).map(|term| TupleElement {
+                        term,
+                        is_unpacked: x.is_unpacked,
+                    })
+                })
+                .collect::<Option<_>>()?,
+        })
+    }
 }
 
 impl<S: State, T: table::Display<S> + Clone> table::Display<S> for Tuple<T> {
@@ -254,14 +407,13 @@ impl<S: State, T: table::Display<S> + Clone> table::Display<S> for Tuple<T> {
 
         while let Some(element) = peekable.next() {
             let is_last = peekable.peek().is_none();
-            let is_unpacked = element.is_unpacked();
-            let term = element.as_term();
+            let is_unpacked = element.is_unpacked;
 
             if is_unpacked {
                 write!(f, "...")?;
             }
 
-            write!(f, "{}", DisplayObject { table, display: term })?;
+            write!(f, "{}", DisplayObject { table, display: &element.term })?;
 
             if !is_last {
                 write!(f, ", ")?;
@@ -276,11 +428,52 @@ impl<S: State, T: table::Display<S> + Clone> table::Display<S> for Tuple<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Never {}
 
+impl<T: State> table::Display<T> for Never {
+    fn fmt(
+        &self,
+        _: &Table<T>,
+        _: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match *self {}
+    }
+}
+
 /// The term under the `local` modifier.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Local<T: Term>(pub Box<T>)
 where
     Self: Into<T>;
+
+impl<T: Term> Local<T>
+where
+    Self: Into<T>,
+{
+    /// Converts a local term from model `U` to model `M`.
+    pub fn from_other_model<U: Model>(local: Local<T::Rebind<U>>) -> Self
+    where
+        Local<T::Rebind<U>>: Into<T::Rebind<U>>,
+
+        <T::Model as Model>::LifetimeInference: From<U::LifetimeInference>,
+        <T::Model as Model>::TypeInference: From<U::TypeInference>,
+        <T::Model as Model>::ConstantInference: From<U::ConstantInference>,
+    {
+        Self(Box::new(T::from_other_model(*local.0)))
+    }
+
+    /// Tries to convert a local term from model `U` to model `M`.
+    pub fn try_from_other_model<U: Model>(
+        local: Local<T::Rebind<U>>,
+    ) -> Option<Self>
+    where
+        Local<T::Rebind<U>>: Into<T::Rebind<U>>,
+
+        <T::Model as Model>::LifetimeInference: TryFrom<U::LifetimeInference>,
+        <T::Model as Model>::TypeInference: TryFrom<U::TypeInference>,
+        <T::Model as Model>::ConstantInference: TryFrom<U::ConstantInference>,
+    {
+        Some(Self(Box::new(T::try_from_other_model(*local.0)?)))
+    }
+}
 
 /// The trait used for specifying the model of a term.
 pub trait ModelOf {
@@ -330,14 +523,24 @@ pub trait Term:
     /// Rebinds this kind of term to another model.
     type Rebind<M: Model>: Term<Model = M>;
 
-    /// Normalizes the term.
-    ///
-    /// Normalization is the process of converting a term into more simpler
-    /// forms.
-    ///
-    /// # Errors
-    ///
-    /// See [`ExceedLimitError`] for more information.
+    /// Converts a term from another model to this model.
+    fn from_other_model<U: Model>(term: Self::Rebind<U>) -> Self
+    where
+        <Self::Model as Model>::LifetimeInference: From<U::LifetimeInference>,
+        <Self::Model as Model>::TypeInference: From<U::TypeInference>,
+        <Self::Model as Model>::ConstantInference: From<U::ConstantInference>;
+
+    /// Tries to convert a term from another model to this model.
+    fn try_from_other_model<U: Model>(term: Self::Rebind<U>) -> Option<Self>
+    where
+        <Self::Model as Model>::LifetimeInference:
+            TryFrom<U::LifetimeInference>,
+        <Self::Model as Model>::TypeInference: TryFrom<U::TypeInference>,
+        <Self::Model as Model>::ConstantInference:
+            TryFrom<U::ConstantInference>;
+
+    #[doc(hidden)]
+    #[allow(private_interfaces)]
     fn normalize(
         &self,
         environment: &Environment<
@@ -346,14 +549,14 @@ pub trait Term:
             impl Normalizer<Self::Model>,
         >,
         limit: &mut Limit<
-            impl Session<Self>
-                + Session<Lifetime<Self::Model>>
+            impl Session<Lifetime<Self::Model>>
                 + Session<Type<Self::Model>>
                 + Session<Constant<Self::Model>>,
         >,
     ) -> Result<Option<Self>, ExceedLimitError>;
 
     #[doc(hidden)]
+    #[allow(private_interfaces)]
     fn outlives_satisfiability(
         &self,
         lifetime: &Lifetime<Self::Model>,
@@ -363,8 +566,7 @@ pub trait Term:
             impl Normalizer<Self::Model>,
         >,
         limit: &mut Limit<
-            impl Session<Self>
-                + Session<Lifetime<Self::Model>>
+            impl Session<Lifetime<Self::Model>>
                 + Session<Type<Self::Model>>
                 + Session<Constant<Self::Model>>,
         >,
@@ -584,13 +786,13 @@ where
             for (idx, (from_element, to_element)) in
                 from.elements.iter().zip(&to.elements).enumerate()
             {
-                if from_element.is_unpacked() != to_element.is_unpacked() {
+                if from_element.is_unpacked != to_element.is_unpacked {
                     error = true;
                     break;
                 }
 
-                let from_element = from_element.as_term();
-                let to_element = to_element.as_term();
+                let from_element = &from_element.term;
+                let to_element = &to_element.term;
 
                 push(
                     from_element.clone(),
@@ -608,8 +810,8 @@ where
         }
 
         match (
-            from.elements.iter().filter(|x| x.is_unpacked()).count(),
-            to.elements.iter().filter(|x| x.is_unpacked()).count(),
+            from.elements.iter().filter(|x| x.is_unpacked).count(),
+            to.elements.iter().filter(|x| x.is_unpacked).count(),
         ) {
             (0, 0) => {
                 if from.elements.len() != to.elements.len() {
@@ -621,8 +823,8 @@ where
                 for (idx, (from_element, to_element)) in
                     from.elements.iter().zip(&to.elements).enumerate()
                 {
-                    let from_element = from_element.as_regular().unwrap();
-                    let to_element = to_element.as_regular().unwrap();
+                    let from_element = &from_element.term;
+                    let to_element = &to_element.term;
 
                     push(
                         from_element.clone(),
@@ -649,7 +851,7 @@ where
         }
 
         let unpacked_position =
-            from.elements.iter().position(TupleElement::is_unpacked).unwrap();
+            from.elements.iter().position(|x| x.is_unpacked).unwrap();
 
         let head_range = 0..unpacked_position;
         let from_tail_range = (unpacked_position + 1)..from.elements.len();
@@ -665,14 +867,15 @@ where
         .zip(&to.elements[head_range])
         .enumerate()
         {
-            let from_element = from_element.as_regular().unwrap();
-            let TupleElement::Regular(to_element) = to_element else {
+            let from_element = &from_element.term;
+
+            if !to_element.is_unpacked {
                 return None;
-            };
+            }
 
             push(
                 from_element.clone(),
-                to_element.clone(),
+                to_element.term.clone(),
                 SubTupleLocation::Single(idx),
                 SubTupleLocation::Single(idx),
                 &mut existing,
@@ -687,14 +890,15 @@ where
         .zip(&to.elements[to_tail_range.clone()])
         .enumerate()
         {
-            let from_element = from_element.as_regular().unwrap();
-            let TupleElement::Regular(to_element) = to_element else {
+            let from_element = &from_element.term;
+
+            if !to_element.is_unpacked {
                 return None;
-            };
+            }
 
             push(
                 from_element.clone(),
-                to_element.clone(),
+                to_element.term.clone(),
                 SubTupleLocation::Single(idx + from_tail_range.start),
                 SubTupleLocation::Single(idx + to_tail_range.start),
                 &mut existing,
@@ -706,7 +910,8 @@ where
             Self { elements: to.elements[to_unpack_range.clone()].to_vec() }
                 .into();
 
-        let unpacked = from.elements[unpacked_position].as_unpacked().unwrap();
+        let unpacked = &from.elements[unpacked_position].term;
+
         push(
             unpacked.clone(),
             to_unpack,
@@ -748,6 +953,15 @@ impl<M: Model> GenericArguments<M> {
     ///
     /// See [`ExceedLimitError`] for more information.
     pub fn equals(
+        &self,
+        other: &Self,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
+    ) -> Result<bool, ExceedLimitError> {
+        let mut limit = Limit::<session::Default<_>>::default();
+        self.equals_impl(other, environment, &mut limit)
+    }
+
+    pub(super) fn equals_impl(
         &self,
         other: &Self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
@@ -818,6 +1032,18 @@ impl<M: Model> GenericArguments<M> {
                   + unification::Config<Type<M>>
                   + unification::Config<Constant<M>>),
         environment: &Environment<M, impl State, impl Normalizer<M>>,
+    ) -> Result<Option<Mapping<M>>, ExceedLimitError> {
+        let mut limit = Limit::<session::Default<_>>::default();
+        self.unify_as_mapping_impl(other, config, environment, &mut limit)
+    }
+
+    pub(super) fn unify_as_mapping_impl(
+        &self,
+        other: &Self,
+        config: &mut (impl unification::Config<Lifetime<M>>
+                  + unification::Config<Type<M>>
+                  + unification::Config<Constant<M>>),
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
         limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
@@ -833,7 +1059,7 @@ impl<M: Model> GenericArguments<M> {
 
         for (lhs, rhs) in self.lifetimes.iter().zip(&other.lifetimes) {
             let Some(unification) =
-                unification::unify(lhs, rhs, config, environment, limit)?
+                unification::unify_impl(lhs, rhs, config, environment, limit)?
             else {
                 return Ok(None);
             };
@@ -843,7 +1069,7 @@ impl<M: Model> GenericArguments<M> {
 
         for (lhs, rhs) in self.types.iter().zip(&other.types) {
             let Some(unification) =
-                unification::unify(lhs, rhs, config, environment, limit)?
+                unification::unify_impl(lhs, rhs, config, environment, limit)?
             else {
                 return Ok(None);
             };
@@ -853,7 +1079,7 @@ impl<M: Model> GenericArguments<M> {
 
         for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
             let Some(unification) =
-                unification::unify(lhs, rhs, config, environment, limit)?
+                unification::unify_impl(lhs, rhs, config, environment, limit)?
             else {
                 return Ok(None);
             };
@@ -886,7 +1112,7 @@ impl<M: Model> GenericArguments<M> {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    pub fn definite(
+    pub(super) fn definite_impl(
         &self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
         limit: &mut Limit<
@@ -894,19 +1120,19 @@ impl<M: Model> GenericArguments<M> {
         >,
     ) -> Result<bool, ExceedLimitError> {
         for lifetime in &self.lifetimes {
-            if !predicate::definite(lifetime, environment, limit)? {
+            if !predicate::definite_impl(lifetime, environment, limit)? {
                 return Ok(false);
             }
         }
 
         for r#type in &self.types {
-            if !predicate::definite(r#type, environment, limit)? {
+            if !predicate::definite_impl(r#type, environment, limit)? {
                 return Ok(false);
             }
         }
 
         for constant in &self.constants {
-            if !predicate::definite(constant, environment, limit)? {
+            if !predicate::definite_impl(constant, environment, limit)? {
                 return Ok(false);
             }
         }

@@ -6,7 +6,6 @@ use super::{control_flow_graph::ControlFlowGraph, value::register::Register};
 use crate::{arena::Arena, ir::alloca::Alloca, semantic::model::Model};
 
 pub mod binding;
-pub mod sub_value;
 
 /// An intermediate representation of the program.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Getters)]

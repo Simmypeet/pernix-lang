@@ -11,7 +11,7 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     lifetime::Lifetime, r#type::Type, GenericArguments, Local, ModelOf, Never,
-    Term, TupleElement,
+    Term,
 };
 use crate::{
     arena::ID,
@@ -200,7 +200,7 @@ impl<M: Model> Location<Constant<M>, Constant<M>> for SubConstantLocation {
         match (self, term) {
             (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
                 SubTupleLocation::Single(single) => {
-                    tuple.elements.get(single).map(|x| x.as_term().clone())
+                    tuple.elements.get(single).map(|x| x.term.clone())
                 }
                 SubTupleLocation::Range { begin, end } => tuple
                     .elements
@@ -235,7 +235,7 @@ impl<M: Model> Location<Constant<M>, Constant<M>> for SubConstantLocation {
         match (self, term) {
             (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
                 SubTupleLocation::Single(single) => {
-                    tuple.elements.get(single).map(TupleElement::as_term)
+                    tuple.elements.get(single).map(|x| &x.term)
                 }
                 SubTupleLocation::Range { .. } => None,
             },
@@ -267,10 +267,9 @@ impl<M: Model> Location<Constant<M>, Constant<M>> for SubConstantLocation {
     ) -> Option<&mut Constant<M>> {
         match (self, term) {
             (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
-                SubTupleLocation::Single(single) => tuple
-                    .elements
-                    .get_mut(single)
-                    .map(TupleElement::as_term_mut),
+                SubTupleLocation::Single(single) => {
+                    tuple.elements.get_mut(single).map(|x| &mut x.term)
+                }
                 SubTupleLocation::Range { .. } => None,
             },
 
@@ -536,20 +535,119 @@ where
     type InferenceVariable = M::ConstantInference;
     type Rebind<Ms: Model> = Constant<Ms>;
 
+    fn from_other_model<U: Model>(term: Self::Rebind<U>) -> Self
+    where
+        <Self::Model as Model>::LifetimeInference: From<U::LifetimeInference>,
+        <Self::Model as Model>::TypeInference: From<U::TypeInference>,
+        <Self::Model as Model>::ConstantInference: From<U::ConstantInference>,
+    {
+        match term {
+            Constant::Primitive(primitive) => Self::Primitive(primitive),
+            Constant::Inference(inference) => {
+                Self::Inference(M::ConstantInference::from(inference))
+            }
+            Constant::Struct(value) => Self::Struct(Struct {
+                id: value.id,
+                fields: value
+                    .fields
+                    .into_iter()
+                    .map(Self::from_other_model)
+                    .collect(),
+            }),
+            Constant::Enum(value) => Self::Enum(Enum {
+                variant_id: value.variant_id,
+                associated_value: value
+                    .associated_value
+                    .map(|x| Box::new(Self::from_other_model(*x))),
+            }),
+            Constant::Array(array) => Self::Array(Array {
+                elements: array
+                    .elements
+                    .into_iter()
+                    .map(Self::from_other_model)
+                    .collect(),
+            }),
+            Constant::Parameter(parameter) => Self::Parameter(parameter),
+            Constant::Local(local) => {
+                Self::Local(Local::from_other_model(local))
+            }
+            Constant::Tuple(tuple) => {
+                Self::Tuple(Tuple::from_other_model(tuple))
+            }
+            Constant::Phantom(Phantom) => Self::Phantom(Phantom),
+        }
+    }
+
+    fn try_from_other_model<U: Model>(term: Self::Rebind<U>) -> Option<Self>
+    where
+        <Self::Model as Model>::LifetimeInference:
+            TryFrom<U::LifetimeInference>,
+        <Self::Model as Model>::TypeInference: TryFrom<U::TypeInference>,
+        <Self::Model as Model>::ConstantInference:
+            TryFrom<U::ConstantInference>,
+    {
+        Some(match term {
+            Constant::Primitive(primitive) => Self::Primitive(primitive),
+            Constant::Inference(inference) => {
+                Self::Inference(M::ConstantInference::try_from(inference).ok()?)
+            }
+            Constant::Struct(value) => Self::Struct(Struct {
+                id: value.id,
+                fields: value
+                    .fields
+                    .into_iter()
+                    .map(Self::try_from_other_model)
+                    .collect::<Option<Vec<_>>>()?,
+            }),
+            Constant::Enum(value) => match value.associated_value {
+                Some(associated_value) => {
+                    let associated_value =
+                        Self::try_from_other_model(*associated_value)?;
+
+                    Self::Enum(Enum {
+                        variant_id: value.variant_id,
+                        associated_value: Some(Box::new(associated_value)),
+                    })
+                }
+                None => Self::Enum(Enum {
+                    variant_id: value.variant_id,
+                    associated_value: None,
+                }),
+            },
+            Constant::Array(array) => Self::Array(Array {
+                elements: array
+                    .elements
+                    .into_iter()
+                    .map(Self::try_from_other_model)
+                    .collect::<Option<Vec<_>>>()?,
+            }),
+            Constant::Parameter(parameter) => Self::Parameter(parameter),
+            Constant::Local(local) => {
+                Self::Local(Local::try_from_other_model(local)?)
+            }
+            Constant::Tuple(tuple) => {
+                Self::Tuple(Tuple::try_from_other_model(tuple)?)
+            }
+            Constant::Phantom(Phantom) => Self::Phantom(Phantom),
+        })
+    }
+
+    #[allow(private_bounds, private_interfaces)]
     fn normalize(
         &self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-        limit: &mut Limit<
+        _: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Self>,
         >,
     ) -> Result<Option<Self>, ExceedLimitError> {
         if let Constant::Inference(inference) = self {
-            Normalizer::normalize_constant(inference, environment, limit)
+            Normalizer::normalize_constant(inference, environment)
         } else {
             Ok(None)
         }
     }
 
+    #[allow(private_bounds, private_interfaces)]
     fn outlives_satisfiability(
         &self,
         _: &Lifetime<M>,
@@ -821,7 +919,7 @@ impl<M: Model> Constant<M> {
 
                 for element in &tuple.elements {
                     occurrences.extend(
-                        element.as_term().get_global_id_dependencies(table)?,
+                        element.term.get_global_id_dependencies(table)?,
                     );
                 }
 
@@ -836,7 +934,10 @@ impl<M: Model> Constant<M> {
     }
 }
 
-impl<T: State, M: Model> table::Display<T> for Constant<M> {
+impl<T: State, M: Model> table::Display<T> for Constant<M>
+where
+    M::ConstantInference: table::Display<T>,
+{
     fn fmt(
         &self,
         table: &Table<T>,
@@ -845,7 +946,9 @@ impl<T: State, M: Model> table::Display<T> for Constant<M> {
         match self {
             Self::Phantom(_) => write!(f, "phantom"),
             Self::Primitive(val) => write!(f, "{val}"),
-            Self::Inference(_) => write!(f, "?"),
+            Self::Inference(inference) => {
+                write!(f, "{}", DisplayObject { display: inference, table })
+            }
             Self::Struct(val) => {
                 let qualified_name = table
                     .get_qualified_name(val.id.into())

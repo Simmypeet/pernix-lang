@@ -11,7 +11,6 @@ use crate::{
         model::{Default, Model},
         normalizer::NoOp,
         predicate,
-        session::{self, Limit},
         term::{
             r#type::{Primitive, Type},
             GenericArguments, Tuple, TupleElement,
@@ -33,7 +32,10 @@ impl PrimitivesTuple {
                 .primitives
                 .iter()
                 .copied()
-                .map(|x| TupleElement::Regular(Type::Primitive(x)))
+                .map(|x| TupleElement {
+                    term: Type::Primitive(x),
+                    is_unpacked: false,
+                })
                 .collect(),
         })
     }
@@ -70,7 +72,6 @@ fn check_primitives_tuple_copyable_impl(
 
     let active_premise =
         table.get_active_premise(core_module_id.into()).unwrap();
-    let mut session = session::Default::default();
 
     let satisfiability = predicate::Trait::satisfies(
         copy_trait_id,
@@ -85,7 +86,6 @@ fn check_primitives_tuple_copyable_impl(
             table: &table,
             normalizer: &NoOp,
         },
-        &mut Limit::new(&mut session),
     )?;
 
     let Some(satisfiability) = satisfiability else {

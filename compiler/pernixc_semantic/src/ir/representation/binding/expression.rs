@@ -237,7 +237,17 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
         config: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
-        todo!()
+        match syntax_tree.operator() {
+            syntax_tree::expression::PrefixOperator::LogicalNot(_) => todo!(),
+            syntax_tree::expression::PrefixOperator::Negate(operator) => {
+                todo!()
+            }
+            syntax_tree::expression::PrefixOperator::BitwiseNot(_) => todo!(),
+            syntax_tree::expression::PrefixOperator::Dereference(_) => todo!(),
+            syntax_tree::expression::PrefixOperator::Local(_) => todo!(),
+            syntax_tree::expression::PrefixOperator::Unlocal(_) => todo!(),
+            syntax_tree::expression::PrefixOperator::ReferenceOf(_) => todo!(),
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////////

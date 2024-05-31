@@ -13,7 +13,7 @@ use crate::{
         model::Default,
         normalizer::NoOp,
         predicate::definite,
-        session::{self, Limit, Session},
+        session::{self, Session},
         term::{
             constant::{self, Constant},
             r#type::{self, SymbolID, Type},
@@ -226,11 +226,11 @@ impl Property<Type<Default>> for TypeAlias {
             },
         });
 
-        let should_add = !definite(
-            &generated_term,
-            &Environment { premise, table, normalizer: &NoOp },
-            &mut Limit::new(&mut session::Default::default()),
-        )?;
+        let should_add = !definite(&generated_term, &Environment {
+            premise,
+            table,
+            normalizer: &NoOp,
+        })?;
 
         if should_add {
             let Insertion { id, duplication } = table
@@ -271,12 +271,8 @@ where
     let environment =
         &Environment { table: &table, premise: &premise, normalizer: &NoOp };
 
-    prop_assert!(definite(
-        &term,
-        environment,
-        &mut Limit::new(&mut session::Default::default())
-    )
-    .map_err(|_| TestCaseError::reject("too complex property to test"))?);
+    prop_assert!(definite(&term, environment)
+        .map_err(|_| TestCaseError::reject("too complex property to test"))?);
 
     // remove one of the mappings and check if the term is still definite
     {
@@ -292,14 +288,10 @@ where
                 premise: &premise_removed,
                 normalizer: &NoOp,
             };
-            prop_assert!(!definite(
-                &term,
-                environment,
-                &mut Limit::new(&mut session::Default::default())
-            )
-            .map_err(|_| TestCaseError::reject(
-                "too complex property to test"
-            ))?);
+            let result = !definite(&term, environment).map_err(|_| {
+                TestCaseError::reject("too complex property to test")
+            })?;
+            prop_assert!(result);
         }
     }
 

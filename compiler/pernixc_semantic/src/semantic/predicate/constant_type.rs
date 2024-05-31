@@ -1,7 +1,7 @@
 use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
     semantic::{
-        equality, get_equivalences,
+        equality, get_equivalences_impl,
         instantiation::{self, Instantiation},
         model::Model,
         normalizer::Normalizer,
@@ -15,7 +15,6 @@ use crate::{
 #[derive(Debug)]
 struct Visitor<
     'a,
-    'r,
     'l,
     T: State,
     N: Normalizer<M>,
@@ -24,12 +23,11 @@ struct Visitor<
 > {
     constant_type: Result<bool, ExceedLimitError>,
     environment: &'a Environment<'a, M, T, N>,
-    limit: &'l mut Limit<'r, R>,
+    limit: &'l mut Limit<R>,
 }
 
 impl<
         'a,
-        'r,
         'l,
         'v,
         U: Term,
@@ -39,7 +37,7 @@ impl<
             + Session<Lifetime<U::Model>>
             + Session<Type<U::Model>>
             + Session<Constant<U::Model>>,
-    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, N, R, U::Model>
+    > visitor::Visitor<'v, U> for Visitor<'a, 'l, T, N, R, U::Model>
 {
     fn visit(&mut self, term: &U, _: U::Location) -> bool {
         match satisfies_internal(
@@ -77,7 +75,10 @@ pub enum QuerySource {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstantType<M: Model>(pub Type<M>);
 
-impl<T: State, M: Model> table::Display<T> for ConstantType<M> {
+impl<T: State, M: Model> table::Display<T> for ConstantType<M>
+where
+    Type<M>: table::Display<T>,
+{
     fn fmt(
         &self,
         table: &Table<T>,
@@ -105,8 +106,7 @@ fn satisfies_internal<T: Term, N: Normalizer<T::Model>>(
     query_source: QuerySource,
     environment: &Environment<T::Model, impl State, N>,
     limit: &mut Limit<
-        impl Session<T>
-            + Session<Lifetime<T::Model>>
+        impl Session<Lifetime<T::Model>>
             + Session<Type<T::Model>>
             + Session<Constant<T::Model>>,
     >,
@@ -118,7 +118,7 @@ fn satisfies_internal<T: Term, N: Normalizer<T::Model>>(
         return Ok(true);
     }
 
-    match limit.mark_as_in_progress(Query(term), query_source)? {
+    match limit.mark_as_in_progress::<T, _>(Query(term), query_source)? {
         Some(session::Cached::Done(Satisfied)) => return Ok(true),
         Some(session::Cached::InProgress(source)) => {
             return Ok(match source {
@@ -159,7 +159,7 @@ fn satisfies_internal<T: Term, N: Normalizer<T::Model>>(
             }
 
             if result {
-                limit.mark_as_done(Query(term), Satisfied);
+                limit.mark_as_done::<T, _>(Query(term), Satisfied);
                 return Ok(true);
             }
         }
@@ -173,25 +173,25 @@ fn satisfies_internal<T: Term, N: Normalizer<T::Model>>(
         .filter_map(|x| T::as_constant_type_predicate(x))
     {
         if equality::equals_impl(term, premise_term, environment, limit)? {
-            limit.mark_as_done(Query(term), Satisfied);
+            limit.mark_as_done::<T, _>(Query(term), Satisfied);
             return Ok(true);
         }
     }
 
     // satisfiable with equivalence
-    for eq in get_equivalences(term, environment, limit)? {
+    for eq in get_equivalences_impl(term, environment, limit)? {
         if satisfies_internal(
             &eq,
             QuerySource::FromEquivalence,
             environment,
             limit,
         )? {
-            limit.mark_as_done(Query(term), Satisfied);
+            limit.mark_as_done::<T, _>(Query(term), Satisfied);
             return Ok(true);
         }
     }
 
-    limit.clear_query(Query(term));
+    limit.clear_query::<T, _>(Query(term));
     Ok(false)
 }
 
@@ -202,6 +202,14 @@ impl<M: Model> ConstantType<M> {
     ///
     /// See [`ExceedLimitError`] for more information.
     pub fn satisfies(
+        ty: &Type<M>,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
+    ) -> Result<bool, ExceedLimitError> {
+        let mut limit = Limit::<session::Default<_>>::default();
+        satisfies_internal(ty, QuerySource::Normal, environment, &mut limit)
+    }
+
+    pub(in crate::semantic) fn satisfies_impl(
         ty: &Type<M>,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
         limit: &mut Limit<

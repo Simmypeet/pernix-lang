@@ -10,7 +10,7 @@ use super::{
         constant::{self, Constant},
         lifetime::Lifetime,
         r#type::{self, Type},
-        MemberSymbol, ModelOf, Symbol, Term, Tuple, TupleElement,
+        MemberSymbol, ModelOf, Symbol, Term, Tuple,
     },
 };
 
@@ -175,7 +175,7 @@ where
                 let element = self
                     .elements
                     .get_mut(idx)
-                    .map(TupleElement::as_term_mut)
+                    .map(|x| &mut x.term)
                     .ok_or(AssignSubTermError::InvalidLocation)?;
 
                 *element = sub_term;

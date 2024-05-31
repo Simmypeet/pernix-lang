@@ -11,7 +11,7 @@ use strum_macros::EnumIter;
 
 use super::{
     constant::Constant, lifetime::Lifetime, GenericArguments, Local,
-    MemberSymbol, ModelOf, Never, Symbol, Term, TupleElement,
+    MemberSymbol, ModelOf, Never, Symbol, Term,
 };
 use crate::{
     arena::ID,
@@ -438,7 +438,7 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
 
             (Self::Tuple(location), Type::Tuple(tuple)) => match location {
                 SubTupleLocation::Single(single) => {
-                    tuple.elements.get(single).map(|x| x.as_term().clone())
+                    tuple.elements.get(single).map(|x| x.term.clone())
                 }
                 SubTupleLocation::Range { begin, end } => tuple
                     .elements
@@ -476,7 +476,7 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
 
             (Self::Tuple(location), Type::Tuple(tuple)) => match location {
                 SubTupleLocation::Single(single) => {
-                    tuple.elements.get(single).map(TupleElement::as_term)
+                    tuple.elements.get(single).map(|x| &x.term)
                 }
                 SubTupleLocation::Range { .. } => None,
             },
@@ -512,10 +512,9 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
             (Self::Array, Type::Array(array)) => Some(&mut *array.r#type),
 
             (Self::Tuple(location), Type::Tuple(tuple)) => match location {
-                SubTupleLocation::Single(single) => tuple
-                    .elements
-                    .get_mut(single)
-                    .map(TupleElement::as_term_mut),
+                SubTupleLocation::Single(single) => {
+                    tuple.elements.get_mut(single).map(|x| &mut x.term)
+                }
                 SubTupleLocation::Range { .. } => None,
             },
 
@@ -859,6 +858,14 @@ pub enum Constraint {
     #[display(fmt = "{{number}}")]
     Number,
 
+    /// The type can be integer number type. (signed/unsigned)
+    #[display(fmt = "{{integer}}")]
+    Integer,
+
+    /// The type can be unsigned number type. (unsigned integer)
+    #[display(fmt = "{{signedInteger}}")]
+    SignedInteger,
+
     /// The type can be signed number type. (signed integer/floating)
     #[display(fmt = "{{signed}}")]
     Signed,
@@ -915,7 +922,101 @@ where
     type InferenceVariable = M::TypeInference;
     type Rebind<Ms: Model> = Type<Ms>;
 
-    #[allow(clippy::too_many_lines)]
+    fn from_other_model<U: Model>(term: Self::Rebind<U>) -> Self
+    where
+        <Self::Model as Model>::LifetimeInference: From<U::LifetimeInference>,
+        <Self::Model as Model>::TypeInference: From<U::TypeInference>,
+        <Self::Model as Model>::ConstantInference: From<U::ConstantInference>,
+    {
+        match term {
+            Type::Primitive(primitive) => Self::Primitive(primitive),
+            Type::Parameter(parameter) => Self::Parameter(parameter),
+            Type::Inference(inference) => {
+                Self::Inference(M::TypeInference::from(inference))
+            }
+            Type::Symbol(symbol) => {
+                Self::Symbol(Symbol::from_other_model(symbol))
+            }
+            Type::Pointer(pointer) => Self::Pointer(Pointer {
+                qualifier: pointer.qualifier,
+                pointee: Box::new(Self::from_other_model(*pointer.pointee)),
+            }),
+            Type::Reference(reference) => Self::Reference(Reference {
+                qualifier: reference.qualifier,
+                lifetime: Lifetime::from_other_model(reference.lifetime),
+                pointee: Box::new(Self::from_other_model(*reference.pointee)),
+            }),
+            Type::Array(array) => Self::Array(Array {
+                length: Constant::from_other_model(array.length),
+                r#type: Box::new(Self::from_other_model(*array.r#type)),
+            }),
+            Type::Tuple(tuple) => Self::Tuple(Tuple::from_other_model(tuple)),
+            Type::Local(local) => Self::Local(Local::from_other_model(local)),
+            Type::Phantom(phantom) => Self::Phantom(Phantom(Box::new(
+                Self::from_other_model(*phantom.0),
+            ))),
+            Type::MemberSymbol(member_symbol) => Self::MemberSymbol(
+                MemberSymbol::from_other_model(member_symbol),
+            ),
+            Type::TraitMember(trait_member) => {
+                Self::TraitMember(TraitMember::from_other_model(trait_member))
+            }
+        }
+    }
+
+    fn try_from_other_model<U: Model>(term: Self::Rebind<U>) -> Option<Self>
+    where
+        <Self::Model as Model>::LifetimeInference:
+            TryFrom<U::LifetimeInference>,
+        <Self::Model as Model>::TypeInference: TryFrom<U::TypeInference>,
+        <Self::Model as Model>::ConstantInference:
+            TryFrom<U::ConstantInference>,
+    {
+        Some(match term {
+            Type::Primitive(primitive) => Self::Primitive(primitive),
+            Type::Parameter(parameter) => Self::Parameter(parameter),
+            Type::Inference(inference) => {
+                Self::Inference(M::TypeInference::try_from(inference).ok()?)
+            }
+            Type::Symbol(symbol) => {
+                Self::Symbol(Symbol::try_from_other_model(symbol)?)
+            }
+            Type::Pointer(pointer) => Self::Pointer(Pointer {
+                qualifier: pointer.qualifier,
+                pointee: Box::new(Self::try_from_other_model(
+                    *pointer.pointee,
+                )?),
+            }),
+            Type::Reference(reference) => Self::Reference(Reference {
+                qualifier: reference.qualifier,
+                lifetime: Lifetime::try_from_other_model(reference.lifetime)?,
+                pointee: Box::new(Self::try_from_other_model(
+                    *reference.pointee,
+                )?),
+            }),
+            Type::Array(array) => Self::Array(Array {
+                length: Constant::try_from_other_model(array.length)?,
+                r#type: Box::new(Self::try_from_other_model(*array.r#type)?),
+            }),
+            Type::Tuple(tuple) => {
+                Self::Tuple(Tuple::try_from_other_model(tuple)?)
+            }
+            Type::Local(local) => {
+                Self::Local(Local::try_from_other_model(local)?)
+            }
+            Type::Phantom(phantom) => Self::Phantom(Phantom(Box::new(
+                Self::try_from_other_model(*phantom.0)?,
+            ))),
+            Type::MemberSymbol(member_symbol) => Self::MemberSymbol(
+                MemberSymbol::try_from_other_model(member_symbol)?,
+            ),
+            Type::TraitMember(trait_member) => Self::TraitMember(
+                TraitMember::try_from_other_model(trait_member)?,
+            ),
+        })
+    }
+
+    #[allow(clippy::too_many_lines, private_bounds, private_interfaces)]
     fn normalize(
         &self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
@@ -961,7 +1062,7 @@ where
                 };
 
                 // resolve for the appropriate trait-implementation
-                let Ok(result) = predicate::resolve_implementation(
+                let Ok(result) = predicate::resolve_implementation_impl(
                     trait_id,
                     &trait_member.parent_generic_arguments,
                     environment,
@@ -1021,7 +1122,7 @@ where
 
                 // gets the decution for the parent generic arguments
                 let Some(mut deduction) = adt_implementation_symbol_arguments
-                    .deduce(
+                    .deduce_impl(
                     parent_generic_arguments,
                     environment,
                     limit,
@@ -1078,7 +1179,7 @@ where
 
                 // gets the decution for the parent generic arguments
                 let Some(mut deduction) = adt_implementation_symbol_arguments
-                    .deduce(
+                    .deduce_impl(
                     parent_generic_arguments,
                     environment,
                     limit,
@@ -1112,7 +1213,7 @@ where
             // unpack the tuple
             Self::Tuple(tuple) => {
                 let contain_upacked =
-                    tuple.elements.iter().any(super::TupleElement::is_unpacked);
+                    tuple.elements.iter().any(|x| x.is_unpacked);
 
                 if !contain_upacked {
                     return Ok(None);
@@ -1121,19 +1222,20 @@ where
                 let mut result = Vec::new();
 
                 for element in tuple.elements.iter().cloned() {
-                    match element {
-                        regular @ super::TupleElement::Regular(_) => {
-                            result.push(regular);
-                        }
-                        super::TupleElement::Unpacked(term) => match term {
+                    if element.is_unpacked {
+                        match element.term {
                             Self::Tuple(inner) => {
                                 result.extend(inner.elements.iter().cloned());
                             }
                             term => {
-                                result
-                                    .push(super::TupleElement::Unpacked(term));
+                                result.push(super::TupleElement {
+                                    term,
+                                    is_unpacked: true,
+                                });
                             }
-                        },
+                        }
+                    } else {
+                        result.push(element);
                     }
                 }
 
@@ -1141,13 +1243,14 @@ where
             }
 
             Self::Inference(inference) => {
-                Normalizer::normalize_type(inference, environment, limit)
+                Normalizer::normalize_type(inference, environment)
             }
 
             _ => Ok(None),
         }
     }
 
+    #[allow(private_bounds, private_interfaces)]
     fn outlives_satisfiability(
         &self,
         _: &Lifetime<M>,
@@ -1505,7 +1608,12 @@ where
     }
 }
 
-impl<T: State, M: Model> table::Display<T> for Type<M> {
+impl<T: State, M: Model> table::Display<T> for Type<M>
+where
+    M::TypeInference: table::Display<T>,
+    Constant<M>: table::Display<T>,
+    Lifetime<M>: table::Display<T>,
+{
     fn fmt(
         &self,
         table: &Table<T>,
@@ -1532,7 +1640,9 @@ impl<T: State, M: Model> table::Display<T> for Type<M> {
                         .unwrap_or("{unknown}")
                 )
             }
-            Self::Inference(_) => write!(f, "?"),
+            Self::Inference(inference) => {
+                write!(f, "{}", DisplayObject { table, display: inference })
+            }
             Self::Symbol(symbol) => {
                 write!(f, "{}", DisplayObject { table, display: symbol })
             }
@@ -1646,7 +1756,7 @@ impl<M: Model> Type<M> {
                 let mut occurrences = Vec::new();
                 for element in &tuple.elements {
                     occurrences.extend(
-                        element.as_term().get_global_id_dependencies(table)?,
+                        element.term.get_global_id_dependencies(table)?,
                     );
                 }
                 occurrences

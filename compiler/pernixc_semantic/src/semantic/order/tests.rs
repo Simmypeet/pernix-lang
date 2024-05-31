@@ -12,7 +12,7 @@ use crate::{
     semantic::{
         model::Default,
         normalizer::NoOp,
-        session::{self, Limit, Session},
+        session::{self, Session},
         term::{
             constant::Constant,
             lifetime::Lifetime,
@@ -114,7 +114,6 @@ where
                             premise: &Premise::default(),
                             normalizer: &NoOp,
                         },
-                        &mut Limit::new(&mut session::Default::default()),
                     )
                     .unwrap()
                     .is_some()
@@ -467,8 +466,7 @@ proptest! {
                 table: &Table::<Building>::default(),
                 premise: &Premise::default(),
                 normalizer: &NoOp,
-            },
-            &mut Limit::new(&mut session::Default::default()),
+            }
         )?;
 
         match (result, expected) {

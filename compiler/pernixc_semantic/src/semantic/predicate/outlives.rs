@@ -1,13 +1,13 @@
 use super::contains_forall_lifetime;
 use crate::{
     semantic::{
-        get_equivalences,
+        get_equivalences_impl,
         instantiation::{self, Instantiation},
         mapping::Mapping,
         model::Model,
         normalizer::Normalizer,
         predicate::Satisfiability,
-        session::{Cached, Limit, Session},
+        session::{self, Cached, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         unification::{self, Unification},
         visitor, Environment, ExceedLimitError, Satisfied,
@@ -35,7 +35,10 @@ pub struct Outlives<T: Term> {
     pub bound: Lifetime<T::Model>,
 }
 
-impl<S: State, T: table::Display<S> + Term> table::Display<S> for Outlives<T> {
+impl<S: State, T: table::Display<S> + Term> table::Display<S> for Outlives<T> 
+where
+    Lifetime<T::Model>: table::Display<S>,
+{
     fn fmt(
         &self,
         table: &Table<S>,
@@ -67,7 +70,6 @@ impl<T: Term> Outlives<T> {
 
 struct Visitor<
     'a,
-    'r,
     'l,
     T: State,
     N: Normalizer<M>,
@@ -77,12 +79,11 @@ struct Visitor<
     outlives: Result<bool, ExceedLimitError>,
     bound: &'a Lifetime<M>,
     environment: &'a Environment<'a, M, T, N>,
-    limit: &'l mut Limit<'r, R>,
+    limit: &'l mut Limit<R>,
 }
 
 impl<
         'a,
-        'r,
         'l,
         'v,
         U: Term,
@@ -92,10 +93,10 @@ impl<
             + Session<Lifetime<U::Model>>
             + Session<Type<U::Model>>
             + Session<Constant<U::Model>>,
-    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, N, R, U::Model>
+    > visitor::Visitor<'v, U> for Visitor<'a, 'l, T, N, R, U::Model>
 {
     fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
-        match Outlives::satisfies(
+        match Outlives::satisfies_impl(
             term,
             self.bound,
             self.environment,
@@ -152,8 +153,7 @@ impl<T: Term> Outlives<T> {
             impl Normalizer<T::Model>,
         >,
         limit: &mut Limit<
-            impl Session<T>
-                + Session<Lifetime<T::Model>>
+            impl Session<Lifetime<T::Model>>
                 + Session<Type<T::Model>>
                 + Session<Constant<T::Model>>,
         >,
@@ -165,7 +165,12 @@ impl<T: Term> Outlives<T> {
 
         for (bound, operands) in mapping.lifetimes {
             for operand in operands {
-                if !Outlives::satisfies(&bound, &operand, environment, limit)? {
+                if !Outlives::satisfies_impl(
+                    &bound,
+                    &operand,
+                    environment,
+                    limit,
+                )? {
                     return Ok(false);
                 }
             }
@@ -187,9 +192,22 @@ impl<T: Term> Outlives<T> {
             impl State,
             impl Normalizer<T::Model>,
         >,
+    ) -> Result<bool, ExceedLimitError> {
+        let mut limit = Limit::<session::Default<_>>::default();
+
+        Self::satisfies_impl(operand, bound, environment, &mut limit)
+    }
+
+    pub(in crate::semantic) fn satisfies_impl(
+        operand: &T,
+        bound: &Lifetime<T::Model>,
+        environment: &Environment<
+            T::Model,
+            impl State,
+            impl Normalizer<T::Model>,
+        >,
         limit: &mut Limit<
-            impl Session<T>
-                + Session<Lifetime<T::Model>>
+            impl Session<Lifetime<T::Model>>
                 + Session<Type<T::Model>>
                 + Session<Constant<T::Model>>,
         >,
@@ -201,7 +219,7 @@ impl<T: Term> Outlives<T> {
             return Ok(true);
         }
 
-        match limit.mark_as_in_progress(Query { operand, bound }, ())? {
+        match limit.mark_as_in_progress::<T, _>(Query { operand, bound }, ())? {
             Some(Cached::Done(Satisfied)) => return Ok(true),
             Some(Cached::InProgress(())) => return Ok(false),
             None => {}
@@ -215,23 +233,23 @@ impl<T: Term> Outlives<T> {
             let _ = operand.accept_one_level(&mut visitor);
 
             if visitor.outlives? {
-                limit.mark_as_done(Query { operand, bound }, Satisfied);
+                limit.mark_as_done::<T, _>(Query { operand, bound }, Satisfied);
                 return Ok(true);
             }
         }
 
         // look for operand equivalences
-        for operand_eq in get_equivalences(operand, environment, limit)? {
-            if Self::satisfies(&operand_eq, bound, environment, limit)? {
-                limit.mark_as_done(Query { operand, bound }, Satisfied);
+        for operand_eq in get_equivalences_impl(operand, environment, limit)? {
+            if Self::satisfies_impl(&operand_eq, bound, environment, limit)? {
+                limit.mark_as_done::<T, _>(Query { operand, bound }, Satisfied);
                 return Ok(true);
             }
         }
 
         // look for bound equivalences
-        for bound_eq in get_equivalences(bound, environment, limit)? {
-            if Self::satisfies(operand, &bound_eq, environment, limit)? {
-                limit.mark_as_done(Query { operand, bound }, Satisfied);
+        for bound_eq in get_equivalences_impl(bound, environment, limit)? {
+            if Self::satisfies_impl(operand, &bound_eq, environment, limit)? {
+                limit.mark_as_done::<T, _>(Query { operand, bound }, Satisfied);
                 return Ok(true);
             }
         }
@@ -242,7 +260,7 @@ impl<T: Term> Outlives<T> {
             .iter()
             .filter_map(|x| T::as_outlive_predicate(x))
         {
-            let Some(unification) = unification::unify(
+            let Some(unification) = unification::unify_impl(
                 operand,
                 next_operand,
                 &mut OutlivesUnifyingConfig,
@@ -261,13 +279,14 @@ impl<T: Term> Outlives<T> {
                 continue;
             }
 
-            if Outlives::satisfies(next_bound, bound, environment, limit)? {
-                limit.mark_as_done(Query { operand, bound }, Satisfied);
+            if Outlives::satisfies_impl(next_bound, bound, environment, limit)?
+            {
+                limit.mark_as_done::<T, _>(Query { operand, bound }, Satisfied);
                 return Ok(true);
             }
         }
 
-        limit.clear_query(Query { operand, bound });
+        limit.clear_query::<T, _>(Query { operand, bound });
         Ok(false)
     }
 }

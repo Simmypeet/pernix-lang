@@ -32,7 +32,7 @@ pub mod model;
 pub mod normalizer;
 pub mod order;
 pub mod predicate;
-pub mod session;
+mod session;
 pub mod simplify;
 pub mod sub_term;
 pub mod term;
@@ -145,9 +145,16 @@ pub struct Environment<'a, M: Model, T: State, N: Normalizer<M>> {
 pub fn get_equivalences<T: Term>(
     term: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+) -> Result<Vec<T>, ExceedLimitError> {
+    let mut limit = Limit::<session::Default<_>>::default();
+    get_equivalences_impl(term, environment, &mut limit)
+}
+
+fn get_equivalences_impl<T: Term>(
+    term: &T,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
-        impl Session<T>
-            + Session<Lifetime<T::Model>>
+        impl Session<Lifetime<T::Model>>
             + Session<Type<T::Model>>
             + Session<Constant<T::Model>>,
     >,

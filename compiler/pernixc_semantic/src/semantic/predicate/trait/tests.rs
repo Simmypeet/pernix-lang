@@ -19,7 +19,6 @@ use crate::{
         normalizer::NoOp,
         order::Order,
         predicate::{self, definite},
-        session::{self, Limit},
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments, Kind,
@@ -47,15 +46,11 @@ lazy_static! {
 fn definite_lifetime() -> impl Strategy<Value = Lifetime<Default>> {
     Lifetime::arbitrary().prop_filter("filter out non-definite terms", |term| {
         matches!(
-            definite::definite(
-                term,
-                &Environment {
-                    premise: &Premise::default(),
-                    table: &*TABLE,
-                    normalizer: &NoOp
-                },
-                &mut Limit::new(&mut session::Default::default())
-            ),
+            definite::definite(term, &Environment {
+                premise: &Premise::default(),
+                table: &*TABLE,
+                normalizer: &NoOp
+            },),
             Ok(true)
         ) && !RecursiveIterator::new(term)
             .any(|(x, _)| matches!(x, Kind::Type(Type::TraitMember(_))))
@@ -65,15 +60,11 @@ fn definite_lifetime() -> impl Strategy<Value = Lifetime<Default>> {
 fn definite_type() -> impl Strategy<Value = Type<Default>> {
     Type::arbitrary().prop_filter("filter out non-definite terms", |term| {
         matches!(
-            definite::definite(
-                term,
-                &Environment {
-                    premise: &Premise::default(),
-                    table: &*TABLE,
-                    normalizer: &NoOp
-                },
-                &mut Limit::new(&mut session::Default::default())
-            ),
+            definite::definite(term, &Environment {
+                premise: &Premise::default(),
+                table: &*TABLE,
+                normalizer: &NoOp
+            },),
             Ok(true)
         ) && !RecursiveIterator::new(term)
             .any(|(x, _)| matches!(x, Kind::Type(Type::TraitMember(_))))
@@ -83,15 +74,11 @@ fn definite_type() -> impl Strategy<Value = Type<Default>> {
 fn definite_constant() -> impl Strategy<Value = Constant<Default>> {
     Constant::arbitrary().prop_filter("filter out non-definite terms", |term| {
         matches!(
-            definite::definite(
-                term,
-                &Environment {
-                    premise: &Premise::default(),
-                    table: &*TABLE,
-                    normalizer: &NoOp
-                },
-                &mut Limit::new(&mut session::Default::default())
-            ),
+            definite::definite(term, &Environment {
+                premise: &Premise::default(),
+                table: &*TABLE,
+                normalizer: &NoOp
+            },),
             Ok(true)
         ) && !RecursiveIterator::new(term)
             .any(|(x, _)| matches!(x, Kind::Type(Type::TraitMember(_))))
@@ -125,7 +112,6 @@ pub struct SingleImplementation {
 impl SingleImplementation {
     fn assert(&self) -> TestCaseResult {
         let premise = Premise::default();
-        let mut session = session::Default::default();
 
         let result = super::resolve_implementation(
             self.trait_id,
@@ -135,7 +121,6 @@ impl SingleImplementation {
                 table: &self.table,
                 normalizer: &NoOp,
             },
-            &mut Limit::new(&mut session),
         )?;
 
         prop_assert_eq!(result.id, self.target_implementation_id);
@@ -503,7 +488,6 @@ impl SpecializedImplementation {
     fn assert(&self) -> TestCaseResult {
         // should match to the specialized implementation
         let premise = Premise::default();
-        let mut session = session::Default::default();
 
         let result = super::resolve_implementation(
             self.trait_id,
@@ -513,7 +497,6 @@ impl SpecializedImplementation {
                 table: &self.table,
                 normalizer: &NoOp,
             },
-            &mut Limit::new(&mut session),
         )?;
 
         prop_assert_eq!(result.id, self.specialized_implementation_id);
@@ -724,13 +707,11 @@ impl SpecializedImplementation {
 
         general_implementation.arguments = generic_arguments;
 
-        let mut session = session::Default::default();
         let premise = Premise::default();
 
         if general_implementation.arguments.clone().order(
             &starting_generic_arguments,
             &Environment { premise: &premise, table, normalizer: &NoOp },
-            &mut Limit::new(&mut session),
         ) != Ok(Order::MoreGeneral)
         {
             return None;
@@ -861,7 +842,6 @@ impl FallbackToGeneralImplementation {
     fn assert(&self) -> TestCaseResult {
         // should match to the general implementation
         let premise = Premise::default();
-        let mut session = session::Default::default();
 
         let result = super::resolve_implementation(
             self.0.trait_id,
@@ -871,7 +851,6 @@ impl FallbackToGeneralImplementation {
                 table: &self.0.table,
                 normalizer: &NoOp,
             },
-            &mut Limit::new(&mut session),
         )?;
 
         prop_assert_eq!(result.id, self.0.general_implementation_id);

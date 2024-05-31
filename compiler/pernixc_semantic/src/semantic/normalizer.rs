@@ -2,7 +2,6 @@
 
 use super::{
     model::Model,
-    session::{Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type},
     Environment, ExceedLimitError,
 };
@@ -15,9 +14,6 @@ pub trait Normalizer<M: Model>: Sized {
     fn normalize_lifetime(
         lifetime: &M::LifetimeInference,
         environment: &Environment<M, impl State, Self>,
-        limit: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-        >,
     ) -> Result<Option<Lifetime<M>>, ExceedLimitError>;
 
     /// Normalizes the type inference variable into the concrete type
@@ -25,9 +21,6 @@ pub trait Normalizer<M: Model>: Sized {
     fn normalize_type(
         ty: &M::TypeInference,
         environment: &Environment<M, impl State, Self>,
-        limit: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-        >,
     ) -> Result<Option<Type<M>>, ExceedLimitError>;
 
     /// Normalizes the constant inference variable into the concrete constant
@@ -35,9 +28,6 @@ pub trait Normalizer<M: Model>: Sized {
     fn normalize_constant(
         constant: &M::ConstantInference,
         environment: &Environment<M, impl State, Self>,
-        limit: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-        >,
     ) -> Result<Option<Constant<M>>, ExceedLimitError>;
 }
 
@@ -49,9 +39,6 @@ impl<M: Model> Normalizer<M> for NoOp {
     fn normalize_lifetime(
         _: &<M as Model>::LifetimeInference,
         _: &Environment<M, impl State, Self>,
-        _: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-        >,
     ) -> Result<Option<Lifetime<M>>, ExceedLimitError> {
         Ok(None)
     }
@@ -59,9 +46,6 @@ impl<M: Model> Normalizer<M> for NoOp {
     fn normalize_type(
         _: &<M as Model>::TypeInference,
         _: &Environment<M, impl State, Self>,
-        _: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-        >,
     ) -> Result<Option<Type<M>>, ExceedLimitError> {
         Ok(None)
     }
@@ -69,9 +53,6 @@ impl<M: Model> Normalizer<M> for NoOp {
     fn normalize_constant(
         _: &<M as Model>::ConstantInference,
         _: &Environment<M, impl State, Self>,
-        _: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-        >,
     ) -> Result<Option<Constant<M>>, ExceedLimitError> {
         Ok(None)
     }

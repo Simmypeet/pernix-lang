@@ -24,7 +24,6 @@ use crate::{
         model::{Default, Model},
         normalizer::{NoOp, Normalizer},
         predicate::{self, ConstantType, Outlives, Predicate, Trait, Tuple},
-        session::{self, Limit, Session},
         term::{
             self, constant,
             lifetime::{self, Lifetime},
@@ -34,6 +33,7 @@ use crate::{
     },
     symbol::{
         table::{
+            self,
             representation::{Element, Index, RwLockContainer},
             resolution, Building, State, Table,
         },
@@ -44,7 +44,10 @@ use crate::{
     },
 };
 
-impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
+impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N>
+where
+    predicate::Predicate<M>: table::Display<table::Suboptimal>,
+{
     /// Checks if the given `resolution` is well-formed. The errors are reported
     /// to the `handler`.
     ///
@@ -62,7 +65,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
         resolution: &resolution::Resolution<M>,
         resolution_span: &Span,
         do_outlives_check: bool,
-        session: &mut session::Default<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match resolution {
@@ -80,11 +82,9 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                                 .clone(),
                         });
 
-                    match self.predicate_satisfied(
-                        &predicate,
-                        do_outlives_check,
-                        session,
-                    ) {
+                    match self
+                        .predicate_satisfied(&predicate, do_outlives_check)
+                    {
                         Ok(true) => {}
                         Ok(false) => {
                             handler.receive(Box::new(UnsatisifedPredicate {
@@ -108,7 +108,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                     generic.generic_arguments.clone(),
                     resolution_span,
                     do_outlives_check,
-                    session,
                     handler,
                 )
             }
@@ -138,11 +137,8 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                     let deduced = match GenericArguments::from_default_model(
                         adt_implementation.arguments.clone(),
                     )
-                    .deduce(
-                        &member_generic.parent_generic_arguments,
-                        self,
-                        &mut Limit::new(session),
-                    ) {
+                    .deduce(&member_generic.parent_generic_arguments, self)
+                    {
                         Ok(deduced) => {
                             deduced.expect("should be able to deduce")
                         }
@@ -155,7 +151,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                         &deduced,
                         resolution_span,
                         do_outlives_check,
-                        session,
                         handler,
                     );
                 }
@@ -165,7 +160,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                     member_generic.generic_arguments.clone(),
                     resolution_span,
                     do_outlives_check,
-                    session,
                     handler,
                 )
             }
@@ -193,7 +187,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
         generic_arguments: GenericArguments<M>,
         instantiation_span: &Span,
         do_outlives_check: bool,
-        session: &mut session::Default<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         // convert the generic arguments to an instantiation and delegate the
@@ -213,7 +206,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
             .unwrap(),
             instantiation_span,
             do_outlives_check,
-            session,
             handler,
         )
     }
@@ -238,9 +230,10 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
         instantiation: &Instantiation<M>,
         instantiation_span: &Span,
         do_outlives_check: bool,
-        session: &mut session::Default<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) {
+    ) where
+        predicate::Predicate<M>: table::Display<table::Suboptimal>,
+    {
         // get all the predicates and instantiate them with the given generic
         // arguments
         let instantiated_sym = self.table.get_generic(instantiated).unwrap();
@@ -253,11 +246,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
 
             predicate.instantiate(instantiation);
 
-            match self.predicate_satisfied(
-                &predicate,
-                do_outlives_check,
-                session,
-            ) {
+            match self.predicate_satisfied(&predicate, do_outlives_check) {
                 Ok(false) => handler.receive(Box::new(UnsatisifedPredicate {
                     predicate,
                     instantiation_span: instantiation_span.clone(),
@@ -285,49 +274,35 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
         &self,
         predicate: &Predicate<M>,
         do_outlives_check: bool,
-        session: &mut session::Default<M>,
     ) -> Result<bool, ExceedLimitError> {
         let result = match &predicate {
-            predicate::Predicate::TraitTypeEquality(eq) => {
-                equality::equals_impl(
-                    &r#type::Type::TraitMember(eq.lhs.clone()),
-                    &eq.rhs,
-                    self,
-                    &mut Limit::new(session),
-                )
-            }
+            predicate::Predicate::TraitTypeEquality(eq) => equality::equals(
+                &r#type::Type::TraitMember(eq.lhs.clone()),
+                &eq.rhs,
+                self,
+            ),
             predicate::Predicate::ConstantType(pred) => {
-                ConstantType::satisfies(&pred.0, self, &mut Limit::new(session))
+                ConstantType::satisfies(&pred.0, self)
             }
             predicate::Predicate::LifetimeOutlives(pred) => {
                 if !do_outlives_check {
                     return Ok(true);
                 }
 
-                Outlives::satisfies(
-                    &pred.operand,
-                    &pred.bound,
-                    self,
-                    &mut Limit::new(session),
-                )
+                Outlives::satisfies(&pred.operand, &pred.bound, self)
             }
             predicate::Predicate::TypeOutlives(pred) => {
                 if !do_outlives_check {
                     return Ok(true);
                 }
 
-                Outlives::satisfies(
-                    &pred.operand,
-                    &pred.bound,
-                    self,
-                    &mut Limit::new(session),
-                )
+                Outlives::satisfies(&pred.operand, &pred.bound, self)
             }
             predicate::Predicate::TupleType(pred) => {
-                Tuple::satisfies(&pred.0, self, &mut Limit::new(session))
+                Tuple::satisfies(&pred.0, self)
             }
             predicate::Predicate::TupleConstant(pred) => {
-                Tuple::satisfies(&pred.0, self, &mut Limit::new(session))
+                Tuple::satisfies(&pred.0, self)
             }
             predicate::Predicate::Trait(pred) => {
                 || -> Result<bool, ExceedLimitError> {
@@ -336,7 +311,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                         pred.is_const,
                         &pred.generic_arguments,
                         self,
-                        &mut Limit::new(session),
                     )?
                     else {
                         return Ok(false);
@@ -355,7 +329,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                                     &pred.operand,
                                     &pred.bound,
                                     self,
-                                    &mut Limit::new(session),
                                 )? {
                                     return Ok(false);
                                 }
@@ -367,7 +340,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                                     &pred.operand,
                                     &pred.bound,
                                     self,
-                                    &mut Limit::new(session),
                                 )? {
                                     return Ok(false);
                                 }
@@ -390,7 +362,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
         ty: &r#type::Type<M>,
         instantiation_span: &Span,
         do_outlives_check: bool,
-        session: &mut session::Default<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match ty {
@@ -411,7 +382,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                         &*reference.pointee,
                         &reference.lifetime,
                         self,
-                        &mut Limit::new(session),
                     ) {
                         Ok(true) => {}
                         Ok(false) => {
@@ -457,13 +427,12 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
         &self,
         unpacked_term: &U,
         instantiation_span: &Span,
-        session: &mut session::Default<M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        session::Default<M>: Session<U>,
-        predicate::Predicate<M>: From<Tuple<U>>,
+        predicate::Predicate<M>:
+            From<Tuple<U>> + table::Display<table::Suboptimal>,
     {
-        match Tuple::satisfies(unpacked_term, self, &mut Limit::new(session)) {
+        match Tuple::satisfies(unpacked_term, self) {
             Ok(true) => {}
             Ok(false) => {
                 handler.receive(Box::new(error::UnsatisifedPredicate {
@@ -493,7 +462,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         let active_premise = self.get_active_premise(id).unwrap();
-        let mut session = session::Default::default();
         let environment = Environment {
             premise: &active_premise,
             table: self,
@@ -506,20 +474,13 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 resolution,
                 &generic_identifier.span(),
                 true,
-                &mut session,
                 handler,
             )
         }
 
         // check type occurrences
         for (ty, syn) in occurrences.types() {
-            environment.check_type_ocurrence(
-                ty,
-                &syn.span(),
-                true,
-                &mut session,
-                handler,
-            )
+            environment.check_type_ocurrence(ty, &syn.span(), true, handler)
         }
 
         // check unpacked type occurrences
@@ -527,7 +488,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             environment.check_unpacked_ocurrences(
                 unpacked,
                 &syn.span(),
-                &mut session,
                 handler,
             )
         }
@@ -537,7 +497,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             environment.check_unpacked_ocurrences(
                 unpacked,
                 &syn.span(),
-                &mut session,
                 handler,
             )
         }
@@ -654,7 +613,7 @@ impl UnusedGenericParameters {
             }
             r#type::Type::Tuple(tuple) => {
                 for ty in &tuple.elements {
-                    self.check_in_type(ty.as_term());
+                    self.check_in_type(&ty.term);
                 }
             }
             r#type::Type::Local(local) => {
@@ -724,7 +683,7 @@ impl UnusedGenericParameters {
 
             constant::Constant::Tuple(tuple) => {
                 for element in &tuple.elements {
-                    self.check_in_constant(element.as_term());
+                    self.check_in_constant(&element.term);
                 }
             }
         }
@@ -883,8 +842,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let implementation_member_active_premise =
             self.get_active_premise(implementation_member_id.into()).unwrap();
 
-        let mut session = session::Default::default();
-
         for ((tr_const_id, tr_const_param), (im_const_id, im_const_param)) in
             trait_member_sym
                 .generic_declaration()
@@ -900,7 +857,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             let mut tr_const_ty = tr_const_param.r#type.clone();
             instantiation::instantiate(&mut tr_const_ty, &trait_instantiation);
 
-            match equality::equals_impl(
+            match equality::equals(
                 &tr_const_ty,
                 &im_const_param.r#type,
                 &Environment {
@@ -908,7 +865,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     premise: &implementation_member_active_premise,
                     normalizer: &NoOp,
                 },
-                &mut Limit::new(&mut session),
             ) {
                 Ok(false) => handler.receive(Box::new(
                     MismatchedImplementationConstantTypeParameter {
@@ -939,11 +895,9 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             let mut predicate_instantiated = predicate.predicate.clone();
             predicate_instantiated.instantiate(&trait_instantiation);
 
-            match implementation_member_environment.predicate_satisfied(
-                &predicate_instantiated,
-                true,
-                &mut session,
-            ) {
+            match implementation_member_environment
+                .predicate_satisfied(&predicate_instantiated, true)
+            {
                 Ok(false) => {
                     handler.receive(Box::new(
                         UnsatisfiedTraitMemberPredicate {
@@ -993,11 +947,9 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         for predicate in
             &implementation_member_sym.generic_declaration().predicates
         {
-            match trait_member_environment.predicate_satisfied(
-                &predicate.predicate,
-                true,
-                &mut session,
-            ) {
+            match trait_member_environment
+                .predicate_satisfied(&predicate.predicate, true)
+            {
                 Ok(false) => {
                     handler.receive(Box::new(ExtraneousTraitMemberPredicate {
                         trait_implementation_member_id:
@@ -1134,7 +1086,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         drop(implemented_sym);
 
         // check if the signature matches the trait definition
-        let mut session = session::Default::default();
         let premise =
             self.get_active_premise(implementation_id.into()).unwrap();
 
@@ -1146,7 +1097,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             implementation_sym.arguments.clone(),
             implementation_sym.span().as_ref().unwrap(),
             true,
-            &mut session,
             handler,
         );
     }

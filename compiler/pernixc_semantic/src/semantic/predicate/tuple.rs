@@ -1,10 +1,10 @@
 use super::contains_forall_lifetime;
 use crate::{
     semantic::{
-        equality, get_equivalences,
+        equality, get_equivalences_impl,
         instantiation::{self, Instantiation},
         normalizer::Normalizer,
-        session::{Cached, Limit, Session},
+        session::{self, Cached, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         Environment, ExceedLimitError, Satisfied,
     },
@@ -55,9 +55,20 @@ impl<T: Term> Tuple<T> {
             impl State,
             impl Normalizer<T::Model>,
         >,
+    ) -> Result<bool, ExceedLimitError> {
+        let mut limit = Limit::<session::Default<_>>::default();
+        Self::satisfies_impl(term, environment, &mut limit)
+    }
+
+    pub(in crate::semantic) fn satisfies_impl(
+        term: &T,
+        environment: &Environment<
+            T::Model,
+            impl State,
+            impl Normalizer<T::Model>,
+        >,
         limit: &mut Limit<
-            impl Session<T>
-                + Session<Lifetime<T::Model>>
+            impl Session<Lifetime<T::Model>>
                 + Session<Type<T::Model>>
                 + Session<Constant<T::Model>>,
         >,
@@ -67,7 +78,7 @@ impl<T: Term> Tuple<T> {
             return Ok(true);
         }
 
-        match limit.mark_as_in_progress(Query(term), ())? {
+        match limit.mark_as_in_progress::<T, _>(Query(term), ())? {
             Some(Cached::Done(Satisfied)) => return Ok(true),
             Some(Cached::InProgress(())) => return Ok(false),
             None => {}
@@ -81,20 +92,20 @@ impl<T: Term> Tuple<T> {
             .filter_map(|x| T::as_tuple_predicate(x))
         {
             if equality::equals_impl(&predicate.0, term, environment, limit)? {
-                limit.mark_as_done(Query(term), Satisfied);
+                limit.mark_as_done::<T, _>(Query(term), Satisfied);
                 return Ok(true);
             }
         }
 
         // get the equivalences
-        for eq in get_equivalences(term, environment, limit)? {
-            if Self::satisfies(&eq, environment, limit)? {
-                limit.mark_as_done(Query(term), Satisfied);
+        for eq in get_equivalences_impl(term, environment, limit)? {
+            if Self::satisfies_impl(&eq, environment, limit)? {
+                limit.mark_as_done::<T, _>(Query(term), Satisfied);
                 return Ok(true);
             }
         }
 
-        limit.clear_query(Query(term));
+        limit.clear_query::<T, _>(Query(term));
         Ok(false)
     }
 }

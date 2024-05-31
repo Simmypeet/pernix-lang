@@ -173,15 +173,17 @@ where
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let strat = args.unwrap_or_else(T::arbitrary);
 
-        proptest::collection::vec(
-            prop_oneof![
-                strat.clone().prop_map(|x| TupleElement::Regular(x)),
-                strat.prop_map(|x| TupleElement::Unpacked(x))
-            ],
-            0..=2,
-        )
-        .prop_map(|elements| Self { elements })
-        .boxed()
+        proptest::collection::vec((strat, proptest::bool::ANY), 0..=2)
+            .prop_map(|elements| Self {
+                elements: elements
+                    .into_iter()
+                    .map(|(term, is_unpacked)| TupleElement {
+                        term,
+                        is_unpacked,
+                    })
+                    .collect(),
+            })
+            .boxed()
     }
 }
 

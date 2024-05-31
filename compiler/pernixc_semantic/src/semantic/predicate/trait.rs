@@ -16,7 +16,7 @@ use crate::{
         normalizer::Normalizer,
         order,
         predicate::{ConstantType, LifetimeConstraint, Predicate, Tuple},
-        session::{Cached, Limit, Session},
+        session::{self, Cached, Limit, Session},
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments,
@@ -59,7 +59,10 @@ impl<M: Model> Trait<M> {
     }
 }
 
-impl<T: State, M: Model> table::Display<T> for Trait<M> {
+impl<T: State, M: Model> table::Display<T> for Trait<M>
+where
+    GenericArguments<M>: table::Display<T>,
+{
     fn fmt(
         &self,
         table: &Table<T>,
@@ -155,8 +158,24 @@ impl<M: Model> Trait<M> {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    #[allow(clippy::too_many_lines)]
     pub fn satisfies(
+        id: ID<symbol::Trait>,
+        is_const: bool,
+        generic_arguments: &GenericArguments<M>,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
+    ) -> Result<Option<Satisfiability<M>>, ExceedLimitError> {
+        let mut limit = Limit::<session::Default<_>>::default();
+        Self::satisfies_impl(
+            id,
+            is_const,
+            generic_arguments,
+            environment,
+            &mut limit,
+        )
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(in crate::semantic) fn satisfies_impl(
         id: ID<symbol::Trait>,
         is_const: bool,
         generic_arguments: &GenericArguments<M>,
@@ -165,13 +184,17 @@ impl<M: Model> Trait<M> {
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
     ) -> Result<Option<Satisfiability<M>>, ExceedLimitError> {
-        match limit.mark_as_in_progress(
+        match limit.mark_as_in_progress::<Type<_>, _>(
             Query { id, is_const, generic_arguments },
             (),
         )? {
             Some(Cached::InProgress(())) => {
                 // co-inductive
-                limit.clear_query(Query { id, is_const, generic_arguments });
+                limit.clear_query::<Type<_>, _>(Query {
+                    id,
+                    is_const,
+                    generic_arguments,
+                });
                 return Ok(Some(Satisfiability {
                     lifetime_constraints: HashSet::new(),
                 }));
@@ -207,7 +230,7 @@ impl<M: Model> Trait<M> {
                 let result =
                     Satisfiability { lifetime_constraints: HashSet::new() };
 
-                limit.mark_as_done(
+                limit.mark_as_done::<Type<_>, _>(
                     Query { id, is_const, generic_arguments },
                     result.clone(),
                 );
@@ -229,7 +252,7 @@ impl<M: Model> Trait<M> {
             }
 
             let Some(forall_lifetime_unification) =
-                trait_premise.generic_arguments.unify_as_mapping(
+                trait_premise.generic_arguments.unify_as_mapping_impl(
                     generic_arguments,
                     &mut HigherRankedLifetimeUnifyingConfig,
                     environment,
@@ -322,7 +345,7 @@ impl<M: Model> Trait<M> {
                         )?
                     }
                     Predicate::ConstantType(constant_type) => {
-                        ConstantType::satisfies(
+                        ConstantType::satisfies_impl(
                             &constant_type.0,
                             environment,
                             limit,
@@ -340,13 +363,13 @@ impl<M: Model> Trait<M> {
                         true
                     }
                     Predicate::TupleType(tuple) => {
-                        Tuple::satisfies(&tuple.0, environment, limit)?
+                        Tuple::satisfies_impl(&tuple.0, environment, limit)?
                     }
                     Predicate::TupleConstant(tuple) => {
-                        Tuple::satisfies(&tuple.0, environment, limit)?
+                        Tuple::satisfies_impl(&tuple.0, environment, limit)?
                     }
                     Predicate::Trait(tr) => {
-                        if let Some(satisfiability) = Self::satisfies(
+                        if let Some(satisfiability) = Self::satisfies_impl(
                             tr.id,
                             tr.is_const,
                             &tr.generic_arguments,
@@ -366,7 +389,7 @@ impl<M: Model> Trait<M> {
             }
 
             // if all the lifetimes are equal, then the trait is satisfied
-            limit.mark_as_done(
+            limit.mark_as_done::<Type<_>, _>(
                 Query { id, is_const, generic_arguments },
                 Satisfiability {
                     lifetime_constraints: lifetime_constraints.clone(),
@@ -376,10 +399,14 @@ impl<M: Model> Trait<M> {
         }
 
         // manually search for the trait implementation
-        match resolve_implementation(id, generic_arguments, environment, limit)
-        {
+        match resolve_implementation_impl(
+            id,
+            generic_arguments,
+            environment,
+            limit,
+        ) {
             Ok(implementation) => {
-                limit.mark_as_done(
+                limit.mark_as_done::<Type<_>, _>(
                     Query { id, is_const, generic_arguments },
                     Satisfiability {
                         lifetime_constraints: implementation
@@ -397,7 +424,11 @@ impl<M: Model> Trait<M> {
             }
 
             Err(_) => {
-                limit.clear_query(Query { id, is_const, generic_arguments });
+                limit.clear_query::<Type<_>, _>(Query {
+                    id,
+                    is_const,
+                    generic_arguments,
+                });
                 Ok(None)
             }
         }
@@ -461,6 +492,20 @@ pub enum ResolveError {
 ///   [`ExceedLimitError`] for more information.
 #[allow(clippy::too_many_lines)]
 pub fn resolve_implementation<M: Model>(
+    trait_id: ID<symbol::Trait>,
+    generic_arguments: &GenericArguments<M>,
+    environment: &Environment<M, impl State, impl Normalizer<M>>,
+) -> Result<Implementation<M>, ResolveError> {
+    let mut limit = Limit::<session::Default<_>>::default();
+    resolve_implementation_impl(
+        trait_id,
+        generic_arguments,
+        environment,
+        &mut limit,
+    )
+}
+
+pub(in crate::semantic) fn resolve_implementation_impl<M: Model>(
     trait_id: ID<symbol::Trait>,
     generic_arguments: &GenericArguments<M>,
     environment: &Environment<M, impl State, impl Normalizer<M>>,
@@ -561,7 +606,7 @@ pub fn resolve_implementation<M: Model>(
         });
     }
 
-    if !generic_arguments.definite(environment, limit)? {
+    if !generic_arguments.definite_impl(environment, limit)? {
         return Err(ResolveError::NonDefiniteGenericArguments);
     }
 
@@ -588,7 +633,7 @@ pub fn resolve_implementation<M: Model>(
     {
         // builds the unification
         let Some(unification) =
-            arguments.deduce(generic_arguments, environment, limit)?
+            arguments.deduce_impl(generic_arguments, environment, limit)?
         else {
             continue;
         };
@@ -657,7 +702,7 @@ pub fn resolve_implementation<M: Model>(
                         .arguments()
                         .clone(),
                 )
-                .order(
+                .order_impl(
                     &GenericArguments::from_default_model(
                         environment
                             .table
@@ -743,7 +788,7 @@ fn predicate_satisfies<
                 }
             }
             Predicate::ConstantType(constant_type) => {
-                if !ConstantType::satisfies(
+                if !ConstantType::satisfies_impl(
                     &constant_type.0,
                     environment,
                     session,
@@ -761,19 +806,24 @@ fn predicate_satisfies<
             }
 
             Predicate::TupleType(tuple_type) => {
-                if !Tuple::satisfies(&tuple_type.0, environment, session)? {
+                if !Tuple::satisfies_impl(&tuple_type.0, environment, session)?
+                {
                     return Ok(None);
                 }
             }
 
             Predicate::TupleConstant(tuple_constant) => {
-                if !Tuple::satisfies(&tuple_constant.0, environment, session)? {
+                if !Tuple::satisfies_impl(
+                    &tuple_constant.0,
+                    environment,
+                    session,
+                )? {
                     return Ok(None);
                 }
             }
 
             Predicate::Trait(tr) => {
-                if let Some(satisfiability) = Trait::satisfies(
+                if let Some(satisfiability) = Trait::satisfies_impl(
                     tr.id,
                     tr.is_const,
                     &tr.generic_arguments,
@@ -818,7 +868,7 @@ fn is_in_active_trait_implementation<M: Model>(
             GenericArguments::from_default_model(
                 implementation.arguments.clone(),
             )
-            .equals(generic_arguments, environment, limit)
+            .equals_impl(generic_arguments, environment, limit)
         }
         TraitContext::InTrait(env_trait_id) => {
             if need_implementation || env_trait_id != trait_id {
@@ -831,7 +881,7 @@ fn is_in_active_trait_implementation<M: Model>(
                 .generic_declaration()
                 .parameters
                 .create_identity_generic_arguments(env_trait_id.into())
-                .equals(generic_arguments, environment, limit)
+                .equals_impl(generic_arguments, environment, limit)
         }
         TraitContext::Normal => Ok(false),
     }

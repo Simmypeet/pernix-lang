@@ -10,11 +10,11 @@ use proptest::{
 use super::{unify, Config, Unification};
 use crate::{
     semantic::{
-        equality::equals_impl,
+        equality::equals,
         equivalent::Equivalent,
         model::Default,
         normalizer::NoOp,
-        session::{self, Limit, Session},
+        session::{self, Session},
         sub_term::Location,
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
@@ -212,8 +212,8 @@ where
         for property in &self.terms {
             let (lhs_term, rhs_term) = property.generate();
 
-            lhs.push(TupleElement::Regular(lhs_term));
-            rhs.push(TupleElement::Regular(rhs_term));
+            lhs.push(TupleElement { term: lhs_term, is_unpacked: false });
+            rhs.push(TupleElement { term: rhs_term, is_unpacked: false });
         }
 
         (Tuple { elements: lhs }.into(), Tuple { elements: rhs }.into())
@@ -526,24 +526,21 @@ where
 
     let (mut lhs, rhs) = property.generate();
 
-    if equals_impl(
-        &lhs,
-        &rhs,
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
-    )? {
+    if equals(&lhs, &rhs, &Environment {
+        premise: &premise,
+        table: &table,
+        normalizer: &NoOp,
+    })? {
         return Err(TestCaseError::reject("trivially equalities"));
     }
 
     property.apply(&mut table, &mut premise)?;
 
-    let unification = unify(
-        &lhs,
-        &rhs,
-        &mut config,
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-        &mut Limit::new(&mut session::Default::default()),
-    )
+    let unification = unify(&lhs, &rhs, &mut config, &Environment {
+        premise: &premise,
+        table: &table,
+        normalizer: &NoOp,
+    })
     .map_err(|_| TestCaseError::reject("too complex property"))?
     .unwrap();
 
@@ -560,13 +557,8 @@ where
             table: &table,
             normalizer: &NoOp,
         };
-        prop_assert!(equals_impl(
-            &lhs,
-            &rhs,
-            &environment,
-            &mut Limit::new(&mut session::Default::default()),
-        )
-        .map_err(|_| TestCaseError::reject("too complex property"))?);
+        prop_assert!(equals(&lhs, &rhs, &environment,)
+            .map_err(|_| TestCaseError::reject("too complex property"))?);
     }
 
     // the terms will equal by rewriting the lhs
@@ -575,13 +567,8 @@ where
 
         let environment =
             Environment { premise: &premise, table: &table, normalizer: &NoOp };
-        prop_assert!(equals_impl(
-            &lhs,
-            &rhs,
-            &environment,
-            &mut Limit::new(&mut session::Default::default()),
-        )
-        .map_err(|_| TestCaseError::reject("too complex property"))?);
+        prop_assert!(equals(&lhs, &rhs, &environment,)
+            .map_err(|_| TestCaseError::reject("too complex property"))?);
     }
 
     Ok(())

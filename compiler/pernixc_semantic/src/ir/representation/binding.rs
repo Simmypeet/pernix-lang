@@ -18,12 +18,12 @@ use crate::{
     },
     semantic::{
         model::{self, Model as _},
-        session::{self, Limit},
         simplify::simplify,
         term::{
             constant::Constant,
             lifetime::Lifetime,
             r#type::{Expected, Type},
+            Never, Term,
         },
         Environment, Premise,
     },
@@ -44,10 +44,30 @@ pub mod statement;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Model;
 
+impl<T> From<Never> for InferenceVariable<T> {
+    fn from(value: Never) -> Self { match value {} }
+}
+
 impl model::Model for Model {
     type LifetimeInference = InferenceVariable<Lifetime<Self>>;
     type TypeInference = InferenceVariable<Type<Self>>;
     type ConstantInference = InferenceVariable<Constant<Self>>;
+
+    fn from_default_type(ty: Type<model::Default>) -> Type<Self> {
+        Type::from_other_model(ty)
+    }
+
+    fn from_default_lifetime(
+        lifetime: Lifetime<model::Default>,
+    ) -> Lifetime<Self> {
+        Lifetime::from_other_model(lifetime)
+    }
+
+    fn from_default_constant(
+        constant: Constant<model::Default>,
+    ) -> Constant<Self> {
+        Constant::from_other_model(constant)
+    }
 }
 
 impl From<InferenceVariable<Self>> for Lifetime<Model> {
@@ -60,6 +80,16 @@ impl From<InferenceVariable<Self>> for Type<Model> {
 
 impl From<InferenceVariable<Self>> for Constant<Model> {
     fn from(value: InferenceVariable<Self>) -> Self { Self::Inference(value) }
+}
+
+impl<T: table::State, U> table::Display<T> for InferenceVariable<U> {
+    fn fmt(
+        &self,
+        _: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "?")
+    }
 }
 
 /// The context used for binding the IR for a function.
@@ -261,30 +291,21 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
     ) -> bool {
         match expected_ty {
             Expected::Known(expected_ty) => {
-                let mut session = session::Default::default();
-
                 // simplify the types
-                let simplified_ty = simplify(
-                    &ty,
-                    &Environment {
-                        premise: &self.premise,
-                        table: self.table,
-                        normalizer: &self.inference_context,
-                    },
-                    &mut Limit::new(&mut session),
-                )
+                let simplified_ty = simplify(&ty, &Environment {
+                    premise: &self.premise,
+                    table: self.table,
+                    normalizer: &self.inference_context,
+                })
                 .unwrap_or(ty);
 
-                let simplified_expected = simplify(
-                    &expected_ty,
-                    &Environment {
+                let simplified_expected =
+                    simplify(&expected_ty, &Environment {
                         premise: &self.premise,
                         table: self.table,
                         normalizer: &self.inference_context,
-                    },
-                    &mut Limit::new(&mut session),
-                )
-                .unwrap_or(expected_ty);
+                    })
+                    .unwrap_or(expected_ty);
 
                 let result = match self.inference_context.unify_type(
                     &simplified_ty,
@@ -303,7 +324,8 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
                         UnifyError::IncompatibleTypes { .. }
                         | UnifyError::IncompatibleConstants { .. }
                         | UnifyError::ExceedLimitError(_)
-                        | UnifyError::UnsatisfiedConstraint(_),
+                        | UnifyError::UnsatisfiedConstraint(_)
+                        | UnifyError::CombineConstraint(_),
                     ) => false,
                 };
 

@@ -24,8 +24,8 @@ use crate::{
     },
     symbol::{
         table::{
-            representation::Index, Display, DisplayObject, State, Suboptimal,
-            Table,
+            self, representation::Index, Display, DisplayObject, State,
+            Suboptimal, Table,
         },
         Accessibility, AdtID, ConstantParameterID, Field, GenericID,
         GenericKind, GenericParameter, GlobalID, LocalGenericParameterID,
@@ -905,7 +905,10 @@ pub struct UndecidablePredicate<M: Model> {
     pub predicate_declaration_span: Option<Span>,
 }
 
-impl<T: State, M: Model> Display<T> for UndecidablePredicate<M> {
+impl<T: State, M: Model> Display<T> for UndecidablePredicate<M>
+where
+    Predicate<M>: Display<T>,
+{
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
@@ -1668,7 +1671,10 @@ pub struct UnsatisifedPredicate<M: Model> {
     pub predicate_declaration_span: Option<Span>,
 }
 
-impl<S: State, M: Model> Display<S> for UnsatisifedPredicate<M> {
+impl<S: State, M: Model> Display<S> for UnsatisifedPredicate<M>
+where
+    Predicate<M>: table::Display<S>,
+{
     fn fmt(&self, table: &Table<S>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
@@ -1756,7 +1762,10 @@ pub struct UnsatisfiedTraitMemberPredicate<M: Model> {
     pub predicate_span: Option<Span>,
 }
 
-impl<T: State, M: Model> Display<T> for UnsatisfiedTraitMemberPredicate<M> {
+impl<T: State, M: Model> Display<T> for UnsatisfiedTraitMemberPredicate<M>
+where
+    Predicate<M>: table::Display<T>,
+{
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Some(trait_implementation_symbol) =
             table.get_global(self.trait_implementation_id.into())
@@ -1817,7 +1826,10 @@ pub struct ExtraneousTraitMemberPredicate<M: Model> {
     pub predicate_span: Option<Span>,
 }
 
-impl<T: State, M: Model> Display<T> for ExtraneousTraitMemberPredicate<M> {
+impl<T: State, M: Model> Display<T> for ExtraneousTraitMemberPredicate<M>
+where
+    Predicate<M>: table::Display<T>,
+{
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Some(trait_implementation_symbol) =
             table.get_global(self.trait_implementation_member_id.into())
@@ -1897,7 +1909,10 @@ pub struct MismatchedPatternBindingType<M: Model> {
     pub pattern_span: Span,
 }
 
-impl<T: State, M: Model> Display<T> for MismatchedPatternBindingType<M> {
+impl<T: State, M: Model> Display<T> for MismatchedPatternBindingType<M>
+where
+    Type<M>: Display<T>,
+{
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
@@ -2166,7 +2181,12 @@ pub struct MismatchedType<M: Model> {
     pub span: Span,
 }
 
-impl<T: State, M: Model> Display<T> for MismatchedType<M> {
+impl<T: State, M: Model> Display<T> for MismatchedType<M>
+where
+    M::LifetimeInference: Display<T>,
+    M::TypeInference: Display<T>,
+    M::ConstantInference: Display<T>,
+{
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.expected_type {
             Expected::Known(known) => {

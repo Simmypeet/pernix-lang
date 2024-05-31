@@ -138,7 +138,7 @@ impl<M: Model> Get for Constant<M> {
 
 /// The result of a query.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Cached<I, T> {
+pub(super) enum Cached<I, T> {
     /// The query is in progress.
     InProgress(I),
 
@@ -148,8 +148,8 @@ pub enum Cached<I, T> {
 
 /// Used to limit the number of queries that can be made.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, CopyGetters)]
-pub struct Limit<'a, R> {
-    session: &'a mut R,
+pub(super) struct Limit<R> {
+    session: R,
 
     /// The limit of the number of queries.
     #[get_copy = "pub"]
@@ -160,17 +160,25 @@ pub struct Limit<'a, R> {
     count: usize,
 }
 
-impl<'a, R> Limit<'a, R> {
+impl<R> std::default::Default for Limit<R>
+where
+    R: std::default::Default,
+{
+    fn default() -> Self { Self::new(R::default()) }
+}
+
+impl<R> Limit<R> {
     /// The default limit of the number of queries.
-    pub const DEFAULT_LIMIT: usize = 65536;
+    pub(super) const DEFAULT_LIMIT: usize = 65536;
 
     /// Creates a new limit.
-    pub fn new(session: &'a mut R) -> Self {
+    pub(super) fn new(session: R) -> Self {
         Self { session, limit: Self::DEFAULT_LIMIT, count: 0 }
     }
 
     /// Creates a new [`Limit`] with the given limit number.
-    pub fn with_limit(session: &'a mut R, limit: usize) -> Self {
+    #[allow(unused)]
+    pub(super) fn with_limit(session: R, limit: usize) -> Self {
         Self { session, limit, count: 0 }
     }
 
@@ -180,7 +188,7 @@ impl<'a, R> Limit<'a, R> {
     ///
     /// Returns an error if the number of queries exceeds the limit.
     #[allow(clippy::type_complexity)]
-    pub fn mark_as_in_progress<T: Get, Q>(
+    pub(super) fn mark_as_in_progress<T: Get, Q>(
         &mut self,
         query: Q,
         metadata: <T::Session<R> as Cache<Q>>::InProgress,
@@ -203,18 +211,18 @@ impl<'a, R> Limit<'a, R> {
         // limit exceeded, reset the state and return an error
         if self.count >= self.limit {
             self.count = 0;
-            T::get_session_mut(self.session).delete_all_work_in_progress();
+            T::get_session_mut(&mut self.session).delete_all_work_in_progress();
             return Err(ExceedLimitError);
         }
 
         self.count += 1;
 
-        Ok(T::get_session_mut(self.session)
+        Ok(T::get_session_mut(&mut self.session)
             .mark_as_in_progress(query, metadata))
     }
 
     /// Marks the given query as done and stores the result.
-    pub fn mark_as_done<T: Get, Q>(
+    pub(super) fn mark_as_done<T: Get, Q>(
         &mut self,
         query: Q,
         result: <T::Session<R> as Cache<Q>>::Result,
@@ -225,11 +233,11 @@ impl<'a, R> Limit<'a, R> {
 
         T::Session<R>: Cache<Q>,
     {
-        T::get_session_mut(self.session).mark_as_done(query, result);
+        T::get_session_mut(&mut self.session).mark_as_done(query, result);
     }
 
     /// Clears the cached result of the given query.
-    pub fn clear_query<T: Get, Q>(
+    pub(super) fn clear_query<T: Get, Q>(
         &mut self,
         query: Q,
     ) -> Option<
@@ -245,12 +253,13 @@ impl<'a, R> Limit<'a, R> {
 
         T::Session<R>: Cache<Q>,
     {
-        T::get_session_mut(self.session).clear_query(query)
+        T::get_session_mut(&mut self.session).clear_query(query)
     }
 
     /// Returns the result of the given query.
-    pub fn get_result<T: Get, Q>(
-        &self,
+    #[allow(unused)]
+    pub(super) fn get_result<'a, T: Get, Q>(
+        &'a self,
         query: Q,
     ) -> Option<
         &Cached<
@@ -265,10 +274,11 @@ impl<'a, R> Limit<'a, R> {
 
         T::Session<R>: Cache<Q> + 'a,
     {
-        T::get_session(self.session).get_result(query)
+        T::get_session(&self.session).get_result(query)
     }
 
     /// Clears all the queries that are in progress state.
+    #[allow(unused)]
     pub fn delete_all_work_in_progress<T: Get, Q>(&mut self)
     where
         R: Session<Lifetime<T::Model>>
@@ -277,12 +287,12 @@ impl<'a, R> Limit<'a, R> {
 
         T::Session<R>: Cache<Q>,
     {
-        T::get_session_mut(self.session).delete_all_work_in_progress();
+        T::get_session_mut(&mut self.session).delete_all_work_in_progress();
     }
 }
 
 /// Used to *remember* the queries that have been made and their results.
-pub trait Cache<Query> {
+pub(super) trait Cache<Query> {
     /// The result type returned by the query.
     type Result;
 
@@ -323,7 +333,7 @@ pub trait Cache<Query> {
 ///
 /// Most of the time, you should use [`Default`] as the implementation of this
 /// trait.
-pub trait Session<T: SubTerm>:
+pub(super) trait Session<T: SubTerm>:
     for<'a> Cache<equality::Query<'a, T>, Result = Satisfied, InProgress = ()>
     + for<'a> Cache<
         predicate::DefiniteQuery<'a, T>,
@@ -388,7 +398,7 @@ impl<T: Term, U> Session<T> for U where
 
 /// Default and preferred implementation of [`Session`].
 #[derive(Debug, Clone, Default)]
-pub struct Default<M: Model> {
+pub(super) struct Default<M: Model> {
     lifetime_equals: HashMap<(Lifetime<M>, Lifetime<M>), Cached<(), Satisfied>>,
     type_equals: HashMap<(Type<M>, Type<M>), Cached<(), Satisfied>>,
     constant_equals: HashMap<(Constant<M>, Constant<M>), Cached<(), Satisfied>>,
@@ -491,12 +501,6 @@ macro_rules! implements_cache {
 #[derive(Debug, Clone, Default)]
 pub struct Storage<Q, Result, InProgress> {
     field1: HashMap<Q, Cached<InProgress, Result>>,
-}
-
-impl<Q, Result, InProgress> Storage<Q, Result, InProgress> {
-    /// Creates a new storage.
-    #[must_use]
-    pub fn new() -> Self { Self { field1: HashMap::new() } }
 }
 
 impl<Q: Eq + Hash, InProgress: Clone, Result: Clone> Cache<Q>

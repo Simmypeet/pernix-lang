@@ -6,7 +6,7 @@ use super::{
     equality,
     model::Model,
     normalizer::Normalizer,
-    session::{Cached, Limit, Session},
+    session::{self, Cached, Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     visitor::Mutable,
     Environment, ExceedLimitError,
@@ -19,7 +19,6 @@ pub struct Query<'a, T>(pub &'a T);
 
 struct Visitor<
     'a,
-    'r,
     'l,
     T: State,
     N: Normalizer<M>,
@@ -28,13 +27,12 @@ struct Visitor<
 > {
     result: Result<(), ExceedLimitError>,
     environment: &'a Environment<'a, M, T, N>,
-    limit: &'l mut Limit<'r, R>,
+    limit: &'l mut Limit<R>,
     model: PhantomData<M>,
 }
 
 impl<
         'a,
-        'r,
         'l,
         U: Term,
         T: State,
@@ -43,7 +41,7 @@ impl<
             + Session<Type<U::Model>>
             + Session<Constant<U::Model>>
             + Session<U>,
-    > Mutable<U> for Visitor<'a, 'r, 'l, T, N, R, U::Model>
+    > Mutable<U> for Visitor<'a, 'l, T, N, R, U::Model>
 {
     fn visit(
         &mut self,
@@ -75,13 +73,12 @@ fn simplify_internal<T: Term>(
     term: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
-        impl Session<T>
-            + Session<Lifetime<T::Model>>
+        impl Session<Lifetime<T::Model>>
             + Session<Type<T::Model>>
             + Session<Constant<T::Model>>,
     >,
 ) -> Result<Option<T>, ExceedLimitError> {
-    match limit.mark_as_in_progress(Query(term), ())? {
+    match limit.mark_as_in_progress::<T, _>(Query(term), ())? {
         Some(Cached::Done(result)) => return Ok(Some(result)),
         Some(Cached::InProgress(())) => return Ok(None),
         None => {}
@@ -138,7 +135,7 @@ fn simplify_internal<T: Term>(
     let _ = simplified.accept_one_level_mut(&mut visitor);
     visitor.result?;
 
-    limit.mark_as_done(Query(term), simplified.clone());
+    limit.mark_as_done::<T, _>(Query(term), simplified.clone());
     Ok(Some(simplified))
 }
 
@@ -150,14 +147,10 @@ fn simplify_internal<T: Term>(
 pub fn simplify<T: Term>(
     term: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
-    limit: &mut Limit<
-        impl Session<T>
-            + Session<Lifetime<T::Model>>
-            + Session<Type<T::Model>>
-            + Session<Constant<T::Model>>,
-    >,
 ) -> Result<T, ExceedLimitError> {
-    simplify_internal(term, environment, limit)
+    let mut limit = Limit::<session::Default<_>>::default();
+
+    simplify_internal(term, environment, &mut limit)
         .map(|x| x.unwrap_or_else(|| term.clone()))
 }
 

@@ -101,8 +101,10 @@ pub use constant_type::{
     ConstantType, Query as ConstantTypeQuery,
     QuerySource as ConstantTypeQuerySource,
 };
+pub(super) use definite::definite_impl;
 pub use definite::{definite, Query as DefiniteQuery};
 pub use outlives::{Outlives, Query as OutlivesQuery};
+pub(super) use r#trait::resolve_implementation_impl;
 pub use r#trait::{
     resolve_implementation, Implementation, Query as TraitQuery,
     ResolveError as TraitResolveError, Satisfiability as TraitSatisfiability,
@@ -179,7 +181,16 @@ impl<M: Model> Predicate<M> {
     }
 }
 
-impl<T: State, M: Model> table::Display<T> for Predicate<M> {
+impl<T: State, M: Model> table::Display<T> for Predicate<M>
+where
+    Equality<r#type::TraitMember<M>, Type<M>>: table::Display<T>,
+    ConstantType<M>: table::Display<T>,
+    Outlives<Lifetime<M>>: table::Display<T>,
+    Outlives<Type<M>>: table::Display<T>,
+    Tuple<Type<M>>: table::Display<T>,
+    Tuple<Constant<M>>: table::Display<T>,
+    Trait<M>: table::Display<T>,
+{
     fn fmt(
         &self,
         table: &table::Table<T>,

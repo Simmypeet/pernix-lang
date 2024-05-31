@@ -1029,7 +1029,7 @@ impl<T: Container> Representation<T> {
                 for element in &tuple.elements {
                     current_min = self.merge_accessibility_down(
                         current_min,
-                        self.get_type_accessibility(element.as_term())?,
+                        self.get_type_accessibility(&element.term)?,
                     )?;
                 }
 
@@ -1167,7 +1167,7 @@ impl<T: Container> Representation<T> {
                 for element in &tuple.elements {
                     current_min = self.merge_accessibility_down(
                         current_min,
-                        self.get_constant_accessibility(element.as_term())?,
+                        self.get_constant_accessibility(&element.term)?,
                     )?;
                 }
 

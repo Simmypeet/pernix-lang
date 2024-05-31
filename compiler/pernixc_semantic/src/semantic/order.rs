@@ -6,7 +6,7 @@
 use super::{
     model::Model,
     normalizer::Normalizer,
-    session::{Limit, Session},
+    session::{self, Limit, Session},
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
@@ -82,7 +82,7 @@ fn get_arguments_matching_count<T: Term>(
     let mut count = 0;
 
     for (lifetime, other_lifetime) in this.iter().zip(other.iter()) {
-        let Some(unification) = unification::unify(
+        let Some(unification) = unification::unify_impl(
             lifetime,
             other_lifetime,
             &mut OrderUnifyingConfig,
@@ -174,6 +174,15 @@ impl<M: Model> GenericArguments<M> {
     ///
     /// See [`ExceedLimitError`] for more information.
     pub fn order(
+        &self,
+        other: &Self,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
+    ) -> Result<Order, ExceedLimitError> {
+        let mut limit = Limit::<session::Default<_>>::default();
+        self.order_impl(other, environment, &mut limit)
+    }
+
+    pub(super) fn order_impl(
         &self,
         other: &Self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,

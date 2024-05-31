@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use super::{
-    equality, get_equivalences, matching,
+    equality, get_equivalences_impl, matching,
     model::Model,
     normalizer::Normalizer,
     session::{self, Limit, Session},
@@ -144,8 +144,7 @@ fn substructural_unify<T: Term>(
               + Config<Constant<T::Model>>),
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
-        impl Session<T>
-            + Session<Lifetime<T::Model>>
+        impl Session<Lifetime<T::Model>>
             + Session<Type<T::Model>>
             + Session<Constant<T::Model>>,
     >,
@@ -158,7 +157,8 @@ fn substructural_unify<T: Term>(
 
     for matching::Matching { lhs, rhs, lhs_location, .. } in substructural.types
     {
-        let Some(new) = unify(&lhs, &rhs, config, environment, limit)? else {
+        let Some(new) = unify_impl(&lhs, &rhs, config, environment, limit)?
+        else {
             return Ok(None);
         };
 
@@ -168,7 +168,8 @@ fn substructural_unify<T: Term>(
     for matching::Matching { lhs, rhs, lhs_location, .. } in
         substructural.lifetimes
     {
-        let Some(new) = unify(&lhs, &rhs, config, environment, limit)? else {
+        let Some(new) = unify_impl(&lhs, &rhs, config, environment, limit)?
+        else {
             return Ok(None);
         };
 
@@ -178,7 +179,8 @@ fn substructural_unify<T: Term>(
     for matching::Matching { lhs, rhs, lhs_location, .. } in
         substructural.constants
     {
-        let Some(new) = unify(&lhs, &rhs, config, environment, limit)? else {
+        let Some(new) = unify_impl(&lhs, &rhs, config, environment, limit)?
+        else {
             return Ok(None);
         };
 
@@ -192,11 +194,11 @@ fn substructural_unify<T: Term>(
     }))
 }
 
-/// Unifies the two given terms.
+/// Unifies two terms.
 ///
 /// # Errors
 ///
-/// See [`ExceedLimitError`].
+/// See [`ExceedLimitError`] for more information.
 pub fn unify<T: Term>(
     from: &T,
     to: &T,
@@ -204,9 +206,20 @@ pub fn unify<T: Term>(
               + Config<Type<T::Model>>
               + Config<Constant<T::Model>>),
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+) -> Result<Option<Unification<T>>, ExceedLimitError> {
+    let mut limit = Limit::<session::Default<_>>::default();
+    unify_impl(from, to, config, environment, &mut limit)
+}
+
+pub(super) fn unify_impl<T: Term>(
+    from: &T,
+    to: &T,
+    config: &mut (impl Config<Lifetime<T::Model>>
+              + Config<Type<T::Model>>
+              + Config<Constant<T::Model>>),
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     limit: &mut Limit<
-        impl Session<T>
-            + Session<Lifetime<T::Model>>
+        impl Session<Lifetime<T::Model>>
             + Session<Type<T::Model>>
             + Session<Constant<T::Model>>,
     >,
@@ -221,7 +234,7 @@ pub fn unify<T: Term>(
 
     let query = Query { lhs: from, rhs: to };
 
-    match limit.mark_as_in_progress(query.clone(), ())? {
+    match limit.mark_as_in_progress::<T, _>(query.clone(), ())? {
         Some(session::Cached::Done(result)) => return Ok(Some(result)),
         Some(session::Cached::InProgress(())) => {
             return Ok(None);
@@ -236,43 +249,43 @@ pub fn unify<T: Term>(
             r#match: Matching::Unifiable(from.clone(), to.clone()),
         };
 
-        limit.mark_as_done(query, result.clone());
+        limit.mark_as_done::<T, _>(query, result.clone());
         return Ok(Some(result));
     }
 
     if let Some(unification) =
         substructural_unify(from, to, config, environment, limit)?
     {
-        limit.mark_as_done(query, unification.clone());
+        limit.mark_as_done::<T, _>(query, unification.clone());
         return Ok(Some(unification));
     }
 
     // try to look for equivalences
-    for eq_lhs in get_equivalences(from, environment, limit)? {
+    for eq_lhs in get_equivalences_impl(from, environment, limit)? {
         if let Some(mut unification) =
-            unify(&eq_lhs, to, config, environment, limit)?
+            unify_impl(&eq_lhs, to, config, environment, limit)?
         {
             unification.rewritten_lhs =
                 unification.rewritten_lhs.or(Some(eq_lhs));
 
-            limit.mark_as_done(query, unification.clone());
+            limit.mark_as_done::<T, _>(query, unification.clone());
             return Ok(Some(unification));
         }
     }
 
-    for eq_rhs in get_equivalences(to, environment, limit)? {
+    for eq_rhs in get_equivalences_impl(to, environment, limit)? {
         if let Some(mut unification) =
-            unify(from, &eq_rhs, config, environment, limit)?
+            unify_impl(from, &eq_rhs, config, environment, limit)?
         {
             unification.rewritten_rhs =
                 unification.rewritten_rhs.or(Some(eq_rhs));
 
-            limit.mark_as_done(query, unification.clone());
+            limit.mark_as_done::<T, _>(query, unification.clone());
             return Ok(Some(unification));
         }
     }
 
-    limit.clear_query(query);
+    limit.clear_query::<T, _>(query);
     Ok(None)
 }
 
