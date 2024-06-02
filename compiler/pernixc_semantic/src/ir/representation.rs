@@ -2,7 +2,7 @@
 
 use getset::Getters;
 
-use super::{control_flow_graph::ControlFlowGraph, value::register::Register};
+use super::{control_flow_graph::ControlFlowGraph, register::Register, scope};
 use crate::{arena::Arena, ir::alloca::Alloca, semantic::model::Model};
 
 pub mod binding;
@@ -21,4 +21,8 @@ pub struct Representation<M: Model> {
     /// Contains all the alloca used in the program.
     #[get = "pub"]
     allocas: Arena<Alloca<M>>,
+
+    /// The tree of scopes in the program.
+    #[get = "pub"]
+    scope_tree: scope::Tree,
 }

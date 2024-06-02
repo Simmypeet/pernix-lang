@@ -4,11 +4,11 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use pernixc_base::{diagnostic::Handler, source_file::Span};
 
+use super::address::Stack;
 use crate::{
     arena::ID,
     error::{AlreadyBoundName, Error},
-    ir::address::Address,
-    semantic::{model::Model, term::r#type::Type},
+    semantic::model::Model,
     symbol::{Field, Struct},
 };
 
@@ -51,16 +51,10 @@ pub struct Named<M: Model> {
 
     /// The address to the location where the value is stored with this name
     /// binding.
-    pub load_address: Address<M>,
+    pub load_address: Stack<M>,
 
     /// Determined if the underlying value is mutable or not.
     pub mutable: bool,
-
-    /// The type of the value.
-    ///
-    /// The type is typically the freshened version of the underlying
-    /// [`Self::load_address`] type.
-    pub r#type: Type<M>,
 
     /// The span to the identifier of the name binding.
     pub span: Option<Span>,

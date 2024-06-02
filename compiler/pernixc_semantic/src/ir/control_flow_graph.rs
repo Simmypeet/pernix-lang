@@ -4,26 +4,11 @@ use std::collections::HashSet;
 
 use getset::{CopyGetters, Getters};
 
-use super::instruction::{self, Instruction};
+use super::instruction::{Instruction, Terminator};
 use crate::{
     arena::{Arena, ID},
     semantic::model::Model,
 };
-
-/// Represents a scope hierarchy that is used to determine the
-/// visibility/lifetime of each variable.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Scope {
-    /// The ID to the parent scope. If this is `None`, then this is the
-    /// top-most scope.
-    pub parent: Option<ID<Scope>>,
-
-    /// The depth of the scope. The top-most scope has a depth of 0.
-    pub scope_depth: usize,
-
-    /// List of child scopes that are under this scope.
-    pub child_scopes: HashSet<ID<Scope>>,
-}
 
 /// Represents a list of instructions executed in sequence.
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
@@ -34,34 +19,29 @@ pub struct Block<M: Model> {
     /// List of instructions that will never be executed.
     #[get = "pub"]
     unreachables: Vec<Instruction<M>>,
+    /// The terminator instruction that will be executed last.
+    #[get = "pub"]
+    terminator: Option<Terminator<M>>,
     /// List of blocks that are successors of this block.
     #[get = "pub"]
     successors: HashSet<ID<Block<M>>>,
     /// List of blocks that are predecessors of this block.
     #[get = "pub"]
     predecessors: HashSet<ID<Block<M>>>,
-    /// The scope in which this block is in.
-    #[get_copy = "pub"]
-    in_scope_id: ID<Scope>,
 }
 
 impl<M: Model> Block<M> {
     /// Returns `true` if any of the instructions that will be added in the
     /// future will be unreachable (never executed)
     #[must_use]
-    pub fn is_unreachable(&self) -> bool {
-        self.instructions.last().map_or(false, |x| match x {
-            Instruction::Jump(_) | Instruction::Return(_) => true,
-            Instruction::Basic(_) => false,
-        })
-    }
+    pub fn is_unreachable(&self) -> bool { self.terminator.is_some() }
 
     /// Adds a basic instruction to the block.
-    pub fn insert_basic(&mut self, instruction: instruction::Basic<M>) {
+    pub fn insert_basic(&mut self, instruction: Instruction<M>) {
         if self.is_unreachable() {
-            self.unreachables.push(Instruction::Basic(instruction));
+            self.unreachables.push(instruction);
         } else {
-            self.instructions.push(Instruction::Basic(instruction));
+            self.instructions.push(instruction);
         }
     }
 }
@@ -90,14 +70,6 @@ pub struct ControlFlowGraph<M: Model> {
     /// The id of the entry block.
     #[get_copy = "pub"]
     entry_block_id: ID<Block<M>>,
-
-    /// List of all the scopes in the control flow graph.
-    #[get = "pub"]
-    scopes: Arena<Scope>,
-
-    /// The id of the top-most scope.
-    #[get_copy = "pub"]
-    starting_scope_id: ID<Scope>,
 }
 
 impl<M: Model> ControlFlowGraph<M> {
@@ -116,13 +88,6 @@ impl<M: Model> ControlFlowGraph<M> {
 
 impl<M: Model> Default for ControlFlowGraph<M> {
     fn default() -> Self {
-        let mut scopes = Arena::new();
-        let starting_scope_id = scopes.insert(Scope {
-            parent: None,
-            scope_depth: 0,
-            child_scopes: HashSet::new(),
-        });
-
         let mut blocks = Arena::new();
 
         // create an entry block
@@ -131,9 +96,9 @@ impl<M: Model> Default for ControlFlowGraph<M> {
             unreachables: Vec::new(),
             successors: HashSet::new(),
             predecessors: HashSet::new(),
-            in_scope_id: starting_scope_id,
+            terminator: None,
         });
 
-        Self { blocks, entry_block_id, scopes, starting_scope_id }
+        Self { blocks, entry_block_id }
     }
 }

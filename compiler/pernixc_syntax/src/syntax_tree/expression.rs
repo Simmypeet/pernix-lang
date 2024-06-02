@@ -932,7 +932,7 @@ impl SourceElement for Postfixable {
 ///     | '@'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum ReferenceOfKind {
     Local(Punctuation),
     Regular(Punctuation),

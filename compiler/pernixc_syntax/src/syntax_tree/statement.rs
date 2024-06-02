@@ -64,24 +64,9 @@ impl SourceElement for TypeAnnotation {
 }
 
 /// Syntax Synopsis:
-///
-/// ``` txt
-/// Initializer:
-///     '=' Expression
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Initializer {
-    #[get = "pub"]
-    equals: Punctuation,
-    #[get = "pub"]
-    expression: Expression,
-}
-
-/// Syntax Synopsis:
 /// ``` txt
 /// VariableDeclaration:
-///     'let' Irrefutable TypeAnnotation? Initializer? ';'
+///     'let' Irrefutable TypeAnnotation? = Expression ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -94,7 +79,9 @@ pub struct VariableDeclaration {
     #[get = "pub"]
     type_annotation: Option<TypeAnnotation>,
     #[get = "pub"]
-    initializer: Option<Initializer>,
+    equals: Punctuation,
+    #[get = "pub"]
+    expression: Expression,
     #[get = "pub"]
     semicolon: Punctuation,
 }
@@ -232,18 +219,8 @@ impl<'a> Parser<'a> {
             _ => None,
         };
 
-        let initializer = match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(equals))
-                if equals.punctuation == '=' =>
-            {
-                // eat the '='
-                self.forward();
-                let expression = self.parse_expression(handler)?;
-
-                Some(Initializer { equals, expression })
-            }
-            _ => None,
-        };
+        let equals = self.parse_punctuation('=', true, handler)?;
+        let expression = self.parse_expression(handler)?;
 
         let semicolon = self.parse_punctuation(';', true, handler)?;
 
@@ -251,7 +228,8 @@ impl<'a> Parser<'a> {
             let_keyword,
             irrefutable_pattern,
             type_annotation,
-            initializer,
+            equals,
+            expression,
             semicolon,
         })
     }

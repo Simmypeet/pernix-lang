@@ -2202,6 +2202,29 @@ where
     }
 }
 
+/// The lvalue found is not mutable.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MutabilityError {
+    /// The span of the l-value.
+    pub span: Span,
+}
+
+impl<T: State> Display<T> for MutabilityError {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!("`{}` is not mutable", self.span.str())
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
 /// Implemented by all semantic errors.
 pub trait Error:
     Debug + Display<Suboptimal> + Any + Send + Sync + 'static

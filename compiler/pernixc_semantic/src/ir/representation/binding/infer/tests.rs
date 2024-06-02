@@ -1,6 +1,5 @@
 use super::{Context, InferenceVariable};
 use crate::{
-    ir::representation::binding::Model,
     semantic::term::r#type::{self, Primitive, Type},
     symbol::table::{representation::Insertion, Building, Table},
 };
@@ -8,7 +7,7 @@ use crate::{
 impl Context {
     fn assert_all_same_constraint<'a>(
         &self,
-        inference_types: impl IntoIterator<Item = &'a Type<Model>>,
+        inference_types: impl IntoIterator<Item = &'a Type<super::Model>>,
         expected_constraint: r#type::Constraint,
     ) {
         let mut inference_variables = inference_types.into_iter();
@@ -51,8 +50,8 @@ impl Context {
 
     fn assert_all_same_known<'a>(
         &self,
-        inference_types: impl IntoIterator<Item = &'a Type<Model>>,
-        expected_known: &Type<Model>,
+        inference_types: impl IntoIterator<Item = &'a Type<super::Model>>,
+        expected_known: &Type<super::Model>,
     ) {
         let inference_variables = inference_types.into_iter();
 

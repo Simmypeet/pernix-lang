@@ -1,22 +1,21 @@
-use std::{fmt::Display, sync::Arc};
-
-use pernixc_base::{
-    diagnostic::{Counter, Storage},
-    source_file::SourceFile,
-};
-use pernixc_lexical::token_stream::TokenStream;
-use pernixc_syntax::{parser::Parser, syntax_tree};
+use pernixc_base::diagnostic::Storage;
 
 use crate::{
     arena::ID,
     error::{
         Error, FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
+        MismatchedType, MutabilityError,
     },
     ir::representation::binding::{
-        expression::{Config, Target},
+        expression::{Bind, Config, Target},
+        infer::ConstraintModel,
+        tests::{parse_expression, parse_statement, TestTemplate},
         Binder,
     },
-    semantic::term::r#type::{self, Primitive, Type},
+    semantic::term::{
+        r#type::{self, Constraint, Primitive, Type},
+        Local,
+    },
     symbol::{
         table::{
             representation::{
@@ -29,26 +28,6 @@ use crate::{
         GenericDeclaration,
     },
 };
-
-fn create_expression_syntax(
-    source: impl Display,
-) -> syntax_tree::expression::Expression {
-    let counter = Counter::default();
-
-    let source_file = Arc::new(SourceFile::temp(source).unwrap());
-    let token_stream = TokenStream::tokenize(&source_file, &counter);
-
-    // no error
-    assert_eq!(counter.count(), 0);
-
-    let mut parser = Parser::new(&token_stream);
-    let expression = parser.parse_expression(&counter).unwrap();
-
-    // no error
-    assert_eq!(counter.count(), 0);
-
-    expression
-}
 
 fn create_dummy_function(
 ) -> (Table<Building<RwLockContainer, Finalizer>>, ID<Function>) {
@@ -81,7 +60,7 @@ fn bind_numeric_literal_suffix() {
 
     let (table, function_id) = create_dummy_function();
     let storage: Storage<Box<dyn Error>> = Storage::default();
-    let expression = create_expression_syntax(SOURCE)
+    let expression = parse_expression(SOURCE)
         .into_binary()
         .unwrap()
         .destruct()
@@ -104,18 +83,23 @@ fn bind_numeric_literal_suffix() {
     .unwrap();
 
     let numeric_value = binder
-        .bind_numeric(&expression, Config { target: Target::Value }, &storage)
+        .bind(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
-        .unwrap()
-        .into_literal()
-        .unwrap()
-        .into_numeric()
         .unwrap();
 
-    assert!(numeric_value.decimal.is_none());
-    assert_eq!(numeric_value.numeric, "432");
-    assert_eq!(numeric_value.r#type, Type::Primitive(Primitive::Uint64));
+    assert!(storage.as_vec().is_empty());
+
+    let register = binder
+        .intermediate_representation
+        .registers
+        .get(numeric_value)
+        .unwrap();
+    let numeric_value = register.assignment.as_numeric().unwrap();
+
+    assert!(numeric_value.decimal_stirng.is_none());
+    assert_eq!(numeric_value.integer_string, "432");
+    assert_eq!(register.r#type, Type::Primitive(Primitive::Uint64));
 }
 
 #[test]
@@ -124,7 +108,7 @@ fn bind_numeric_literal_float_infer() {
 
     let (table, function_id) = create_dummy_function();
     let storage: Storage<Box<dyn Error>> = Storage::default();
-    let expression = create_expression_syntax(SOURCE)
+    let expression = parse_expression(SOURCE)
         .into_binary()
         .unwrap()
         .destruct()
@@ -147,22 +131,30 @@ fn bind_numeric_literal_float_infer() {
     .unwrap();
 
     let numeric_value = binder
-        .bind_numeric(&expression, Config { target: Target::Value }, &storage)
+        .bind(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
-        .unwrap()
-        .into_literal()
-        .unwrap()
-        .into_numeric()
         .unwrap();
 
-    assert_eq!(numeric_value.numeric, "32");
-    assert_eq!(numeric_value.decimal.as_ref().map(AsRef::as_ref), Some("0"));
+    assert!(storage.as_vec().is_empty());
 
-    let inference_variable = numeric_value.r#type.into_inference().unwrap();
+    let register = binder
+        .intermediate_representation
+        .registers
+        .get(numeric_value)
+        .unwrap();
+    let numeric_value = register.assignment.as_numeric().unwrap();
+
+    assert_eq!(numeric_value.integer_string, "32");
+    assert_eq!(
+        numeric_value.decimal_stirng.as_ref().map(AsRef::as_ref),
+        Some("0")
+    );
+
+    let inference_variable = register.r#type.as_inference().unwrap();
     let constraint_id = binder
         .inference_context
-        .get_inference(inference_variable)
+        .get_inference(*inference_variable)
         .cloned()
         .unwrap()
         .into_inferring()
@@ -180,7 +172,7 @@ fn bind_numeric_literal_number_infer() {
 
     let (table, function_id) = create_dummy_function();
     let storage: Storage<Box<dyn Error>> = Storage::default();
-    let expression = create_expression_syntax(SOURCE)
+    let expression = parse_expression(SOURCE)
         .into_binary()
         .unwrap()
         .destruct()
@@ -203,22 +195,27 @@ fn bind_numeric_literal_number_infer() {
     .unwrap();
 
     let numeric_value = binder
-        .bind_numeric(&expression, Config { target: Target::Value }, &storage)
+        .bind(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
-        .unwrap()
-        .into_literal()
-        .unwrap()
-        .into_numeric()
         .unwrap();
 
-    assert_eq!(numeric_value.numeric, "32");
-    assert!(numeric_value.decimal.is_none());
+    assert!(storage.as_vec().is_empty());
 
-    let inference_variable = numeric_value.r#type.into_inference().unwrap();
+    let register = binder
+        .intermediate_representation
+        .registers
+        .get(numeric_value)
+        .unwrap();
+    let numeric_value = register.assignment.as_numeric().unwrap();
+
+    assert_eq!(numeric_value.integer_string, "32");
+    assert!(numeric_value.decimal_stirng.is_none());
+
+    let inference_variable = register.r#type.as_inference().unwrap();
     let constraint_id = binder
         .inference_context
-        .get_inference(inference_variable)
+        .get_inference(*inference_variable)
         .cloned()
         .unwrap()
         .into_inferring()
@@ -236,7 +233,7 @@ fn invalid_numeric_literal_suffix() {
 
     let (table, function_id) = create_dummy_function();
     let storage: Storage<Box<dyn Error>> = Storage::default();
-    let expression = create_expression_syntax(SOURCE)
+    let expression = parse_expression(SOURCE)
         .into_binary()
         .unwrap()
         .destruct()
@@ -259,7 +256,7 @@ fn invalid_numeric_literal_suffix() {
     .unwrap();
 
     assert!(binder
-        .bind_numeric(&expression, Config { target: Target::Value }, &storage)
+        .bind(&expression, Config { target: Target::Value }, &storage)
         .is_err());
 
     let mut storage = storage.into_vec();
@@ -276,7 +273,7 @@ fn floating_point_literal_has_integral_suffix() {
 
     let (table, function_id) = create_dummy_function();
     let storage: Storage<Box<dyn Error>> = Storage::default();
-    let expression = create_expression_syntax(SOURCE)
+    let expression = parse_expression(SOURCE)
         .into_binary()
         .unwrap()
         .destruct()
@@ -299,7 +296,7 @@ fn floating_point_literal_has_integral_suffix() {
     .unwrap();
 
     assert!(binder
-        .bind_numeric(&expression, Config { target: Target::Value }, &storage)
+        .bind(&expression, Config { target: Target::Value }, &storage)
         .is_err());
 
     let mut storage = storage.into_vec();
@@ -320,7 +317,7 @@ fn bind_boolean_literal() {
     let (table, function_id) = create_dummy_function();
     let storage: Storage<Box<dyn Error>> = Storage::default();
 
-    let true_expression = create_expression_syntax(TRUE_SOURCE)
+    let true_expression = parse_expression(TRUE_SOURCE)
         .into_binary()
         .unwrap()
         .destruct()
@@ -331,7 +328,7 @@ fn bind_boolean_literal() {
         .unwrap()
         .into_boolean()
         .unwrap();
-    let false_expression = create_expression_syntax(FALSE_SOURCE)
+    let false_expression = parse_expression(FALSE_SOURCE)
         .into_binary()
         .unwrap()
         .destruct()
@@ -353,40 +350,445 @@ fn bind_boolean_literal() {
     )
     .unwrap();
 
-    let true_literal = binder
-        .bind_boolean(
-            &true_expression,
-            Config { target: Target::Value },
-            &storage,
-        )
+    let true_value = binder
+        .bind(&true_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
         .unwrap();
-    let false_literal = binder
-        .bind_boolean(
-            &false_expression,
-            Config { target: Target::Value },
-            &storage,
-        )
+    let false_value = binder
+        .bind(&false_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
         .unwrap();
 
+    assert!(storage.as_vec().is_empty());
+
     assert!(
-        true_literal
-            .into_value()
+        binder
+            .intermediate_representation
+            .registers
+            .get(true_value)
             .unwrap()
-            .into_literal()
-            .unwrap()
-            .into_boolean()
+            .assignment
+            .as_boolean()
             .unwrap()
             .value
     );
 
     assert!(
-        !false_literal
-            .into_value()
+        !binder
+            .intermediate_representation
+            .registers
+            .get(false_value)
             .unwrap()
-            .into_literal()
-            .unwrap()
-            .into_boolean()
+            .assignment
+            .as_boolean()
             .unwrap()
             .value
     );
+}
+
+#[test]
+fn bind_prefix_operator() {
+    const LOCAL_SOURCE: &str = "local 32";
+    const LOGICAL_NOT_SOURCE: &str = "!false";
+    const NEGATE_SOURCE: &str = "-32";
+    const BITWISE_NOT_SOURCE: &str = "~32";
+    const UNLOCAL_SOURCE: &str = "unlocal local 32";
+
+    let (table, function_id) = create_dummy_function();
+    let storage: Storage<Box<dyn Error>> = Storage::default();
+
+    let local_expression = parse_expression(LOCAL_SOURCE)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_prefix()
+        .unwrap();
+    let logical_not_expression = parse_expression(LOGICAL_NOT_SOURCE)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_prefix()
+        .unwrap();
+    let negate_expression = parse_expression(NEGATE_SOURCE)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_prefix()
+        .unwrap();
+    let bitwise_not_expression = parse_expression(BITWISE_NOT_SOURCE)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_prefix()
+        .unwrap();
+    let unlocal_expression = parse_expression(UNLOCAL_SOURCE)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_prefix()
+        .unwrap();
+
+    let mut binder = Binder::new_function(
+        &table,
+        NoOpObserver,
+        function_id,
+        std::iter::empty(),
+        false,
+        &storage,
+    )
+    .unwrap();
+
+    let local = binder
+        .bind(&local_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(binder
+        .intermediate_representation
+        .registers
+        .get(local)
+        .unwrap()
+        .assignment
+        .is_prefix());
+
+    let logical_not = binder
+        .bind(
+            &logical_not_expression,
+            Config { target: Target::Value },
+            &storage,
+        )
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(binder
+        .intermediate_representation
+        .registers
+        .get(logical_not)
+        .unwrap()
+        .assignment
+        .is_prefix());
+
+    let negate = binder
+        .bind(&negate_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(binder
+        .intermediate_representation
+        .registers
+        .get(negate)
+        .unwrap()
+        .assignment
+        .is_prefix());
+
+    let bitwise_not = binder
+        .bind(
+            &bitwise_not_expression,
+            Config { target: Target::Value },
+            &storage,
+        )
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(binder
+        .intermediate_representation
+        .registers
+        .get(bitwise_not)
+        .unwrap()
+        .assignment
+        .is_prefix());
+
+    let unlocal = binder
+        .bind(&unlocal_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(binder
+        .intermediate_representation
+        .registers
+        .get(unlocal)
+        .unwrap()
+        .assignment
+        .is_prefix());
+
+    assert!(storage.as_vec().is_empty());
+}
+
+#[test]
+fn bind_prefix_type_mismatched() {
+    const LOGICAL_NOT_SOURCE: &str = "!64";
+    const NEGATE_SOURCE: &str = "-32u32";
+    const BITWISE_NOT_SOURCE: &str = "~32.0";
+    const UNLOCAL_SOURCE: &str = "unlocal 64";
+
+    let (table, function_id) = create_dummy_function();
+    let storage: Storage<Box<dyn Error>> = Storage::default();
+
+    let logical_not_expression = parse_expression(LOGICAL_NOT_SOURCE)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_prefix()
+        .unwrap();
+    let negate_expression = parse_expression(NEGATE_SOURCE)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_prefix()
+        .unwrap();
+    let bitwise_not_expression = parse_expression(BITWISE_NOT_SOURCE)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_prefix()
+        .unwrap();
+    let unlocal_expression = parse_expression(UNLOCAL_SOURCE)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_prefix()
+        .unwrap();
+
+    let mut binder = Binder::new_function(
+        &table,
+        NoOpObserver,
+        function_id,
+        std::iter::empty(),
+        false,
+        &storage,
+    )
+    .unwrap();
+
+    assert!(binder
+        .bind(
+            &logical_not_expression,
+            Config { target: Target::Value },
+            &storage,
+        )
+        .is_err());
+    assert!(binder
+        .bind(&negate_expression, Config { target: Target::Value }, &storage,)
+        .is_err());
+    assert!(binder
+        .bind(
+            &bitwise_not_expression,
+            Config { target: Target::Value },
+            &storage,
+        )
+        .is_err());
+    assert!(binder
+        .bind(&unlocal_expression, Config { target: Target::Value }, &storage,)
+        .is_err());
+
+    let storage = storage.into_vec();
+
+    // "{{number}} != bool" for !64
+    assert!(storage
+        .iter()
+        .find(|error| {
+            let Some(error) = error
+                .as_any()
+                .downcast_ref::<MismatchedType<ConstraintModel>>()
+            else {
+                return false;
+            };
+
+            error.expected_type == Type::Primitive(Primitive::Bool)
+                && error.found_type.as_inference().map_or(false, |constraint| {
+                    *constraint == Constraint::Number
+                })
+        })
+        .is_some());
+
+    // "uint32 != {{signed}}" for -32u32
+    assert!(storage
+        .iter()
+        .find(|error| {
+            let Some(error) = error
+                .as_any()
+                .downcast_ref::<MismatchedType<ConstraintModel>>()
+            else {
+                return false;
+            };
+
+            error.found_type == Type::Primitive(Primitive::Uint32)
+                && error
+                    .expected_type
+                    .as_inference()
+                    .map_or(false, |constraint| {
+                        *constraint == Constraint::Signed
+                    })
+        })
+        .is_some());
+
+    // "{{floating}} != {{integer}}" for ~32.0
+    assert!(storage
+        .iter()
+        .find(|error| {
+            let Some(error) = error
+                .as_any()
+                .downcast_ref::<MismatchedType<ConstraintModel>>()
+            else {
+                return false;
+            };
+
+            error
+                .expected_type
+                .as_inference()
+                .map_or(false, |constraint| *constraint == Constraint::Integer)
+                && error.found_type.as_inference().map_or(false, |constraint| {
+                    *constraint == Constraint::Floating
+                })
+        })
+        .is_some());
+
+    // "unlocal 64" for unlocal 64
+    assert!(storage
+        .iter()
+        .find(|error| {
+            let Some(error) = error
+                .as_any()
+                .downcast_ref::<MismatchedType<ConstraintModel>>()
+            else {
+                return false;
+            };
+
+            error.expected_type
+                == Type::Local(Local(Box::new(Type::Inference(
+                    Constraint::All,
+                ))))
+                && error.found_type.as_inference().map_or(false, |constraint| {
+                    *constraint == Constraint::Number
+                })
+        })
+        .is_some());
+}
+
+#[test]
+fn named_load() {
+    const VARIABLE_DECLARATION: &str = "let mutable x: int32 = 32;";
+    const VARIABLE_LOAD: &str = "x";
+
+    let test_template = TestTemplate::new();
+    let (mut binder, storage) = test_template.create_binder();
+
+    let variable_declaration = parse_statement(VARIABLE_DECLARATION)
+        .into_variable_declaration()
+        .unwrap();
+
+    let alloca_id =
+        binder.bind_variable_declaration(&variable_declaration, &storage);
+
+    let named_load = parse_expression(VARIABLE_LOAD)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_unit()
+        .unwrap()
+        .into_qualified_identifier()
+        .unwrap();
+
+    let register_id = binder
+        .bind(&named_load, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    let load_alloca_id = *binder
+        .intermediate_representation
+        .registers
+        .get(register_id)
+        .unwrap()
+        .assignment
+        .as_load()
+        .unwrap()
+        .address
+        .as_base()
+        .unwrap()
+        .as_alloca()
+        .unwrap();
+
+    assert_eq!(load_alloca_id, alloca_id);
+
+    let (as_address, _) = binder
+        .bind(
+            &named_load,
+            Config { target: Target::Address { is_mutable: true } },
+            &storage,
+        )
+        .unwrap()
+        .into_address()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    assert_eq!(*as_address.as_base().unwrap().as_alloca().unwrap(), alloca_id);
+}
+
+#[test]
+fn named_load_mutability_error() {
+    const VARIABLE_DECLARATION: &str = "let x: int32 = 32;";
+    const VARIABLE_LOAD: &str = "x";
+
+    let test_template = TestTemplate::new();
+    let (mut binder, storage) = test_template.create_binder();
+
+    let variable_declaration = parse_statement(VARIABLE_DECLARATION)
+        .into_variable_declaration()
+        .unwrap();
+
+    let alloca_id =
+        binder.bind_variable_declaration(&variable_declaration, &storage);
+
+    let named_load = parse_expression(VARIABLE_LOAD)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_unit()
+        .unwrap()
+        .into_qualified_identifier()
+        .unwrap();
+
+    let (as_address, _) = binder
+        .bind(
+            &named_load,
+            Config { target: Target::Address { is_mutable: true } },
+            &storage,
+        )
+        .unwrap()
+        .into_address()
+        .unwrap();
+
+    assert_eq!(
+        alloca_id,
+        as_address.into_base().unwrap().into_alloca().unwrap()
+    );
+
+    let errors = storage.into_vec();
+    assert!(errors
+        .iter()
+        .find_map(|x| x.as_any().downcast_ref::<MutabilityError>())
+        .is_some());
 }

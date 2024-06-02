@@ -7,22 +7,31 @@ use pernixc_base::{
 };
 use pernixc_syntax::syntax_tree;
 
-use super::{Binder, Error};
+use super::{
+    infer::{self, Erased},
+    Binder, Error, HandlerWrapper,
+};
 use crate::{
+    arena::ID,
     error::{
         self, ExpectedLValue, FloatingPointLiteralHasIntegralSuffix,
-        InvalidNumericSuffix,
+        InvalidNumericSuffix, MutabilityError,
     },
     ir::{
-        address::Address,
-        representation::binding::{infer::InferenceVariable, Model},
-        value::{
-            literal::{Boolean, Literal, Numeric},
-            register::{Prefix, PrefixOperator, Register},
-            Inspect, Value,
+        address::{self, Address, Memory},
+        register::{
+            Assignment, Boolean, Load, LoadKind, Numeric, Prefix,
+            PrefixOperator, ReferenceOf, Register,
         },
     },
-    semantic::term::r#type::{self, Expected, Type},
+    semantic::{
+        simplify::simplify,
+        term::{
+            lifetime::Lifetime,
+            r#type::{self, Expected, Reference, Type},
+            Local,
+        },
+    },
     symbol::table::{self, resolution::Observer},
 };
 
@@ -45,6 +54,27 @@ pub enum Target {
     Statement,
 }
 
+impl Target {
+    /// Handles the `register_id` as an r-value.
+    fn return_rvalue(
+        &self,
+        register_id: ID<Register<infer::Model>>,
+        rvalue_span: Span,
+        handler: HandlerWrapper,
+    ) -> Result<Expression, Error> {
+        match self {
+            Target::Value => Ok(Expression::Value(register_id)),
+            Target::Address { .. } => {
+                handler.receive(Box::new(ExpectedLValue {
+                    expression_span: rvalue_span.clone(),
+                }));
+                Err(Error(rvalue_span))
+            }
+            Target::Statement => Ok(Expression::SideEffect),
+        }
+    }
+}
+
 /// The configuration object for binding the expression syntax tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Config {
@@ -56,15 +86,12 @@ pub struct Config {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Expression {
     /// The expression is bound as an r-value.
-    Value(Value<Model>),
+    Value(ID<Register<infer::Model>>),
 
     /// The expression is bound as an l-value.
     Address {
         /// The address of the l-value.
-        address: Address<Model>,
-
-        /// The type of the address.
-        address_type: Type<Model>,
+        address: Address<Memory<infer::Model>>,
 
         /// The span of the expression.
         span: Span,
@@ -74,15 +101,26 @@ pub enum Expression {
     SideEffect,
 }
 
-impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
-    ////////////////////////////////////////////////////////////////////////////
-
-    /// Binds the given [`syntax_tree::expression::Numeric`]
+/// The trait for binding the expression syntax tree.
+pub trait Bind<T> {
+    /// Binds the given syntax tree to the [`Expression`].
     ///
     /// # Errors
     ///
-    /// See [`Error`] for more information.
-    pub fn bind_numeric(
+    /// If an error occurs during the binding process, an [`Error`] is returned
+    /// with the span of the syntax tree that caused the error.
+    fn bind(
+        &mut self,
+        syntax_tree: &T,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error>;
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::expression::Numeric> for Binder<'t, S, O>
+{
+    fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Numeric,
         config: Config,
@@ -144,52 +182,40 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
             }
             None => {
                 // infer the type
-                let inference_variable = InferenceVariable::new();
-
                 let constraint = if syntax_tree.decimal().is_some() {
                     r#type::Constraint::Floating
                 } else {
                     r#type::Constraint::Number
                 };
 
-                assert!(self
-                    .inference_context
-                    .register::<Type<_>>(inference_variable, constraint));
-
-                Type::Inference(inference_variable)
+                Type::Inference(self.create_type_inference(constraint))
             }
         };
 
-        match config.target {
-            Target::Value => Ok(Expression::Value(Value::Literal(
-                Literal::Numeric(Numeric {
-                    span: Some(syntax_tree.span()),
-                    numeric: syntax_tree.numeric().span.str().to_owned(),
-                    decimal: syntax_tree
-                        .decimal()
-                        .as_ref()
-                        .map(|x| x.numeric().span.str().to_owned()),
-                    r#type: numeric_ty,
-                }),
-            ))),
-            Target::Address { .. } => {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    ExpectedLValue { expression_span: syntax_tree.span() },
-                ));
-                Err(Error(syntax_tree.span()))
-            }
-            Target::Statement => Ok(Expression::SideEffect),
-        }
+        let register_id = self.create_register_assignmnet(
+            Assignment::Numeric(Numeric {
+                integer_string: syntax_tree.numeric().span.str().to_string(),
+                decimal_stirng: syntax_tree
+                    .decimal()
+                    .as_ref()
+                    .map(|x| x.numeric().span.str().to_owned()),
+            }),
+            numeric_ty,
+            Some(syntax_tree.span()),
+        );
+
+        config.target.return_rvalue(
+            register_id,
+            syntax_tree.span(),
+            self.create_handler_wrapper(handler),
+        )
     }
+}
 
-    ////////////////////////////////////////////////////////////////////////////
-
-    /// Binds the given [`syntax_tree::expression::Boolean`]
-    ///
-    /// # Errors
-    ///
-    /// See [`Error`] for more information.
-    pub fn bind_boolean(
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::expression::Boolean> for Binder<'t, S, O>
+{
+    fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Boolean,
         config: Config,
@@ -200,30 +226,24 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
             syntax_tree::expression::Boolean::False(_) => false,
         };
 
-        match config.target {
-            Target::Value => {
-                Ok(Expression::Value(Value::Literal(Literal::Boolean(
-                    Boolean { value, span: Some(syntax_tree.span()) },
-                ))))
-            }
-            Target::Address { .. } => {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    ExpectedLValue { expression_span: syntax_tree.span() },
-                ));
-                Err(Error(syntax_tree.span()))
-            }
-            Target::Statement => Ok(Expression::SideEffect),
-        }
+        let register_id = self.create_register_assignmnet(
+            Assignment::Boolean(Boolean { value }),
+            Type::Primitive(r#type::Primitive::Bool),
+            Some(syntax_tree.span()),
+        );
+
+        config.target.return_rvalue(
+            register_id,
+            syntax_tree.span(),
+            self.create_handler_wrapper(handler),
+        )
     }
+}
 
-    ////////////////////////////////////////////////////////////////////////////
-
-    /// Binds the given [`syntax_tree::expression::Prefix`]
-    ///
-    /// # Errors
-    ///
-    /// See [`Error`] for more information.
-    pub fn bind_prefix(
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::expression::Prefix> for Binder<'t, S, O>
+{
+    fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Prefix,
         config: Config,
@@ -233,6 +253,7 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
             syntax_tree::expression::PrefixOperator::Local(_)
             | syntax_tree::expression::PrefixOperator::LogicalNot(_)
             | syntax_tree::expression::PrefixOperator::Negate(_)
+            | syntax_tree::expression::PrefixOperator::Unlocal(_)
             | syntax_tree::expression::PrefixOperator::BitwiseNot(_) => {
                 let (expected_type, operator) = match syntax_tree.operator() {
                     syntax_tree::expression::PrefixOperator::Local(_) => {
@@ -243,6 +264,14 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
                             r#type::Primitive::Bool,
                         ))),
                         PrefixOperator::LogicalNot,
+                    ),
+                    syntax_tree::expression::PrefixOperator::Unlocal(_) => (
+                        Some(Expected::Known(Type::Local(Local(Box::new(
+                            Type::Inference(self.create_type_inference(
+                                r#type::Constraint::All,
+                            )),
+                        ))))),
+                        PrefixOperator::Unlocal,
                     ),
                     syntax_tree::expression::PrefixOperator::Negate(_) => (
                         Some(Expected::Constraint(r#type::Constraint::Signed)),
@@ -256,69 +285,168 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
                 };
 
                 let operand = self
-                    .bind_prefixable(
-                        syntax_tree.prefixable(),
+                    .bind(
+                        &**syntax_tree.prefixable(),
                         Config { target: Target::Value },
                         handler,
                     )?
                     .into_value()
                     .unwrap();
 
+                let operand_type = self.intermediate_representation.registers
+                    [operand]
+                    .r#type
+                    .clone();
+
                 // if required, type check the operand
                 if let Some(expected_type) = expected_type {
-                    let operand_type = operand
-                        .type_of(&self.intermediate_representation, self.table)
-                        .unwrap();
-
                     self.type_check(
-                        operand_type,
+                        operand_type.clone(),
                         expected_type,
                         syntax_tree.span(),
                         handler,
                     )?;
                 }
 
-                let register_id = self
-                    .intermediate_representation
-                    .registers
-                    .insert(Register::Prefix(Prefix {
-                        operand,
-                        operator,
-                        span: Some(syntax_tree.span()),
-                    }));
+                let register_id = self.create_register_assignmnet(
+                    Assignment::Prefix(Prefix { operand, operator }),
+                    match operator {
+                        PrefixOperator::Negate
+                        | PrefixOperator::LogicalNot
+                        | PrefixOperator::BitwiseNot => operand_type,
 
-                match config.target {
-                    Target::Value => {
-                        Ok(Expression::Value(Value::Register(register_id)))
-                    }
-                    Target::Address { .. } => {
-                        self.create_handler_wrapper(handler).receive(Box::new(
-                            ExpectedLValue {
-                                expression_span: syntax_tree.span(),
-                            },
-                        ));
-                        Err(Error(syntax_tree.span()))
-                    }
-                    Target::Statement => Ok(Expression::SideEffect),
-                }
+                        PrefixOperator::Local => {
+                            Type::Local(Local(Box::new(operand_type)))
+                        }
+
+                        PrefixOperator::Unlocal => {
+                            let operand_type = simplify(
+                                &operand_type,
+                                &self.create_environment(),
+                            )
+                            .unwrap_or(operand_type);
+
+                            let Type::Local(local) = operand_type else {
+                                // should never happen unless failed to simplify
+                                // the type.
+                                return Err(Error(syntax_tree.span()));
+                            };
+
+                            *local.0
+                        }
+                    },
+                    Some(syntax_tree.span()),
+                );
+
+                config.target.return_rvalue(
+                    register_id,
+                    syntax_tree.span(),
+                    self.create_handler_wrapper(handler),
+                )
             }
-
-            syntax_tree::expression::PrefixOperator::Unlocal(_) => todo!(),
 
             syntax_tree::expression::PrefixOperator::Dereference(_) => todo!(),
 
-            syntax_tree::expression::PrefixOperator::ReferenceOf(_) => todo!(),
+            syntax_tree::expression::PrefixOperator::ReferenceOf(
+                reference_of,
+            ) => {
+                let mutable = match reference_of.qualifier() {
+                    Some(_) => true,
+                    None => false,
+                };
+
+                // bind the operand
+                let Expression::Address { address, .. } = self.bind(
+                    &**syntax_tree.prefixable(),
+                    Config { target: Target::Address { is_mutable: mutable } },
+                    handler,
+                )?
+                else {
+                    panic!("Expected an address");
+                };
+
+                // check if the address is mutable
+                let expected = match reference_of.kind() {
+                    syntax_tree::expression::ReferenceOfKind::Local(_) => {
+                        let inference_variable =
+                            self.create_type_inference(r#type::Constraint::All);
+
+                        Some(Type::Local(Local(Box::new(Type::Inference(
+                            inference_variable,
+                        )))))
+                    }
+                    syntax_tree::expression::ReferenceOfKind::Regular(_) => {
+                        None
+                    }
+                };
+
+                let mut address_type = self.get_address_type(&address);
+
+                if let Some(expected) = expected {
+                    self.type_check(
+                        address_type.clone(),
+                        Expected::Known(expected),
+                        syntax_tree.span(),
+                        handler,
+                    )?;
+                }
+
+                let qualifier = match reference_of.qualifier() {
+                    Some(qualifier) => match qualifier {
+                        syntax_tree::Qualifier::Mutable(_) => {
+                            r#type::Qualifier::Mutable
+                        }
+                        syntax_tree::Qualifier::Unique(_) => {
+                            r#type::Qualifier::Unique
+                        }
+                    },
+                    None => r#type::Qualifier::Immutable,
+                };
+
+                let register_id = self.create_register_assignmnet(
+                    Assignment::ReferenceOf(ReferenceOf {
+                        address,
+                        qualifier,
+                        is_local: reference_of.kind().is_local(),
+                    }),
+                    Type::Reference(Reference {
+                        qualifier,
+                        lifetime: Lifetime::Inference(Erased),
+                        pointee: Box::new(if reference_of.kind().is_local() {
+                            address_type = simplify(
+                                &address_type,
+                                &self.create_environment(),
+                            )
+                            .unwrap_or(address_type);
+
+                            let Type::Local(local) = address_type else {
+                                // should never happen unless failed to simplify
+                                // the type.
+                                return Err(Error(syntax_tree.span()));
+                            };
+
+                            *local.0
+                        } else {
+                            address_type
+                        }),
+                    }),
+                    Some(syntax_tree.span()),
+                );
+
+                config.target.return_rvalue(
+                    register_id,
+                    syntax_tree.span(),
+                    self.create_handler_wrapper(handler),
+                )
+            }
         }
     }
+}
 
-    ////////////////////////////////////////////////////////////////////////////
-
-    /// Binds the given [`syntax_tree::expression::Prefixable`]
-    ///
-    /// # Errors
-    ///
-    /// See [`Error`] for more information.
-    pub fn bind_prefixable(
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::expression::Prefixable> for Binder<'t, S, O>
+{
+    fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Prefixable,
         config: Config,
@@ -326,22 +454,19 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
     ) -> Result<Expression, Error> {
         match syntax_tree {
             syntax_tree::expression::Prefixable::Postfixable(syn) => {
-                self.bind_postfixable(syn, config, handler)
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Prefixable::Prefix(syn) => {
-                self.bind_prefix(syn, config, handler)
+                self.bind(syn, config, handler)
             }
         }
     }
+}
 
-    ////////////////////////////////////////////////////////////////////////////
-
-    /// Binds the given [`syntax_tree::expression::Postfix`]
-    ///
-    /// # Errors
-    ///
-    /// See [`Error`] for more information.
-    pub fn bind_postfix(
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::expression::Postfix> for Binder<'t, S, O>
+{
+    fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Postfix,
         config: Config,
@@ -349,15 +474,12 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
     ) -> Result<Expression, Error> {
         todo!()
     }
+}
 
-    ////////////////////////////////////////////////////////////////////////////
-
-    /// Binds the given [`syntax_tree::expression::Postfixable`]
-    ///
-    /// # Errors
-    ///
-    /// See [`Error`] for more information.
-    pub fn bind_postfixable(
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::expression::Postfixable> for Binder<'t, S, O>
+{
+    fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Postfixable,
         config: Config,
@@ -365,22 +487,103 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
     ) -> Result<Expression, Error> {
         match syntax_tree {
             syntax_tree::expression::Postfixable::Unit(syn) => {
-                self.bind_unit(syn, config, handler)
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Postfixable::Postfix(syn) => {
-                self.bind_postfix(syn, config, handler)
+                self.bind(syn, config, handler)
             }
         }
     }
+}
 
-    ////////////////////////////////////////////////////////////////////////////
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::QualifiedIdentifier> for Binder<'t, S, O>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &syntax_tree::QualifiedIdentifier,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let is_simple_identifier =
+            syntax_tree.leading_scope_separator().is_none()
+                && syntax_tree.rest().is_empty()
+                && syntax_tree.first().generic_arguments().is_none();
 
-    /// Binds the given [`syntax_tree::expression::Unit`]
-    ///
-    /// # Errors
-    ///
-    /// See [`Error`] for more information.
-    pub fn bind_unit(
+        // search for the variable/parameter in the stack
+        'out: {
+            if is_simple_identifier {
+                let Some(name) = self
+                    .stack
+                    .search(syntax_tree.first().identifier().span.str())
+                else {
+                    break 'out;
+                };
+
+                let address = Address::Base(match name.load_address {
+                    address::Stack::Alloca(alloca_id) => {
+                        address::Memory::Alloca(alloca_id)
+                    }
+                    address::Stack::Parameter(parameter) => {
+                        address::Memory::Parameter(parameter)
+                    }
+                });
+
+                match config.target {
+                    Target::Statement | Target::Value => {
+                        let register_id = self.create_register_assignmnet(
+                            Assignment::Load(Load {
+                                address: address.clone(),
+                                kind: LoadKind::Copy,
+                            }),
+                            {
+                                let mut address_type =
+                                    self.get_address_type(&address);
+
+                                address_type = simplify(
+                                    &address_type,
+                                    &self.create_environment(),
+                                )
+                                .unwrap_or(address_type);
+
+                                address_type
+                            },
+                            Some(syntax_tree.span()),
+                        );
+
+                        return Ok(match config.target {
+                            Target::Statement => Expression::SideEffect,
+                            Target::Value => Expression::Value(register_id),
+                            _ => unreachable!(),
+                        });
+                    }
+                    Target::Address { is_mutable } => {
+                        // report mutability error, soft error, keep going
+                        if is_mutable && !name.mutable {
+                            self.create_handler_wrapper(handler).receive(
+                                Box::new(MutabilityError {
+                                    span: syntax_tree.span(),
+                                }),
+                            );
+                        }
+
+                        return Ok(Expression::Address {
+                            address,
+                            span: syntax_tree.span(),
+                        });
+                    }
+                }
+            }
+        };
+
+        todo!()
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::expression::Unit> for Binder<'t, S, O>
+{
+    fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Unit,
         config: Config,
@@ -388,36 +591,80 @@ impl<'t, C, S: table::State, O: Observer<S, super::Model>> Binder<'t, C, S, O> {
     ) -> Result<Expression, Error> {
         match syntax_tree {
             syntax_tree::expression::Unit::Boolean(syn) => {
-                self.bind_boolean(syn, config, handler)
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Unit::Numeric(syn) => {
-                self.bind_numeric(syn, config, handler)
+                self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::QualifiedIdentifier(_) => todo!(),
+            syntax_tree::expression::Unit::QualifiedIdentifier(syn) => {
+                self.bind(syn, config, handler)
+            }
             syntax_tree::expression::Unit::Parenthesized(_) => todo!(),
             syntax_tree::expression::Unit::Struct(_) => todo!(),
             syntax_tree::expression::Unit::Array(_) => todo!(),
             syntax_tree::expression::Unit::Phantom(_) => todo!(),
         }
     }
+}
 
-    ////////////////////////////////////////////////////////////////////////////
-
-    /// Binds the given [`syntax_tree::expression::Binary`]
-    ///
-    /// # Errors
-    ///
-    /// See [`Error`] for more information.
-    pub fn bind_binary(
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::expression::Binary> for Binder<'t, S, O>
+{
+    fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Binary,
         config: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
-        self.bind_prefixable(syntax_tree.first(), config, handler)
+        self.bind(&**syntax_tree.first(), config, handler)
     }
+}
 
-    ////////////////////////////////////////////////////////////////////////////
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::expression::Expression> for Binder<'t, S, O>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &syntax_tree::expression::Expression,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        match syntax_tree {
+            syntax_tree::expression::Expression::Binary(syn) => {
+                self.bind(syn, config, handler)
+            }
+            syntax_tree::expression::Expression::Terminator(_) => todo!(),
+            syntax_tree::expression::Expression::Brace(_) => todo!(),
+        }
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+    /// Binds the given syntax tree as a value. In case of an error, an error
+    /// register is returned.
+    pub fn bind_value_or_error<T>(
+        &mut self,
+        syntax_tree: &T,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> ID<Register<infer::Model>>
+    where
+        Self: Bind<T>,
+    {
+        match self.bind(syntax_tree, Config { target: Target::Value }, handler)
+        {
+            Ok(value) => value.into_value().unwrap(),
+            Err(Error(span)) => {
+                let inference =
+                    self.create_type_inference(r#type::Constraint::All);
+
+                self.create_register_assignmnet(
+                    Assignment::Errored,
+                    Type::Inference(inference),
+                    Some(span),
+                )
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -14,7 +14,6 @@ use super::{
 };
 use crate::{
     arena::{Key, ID},
-    ir::control_flow_graph::Scope,
     semantic::{
         equality,
         instantiation::Instantiation,
@@ -51,10 +50,6 @@ impl Forall {
 /// Represents a lifetime inference variable in Hindley Milner type inference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Inference(pub Never); /* will be changed */
-
-/// Represents a local lifetime variable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Local(pub ID<Scope>); /* will be changed */
 
 /// Represents a lifetime annotation term.
 #[derive(

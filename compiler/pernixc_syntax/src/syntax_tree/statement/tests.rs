@@ -67,26 +67,16 @@ impl Display for Statement {
 pub struct VariableDeclaration {
     pub irrefutable_pattern: Irrefutable,
     pub ty: Option<Type>,
-    pub expression: Option<Expression>,
+    pub expression: Expression,
 }
 
 impl Input<&super::VariableDeclaration> for &VariableDeclaration {
     fn assert(self, output: &super::VariableDeclaration) -> TestCaseResult {
         self.irrefutable_pattern.assert(output.irrefutable_pattern())?;
-
-        match (&self.ty, output.type_annotation()) {
-            (Some(ty), Some(output_ty)) => ty.assert(output_ty.ty())?,
-            (None, None) => {}
-            _ => {
-                return Err(TestCaseError::fail(format!(
-                    "Expected {self:?}, found {output:?}",
-                )))
-            }
-        }
-
-        self.expression
+        self.ty
             .as_ref()
-            .assert(output.initializer().as_ref().map(|x| &x.expression))
+            .assert(output.type_annotation.as_ref().map(|x| &x.ty))?;
+        self.expression.assert(&output.expression())
     }
 }
 
@@ -105,7 +95,7 @@ impl Arbitrary for VariableDeclaration {
             proptest::option::of(args.1.unwrap_or_else(|| {
                 Type::arbitrary_with((args.0.clone(), None))
             })),
-            proptest::option::of(expression),
+            expression,
         )
             .prop_map(|(irrefutable_pattern, ty, expression)| Self {
                 irrefutable_pattern,
@@ -126,9 +116,7 @@ impl Display for VariableDeclaration {
             write!(f, ": {type_annotation}")?;
         }
 
-        if let Some(expression) = &self.expression {
-            write!(f, " = {expression}")?;
-        }
+        write!(f, " = {}", self.expression)?;
 
         f.write_char(';')
     }

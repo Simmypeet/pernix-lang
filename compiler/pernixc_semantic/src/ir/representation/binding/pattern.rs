@@ -1,3 +1,5 @@
+//! Contains the code to bind a pattern syntax tree to the IR.
+
 use std::collections::HashMap;
 
 use pernixc_base::{
@@ -7,6 +9,7 @@ use pernixc_base::{
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
+use super::{infer, Binder};
 use crate::{
     arena::{Reserve, ID},
     error::{
@@ -16,20 +19,15 @@ use crate::{
         PatternBindingType,
     },
     ir::{
-        address::{self, Address, Field},
+        address::{self, Address, Field, Memory, Stack},
         alloca::Alloca,
-        control_flow_graph::Block,
         instruction::{
-            self, AllocaAllocation, Basic, Initialize, RegisterAssignment,
+            self, AllocaAllocation, Initialize, Instruction, RegisterAssignment,
         },
         pattern::{
             self, Irrefutable, Named, RegularTupleBinding, Structural, Wildcard,
         },
-        representation::Representation,
-        value::{
-            register::{AddressOf, Load, LoadKind, Register},
-            Value,
-        },
+        register::{Assignment, Load, LoadKind, ReferenceOf, Register},
     },
     semantic::{
         fresh::{self, Fresh},
@@ -43,7 +41,9 @@ use crate::{
         },
     },
     symbol::{
-        table::{self, representation::Index, State, Table},
+        table::{
+            self, representation::Index, resolution::Observer, State, Table,
+        },
         GlobalID, Struct,
     },
 };
@@ -59,14 +59,6 @@ enum TypeBinding<'a, M: Model> {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 pub enum CreatePatternError<M: Model> {
-    #[error("the given `block_id` is invalid")]
-    InvalidBlockID,
-
-    #[error(
-        "the given block is unreachable and cannot be used to create a pattern"
-    )]
-    UnreachableBlock,
-
     #[error(
         "the type contains an invalid struct ID: {0:?} which does not exist \
          in the symbol table"
@@ -85,13 +77,80 @@ pub enum CreatePatternError<M: Model> {
         "the type contains a tuple type having more than one unpacked element"
     )]
     MoreThanOneUnpackedInTupleType(term::Tuple<r#type::Type<M>>),
+}
 
-    #[error("the given `referring_site` id is invalid to the symbol table")]
-    InvalidReferringSiteID,
+impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+    /// Bind the given irrefutable pattern syntax tree to the IR and return the
+    /// [`Irrefutable`] pattern.
+    pub fn create_irrefutable(
+        &mut self,
+        syntax_tree: &syntax_tree::pattern::Irrefutable,
+        simplified_type: &Type<infer::Model>,
+        address: &Address<Memory<infer::Model>>,
+        handler: &dyn Handler<Box<dyn Error>>,
+    ) -> Result<Irrefutable<infer::Model>, CreatePatternError<infer::Model>>
+    {
+        let storage = Storage::<Box<dyn Error>>::default();
+        let mut side_effect = SideEffect {
+            new_instructions: Vec::new(),
+            register_reserved: Reserve::new(
+                &self.intermediate_representation.registers,
+            ),
+            alloca_reserved: Reserve::new(
+                &self.intermediate_representation.allocas,
+            ),
+        };
+
+        let pattern = side_effect.create_irrefutable_interanl(
+            self.table,
+            syntax_tree,
+            TypeBinding::Value(simplified_type),
+            address,
+            self.current_site,
+            &storage,
+        )?;
+
+        // have no ICEs, propagate the diagnostic
+        storage.propagate(handler);
+
+        // insert new allocas
+        let SideEffect {
+            new_instructions,
+            register_reserved,
+            alloca_reserved,
+            ..
+        } = side_effect;
+
+        let register_reserved = register_reserved.into_reserved();
+        let alloca_reserved = alloca_reserved.into_reserved();
+
+        // insert the new instructions
+        let block = self.current_block_mut();
+        for instruction in new_instructions {
+            block.insert_basic(instruction);
+        }
+
+        for (id, alloca) in alloca_reserved {
+            self.intermediate_representation
+                .allocas
+                .insert_with_id(id, alloca)
+                .unwrap();
+        }
+
+        // insert new registers
+        for (id, register) in register_reserved {
+            self.intermediate_representation
+                .registers
+                .insert_with_id(id, register)
+                .unwrap();
+        }
+
+        Ok(pattern)
+    }
 }
 
 struct SideEffect<'a, M: Model> {
-    new_instructions: Vec<Basic<M>>,
+    new_instructions: Vec<Instruction<M>>,
     register_reserved: Reserve<'a, Register<M>>,
     alloca_reserved: Reserve<'a, Alloca<M>>,
 }
@@ -105,22 +164,23 @@ where
         mut address_type: Type<M>,
         qualifier: Qualifier,
         span: Span,
-        address: &Address<M>,
+        address: &Address<Memory<M>>,
         identifier: &Identifier,
         mutable: bool,
     ) -> Named<M> {
         // address_type <= alloca_type <= named_type
-        let register_id =
-            self.register_reserved.reserve(Register::AddressOf(AddressOf {
-                address: address.clone(),
-                address_type: address_type.clone(),
-                qualifier,
-                span: None,
-                lifetime: Lifetime::Inference(M::LifetimeInference::fresh()),
-            }));
-
         fresh::replace_with_fresh_lifeteime_inference(&mut address_type);
-        let mut alloca_ty = Type::Reference(Reference {
+        let register_id = self.register_reserved.reserve(Register {
+            assignment: Assignment::ReferenceOf(ReferenceOf {
+                is_local: false,
+                address: address.clone(),
+                qualifier,
+            }),
+            r#type: address_type.clone(),
+            span: None,
+        });
+
+        let alloca_ty = Type::Reference(Reference {
             qualifier,
             lifetime: Lifetime::Inference(M::LifetimeInference::fresh()),
             pointee: Box::new(address_type),
@@ -132,36 +192,34 @@ where
 
         // create a register that holds the reference of the
         // value
-        self.new_instructions.push(instruction::Basic::AllocaAllocation(
+        self.new_instructions.push(instruction::Instruction::AllocaAllocation(
             AllocaAllocation { id: alloca_id },
         ));
-        self.new_instructions.push(instruction::Basic::RegisterAssignment(
-            RegisterAssignment { id: register_id },
-        ));
-        self.new_instructions.push(instruction::Basic::Initialize(
+        self.new_instructions.push(
+            instruction::Instruction::RegisterAssignment(RegisterAssignment {
+                id: register_id,
+            }),
+        );
+        self.new_instructions.push(instruction::Instruction::Initialize(
             Initialize {
-                address: Address::Alloca(alloca_id),
-                value: Value::Register(register_id),
+                address: Address::Base(Memory::Alloca(alloca_id)),
+                value: register_id,
             },
         ));
 
         Named {
             name: identifier.span.str().to_owned(),
-            load_address: Address::Alloca(alloca_id),
+            load_address: Stack::Alloca(alloca_id),
             mutable,
             span: Some(identifier.span.clone()),
-            r#type: {
-                fresh::replace_with_fresh_lifeteime_inference(&mut alloca_ty);
-                alloca_ty
-            },
         }
     }
 
     fn reduce_reference<'b>(
         &mut self,
         type_binding: &TypeBinding<'b, M>,
-        mut address: Address<M>,
-    ) -> (&'b Type<M>, Address<M>, Option<Qualifier>) {
+        mut address: Address<Memory<M>>,
+    ) -> (&'b Type<M>, Address<Memory<M>>, Option<Qualifier>) {
         let (mut current_ty, mut reference_binding_info) = match type_binding {
             TypeBinding::Value(ty) => (*ty, None),
             TypeBinding::Reference { qualifier, r#type } => {
@@ -172,20 +230,30 @@ where
         loop {
             match current_ty {
                 Type::Reference(reference) => {
-                    let register =
-                        self.register_reserved.reserve(Register::Load(Load {
-                            address: address.clone(),
-                            address_type: current_ty.clone(),
+                    let register = self.register_reserved.reserve(Register {
+                        assignment: Assignment::Load(Load {
+                            address,
                             kind: LoadKind::Copy,
-                            span: None,
-                        }));
-                    self.new_instructions.push(Basic::RegisterAssignment(
-                        RegisterAssignment { id: register },
-                    ));
+                        }),
+                        r#type: {
+                            let mut current_ty_cloned = current_ty.clone();
+                            fresh::replace_with_fresh_lifeteime_inference(
+                                &mut current_ty_cloned,
+                            );
+
+                            current_ty_cloned
+                        },
+                        span: None,
+                    });
+                    self.new_instructions.push(
+                        Instruction::RegisterAssignment(RegisterAssignment {
+                            id: register,
+                        }),
+                    );
 
                     // update the address, reference binding
                     // info, and binding ty
-                    address = Address::Value(Value::Register(register));
+                    address = Address::Base(Memory::Value(register));
                     reference_binding_info = Some(reference.qualifier);
                     current_ty = reference.pointee.as_ref();
                 }
@@ -205,7 +273,7 @@ where
         table: &Table<impl State>,
         syntax_tree: &syntax_tree::pattern::Irrefutable,
         type_binding: TypeBinding<M>,
-        address: &Address<M>,
+        address: &Address<Memory<M>>,
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<Irrefutable<M>, CreatePatternError<M>>
@@ -343,7 +411,7 @@ where
                             referring_site,
                             field_sym.accessibility,
                         )
-                        .ok_or(CreatePatternError::InvalidReferringSiteID)?
+                        .unwrap()
                     {
                         // soft error, no need to stop the process
                         handler.receive(Box::new(FieldIsNotAccessible {
@@ -407,21 +475,76 @@ where
                             mutable_keyword,
                         },
                         TypeBinding::Value(ty),
-                    ) => Irrefutable::Named(Named {
-                        name: named.identifier().span.str().to_owned(),
-                        load_address: address.clone(),
-                        mutable: mutable_keyword.is_some(),
-                        span: Some(named.identifier().span.clone()),
-                        r#type: {
-                            let mut fresh_ty = ty.clone();
+                    ) => {
+                        // if the address is not alloca or parameter, then
+                        // create a new alloca and move
+                        // the value to the alloca
 
+                        let stack = match address {
+                            Address::Base(Memory::Alloca(id)) => {
+                                Some(Stack::Alloca(*id))
+                            }
+                            Address::Base(Memory::Parameter(id)) => {
+                                Some(Stack::Parameter(*id))
+                            }
+                            _ => None,
+                        };
+
+                        if let Some(stack) = stack {
+                            Irrefutable::Named(Named {
+                                name: named.identifier().span.str().to_owned(),
+                                load_address: stack,
+                                mutable: mutable_keyword.is_some(),
+                                span: Some(named.identifier().span.clone()),
+                            })
+                        } else {
+                            let mut ty = ty.clone();
                             fresh::replace_with_fresh_lifeteime_inference(
-                                &mut fresh_ty,
+                                &mut ty,
                             );
 
-                            fresh_ty
-                        },
-                    }),
+                            let alloca_id =
+                                self.alloca_reserved.reserve(Alloca {
+                                    r#type: ty.clone(),
+                                    span: Some(named.identifier().span.clone()),
+                                });
+
+                            let id = self.register_reserved.reserve(Register {
+                                assignment: Assignment::Load(Load {
+                                    address: address.clone(),
+                                    kind: LoadKind::Move,
+                                }),
+                                r#type: ty.clone(),
+                                span: None,
+                            });
+
+                            self.new_instructions.push(
+                                Instruction::AllocaAllocation(
+                                    AllocaAllocation { id: alloca_id },
+                                ),
+                            );
+                            self.new_instructions.push(
+                                Instruction::RegisterAssignment(
+                                    RegisterAssignment { id },
+                                ),
+                            );
+                            self.new_instructions.push(
+                                Instruction::Initialize(Initialize {
+                                    address: Address::Base(Memory::Alloca(
+                                        alloca_id,
+                                    )),
+                                    value: id,
+                                }),
+                            );
+
+                            Irrefutable::Named(Named {
+                                name: named.identifier().span.str().to_owned(),
+                                load_address: Stack::Alloca(alloca_id),
+                                mutable: mutable_keyword.is_some(),
+                                span: Some(named.identifier().span.clone()),
+                            })
+                        }
+                    }
 
                     (binding, TypeBinding::Reference { qualifier, r#type }) => {
                         Irrefutable::Named(
@@ -609,12 +732,16 @@ where
                         });
 
                         // variable declaration instruction and packing
-                        self.new_instructions.push(Basic::AllocaAllocation(
-                            AllocaAllocation { id: alloca_id },
-                        ));
-                        self.new_instructions.push(Basic::TuplePack(
+                        self.new_instructions.push(
+                            Instruction::AllocaAllocation(AllocaAllocation {
+                                id: alloca_id,
+                            }),
+                        );
+                        self.new_instructions.push(Instruction::TuplePack(
                             instruction::TuplePack {
-                                store_address: Address::Alloca(alloca_id),
+                                store_address: Address::Base(Memory::Alloca(
+                                    alloca_id,
+                                )),
                                 tuple_address: address,
                                 before_packed_element_count:
                                     before_packed_elements.len(),
@@ -629,7 +756,7 @@ where
                                 .get(unpacked_position)
                                 .unwrap(),
                             TypeBinding::Value(&ty),
-                            &Address::Alloca(alloca_id),
+                            &Address::Base(Memory::Alloca(alloca_id)),
                             referring_site,
                             handler,
                         )?
@@ -685,89 +812,6 @@ where
                 Irrefutable::Wildcard(Wildcard)
             }
         })
-    }
-}
-
-impl<M: Model> Representation<M>
-where
-    M::LifetimeInference: Fresh,
-{
-    /// Creates an irrefutable pattern from the given syntax tree.
-    ///
-    /// # Errors
-    ///
-    /// See [`CreatePatternError`] for the possible errors that can occur.
-    #[allow(clippy::too_many_arguments)]
-    pub fn create_irrefutable(
-        &mut self,
-        table: &Table<impl State>,
-        syntax_tree: &syntax_tree::pattern::Irrefutable,
-        simplified_type: &Type<M>,
-        address: &Address<M>,
-        block_id: ID<Block<M>>,
-        referring_site: GlobalID,
-        handler: &dyn Handler<Box<dyn Error>>,
-    ) -> Result<Irrefutable<M>, CreatePatternError<M>>
-    where
-        Type<M>: table::Display<table::Suboptimal>,
-    {
-        // check if the `block_id` is valid
-        let block = self
-            .control_flow_graph
-            .get_block(block_id)
-            .ok_or(CreatePatternError::InvalidBlockID)?;
-
-        // check if the `block` is reachable
-        if block.is_unreachable() {
-            return Err(CreatePatternError::UnreachableBlock);
-        }
-
-        let storage = Storage::<Box<dyn Error>>::default();
-        let mut side_effect = SideEffect {
-            new_instructions: Vec::new(),
-            register_reserved: Reserve::new(&self.registers),
-            alloca_reserved: Reserve::new(&self.allocas),
-        };
-
-        let pattern = side_effect.create_irrefutable_interanl(
-            table,
-            syntax_tree,
-            TypeBinding::Value(simplified_type),
-            address,
-            referring_site,
-            &storage,
-        )?;
-
-        // have no ICEs, propagate the diagnostic
-        storage.propagate(handler);
-
-        // insert new allocas
-        let SideEffect {
-            new_instructions,
-            register_reserved,
-            alloca_reserved,
-            ..
-        } = side_effect;
-
-        let register_reserved = register_reserved.into_reserved();
-        let alloca_reserved = alloca_reserved.into_reserved();
-
-        // insert the new instructions
-        let block = self.control_flow_graph.get_block_mut(block_id).unwrap();
-        for instruction in new_instructions {
-            block.insert_basic(instruction);
-        }
-
-        for (id, alloca) in alloca_reserved {
-            self.allocas.insert_with_id(id, alloca).unwrap();
-        }
-
-        // insert new registers
-        for (id, register) in register_reserved {
-            self.registers.insert_with_id(id, register).unwrap();
-        }
-
-        Ok(pattern)
     }
 }
 

@@ -1,38 +1,44 @@
 use std::{fmt::Display, sync::Arc};
 
-use pernixc_base::{diagnostic::Counter, source_file::SourceFile};
+use pernixc_base::{
+    diagnostic::{Counter, Storage},
+    source_file::SourceFile,
+};
 use pernixc_lexical::token_stream::TokenStream;
 use pernixc_syntax::{parser::Parser, syntax_tree};
 
 use crate::{
     arena::ID,
+    error::Error,
     ir::{
-        address::{self, Address, Field},
+        address::{self, Address, Field, Memory, Stack},
         alloca::Alloca,
-        instruction::{Basic, Instruction},
+        instruction::Instruction,
         pattern::{self, Irrefutable, Named},
-        representation::Representation,
-        value::{register::Register, Value},
-    },
-    semantic::{
-        fresh::Fresh,
-        model::Model,
-        term::{
-            constant::Constant,
-            lifetime::Lifetime,
-            r#type::{Primitive, Qualifier, Reference, SymbolID, Type},
-            GenericArguments, Never, Symbol, Term, Tuple, TupleElement,
+        register::{Assignment, LoadKind},
+        representation::{
+            binding::{
+                infer::{self, Erased},
+                Binder,
+            },
+            Representation,
         },
+    },
+    semantic::term::{
+        lifetime::Lifetime,
+        r#type::{Primitive, Qualifier, Reference, SymbolID, Type},
+        GenericArguments, Symbol, Tuple, TupleElement,
     },
     symbol::{
         self,
         table::{
-            self,
             representation::{Index, IndexMut, Insertion},
+            resolution::NoOpObserver,
             Building, Table,
         },
-        Accessibility, AdtTemplate, GenericDeclaration, GenericID, MemberID,
-        Module, StructDefinition,
+        Accessibility, AdtTemplate, Function, FunctionDefinition,
+        FunctionTemplate, GenericDeclaration, GenericID, MemberID,
+        StructDefinition,
     },
 };
 
@@ -54,68 +60,20 @@ fn create_pattern(source: impl Display) -> syntax_tree::pattern::Irrefutable {
     pattern
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct SimpleInference;
-
-impl Fresh for SimpleInference {
-    fn fresh() -> Self { Self }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct SimpleModel;
-
-impl<T: table::State> table::Display<T> for SimpleInference {
-    fn fmt(
-        &self,
-        _: &Table<T>,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        write!(f, "?")
-    }
-}
-
-impl From<Never> for SimpleInference {
-    fn from(value: Never) -> Self { match value {} }
-}
-
-impl Model for SimpleModel {
-    type LifetimeInference = SimpleInference;
-    type TypeInference = SimpleInference;
-    type ConstantInference = SimpleInference;
-
-    fn from_default_type(
-        ty: Type<crate::semantic::model::Default>,
-    ) -> Type<Self> {
-        Type::from_other_model(ty)
-    }
-
-    fn from_default_lifetime(
-        lifetime: Lifetime<crate::semantic::model::Default>,
-    ) -> Lifetime<Self> {
-        Lifetime::from_other_model(lifetime)
-    }
-
-    fn from_default_constant(
-        constant: Constant<crate::semantic::model::Default>,
-    ) -> Constant<Self> {
-        Constant::from_other_model(constant)
-    }
-}
-
-impl Representation<SimpleModel> {
+impl Representation<infer::Model> {
     /// Check for the named pattern that bound as `ref QUALIFIER IDENTIFIER`
     fn check_reference_bound_named_pattern(
         &self,
-        named_pattern: &Named<SimpleModel>,
+        named_pattern: &Named<infer::Model>,
         expected_name: &str,
-        expected_stored_adress: &Address<SimpleModel>,
+        expected_stored_adress: &Address<Memory<infer::Model>>,
         qualifier: Qualifier,
-        ty: &Type<SimpleModel>,
+        ty: &Type<infer::Model>,
     ) {
         assert_eq!(named_pattern.name, expected_name);
 
         // should store the address at some alloca
-        let Address::Alloca(stored_address_alloca_id) =
+        let Stack::Alloca(stored_address_alloca_id) =
             named_pattern.load_address
         else {
             panic!("Expected an alloca address")
@@ -131,15 +89,17 @@ impl Representation<SimpleModel> {
             .instructions()
             .iter()
             .find_map(|instruction| {
-                let Instruction::Basic(Basic::RegisterAssignment(
-                    register_assignment,
-                )) = instruction
+                let Instruction::RegisterAssignment(register_assignment) =
+                    instruction
                 else {
                     return None;
                 };
 
-                let Register::AddressOf(reference_of) =
-                    self.registers.get(register_assignment.id).unwrap()
+                let Assignment::ReferenceOf(reference_of) = &self
+                    .registers
+                    .get(register_assignment.id)
+                    .unwrap()
+                    .assignment
                 else {
                     return None;
                 };
@@ -153,18 +113,17 @@ impl Representation<SimpleModel> {
             .unwrap();
 
         assert!(block.instructions().iter().any(|instruction| {
-            let Instruction::Basic(Basic::Initialize(store)) = instruction
-            else {
+            let Instruction::Initialize(store) = instruction else {
                 return false;
             };
 
-            store.value == Value::Register(reference_of_register_id)
-                && store.address == Address::Alloca(stored_address_alloca_id)
+            store.value == reference_of_register_id
+                && store.address
+                    == Address::Base(Memory::Alloca(stored_address_alloca_id))
         }));
 
         assert!(block.instructions().iter().any(|instruction| {
-            let Instruction::Basic(Basic::AllocaAllocation(alloca_allocation)) =
-                instruction
+            let Instruction::AllocaAllocation(alloca_allocation) = instruction
             else {
                 return false;
             };
@@ -178,59 +137,78 @@ impl Representation<SimpleModel> {
             alloca.r#type,
             Type::Reference(Reference {
                 qualifier,
-                lifetime: Lifetime::Inference(SimpleInference),
+                lifetime: Lifetime::Inference(Erased),
                 pointee: Box::new(ty.clone())
             })
         );
     }
 }
 
-fn create_table() -> (Table<Building>, ID<Module>) {
-    let mut table = Table::<Building>::default();
+fn create_dummy_function() -> (Table<Building>, ID<Function>) {
+    let mut table = Table::default();
 
-    let Insertion { id, duplication } =
+    let Insertion { id: test_module_id, duplication } =
         table.create_root_module("test".to_string());
 
     assert!(duplication.is_none());
 
-    (table, id)
+    let Insertion { id: function_id, duplication } = table
+        .insert_member(
+            "test".to_string(),
+            Accessibility::Public,
+            test_module_id,
+            None,
+            GenericDeclaration::default(),
+            FunctionTemplate::<FunctionDefinition>::default(),
+        )
+        .unwrap();
+
+    assert!(duplication.is_none());
+
+    (table, function_id)
 }
 
 #[test]
 fn value_bound_named() {
     const VALUE_BOUND_NAMED: &str = "mutable helloWorld";
 
-    let mut representation = Representation::<SimpleModel>::default();
-    let (table, referring_site) = create_table();
+    let (table, function_id) = create_dummy_function();
     let pattern = create_pattern(VALUE_BOUND_NAMED);
 
-    let alloca_id = representation
+    let storage: Storage<Box<dyn Error>> = Storage::default();
+    let mut binder = Binder::new_function(
+        &table,
+        NoOpObserver,
+        function_id,
+        std::iter::empty(),
+        false,
+        &storage,
+    )
+    .unwrap();
+
+    let alloca_id = binder
+        .intermediate_representation
         .allocas
         .insert(Alloca { r#type: Type::default(), span: None });
 
-    let counter = Counter::default();
-
-    let pattern = representation
+    let pattern = binder
         .create_irrefutable(
-            &table,
             &pattern,
             &Type::default(),
-            &Address::Alloca(alloca_id),
-            representation.control_flow_graph.entry_block_id(),
-            referring_site.into(),
-            &counter,
+            &Address::Base(Memory::Alloca(alloca_id)),
+            &storage,
         )
         .unwrap();
 
     // no error
-    assert_eq!(counter.count(), 0);
+    assert!(storage.as_vec().is_empty());
 
     let Irrefutable::Named(pattern) = pattern else {
         panic!("Expected a named pattern")
     };
 
     assert_eq!(pattern.name, "helloWorld");
-    assert_eq!(pattern.load_address, Address::Alloca(alloca_id));
+    assert_eq!(pattern.load_address, Stack::Alloca(alloca_id));
     assert!(pattern.mutable);
 }
 
@@ -238,39 +216,45 @@ fn value_bound_named() {
 fn reference_bound_named() {
     const SIMPLE_NAMED_VALUE_BOUND: &str = "ref unique helloWorld";
 
-    let mut representation = Representation::default();
-    let (table, referring_site) = create_table();
+    let (table, function_id) = create_dummy_function();
     let pattern = create_pattern(SIMPLE_NAMED_VALUE_BOUND);
 
-    let alloca_id = representation
+    let storage: Storage<Box<dyn Error>> = Storage::default();
+    let mut binder = Binder::new_function(
+        &table,
+        NoOpObserver,
+        function_id,
+        std::iter::empty(),
+        false,
+        &storage,
+    )
+    .unwrap();
+
+    let alloca_id = binder
+        .intermediate_representation
         .allocas
         .insert(Alloca { r#type: Type::default(), span: None });
 
-    let counter = Counter::default();
-
-    let pattern = representation
+    let pattern = binder
         .create_irrefutable(
-            &table,
             &pattern,
             &Type::default(),
-            &Address::Alloca(alloca_id),
-            representation.control_flow_graph.entry_block_id(),
-            referring_site.into(),
-            &counter,
+            &Address::Base(Memory::Alloca(alloca_id)),
+            &storage,
         )
         .unwrap();
 
     // no error
-    assert_eq!(counter.count(), 0);
+    assert!(storage.as_vec().is_empty());
 
     let Irrefutable::Named(pattern) = pattern else {
         panic!("Expected a named pattern")
     };
 
-    representation.check_reference_bound_named_pattern(
+    binder.intermediate_representation.check_reference_bound_named_pattern(
         &pattern,
         "helloWorld",
-        &Address::Alloca(alloca_id),
+        &Address::Base(Memory::Alloca(alloca_id)),
         Qualifier::Unique,
         &Type::default(),
     );
@@ -281,15 +265,19 @@ fn reference_bound_named() {
 fn value_bound_struct() {
     const VALUE_BOUND_STRUCT: &str = "{ ref unique a, mutable b }";
 
-    let mut representation = Representation::default();
-    let (table, referring_site, struct_id) = {
-        let (mut table, root_module) = create_table();
+    let (mut table, function_id) = create_dummy_function();
+    let struct_id = {
+        let core_module_id = table
+            .get_by_qualified_name(std::iter::once("core"))
+            .unwrap()
+            .into_module()
+            .unwrap();
 
         let Insertion { id: struct_id, duplication } = table
             .insert_member(
                 "Test".to_string(),
                 Accessibility::Public,
-                root_module,
+                core_module_id,
                 None,
                 GenericDeclaration::default(),
                 AdtTemplate::<StructDefinition>::default(),
@@ -320,7 +308,7 @@ fn value_bound_struct() {
             })
             .unwrap();
 
-        (table, root_module, struct_id)
+        struct_id
     };
 
     let pattern = create_pattern(VALUE_BOUND_STRUCT);
@@ -332,26 +320,33 @@ fn value_bound_struct() {
     let a_field_id = table.get(struct_id).unwrap().fields.get_id("a").unwrap();
     let b_field_id = table.get(struct_id).unwrap().fields.get_id("b").unwrap();
 
-    let struct_alloca_id = representation
+    let storage: Storage<Box<dyn Error>> = Storage::default();
+    let mut binder = Binder::new_function(
+        &table,
+        NoOpObserver,
+        function_id,
+        std::iter::empty(),
+        false,
+        &storage,
+    )
+    .unwrap();
+
+    let struct_alloca_id = binder
+        .intermediate_representation
         .allocas
         .insert(Alloca { r#type: struct_ty.clone(), span: None });
 
-    let counter = Counter::default();
-
-    let pattern = representation
+    let pattern = binder
         .create_irrefutable(
-            &table,
             &pattern,
             &struct_ty,
-            &Address::Alloca(struct_alloca_id),
-            representation.control_flow_graph.entry_block_id(),
-            referring_site.into(),
-            &counter,
+            &Address::Base(Memory::Alloca(struct_alloca_id)),
+            &storage,
         )
         .unwrap();
 
     // no error
-    assert_eq!(counter.count(), 0);
+    assert!(storage.as_vec().is_empty());
 
     let Irrefutable::Structural(pattern) = pattern else {
         panic!("Expected a named pattern")
@@ -365,11 +360,13 @@ fn value_bound_struct() {
             panic!("Expected a named pattern")
         };
 
-        representation.check_reference_bound_named_pattern(
+        binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
             "a",
             &Address::Field(Field {
-                struct_address: Box::new(Address::Alloca(struct_alloca_id)),
+                struct_address: Box::new(Address::Base(Memory::Alloca(
+                    struct_alloca_id,
+                ))),
                 id: a_field_id,
             }),
             Qualifier::Unique,
@@ -388,15 +385,49 @@ fn value_bound_struct() {
         assert_eq!(pattern.name, "b");
         assert!(pattern.mutable);
 
-        // should store the address at some alloca
-        let Address::Field(field_address) = &pattern.load_address else {
-            panic!("Expected a field address")
-        };
+        let destructed_variable = pattern.load_address.into_alloca().unwrap();
 
-        assert_eq!(field_address.id, b_field_id);
+        let register_id = binder
+            .current_block()
+            .instructions()
+            .iter()
+            .find_map(|inst| {
+                let Instruction::Initialize(init) = inst else { return None };
+
+                (init.address
+                    == Address::Base(Memory::Alloca(destructed_variable)))
+                .then_some(init.value)
+            })
+            .unwrap();
+
+        let load = binder
+            .intermediate_representation
+            .registers
+            .get(register_id)
+            .unwrap()
+            .assignment
+            .as_load()
+            .unwrap();
+
         assert_eq!(
-            &*field_address.struct_address,
-            &Address::Alloca(struct_alloca_id)
+            load.address,
+            Address::Field(Field {
+                struct_address: Box::new(Address::Base(Memory::Alloca(
+                    struct_alloca_id,
+                ))),
+                id: b_field_id,
+            })
+        );
+
+        assert_eq!(load.kind, LoadKind::Move);
+        assert_eq!(
+            binder
+                .intermediate_representation
+                .allocas
+                .get(destructed_variable)
+                .unwrap()
+                .r#type,
+            Type::Primitive(Primitive::Float32)
         );
     }
 }
@@ -407,15 +438,19 @@ fn reference_bound_struct() {
     // both a and b are bound by reference
     const REFERENCE_BOUND_STRUCT: &str = "{ ref a, mutable b }";
 
-    let mut representation = Representation::default();
-    let (table, referring_site, struct_id) = {
-        let (mut table, root_module) = create_table();
+    let (mut table, function_id) = create_dummy_function();
+    let struct_id = {
+        let core_module_id = table
+            .get_by_qualified_name(std::iter::once("core"))
+            .unwrap()
+            .into_module()
+            .unwrap();
 
         let Insertion { id: struct_id, duplication } = table
             .insert_member(
                 "Test".to_string(),
                 Accessibility::Public,
-                root_module,
+                core_module_id,
                 None,
                 GenericDeclaration::default(),
                 AdtTemplate::<StructDefinition>::default(),
@@ -446,57 +481,71 @@ fn reference_bound_struct() {
             })
             .unwrap();
 
-        (table, root_module, struct_id)
+        struct_id
     };
 
+    let mut binder = Binder::new_function(
+        &table,
+        NoOpObserver,
+        function_id,
+        std::iter::empty(),
+        false,
+        &Counter::default(),
+    )
+    .unwrap();
+    let storage: Storage<Box<dyn Error>> = Storage::default();
+
     let pattern = create_pattern(REFERENCE_BOUND_STRUCT);
+    let struct_ty = Type::Symbol(Symbol {
+        id: SymbolID::Struct(struct_id),
+        generic_arguments: GenericArguments::default(),
+    });
     let reference_struct_ty = Type::Reference(Reference {
         qualifier: Qualifier::Immutable,
         lifetime: Lifetime::Static,
-        pointee: Box::new(Type::Symbol(Symbol {
-            id: SymbolID::Struct(struct_id),
-            generic_arguments: GenericArguments::default(),
-        })),
+        pointee: Box::new(struct_ty.clone()),
     });
 
     let a_field_id = table.get(struct_id).unwrap().fields.get_id("a").unwrap();
     let b_field_id = table.get(struct_id).unwrap().fields.get_id("b").unwrap();
 
-    let struct_alloca_id = representation
+    let struct_alloca_id = binder
+        .intermediate_representation
         .allocas
         .insert(Alloca { r#type: reference_struct_ty.clone(), span: None });
 
-    let counter = Counter::default();
-
-    let pattern = representation
+    let pattern = binder
         .create_irrefutable(
-            &table,
             &pattern,
             &reference_struct_ty,
-            &Address::Alloca(struct_alloca_id),
-            representation.control_flow_graph.entry_block_id(),
-            referring_site.into(),
-            &counter,
+            &Address::Base(Memory::Alloca(struct_alloca_id)),
+            &storage,
         )
         .unwrap();
 
     // no error
-    assert_eq!(counter.count(), 0);
+    assert!(storage.as_vec().is_empty());
 
     let Irrefutable::Structural(pattern) = pattern else {
         panic!("Expected a named pattern")
     };
 
-    let load_address_register = representation
+    let load_address_register = binder
+        .intermediate_representation
         .registers
         .iter()
         .find_map(|(idx, i)| {
-            let Register::Load(load) = i else {
+            let Assignment::Load(load) = &i.assignment else {
                 return None;
             };
 
-            if load.address == Address::Alloca(struct_alloca_id)
-                && load.address_type == reference_struct_ty
+            if load.address == Address::Base(Memory::Alloca(struct_alloca_id))
+                && i.r#type
+                    == Type::Reference(Reference {
+                        qualifier: Qualifier::Immutable,
+                        lifetime: Lifetime::Inference(Erased),
+                        pointee: Box::new(struct_ty.clone()),
+                    })
             {
                 Some(idx)
             } else {
@@ -513,11 +562,11 @@ fn reference_bound_struct() {
             panic!("Expected a named pattern")
         };
 
-        representation.check_reference_bound_named_pattern(
+        binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
             "a",
             &Address::Field(Field {
-                struct_address: Box::new(Address::Value(Value::Register(
+                struct_address: Box::new(Address::Base(Memory::Value(
                     load_address_register,
                 ))),
                 id: a_field_id,
@@ -535,11 +584,11 @@ fn reference_bound_struct() {
             panic!("Expected a named pattern")
         };
 
-        representation.check_reference_bound_named_pattern(
+        binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
             "b",
             &Address::Field(Field {
-                struct_address: Box::new(Address::Value(Value::Register(
+                struct_address: Box::new(Address::Base(Memory::Value(
                     load_address_register,
                 ))),
                 id: b_field_id,
@@ -555,8 +604,7 @@ fn reference_bound_struct() {
 fn value_bound_tuple() {
     const VALUE_BOUND_TUPLE: &str = "(ref a, mutable b)";
 
-    let mut representation = Representation::default();
-    let (table, referring_site) = create_table();
+    let (table, function_id) = create_dummy_function();
 
     let pattern = create_pattern(VALUE_BOUND_TUPLE);
     let tuple_ty = Type::Tuple(Tuple {
@@ -572,26 +620,33 @@ fn value_bound_tuple() {
         ],
     });
 
-    let tuple_alloca_id = representation
+    let storage: Storage<Box<dyn Error>> = Storage::default();
+    let mut binder = Binder::new_function(
+        &table,
+        NoOpObserver,
+        function_id,
+        std::iter::empty(),
+        false,
+        &storage,
+    )
+    .unwrap();
+
+    let tuple_alloca_id = binder
+        .intermediate_representation
         .allocas
         .insert(Alloca { r#type: tuple_ty.clone(), span: None });
 
-    let counter = Counter::default();
-
-    let pattern = representation
+    let pattern = binder
         .create_irrefutable(
-            &table,
             &pattern,
             &tuple_ty,
-            &Address::Alloca(tuple_alloca_id),
-            representation.control_flow_graph.entry_block_id(),
-            referring_site.into(),
-            &counter,
+            &Address::Base(Memory::Alloca(tuple_alloca_id)),
+            &storage,
         )
         .unwrap();
 
     // no error
-    assert_eq!(counter.count(), 0);
+    assert!(storage.as_vec().is_empty());
 
     let Irrefutable::Tuple(pattern::Tuple::Regular(pattern)) = pattern else {
         panic!("Expected a named pattern")
@@ -603,11 +658,13 @@ fn value_bound_tuple() {
             panic!("Expected a named pattern")
         };
 
-        representation.check_reference_bound_named_pattern(
+        binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
             "a",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Alloca(tuple_alloca_id)),
+                tuple_address: Box::new(Address::Base(Memory::Alloca(
+                    tuple_alloca_id,
+                ))),
                 offset: address::Offset::FromStart(0),
             }),
             Qualifier::Immutable,
@@ -625,14 +682,49 @@ fn value_bound_tuple() {
         assert!(pattern.mutable);
 
         // should store the address at some alloca
-        let Address::Tuple(tuple_address) = &pattern.load_address else {
-            panic!("Expected a tuple address")
-        };
+        let destructed_variable = pattern.load_address.into_alloca().unwrap();
 
-        assert_eq!(tuple_address.offset, address::Offset::FromStart(1));
+        let register_id = binder
+            .current_block()
+            .instructions()
+            .iter()
+            .find_map(|inst| {
+                let Instruction::Initialize(init) = inst else { return None };
+
+                (init.address
+                    == Address::Base(Memory::Alloca(destructed_variable)))
+                .then_some(init.value)
+            })
+            .unwrap();
+
+        let load = binder
+            .intermediate_representation
+            .registers
+            .get(register_id)
+            .unwrap()
+            .assignment
+            .as_load()
+            .unwrap();
+
         assert_eq!(
-            &*tuple_address.tuple_address,
-            &Address::Alloca(tuple_alloca_id)
+            load.address,
+            Address::Tuple(address::Tuple {
+                tuple_address: Box::new(Address::Base(Memory::Alloca(
+                    tuple_alloca_id
+                ))),
+                offset: address::Offset::FromStart(1),
+            })
+        );
+
+        assert_eq!(load.kind, LoadKind::Move);
+        assert_eq!(
+            binder
+                .intermediate_representation
+                .allocas
+                .get(destructed_variable)
+                .unwrap()
+                .r#type,
+            Type::Primitive(Primitive::Int32)
         );
     }
 }
@@ -641,62 +733,72 @@ fn value_bound_tuple() {
 fn reference_bound_tuple() {
     const REFERENCE_BOUND_TUPLE: &str = "(ref a, mutable b)";
 
-    let mut representation = Representation::default();
-    let (table, referring_site) = create_table();
+    let (table, function_id) = create_dummy_function();
 
     let pattern = create_pattern(REFERENCE_BOUND_TUPLE);
+    let tuple_ty = Type::Tuple(Tuple {
+        elements: vec![
+            TupleElement {
+                term: Type::Primitive(Primitive::Bool),
+                is_unpacked: false,
+            },
+            TupleElement {
+                term: Type::Primitive(Primitive::Int32),
+                is_unpacked: false,
+            },
+        ],
+    });
     let reference_tuple_ty = Type::Reference(Reference {
         qualifier: Qualifier::Mutable,
         lifetime: Lifetime::Static,
-        pointee: Box::new(Type::Tuple(Tuple {
-            elements: vec![
-                TupleElement {
-                    term: Type::Primitive(Primitive::Bool),
-                    is_unpacked: false,
-                },
-                TupleElement {
-                    term: Type::Primitive(Primitive::Int32),
-                    is_unpacked: false,
-                },
-            ],
-        })),
+        pointee: Box::new(tuple_ty.clone()),
     });
 
-    let tuple_alloca_id = representation
+    let storage: Storage<Box<dyn Error>> = Storage::default();
+    let mut binder = Binder::new_function(
+        &table,
+        NoOpObserver,
+        function_id,
+        std::iter::empty(),
+        false,
+        &storage,
+    )
+    .unwrap();
+
+    let tuple_alloca_id = binder
+        .intermediate_representation
         .allocas
         .insert(Alloca { r#type: reference_tuple_ty.clone(), span: None });
 
-    let counter = Counter::default();
-
-    let pattern = representation
+    let pattern = binder
         .create_irrefutable(
-            &table,
             &pattern,
             &reference_tuple_ty,
-            &Address::Alloca(tuple_alloca_id),
-            representation.control_flow_graph.entry_block_id(),
-            referring_site.into(),
-            &counter,
+            &Address::Base(Memory::Alloca(tuple_alloca_id)),
+            &storage,
         )
         .unwrap();
-
-    // no error
-    assert_eq!(counter.count(), 0);
 
     let Irrefutable::Tuple(pattern::Tuple::Regular(pattern)) = pattern else {
         panic!("Expected a named pattern")
     };
 
-    let load_address_register = representation
+    let load_address_register = binder
+        .intermediate_representation
         .registers
         .iter()
         .find_map(|(idx, i)| {
-            let Register::Load(load) = i else {
+            let Assignment::Load(load) = &i.assignment else {
                 return None;
             };
 
-            if load.address == Address::Alloca(tuple_alloca_id)
-                && load.address_type == reference_tuple_ty
+            if load.address == Address::Base(Memory::Alloca(tuple_alloca_id))
+                && i.r#type
+                    == Type::Reference(Reference {
+                        qualifier: Qualifier::Mutable,
+                        lifetime: Lifetime::Inference(Erased),
+                        pointee: Box::new(tuple_ty.clone()),
+                    })
             {
                 Some(idx)
             } else {
@@ -711,11 +813,11 @@ fn reference_bound_tuple() {
             panic!("Expected a named pattern")
         };
 
-        representation.check_reference_bound_named_pattern(
+        binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
             "a",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Value(Value::Register(
+                tuple_address: Box::new(Address::Base(Memory::Value(
                     load_address_register,
                 ))),
                 offset: address::Offset::FromStart(0),
@@ -731,11 +833,11 @@ fn reference_bound_tuple() {
             panic!("Expected a named pattern")
         };
 
-        representation.check_reference_bound_named_pattern(
+        binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
             "b",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Value(Value::Register(
+                tuple_address: Box::new(Address::Base(Memory::Value(
                     load_address_register,
                 ))),
                 offset: address::Offset::FromStart(1),
@@ -751,8 +853,7 @@ fn reference_bound_tuple() {
 fn packed_tuple() {
     const PACKED_TUPLE: &str = "(ref a, b, mutable c)";
 
-    let mut representation = Representation::default();
-    let (table, referring_site) = create_table();
+    let (table, function_id) = create_dummy_function();
 
     let pattern = create_pattern(PACKED_TUPLE);
     let tuple_ty = Type::Tuple(Tuple {
@@ -775,26 +876,33 @@ fn packed_tuple() {
         ],
     });
 
-    let tuple_alloca_id = representation
+    let storage: Storage<Box<dyn Error>> = Storage::default();
+    let mut binder = Binder::new_function(
+        &table,
+        NoOpObserver,
+        function_id,
+        std::iter::empty(),
+        false,
+        &storage,
+    )
+    .unwrap();
+
+    let tuple_alloca_id = binder
+        .intermediate_representation
         .allocas
         .insert(Alloca { r#type: tuple_ty.clone(), span: None });
 
-    let counter = Counter::default();
-
-    let pattern = representation
+    let pattern = binder
         .create_irrefutable(
-            &table,
             &pattern,
             &tuple_ty,
-            &Address::Alloca(tuple_alloca_id),
-            representation.control_flow_graph.entry_block_id(),
-            referring_site.into(),
-            &counter,
+            &Address::Base(Memory::Alloca(tuple_alloca_id)),
+            &storage,
         )
         .unwrap();
 
     // no error
-    assert_eq!(counter.count(), 0);
+    assert!(storage.as_vec().is_empty());
 
     let Irrefutable::Tuple(pattern::Tuple::Packed(pattern)) = pattern else {
         panic!("Expected a named pattern")
@@ -808,11 +916,13 @@ fn packed_tuple() {
             panic!("Expected a named pattern")
         };
 
-        representation.check_reference_bound_named_pattern(
+        binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
             "a",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Alloca(tuple_alloca_id)),
+                tuple_address: Box::new(Address::Base(Memory::Alloca(
+                    tuple_alloca_id,
+                ))),
                 offset: address::Offset::FromStart(0),
             }),
             Qualifier::Immutable,
@@ -831,23 +941,43 @@ fn packed_tuple() {
         assert_eq!(pattern.name, "c");
         assert!(pattern.mutable);
 
-        // should store the address at some alloca
-        let Address::Tuple(tuple_address) = &pattern.load_address else {
-            panic!("Expected a tuple address")
-        };
+        let destructed_variable = pattern.load_address.into_alloca().unwrap();
 
-        assert_eq!(tuple_address.offset, address::Offset::FromEnd(0));
+        let register_id = binder
+            .current_block()
+            .instructions()
+            .iter()
+            .find_map(|inst| {
+                let Instruction::Initialize(init) = inst else { return None };
+
+                (init.address
+                    == Address::Base(Memory::Alloca(destructed_variable)))
+                .then_some(init.value)
+            })
+            .unwrap();
+
+        let load = binder
+            .intermediate_representation
+            .registers
+            .get(register_id)
+            .unwrap()
+            .assignment
+            .as_load()
+            .unwrap();
+
         assert_eq!(
-            &*tuple_address.tuple_address,
-            &Address::Alloca(tuple_alloca_id)
+            load.address,
+            Address::Tuple(address::Tuple {
+                tuple_address: Box::new(Address::Base(Memory::Alloca(
+                    tuple_alloca_id
+                ))),
+                offset: address::Offset::FromEnd(0),
+            })
         );
     }
 
     {
-        let block = representation
-            .control_flow_graph
-            .get_block(representation.control_flow_graph.entry_block_id())
-            .unwrap();
+        let block = binder.current_block();
 
         let Irrefutable::Named(pat) = pattern.packed_element.as_ref() else {
             panic!("Expected a named pattern")
@@ -857,13 +987,14 @@ fn packed_tuple() {
             .instructions()
             .iter()
             .find_map(|inst| {
-                let Instruction::Basic(Basic::TuplePack(pack)) = inst else {
+                let Instruction::TuplePack(pack) = inst else {
                     return None;
                 };
 
                 if pack.before_packed_element_count == 1
                     && pack.after_packed_element_count == 1
-                    && pack.tuple_address == Address::Alloca(tuple_alloca_id)
+                    && pack.tuple_address
+                        == Address::Base(Memory::Alloca(tuple_alloca_id))
                 {
                     Some(&pack.store_address)
                 } else {
@@ -872,10 +1003,13 @@ fn packed_tuple() {
             })
             .unwrap();
 
-        assert_eq!(store_address, &pat.load_address);
+        assert_eq!(
+            store_address.as_base().unwrap().as_alloca().unwrap(),
+            pat.load_address.as_alloca().unwrap()
+        );
 
         assert!(block.instructions().iter().any(|inst| {
-            let Instruction::Basic(Basic::AllocaAllocation(inst)) = inst else {
+            let Instruction::AllocaAllocation(inst) = inst else {
                 return false;
             };
 
@@ -883,7 +1017,8 @@ fn packed_tuple() {
         }));
 
         assert_eq!(
-            representation
+            binder
+                .intermediate_representation
                 .allocas
                 .get(*pat.load_address.as_alloca().unwrap())
                 .unwrap()

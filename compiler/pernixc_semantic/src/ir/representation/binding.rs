@@ -1,34 +1,47 @@
-//! Contains the definition of states and models used for building the IR.
+//! Contains the definition of [`Binder`], the struct used for building the IR.
 
 use std::sync::Arc;
 
-use infer::{Constraint, Context, UnifyError};
+use infer::{
+    Constraint, Context, Erased, InferenceVariable, NoConstraint, UnifyError,
+};
 use parking_lot::RwLock;
 use pernixc_base::{diagnostic::Handler, source_file::Span};
 use pernixc_syntax::syntax_tree;
+use stack::Stack;
 
-use self::infer::InferenceVariable;
 use super::Representation;
 use crate::{
     arena::ID,
     error::{self, MismatchedType},
     ir::{
-        address::Address, control_flow_graph::Block, pattern::NameBindingPoint,
-        State,
+        address::{Address, Memory},
+        control_flow_graph::Block,
+        instruction::{self, ScopePush},
+        pattern::NameBindingPoint,
+        register::{Assignment, Register},
     },
     semantic::{
-        model::{self, Model as _},
-        simplify::simplify,
+        instantiation::{self, Instantiation},
+        model::Model as _,
+        simplify::{self, simplify},
         term::{
+            self,
             constant::Constant,
             lifetime::Lifetime,
-            r#type::{Expected, Type},
-            Never, Term,
+            r#type::{self, Expected, Type},
+            Symbol, Tuple, TupleElement,
         },
+        visitor::RecursiveIterator,
         Environment, Premise,
     },
     symbol::{
-        table::{self, representation::Index, resolution::Observer, Table},
+        table::{
+            self,
+            representation::Index,
+            resolution::{self, EliidedTermProvider, Observer},
+            Table,
+        },
         FunctionTemplate, GenericTemplate, GlobalID,
     },
 };
@@ -36,85 +49,26 @@ use crate::{
 pub mod expression;
 pub mod infer;
 mod pattern;
+pub mod stack;
 pub mod statement;
-
-/// The model used for building the IR
-///
-/// This model enables the use of inference variables
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Model;
-
-impl<T> From<Never> for InferenceVariable<T> {
-    fn from(value: Never) -> Self { match value {} }
-}
-
-impl model::Model for Model {
-    type LifetimeInference = InferenceVariable<Lifetime<Self>>;
-    type TypeInference = InferenceVariable<Type<Self>>;
-    type ConstantInference = InferenceVariable<Constant<Self>>;
-
-    fn from_default_type(ty: Type<model::Default>) -> Type<Self> {
-        Type::from_other_model(ty)
-    }
-
-    fn from_default_lifetime(
-        lifetime: Lifetime<model::Default>,
-    ) -> Lifetime<Self> {
-        Lifetime::from_other_model(lifetime)
-    }
-
-    fn from_default_constant(
-        constant: Constant<model::Default>,
-    ) -> Constant<Self> {
-        Constant::from_other_model(constant)
-    }
-}
-
-impl<T: table::State, U> table::Display<T> for InferenceVariable<U> {
-    fn fmt(
-        &self,
-        _: &Table<T>,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        write!(f, "?")
-    }
-}
-
-/// The context used for binding the IR for a function.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FunctionBindingContext<P: Copy, D>
-where
-    GlobalID: From<P> + From<ID<GenericTemplate<P, FunctionTemplate<D>>>>,
-    GenericTemplate<P, FunctionTemplate<D>>: table::representation::Element,
-{
-    function_id: ID<GenericTemplate<P, FunctionTemplate<D>>>,
-    parameter_name_binding_point: NameBindingPoint<Model>,
-}
 
 /// The binder used for building the IR.
 #[derive(Debug)]
-pub struct Binder<'t, C, S: table::State, O: Observer<S, Model>> {
+pub struct Binder<'t, S: table::State, O: Observer<S, infer::Model>> {
     table: &'t Table<S>,
     resolution_observer: O,
     current_site: GlobalID,
-    premise: Premise<Model>,
+    premise: Premise<infer::Model>,
+    stack: Stack,
     constant: bool,
 
-    intermediate_representation: Representation<Model>,
-    current_block_id: ID<Block<Model>>,
+    intermediate_representation: Representation<infer::Model>,
+    current_block_id: ID<Block<infer::Model>>,
 
     inference_context: infer::Context,
 
-    context: C,
-
     // a boolean flag indicating whether there's already been an error reported
     suboptimal: Arc<RwLock<bool>>,
-}
-
-impl<'t, C, S: table::State, O: Observer<S, Model>> State
-    for Binder<'t, C, S, O>
-{
-    type Model = Model;
 }
 
 #[derive(
@@ -146,18 +100,13 @@ impl<'h> Handler<Box<dyn error::Error>> for HandlerWrapper<'h> {
     }
 }
 
-impl<'t, P: Copy, D, S: table::State, O: Observer<S, Model>>
-    Binder<'t, FunctionBindingContext<P, D>, S, O>
-where
-    GlobalID: From<P> + From<ID<GenericTemplate<P, FunctionTemplate<D>>>>,
-    GenericTemplate<P, FunctionTemplate<D>>: table::representation::Element,
-{
+impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     /// Creates the binder for building the IR.
     ///
     /// # Errors
     ///
     /// See [`CreateFunctionBinderError`] for the possible errors.
-    pub fn new_function<'a>(
+    pub fn new_function<'a, P: Copy, D>(
         table: &'t Table<S>,
         resolution_observer: O,
         function_id: ID<GenericTemplate<P, FunctionTemplate<D>>>,
@@ -166,9 +115,13 @@ where
         >,
         is_const: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Self, CreateFunctionBinderError> {
+    ) -> Result<Self, CreateFunctionBinderError>
+    where
+        GlobalID: From<P> + From<ID<GenericTemplate<P, FunctionTemplate<D>>>>,
+        GenericTemplate<P, FunctionTemplate<D>>: table::representation::Element,
+    {
         let premise = table
-            .get_active_premise::<Model>(function_id.into())
+            .get_active_premise::<infer::Model>(function_id.into())
             .ok_or(CreateFunctionBinderError::InvalidFunctionID)?;
 
         let handler = HandlerWrapper {
@@ -176,18 +129,43 @@ where
             suboptimal: Arc::new(RwLock::new(false)),
         };
 
-        let mut intermediate_representation = Representation::default();
+        let intermediate_representation = Representation::default();
         let current_block_id =
             intermediate_representation.control_flow_graph.entry_block_id();
 
         let function_sym = table.get(function_id).unwrap();
+        let stack =
+            Stack::new(intermediate_representation.scope_tree.root_scope_id());
 
         // mismatched count
         if parameter_pattern_syns.len() != function_sym.parameters().len() {
             return Err(CreateFunctionBinderError::MismatchedParameterCount);
         }
 
+        let mut binder = Self {
+            table,
+            current_site: function_id.into(),
+            premise,
+            constant: is_const,
+            intermediate_representation,
+            stack,
+            current_block_id,
+
+            inference_context: Context::default(),
+
+            resolution_observer,
+
+            suboptimal: handler.suboptimal.clone(),
+        };
+
         let mut parameter_name_binding_point = NameBindingPoint::default();
+
+        let root_scope_id =
+            binder.intermediate_representation.scope_tree.root_scope_id();
+
+        binder.current_block_mut().insert_basic(
+            instruction::Instruction::ScopePush(ScopePush(root_scope_id)),
+        );
 
         // bind the parameter patterns
         #[allow(clippy::significant_drop_in_scrutinee)]
@@ -195,55 +173,30 @@ where
             function_sym.parameter_as_order().zip(parameter_pattern_syns)
         {
             let parameter_type =
-                Model::from_default_type(parameter_sym.r#type.clone());
+                infer::Model::from_default_type(parameter_sym.r#type.clone());
 
-            let pattern = intermediate_representation
-                .create_irrefutable(
-                    table,
-                    syntax_tree,
-                    &parameter_type,
-                    &Address::Parameter(parameter_id),
-                    current_block_id,
-                    function_id.into(),
-                    &handler,
-                )
-                .unwrap();
+            let Ok(pattern) = binder.create_irrefutable(
+                syntax_tree,
+                &parameter_type,
+                &Address::Base(Memory::Parameter(parameter_id)),
+                &handler,
+            ) else {
+                continue;
+            };
 
+            // add the binding point
             parameter_name_binding_point
                 .add_irrefutable_binding(&pattern, &handler);
         }
 
+        binder
+            .stack
+            .current_scope_mut()
+            .add_named_binding_point(parameter_name_binding_point);
+
         drop(function_sym);
 
-        Ok(Self {
-            table,
-            current_site: function_id.into(),
-            premise,
-            constant: is_const,
-            intermediate_representation,
-            current_block_id,
-
-            inference_context: Context::default(),
-
-            context: FunctionBindingContext {
-                function_id,
-                parameter_name_binding_point,
-            },
-            resolution_observer,
-
-            suboptimal: handler.suboptimal,
-        })
-    }
-}
-
-impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
-    /// Creates a handler that triggers the suboptimal flag inside this
-    /// binder when an error is received.
-    fn create_handler_wrapper<'a>(
-        &self,
-        handler: &'a dyn Handler<Box<dyn error::Error>>,
-    ) -> HandlerWrapper<'a> {
-        HandlerWrapper { handler, suboptimal: self.suboptimal.clone() }
+        Ok(binder)
     }
 }
 
@@ -254,7 +207,295 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
 #[error("encountered a fatal semantic error")]
 pub struct Error(pub Span);
 
-impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+struct InferenceProvider;
+
+impl EliidedTermProvider<Lifetime<infer::Model>> for InferenceProvider {
+    fn create(&mut self) -> Lifetime<infer::Model> {
+        Lifetime::Inference(Erased)
+    }
+}
+
+impl EliidedTermProvider<Type<infer::Model>> for InferenceProvider {
+    fn create(&mut self) -> Type<infer::Model> {
+        Type::Inference(InferenceVariable::new())
+    }
+}
+
+impl EliidedTermProvider<Constant<infer::Model>> for InferenceProvider {
+    fn create(&mut self) -> Constant<infer::Model> {
+        Constant::Inference(InferenceVariable::new())
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+    /// Returns a reference to the current control flow graph.
+    fn current_block(&self) -> &Block<infer::Model> {
+        &self.intermediate_representation.control_flow_graph
+            [self.current_block_id]
+    }
+
+    /// Returns a mutable reference to the current control flow graph.
+    fn current_block_mut(&mut self) -> &mut Block<infer::Model> {
+        &mut self.intermediate_representation.control_flow_graph
+            [self.current_block_id]
+    }
+
+    /// Creates a new type inference variable and assigns it to the inference
+    /// context with the given constraint.
+    fn create_type_inference(
+        &mut self,
+        constraint: r#type::Constraint,
+    ) -> InferenceVariable<Type<infer::Model>> {
+        let inference_variable = InferenceVariable::new();
+        assert!(self
+            .inference_context
+            .register::<Type<_>>(inference_variable, constraint));
+
+        inference_variable
+    }
+
+    /// Creates an environment object that includes the `active_premise`,
+    ///
+    /// `table`, and `inference_context` normalizer.
+    fn create_environment(
+        &self,
+    ) -> Environment<'_, infer::Model, S, infer::Context> {
+        Environment {
+            premise: &self.premise,
+            table: self.table,
+            normalizer: &self.inference_context,
+        }
+    }
+
+    /// Creates a new register and assigns the given `assignment` to it.
+    fn create_register_assignmnet(
+        &mut self,
+        assignment: Assignment<infer::Model>,
+        ty: Type<infer::Model>,
+        span: Option<Span>,
+    ) -> ID<Register<infer::Model>> {
+        let register_id = self
+            .intermediate_representation
+            .registers
+            .insert(Register { assignment, r#type: ty, span });
+
+        self.current_block_mut().insert_basic(
+            instruction::Instruction::RegisterAssignment(
+                instruction::RegisterAssignment { id: register_id },
+            ),
+        );
+
+        register_id
+    }
+
+    /// Creates a handler that triggers the suboptimal flag inside this
+    /// binder when an error is received.
+    fn create_handler_wrapper<'a>(
+        &self,
+        handler: &'a dyn Handler<Box<dyn error::Error>>,
+    ) -> HandlerWrapper<'a> {
+        HandlerWrapper { handler, suboptimal: self.suboptimal.clone() }
+    }
+
+    /// Resolves the given `syntax_tree` to a type where inference is allowed.
+    fn resolve_type_with_inference(
+        &mut self,
+        syntax_tree: &syntax_tree::r#type::Type,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Option<Type<infer::Model>> {
+        let handler = self.create_handler_wrapper(handler);
+
+        let ty = self
+            .table
+            .resolve_type(
+                syntax_tree,
+                self.current_site,
+                resolution::Config {
+                    ellided_lifetime_provider: Some(&mut InferenceProvider),
+                    ellided_type_provider: Some(&mut InferenceProvider),
+                    ellided_constant_provider: Some(&mut InferenceProvider),
+                    observer: Some(&mut self.resolution_observer),
+                    higher_ranked_liftimes: None,
+                },
+                &handler,
+            )
+            .ok()?;
+
+        let mut type_inferences = Vec::new();
+        let mut constant_inferences = Vec::new();
+
+        for (kind, _) in RecursiveIterator::new(&ty) {
+            match kind {
+                term::Kind::Type(Type::Inference(inference_variable)) => {
+                    type_inferences.push(*inference_variable);
+                }
+                term::Kind::Constant(Constant::Inference(
+                    inference_variable,
+                )) => {
+                    constant_inferences.push(*inference_variable);
+                }
+                _ => {}
+            }
+        }
+
+        for inference in type_inferences {
+            assert!(self
+                .inference_context
+                .register::<Type<_>>(inference, r#type::Constraint::All));
+        }
+
+        for inference in constant_inferences {
+            assert!(self
+                .inference_context
+                .register::<Constant<_>>(inference, NoConstraint));
+        }
+
+        Some(ty)
+    }
+
+    fn get_address_type(
+        &self,
+        address: &Address<Memory<infer::Model>>,
+    ) -> Type<infer::Model> {
+        match address {
+            Address::Base(base) => match base {
+                Memory::Parameter(parameter_id) => {
+                    infer::Model::from_default_type(match self.current_site {
+                        GlobalID::Function(id) => self
+                            .table
+                            .get(id)
+                            .unwrap()
+                            .parameters()
+                            .get(*parameter_id)
+                            .unwrap()
+                            .r#type
+                            .clone(),
+                        GlobalID::TraitFunction(id) => self
+                            .table
+                            .get(id)
+                            .unwrap()
+                            .parameters()
+                            .get(*parameter_id)
+                            .unwrap()
+                            .r#type
+                            .clone(),
+                        GlobalID::TraitImplementationFunction(id) => self
+                            .table
+                            .get(id)
+                            .unwrap()
+                            .parameters()
+                            .get(*parameter_id)
+                            .unwrap()
+                            .r#type
+                            .clone(),
+                        GlobalID::AdtImplementationFunction(id) => self
+                            .table
+                            .get(id)
+                            .unwrap()
+                            .parameters()
+                            .get(*parameter_id)
+                            .unwrap()
+                            .r#type
+                            .clone(),
+                        _ => {
+                            panic!(
+                                "the parameter id appears in an unexpected \
+                                 site"
+                            )
+                        }
+                    })
+                }
+                Memory::Alloca(alloca_id) => self
+                    .intermediate_representation
+                    .allocas
+                    .get(*alloca_id)
+                    .unwrap()
+                    .r#type
+                    .clone(),
+
+                Memory::Value(register) => self
+                    .intermediate_representation
+                    .registers
+                    .get(*register)
+                    .unwrap()
+                    .r#type
+                    .clone(),
+            },
+            Address::Field(field_address) => {
+                let mut struct_address = self.get_address_type(address);
+
+                // simplify the struct type
+                struct_address = simplify::simplify(
+                    &struct_address,
+                    &self.create_environment(),
+                )
+                .unwrap_or(struct_address);
+
+                let Type::Symbol(Symbol {
+                    id: r#type::SymbolID::Struct(struct_id),
+                    generic_arguments,
+                }) = struct_address
+                else {
+                    panic!("expected a struct type")
+                };
+
+                let struct_sym = self.table.get(struct_id).unwrap();
+                let instantiation = Instantiation::from_generic_arguments(
+                    generic_arguments,
+                    struct_id.into(),
+                    &struct_sym.generic_declaration.parameters,
+                )
+                .unwrap();
+                let mut field_ty = infer::Model::from_default_type(
+                    struct_sym
+                        .fields
+                        .get(field_address.id)
+                        .unwrap()
+                        .r#type
+                        .clone(),
+                );
+
+                instantiation::instantiate(&mut field_ty, &instantiation);
+
+                field_ty
+            }
+            Address::Tuple(tuple_address) => {
+                let mut tuple_ty =
+                    self.get_address_type(&tuple_address.tuple_address);
+
+                // simplfiy the tuple type
+                tuple_ty =
+                    simplify::simplify(&tuple_ty, &self.create_environment())
+                        .unwrap_or(tuple_ty);
+
+                let Type::Tuple(mut tuple_ty) = tuple_ty else {
+                    panic!("expected a tuple type")
+                };
+
+                let tuple_elem = match tuple_address.offset {
+                    crate::ir::address::Offset::FromStart(id) => {
+                        tuple_ty.elements.remove(id)
+                    }
+                    crate::ir::address::Offset::FromEnd(id) => tuple_ty
+                        .elements
+                        .remove(tuple_ty.elements.len() - id - 1),
+                };
+
+                if tuple_elem.is_unpacked {
+                    Type::Tuple(Tuple {
+                        elements: vec![TupleElement {
+                            term: tuple_elem.term,
+                            is_unpacked: true,
+                        }],
+                    })
+                } else {
+                    tuple_elem.term
+                }
+            }
+        }
+    }
+
     /// Performs type checking on the given `ty`.
     ///
     /// This function performs type inference as well as type checking. Any
@@ -276,18 +517,14 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
     ///
     /// If the type check fails, an error is returned with the span of
     /// `type_check_span`
-    ///
-    /// # Returns
-    ///
-    /// Returns the simplified version of `ty` if the type check is successful.
     #[must_use]
     fn type_check(
         &mut self,
-        ty: Type<Model>,
-        expected_ty: Expected<Model>,
+        ty: Type<infer::Model>,
+        expected_ty: Expected<infer::Model>,
         type_check_span: Span,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Type<Model>, Error> {
+    ) -> Result<(), Error> {
         // simplify the types
         let simplified_ty = simplify(&ty, &Environment {
             premise: &self.premise,
@@ -330,7 +567,7 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
 
                 // report the error
                 if result {
-                    Ok(simplified_ty)
+                    Ok(())
                 } else {
                     self.create_handler_wrapper(handler).receive(Box::new(
                         MismatchedType {
@@ -361,7 +598,7 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
 
                 // report the error
                 if result {
-                    Ok(simplified_ty)
+                    Ok(())
                 } else {
                     self.create_handler_wrapper(handler).receive(Box::new(
                         MismatchedType {
@@ -380,3 +617,6 @@ impl<'t, C, S: table::State, O: Observer<S, Model>> Binder<'t, C, S, O> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

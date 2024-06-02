@@ -3,9 +3,10 @@
 use pernixc_syntax::syntax_tree::expression::Block;
 
 use super::{
-    address::Address,
+    address::{Address, Memory},
     alloca::Alloca,
-    value::{register::Register, Value},
+    register::Register,
+    scope::Scope,
 };
 use crate::{arena::ID, semantic::model::Model};
 
@@ -36,7 +37,7 @@ pub struct UnconditionalJump {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConditionalJump<M: Model> {
     /// The condition of the jump.
-    pub condition: Value<M>,
+    pub condition: ID<Register<M>>,
 
     /// The block to jump to if the condition is true.
     pub true_target: ID<Block>,
@@ -57,7 +58,7 @@ pub enum Jump<M: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Return<M: Model> {
     /// The value to return.
-    pub value: Value<M>,
+    pub value: ID<Register<M>>,
 }
 
 /// Represents an assignment of a register.
@@ -74,10 +75,10 @@ pub struct RegisterAssignment<M: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Initialize<M: Model> {
     /// The address where the value will be stored.
-    pub address: Address<M>,
+    pub address: Address<Memory<M>>,
 
     /// The value to store.
-    pub value: Value<M>,
+    pub value: ID<Register<M>>,
 }
 
 /// An instruction that allocates a new `alloca` memory.
@@ -92,10 +93,10 @@ pub struct AllocaAllocation<M: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TuplePack<M: Model> {
     /// The address where the unpacked tuple elements will be stored.
-    pub store_address: Address<M>,
+    pub store_address: Address<Memory<M>>,
 
     /// The address to the tuple where the unpacked elements are stored.
-    pub tuple_address: Address<M>,
+    pub tuple_address: Address<Memory<M>>,
 
     /// The number of elements in the tuple before the packed element.
     ///
@@ -110,6 +111,14 @@ pub struct TuplePack<M: Model> {
     pub after_packed_element_count: usize,
 }
 
+/// An instruction that pushes a new scope onto the scope stack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScopePush(pub ID<Scope>);
+
+/// An instruction that pops a scope from the scope stack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScopePop(pub ID<Scope>);
+
 /// An enumeration containig all the basic instructions.
 ///
 /// The basic instructions are the instructions that have no effect on the
@@ -117,18 +126,22 @@ pub struct TuplePack<M: Model> {
 /// flow of the program, so they are not considered basic.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Basic<M: Model> {
+pub enum Instruction<M: Model> {
     Initialize(Initialize<M>),
     RegisterAssignment(RegisterAssignment<M>),
     AllocaAllocation(AllocaAllocation<M>),
     TuplePack(TuplePack<M>),
+    ScopePush(ScopePush),
+    ScopePop(ScopePop),
 }
 
-/// Represents an instruction that will be executed in the IR.
+/// An enumeration containing all the possible terminators.
+///
+/// Terminators are instructions that change the control flow of the program.
+/// Either they move to another block or they return from the function.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Instruction<M: Model> {
+pub enum Terminator<M: Model> {
     Jump(Jump<M>),
     Return(Return<M>),
-    Basic(Basic<M>),
 }
