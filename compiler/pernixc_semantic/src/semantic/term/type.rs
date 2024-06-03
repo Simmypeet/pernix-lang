@@ -117,11 +117,24 @@ impl From<MemberSymbolID> for GenericID {
 }
 
 /// A qualifier that can be applied to references/pointers.  
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::Display,
+)]
 #[allow(missing_docs)]
 pub enum Qualifier {
+    #[display(fmt = "immutable")]
     Immutable,
+    #[display(fmt = "mutable")]
     Mutable,
+    #[display(fmt = "unique")]
     Unique,
 }
 

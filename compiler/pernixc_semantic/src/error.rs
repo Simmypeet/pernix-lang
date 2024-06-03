@@ -17,7 +17,11 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    semantic::{model::Model, predicate::Predicate, term::r#type::Type},
+    semantic::{
+        model::Model,
+        predicate::Predicate,
+        term::r#type::{self, Qualifier, Type},
+    },
     symbol::{
         table::{
             self, representation::Index, Display, DisplayObject, State,
@@ -1928,6 +1932,49 @@ where
     }
 }
 
+/// Expected a reference expression with a particular qualifier requirement but
+/// found a different reference type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedReferenceQualifier<M: Model> {
+    /// The reference type that was found.
+    pub found_reference_type: Type<M>,
+
+    /// The expected qualifier.
+    pub expected_qualifier: Qualifier,
+
+    /// The span of the reference expression.
+    pub span: Span,
+}
+
+impl<T: State, M: Model> Display<T> for MismatchedReferenceQualifier<M>
+where
+    Type<M>: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "expected a reference expression with a qualifier `{}` but \
+                 found `{}`",
+                self.expected_qualifier,
+                DisplayObject { display: &self.found_reference_type, table }
+            ),
+        })?;
+
+        write!(f, "\n{}", DisplayObject {
+            display: &self.found_reference_type,
+            table,
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
 /// Field with given name was not found in the struct.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldNotFound {
@@ -2189,6 +2236,40 @@ where
             display: format!(
                 "mismatched type: expected `{}` but found `{}`",
                 DisplayObject { display: &self.expected_type, table },
+                DisplayObject { display: &self.found_type, table }
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The expression of the given type cannot be dereferenced.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CannotDereference<M: Model> {
+    /// The type of the expression that cannot be dereferenced.
+    pub found_type: Type<M>,
+
+    /// The span of the expression with dereference operator.
+    pub span: Span,
+}
+
+impl<T: State, M: Model> Display<T> for CannotDereference<M>
+where
+    M::LifetimeInference: Display<T>,
+    M::TypeInference: Display<T>,
+    M::ConstantInference: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the expression of type `{}` cannot be dereferenced",
                 DisplayObject { display: &self.found_type, table }
             ),
         })?;

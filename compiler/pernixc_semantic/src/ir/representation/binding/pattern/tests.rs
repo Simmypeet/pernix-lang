@@ -566,9 +566,9 @@ fn reference_bound_struct() {
             pattern,
             "a",
             &Address::Field(Field {
-                struct_address: Box::new(Address::Base(Memory::Value(
-                    load_address_register,
-                ))),
+                struct_address: Box::new(Address::Base(
+                    Memory::ReferenceValue(load_address_register),
+                )),
                 id: a_field_id,
             }),
             Qualifier::Immutable,
@@ -588,9 +588,9 @@ fn reference_bound_struct() {
             pattern,
             "b",
             &Address::Field(Field {
-                struct_address: Box::new(Address::Base(Memory::Value(
-                    load_address_register,
-                ))),
+                struct_address: Box::new(Address::Base(
+                    Memory::ReferenceValue(load_address_register),
+                )),
                 id: b_field_id,
             }),
             Qualifier::Immutable,
@@ -817,7 +817,7 @@ fn reference_bound_tuple() {
             pattern,
             "a",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Base(Memory::Value(
+                tuple_address: Box::new(Address::Base(Memory::ReferenceValue(
                     load_address_register,
                 ))),
                 offset: address::Offset::FromStart(0),
@@ -837,7 +837,7 @@ fn reference_bound_tuple() {
             pattern,
             "b",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Base(Memory::Value(
+                tuple_address: Box::new(Address::Base(Memory::ReferenceValue(
                     load_address_register,
                 ))),
                 offset: address::Offset::FromStart(1),

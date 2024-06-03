@@ -414,13 +414,24 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     .r#type
                     .clone(),
 
-                Memory::Value(register) => self
-                    .intermediate_representation
-                    .registers
-                    .get(*register)
-                    .unwrap()
-                    .r#type
-                    .clone(),
+                Memory::ReferenceValue(register) => {
+                    let mut ty = self
+                        .intermediate_representation
+                        .registers
+                        .get(*register)
+                        .unwrap()
+                        .r#type
+                        .clone();
+
+                    ty = simplify::simplify(&ty, &self.create_environment())
+                        .unwrap_or(ty);
+
+                    let Type::Reference(reference) = ty else {
+                        panic!("expected a reference type")
+                    };
+
+                    *reference.pointee
+                }
             },
             Address::Field(field_address) => {
                 let mut struct_address = self.get_address_type(address);

@@ -253,7 +253,7 @@ where
 
                     // update the address, reference binding
                     // info, and binding ty
-                    address = Address::Base(Memory::Value(register));
+                    address = Address::Base(Memory::ReferenceValue(register));
                     reference_binding_info = Some(reference.qualifier);
                     current_ty = reference.pointee.as_ref();
                 }

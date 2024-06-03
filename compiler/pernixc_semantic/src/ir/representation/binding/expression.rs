@@ -14,8 +14,9 @@ use super::{
 use crate::{
     arena::ID,
     error::{
-        self, ExpectedLValue, FloatingPointLiteralHasIntegralSuffix,
-        InvalidNumericSuffix, MutabilityError,
+        self, CannotDereference, ExpectedLValue,
+        FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
+        MismatchedReferenceQualifier, MutabilityError,
     },
     ir::{
         address::{self, Address, Memory},
@@ -28,7 +29,7 @@ use crate::{
         simplify::simplify,
         term::{
             lifetime::Lifetime,
-            r#type::{self, Expected, Reference, Type},
+            r#type::{self, Expected, Qualifier, Reference, Type},
             Local,
         },
     },
@@ -45,8 +46,8 @@ pub enum Target {
     ///
     /// This is used for obtaining the address of some l-value.
     Address {
-        /// Determines whether the underlying address is mutable.
-        is_mutable: bool,
+        /// The expected qualifier of the underlying address.
+        expected_qualifier: Qualifier,
     },
 
     /// The expression is being bound for a statement, therefore the produced
@@ -345,20 +346,107 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 )
             }
 
-            syntax_tree::expression::PrefixOperator::Dereference(_) => todo!(),
+            syntax_tree::expression::PrefixOperator::Dereference(_) => {
+                let operand = self
+                    .bind(
+                        &**syntax_tree.prefixable(),
+                        Config { target: Target::Value },
+                        handler,
+                    )?
+                    .into_value()
+                    .unwrap();
+
+                // expected a reference type
+                let mut operand_type =
+                    self.intermediate_representation.registers[operand]
+                        .r#type
+                        .clone();
+
+                operand_type =
+                    simplify(&operand_type, &self.create_environment())
+                        .unwrap_or(operand_type);
+
+                let reference_type = match operand_type {
+                    Type::Reference(reference) => reference,
+                    found_type => {
+                        self.create_handler_wrapper(handler).receive(Box::new(
+                            CannotDereference {
+                                found_type,
+                                span: syntax_tree.span(),
+                            },
+                        ));
+                        return Err(Error(syntax_tree.span()));
+                    }
+                };
+
+                match config.target {
+                    Target::Value | Target::Statement => {
+                        let register_id = self.create_register_assignmnet(
+                            Assignment::Load(Load {
+                                address: Address::Base(
+                                    address::Memory::ReferenceValue(operand),
+                                ),
+                                kind: LoadKind::Copy,
+                            }),
+                            *reference_type.pointee,
+                            Some(syntax_tree.span()),
+                        );
+
+                        config.target.return_rvalue(
+                            register_id,
+                            syntax_tree.span(),
+                            self.create_handler_wrapper(handler),
+                        )
+                    }
+                    Target::Address { expected_qualifier } => {
+                        if reference_type.qualifier < expected_qualifier {
+                            self.create_handler_wrapper(handler).receive(
+                                Box::new(MismatchedReferenceQualifier {
+                                    found_reference_type: self
+                                        .inference_context
+                                        .into_constraint_model(Type::Reference(
+                                            reference_type,
+                                        ))
+                                        .unwrap(),
+                                    expected_qualifier,
+                                    span: syntax_tree.span(),
+                                }),
+                            );
+                        }
+
+                        Ok(Expression::Address {
+                            address: Address::Base(
+                                address::Memory::ReferenceValue(operand),
+                            ),
+                            span: syntax_tree.span(),
+                        })
+                    }
+                }
+            }
 
             syntax_tree::expression::PrefixOperator::ReferenceOf(
                 reference_of,
             ) => {
-                let mutable = match reference_of.qualifier() {
-                    Some(_) => true,
-                    None => false,
+                let qualifier = match reference_of.qualifier() {
+                    Some(qualifier) => match qualifier {
+                        syntax_tree::Qualifier::Mutable(_) => {
+                            r#type::Qualifier::Mutable
+                        }
+                        syntax_tree::Qualifier::Unique(_) => {
+                            r#type::Qualifier::Unique
+                        }
+                    },
+                    None => r#type::Qualifier::Immutable,
                 };
 
                 // bind the operand
                 let Expression::Address { address, .. } = self.bind(
                     &**syntax_tree.prefixable(),
-                    Config { target: Target::Address { is_mutable: mutable } },
+                    Config {
+                        target: Target::Address {
+                            expected_qualifier: qualifier,
+                        },
+                    },
                     handler,
                 )?
                 else {
@@ -390,18 +478,6 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                         handler,
                     )?;
                 }
-
-                let qualifier = match reference_of.qualifier() {
-                    Some(qualifier) => match qualifier {
-                        syntax_tree::Qualifier::Mutable(_) => {
-                            r#type::Qualifier::Mutable
-                        }
-                        syntax_tree::Qualifier::Unique(_) => {
-                            r#type::Qualifier::Unique
-                        }
-                    },
-                    None => r#type::Qualifier::Immutable,
-                };
 
                 let register_id = self.create_register_assignmnet(
                     Assignment::ReferenceOf(ReferenceOf {
@@ -557,9 +633,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                             _ => unreachable!(),
                         });
                     }
-                    Target::Address { is_mutable } => {
+                    Target::Address { expected_qualifier } => {
                         // report mutability error, soft error, keep going
-                        if is_mutable && !name.mutable {
+                        if matches!(
+                            expected_qualifier,
+                            Qualifier::Mutable | Qualifier::Unique
+                        ) && !name.mutable
+                        {
                             self.create_handler_wrapper(handler).receive(
                                 Box::new(MutabilityError {
                                     span: syntax_tree.span(),

@@ -74,7 +74,7 @@ pub enum Memory<M: Model> {
     Alloca(ID<Alloca<M>>),
 
     /// The memory pointer is stored in a register.
-    Value(ID<Register<M>>),
+    ReferenceValue(ID<Register<M>>),
 }
 
 /// Represents an address to a particular location in memory.
