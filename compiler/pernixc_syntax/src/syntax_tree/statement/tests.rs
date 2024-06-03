@@ -76,7 +76,7 @@ impl Input<&super::VariableDeclaration> for &VariableDeclaration {
         self.ty
             .as_ref()
             .assert(output.type_annotation.as_ref().map(|x| &x.ty))?;
-        self.expression.assert(&output.expression())
+        self.expression.assert(output.expression())
     }
 }
 

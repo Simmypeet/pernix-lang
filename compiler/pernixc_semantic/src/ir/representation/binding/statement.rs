@@ -15,7 +15,6 @@ use crate::{
         alloca::Alloca,
         instruction::{AllocaAllocation, Initialize, Instruction},
         pattern::{Irrefutable, NameBindingPoint, Wildcard},
-        register::Assignment,
     },
     semantic::{
         simplify,
@@ -79,10 +78,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             .r#type
             .clone();
 
-        let (mut variable_type, correct_type) = match syntax_tree
-            .type_annotation()
-            .as_ref()
-        {
+        let mut variable_type = match syntax_tree.type_annotation().as_ref() {
             Some(type_syn) => {
                 let type_annotation = self
                     .resolve_type_with_inference(type_syn.ty(), handler)
@@ -92,18 +88,16 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         )
                     });
 
-                let correct_type = self
-                    .type_check(
-                        initialize_type,
-                        r#type::Expected::Known(type_annotation.clone()),
-                        syntax_tree.expression().span(),
-                        handler,
-                    )
-                    .is_ok();
+                let _ = self.type_check(
+                    initialize_type,
+                    r#type::Expected::Known(type_annotation.clone()),
+                    syntax_tree.expression().span(),
+                    handler,
+                );
 
-                (type_annotation, correct_type)
+                type_annotation
             }
-            None => (initialize_type, true),
+            None => initialize_type,
         };
 
         let alloca_id =
@@ -116,20 +110,10 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             AllocaAllocation { id: alloca_id },
         ));
 
-        let value_to_initialize = if correct_type {
-            initializer
-        } else {
-            self.create_register_assignmnet(
-                Assignment::Errored,
-                variable_type.clone(),
-                Some(syntax_tree.expression().span()),
-            )
-        };
-
         self.current_block_mut().insert_basic(Instruction::Initialize(
             Initialize {
                 address: Address::Base(Memory::Alloca(alloca_id)),
-                value: value_to_initialize,
+                value: initializer,
             },
         ));
 

@@ -39,7 +39,7 @@ use crate::{
         table::{
             self,
             representation::Index,
-            resolution::{self, EliidedTermProvider, Observer},
+            resolution::{self, EliidedTermProvider, Observer, Resolution},
             Table,
         },
         FunctionTemplate, GenericTemplate, GlobalID,

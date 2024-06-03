@@ -144,17 +144,14 @@ impl<Pattern> SourceElement for Enum<Pattern> {
 /// Syntax Synopsis:
 /// ``` txt
 /// Wildcard:
-///     '?'
+///     '..'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Wildcard {
-    #[get = "pub"]
-    question_mark: Punctuation,
-}
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Wildcard(Punctuation, Punctuation);
 
 impl SourceElement for Wildcard {
-    fn span(&self) -> Span { self.question_mark.span() }
+    fn span(&self) -> Span { self.0.span.join(&self.1.span).unwrap() }
 }
 
 /// Syntax Synopsis:
@@ -532,10 +529,14 @@ impl Pattern for Irrefutable {
         match parser.stop_at_significant() {
             // parse wildcard pattern
             Reading::Unit(Token::Punctuation(punc))
-                if punc.punctuation == '?' =>
+                if punc.punctuation == '.' =>
             {
                 parser.forward();
-                Some(Self::Wildcard(Wildcard { question_mark: punc }))
+
+                let second_punc =
+                    parser.parse_punctuation('.', false, handler)?;
+
+                Some(Self::Wildcard(Wildcard(punc, second_punc)))
             }
 
             // parse named pattern
@@ -581,10 +582,14 @@ impl Pattern for Refutable {
         match parser.stop_at_significant() {
             // parse wildcard pattern
             Reading::Unit(Token::Punctuation(punc))
-                if punc.punctuation == '?' =>
+                if punc.punctuation == '.' =>
             {
                 parser.forward();
-                Some(Self::Wildcard(Wildcard { question_mark: punc }))
+
+                let second_punc =
+                    parser.parse_punctuation('.', false, handler)?;
+
+                Some(Self::Wildcard(Wildcard(punc, second_punc)))
             }
 
             // parse named pattern

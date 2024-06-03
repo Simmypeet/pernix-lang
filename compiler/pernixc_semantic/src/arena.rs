@@ -408,11 +408,19 @@ impl<T, Secondary: Hash + Eq, Primary: Key> Map<T, Secondary, Primary> {
         self.items.iter().map(|(k, v)| (k, self.get(*v).unwrap()))
     }
 
-    /// Returns an iterator over the keys in the [`Map`].
+    /// Returns an iterator over the primary keys in the [`Map`].
     ///
     /// The order of the keys is **not** maintained.
     #[must_use]
-    pub fn keys(&self) -> impl ExactSizeIterator<Item = &Secondary> {
+    pub fn ids(&self) -> impl ExactSizeIterator<Item = Primary> + '_ {
+        self.arena.ids()
+    }
+
+    /// Returns an iterator over the secondary keys in the [`Map`].
+    ///
+    /// The order of the keys is **not** maintained.
+    #[must_use]
+    pub fn secondaries(&self) -> impl ExactSizeIterator<Item = &Secondary> {
         self.items.keys()
     }
 

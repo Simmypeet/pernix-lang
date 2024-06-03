@@ -3,6 +3,8 @@
 //! The register is a place where SSA values are stored. The assignment is the
 //! value that is stored in the register.
 
+use std::collections::HashMap;
+
 use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
 
@@ -11,8 +13,12 @@ use crate::{
     arena::ID,
     semantic::{
         model::Model,
-        term::r#type::{Qualifier, Type},
+        term::{
+            r#type::{Qualifier, Type},
+            GenericArguments,
+        },
     },
+    symbol::{self, Field},
 };
 
 /// Represents an element of a [`Tuple`].
@@ -112,9 +118,19 @@ pub struct Boolean {
     pub value: bool,
 }
 
+/// Represents a struct value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Struct<M: Model> {
+    /// The struct ID of the struct.
+    pub struct_id: ID<symbol::Struct>,
+
+    /// The field initializers of the struct.
+    pub initializers_by_field_id: HashMap<ID<Field>, ID<Register<M>>>,
+}
+
 /// An enumeration of the different kinds of values that can be assigned in the
 /// register.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Assignment<M: Model> {
     Tuple(Tuple<M>),
@@ -123,13 +139,14 @@ pub enum Assignment<M: Model> {
     Prefix(Prefix<M>),
     Numeric(Numeric),
     Boolean(Boolean),
+    Struct(Struct<M>),
 
     /// The value is an error.
     Errored,
 }
 
 /// Represents a register in the SSA from.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Register<M: Model> {
     /// The value stored in the register.
     pub assignment: Assignment<M>,

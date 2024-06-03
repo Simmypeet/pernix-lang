@@ -20,7 +20,7 @@ use crate::{
     semantic::{
         model::Model,
         predicate::Predicate,
-        term::r#type::{self, Qualifier, Type},
+        term::r#type::{Qualifier, Type},
     },
     symbol::{
         table::{
@@ -1961,11 +1961,6 @@ where
             ),
         })?;
 
-        write!(f, "\n{}", DisplayObject {
-            display: &self.found_reference_type,
-            table,
-        })?;
-
         write!(f, "\n{}", SourceCodeDisplay {
             span: &self.span,
             help_display: Option::<i32>::None,
@@ -2249,6 +2244,138 @@ where
     }
 }
 
+/// The struct type was expected but the found type is different.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectedStruct<M: Model> {
+    /// The span of the qualified identifier.
+    pub span: Span,
+
+    /// The found type.
+    pub found_type: Type<M>,
+}
+
+impl<T: State, M: Model> Display<T> for ExpectedStruct<M>
+where
+    M::LifetimeInference: Display<T>,
+    M::TypeInference: Display<T>,
+    M::ConstantInference: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "struct type expected",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        write!(f, "\n{}", Message {
+            severity: Severity::Info,
+            display: format!("found type: `{}`", DisplayObject {
+                display: &self.found_type,
+                table
+            }),
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The struct expression contains uninitialized fields.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UninitializedFields {
+    /// The ID of the struct where the fields are uninitialized.
+    pub struct_id: ID<Struct>,
+
+    /// The set of uninitialized fields.
+    pub uninitialized_fields: HashSet<ID<Field>>,
+
+    /// The span of the struct expression.
+    pub struct_expression_span: Span,
+}
+
+impl<T: State> Display<T> for UninitializedFields {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the struct expression contains uninitialized fields",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.struct_expression_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        write!(f, "\n{}", Message {
+            severity: Severity::Info,
+            display: format!(
+                "the following fields are uninitialized: {}",
+                self.uninitialized_fields
+                    .iter()
+                    .map(|&field_id| {
+                        struct_sym
+                            .fields
+                            .get(field_id)
+                            .map(|x| x.name.clone())
+                            .ok_or(fmt::Error)
+                    })
+                    .collect::<Result<Vec<_>, fmt::Error>>()?
+                    .join(", ")
+            ),
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The field is initialized more than once.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DuplicatedFieldInitialization {
+    /// The ID of the field that is initialized more than once.
+    pub field_id: ID<Field>,
+
+    /// The ID of the struct where the field is initialized.
+    pub struct_id: ID<Struct>,
+
+    /// The span of the first initialization.
+    pub prior_initialization_span: Span,
+
+    /// The span of the duplicate initialization.
+    pub duplicate_initialization_span: Span,
+}
+
+impl<T: State> Display<T> for DuplicatedFieldInitialization {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
+        let field_sym =
+            struct_sym.fields.get(self.field_id).ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the field `{}` is initialized more than once",
+                field_sym.name
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.duplicate_initialization_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.prior_initialization_span,
+            help_display: Some("the field is first initialized here"),
+        })?;
+
+        Ok(())
+    }
+}
+
 /// The expression of the given type cannot be dereferenced.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CannotDereference<M: Model> {
@@ -2285,12 +2412,12 @@ where
 
 /// The lvalue found is not mutable.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MutabilityError {
+pub struct MismatchedMutability {
     /// The span of the l-value.
     pub span: Span,
 }
 
-impl<T: State> Display<T> for MutabilityError {
+impl<T: State> Display<T> for MismatchedMutability {
     fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,

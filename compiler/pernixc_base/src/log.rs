@@ -172,7 +172,7 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                             (line_number == start_line
                                 && index >= start_location.column)
                                 || (line_number == end_line
-                                    && (index + 1)
+                                    && index
                                         < end_location.map_or(
                                             usize::MAX,
                                             |end_location| end_location.column,
@@ -191,12 +191,15 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                     };
 
                     if is_in_span {
-                        write!(
-                            f,
-                            "{}",
-                            Style::Underline
-                                .with(Style::Bold.with(Color::Red.with(char)))
-                        )?;
+                        if char.is_whitespace() {
+                            write!(f, "{char}",)?;
+                        } else {
+                            write!(
+                                f,
+                                "{}",
+                                Style::Bold.with(Color::Red.with(char))
+                            )?;
+                        }
                     } else {
                         write!(f, "{char}")?;
                     }

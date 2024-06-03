@@ -34,7 +34,7 @@ impl<M: Model> Block<M> {
     /// Returns `true` if any of the instructions that will be added in the
     /// future will be unreachable (never executed)
     #[must_use]
-    pub fn is_unreachable(&self) -> bool { self.terminator.is_some() }
+    pub const fn is_unreachable(&self) -> bool { self.terminator.is_some() }
 
     /// Adds a basic instruction to the block.
     pub fn insert_basic(&mut self, instruction: Instruction<M>) {

@@ -1,11 +1,16 @@
 //! Contains the code for binding the expression syntax tree.
 
+use std::{
+    collections::{hash_map::Entry, HashMap, HashSet},
+    ops::Not,
+};
+
 use enum_as_inner::EnumAsInner;
 use pernixc_base::{
     diagnostic::Handler,
     source_file::{SourceElement, Span},
 };
-use pernixc_syntax::syntax_tree;
+use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
 use super::{
     infer::{self, Erased},
@@ -14,26 +19,32 @@ use super::{
 use crate::{
     arena::ID,
     error::{
-        self, CannotDereference, ExpectedLValue,
+        self, CannotDereference, DuplicatedFieldInitialization, ExpectedLValue,
+        FieldIsNotAccessible, FieldNotFound,
         FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
-        MismatchedReferenceQualifier, MutabilityError,
+        MismatchedMutability, MismatchedReferenceQualifier,
     },
     ir::{
         address::{self, Address, Memory},
         register::{
             Assignment, Boolean, Load, LoadKind, Numeric, Prefix,
-            PrefixOperator, ReferenceOf, Register,
+            PrefixOperator, ReferenceOf, Register, Struct,
         },
     },
     semantic::{
+        instantiation::{self, Instantiation},
+        model::Model,
         simplify::simplify,
         term::{
             lifetime::Lifetime,
-            r#type::{self, Expected, Qualifier, Reference, Type},
-            Local,
+            r#type::{self, Expected, Qualifier, Reference, SymbolID, Type},
+            Local, Symbol,
         },
     },
-    symbol::table::{self, resolution::Observer},
+    symbol::{
+        table::{self, representation::Index, resolution::Observer},
+        Field,
+    },
 };
 
 /// An enumeration describes the intended purpose of binding the expression.
@@ -58,20 +69,20 @@ pub enum Target {
 impl Target {
     /// Handles the `register_id` as an r-value.
     fn return_rvalue(
-        &self,
+        self,
         register_id: ID<Register<infer::Model>>,
         rvalue_span: Span,
-        handler: HandlerWrapper,
+        handler: &HandlerWrapper,
     ) -> Result<Expression, Error> {
         match self {
-            Target::Value => Ok(Expression::Value(register_id)),
-            Target::Address { .. } => {
+            Self::Value => Ok(Expression::Value(register_id)),
+            Self::Address { .. } => {
                 handler.receive(Box::new(ExpectedLValue {
                     expression_span: rvalue_span.clone(),
                 }));
                 Err(Error(rvalue_span))
             }
-            Target::Statement => Ok(Expression::SideEffect),
+            Self::Statement => Ok(Expression::SideEffect),
         }
     }
 }
@@ -208,7 +219,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
         config.target.return_rvalue(
             register_id,
             syntax_tree.span(),
-            self.create_handler_wrapper(handler),
+            &self.create_handler_wrapper(handler),
         )
     }
 }
@@ -236,7 +247,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
         config.target.return_rvalue(
             register_id,
             syntax_tree.span(),
-            self.create_handler_wrapper(handler),
+            &self.create_handler_wrapper(handler),
         )
     }
 }
@@ -244,6 +255,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 impl<'t, S: table::State, O: Observer<S, infer::Model>>
     Bind<syntax_tree::expression::Prefix> for Binder<'t, S, O>
 {
+    #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Prefix,
@@ -342,7 +354,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 config.target.return_rvalue(
                     register_id,
                     syntax_tree.span(),
-                    self.create_handler_wrapper(handler),
+                    &self.create_handler_wrapper(handler),
                 )
             }
 
@@ -395,10 +407,11 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                         config.target.return_rvalue(
                             register_id,
                             syntax_tree.span(),
-                            self.create_handler_wrapper(handler),
+                            &self.create_handler_wrapper(handler),
                         )
                     }
                     Target::Address { expected_qualifier } => {
+                        // soft error, keep going
                         if reference_type.qualifier < expected_qualifier {
                             self.create_handler_wrapper(handler).receive(
                                 Box::new(MismatchedReferenceQualifier {
@@ -427,8 +440,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             syntax_tree::expression::PrefixOperator::ReferenceOf(
                 reference_of,
             ) => {
-                let qualifier = match reference_of.qualifier() {
-                    Some(qualifier) => match qualifier {
+                let qualifier = reference_of.qualifier().as_ref().map_or(
+                    r#type::Qualifier::Immutable,
+                    |qualifier| match qualifier {
                         syntax_tree::Qualifier::Mutable(_) => {
                             r#type::Qualifier::Mutable
                         }
@@ -436,8 +450,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                             r#type::Qualifier::Unique
                         }
                     },
-                    None => r#type::Qualifier::Immutable,
-                };
+                );
 
                 // bind the operand
                 let Expression::Address { address, .. } = self.bind(
@@ -512,7 +525,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 config.target.return_rvalue(
                     register_id,
                     syntax_tree.span(),
-                    self.create_handler_wrapper(handler),
+                    &self.create_handler_wrapper(handler),
                 )
             }
         }
@@ -587,6 +600,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 && syntax_tree.first().generic_arguments().is_none();
 
         // search for the variable/parameter in the stack
+        #[allow(clippy::unnecessary_operation)]
         'out: {
             if is_simple_identifier {
                 let Some(name) = self
@@ -630,7 +644,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                         return Ok(match config.target {
                             Target::Statement => Expression::SideEffect,
                             Target::Value => Expression::Value(register_id),
-                            _ => unreachable!(),
+                            Target::Address { .. } => unreachable!(),
                         });
                     }
                     Target::Address { expected_qualifier } => {
@@ -641,7 +655,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                         ) && !name.mutable
                         {
                             self.create_handler_wrapper(handler).receive(
-                                Box::new(MutabilityError {
+                                Box::new(MismatchedMutability {
                                     span: syntax_tree.span(),
                                 }),
                             );
@@ -657,6 +671,172 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
         };
 
         todo!()
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::expression::Struct> for Binder<'t, S, O>
+{
+    #[allow(clippy::too_many_lines)]
+    fn bind(
+        &mut self,
+        syntax_tree: &syntax_tree::expression::Struct,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let ty_syntax_tree = syntax_tree::r#type::Type::QualifiedIdentifier(
+            syntax_tree.qualified_identifier().clone(),
+        );
+
+        let ty = self
+            .resolve_type_with_inference(&ty_syntax_tree, handler)
+            .ok_or(Error(syntax_tree.span()))?;
+
+        // must be struct type
+        let (struct_id, generic_arguments) = match ty {
+            Type::Symbol(Symbol {
+                id: SymbolID::Struct(struct_id),
+                generic_arguments,
+            }) => (struct_id, generic_arguments),
+
+            found => {
+                handler.receive(Box::new(error::ExpectedStruct {
+                    span: syntax_tree.span(),
+                    found_type: found,
+                }));
+
+                return Err(Error(syntax_tree.span()));
+            }
+        };
+
+        let instantiation = Instantiation::from_generic_arguments(
+            generic_arguments.clone(),
+            struct_id.into(),
+            &self.table.get(struct_id).unwrap().generic_declaration.parameters,
+        )
+        .unwrap();
+
+        let mut initializers_by_field_id =
+            HashMap::<ID<Field>, (ID<Register<infer::Model>>, Span)>::new();
+
+        for field_syn in syntax_tree
+            .field_initializers()
+            .as_ref()
+            .into_iter()
+            .flat_map(ConnectedList::elements)
+        {
+            // get the field ID by name
+            let register_id =
+                self.bind_value_or_error(&**field_syn.expression(), handler);
+            let initializer_type = self.intermediate_representation.registers
+                [register_id]
+                .r#type
+                .clone();
+
+            let (field_id, field_ty, field_accessibility) = {
+                let struct_sym = self.table.get(struct_id).unwrap();
+                let Some(field_id) =
+                    struct_sym.fields.get_id(field_syn.identifier().span.str())
+                else {
+                    self.create_handler_wrapper(handler).receive(Box::new(
+                        FieldNotFound {
+                            identifier_span: field_syn
+                                .identifier()
+                                .span
+                                .clone(),
+                            struct_id,
+                        },
+                    ));
+                    continue;
+                };
+
+                let field = struct_sym.fields.get(field_id).unwrap();
+                let mut field_ty =
+                    infer::Model::from_default_type(field.r#type.clone());
+
+                instantiation::instantiate(&mut field_ty, &instantiation);
+
+                (field_id, field_ty, field.accessibility)
+            };
+
+            // field accessibility check
+            if !self
+                .table
+                .is_accessible_from(self.current_site, field_accessibility)
+                .unwrap()
+            {
+                self.create_handler_wrapper(handler).receive(Box::new(
+                    FieldIsNotAccessible {
+                        field_id,
+                        struct_id,
+                        referring_site: self.current_site,
+                        referring_identifier_span: field_syn
+                            .identifier()
+                            .span
+                            .clone(),
+                    },
+                ));
+            }
+
+            // type check the field
+            let _ = self.type_check(
+                initializer_type,
+                Expected::Known(field_ty),
+                field_syn.expression().span(),
+                handler,
+            );
+
+            match initializers_by_field_id.entry(field_id) {
+                Entry::Occupied(entry) => self
+                    .create_handler_wrapper(handler)
+                    .receive(Box::new(DuplicatedFieldInitialization {
+                        field_id,
+                        struct_id,
+                        prior_initialization_span: entry.get().1.clone(),
+                        duplicate_initialization_span: field_syn.span(),
+                    })),
+                Entry::Vacant(entry) => {
+                    entry.insert((register_id, field_syn.span()));
+                }
+            }
+        }
+
+        // check for uninitialized fields
+        let struct_sym = self.table.get(struct_id).unwrap();
+        let uninitialized_fields = struct_sym
+            .fields
+            .ids()
+            .filter(|field_id| !initializers_by_field_id.contains_key(field_id))
+            .collect::<HashSet<_>>();
+
+        if !uninitialized_fields.is_empty() {
+            self.create_handler_wrapper(handler).receive(Box::new(
+                error::UninitializedFields {
+                    struct_id,
+                    uninitialized_fields,
+                    struct_expression_span: syntax_tree.span(),
+                },
+            ));
+        }
+
+        config.target.return_rvalue(
+            self.create_register_assignmnet(
+                Assignment::Struct(Struct {
+                    struct_id,
+                    initializers_by_field_id: initializers_by_field_id
+                        .into_iter()
+                        .map(|(id, (register_id, _))| (id, register_id))
+                        .collect(),
+                }),
+                Type::Symbol(Symbol {
+                    id: SymbolID::Struct(struct_id),
+                    generic_arguments,
+                }),
+                Some(syntax_tree.span()),
+            ),
+            syntax_tree.span(),
+            &self.create_handler_wrapper(handler),
+        )
     }
 }
 
@@ -680,7 +860,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 self.bind(syn, config, handler)
             }
             syntax_tree::expression::Unit::Parenthesized(_) => todo!(),
-            syntax_tree::expression::Unit::Struct(_) => todo!(),
+            syntax_tree::expression::Unit::Struct(syn) => {
+                self.bind(syn, config, handler)
+            }
             syntax_tree::expression::Unit::Array(_) => todo!(),
             syntax_tree::expression::Unit::Phantom(_) => todo!(),
         }

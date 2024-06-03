@@ -4,13 +4,13 @@ use crate::{
     arena::ID,
     error::{
         Error, FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
-        MismatchedType, MutabilityError,
+        MismatchedMutability, MismatchedReferenceQualifier, MismatchedType,
     },
     ir::{
         register::Register,
         representation::binding::{
             expression::{Bind, Config, Target},
-            infer::{self, ConstraintModel, Erased},
+            infer::{self, ConstraintModel, Erased, NoConstraint},
             tests::{parse_expression, parse_statement, TestTemplate},
             Binder,
         },
@@ -396,6 +396,7 @@ fn bind_boolean_literal() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn bind_prefix_operator() {
     const LOCAL_SOURCE: &str = "local 32";
     const LOGICAL_NOT_SOURCE: &str = "!false";
@@ -534,6 +535,7 @@ fn bind_prefix_operator() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn bind_prefix_type_mismatched() {
     const LOGICAL_NOT_SOURCE: &str = "!64";
     const NEGATE_SOURCE: &str = "-32u32";
@@ -606,85 +608,68 @@ fn bind_prefix_type_mismatched() {
     let storage = storage.into_vec();
 
     // "{{number}} != bool" for !64
-    assert!(storage
-        .iter()
-        .find(|error| {
-            let Some(error) = error
-                .as_any()
-                .downcast_ref::<MismatchedType<ConstraintModel>>()
-            else {
-                return false;
-            };
+    assert!(storage.iter().any(|error| {
+        let Some(error) =
+            error.as_any().downcast_ref::<MismatchedType<ConstraintModel>>()
+        else {
+            return false;
+        };
 
-            error.expected_type == Type::Primitive(Primitive::Bool)
-                && error.found_type.as_inference().map_or(false, |constraint| {
-                    *constraint == Constraint::Number
-                })
-        })
-        .is_some());
+        error.expected_type == Type::Primitive(Primitive::Bool)
+            && error
+                .found_type
+                .as_inference()
+                .map_or(false, |constraint| *constraint == Constraint::Number)
+    }));
 
     // "uint32 != {{signed}}" for -32u32
-    assert!(storage
-        .iter()
-        .find(|error| {
-            let Some(error) = error
-                .as_any()
-                .downcast_ref::<MismatchedType<ConstraintModel>>()
-            else {
-                return false;
-            };
+    assert!(storage.iter().any(|error| {
+        let Some(error) =
+            error.as_any().downcast_ref::<MismatchedType<ConstraintModel>>()
+        else {
+            return false;
+        };
 
-            error.found_type == Type::Primitive(Primitive::Uint32)
-                && error
-                    .expected_type
-                    .as_inference()
-                    .map_or(false, |constraint| {
-                        *constraint == Constraint::Signed
-                    })
-        })
-        .is_some());
-
-    // "{{floating}} != {{integer}}" for ~32.0
-    assert!(storage
-        .iter()
-        .find(|error| {
-            let Some(error) = error
-                .as_any()
-                .downcast_ref::<MismatchedType<ConstraintModel>>()
-            else {
-                return false;
-            };
-
-            error
+        error.found_type == Type::Primitive(Primitive::Uint32)
+            && error
                 .expected_type
                 .as_inference()
-                .map_or(false, |constraint| *constraint == Constraint::Integer)
-                && error.found_type.as_inference().map_or(false, |constraint| {
-                    *constraint == Constraint::Floating
-                })
-        })
-        .is_some());
+                .map_or(false, |constraint| *constraint == Constraint::Signed)
+    }));
+
+    // "{{floating}} != {{integer}}" for ~32.0
+    assert!(storage.iter().any(|error| {
+        let Some(error) =
+            error.as_any().downcast_ref::<MismatchedType<ConstraintModel>>()
+        else {
+            return false;
+        };
+
+        error
+            .expected_type
+            .as_inference()
+            .map_or(false, |constraint| *constraint == Constraint::Integer)
+            && error
+                .found_type
+                .as_inference()
+                .map_or(false, |constraint| *constraint == Constraint::Floating)
+    }));
 
     // "unlocal 64" for unlocal 64
-    assert!(storage
-        .iter()
-        .find(|error| {
-            let Some(error) = error
-                .as_any()
-                .downcast_ref::<MismatchedType<ConstraintModel>>()
-            else {
-                return false;
-            };
+    assert!(storage.iter().any(|error| {
+        let Some(error) =
+            error.as_any().downcast_ref::<MismatchedType<ConstraintModel>>()
+        else {
+            return false;
+        };
 
-            error.expected_type
-                == Type::Local(Local(Box::new(Type::Inference(
-                    Constraint::All,
-                ))))
-                && error.found_type.as_inference().map_or(false, |constraint| {
-                    *constraint == Constraint::Number
-                })
-        })
-        .is_some());
+        error.expected_type
+            == Type::Local(Local(Box::new(Type::Inference(Constraint::All))))
+            && error
+                .found_type
+                .as_inference()
+                .map_or(false, |constraint| *constraint == Constraint::Number)
+    }));
 }
 
 #[test]
@@ -804,7 +789,7 @@ fn named_load_mutability_error() {
     let errors = storage.into_vec();
     assert!(errors
         .iter()
-        .find_map(|x| x.as_any().downcast_ref::<MutabilityError>())
+        .find_map(|x| x.as_any().downcast_ref::<MismatchedMutability>())
         .is_some());
 }
 
@@ -884,7 +869,7 @@ fn reference_of() {
                 *reference_of.address.as_base().unwrap().as_alloca().unwrap(),
                 alloca_id
             );
-            assert_eq!(reference_of.is_local, false);
+            assert!(!reference_of.is_local);
             assert_eq!(reference_of.qualifier, qualifier);
         };
 
@@ -975,7 +960,7 @@ fn reference_of_local() {
                 *reference_of.address.as_base().unwrap().as_alloca().unwrap(),
                 alloca_id
             );
-            assert_eq!(reference_of.is_local, true);
+            assert!(reference_of.is_local);
             assert_eq!(reference_of.qualifier, qualifier);
         };
 
@@ -1014,7 +999,7 @@ fn reference_of_mutability_error() {
 
     assert!(errors
         .iter()
-        .find_map(|x| x.as_any().downcast_ref::<MutabilityError>())
+        .find_map(|x| x.as_any().downcast_ref::<MismatchedMutability>())
         .is_some());
 }
 
@@ -1046,21 +1031,217 @@ fn reference_of_local_error() {
 
     let errors = storage.into_vec();
 
-    assert!(errors
-        .iter()
-        .find(|x| {
-            let Some(error) = x
-                .as_any()
-                .downcast_ref::<MismatchedType<infer::ConstraintModel>>()
-            else {
-                return false;
-            };
+    assert!(errors.iter().any(|x| {
+        let Some(error) =
+            x.as_any().downcast_ref::<MismatchedType<infer::ConstraintModel>>()
+        else {
+            return false;
+        };
 
-            error.expected_type
-                == Type::Local(Local(Box::new(Type::Inference(
-                    Constraint::All,
-                ))))
-                && error.found_type == Type::Primitive(Primitive::Int32)
-        })
-        .is_some());
+        error.expected_type
+            == Type::Local(Local(Box::new(Type::Inference(Constraint::All))))
+            && error.found_type == Type::Primitive(Primitive::Int32)
+    }));
+}
+
+#[test]
+fn dereference_as_value() {
+    const VALUE_VARIABLE_DECLARATION: &str = "let x = 6420i32;";
+    const REFERENCE_VARIABLE_DECLARATION: &str = "let y = &x;";
+    const DEREFERENCE: &str = "*y";
+
+    let test_template = TestTemplate::new();
+    let (mut binder, storage) = test_template.create_binder();
+
+    let value_variable_declaration =
+        parse_statement(VALUE_VARIABLE_DECLARATION)
+            .into_variable_declaration()
+            .unwrap();
+
+    binder.bind_variable_declaration(&value_variable_declaration, &storage);
+
+    let reference_variable_declaration =
+        parse_statement(REFERENCE_VARIABLE_DECLARATION)
+            .into_variable_declaration()
+            .unwrap();
+
+    let reference_alloca_id = binder
+        .bind_variable_declaration(&reference_variable_declaration, &storage);
+
+    let dereference = parse_expression(DEREFERENCE)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_prefix()
+        .unwrap();
+
+    let register_id = binder
+        .bind(&dereference, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    let dereference_register =
+        binder.intermediate_representation.registers.get(register_id).unwrap();
+
+    let dereference = dereference_register.assignment.as_load().unwrap();
+
+    let reference_value =
+        dereference.address.as_base().unwrap().into_reference_value().unwrap();
+
+    let name_load_register = binder
+        .intermediate_representation
+        .registers
+        .get(reference_value)
+        .unwrap();
+
+    assert_eq!(
+        *name_load_register
+            .assignment
+            .as_load()
+            .unwrap()
+            .address
+            .as_base()
+            .unwrap()
+            .as_alloca()
+            .unwrap(),
+        reference_alloca_id
+    );
+}
+
+#[test]
+fn dereference_as_address() {
+    const VALUE_VARIABLE_DECLARATION: &str = "let mutable x = 6420i32;";
+    const REFERENCE_VARIABLE_DECLARATION: &str = "let y = &unique x;";
+    const DEREFERENCE: &str = "*y";
+
+    let test_template = TestTemplate::new();
+    let (mut binder, storage) = test_template.create_binder();
+
+    let value_variable_declaration =
+        parse_statement(VALUE_VARIABLE_DECLARATION)
+            .into_variable_declaration()
+            .unwrap();
+
+    binder.bind_variable_declaration(&value_variable_declaration, &storage);
+
+    let reference_variable_declaration =
+        parse_statement(REFERENCE_VARIABLE_DECLARATION)
+            .into_variable_declaration()
+            .unwrap();
+
+    let reference_alloca_id = binder
+        .bind_variable_declaration(&reference_variable_declaration, &storage);
+
+    let dereference = parse_expression(DEREFERENCE)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_prefix()
+        .unwrap();
+
+    let (address, _) = binder
+        .bind(
+            &dereference,
+            Config {
+                target: Target::Address {
+                    expected_qualifier: Qualifier::Unique,
+                },
+            },
+            &storage,
+        )
+        .unwrap()
+        .into_address()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    let reference_id =
+        *address.as_base().unwrap().as_reference_value().unwrap();
+
+    assert_eq!(
+        *binder
+            .intermediate_representation
+            .registers
+            .get(reference_id)
+            .unwrap()
+            .assignment
+            .as_load()
+            .unwrap()
+            .address
+            .as_base()
+            .unwrap()
+            .as_alloca()
+            .unwrap(),
+        reference_alloca_id
+    );
+}
+
+#[test]
+fn dereference_mismatched_qualifier() {
+    const VALUE_VARIABLE_DECLARATION: &str = "let mutable x = 6420i32;";
+    const REFERENCE_VARIABLE_DECLARATION: &str = "let y = &mutable x;";
+    const DEREFERENCE: &str = "*y";
+
+    let test_template = TestTemplate::new();
+    let (mut binder, storage) = test_template.create_binder();
+
+    let value_variable_declaration =
+        parse_statement(VALUE_VARIABLE_DECLARATION)
+            .into_variable_declaration()
+            .unwrap();
+
+    binder.bind_variable_declaration(&value_variable_declaration, &storage);
+    let reference_variable_declaration =
+        parse_statement(REFERENCE_VARIABLE_DECLARATION)
+            .into_variable_declaration()
+            .unwrap();
+
+    binder.bind_variable_declaration(&reference_variable_declaration, &storage);
+
+    let dereference = parse_expression(DEREFERENCE)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_prefix()
+        .unwrap();
+
+    let _ = binder
+        .bind(
+            &dereference,
+            Config {
+                target: Target::Address {
+                    expected_qualifier: Qualifier::Unique,
+                },
+            },
+            &storage,
+        )
+        .unwrap()
+        .into_address()
+        .unwrap();
+
+    let errors = storage.into_vec();
+
+    assert!(errors.iter().any(|predicate| {
+        let Some(error) = predicate
+                    .as_any()
+                    .downcast_ref::<MismatchedReferenceQualifier<
+                    infer::ConstraintModel,
+                >>() else {
+                    return false;
+                };
+
+        error.expected_qualifier == Qualifier::Unique
+            && error.found_reference_type
+                == Type::Reference(Reference {
+                    qualifier: Qualifier::Mutable,
+                    lifetime: Lifetime::Inference(NoConstraint),
+                    pointee: Box::new(Type::Primitive(Primitive::Int32)),
+                })
+    }));
 }
