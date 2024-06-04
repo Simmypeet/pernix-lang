@@ -3,8 +3,10 @@ use pernixc_base::diagnostic::Storage;
 use crate::{
     arena::ID,
     error::{
-        Error, FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
-        MismatchedMutability, MismatchedReferenceQualifier, MismatchedType,
+        DuplicatedFieldInitialization, Error, FieldIsNotAccessible,
+        FieldNotFound, FloatingPointLiteralHasIntegralSuffix,
+        InvalidNumericSuffix, MismatchedMutability,
+        MismatchedReferenceQualifier, MismatchedType, UninitializedFields,
     },
     ir::{
         register::Register,
@@ -26,13 +28,14 @@ use crate::{
     symbol::{
         table::{
             representation::{
-                building::finalizing::Finalizer, Insertion, RwLockContainer,
+                building::finalizing::Finalizer, IndexMut, Insertion,
+                RwLockContainer,
             },
             resolution::NoOpObserver,
             Building, Table,
         },
-        Accessibility, Function, FunctionDefinition, FunctionTemplate,
-        GenericDeclaration,
+        Accessibility, AdtTemplate, Field, Function, FunctionDefinition,
+        FunctionTemplate, GenericDeclaration, Module, Struct, StructDefinition,
     },
 };
 
@@ -1243,5 +1246,307 @@ fn dereference_mismatched_qualifier() {
                     lifetime: Lifetime::Inference(NoConstraint),
                     pointee: Box::new(Type::Primitive(Primitive::Int32)),
                 })
+    }));
+}
+
+impl TestTemplate {
+    fn create_struct_sample(
+        &mut self,
+        parent_module_id: ID<Module>,
+        x_accessibility: Accessibility,
+        y_accessibility: Accessibility,
+    ) -> (ID<Struct>, ID<Field> /* x field */, ID<Field> /* y field */) {
+        let Insertion { id: struct_id, duplication } = self
+            .table
+            .insert_member(
+                "Vector2".to_string(),
+                Accessibility::Public,
+                parent_module_id,
+                None,
+                GenericDeclaration::default(),
+                AdtTemplate::<StructDefinition>::default(),
+            )
+            .unwrap();
+
+        assert!(duplication.is_none());
+
+        let (x_field_id, y_field_id) = {
+            let struct_sym = self.table.get_mut(struct_id).unwrap();
+
+            let x_field_id = struct_sym
+                .fields
+                .insert("x".to_string(), Field {
+                    accessibility: x_accessibility,
+                    name: "x".to_string(),
+                    r#type: Type::Primitive(Primitive::Float32),
+                    span: None,
+                })
+                .unwrap();
+
+            let y_field_id = struct_sym
+                .fields
+                .insert("y".to_string(), Field {
+                    accessibility: y_accessibility,
+                    name: "y".to_string(),
+                    r#type: Type::Primitive(Primitive::Float32),
+                    span: None,
+                })
+                .unwrap();
+
+            (x_field_id, y_field_id)
+        };
+
+        (struct_id, x_field_id, y_field_id)
+    }
+}
+
+#[test]
+fn struct_expression() {
+    const STRUCT_EXPRESSION: &str = "Vector2 { x: 32, y: 64 }";
+
+    let mut test_template = TestTemplate::new();
+
+    let (_, x_field_id, y_field_id) = test_template.create_struct_sample(
+        test_template.test_module_id,
+        Accessibility::Public,
+        Accessibility::Public,
+    );
+    let (mut binder, storage) = test_template.create_binder();
+
+    let struct_expression = parse_expression(STRUCT_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_unit()
+        .unwrap()
+        .into_struct()
+        .unwrap();
+
+    let register_id = binder
+        .bind(&struct_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    let assert_struct_initializer =
+        |field_id: ID<Field>, expected_string: &str| {
+            let register = binder
+                .intermediate_representation
+                .registers
+                .get(register_id)
+                .unwrap();
+            let struct_initializer = register.assignment.as_struct().unwrap();
+
+            let initializer = *struct_initializer
+                .initializers_by_field_id
+                .get(&field_id)
+                .unwrap();
+
+            let numeric_register = binder
+                .intermediate_representation
+                .registers
+                .get(initializer)
+                .unwrap();
+
+            let numeric_assignment =
+                numeric_register.assignment.as_numeric().unwrap();
+
+            assert_eq!(numeric_assignment.integer_string, expected_string);
+        };
+
+    assert_struct_initializer(x_field_id, "32");
+    assert_struct_initializer(y_field_id, "64");
+}
+
+#[test]
+fn struct_uninitialized_field_error() {
+    const STRUCT_EXPRESSION: &str = "Vector2 { x: 32 }";
+
+    let mut test_template = TestTemplate::new();
+    let (_, _, y_field_id) = test_template.create_struct_sample(
+        test_template.test_module_id,
+        Accessibility::Public,
+        Accessibility::Public,
+    );
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let struct_expression = parse_expression(STRUCT_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_unit()
+        .unwrap()
+        .into_struct()
+        .unwrap();
+
+    let _ = binder
+        .bind(&struct_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    let errors = storage.into_vec();
+
+    assert!(errors.iter().any(|predicate| {
+        let Some(error) =
+            predicate.as_any().downcast_ref::<UninitializedFields>()
+        else {
+            return false;
+        };
+
+        error.uninitialized_fields.len() == 1
+            && error.uninitialized_fields.contains(&y_field_id)
+    }));
+}
+
+#[test]
+fn struct_duplicated_initialization_error() {
+    const STRUCT_EXPRESSION: &str = "Vector2 { x: 32, x: 64, y: 24 }";
+
+    let mut test_template = TestTemplate::new();
+    let (struct_id, x_field_id, _) = test_template.create_struct_sample(
+        test_template.test_module_id,
+        Accessibility::Public,
+        Accessibility::Public,
+    );
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let struct_expression = parse_expression(STRUCT_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_unit()
+        .unwrap()
+        .into_struct()
+        .unwrap();
+
+    let _ = binder
+        .bind(&struct_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    let errors = storage.into_vec();
+
+    assert!(errors.iter().any(|predicate| {
+        let Some(error) =
+            predicate.as_any().downcast_ref::<DuplicatedFieldInitialization>()
+        else {
+            return false;
+        };
+
+        error.struct_id == struct_id && error.field_id == x_field_id
+    }));
+}
+
+#[test]
+fn struct_unknown_field_error() {
+    const STRUCT_EXPRESSION: &str = "Vector2 { x: 32, y: 24, z: 64 }";
+
+    let mut test_template = TestTemplate::new();
+    let (struct_id, _, _) = test_template.create_struct_sample(
+        test_template.test_module_id,
+        Accessibility::Public,
+        Accessibility::Public,
+    );
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let struct_expression = parse_expression(STRUCT_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_unit()
+        .unwrap()
+        .into_struct()
+        .unwrap();
+
+    let _ = binder
+        .bind(&struct_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    let errors = storage.into_vec();
+
+    assert!(errors.iter().any(|predicate| {
+        let Some(error) = predicate.as_any().downcast_ref::<FieldNotFound>()
+        else {
+            return false;
+        };
+
+        error.struct_id == struct_id && error.identifier_span.str() == "z"
+    }));
+}
+
+#[test]
+fn struct_field_is_not_accessible_error() {
+    const STRUCT_EXPRESSION: &str = "inner::Vector2 { x: 32, y: 24 }";
+
+    let mut test_template = TestTemplate::new();
+    let Insertion { id: inner_module_id, duplication } = test_template
+        .table
+        .insert_module(
+            "inner".to_string(),
+            Accessibility::Public,
+            test_template.test_module_id,
+            None,
+        )
+        .unwrap();
+
+    let (struct_id, x_field_id, _) = test_template.create_struct_sample(
+        inner_module_id,
+        Accessibility::Scoped(inner_module_id),
+        Accessibility::Public,
+    );
+
+    assert!(duplication.is_none());
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let struct_expression = parse_expression(STRUCT_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_unit()
+        .unwrap()
+        .into_struct()
+        .unwrap();
+
+    let _ = binder
+        .bind(&struct_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    let errors = storage.into_vec();
+
+    assert!(errors.iter().any(|predicate| {
+        let Some(error) =
+            predicate.as_any().downcast_ref::<FieldIsNotAccessible>()
+        else {
+            return false;
+        };
+
+        error.struct_id == struct_id && error.field_id == x_field_id
     }));
 }

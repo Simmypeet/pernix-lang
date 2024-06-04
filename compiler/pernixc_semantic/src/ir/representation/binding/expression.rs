@@ -1,9 +1,6 @@
 //! Contains the code for binding the expression syntax tree.
 
-use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    ops::Not,
-};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_base::{
