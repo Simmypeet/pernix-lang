@@ -1320,8 +1320,7 @@ impl Context {
             premise: &DUMMY_PREMISE,
             table: &DUMMY_TABLE,
             normalizer: &ConstraintNormalizer { context: self },
-        })
-        .unwrap_or(intermediary_type);
+        });
 
         Type::try_from_other_model(intermediary_type)
     }

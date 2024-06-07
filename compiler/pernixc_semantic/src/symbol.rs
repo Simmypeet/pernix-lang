@@ -930,10 +930,51 @@ impl ImplementedSealed for Struct {
 }
 
 /// Contains the definition of the struct.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Getters)]
 pub struct StructDefinition {
     /// Contains all the fields defined in the struct.
-    pub fields: Map<Field>,
+    #[get = "pub"]
+    fields: Map<Field>,
+
+    /// The order of the fields in the struct in order of declaration.
+    #[get = "pub"]
+    field_declaration_order: Vec<ID<Field>>,
+}
+
+impl StructDefinition {
+    /// Inserts a new field to the struct.
+    ///
+    /// # Errors
+    ///
+    /// Returns the ID of the existing field with the same name and the passed
+    /// field.
+    ///
+    /// # Returns
+    ///
+    /// Returns the ID of the field if the field is successfully inserted.
+    pub fn insert_field(
+        &mut self,
+        field: Field,
+    ) -> Result<ID<Field>, (ID<Field>, Field)> {
+        match self.fields.insert(field.name.clone(), field) {
+            Ok(id) => {
+                self.field_declaration_order.push(id);
+                Ok(id)
+            }
+            Err((field_id, field)) => Err((field_id, field)),
+        }
+    }
+
+    /// Returns an iterator of all fields that iterates in order as they are
+    /// declared.
+    pub fn fields_as_order(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (ID<Field>, &Field)> {
+        self.field_declaration_order
+            .iter()
+            .copied()
+            .map(move |id| (id, self.fields.get(id).unwrap()))
+    }
 }
 
 /// Represents an enum variant declaration, denoted by `NAME(ASSOC_TYPE)`
@@ -1628,6 +1669,34 @@ pub enum ImplementationID {
     PositiveTrait(ID<PositiveTraitImplementation>),
     NegativeTrait(ID<NegativeTraitImplementation>),
     Adt(ID<AdtImplementation>),
+}
+
+impl From<ImplementationID> for GlobalID {
+    fn from(value: ImplementationID) -> Self {
+        match value {
+            ImplementationID::PositiveTrait(id) => {
+                Self::PositiveTraitImplementation(id)
+            }
+            ImplementationID::NegativeTrait(id) => {
+                Self::NegativeTraitImplementation(id)
+            }
+            ImplementationID::Adt(id) => Self::AdtImplementation(id),
+        }
+    }
+}
+
+impl From<ImplementationID> for GenericID {
+    fn from(value: ImplementationID) -> Self {
+        match value {
+            ImplementationID::PositiveTrait(id) => {
+                Self::PositiveTraitImplementation(id)
+            }
+            ImplementationID::NegativeTrait(id) => {
+                Self::NegativeTraitImplementation(id)
+            }
+            ImplementationID::Adt(id) => Self::AdtImplementation(id),
+        }
+    }
 }
 
 impl From<TraitImplementationID> for ImplementationID {

@@ -10,7 +10,7 @@ use super::contains_forall_lifetime;
 use crate::{
     arena::ID,
     semantic::{
-        equality,
+        deduction, equality,
         instantiation::Instantiation,
         model::{Default, Model},
         normalizer::Normalizer,
@@ -632,10 +632,21 @@ pub(in crate::semantic) fn resolve_implementation_impl<M: Model>(
         })
     {
         // builds the unification
-        let Some(unification) =
-            arguments.deduce_impl(generic_arguments, environment, limit)?
-        else {
-            continue;
+        let unification = match arguments.deduce_impl(
+            generic_arguments,
+            environment,
+            limit,
+        ) {
+            Ok(unification) => unification,
+
+            Err(deduction::Error::ExceedLimit(exceed_limit_error)) => {
+                return Err(exceed_limit_error.into())
+            }
+
+            Err(
+                deduction::Error::MismatchedGenericArgumentCount(_)
+                | deduction::Error::UnificationFailure(_),
+            ) => continue,
         };
 
         // check if satisfies all the predicate

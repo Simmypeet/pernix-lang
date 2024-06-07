@@ -19,13 +19,14 @@ use crate::{
         self, CannotDereference, DuplicatedFieldInitialization, ExpectedLValue,
         FieldIsNotAccessible, FieldNotFound,
         FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
-        MismatchedMutability, MismatchedReferenceQualifier,
+        MismatchedArgumentCount, MismatchedMutability,
+        MismatchedReferenceQualifier,
     },
     ir::{
         address::{self, Address, Memory},
         register::{
             Assignment, Boolean, Load, LoadKind, Numeric, Prefix,
-            PrefixOperator, ReferenceOf, Register, Struct,
+            PrefixOperator, ReferenceOf, Register, Struct, Variant,
         },
     },
     semantic::{
@@ -39,7 +40,11 @@ use crate::{
         },
     },
     symbol::{
-        table::{self, representation::Index, resolution::Observer},
+        table::{
+            self,
+            representation::Index,
+            resolution::{self, Observer},
+        },
         Field,
     },
 };
@@ -333,8 +338,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                             let operand_type = simplify(
                                 &operand_type,
                                 &self.create_environment(),
-                            )
-                            .unwrap_or(operand_type);
+                            );
 
                             let Type::Local(local) = operand_type else {
                                 // should never happen unless failed to simplify
@@ -372,8 +376,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                         .clone();
 
                 operand_type =
-                    simplify(&operand_type, &self.create_environment())
-                        .unwrap_or(operand_type);
+                    simplify(&operand_type, &self.create_environment());
 
                 let reference_type = match operand_type {
                     Type::Reference(reference) => reference,
@@ -502,8 +505,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                             address_type = simplify(
                                 &address_type,
                                 &self.create_environment(),
-                            )
-                            .unwrap_or(address_type);
+                            );
 
                             let Type::Local(local) = address_type else {
                                 // should never happen unless failed to simplify
@@ -549,6 +551,108 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
+impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+    fn bind_variant_call(
+        &mut self,
+        arguments: Vec<ID<Register<infer::Model>>>,
+        variant: resolution::Variant<infer::Model>,
+        syntax_tree_span: Span,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> ID<Register<infer::Model>> {
+        let variant_sym = self.table.get(variant.variant).unwrap();
+        let enum_sym = self.table.get(variant_sym.parent_enum_id()).unwrap();
+
+        let instantiation = Instantiation::from_generic_arguments(
+            variant.generic_arguments.clone(),
+            variant_sym.parent_enum_id().into(),
+            &enum_sym.generic_declaration.parameters,
+        )
+        .unwrap();
+
+        let enum_type = Type::Symbol(Symbol {
+            id: SymbolID::Enum(variant_sym.parent_enum_id()),
+            generic_arguments: variant.generic_arguments,
+        });
+
+        if let Some(mut variant_type) = variant_sym
+            .associated_type
+            .clone()
+            .map(infer::Model::from_default_type)
+        {
+            instantiation::instantiate(&mut variant_type, &instantiation);
+
+            let associated_value = match arguments.len() {
+                0 => {
+                    handler.receive(Box::new(MismatchedArgumentCount {
+                        called_id: variant.variant.into(),
+                        expected_count: 1,
+                        found_count: 0,
+                        span: syntax_tree_span.clone(),
+                    }));
+
+                    self.create_register_assignmnet(
+                        Assignment::Errored,
+                        variant_type,
+                        Some(syntax_tree_span.clone()),
+                    )
+                }
+                len => {
+                    if len != 1 {
+                        handler.receive(Box::new(MismatchedArgumentCount {
+                            called_id: variant.variant.into(),
+                            expected_count: 1,
+                            found_count: len,
+                            span: syntax_tree_span.clone(),
+                        }));
+                    }
+
+                    let argument = arguments.into_iter().next().unwrap();
+                    let argument_type =
+                        self.intermediate_representation.registers[argument]
+                            .r#type
+                            .clone();
+
+                    let _ = self.type_check(
+                        argument_type,
+                        Expected::Known(variant_type),
+                        syntax_tree_span.clone(),
+                        &self.create_handler_wrapper(handler),
+                    );
+
+                    argument
+                }
+            };
+
+            self.create_register_assignmnet(
+                Assignment::Variant(Variant {
+                    variant_id: variant.variant,
+                    associated_value: Some(associated_value),
+                }),
+                enum_type,
+                Some(syntax_tree_span),
+            )
+        } else {
+            if !arguments.is_empty() {
+                handler.receive(Box::new(MismatchedArgumentCount {
+                    called_id: variant.variant.into(),
+                    expected_count: 0,
+                    found_count: arguments.len(),
+                    span: syntax_tree_span.clone(),
+                }));
+            }
+
+            self.create_register_assignmnet(
+                Assignment::Variant(Variant {
+                    variant_id: variant.variant,
+                    associated_value: None,
+                }),
+                enum_type,
+                Some(syntax_tree_span),
+            )
+        }
+    }
+}
+
 impl<'t, S: table::State, O: Observer<S, infer::Model>>
     Bind<syntax_tree::expression::Postfix> for Binder<'t, S, O>
 {
@@ -558,7 +662,62 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
         config: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
-        todo!()
+        match syntax_tree.operator() {
+            syntax_tree::expression::PostfixOperator::Call(call) => {
+                let arguments = call
+                    .arguments()
+                    .iter()
+                    .flat_map(ConnectedList::elements)
+                    .map(|arg| self.bind_value_or_error(&**arg, handler))
+                    .collect::<Vec<_>>();
+
+                match &**syntax_tree.postfixable() {
+                    syntax_tree::expression::Postfixable::Unit(
+                        syntax_tree::expression::Unit::QualifiedIdentifier(
+                            qualified_identifier,
+                        ),
+                    ) => {
+                        let resolution = self
+                            .resolve_with_inference(
+                                qualified_identifier,
+                                handler,
+                            )
+                            .ok_or(Error(syntax_tree.span()))?;
+
+                        // can be enum variant and functin call
+                        match resolution {
+                            resolution::Resolution::Module(_) => todo!(),
+
+                            // bind as variant
+                            resolution::Resolution::Variant(variant) => {
+                                return config.target.return_rvalue(
+                                    self.bind_variant_call(
+                                        arguments,
+                                        variant,
+                                        syntax_tree.span(),
+                                        handler,
+                                    ),
+                                    syntax_tree.span(),
+                                    &self.create_handler_wrapper(handler),
+                                )
+                            }
+
+                            resolution::Resolution::Generic(_) => todo!(),
+                            resolution::Resolution::MemberGeneric(_) => todo!(),
+                        }
+                    }
+
+                    // currently only supports functions
+                    postfixable => {
+                        let _ = self.bind_value_or_error(postfixable, handler);
+
+                        todo!("report expression is not callable")
+                    }
+                }
+            }
+            syntax_tree::expression::PostfixOperator::Cast(_) => todo!(),
+            syntax_tree::expression::PostfixOperator::Access(_) => todo!(),
+        }
     }
 }
 
@@ -585,6 +744,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 impl<'t, S: table::State, O: Observer<S, infer::Model>>
     Bind<syntax_tree::QualifiedIdentifier> for Binder<'t, S, O>
 {
+    #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::QualifiedIdentifier,
@@ -630,8 +790,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                                 address_type = simplify(
                                     &address_type,
                                     &self.create_environment(),
-                                )
-                                .unwrap_or(address_type);
+                                );
 
                                 address_type
                             },
@@ -667,7 +826,80 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             }
         };
 
-        todo!()
+        let resolution = self
+            .resolve_with_inference(syntax_tree, handler)
+            .ok_or(Error(syntax_tree.span()))?;
+
+        match resolution {
+            resolution::Resolution::Module(_) => todo!(),
+            resolution::Resolution::Variant(variant_res) => {
+                let variant = self.table.get(variant_res.variant).unwrap();
+
+                // expected a variant type
+                if variant.associated_type.is_some() {
+                    self.create_handler_wrapper(handler).receive(Box::new(
+                        error::ExpectedAssociatedValue {
+                            span: syntax_tree.span(),
+                            variant_id: variant_res.variant,
+                        },
+                    ));
+                }
+
+                let associated_value = if let Some(associated_type) =
+                    variant.associated_type.clone()
+                {
+                    let mut associated_type =
+                        infer::Model::from_default_type(associated_type);
+
+                    let instantiation = Instantiation::from_generic_arguments(
+                        variant_res.generic_arguments.clone(),
+                        variant.parent_enum_id().into(),
+                        &self
+                            .table
+                            .get(variant.parent_enum_id())
+                            .unwrap()
+                            .generic_declaration
+                            .parameters,
+                    )
+                    .unwrap();
+
+                    instantiation::instantiate(
+                        &mut associated_type,
+                        &instantiation,
+                    );
+
+                    let associated_value = self.create_register_assignmnet(
+                        Assignment::Errored,
+                        associated_type,
+                        Some(syntax_tree.span()),
+                    );
+
+                    Some(associated_value)
+                } else {
+                    None
+                };
+
+                let register_id = self.create_register_assignmnet(
+                    Assignment::Variant(Variant {
+                        variant_id: variant_res.variant,
+                        associated_value,
+                    }),
+                    Type::Symbol(Symbol {
+                        id: SymbolID::Enum(variant.parent_enum_id()),
+                        generic_arguments: variant_res.generic_arguments,
+                    }),
+                    None,
+                );
+
+                config.target.return_rvalue(
+                    register_id,
+                    syntax_tree.span(),
+                    &self.create_handler_wrapper(handler),
+                )
+            }
+            resolution::Resolution::Generic(_) => todo!(),
+            resolution::Resolution::MemberGeneric(_) => todo!(),
+        }
     }
 }
 
@@ -681,29 +913,20 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
         config: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
-        let ty_syntax_tree = syntax_tree::r#type::Type::QualifiedIdentifier(
-            syntax_tree.qualified_identifier().clone(),
-        );
-
-        let ty = self
-            .resolve_type_with_inference(&ty_syntax_tree, handler)
+        let resolution = self
+            .resolve_with_inference(syntax_tree.qualified_identifier(), handler)
             .ok_or(Error(syntax_tree.span()))?;
 
         // must be struct type
-        let (struct_id, generic_arguments) = match ty {
-            Type::Symbol(Symbol {
-                id: SymbolID::Struct(struct_id),
-                generic_arguments,
-            }) => (struct_id, generic_arguments),
-
-            found => {
-                handler.receive(Box::new(error::ExpectedStruct {
-                    span: syntax_tree.span(),
-                    found_type: found,
-                }));
-
-                return Err(Error(syntax_tree.span()));
-            }
+        let resolution::Resolution::Generic(resolution::Generic {
+            id: resolution::GenericID::Struct(struct_id),
+            generic_arguments,
+        }) = resolution
+        else {
+            self.create_handler_wrapper(handler).receive(Box::new(
+                error::ExpectedStruct { span: syntax_tree.span() },
+            ));
+            return Err(Error(syntax_tree.span()));
         };
 
         let instantiation = Instantiation::from_generic_arguments(
@@ -725,6 +948,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             // get the field ID by name
             let register_id =
                 self.bind_value_or_error(&**field_syn.expression(), handler);
+
             let initializer_type = self.intermediate_representation.registers
                 [register_id]
                 .r#type
@@ -732,8 +956,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
             let (field_id, field_ty, field_accessibility) = {
                 let struct_sym = self.table.get(struct_id).unwrap();
-                let Some(field_id) =
-                    struct_sym.fields.get_id(field_syn.identifier().span.str())
+                let Some(field_id) = struct_sym
+                    .fields()
+                    .get_id(field_syn.identifier().span.str())
                 else {
                     self.create_handler_wrapper(handler).receive(Box::new(
                         FieldNotFound {
@@ -747,7 +972,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     continue;
                 };
 
-                let field = struct_sym.fields.get(field_id).unwrap();
+                let field = struct_sym.fields().get(field_id).unwrap();
                 let mut field_ty =
                     infer::Model::from_default_type(field.r#type.clone());
 
@@ -801,7 +1026,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
         // check for uninitialized fields
         let struct_sym = self.table.get(struct_id).unwrap();
         let uninitialized_fields = struct_sym
-            .fields
+            .fields()
             .ids()
             .filter(|field_id| !initializers_by_field_id.contains_key(field_id))
             .collect::<HashSet<_>>();

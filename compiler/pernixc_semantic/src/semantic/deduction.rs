@@ -18,7 +18,7 @@ use super::{
     },
     unification, Environment, ExceedLimitError,
 };
-use crate::symbol::table::State;
+use crate::symbol::{table::State, GenericKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct DeductionUnifyingConfig;
@@ -154,6 +154,39 @@ fn from_unification_to_substitution<T: Term>(
     Ok(Some(result))
 }
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error(
+    "the number of generic arguments between the two generic arguments does \
+     not match"
+)]
+pub struct MismatchedGenericArgumentCountError {
+    pub lhs_count: usize,
+    pub rhs_count: usize,
+    pub kind: GenericKind,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error("can't unify the two generic arguments")]
+pub struct UnificationFailureError;
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+pub enum Error {
+    #[error(transparent)]
+    ExceedLimit(#[from] ExceedLimitError),
+
+    #[error(transparent)]
+    MismatchedGenericArgumentCount(#[from] MismatchedGenericArgumentCountError),
+
+    #[error(transparent)]
+    UnificationFailure(#[from] UnificationFailureError),
+}
+
 impl<M: Model> GenericArguments<M> {
     /// Performs generic parameter deduction.
     ///
@@ -164,7 +197,7 @@ impl<M: Model> GenericArguments<M> {
         &self,
         another: &Self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-    ) -> Result<Option<Instantiation<M>>, ExceedLimitError> {
+    ) -> Result<Instantiation<M>, Error> {
         let mut limit = Limit::<session::Default<_>>::default();
         self.deduce_impl(another, environment, &mut limit)
     }
@@ -177,13 +210,31 @@ impl<M: Model> GenericArguments<M> {
         limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
         >,
-    ) -> Result<Option<Instantiation<M>>, ExceedLimitError> {
+    ) -> Result<Instantiation<M>, Error> {
         // arity check
-        if self.lifetimes.len() != another.lifetimes.len()
-            || self.types.len() != another.types.len()
-            || self.constants.len() != another.constants.len()
-        {
-            return Ok(None);
+        if self.lifetimes.len() != another.lifetimes.len() {
+            return Err(MismatchedGenericArgumentCountError {
+                lhs_count: self.lifetimes.len(),
+                rhs_count: another.lifetimes.len(),
+                kind: GenericKind::Lifetime,
+            }
+            .into());
+        }
+        if self.types.len() != another.types.len() {
+            return Err(MismatchedGenericArgumentCountError {
+                lhs_count: self.types.len(),
+                rhs_count: another.types.len(),
+                kind: GenericKind::Type,
+            }
+            .into());
+        }
+        if self.constants.len() != another.constants.len() {
+            return Err(MismatchedGenericArgumentCountError {
+                lhs_count: self.constants.len(),
+                rhs_count: another.constants.len(),
+                kind: GenericKind::Constant,
+            }
+            .into());
         }
 
         // unify all kinds of generic arguments
@@ -195,7 +246,7 @@ impl<M: Model> GenericArguments<M> {
             Mapping::default(),
         )?
         else {
-            return Ok(None);
+            return Err(UnificationFailureError.into());
         };
         let Some(unification) = unify(
             &self.types,
@@ -205,7 +256,7 @@ impl<M: Model> GenericArguments<M> {
             unification,
         )?
         else {
-            return Ok(None);
+            return Err(UnificationFailureError.into());
         };
         let Some(unification) = unify(
             &self.constants,
@@ -215,7 +266,7 @@ impl<M: Model> GenericArguments<M> {
             unification,
         )?
         else {
-            return Ok(None);
+            return Err(UnificationFailureError.into());
         };
 
         // separate out the unification between generic parameters and trait
@@ -232,7 +283,7 @@ impl<M: Model> GenericArguments<M> {
                 limit,
             )?
             else {
-                return Ok(None);
+                return Err(UnificationFailureError.into());
             };
             let Some(types) = from_unification_to_substitution(
                 type_param_map,
@@ -240,7 +291,7 @@ impl<M: Model> GenericArguments<M> {
                 limit,
             )?
             else {
-                return Ok(None);
+                return Err(UnificationFailureError.into());
             };
             let Some(constants) = from_unification_to_substitution(
                 constant_param_map,
@@ -248,7 +299,7 @@ impl<M: Model> GenericArguments<M> {
                 limit,
             )?
             else {
-                return Ok(None);
+                return Err(UnificationFailureError.into());
             };
             (
                 Instantiation { lifetimes, types, constants },
@@ -268,9 +319,9 @@ impl<M: Model> GenericArguments<M> {
             environment,
             limit,
         )? {
-            return Ok(None);
+            return Err(UnificationFailureError.into());
         }
 
-        Ok(Some(base_unification))
+        Ok(base_unification)
     }
 }

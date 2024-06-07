@@ -13,10 +13,7 @@ use crate::{
     arena::ID,
     semantic::{
         model::Model,
-        term::{
-            r#type::{Qualifier, Type},
-            GenericArguments,
-        },
+        term::r#type::{Qualifier, Type},
     },
     symbol::{self, Field},
 };
@@ -128,6 +125,16 @@ pub struct Struct<M: Model> {
     pub initializers_by_field_id: HashMap<ID<Field>, ID<Register<M>>>,
 }
 
+/// Represents a variant value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Variant<M: Model> {
+    /// The variant ID of the variant.
+    pub variant_id: ID<symbol::Variant>,
+
+    /// The field initializers of the variant.
+    pub associated_value: Option<ID<Register<M>>>,
+}
+
 /// An enumeration of the different kinds of values that can be assigned in the
 /// register.
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
@@ -140,6 +147,7 @@ pub enum Assignment<M: Model> {
     Numeric(Numeric),
     Boolean(Boolean),
     Struct(Struct<M>),
+    Variant(Variant<M>),
 
     /// The value is an error.
     Errored,

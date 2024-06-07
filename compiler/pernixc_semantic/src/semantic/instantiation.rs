@@ -17,8 +17,8 @@ use super::{
 use crate::{
     arena::ID,
     symbol::{
-        ConstantParameter, GenericID, GenericParameters, LifetimeParameter,
-        MemberID, TypeParameter,
+        ConstantParameter, GenericID, GenericKind, GenericParameters,
+        LifetimeParameter, MemberID, TypeParameter,
     },
 };
 
@@ -61,7 +61,7 @@ pub fn instantiate<T: Term>(
 }
 
 /// Error that occurs when converting a [`GenericArguments`] into a
-/// [`Instantiation`] but the number of generic arguments supplied does not
+/// [`Instantiation`], the number of generic arguments supplied does not
 /// match the number of generic parameters.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
@@ -70,7 +70,20 @@ pub fn instantiate<T: Term>(
     "the number of generic arguments supplied does not match the number of \
      generic parameters"
 )]
-pub struct MismatchedGenericParameterCount;
+pub struct MismatchedGenericArgumentCountError {
+    /// The generic ID that the generic arguments were supplied for.
+    pub generic_id: GenericID,
+
+    /// The number of generic parameters expected.
+    pub expected: usize,
+
+    /// The number of generic arguments supplied.
+    pub found: usize,
+
+    /// The kind of the generic parameters that the generic arguments were
+    /// supplied for.
+    pub kind: GenericKind,
+}
 
 /// An error that occurs when converting generic arguments into a substitution.
 #[derive(
@@ -85,7 +98,7 @@ pub enum FromGenericArgumentsError {
     #[error("constant parameter collision with {0:?}")]
     ConstantParameterCollision(ID<ConstantParameter>),
     #[error(transparent)]
-    MismatchedGenericParameterCount(MismatchedGenericParameterCount),
+    MismatchedGenericParameterCount(MismatchedGenericArgumentCountError),
 }
 
 impl<M: Model> Instantiation<M> {
@@ -128,14 +141,45 @@ impl<M: Model> Instantiation<M> {
     ) -> Result<(), FromGenericArgumentsError> {
         if generic_arguments.types.len()
             != generic_parameters.type_order().len()
-            || generic_arguments.lifetimes.len()
-                != generic_parameters.lifetime_order().len()
-            || generic_arguments.constants.len()
-                != generic_parameters.constant_order().len()
         {
             return Err(
                 FromGenericArgumentsError::MismatchedGenericParameterCount(
-                    MismatchedGenericParameterCount,
+                    MismatchedGenericArgumentCountError {
+                        generic_id,
+                        expected: generic_parameters.type_order().len(),
+                        found: generic_arguments.types.len(),
+                        kind: GenericKind::Type,
+                    },
+                ),
+            );
+        }
+
+        if generic_arguments.lifetimes.len()
+            != generic_parameters.lifetime_order().len()
+        {
+            return Err(
+                FromGenericArgumentsError::MismatchedGenericParameterCount(
+                    MismatchedGenericArgumentCountError {
+                        generic_id,
+                        expected: generic_parameters.lifetime_order().len(),
+                        found: generic_arguments.lifetimes.len(),
+                        kind: GenericKind::Lifetime,
+                    },
+                ),
+            );
+        }
+
+        if generic_arguments.constants.len()
+            != generic_parameters.constant_order().len()
+        {
+            return Err(
+                FromGenericArgumentsError::MismatchedGenericParameterCount(
+                    MismatchedGenericArgumentCountError {
+                        generic_id,
+                        expected: generic_parameters.constant_order().len(),
+                        found: generic_arguments.constants.len(),
+                        kind: GenericKind::Constant,
+                    },
                 ),
             );
         }
@@ -171,7 +215,7 @@ impl<M: Model> Instantiation<M> {
         generic_arguments: GenericArguments<M>,
         generic_id: GenericID,
         generic_parameters: &GenericParameters,
-    ) -> Result<Self, MismatchedGenericParameterCount> {
+    ) -> Result<Self, MismatchedGenericArgumentCountError> {
         let mut substitution = Self::default();
 
         substitution

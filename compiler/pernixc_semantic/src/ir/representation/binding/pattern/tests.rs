@@ -289,8 +289,7 @@ fn value_bound_struct() {
         let struct_sym = table.get_mut(struct_id).unwrap();
 
         struct_sym
-            .fields
-            .insert("a".to_string(), symbol::Field {
+            .insert_field(symbol::Field {
                 accessibility: Accessibility::Public,
                 r#type: Type::Primitive(Primitive::Int32),
                 name: "a".to_string(),
@@ -299,8 +298,7 @@ fn value_bound_struct() {
             .unwrap();
 
         struct_sym
-            .fields
-            .insert("b".to_string(), symbol::Field {
+            .insert_field(symbol::Field {
                 accessibility: Accessibility::Public,
                 r#type: Type::Primitive(Primitive::Float32),
                 name: "b".to_string(),
@@ -317,8 +315,10 @@ fn value_bound_struct() {
         generic_arguments: GenericArguments::default(),
     });
 
-    let a_field_id = table.get(struct_id).unwrap().fields.get_id("a").unwrap();
-    let b_field_id = table.get(struct_id).unwrap().fields.get_id("b").unwrap();
+    let a_field_id =
+        table.get(struct_id).unwrap().fields().get_id("a").unwrap();
+    let b_field_id =
+        table.get(struct_id).unwrap().fields().get_id("b").unwrap();
 
     let storage: Storage<Box<dyn Error>> = Storage::default();
     let mut binder = Binder::new_function(
@@ -462,7 +462,7 @@ fn reference_bound_struct() {
         let struct_sym = table.get_mut(struct_id).unwrap();
 
         struct_sym
-            .fields
+            .fields()
             .insert("a".to_string(), symbol::Field {
                 accessibility: Accessibility::Public,
                 r#type: Type::Primitive(Primitive::Int32),
@@ -472,7 +472,7 @@ fn reference_bound_struct() {
             .unwrap();
 
         struct_sym
-            .fields
+            .fields()
             .insert("b".to_string(), symbol::Field {
                 accessibility: Accessibility::Public,
                 r#type: Type::Primitive(Primitive::Float32),
@@ -506,8 +506,10 @@ fn reference_bound_struct() {
         pointee: Box::new(struct_ty.clone()),
     });
 
-    let a_field_id = table.get(struct_id).unwrap().fields.get_id("a").unwrap();
-    let b_field_id = table.get(struct_id).unwrap().fields.get_id("b").unwrap();
+    let a_field_id =
+        table.get(struct_id).unwrap().fields().get_id("a").unwrap();
+    let b_field_id =
+        table.get(struct_id).unwrap().fields().get_id("b").unwrap();
 
     let struct_alloca_id = binder
         .intermediate_representation

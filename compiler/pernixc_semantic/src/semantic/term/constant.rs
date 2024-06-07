@@ -77,28 +77,10 @@ impl From<MemberSymbolID> for GenericID {
 )]
 #[allow(missing_docs)]
 pub enum Primitive {
-    #[display(fmt = "{_0}i8")]
-    Int8(i8),
-    #[display(fmt = "{_0}i16")]
-    Int16(i16),
-    #[display(fmt = "{_0}i32")]
-    Int32(i32),
-    #[display(fmt = "{_0}i64")]
-    Int64(i64),
-    #[display(fmt = "{_0}u8")]
-    Uint8(u8),
-    #[display(fmt = "{_0}u16")]
-    Uint16(u16),
-    #[display(fmt = "{_0}u32")]
-    Uint32(u32),
-    #[display(fmt = "{_0}u64")]
-    Uint64(u64),
+    #[display(fmt = "{_0}")]
+    Integer(i128),
     #[display(fmt = "{_0}")]
     Bool(bool),
-    #[display(fmt = "{_0}usize")]
-    Usize(usize),
-    #[display(fmt = "{_0}isize")]
-    Isize(isize),
 }
 
 /// Represents a struct constant value.
@@ -131,10 +113,6 @@ pub struct Array<M: Model> {
 /// Represents a tuple constant value, denoted by `(value, value, ...value)`
 /// syntax.
 pub type Tuple<M> = super::Tuple<Constant<M>>;
-
-/// Represents a constant value denoted by a `phantom` syntax.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Phantom;
 
 /// The location pointing to a sub-constant term in a constant.
 #[derive(
@@ -325,8 +303,8 @@ pub enum Constant<M: Model> {
     Local(Local<Self>),
     #[from]
     Tuple(Tuple<M>),
-    #[from]
-    Phantom(Phantom),
+    Phantom,
+    Error,
 }
 
 impl<M: Model> From<Never> for Constant<M> {
@@ -574,7 +552,8 @@ where
             Constant::Tuple(tuple) => {
                 Self::Tuple(Tuple::from_other_model(tuple))
             }
-            Constant::Phantom(Phantom) => Self::Phantom(Phantom),
+            Constant::Phantom => Self::Phantom,
+            Constant::Error => Self::Error,
         }
     }
 
@@ -628,7 +607,8 @@ where
             Constant::Tuple(tuple) => {
                 Self::Tuple(Tuple::try_from_other_model(tuple)?)
             }
-            Constant::Phantom(Phantom) => Self::Phantom(Phantom),
+            Constant::Phantom => Self::Phantom,
+            Constant::Error => Self::Error,
         })
     }
 
@@ -796,13 +776,11 @@ where
 
     fn definite_satisfiability(&self) -> Satisfiability {
         match self {
-            Self::Parameter(_) | Self::Inference(_) => {
+            Self::Error | Self::Parameter(_) | Self::Inference(_) => {
                 Satisfiability::Unsatisfied
             }
 
-            Self::Phantom(Phantom) | Self::Primitive(_) => {
-                Satisfiability::Satisfied
-            }
+            Self::Phantom | Self::Primitive(_) => Satisfiability::Satisfied,
 
             Self::Struct(_)
             | Self::Enum(_)
@@ -873,7 +851,8 @@ impl<M: Model> Constant<M> {
         table: &Table<impl State>,
     ) -> Option<Vec<GlobalID>> {
         let mut occurrences = match self {
-            Self::Phantom(Phantom)
+            Self::Phantom
+            | Self::Error
             | Self::Parameter(_)
             | Self::Primitive(_)
             | Self::Inference(_) => {
@@ -948,7 +927,7 @@ where
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         match self {
-            Self::Phantom(_) => write!(f, "phantom"),
+            Self::Phantom => write!(f, "phantom"),
             Self::Primitive(val) => write!(f, "{val}"),
             Self::Inference(inference) => {
                 write!(f, "{}", DisplayObject { display: inference, table })
@@ -1031,6 +1010,7 @@ where
             Self::Tuple(tuple) => {
                 write!(f, "{}", DisplayObject { display: tuple, table })
             }
+            Self::Error => write!(f, "{{error}}"),
         }
     }
 }

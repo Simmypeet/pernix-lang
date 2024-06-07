@@ -9,7 +9,10 @@ use pernixc_base::{
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::{infer, Binder};
+use super::{
+    infer::{self, Erased},
+    Binder,
+};
 use crate::{
     arena::{Reserve, ID},
     error::{
@@ -30,8 +33,10 @@ use crate::{
         register::{Assignment, Load, LoadKind, ReferenceOf, Register},
     },
     semantic::{
-        fresh::{self, Fresh},
-        instantiation::{self, Instantiation, MismatchedGenericParameterCount},
+        fresh,
+        instantiation::{
+            self, Instantiation, MismatchedGenericArgumentCountError,
+        },
         model::Model,
         term::{
             self,
@@ -58,7 +63,7 @@ enum TypeBinding<'a, M: Model> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
-pub enum CreatePatternError<M: Model> {
+pub enum CreatePatternError {
     #[error(
         "the type contains an invalid struct ID: {0:?} which does not exist \
          in the symbol table"
@@ -69,14 +74,16 @@ pub enum CreatePatternError<M: Model> {
         "the type contains a term containing generic arguments that do not \
          match the generic parameters of the instantiated symbol"
     )]
-    MismatchedGenericParameterCount(#[from] MismatchedGenericParameterCount),
+    MismatchedGenericParameterCount(
+        #[from] MismatchedGenericArgumentCountError,
+    ),
 
     /// The type of the pattern binding contains an ill-formed tuple type. This
     /// is considered as a compiler's error.
     #[error(
         "the type contains a tuple type having more than one unpacked element"
     )]
-    MoreThanOneUnpackedInTupleType(term::Tuple<r#type::Type<M>>),
+    MoreThanOneUnpackedInTupleType(term::Tuple<r#type::Type<infer::Model>>),
 }
 
 impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
@@ -88,8 +95,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         simplified_type: &Type<infer::Model>,
         address: &Address<Memory<infer::Model>>,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) -> Result<Irrefutable<infer::Model>, CreatePatternError<infer::Model>>
-    {
+    ) -> Result<Irrefutable<infer::Model>, CreatePatternError> {
         let storage = Storage::<Box<dyn Error>>::default();
         let mut side_effect = SideEffect {
             new_instructions: Vec::new(),
@@ -149,40 +155,43 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     }
 }
 
-struct SideEffect<'a, M: Model> {
-    new_instructions: Vec<Instruction<M>>,
-    register_reserved: Reserve<'a, Register<M>>,
-    alloca_reserved: Reserve<'a, Alloca<M>>,
+struct SideEffect<'a> {
+    new_instructions: Vec<Instruction<infer::Model>>,
+    register_reserved: Reserve<'a, Register<infer::Model>>,
+    alloca_reserved: Reserve<'a, Alloca<infer::Model>>,
 }
 
-impl<'a, M: Model> SideEffect<'a, M>
-where
-    M::LifetimeInference: Fresh,
-{
+impl<'a> SideEffect<'a> {
     fn create_reference_bound_named_pattern(
         &mut self,
-        mut address_type: Type<M>,
+        mut address_type: Type<infer::Model>,
         qualifier: Qualifier,
         span: Span,
-        address: &Address<Memory<M>>,
+        address: &Address<Memory<infer::Model>>,
         identifier: &Identifier,
         mutable: bool,
-    ) -> Named<M> {
+    ) -> Named<infer::Model> {
         // address_type <= alloca_type <= named_type
-        fresh::replace_with_fresh_lifeteime_inference(&mut address_type);
         let register_id = self.register_reserved.reserve(Register {
             assignment: Assignment::ReferenceOf(ReferenceOf {
                 is_local: false,
                 address: address.clone(),
                 qualifier,
             }),
-            r#type: address_type.clone(),
+            r#type: Type::Reference(Reference {
+                qualifier,
+                lifetime: Lifetime::Inference(Erased),
+                pointee: Box::new(address_type.clone()),
+            }),
             span: None,
         });
 
+        // freshen the lifetime of the address type
+        fresh::replace_with_fresh_lifeteime_inference(&mut address_type);
+
         let alloca_ty = Type::Reference(Reference {
             qualifier,
-            lifetime: Lifetime::Inference(M::LifetimeInference::fresh()),
+            lifetime: Lifetime::Inference(Erased),
             pointee: Box::new(address_type),
         });
 
@@ -217,9 +226,13 @@ where
 
     fn reduce_reference<'b>(
         &mut self,
-        type_binding: &TypeBinding<'b, M>,
-        mut address: Address<Memory<M>>,
-    ) -> (&'b Type<M>, Address<Memory<M>>, Option<Qualifier>) {
+        type_binding: &TypeBinding<'b, infer::Model>,
+        mut address: Address<Memory<infer::Model>>,
+    ) -> (
+        &'b Type<infer::Model>,
+        Address<Memory<infer::Model>>,
+        Option<Qualifier>,
+    ) {
         let (mut current_ty, mut reference_binding_info) = match type_binding {
             TypeBinding::Value(ty) => (*ty, None),
             TypeBinding::Reference { qualifier, r#type } => {
@@ -235,14 +248,7 @@ where
                             address,
                             kind: LoadKind::Copy,
                         }),
-                        r#type: {
-                            let mut current_ty_cloned = current_ty.clone();
-                            fresh::replace_with_fresh_lifeteime_inference(
-                                &mut current_ty_cloned,
-                            );
-
-                            current_ty_cloned
-                        },
+                        r#type: current_ty.clone(),
                         span: None,
                     });
                     self.new_instructions.push(
@@ -272,14 +278,11 @@ where
         &mut self,
         table: &Table<impl State>,
         syntax_tree: &syntax_tree::pattern::Irrefutable,
-        type_binding: TypeBinding<M>,
-        address: &Address<Memory<M>>,
+        type_binding: TypeBinding<infer::Model>,
+        address: &Address<Memory<infer::Model>>,
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) -> Result<Irrefutable<M>, CreatePatternError<M>>
-    where
-        Type<M>: table::Display<table::Suboptimal>,
-    {
+    ) -> Result<Irrefutable<infer::Model>, CreatePatternError> {
         Ok(match syntax_tree {
             syntax_tree::pattern::Irrefutable::Structural(structrual) => {
                 let (ty, address, reference_binding_info) =
@@ -328,9 +331,9 @@ where
 
                     // get the field id
                     let Some((field_sym, field_id)) = struct_symbol
-                        .fields
+                        .fields()
                         .get_id(field_name)
-                        .map(|x| (struct_symbol.fields.get(x).unwrap(), x))
+                        .map(|x| (struct_symbol.fields().get(x).unwrap(), x))
                     else {
                         // field not found error
                         handler.receive(Box::new(FieldNotFound {
@@ -370,8 +373,9 @@ where
                     };
 
                     // instantiation the type
-                    let mut field_ty =
-                        M::from_default_type(field_sym.r#type.clone());
+                    let mut field_ty = infer::Model::from_default_type(
+                        field_sym.r#type.clone(),
+                    );
                     instantiation::instantiate(&mut field_ty, &instantiation);
 
                     let type_binding = reference_binding_info.map_or_else(
@@ -498,14 +502,16 @@ where
                                 span: Some(named.identifier().span.clone()),
                             })
                         } else {
-                            let mut ty = ty.clone();
-                            fresh::replace_with_fresh_lifeteime_inference(
-                                &mut ty,
-                            );
-
                             let alloca_id =
                                 self.alloca_reserved.reserve(Alloca {
-                                    r#type: ty.clone(),
+                                    r#type: {
+                                        let mut ty = ty.clone();
+                                        fresh::replace_with_fresh_lifeteime_inference(
+                                            &mut ty,
+                                        );
+
+                                        ty
+                                    },
                                     span: Some(named.identifier().span.clone()),
                                 });
 

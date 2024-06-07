@@ -31,6 +31,7 @@ use crate::{
         GenericKind, GenericParameter, GlobalID, LocalGenericParameterID,
         MemberID, Module, PositiveTraitImplementation, Struct, Trait,
         TraitImplementationID, TraitImplementationMemberID, TraitMemberID,
+        Variant,
     },
 };
 
@@ -1520,7 +1521,7 @@ impl<T: State> Display<T> for FieldIsNotAccessible {
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
         let field_sym =
-            struct_sym.fields.get(self.field_id).ok_or(fmt::Error)?;
+            struct_sym.fields().get(self.field_id).ok_or(fmt::Error)?;
         let referring_site_qualified_name =
             table.get_qualified_name(self.referring_site).ok_or(fmt::Error)?;
         let struct_qualified_name = table
@@ -1721,7 +1722,7 @@ impl<T: State> Display<T> for DuplicatedField {
 
         let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
         let field_sym =
-            struct_sym.fields.get(self.field_id).ok_or(fmt::Error)?;
+            struct_sym.fields().get(self.field_id).ok_or(fmt::Error)?;
 
         write!(f, "{}", Message {
             severity: Severity::Error,
@@ -2021,7 +2022,7 @@ impl<T: State> Display<T> for AlreadyBoundFieldPattern {
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
         let field_sym =
-            struct_sym.fields.get(self.field_id).ok_or(fmt::Error)?;
+            struct_sym.fields().get(self.field_id).ok_or(fmt::Error)?;
 
         write!(f, "{}", Message {
             severity: Severity::Error,
@@ -2206,6 +2207,110 @@ impl<T: State> Display<T> for ExpectedLValue {
     }
 }
 
+/// The enum variant expects an associated value but none was provided.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectedAssociatedValue {
+    /// The ID of the variant where the associated value is expected.
+    pub variant_id: ID<Variant>,
+
+    /// The span of the variant.
+    pub span: Span,
+}
+
+impl<T: State> Display<T> for ExpectedAssociatedValue {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let variant_sym = table.get(self.variant_id).ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the enum variant `{}` expects an associated value",
+                variant_sym.name()
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The enum variant does not expect an associated value but was provided.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct VariantDoesNotExpectAssociatedValue {
+    /// The ID of the variant where the associated value is not expected.
+    pub variant_id: ID<Variant>,
+
+    /// The span of the variant.
+    pub span: Span,
+}
+
+impl<T: State> Display<T> for VariantDoesNotExpectAssociatedValue {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let variant_sym = table.get(self.variant_id).ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the enum variant `{}` does not expect an associated value",
+                variant_sym.name()
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The expected argument count does not match the found argument count.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedArgumentCount {
+    /// The ID of the symbol that was supplied with the wrong number of
+    /// arguments.
+    ///
+    /// This can be an enum variant, function, trait function, trait
+    /// implementation function, and ADT implementation function.
+    pub called_id: GlobalID,
+
+    /// The expected argument count.
+    pub expected_count: usize,
+
+    /// The found argument count.
+    pub found_count: usize,
+
+    /// The span of the function call.
+    pub span: Span,
+}
+
+impl<T: State> Display<T> for MismatchedArgumentCount {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let called_symbol =
+            table.get_qualified_name(self.called_id).ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the symbol `{}` expects {} arguments but found {}",
+                called_symbol, self.expected_count, self.found_count
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
 /// Mismatched type error.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MismatchedType<M: Model> {
@@ -2245,22 +2350,14 @@ where
 }
 
 /// The struct type was expected but the found type is different.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExpectedStruct<M: Model> {
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectedStruct {
     /// The span of the qualified identifier.
     pub span: Span,
-
-    /// The found type.
-    pub found_type: Type<M>,
 }
 
-impl<T: State, M: Model> Display<T> for ExpectedStruct<M>
-where
-    M::LifetimeInference: Display<T>,
-    M::TypeInference: Display<T>,
-    M::ConstantInference: Display<T>,
-{
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<T: State> Display<T> for ExpectedStruct {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "struct type expected",
@@ -2269,14 +2366,6 @@ where
         write!(f, "\n{}", SourceCodeDisplay {
             span: &self.span,
             help_display: Option::<i32>::None,
-        })?;
-
-        write!(f, "\n{}", Message {
-            severity: Severity::Info,
-            display: format!("found type: `{}`", DisplayObject {
-                display: &self.found_type,
-                table
-            }),
         })?;
 
         Ok(())
@@ -2318,7 +2407,7 @@ impl<T: State> Display<T> for UninitializedFields {
                     .iter()
                     .map(|&field_id| {
                         struct_sym
-                            .fields
+                            .fields()
                             .get(field_id)
                             .map(|x| x.name.clone())
                             .ok_or(fmt::Error)
@@ -2352,7 +2441,7 @@ impl<T: State> Display<T> for DuplicatedFieldInitialization {
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
         let field_sym =
-            struct_sym.fields.get(self.field_id).ok_or(fmt::Error)?;
+            struct_sym.fields().get(self.field_id).ok_or(fmt::Error)?;
 
         write!(f, "{}", Message {
             severity: Severity::Error,

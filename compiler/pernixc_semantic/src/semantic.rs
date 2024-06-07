@@ -21,6 +21,7 @@ use crate::{
     },
 };
 
+pub mod type_check;
 pub mod deduction;
 pub mod equality;
 pub mod equivalent;
@@ -32,6 +33,7 @@ pub mod model;
 pub mod normalizer;
 pub mod order;
 pub mod predicate;
+pub mod requirement;
 mod session;
 pub mod simplify;
 pub mod sub_term;

@@ -856,7 +856,6 @@ impl SourceElement for Access {
 /// ``` txt
 /// PostfixOperator:
 ///     Call
-///     | '\''
 ///     | Cast
 ///     | Access
 ///     ;
@@ -864,7 +863,6 @@ impl SourceElement for Access {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PostfixOperator {
     Call(Call),
-    Copy(Punctuation),
     Cast(Cast),
     Access(Access),
 }
@@ -873,7 +871,6 @@ impl SourceElement for PostfixOperator {
     fn span(&self) -> Span {
         match self {
             Self::Call(operator) => operator.span(),
-            Self::Copy(operator) => operator.span(),
             Self::Cast(operator) => operator.span(),
             Self::Access(operator) => operator.span(),
         }
@@ -1908,18 +1905,6 @@ impl Parser<'_> {
 
         loop {
             match self.stop_at_significant() {
-                Reading::Unit(Token::Punctuation(p))
-                    if p.punctuation == '\'' =>
-                {
-                    // eat the token
-                    self.forward();
-
-                    current = Postfixable::Postfix(Postfix {
-                        postfixable: Box::new(current),
-                        operator: PostfixOperator::Copy(p),
-                    });
-                }
-
                 Reading::Unit(Token::Punctuation(p))
                     if p.punctuation == '.' =>
                 {

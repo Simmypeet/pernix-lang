@@ -108,14 +108,11 @@ impl Finalize for Variant {
                         .get(symbol_id)
                         .unwrap()
                         .write()
-                        .associated_type = Some(
-                        simplify(&ty, &Environment {
-                            premise: &active_premise,
-                            table,
-                            normalizer: &NoOp,
-                        })
-                        .unwrap_or(ty),
-                    );
+                        .associated_type = Some(simplify(&ty, &Environment {
+                        premise: &active_premise,
+                        table,
+                        normalizer: &NoOp,
+                    }));
                 }
             }
 

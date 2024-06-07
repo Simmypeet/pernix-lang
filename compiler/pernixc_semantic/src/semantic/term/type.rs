@@ -16,6 +16,7 @@ use super::{
 use crate::{
     arena::ID,
     semantic::{
+        deduction,
         instantiation::{self, Instantiation},
         mapping::Mapping,
         matching::{self, Match, Matching},
@@ -846,6 +847,8 @@ pub enum Type<M: Model> {
     MemberSymbol(MemberSymbol<M, MemberSymbolID>),
     #[from]
     TraitMember(TraitMember<M>),
+    #[from]
+    Error,
 }
 
 /// The set of types that can be inferred. Used in type inference.
@@ -978,6 +981,7 @@ where
             Type::TraitMember(trait_member) => {
                 Self::TraitMember(TraitMember::from_other_model(trait_member))
             }
+            Type::Error => Self::Error,
         }
     }
 
@@ -1030,6 +1034,7 @@ where
             Type::TraitMember(trait_member) => Self::TraitMember(
                 TraitMember::try_from_other_model(trait_member)?,
             ),
+            Type::Error => Self::Error,
         })
     }
 
@@ -1138,14 +1143,18 @@ where
                     );
 
                 // gets the decution for the parent generic arguments
-                let Some(mut deduction) = adt_implementation_symbol_arguments
-                    .deduce_impl(
-                    parent_generic_arguments,
-                    environment,
-                    limit,
-                )?
-                else {
-                    return Ok(None);
+                let mut deduction = match adt_implementation_symbol_arguments
+                    .deduce_impl(parent_generic_arguments, environment, limit)
+                {
+                    Ok(deduction) => deduction,
+
+                    Err(deduction::Error::ExceedLimit(error)) => {
+                        return Err(error)
+                    }
+
+                    Err(_) => {
+                        return Ok(None);
+                    }
                 };
 
                 if deduction
@@ -1195,14 +1204,19 @@ where
                     );
 
                 // gets the decution for the parent generic arguments
-                let Some(mut deduction) = adt_implementation_symbol_arguments
-                    .deduce_impl(
-                    parent_generic_arguments,
-                    environment,
-                    limit,
-                )?
-                else {
-                    return Ok(None);
+                // gets the decution for the parent generic arguments
+                let mut deduction = match adt_implementation_symbol_arguments
+                    .deduce_impl(parent_generic_arguments, environment, limit)
+                {
+                    Ok(deduction) => deduction,
+
+                    Err(deduction::Error::ExceedLimit(error)) => {
+                        return Err(error)
+                    }
+
+                    Err(_) => {
+                        return Ok(None);
+                    }
                 };
 
                 if deduction
@@ -1282,7 +1296,7 @@ where
         match self {
             Self::Primitive(_) => Ok(Satisfiability::Satisfied),
 
-            Self::Inference(_) | Self::Parameter(_) => {
+            Self::Error | Self::Inference(_) | Self::Parameter(_) => {
                 Ok(Satisfiability::Unsatisfied)
             }
 
@@ -1391,7 +1405,7 @@ where
 
                     Some(
                         struct_sym
-                            .fields
+                            .fields()
                             .values()
                             .map(|field| {
                                 let mut ty =
@@ -1517,7 +1531,7 @@ where
 
     fn definite_satisfiability(&self) -> Satisfiability {
         match self {
-            Self::Parameter(_) | Self::Inference(_) => {
+            Self::Error | Self::Parameter(_) | Self::Inference(_) => {
                 Satisfiability::Unsatisfied
             }
 
@@ -1555,7 +1569,8 @@ where
                 }
             },
 
-            Self::TraitMember(_)
+            Self::Error
+            | Self::TraitMember(_)
             | Self::Parameter(_)
             | Self::Inference(_)
             | Self::MemberSymbol(_) => Satisfiability::Unsatisfied,
@@ -1735,6 +1750,9 @@ where
                     display: &*phantom.0
                 })
             }
+            Self::Error => {
+                write!(f, "{{unknown}}")
+            }
         }
     }
 }
@@ -1747,7 +1765,10 @@ impl<M: Model> Type<M> {
         table: &Table<impl State>,
     ) -> Option<Vec<GlobalID>> {
         let mut occurrences = match self {
-            Self::Primitive(_) | Self::Parameter(_) | Self::Inference(_) => {
+            Self::Error
+            | Self::Primitive(_)
+            | Self::Parameter(_)
+            | Self::Inference(_) => {
                 return Some(Vec::new());
             }
 

@@ -118,11 +118,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         ));
 
         // create the pattern
-        if let Ok(simplified) =
-            simplify::simplify(&variable_type, &self.create_environment())
-        {
-            variable_type = simplified;
-        }
+        variable_type =
+            simplify::simplify(&variable_type, &self.create_environment());
 
         let pattern = self
             .create_irrefutable(

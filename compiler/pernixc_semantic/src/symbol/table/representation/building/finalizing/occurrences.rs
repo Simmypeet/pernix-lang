@@ -4,7 +4,10 @@ use getset::Getters;
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree::{self, GenericIdentifier};
 
-use super::finalizer::build_preset::{self, BuildPreset};
+use super::finalizer::{
+    build_preset::{self, BuildPreset},
+    BuildSymbolError,
+};
 use crate::{
     error,
     semantic::{model::Default, term},
@@ -130,13 +133,21 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
         handler: &dyn Handler<Box<dyn error::Error>>,
         global_id: GlobalID,
         _: &pernixc_lexical::token::Identifier,
-    ) {
-        let _ = table.build_preset::<build_preset::GenericParameter>(
+    ) -> bool {
+        match table.build_preset::<build_preset::GenericParameter>(
             global_id,
             Some(referring_site),
             true,
             handler,
-        );
+        ) {
+            Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => true,
+
+            Err(BuildSymbolError::CyclicDependency) => false,
+
+            Err(BuildSymbolError::InvalidStateFlag { .. }) => {
+                panic!("invalid state flag")
+            }
+        }
     }
 
     fn on_resolution_resolved(

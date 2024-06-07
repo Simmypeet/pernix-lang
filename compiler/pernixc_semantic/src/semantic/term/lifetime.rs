@@ -72,6 +72,8 @@ pub enum Lifetime<M: Model> {
     Inference(M::LifetimeInference),
     #[from]
     Forall(Forall),
+    #[from]
+    Error,
 }
 
 impl<M: Model> ModelOf for Lifetime<M> {
@@ -213,6 +215,7 @@ where
                 Self::Inference(M::LifetimeInference::from(inference))
             }
             Lifetime::Forall(forall) => Self::Forall(forall),
+            Lifetime::Error => Self::Error,
         }
     }
 
@@ -231,6 +234,7 @@ where
                 Ok(Self::Inference(M::LifetimeInference::try_from(inference)?))
             }
             Lifetime::Forall(forall) => Ok(Self::Forall(forall)),
+            Lifetime::Error => Ok(Self::Error),
         }
     }
 
@@ -403,9 +407,10 @@ where
         match self {
             Self::Static => Satisfiability::Satisfied,
 
-            Self::Parameter(_) | Self::Inference(_) | Self::Forall(_) => {
-                Satisfiability::Unsatisfied
-            }
+            Self::Error
+            | Self::Parameter(_)
+            | Self::Inference(_)
+            | Self::Forall(_) => Satisfiability::Unsatisfied,
         }
     }
 
@@ -489,6 +494,7 @@ where
             Self::Forall(_) => {
                 write!(f, "'?")
             }
+            Self::Error => write!(f, "'{{unknown}}"),
         }
     }
 }

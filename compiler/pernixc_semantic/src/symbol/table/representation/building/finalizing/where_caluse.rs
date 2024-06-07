@@ -318,7 +318,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         for operand in syntax_tree.operands().elements() {
             match operand {
                 LifetimePredicateOperand::LifetimeParameter(lt_parameter) => {
-                    let Ok(lifetime_parameter_id) = self
+                    let Ok(Some(lifetime_parameter_id)) = self
                         .resolve_lifetime_parameter(
                             lt_parameter.identifier(),
                             generic_id.into(),

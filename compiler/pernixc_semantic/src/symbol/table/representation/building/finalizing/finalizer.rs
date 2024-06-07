@@ -419,7 +419,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             }
 
             drop(builder_write);
-
             synchronization.notify.notify_all();
         }
     }
@@ -535,11 +534,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         // cyclic dependency detection
         if let Some(required_from) = required_from {
             // determine whether to report the cyclic dependency to the handler
-            let mut report_cyclic_dependency_to_handler =
+            let mut report_cyclic_dependency_to_handler_inner =
                 report_cyclic_dependency_to_handler;
 
             if required_from == id.into() {
-                if report_cyclic_dependency_to_handler
+                if report_cyclic_dependency_to_handler_inner
                     && builder_write
                         .reported_cyclic_dependencies
                         .insert(std::iter::once(id.into()).collect())
@@ -561,20 +560,24 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 .get(&current_node)
                 .copied()
             {
-                report_cyclic_dependency_to_handler &= report_error;
+                report_cyclic_dependency_to_handler_inner &= report_error;
+
+                dependency_stack.push(dependency);
 
                 // cyclic dependency found
                 if dependency == required_from {
                     let dependency_stack_set = dependency_stack
                         .iter()
                         .copied()
+                        .chain([required_from])
                         .collect::<BTreeSet<_>>();
 
                     let is_reported = builder_write
                         .reported_cyclic_dependencies
                         .contains(&dependency_stack_set);
 
-                    if !is_reported && report_cyclic_dependency_to_handler {
+                    if !is_reported && report_cyclic_dependency_to_handler_inner
+                    {
                         handler.receive(Box::new(CyclicDependency {
                             participants: dependency_stack.clone(),
                         }));
@@ -586,7 +589,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     return Err(BuildSymbolError::CyclicDependency);
                 }
 
-                dependency_stack.push(dependency);
                 current_node = dependency;
             }
 
@@ -1005,13 +1007,20 @@ impl<T: BuildPreset, M: Model>
         handler: &dyn Handler<Box<dyn error::Error>>,
         global_id: GlobalID,
         _: &pernixc_lexical::token::Identifier,
-    ) {
-        let _ = table.build_preset::<T>(
+    ) -> bool {
+        match table.build_preset::<T>(
             global_id,
             Some(referring_site),
             true,
             handler,
-        );
+        ) {
+            Ok(()) => true,
+            Err(BuildSymbolError::CyclicDependency) => false,
+            Err(BuildSymbolError::EntryNotFound(_)) => true,
+            Err(BuildSymbolError::InvalidStateFlag { .. }) => {
+                panic!("invalid state falg")
+            }
+        }
     }
 
     fn on_resolution_resolved(

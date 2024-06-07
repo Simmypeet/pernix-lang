@@ -112,13 +112,6 @@ impl Finalize for Function {
                         )
                         .unwrap_or(r#type::Type::default());
 
-                    let mut function_write = table
-                        .representation
-                        .functions
-                        .get(symbol_id)
-                        .unwrap()
-                        .write();
-
                     // build the occurrences
                     let _ = data
                         .build_all_occurrences_to::<build_preset::Complete>(
@@ -128,14 +121,20 @@ impl Finalize for Function {
                             handler,
                         );
 
+                    let mut function_write = table
+                        .representation
+                        .functions
+                        .get(symbol_id)
+                        .unwrap()
+                        .write();
+
                     let parameter_id =
                         function_write.parameters.insert(Parameter {
                             r#type: simplify(&parameter_ty, &Environment {
                                 premise: &active_premise,
                                 table,
                                 normalizer: &NoOp,
-                            })
-                            .unwrap_or(parameter_ty),
+                            }),
                             span: Some(parameter.span()),
                         });
                     function_write.parameter_order.push(parameter_id);
@@ -183,7 +182,6 @@ impl Finalize for Function {
                         table,
                         normalizer: &NoOp,
                     })
-                    .unwrap_or(return_ty)
                 }
 
                 // build the occurrences

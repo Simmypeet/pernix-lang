@@ -139,9 +139,7 @@ where
                     )
                     .deduce(&member_generic.parent_generic_arguments, self)
                     {
-                        Ok(deduced) => {
-                            deduced.expect("should be able to deduce")
-                        }
+                        Ok(deduced) => deduced,
                         Err(_) => todo!("report undecidable error"),
                     };
 
@@ -365,7 +363,8 @@ where
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match ty {
-            term::r#type::Type::Tuple(_)
+            r#type::Type::Error
+            | term::r#type::Type::Tuple(_)
             | term::r#type::Type::Local(_)
             | term::r#type::Type::Phantom(_)
             | term::r#type::Type::Pointer(_)
@@ -633,6 +632,7 @@ impl UnusedGenericParameters {
 
             r#type::Type::TraitMember(_)
             | r#type::Type::Inference(_)
+            | r#type::Type::Error
             | r#type::Type::Primitive(_) => {}
         }
     }
@@ -645,6 +645,7 @@ impl UnusedGenericParameters {
 
             lifetime::Lifetime::Inference(_)
             | lifetime::Lifetime::Static
+            | lifetime::Lifetime::Error
             | lifetime::Lifetime::Forall(_) => {}
         }
     }
@@ -655,7 +656,8 @@ impl UnusedGenericParameters {
                 self.constants.remove(parameter);
             }
 
-            constant::Constant::Phantom(_)
+            constant::Constant::Phantom
+            | constant::Constant::Error
             | constant::Constant::Primitive(_)
             | constant::Constant::Inference(_) => {}
 

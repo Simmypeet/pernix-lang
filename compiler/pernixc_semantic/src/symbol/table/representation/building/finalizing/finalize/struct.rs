@@ -126,12 +126,23 @@ impl Finalize for Struct {
                     }
 
                     // build all the occurrences to partial
-                    let _ =data.build_all_occurrences_to::<build_preset::PartialComplete>(
+                    let _ = data.build_all_occurrences_to::<build_preset::PartialComplete>(
                         table,
                         symbol_id.into(),
                         false,
                         handler,
                     );
+
+                    let field = Field {
+                        accessibility: field_accessibility,
+                        name: field_syn.identifier().span.str().to_owned(),
+                        r#type: simplify(&ty, &Environment {
+                            premise: &active_premise,
+                            table,
+                            normalizer: &NoOp,
+                        }),
+                        span: Some(field_syn.identifier().span.clone()),
+                    };
 
                     #[allow(clippy::significant_drop_in_scrutinee)]
                     match table
@@ -140,25 +151,8 @@ impl Finalize for Struct {
                         .get(symbol_id)
                         .unwrap()
                         .write()
-                        .fields
-                        .insert(
-                            field_syn.identifier().span.str().to_owned(),
-                            Field {
-                                accessibility: field_accessibility,
-                                name: field_syn
-                                    .identifier()
-                                    .span
-                                    .str()
-                                    .to_owned(),
-                                r#type: simplify(&ty, &Environment {
-                                    premise: &active_premise,
-                                    table,
-                                    normalizer: &NoOp,
-                                })
-                                .unwrap_or(ty),
-                                span: Some(field_syn.identifier().span.clone()),
-                            },
-                        ) {
+                        .insert_field(field)
+                    {
                         Ok(_) => {}
                         Err((existing, _)) => {
                             handler.receive(Box::new(DuplicatedField {

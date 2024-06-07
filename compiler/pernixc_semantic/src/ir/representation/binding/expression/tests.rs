@@ -3,9 +3,10 @@ use pernixc_base::diagnostic::Storage;
 use crate::{
     arena::ID,
     error::{
-        DuplicatedFieldInitialization, Error, FieldIsNotAccessible,
-        FieldNotFound, FloatingPointLiteralHasIntegralSuffix,
-        InvalidNumericSuffix, MismatchedMutability,
+        DuplicatedFieldInitialization, Error, ExpectedAssociatedValue,
+        FieldIsNotAccessible, FieldNotFound,
+        FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
+        MismatchedArgumentCount, MismatchedMutability,
         MismatchedReferenceQualifier, MismatchedType, UninitializedFields,
     },
     ir::{
@@ -26,6 +27,7 @@ use crate::{
         },
     },
     symbol::{
+        self,
         table::{
             representation::{
                 building::finalizing::Finalizer, IndexMut, Insertion,
@@ -34,8 +36,9 @@ use crate::{
             resolution::NoOpObserver,
             Building, Table,
         },
-        Accessibility, AdtTemplate, Field, Function, FunctionDefinition,
-        FunctionTemplate, GenericDeclaration, Module, Struct, StructDefinition,
+        Accessibility, AdtTemplate, EnumDefinition, Field, Function,
+        FunctionDefinition, FunctionTemplate, GenericDeclaration, MemberID,
+        Module, Struct, StructDefinition, TypeParameter,
     },
 };
 
@@ -1274,8 +1277,7 @@ impl TestTemplate {
             let struct_sym = self.table.get_mut(struct_id).unwrap();
 
             let x_field_id = struct_sym
-                .fields
-                .insert("x".to_string(), Field {
+                .insert_field(Field {
                     accessibility: x_accessibility,
                     name: "x".to_string(),
                     r#type: Type::Primitive(Primitive::Float32),
@@ -1284,8 +1286,7 @@ impl TestTemplate {
                 .unwrap();
 
             let y_field_id = struct_sym
-                .fields
-                .insert("y".to_string(), Field {
+                .insert_field(Field {
                     accessibility: y_accessibility,
                     name: "y".to_string(),
                     r#type: Type::Primitive(Primitive::Float32),
@@ -1548,5 +1549,261 @@ fn struct_field_is_not_accessible_error() {
         };
 
         error.struct_id == struct_id && error.field_id == x_field_id
+    }));
+}
+
+impl TestTemplate {
+    /*
+    public enum Option[T] {
+        Some(T),
+        None,
+    }
+     */
+    pub fn create_enum_sample(
+        &mut self,
+    ) -> (
+        ID<symbol::Enum>,    /* Option enum */
+        ID<symbol::Variant>, /* Some variant */
+        ID<symbol::Variant>, /* None variant */
+    ) {
+        let Insertion { id: enum_id, duplication } = self
+            .table
+            .insert_member(
+                "Option".to_string(),
+                Accessibility::Public,
+                self.test_module_id,
+                None,
+                GenericDeclaration::default(),
+                AdtTemplate::<EnumDefinition>::default(),
+            )
+            .unwrap();
+
+        assert!(duplication.is_none());
+
+        let t_parameter_id = self
+            .table
+            .get_mut(enum_id)
+            .unwrap()
+            .generic_declaration
+            .parameters
+            .add_type_parameter(TypeParameter { name: None, span: None })
+            .unwrap();
+
+        let Insertion { id: some_variant_id, duplication } = self
+            .table
+            .insert_variant(
+                "Some".to_string(),
+                enum_id,
+                Some(Type::Parameter(MemberID {
+                    parent: enum_id.into(),
+                    id: t_parameter_id,
+                })),
+                None,
+            )
+            .unwrap();
+
+        assert!(duplication.is_none());
+
+        let Insertion { id: none_variant_id, duplication } = self
+            .table
+            .insert_variant("None".to_string(), enum_id, None, None)
+            .unwrap();
+
+        assert!(duplication.is_none());
+
+        (enum_id, some_variant_id, none_variant_id)
+    }
+}
+
+#[test]
+fn enum_without_associated_value() {
+    const AS_QUALIFIED_IDENTIFIER: &str = "Option::None";
+    const AS_NO_ARGUMENTS_CALLED: &str = "Option::None()";
+
+    let mut test_template = TestTemplate::new();
+    let (_, _, none_variant_id) = test_template.create_enum_sample();
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let as_qualified_identifier = parse_expression(AS_QUALIFIED_IDENTIFIER)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_unit()
+        .unwrap()
+        .into_qualified_identifier()
+        .unwrap();
+    let as_no_arguments_called = parse_expression(AS_NO_ARGUMENTS_CALLED)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_postfix()
+        .unwrap();
+
+    let as_qualified_identifier = binder
+        .bind(
+            &as_qualified_identifier,
+            Config { target: Target::Value },
+            &storage,
+        )
+        .unwrap()
+        .into_value()
+        .unwrap();
+    let as_no_arguments_called = binder
+        .bind(
+            &as_no_arguments_called,
+            Config { target: Target::Value },
+            &storage,
+        )
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    let assert_variant = |register: ID<Register<infer::Model>>| {
+        let register =
+            binder.intermediate_representation.registers.get(register).unwrap();
+
+        let variant = register.assignment.as_variant().unwrap();
+
+        assert_eq!(variant.variant_id, none_variant_id);
+        assert!(variant.associated_value.is_none());
+    };
+
+    assert_variant(as_qualified_identifier);
+    assert_variant(as_no_arguments_called);
+}
+
+#[test]
+fn enum_expected_associated_value_error() {
+    const ENUM_EXPRESSION: &str = "Option::Some";
+
+    let mut test_template = TestTemplate::new();
+    let (_, some_variant_id, _) = test_template.create_enum_sample();
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let enum_expression = parse_expression(ENUM_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_unit()
+        .unwrap()
+        .into_qualified_identifier()
+        .unwrap();
+
+    let _ = binder
+        .bind(&enum_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    let errors = storage.into_vec();
+
+    assert!(errors.iter().any(|predicate| {
+        let Some(error) =
+            predicate.as_any().downcast_ref::<ExpectedAssociatedValue>()
+        else {
+            return false;
+        };
+
+        error.variant_id == some_variant_id
+    }));
+}
+
+#[test]
+fn enum_with_associated_value() {
+    const ENUM_EXPRESSION: &str = "Option::Some(32)";
+
+    let mut test_template = TestTemplate::new();
+    let (_, some_variant_id, _) = test_template.create_enum_sample();
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let enum_expression = parse_expression(ENUM_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_postfix()
+        .unwrap();
+
+    let register_id = binder
+        .bind(&enum_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    let register =
+        binder.intermediate_representation.registers.get(register_id).unwrap();
+
+    let variant = register.assignment.as_variant().unwrap();
+
+    assert_eq!(variant.variant_id, some_variant_id);
+
+    let associated_value = variant.associated_value.unwrap();
+
+    let numeric_register = binder
+        .intermediate_representation
+        .registers
+        .get(associated_value)
+        .unwrap();
+
+    let numeric_assignment = numeric_register.assignment.as_numeric().unwrap();
+
+    assert_eq!(numeric_assignment.integer_string, "32");
+}
+
+#[test]
+fn enum_with_mismatched_argument_count() {
+    const ENUM_EXPRESSION: &str = "Option::Some(32, 64)";
+
+    let mut test_template = TestTemplate::new();
+    let (_, some_variant_id, _) = test_template.create_enum_sample();
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let enum_expression = parse_expression(ENUM_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_postfix()
+        .unwrap();
+
+    let _ = binder
+        .bind(&enum_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    let errors = storage.into_vec();
+
+    assert!(errors.iter().any(|predicate| {
+        let Some(error) =
+            predicate.as_any().downcast_ref::<MismatchedArgumentCount>()
+        else {
+            return false;
+        };
+
+        error.expected_count == 1
+            && error.found_count == 2
+            && error.called_id == some_variant_id.into()
     }));
 }

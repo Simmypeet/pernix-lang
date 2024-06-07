@@ -17,6 +17,7 @@ use super::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
     },
+    type_check,
     unification::{self, Unification},
     ExceedLimitError, Satisfied,
 };
@@ -360,6 +361,11 @@ pub(super) trait Session<T: SubTerm>:
         Result = TraitSatisfiability<T::Model>,
         InProgress = (),
     > + for<'a> Cache<simplify::Query<'a, T>, Result = T, InProgress = ()>
+    + for<'a> Cache<
+        type_check::Query<'a, T::Model>,
+        Result = Satisfied,
+        InProgress = (),
+    >
 {
 }
 
@@ -393,6 +399,11 @@ impl<T: Term, U> Session<T> for U where
             Result = TraitSatisfiability<T::Model>,
             InProgress = (),
         > + for<'a> Cache<simplify::Query<'a, T>, Result = T, InProgress = ()>
+        + for<'a> Cache<
+            type_check::Query<'a, T::Model>,
+            Result = Satisfied,
+            InProgress = (),
+        >
 {
 }
 
@@ -442,6 +453,8 @@ pub(super) struct Default<M: Model> {
     lifetime_simplify: HashMap<Lifetime<M>, Cached<(), Lifetime<M>>>,
     type_simplify: HashMap<Type<M>, Cached<(), Type<M>>>,
     constant_simplify: HashMap<Constant<M>, Cached<(), Constant<M>>>,
+
+    type_check: HashMap<(Constant<M>, Type<M>), Cached<(), Satisfied>>,
 }
 
 macro_rules! implements_cache {
@@ -766,4 +779,14 @@ implements_cache!(
     constant_simplify,
     record.0.clone(),
     record.0
+);
+
+implements_cache!(
+    type_check::Query<'a, M>,
+    Satisfied,
+    (),
+    record,
+    type_check,
+    (record.constant.clone(), record.r#type.clone()),
+    &(record.constant.clone(), record.r#type.clone())
 );

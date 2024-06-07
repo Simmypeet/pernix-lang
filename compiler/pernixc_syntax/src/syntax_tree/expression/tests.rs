@@ -1465,7 +1465,6 @@ impl Display for Access {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PostfixOperator {
-    Copy,
     Call(Call),
     Cast(Cast),
     Access(Access),
@@ -1474,7 +1473,6 @@ pub enum PostfixOperator {
 impl Input<&super::PostfixOperator> for &PostfixOperator {
     fn assert(self, output: &super::PostfixOperator) -> TestCaseResult {
         match (self, output) {
-            (PostfixOperator::Copy, super::PostfixOperator::Copy(_)) => Ok(()),
             (
                 PostfixOperator::Call(input),
                 super::PostfixOperator::Call(output),
@@ -1505,7 +1503,6 @@ impl Arbitrary for PostfixOperator {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            Just(Self::Copy),
             Call::arbitrary_with(args.0.clone()).prop_map(Self::Call),
             Cast::arbitrary_with(args).prop_map(Self::Cast),
             Access::arbitrary_with(()).prop_map(Self::Access),
@@ -1517,7 +1514,6 @@ impl Arbitrary for PostfixOperator {
 impl Display for PostfixOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Copy => f.write_char('\''),
             Self::Call(call) => Display::fmt(call, f),
             Self::Cast(cast) => Display::fmt(cast, f),
             Self::Access(access) => Display::fmt(access, f),
@@ -2190,4 +2186,3 @@ proptest! {
         expression_input.assert(&expression)?;
     }
 }
-

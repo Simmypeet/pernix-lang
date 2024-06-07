@@ -21,6 +21,7 @@ use super::{
     model::Model,
     normalizer::Normalizer,
     predicate::{self, Outlives, Predicate, Satisfiability},
+    requirement,
     session::{self, Limit, Session},
     sub_term::{self, AssignSubTermError, SubTupleLocation},
     unification::{self, Unification},
@@ -505,6 +506,7 @@ pub trait Term:
     + sub_term::SubTerm
     + equivalent::Get
     + session::Get
+    + requirement::Require
     + From<MemberID<ID<Self::GenericParameter>, GenericID>>
     + From<Self::TraitMember>
     + 'static
@@ -868,9 +870,8 @@ where
 
         let head_range = 0..unpacked_position;
         let from_tail_range = (unpacked_position + 1)..from.elements.len();
-        let to_tail_range = (to.elements.len()
-            - from_tail_range.clone().count())
-            ..to.elements.len();
+        let to_tail_range =
+            (to.elements.len() - from_tail_range.len())..to.elements.len();
         let to_unpack_range = unpacked_position..to_tail_range.start;
 
         // unify head

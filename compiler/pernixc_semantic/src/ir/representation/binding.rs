@@ -30,7 +30,7 @@ use crate::{
             constant::Constant,
             lifetime::Lifetime,
             r#type::{self, Expected, Type},
-            Symbol, Tuple, TupleElement,
+            GenericArguments, Symbol, Tuple, TupleElement,
         },
         visitor::RecursiveIterator,
         Environment, Premise,
@@ -298,6 +298,100 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         HandlerWrapper { handler, suboptimal: self.suboptimal.clone() }
     }
 
+    fn resolve_with_inference(
+        &mut self,
+        syntax_tree: &syntax_tree::QualifiedIdentifier,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Option<Resolution<infer::Model>> {
+        let handler = self.create_handler_wrapper(handler);
+
+        let resolution = self
+            .table
+            .resolve(
+                syntax_tree,
+                self.current_site,
+                resolution::Config {
+                    ellided_lifetime_provider: Some(&mut InferenceProvider),
+                    ellided_type_provider: Some(&mut InferenceProvider),
+                    ellided_constant_provider: Some(&mut InferenceProvider),
+                    observer: Some(&mut self.resolution_observer),
+                    higher_ranked_liftimes: None,
+                },
+                &handler,
+            )
+            .ok()?;
+
+        let mut type_inferences = Vec::new();
+        let mut constant_inferences = Vec::new();
+
+        let mut gather_inferences =
+            |generic_arguments: &GenericArguments<infer::Model>| {
+                for types in generic_arguments.types.iter() {
+                    for (kind, _) in RecursiveIterator::new(types) {
+                        match kind {
+                            term::Kind::Type(Type::Inference(
+                                inference_variable,
+                            )) => {
+                                type_inferences.push(*inference_variable);
+                            }
+                            term::Kind::Constant(Constant::Inference(
+                                inference_variable,
+                            )) => {
+                                constant_inferences.push(*inference_variable);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                for constants in generic_arguments.constants.iter() {
+                    for (kind, _) in RecursiveIterator::new(constants) {
+                        match kind {
+                            term::Kind::Type(Type::Inference(
+                                inference_variable,
+                            )) => {
+                                type_inferences.push(*inference_variable);
+                            }
+                            term::Kind::Constant(Constant::Inference(
+                                inference_variable,
+                            )) => {
+                                constant_inferences.push(*inference_variable);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            };
+
+        match &resolution {
+            Resolution::Module(_) => {}
+            Resolution::Variant(variant) => {
+                gather_inferences(&variant.generic_arguments);
+            }
+            Resolution::Generic(generic) => {
+                gather_inferences(&generic.generic_arguments);
+            }
+            Resolution::MemberGeneric(generic) => {
+                gather_inferences(&generic.generic_arguments);
+                gather_inferences(&generic.parent_generic_arguments);
+            }
+        }
+
+        for inference in type_inferences {
+            assert!(self
+                .inference_context
+                .register::<Type<_>>(inference, r#type::Constraint::All));
+        }
+
+        for inference in constant_inferences {
+            assert!(self
+                .inference_context
+                .register::<Constant<_>>(inference, NoConstraint));
+        }
+
+        Some(resolution)
+    }
+
     /// Resolves the given `syntax_tree` to a type where inference is allowed.
     fn resolve_type_with_inference(
         &mut self,
@@ -423,8 +517,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         .r#type
                         .clone();
 
-                    ty = simplify::simplify(&ty, &self.create_environment())
-                        .unwrap_or(ty);
+                    ty = simplify::simplify(&ty, &self.create_environment());
 
                     let Type::Reference(reference) = ty else {
                         panic!("expected a reference type")
@@ -440,8 +533,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 struct_address = simplify::simplify(
                     &struct_address,
                     &self.create_environment(),
-                )
-                .unwrap_or(struct_address);
+                );
 
                 let Type::Symbol(Symbol {
                     id: r#type::SymbolID::Struct(struct_id),
@@ -460,7 +552,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 .unwrap();
                 let mut field_ty = infer::Model::from_default_type(
                     struct_sym
-                        .fields
+                        .fields()
                         .get(field_address.id)
                         .unwrap()
                         .r#type
@@ -477,8 +569,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 
                 // simplfiy the tuple type
                 tuple_ty =
-                    simplify::simplify(&tuple_ty, &self.create_environment())
-                        .unwrap_or(tuple_ty);
+                    simplify::simplify(&tuple_ty, &self.create_environment());
 
                 let Type::Tuple(mut tuple_ty) = tuple_ty else {
                     panic!("expected a tuple type")
@@ -541,8 +632,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             premise: &self.premise,
             table: self.table,
             normalizer: &self.inference_context,
-        })
-        .unwrap_or(ty);
+        });
 
         match expected_ty {
             Expected::Known(expected_ty) => {
@@ -551,8 +641,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         premise: &self.premise,
                         table: self.table,
                         normalizer: &self.inference_context,
-                    })
-                    .unwrap_or(expected_ty);
+                    });
 
                 let result = match self.inference_context.unify_type(
                     &simplified_ty,

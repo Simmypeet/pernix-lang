@@ -25,7 +25,6 @@ struct Visitor<
     R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
     M: Model,
 > {
-    result: Result<(), ExceedLimitError>,
     environment: &'a Environment<'a, M, T, N>,
     limit: &'l mut Limit<R>,
     model: PhantomData<M>,
@@ -48,24 +47,13 @@ impl<
         term: &mut U,
         _: <U as super::visitor::Element>::Location,
     ) -> bool {
-        match self.result {
-            Ok(()) => {
-                match simplify_internal(term, self.environment, self.limit) {
-                    Ok(simplified) => {
-                        if let Some(simplified) = simplified {
-                            *term = simplified;
-                        }
-
-                        true
-                    }
-                    Err(err) => {
-                        self.result = Err(err);
-                        false
-                    }
-                }
-            }
-            Err(_) => false,
+        if let Some(simplified) =
+            simplify_internal(term, self.environment, self.limit)
+        {
+            *term = simplified;
         }
+
+        true
     }
 }
 
@@ -77,16 +65,24 @@ fn simplify_internal<T: Term>(
             + Session<Type<T::Model>>
             + Session<Constant<T::Model>>,
     >,
-) -> Result<Option<T>, ExceedLimitError> {
-    match limit.mark_as_in_progress::<T, _>(Query(term), ())? {
-        Some(Cached::Done(result)) => return Ok(Some(result)),
-        Some(Cached::InProgress(())) => return Ok(None),
-        None => {}
+) -> Option<T> {
+    match limit.mark_as_in_progress::<T, _>(Query(term), ()) {
+        Ok(Some(Cached::Done(result))) => return Some(result),
+
+        Ok(Some(Cached::InProgress(()))) | Err(ExceedLimitError) => {
+            return None
+        }
+
+        Ok(None) => {}
     }
 
     let mut simplified = 'simplified: {
-        let mut equivalents =
-            term.normalize(environment, limit)?.into_iter().collect::<Vec<_>>();
+        let mut equivalents = term
+            .normalize(environment, limit)
+            .ok()
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
 
         if term.as_trait_member().is_some() {
             for equivalent in environment
@@ -96,12 +92,10 @@ fn simplify_internal<T: Term>(
                 .filter_map(|x| T::as_trait_member_equality_predicate(x))
             {
                 let trait_member = T::from(equivalent.lhs.clone());
-                if equality::equals_impl(
-                    &trait_member,
-                    term,
-                    environment,
-                    limit,
-                )? {
+
+                if let Ok(true) =
+                    equality::equals(&trait_member, term, environment)
+                {
                     equivalents.push(equivalent.rhs.clone());
                 }
             }
@@ -110,7 +104,7 @@ fn simplify_internal<T: Term>(
         let mut simplified_equivalents = Vec::new();
         for equivalent in equivalents {
             if let Some(sim) =
-                simplify_internal(&equivalent, environment, limit)?
+                simplify_internal(&equivalent, environment, limit)
             {
                 simplified_equivalents.push(sim);
             }
@@ -130,13 +124,11 @@ fn simplify_internal<T: Term>(
     .unwrap_or_else(|| term.clone());
 
     // simplify the sub-terms
-    let mut visitor =
-        Visitor { result: Ok(()), environment, limit, model: PhantomData };
+    let mut visitor = Visitor { environment, limit, model: PhantomData };
     let _ = simplified.accept_one_level_mut(&mut visitor);
-    visitor.result?;
 
     limit.mark_as_done::<T, _>(Query(term), simplified.clone());
-    Ok(Some(simplified))
+    Some(simplified)
 }
 
 /// Simplifies a term by normalizing and applying equivalences.
@@ -147,11 +139,11 @@ fn simplify_internal<T: Term>(
 pub fn simplify<T: Term>(
     term: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
-) -> Result<T, ExceedLimitError> {
+) -> T {
     let mut limit = Limit::<session::Default<_>>::default();
 
     simplify_internal(term, environment, &mut limit)
-        .map(|x| x.unwrap_or_else(|| term.clone()))
+        .unwrap_or_else(|| term.clone())
 }
 
 #[cfg(test)]

@@ -1021,7 +1021,9 @@ impl<T: Container> Representation<T> {
                 .get_accessibility(parameter.parent.into())
                 .ok_or(GetTermAccessibilityError::InvalidID),
 
-            r#type::Type::Primitive(_) => Ok(Accessibility::Public),
+            r#type::Type::Error | r#type::Type::Primitive(_) => {
+                Ok(Accessibility::Public)
+            }
 
             r#type::Type::Tuple(tuple) => {
                 let mut current_min = Accessibility::Public;
@@ -1143,7 +1145,8 @@ impl<T: Container> Representation<T> {
                 .get_accessibility(id.parent.into())
                 .ok_or(GetTermAccessibilityError::InvalidID)?),
 
-            constant::Constant::Phantom(_)
+            constant::Constant::Error
+            | constant::Constant::Phantom
             | constant::Constant::Primitive(_) => Ok(Accessibility::Public),
 
             constant::Constant::Enum(constant) => {
@@ -1193,7 +1196,9 @@ impl<T: Container> Representation<T> {
 
             Lifetime::Inference(never) => match *never {},
 
-            Lifetime::Forall(_) | Lifetime::Static => Ok(Accessibility::Public),
+            Lifetime::Error | Lifetime::Forall(_) | Lifetime::Static => {
+                Ok(Accessibility::Public)
+            }
         }
     }
 
@@ -1655,6 +1660,8 @@ fn draft_table(
         representation: Representation::default(),
         state: Building::new(Drafter::default()),
     };
+    drafting_table.initialize_core();
+
     // draft all targets
     for target in targets {
         let (syntax_tree, name) = target.dissolve();
@@ -1919,6 +1926,46 @@ impl<T: Container> Representation<T> {
             .insert(implementation_id.into()));
 
         Ok(implementation_id)
+    }
+
+    /// Inserts a new [`Variant`] to the given parent [`Enum`].
+    ///
+    /// # Returns
+    ///
+    /// Returns [`None`] if the given `parent_enum_id` is not a valid ID and the
+    /// symbol will not be inserted.
+    pub fn insert_variant(
+        &mut self,
+        name: String,
+        parent_enum_id: ID<Enum>,
+        associated_type: Option<r#type::Type<Default>>,
+        span: Option<Span>,
+    ) -> Option<Insertion<Variant, ID<Variant>>> {
+        // the given `parent_id` does not exist, fatal error
+        if self.get(parent_enum_id).is_none() {
+            return None;
+        }
+
+        // create trait member
+        let member_id = self.variants.insert(T::wrap(Variant {
+            name: name.clone(),
+            parent_enum_id: parent_enum_id.into(),
+            associated_type,
+            span,
+        }));
+
+        // add the trait member to the parent trait
+        let mut parent_symbol = self.get_mut(parent_enum_id).unwrap();
+
+        let duplication = match parent_symbol.variant_ids_by_name.entry(name) {
+            Entry::Occupied(entry) => Some(*entry.get()),
+            Entry::Vacant(entry) => {
+                entry.insert(member_id.into());
+                None
+            }
+        };
+
+        Some(Insertion { id: member_id, duplication })
     }
 
     /// Inserts a new member to the given parent symbol.
