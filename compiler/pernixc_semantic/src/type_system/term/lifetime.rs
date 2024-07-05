@@ -19,6 +19,7 @@ use crate::{
         GenericID, LifetimeParameter, LifetimeParameterID, MemberID,
     },
     type_system::{
+        equality::Equality,
         instantiation::Instantiation,
         mapping::Mapping,
         matching::{self, Match, Matching},
@@ -71,7 +72,7 @@ pub enum Lifetime<M: Model> {
     Inference(M::LifetimeInference),
     #[from]
     Forall(Forall),
-    #[from]
+
     Error,
 }
 
@@ -212,13 +213,13 @@ where
         M::ConstantInference: From<U::ConstantInference>,
     {
         match term {
+            Lifetime::Error => Self::Error,
             Lifetime::Static => Self::Static,
             Lifetime::Parameter(parameter) => Self::Parameter(parameter),
             Lifetime::Inference(inference) => {
                 Self::Inference(M::LifetimeInference::from(inference))
             }
             Lifetime::Forall(forall) => Self::Forall(forall),
-            Lifetime::Error => Self::Error,
         }
     }
 
@@ -231,13 +232,13 @@ where
         M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
     {
         match term {
+            Lifetime::Error => Ok(Self::Error),
             Lifetime::Static => Ok(Self::Static),
             Lifetime::Parameter(parameter) => Ok(Self::Parameter(parameter)),
             Lifetime::Inference(inference) => {
                 Ok(Self::Inference(M::LifetimeInference::try_from(inference)?))
             }
             Lifetime::Forall(forall) => Ok(Self::Forall(forall)),
-            Lifetime::Error => Ok(Self::Error),
         }
     }
 
@@ -358,19 +359,19 @@ where
 
     fn as_trait_member_equality_predicate(
         _: &Predicate<M>,
-    ) -> Option<&predicate::Equality<Never, Self>> {
+    ) -> Option<&Equality<Never, Self>> {
         None
     }
 
     fn as_trait_member_equality_predicate_mut(
         _: &mut Predicate<M>,
-    ) -> Option<&mut predicate::Equality<Never, Self>> {
+    ) -> Option<&mut Equality<Never, Self>> {
         None
     }
 
     fn into_trait_member_equality_predicate(
         predicate: Predicate<M>,
-    ) -> Result<predicate::Equality<Never, Self>, Predicate<M>> {
+    ) -> Result<Equality<Never, Self>, Predicate<M>> {
         Err(predicate)
     }
 
@@ -485,7 +486,7 @@ where
             Self::Forall(_) => {
                 write!(f, "'?")
             }
-            Self::Error => write!(f, "'{{unknown}}"),
+            Self::Error => write!(f, "'{{error}}"),
         }
     }
 }

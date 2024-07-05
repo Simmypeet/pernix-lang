@@ -212,7 +212,8 @@ proptest! {
 }
 
 #[derive(Debug, EnumAsInner, From)]
-pub enum Error {
+#[allow(dead_code)]
+enum Error {
     Lexical(pernixc_lexical::error::Error),
     Syntax(crate::error::Error),
     Target(syntax_tree::target::Error),

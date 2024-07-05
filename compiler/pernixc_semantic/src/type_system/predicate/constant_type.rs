@@ -1,5 +1,6 @@
 use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
+    symbol::table::{self, DisplayObject, State, Table},
     type_system::{
         equality, get_equivalences_with_context,
         instantiation::{self, Instantiation},
@@ -10,7 +11,6 @@ use crate::{
         visitor, Compute, Environment, Output, OverflowError, Satisfied,
         Succeeded,
     },
-    symbol::table::{self, DisplayObject, State, Table},
 };
 
 #[derive(Debug)]
@@ -164,8 +164,6 @@ impl<T: Term> Compute for ConstantType<T> {
     #[allow(private_bounds, private_interfaces)]
     fn on_cyclic(
         &self,
-        _: &Environment<Self::Model, impl State, impl Normalizer<Self::Model>>,
-        _: &mut Context<Self::Model>,
         _: Self::Parameter,
         _: Self::InProgress,
         _: Self::InProgress,

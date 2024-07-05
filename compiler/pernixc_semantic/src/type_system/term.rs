@@ -657,18 +657,18 @@ pub trait Term:
     #[doc(hidden)]
     fn as_trait_member_equality_predicate(
         predicate: &Predicate<Self::Model>,
-    ) -> Option<&predicate::Equality<Self::TraitMember, Self>>;
+    ) -> Option<&Equality<Self::TraitMember, Self>>;
 
     #[doc(hidden)]
     fn as_trait_member_equality_predicate_mut(
         predicate: &mut Predicate<Self::Model>,
-    ) -> Option<&mut predicate::Equality<Self::TraitMember, Self>>;
+    ) -> Option<&mut Equality<Self::TraitMember, Self>>;
 
     #[doc(hidden)]
     fn into_trait_member_equality_predicate(
         predicate: Predicate<Self::Model>,
     ) -> Result<
-        predicate::Equality<Self::TraitMember, Self>,
+        Equality<Self::TraitMember, Self>,
         Predicate<Self::Model>,
     >;
 
@@ -862,8 +862,9 @@ where
 
         let head_range = 0..unpacked_position;
         let from_tail_range = (unpacked_position + 1)..from.elements.len();
-        let to_tail_range =
-            (to.elements.len() - from_tail_range.len())..to.elements.len();
+        let to_tail_range = (to.elements.len()
+            - from_tail_range.clone().count())
+            ..to.elements.len();
         let to_unpack_range = unpacked_position..to_tail_range.start;
 
         // unify head

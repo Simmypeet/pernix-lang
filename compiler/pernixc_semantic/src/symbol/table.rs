@@ -18,7 +18,6 @@ pub mod resolution;
 ///
 /// Primarily used for implementing [`std::fmt::Display`] trait.
 #[derive(Debug, Clone, Copy)]
-#[allow(clippy::self_named_module_files)]
 pub struct DisplayObject<'a, D: ?Sized, T: State> {
     /// The table in which the display object will refer to.
     pub table: &'a Table<T>,
@@ -119,6 +118,7 @@ pub struct Table<T: State> {
     #[deref]
     representation: Representation<T::Container>,
 
+    #[allow(dead_code)]
     state: T,
 }
 

@@ -17,11 +17,6 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    type_system::{
-        model::Model,
-        predicate::Predicate,
-        term::r#type::{Qualifier, Type},
-    },
     symbol::{
         table::{
             self, representation::Index, Display, DisplayObject, State,
@@ -32,6 +27,11 @@ use crate::{
         MemberID, Module, PositiveTraitImplementation, Struct, Trait,
         TraitImplementationID, TraitImplementationMemberID, TraitMemberID,
         Variant,
+    },
+    type_system::{
+        model::Model,
+        predicate::Predicate,
+        term::r#type::{Qualifier, Type},
     },
 };
 

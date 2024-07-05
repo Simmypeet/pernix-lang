@@ -37,9 +37,9 @@ fn type_predicate<M: Model>(x: &Type<M>) -> bool {
 fn constant_predicate<M: Model>(x: &Constant<M>) -> bool { x.is_parameter() }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct OrderUnifyingConfig;
+struct OrderPredicate;
 
-impl<M: Model> unification::Predicate<Lifetime<M>> for OrderUnifyingConfig {
+impl<M: Model> unification::Predicate<Lifetime<M>> for OrderPredicate {
     fn unifiable(
         &self,
         _: &Lifetime<M>,
@@ -51,7 +51,7 @@ impl<M: Model> unification::Predicate<Lifetime<M>> for OrderUnifyingConfig {
     }
 }
 
-impl<M: Model> unification::Predicate<Type<M>> for OrderUnifyingConfig {
+impl<M: Model> unification::Predicate<Type<M>> for OrderPredicate {
     fn unifiable(
         &self,
         from: &Type<M>,
@@ -67,7 +67,7 @@ impl<M: Model> unification::Predicate<Type<M>> for OrderUnifyingConfig {
     }
 }
 
-impl<M: Model> unification::Predicate<Constant<M>> for OrderUnifyingConfig {
+impl<M: Model> unification::Predicate<Constant<M>> for OrderPredicate {
     fn unifiable(
         &self,
         from: &Constant<M>,
@@ -96,7 +96,7 @@ fn get_arguments_matching_count<T: Term>(
         let Some(result) = Unification::new(
             from.clone(),
             to.clone(),
-            Arc::new(OrderUnifyingConfig),
+            Arc::new(OrderPredicate),
         )
         .query_with_context(environment, context)?
         else {
@@ -230,6 +230,5 @@ impl<M: Model> GenericArguments<M> {
     }
 }
 
-// TODO
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

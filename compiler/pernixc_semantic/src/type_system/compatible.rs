@@ -1,3 +1,5 @@
+//! Contains the definition of [`compatible`] logic.
+
 use std::{collections::HashSet, sync::Arc};
 
 use super::{
@@ -17,11 +19,11 @@ use super::{
     Succeeded,
 };
 use crate::{
-    type_system::sub_term::{Location, SubLifetimeLocation},
     symbol::{
         table::{State, Table},
         AdtID, Variance,
     },
+    type_system::sub_term::{Location, SubLifetimeLocation},
 };
 
 // TODO: Maybe move the `get_variance_of` to a separate module

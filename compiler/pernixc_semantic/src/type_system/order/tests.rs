@@ -1,4 +1,4 @@
-use std::{cmp, fmt::Debug};
+use std::{cmp, fmt::Debug, sync::Arc};
 
 use proptest::{
     arbitrary::Arbitrary,
@@ -7,23 +7,23 @@ use proptest::{
     test_runner::{Config, TestCaseError},
 };
 
-use super::{Order, OrderUnifyingConfig};
+use super::{Order, OrderPredicate};
 use crate::{
-    semantic::{
+    symbol::{
+        table::{Building, Table},
+        TypeParameterID,
+    },
+    type_system::{
         model::Default,
         normalizer::NoOp,
-        query::{self, Session},
         term::{
             constant::Constant,
             lifetime::Lifetime,
             r#type::{self, Type},
             GenericArguments, Symbol, Term,
         },
-        unification, Environment, Premise,
-    },
-    symbol::{
-        table::{Building, Table},
-        TypeParameterID,
+        unification::Unification,
+        Compute, Environment, Premise,
     },
 };
 
@@ -40,6 +40,10 @@ trait Property<T>: Debug + 'static {
     ///
     /// Returns `None` if the two terms are incompatible.
     fn get_specialization_point(&self) -> Option<isize>;
+
+    /// Returns the number of nodes in the term.
+    #[allow(dead_code)]
+    fn node_count(&self) -> usize;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -49,6 +53,8 @@ impl<T: Clone + Debug + 'static> Property<T> for Matching<T> {
     fn generate(&self) -> (T, T) { (self.0.clone(), self.0.clone()) }
 
     fn get_specialization_point(&self) -> Option<isize> { Some(0) }
+
+    fn node_count(&self) -> usize { 1 }
 }
 
 impl<T: Debug + Arbitrary<Strategy = BoxedStrategy<T>> + Term + 'static>
@@ -85,6 +91,8 @@ impl<T: Clone + Debug + 'static> Property<T> for Incompatible<T> {
     fn generate(&self) -> (T, T) { (self.lhs.clone(), self.rhs.clone()) }
 
     fn get_specialization_point(&self) -> Option<isize> { None }
+
+    fn node_count(&self) -> usize { 1 }
 }
 
 impl<
@@ -93,8 +101,6 @@ impl<
             + Term<Model = Default>
             + 'static,
     > Arbitrary for Incompatible<T>
-where
-    query::Default<Default>: Session<T>,
 {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
@@ -105,19 +111,20 @@ where
                 "filter out generic parameters, trait members, and trivially \
                  equals terms",
                 |(lhs, rhs)| {
-                    if unification::unify(
-                        &lhs,
-                        &rhs,
-                        &mut OrderUnifyingConfig,
-                        &Environment {
-                            table: &Table::<Building>::default(),
-                            premise: &Premise::default(),
-                            normalizer: &NoOp,
-                        },
+                    let Ok(unification) = Unification::new(
+                        lhs.clone(),
+                        rhs.clone(),
+                        Arc::new(OrderPredicate),
                     )
-                    .unwrap()
-                    .is_some()
-                    {
+                    .query(&Environment {
+                        table: &Table::<Building>::default(),
+                        premise: &Premise::default(),
+                        normalizer: &NoOp,
+                    }) else {
+                        return None;
+                    };
+
+                    if unification.is_some() {
                         return None;
                     }
 
@@ -187,6 +194,8 @@ impl<
             Some(1)
         }
     }
+
+    fn node_count(&self) -> usize { 1 }
 }
 
 impl<
@@ -240,6 +249,8 @@ impl<
     }
 
     fn get_specialization_point(&self) -> Option<isize> { Some(0) }
+
+    fn node_count(&self) -> usize { 1 }
 }
 
 impl<
@@ -362,6 +373,11 @@ impl<
         }
 
         Some(result)
+    }
+
+    fn node_count(&self) -> usize {
+        1 + self.types.iter().map(|prop| prop.node_count()).sum::<usize>()
+            + self.constants.iter().map(|prop| prop.node_count()).sum::<usize>()
     }
 }
 

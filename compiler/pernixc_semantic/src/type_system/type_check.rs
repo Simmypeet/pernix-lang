@@ -13,15 +13,15 @@ use super::{
 };
 use crate::{
     arena::ID,
-    type_system::{
-        get_equivalences_with_context,
-        instantiation::{self, Instantiation},
-        term::{constant, r#type, Tuple},
-    },
     symbol::{
         self,
         table::{representation::Index, State},
         ConstantParameterID,
+    },
+    type_system::{
+        get_equivalences_with_context,
+        instantiation::{self, Instantiation},
+        term::{constant, r#type, Tuple},
     },
 };
 

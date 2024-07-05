@@ -6,23 +6,40 @@ use super::{
     matching::Matching, normalizer::Normalizer, query::Context, term::Term,
     Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
 };
-use crate::symbol::table::State;
+use crate::symbol::table::{self, DisplayObject, State};
 
 /// A query for checking strict equality
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub struct Equality<T> {
+pub struct Equality<T, U = T> {
     pub lhs: T,
-    pub rhs: T,
+    pub rhs: U,
 }
 
-impl<T: Term> Equality<T> {
+impl<T, U> Equality<T, U> {
     /// Creates a new equality query.
     #[must_use]
-    pub fn new(lhs: T, rhs: T) -> Self { Self { lhs, rhs } }
+    pub fn new(lhs: T, rhs: U) -> Self { Self { lhs, rhs } }
 }
 
-impl<T: Term> Compute for Equality<T> {
+impl<S: State, T: table::Display<S>, U: table::Display<S>> table::Display<S>
+    for Equality<T, U>
+{
+    fn fmt(
+        &self,
+        table: &table::Table<S>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(
+            f,
+            "{} = {}",
+            DisplayObject { display: &self.lhs, table },
+            DisplayObject { display: &self.rhs, table }
+        )
+    }
+}
+
+impl<T: Term> Compute for Equality<T, T> {
     type Error = OverflowError;
     type Parameter = ();
 
@@ -219,5 +236,5 @@ fn equals_without_mapping<T: Term>(
     Ok(None)
 }
 
-// #[cfg(test)]
-// pub(super) mod tests;
+#[cfg(test)]
+pub(super) mod tests;

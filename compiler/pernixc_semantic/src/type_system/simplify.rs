@@ -25,6 +25,7 @@ struct Visitor<
     R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
     M: Model,
 > {
+    result: Result<(), ExceedLimitError>,
     environment: &'a Environment<'a, M, T, N>,
     limit: &'l mut Limit<R>,
     model: PhantomData<M>,
@@ -47,13 +48,24 @@ impl<
         term: &mut U,
         _: <U as super::visitor::Element>::Location,
     ) -> bool {
-        if let Some(simplified) =
-            simplify_internal(term, self.environment, self.limit)
-        {
-            *term = simplified;
-        }
+        match self.result {
+            Ok(()) => {
+                match simplify_internal(term, self.environment, self.limit) {
+                    Ok(simplified) => {
+                        if let Some(simplified) = simplified {
+                            *term = simplified;
+                        }
 
-        true
+                        true
+                    }
+                    Err(err) => {
+                        self.result = Err(err);
+                        false
+                    }
+                }
+            }
+            Err(_) => false,
+        }
     }
 }
 
@@ -77,12 +89,8 @@ fn simplify_internal<T: Term>(
     }
 
     let mut simplified = 'simplified: {
-        let mut equivalents = term
-            .normalize(environment, limit)
-            .ok()
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
+        let mut equivalents =
+            term.normalize(environment, limit)?.into_iter().collect::<Vec<_>>();
 
         if term.as_trait_member().is_some() {
             for equivalent in environment
@@ -92,10 +100,12 @@ fn simplify_internal<T: Term>(
                 .filter_map(|x| T::as_trait_member_equality_predicate(x))
             {
                 let trait_member = T::from(equivalent.lhs.clone());
-
-                if let Ok(true) =
-                    equality::equals(&trait_member, term, environment)
-                {
+                if equality::equals_impl(
+                    &trait_member,
+                    term,
+                    environment,
+                    limit,
+                )? {
                     equivalents.push(equivalent.rhs.clone());
                 }
             }
@@ -104,7 +114,7 @@ fn simplify_internal<T: Term>(
         let mut simplified_equivalents = Vec::new();
         for equivalent in equivalents {
             if let Some(sim) =
-                simplify_internal(&equivalent, environment, limit)
+                simplify_internal(&equivalent, environment, limit)?
             {
                 simplified_equivalents.push(sim);
             }
@@ -124,11 +134,13 @@ fn simplify_internal<T: Term>(
     .unwrap_or_else(|| term.clone());
 
     // simplify the sub-terms
-    let mut visitor = Visitor { environment, limit, model: PhantomData };
+    let mut visitor =
+        Visitor { result: Ok(()), environment, limit, model: PhantomData };
     let _ = simplified.accept_one_level_mut(&mut visitor);
+    visitor.result?;
 
     limit.mark_as_done::<T, _>(Query(term), simplified.clone());
-    Some(simplified)
+    Ok(Some(simplified))
 }
 
 /// Simplifies a term by normalizing and applying equivalences.
@@ -143,7 +155,7 @@ pub fn simplify<T: Term>(
     let mut limit = Limit::<query::Default<_>>::default();
 
     simplify_internal(term, environment, &mut limit)
-        .unwrap_or_else(|| term.clone())
+        .map(|x| x.unwrap_or_else(|| term.clone()))
 }
 
 #[cfg(test)]

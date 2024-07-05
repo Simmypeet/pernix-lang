@@ -1,11 +1,13 @@
+//! Contains the definition of [`Definite`].
+
 use super::{predicate::Satisfiability, query::Context, Compute};
 use crate::{
+    symbol::table::State,
     type_system::{
         get_equivalences_with_context, model::Model, normalizer::Normalizer,
         term::Term, visitor, Environment, Output, OverflowError, Satisfied,
         Succeeded,
     },
-    symbol::table::State,
 };
 
 #[derive(Debug)]
@@ -105,3 +107,6 @@ impl<T: Term> Compute for Definite<T> {
         Ok(None)
     }
 }
+
+#[cfg(test)]
+mod tests;

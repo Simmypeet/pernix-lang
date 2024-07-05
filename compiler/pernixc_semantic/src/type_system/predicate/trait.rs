@@ -6,6 +6,12 @@ use thiserror::Error;
 use super::contains_forall_lifetime;
 use crate::{
     arena::ID,
+    symbol::{
+        self,
+        table::{self, representation::Index, DisplayObject, State, Table},
+        ConstantParameterID, Generic, LifetimeParameterID,
+        TraitImplementationID, TypeParameterID, Variance,
+    },
     type_system::{
         compatible, deduction,
         instantiation::Instantiation,
@@ -21,12 +27,6 @@ use crate::{
         unification::{self, Log},
         Compute, Environment, LifetimeConstraint, Output, OverflowError,
         Premise, Satisfied, Succeeded, TraitContext,
-    },
-    symbol::{
-        self,
-        table::{self, representation::Index, DisplayObject, State, Table},
-        ConstantParameterID, Generic, LifetimeParameterID,
-        TraitImplementationID, TypeParameterID, Variance,
     },
 };
 
@@ -279,8 +279,6 @@ impl<M: Model> Compute for Trait<M> {
     #[allow(private_bounds, private_interfaces)]
     fn on_cyclic(
         &self,
-        _: &Environment<Self::Model, impl State, impl Normalizer<Self::Model>>,
-        _: &mut Context<Self::Model>,
         _: Self::Parameter,
         _: Self::InProgress,
         _: Self::InProgress,

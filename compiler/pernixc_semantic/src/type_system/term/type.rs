@@ -22,6 +22,7 @@ use crate::{
     },
     type_system::{
         deduction,
+        equality::Equality,
         instantiation::{self, Instantiation},
         mapping::Mapping,
         matching::{self, Match, Matching},
@@ -865,7 +866,6 @@ pub enum Type<M: Model> {
     MemberSymbol(MemberSymbol<M, MemberSymbolID>),
     #[from]
     TraitMember(TraitMember<M>),
-    #[from]
     Error,
 }
 
@@ -1521,19 +1521,19 @@ where
 
     fn as_trait_member_equality_predicate(
         predicate: &Predicate<M>,
-    ) -> Option<&predicate::Equality<TraitMember<M>, Self>> {
+    ) -> Option<&Equality<TraitMember<M>, Self>> {
         predicate.as_trait_type_equality()
     }
 
     fn as_trait_member_equality_predicate_mut(
         predicate: &mut Predicate<M>,
-    ) -> Option<&mut predicate::Equality<TraitMember<M>, Self>> {
+    ) -> Option<&mut Equality<TraitMember<M>, Self>> {
         predicate.as_trait_type_equality_mut()
     }
 
     fn into_trait_member_equality_predicate(
         predicate: Predicate<M>,
-    ) -> Result<predicate::Equality<TraitMember<M>, Self>, Predicate<M>> {
+    ) -> Result<Equality<TraitMember<M>, Self>, Predicate<M>> {
         predicate.into_trait_type_equality()
     }
 
@@ -1773,7 +1773,7 @@ where
                 })
             }
             Self::Error => {
-                write!(f, "{{unknown}}")
+                write!(f, "{{error}}")
             }
         }
     }

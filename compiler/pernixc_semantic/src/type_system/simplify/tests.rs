@@ -36,7 +36,8 @@ fn basic_case() {
         premise: &premise,
         table: &table,
         normalizer: &NoOp,
-    });
+    })
+    .unwrap();
 
     assert_eq!(simplified, equivalent);
 }
@@ -76,7 +77,8 @@ fn sub_term_case() {
             },
         }),
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         simplified,
@@ -120,7 +122,8 @@ fn already_simplified_case() {
         premise: &premise,
         table: &table,
         normalizer: &NoOp,
-    });
+    })
+    .unwrap();
 
     assert_eq!(simplified, equivalent);
 }
@@ -159,14 +162,16 @@ fn transitive_case() {
             premise: &premise,
             table: &table,
             normalizer: &NoOp,
-        });
+        })
+        .unwrap();
 
     let result2 =
         simplify(&Type::TraitMember(second_trait_member), &Environment {
             premise: &premise,
             table: &table,
             normalizer: &NoOp,
-        });
+        })
+        .unwrap();
 
     assert_eq!(result1, result2);
     assert_eq!(result1, equivalent);
@@ -220,21 +225,24 @@ fn multiple_equivalent_but_same_case() {
             premise: &premise,
             table: &table,
             normalizer: &NoOp,
-        });
+        })
+        .unwrap();
 
     let result_from_first =
         simplify(&Type::TraitMember(first_trait_member), &Environment {
             premise: &premise,
             table: &table,
             normalizer: &NoOp,
-        });
+        })
+        .unwrap();
 
     let result_from_second =
         simplify(&Type::TraitMember(second_trait_member), &Environment {
             premise: &premise,
             table: &table,
             normalizer: &NoOp,
-        });
+        })
+        .unwrap();
 
     assert_eq!(result_from_starting, result_from_first);
     assert_eq!(result_from_starting, result_from_second);
@@ -287,17 +295,20 @@ fn ambiguous_case() {
     let result_from_starting = simplify(
         &Type::TraitMember(starting_trait_member.clone()),
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-    );
+    )
+    .unwrap();
 
     let result_from_first = simplify(
         &Type::TraitMember(first_trait_member.clone()),
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-    );
+    )
+    .unwrap();
 
     let result_from_second = simplify(
         &Type::TraitMember(second_trait_member.clone()),
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-    );
+    )
+    .unwrap();
 
     assert_eq!(result_from_first, Type::TraitMember(first_trait_member));
     assert_eq!(result_from_second, Type::TraitMember(second_trait_member));

@@ -15,12 +15,6 @@ use pernixc_syntax::syntax_tree::AccessModifier;
 use super::{State, Suboptimal, Table};
 use crate::{
     arena::{Arena, ID},
-    type_system::{
-        model::{Default, Model},
-        predicate::Predicate,
-        term::{constant, lifetime::Lifetime, r#type, GenericArguments},
-        Premise, TraitContext,
-    },
     symbol::{
         self, Accessibility, Adt, AdtID, AdtImplementation,
         AdtImplementationConstant, AdtImplementationFunction,
@@ -32,6 +26,12 @@ use crate::{
         Trait, TraitConstant, TraitFunction, TraitImplementationConstant,
         TraitImplementationFunction, TraitImplementationType, TraitType, Type,
         Variant,
+    },
+    type_system::{
+        model::{Default, Model},
+        predicate::Predicate,
+        term::{constant, lifetime::Lifetime, r#type, GenericArguments},
+        Premise, TraitContext,
     },
 };
 
@@ -2065,7 +2065,7 @@ impl<T: Container> Representation<T> {
 
 impl<T: State + std::default::Default> std::default::Default for Table<T> {
     fn default() -> Self {
-        let mut representation = Representation::default();
+        let representation = Representation::default();
         // TODO
         // representation.initialize_core();
 

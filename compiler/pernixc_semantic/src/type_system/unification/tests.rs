@@ -1,4 +1,4 @@
-use std::{fmt::Debug, result::Result};
+use std::{fmt::Debug, result::Result, sync::Arc};
 
 use proptest::{
     arbitrary::Arbitrary,
@@ -7,61 +7,65 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use super::{unify, Log, Predicate, Unification};
+use super::{Log, Predicate as _, Unification, Unifier};
 use crate::{
-    semantic::{
-        model::Default,
-        normalizer::NoOp,
-        query,
-        sub_term::Location,
-        term::{
-            constant::Constant, lifetime::Lifetime, r#type::Type,
-            GenericArguments, Symbol, Term, Tuple, TupleElement,
-        },
-        Environment, OverflowError, Premise,
-    },
     symbol::{
         table::{Building, Table},
         ConstantParameterID, LifetimeParameterID, TypeParameterID,
+    },
+    type_system::{
+        equality::Equality,
+        model::Default,
+        normalizer::NoOp,
+        predicate::Predicate,
+        sub_term::Location,
+        term::{
+            constant::Constant,
+            lifetime::Lifetime,
+            r#type::{self, Type},
+            GenericArguments, Symbol, Term, Tuple, TupleElement,
+        },
+        Compute, Environment, Output, OverflowError, Premise, Satisfied,
+        Succeeded,
     },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct GenericParameterUnifyConfig;
 
-impl Predicate<Lifetime<Default>> for GenericParameterUnifyConfig {
-    fn unifiable<'a>(
-        &mut self,
+impl super::Predicate<Lifetime<Default>> for GenericParameterUnifyConfig {
+    fn unifiable(
+        &self,
         from: &Lifetime<Default>,
         _: &Lifetime<Default>,
-        _: impl ExactSizeIterator<Item = &'a Log<Default>>,
-        _: impl ExactSizeIterator<Item = &'a Log<Default>>,
-    ) -> Result<bool, OverflowError> {
-        Ok(from.is_parameter())
+        _: &Vec<Log<Default>>,
+        _: &Vec<Log<Default>>,
+    ) -> Result<Output<Satisfied, Default>, OverflowError> {
+        Ok(from.is_parameter().then_some(Succeeded::satisfied()))
     }
 }
 
-impl Predicate<Type<Default>> for GenericParameterUnifyConfig {
-    fn unifiable<'a>(
-        &mut self,
+impl super::Predicate<Type<Default>> for GenericParameterUnifyConfig {
+    fn unifiable(
+        &self,
         from: &Type<Default>,
         _: &Type<Default>,
-        _: impl ExactSizeIterator<Item = &'a Log<Default>>,
-        _: impl ExactSizeIterator<Item = &'a Log<Default>>,
-    ) -> Result<bool, OverflowError> {
-        Ok(from.is_parameter())
+        _: &Vec<Log<Default>>,
+        _: &Vec<Log<Default>>,
+    ) -> Result<Output<Satisfied, Default>, OverflowError> {
+        Ok(from.is_parameter().then_some(Succeeded::satisfied()))
     }
 }
 
-impl Predicate<Constant<Default>> for GenericParameterUnifyConfig {
-    fn unifiable<'a>(
-        &mut self,
+impl super::Predicate<Constant<Default>> for GenericParameterUnifyConfig {
+    fn unifiable(
+        &self,
         from: &Constant<Default>,
         _: &Constant<Default>,
-        _: impl ExactSizeIterator<Item = &'a Log<Default>>,
-        _: impl ExactSizeIterator<Item = &'a Log<Default>>,
-    ) -> Result<bool, OverflowError> {
-        Ok(from.is_parameter())
+        _: &Vec<Log<Default>>,
+        _: &Vec<Log<Default>>,
+    ) -> Result<Output<Satisfied, Default>, OverflowError> {
+        Ok(from.is_parameter().then_some(Succeeded::satisfied()))
     }
 }
 
@@ -160,7 +164,7 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
                         Some(Box::<dyn Property<Constant<_>>>::arbitrary())
                     )
                 ).prop_map(|x| Box::new(x) as _),
-                1 => Mapping::<Type<_>>::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
+                1 => Mapping::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
                 4 => TupleCongruence::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _),
             ]
         })
@@ -194,7 +198,6 @@ pub struct TupleCongruence<T> {
 
 impl<T: Term> Property<T> for TupleCongruence<T>
 where
-    query::Default<Default>: Session<T>,
     Tuple<T>: Into<T>,
 {
     fn apply(
@@ -255,7 +258,6 @@ impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T>
     for SymbolCongruence<ID>
 where
     Symbol<Default, ID>: Into<T>,
-    query::Default<Default>: Session<T>,
 {
     fn apply(
         &self,
@@ -361,27 +363,22 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
 }
 
 #[derive(Debug)]
-pub struct Mapping<T: Term> {
-    pub property: Box<dyn Property<T>>,
-    pub trait_member: T::TraitMember,
+pub struct Mapping {
+    pub property: Box<dyn Property<Type<Default>>>,
+    pub trait_member: r#type::TraitMember<Default>,
 }
 
-impl<T: Term<Model = Default> + 'static> Property<T> for Mapping<T> {
+impl Property<Type<Default>> for Mapping {
     fn apply(
         &self,
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
     ) -> Result<(), ApplyPropertyError> {
-        let (lhs, rhs) = self.generate();
+        let (from, to) = self.generate();
 
-        if T::unifiable(
-            &lhs,
-            &rhs,
-            std::iter::empty(),
-            std::iter::empty(),
-            &mut GenericParameterUnifyConfig,
-        )
-        .unwrap()
+        if GenericParameterUnifyConfig
+            .unifiable(&from, &to, &Vec::new(), &Vec::new())?
+            .is_some()
         {
             return Ok(());
         }
@@ -390,32 +387,32 @@ impl<T: Term<Model = Default> + 'static> Property<T> for Mapping<T> {
 
         let mapped = self.property.generate().1;
 
-        premise.equivalent.insert(T::from(self.trait_member.clone()), mapped);
+        premise.append_from_predicates(std::iter::once(
+            Predicate::TraitTypeEquality(Equality::new(
+                self.trait_member.clone(),
+                mapped,
+            )),
+        ));
 
         Ok(())
     }
 
-    fn generate(&self) -> (T, T) {
+    fn generate(&self) -> (Type<Default>, Type<Default>) {
         let term = self.property.generate().1;
 
-        (term, T::from(self.trait_member.clone()))
+        (term, Type::TraitMember(self.trait_member.clone()))
     }
 }
 
-impl<T: Term + 'static> Arbitrary for Mapping<T>
-where
-    Box<dyn Property<T>>:
-        Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
-    T::TraitMember: Arbitrary<Strategy = BoxedStrategy<T::TraitMember>>,
-{
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
+impl Arbitrary for Mapping {
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(strategy: Self::Parameters) -> Self::Strategy {
-        let strategy =
-            strategy.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
+        let strategy = strategy
+            .unwrap_or_else(Box::<dyn Property<Type<Default>>>::arbitrary);
 
-        (strategy, T::TraitMember::arbitrary())
+        (strategy, r#type::TraitMember::arbitrary())
             .prop_map(|(property, trait_member)| Self {
                 property,
                 trait_member,
@@ -424,103 +421,53 @@ where
     }
 }
 
-fn add_equality_mapping_from_unification<T: Term<Model = Default>>(
-    unification: &Unification<T>,
-    equality_mapping: &mut Equivalent<Default>,
-) -> TestCaseResult {
-    match &unification.matching {
-        super::Matching::Unifiable(lhs, rhs) => {
-            let mut config = GenericParameterUnifyConfig;
-
-            prop_assert!(T::unifiable(
-                lhs,
-                rhs,
-                std::iter::empty(),
-                std::iter::empty(),
-                &mut config
-            )
-            .unwrap());
-            equality_mapping.insert(lhs.clone(), rhs.clone());
-
-            Ok(())
-        }
-        super::Matching::Substructural(substructural) => {
-            for lifetime_unification in substructural.lifetimes.values() {
-                add_equality_mapping_from_unification::<Lifetime<_>>(
-                    lifetime_unification,
-                    equality_mapping,
-                )?;
-            }
-
-            for type_unification in substructural.types.values() {
-                add_equality_mapping_from_unification::<Type<_>>(
-                    type_unification,
-                    equality_mapping,
-                )?;
-            }
-
-            for constant_unification in substructural.constants.values() {
-                add_equality_mapping_from_unification::<Constant<_>>(
-                    constant_unification,
-                    equality_mapping,
-                )?;
-            }
-
-            Ok(())
-        }
-        super::Matching::Equality => Ok(()),
-    }
-}
-
 fn rewrite_term<T: Term + 'static>(
     lhs: &mut T,
-    unification: Unification<T>,
+    unifier: Unifier<T>,
 ) -> TestCaseResult {
-    if let Some(rewritten) = unification.rewritten_from {
+    if let Some(rewritten) = unifier.rewritten_from {
         *lhs = rewritten;
     }
 
-    match unification.matching {
+    match unifier.matching {
         super::Matching::Unifiable(new_lhs, rhs) => {
             prop_assert_eq!(&*lhs, &new_lhs);
             *lhs = rhs;
             Ok(())
         }
         super::Matching::Substructural(substructural) => {
-            for (lifetime_location, lifetime_unification) in
-                substructural.lifetimes
+            for (lifetime_location, lifetime_unifier) in substructural.lifetimes
             {
                 let mut sub_lifetime = lifetime_location
                     .get_sub_term(lhs)
                     .ok_or_else(|| TestCaseError::fail("invalid location"))?;
 
-                rewrite_term(&mut sub_lifetime, lifetime_unification)?;
+                rewrite_term(&mut sub_lifetime, lifetime_unifier)?;
 
                 lifetime_location
                     .assign_sub_term(lhs, sub_lifetime)
                     .map_err(|_| TestCaseError::fail("invalid location"))?;
             }
 
-            for (type_location, type_unification) in substructural.types {
+            for (type_location, type_unifier) in substructural.types {
                 let mut sub_type = type_location
                     .get_sub_term(lhs)
                     .ok_or_else(|| TestCaseError::fail("invalid location"))?;
 
-                rewrite_term(&mut sub_type, type_unification)?;
+                rewrite_term(&mut sub_type, type_unifier)?;
 
                 type_location
                     .assign_sub_term(lhs, sub_type)
                     .map_err(|_| TestCaseError::fail("invalid location"))?;
             }
 
-            for (constant_location, constant_unification) in
-                substructural.constants
+            for (constant_location, constant_unifier) in substructural.constants
             {
                 let mut sub_constant = constant_location
                     .get_sub_term(lhs)
                     .ok_or_else(|| TestCaseError::fail("invalid location"))?;
 
-                rewrite_term(&mut sub_constant, constant_unification)?;
+                rewrite_term(&mut sub_constant, constant_unifier)?;
 
                 constant_location
                     .assign_sub_term(lhs, sub_constant)
@@ -533,61 +480,51 @@ fn rewrite_term<T: Term + 'static>(
     }
 }
 
-pub fn property_based_testing<T: Term<Model = Default> + 'static>(
+fn property_based_testing<T: Term<Model = Default> + 'static>(
     property: &dyn Property<T>,
-) -> TestCaseResult
-where
-    query::Default<Default>: Session<T>,
-{
+) -> TestCaseResult {
     let mut table = Table::default();
     let mut premise = Premise::default();
-    let mut config = GenericParameterUnifyConfig;
+    let config = GenericParameterUnifyConfig;
 
     let (mut lhs, rhs) = property.generate();
 
-    if equals(&lhs, &rhs, &Environment {
-        premise: &premise,
-        table: &table,
-        normalizer: &NoOp,
-    })? {
+    property.apply(&mut table, &mut premise)?;
+
+    let environment =
+        Environment { premise: &premise, table: &table, normalizer: &NoOp };
+
+    if Equality::new(lhs.clone(), rhs.clone())
+        .query(&environment)
+        .map_err(|_| TestCaseError::reject("too complex property"))?
+        .is_some()
+    {
         return Err(TestCaseError::reject("trivially equalities"));
     }
 
-    property.apply(&mut table, &mut premise)?;
+    let Succeeded { result: unifier, constraints } =
+        Unification::new(lhs.clone(), rhs.clone(), Arc::new(config))
+            .query(&environment)
+            .map_err(|_| TestCaseError::reject("too complex property"))?
+            .unwrap();
 
-    let unification = unify(&lhs, &rhs, &mut config, &Environment {
-        premise: &premise,
-        table: &table,
-        normalizer: &NoOp,
-    })
-    .map_err(|_| TestCaseError::reject("too complex property"))?
-    .unwrap();
-
-    // the terms will equal when adding the equality mapping
-    {
-        let mut premise_cloned = premise.clone();
-        add_equality_mapping_from_unification(
-            &unification,
-            &mut premise_cloned.equivalent,
-        )?;
-
-        let environment = Environment {
-            premise: &premise_cloned,
-            table: &table,
-            normalizer: &NoOp,
-        };
-        prop_assert!(equals(&lhs, &rhs, &environment,)
-            .map_err(|_| TestCaseError::reject("too complex property"))?);
-    }
+    prop_assert!(constraints.is_empty());
 
     // the terms will equal by rewriting the lhs
     {
-        rewrite_term(&mut lhs, unification)?;
+        rewrite_term(&mut lhs, unifier)?;
 
         let environment =
             Environment { premise: &premise, table: &table, normalizer: &NoOp };
-        prop_assert!(equals(&lhs, &rhs, &environment,)
-            .map_err(|_| TestCaseError::reject("too complex property"))?);
+
+        let Some(satisfied) = Equality::new(lhs, rhs)
+            .query(&environment)
+            .map_err(|_| TestCaseError::reject("too complex property"))?
+        else {
+            return Err(TestCaseError::reject("should be equal"));
+        };
+
+        prop_assert!(satisfied.constraints.is_empty());
     }
 
     Ok(())

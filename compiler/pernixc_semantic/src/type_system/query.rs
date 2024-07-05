@@ -29,6 +29,7 @@ pub enum Cached<I, T> {
 
 /// A struct storing the call to compute a query and the in progress state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
 pub struct Call<Q, I> {
     pub query: Q,
     pub in_progress: I,
@@ -42,6 +43,7 @@ impl<Q, I> Call<Q, I> {
 
 /// An enumeration of all kinds of queries in the type system.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum QueryCall<M: Model> {
     LifetimeEquality(Call<Equality<Lifetime<M>>, ()>),
     TypeEquality(Call<Equality<Type<M>>, ()>),
@@ -145,6 +147,7 @@ pub struct Context<M: Model> {
 
     type_check: HashMap<TypeCheck<M>, Cached<(), Succeeded<Satisfied, M>>>,
 
+    /// The call stack of the queries.
     #[get = "pub"]
     call_stack: Vec<QueryCall<M>>,
 
@@ -178,7 +181,7 @@ impl<M: Model> Default for Context<M> {
 
             call_stack: Vec::new(),
 
-            limit: 65536,
+            limit: 65_536,
             current_count: 0,
         }
     }
@@ -208,14 +211,15 @@ impl<M: Model> Context<M> {
         if self.current_count >= self.limit {
             return Err(OverflowError);
         }
-
         self.current_count += 1;
-        self.call_stack
-            .push(Q::into_query_call(query.clone(), in_progress.clone()));
 
-        match Q::get_map_mut(self).entry(query) {
+        match Q::get_map_mut(self).entry(query.clone()) {
             Entry::Vacant(entry) => {
-                entry.insert(Cached::InProgress(in_progress));
+                entry.insert(Cached::InProgress(in_progress.clone()));
+                self.call_stack.push(Q::into_query_call(
+                    query.clone(),
+                    in_progress.clone(),
+                ));
                 Ok(None)
             }
             Entry::Occupied(entry) => Ok(Some(entry.get().clone())),
@@ -292,6 +296,7 @@ pub(super) trait Query: Clone + Eq + std::hash::Hash {
     type Model: Model;
 
     /// Gets the map of the query from the context.
+    #[allow(dead_code)]
     fn get_map(
         context: &Context<Self::Model>,
     ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>>;

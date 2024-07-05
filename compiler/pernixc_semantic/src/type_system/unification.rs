@@ -437,6 +437,5 @@ pub(super) fn unify<T: Term>(
     Ok(None)
 }
 
-// TODO
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

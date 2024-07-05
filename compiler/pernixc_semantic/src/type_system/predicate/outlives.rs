@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
+    symbol::table::{self, DisplayObject, State, Table},
     type_system::{
         get_equivalences_with_context,
         instantiation::{self, Instantiation},
@@ -16,7 +17,6 @@ use crate::{
         visitor, Compute, Environment, LifetimeConstraint, Output,
         OverflowError, Satisfied, Succeeded,
     },
-    symbol::table::{self, DisplayObject, State, Table},
 };
 
 /// A predicate that a term outlives a lifetime.
@@ -133,7 +133,7 @@ impl<M: Model> unification::Predicate<Constant<M>> for OutlivesUnifyingConfig {
 }
 
 impl<M: Model> LifetimeConstraint<M> {
-    pub fn satisifies_with_context(
+    pub(super) fn satisifies_with_context(
         &self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
         context: &mut Context<M>,
@@ -282,11 +282,11 @@ impl<T: Term> Compute for Outlives<T> {
                 continue;
             }
 
-            if let Some(Satisified) =
+            if let Some(Satisfied) =
                 Outlives::new(next_bound.clone(), self.bound.clone())
                     .query_with_context(environment, context)?
             {
-                return Ok(Some(Satisified));
+                return Ok(Some(Satisfied));
             }
         }
 

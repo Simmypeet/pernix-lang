@@ -21,6 +21,7 @@ use crate::{
         ConstantParameter, ConstantParameterID, GenericID, GlobalID, Variant,
     },
     type_system::{
+        equality::Equality,
         instantiation::Instantiation,
         mapping::Mapping,
         matching::{self, Match},
@@ -312,6 +313,7 @@ pub enum Constant<M: Model> {
     Local(Local<Self>),
     #[from]
     Tuple(Tuple<M>),
+
     Phantom,
     Error,
 }
@@ -744,19 +746,19 @@ where
 
     fn as_trait_member_equality_predicate(
         _: &Predicate<M>,
-    ) -> Option<&predicate::Equality<Never, Self>> {
+    ) -> Option<&Equality<Never, Self>> {
         None
     }
 
     fn as_trait_member_equality_predicate_mut(
         _: &mut Predicate<M>,
-    ) -> Option<&mut predicate::Equality<Never, Self>> {
+    ) -> Option<&mut Equality<Never, Self>> {
         None
     }
 
     fn into_trait_member_equality_predicate(
         predicate: Predicate<M>,
-    ) -> Result<predicate::Equality<Never, Self>, Predicate<M>> {
+    ) -> Result<Equality<Never, Self>, Predicate<M>> {
         Err(predicate)
     }
 

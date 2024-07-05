@@ -8,6 +8,7 @@ mod tuple;
 use enum_as_inner::EnumAsInner;
 
 use super::{
+    equality::Equality,
     instantiation::{self, Instantiation},
     model::{Default, Model},
     sub_term::TermLocation,
@@ -19,7 +20,7 @@ use super::{
     },
     visitor::{accept_recursive, Recursive},
 };
-use crate::symbol::table::{self, DisplayObject, State};
+use crate::symbol::table::{self, State};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct ContainsForallLifetimeVisitor {
@@ -231,33 +232,6 @@ impl<M: Model> Predicate<M> {
             Self::TupleConstant(tuple) => tuple.instantiate(substitution),
             Self::Trait(tr) => tr.instantiate(substitution),
         }
-    }
-}
-
-/// A predicate that two terms are equal.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Equality<T, U = T> {
-    /// The trait member term under comparison.
-    pub lhs: T,
-
-    /// The term that the trait member is equivalent to.
-    pub rhs: U,
-}
-
-impl<S: State, T: table::Display<S>, U: table::Display<S>> table::Display<S>
-    for Equality<T, U>
-{
-    fn fmt(
-        &self,
-        table: &table::Table<S>,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        write!(
-            f,
-            "{} = {}",
-            DisplayObject { display: &self.lhs, table },
-            DisplayObject { display: &self.rhs, table }
-        )
     }
 }
 

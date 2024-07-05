@@ -120,7 +120,7 @@ impl<M: Model> Succeeded<Satisfied, M> {
 ///
 /// The [`None`] is returned if failed to prove the query. Otherwise, the
 /// [`Succeeded`] is returned with the result and additional constraints.
-pub type Output<Result, M: Model> = Option<Succeeded<Result, M>>;
+pub type Output<Result, M> = Option<Succeeded<Result, M>>;
 
 /// Extra environment content that has a particular effect on the semantic
 #[derive(
@@ -244,9 +244,13 @@ fn get_equivalences_with_context<T: Term>(
     Ok(equivalences)
 }
 
+/// A trait used for computing the result of the query.
 #[allow(private_bounds)]
 pub trait Compute: Query {
+    /// The error type of the computation
     type Error: From<OverflowError>;
+
+    #[doc(hidden)]
     type Parameter: Default;
 
     /// The raw implementation of the query.
@@ -272,8 +276,6 @@ pub trait Compute: Query {
     #[allow(private_interfaces, private_bounds)]
     fn on_cyclic(
         &self,
-        _: &Environment<Self::Model, impl State, impl Normalizer<Self::Model>>,
-        _: &mut Context<Self::Model>,
         _: Self::Parameter,
         _: Self::InProgress,
         _: Self::InProgress,
@@ -343,17 +345,12 @@ pub trait Compute: Query {
                     .expect("should exist");
 
                 // circular dependency
-                let call_stack = context.call_stack()[position..].to_vec();
                 let result = self.on_cyclic(
-                    environment,
-                    context,
                     parameter,
                     in_progress,
                     new_in_progress,
-                    &call_stack,
+                    &context.call_stack()[position..],
                 )?;
-
-                context.clear_query(self);
 
                 return Ok(result);
             }
