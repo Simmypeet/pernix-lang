@@ -462,8 +462,7 @@ fn reference_bound_struct() {
         let struct_sym = table.get_mut(struct_id).unwrap();
 
         struct_sym
-            .fields()
-            .insert("a".to_string(), symbol::Field {
+            .insert_field(symbol::Field {
                 accessibility: Accessibility::Public,
                 r#type: Type::Primitive(Primitive::Int32),
                 name: "a".to_string(),
@@ -472,8 +471,7 @@ fn reference_bound_struct() {
             .unwrap();
 
         struct_sym
-            .fields()
-            .insert("b".to_string(), symbol::Field {
+            .insert_field(symbol::Field {
                 accessibility: Accessibility::Public,
                 r#type: Type::Primitive(Primitive::Float32),
                 name: "b".to_string(),
@@ -545,7 +543,7 @@ fn reference_bound_struct() {
                 && i.r#type
                     == Type::Reference(Reference {
                         qualifier: Qualifier::Immutable,
-                        lifetime: Lifetime::Inference(Erased),
+                        lifetime: Lifetime::Static,
                         pointee: Box::new(struct_ty.clone()),
                     })
             {
@@ -785,6 +783,8 @@ fn reference_bound_tuple() {
         panic!("Expected a named pattern")
     };
 
+    dbg!(&binder.intermediate_representation.registers);
+
     let load_address_register = binder
         .intermediate_representation
         .registers
@@ -798,7 +798,7 @@ fn reference_bound_tuple() {
                 && i.r#type
                     == Type::Reference(Reference {
                         qualifier: Qualifier::Mutable,
-                        lifetime: Lifetime::Inference(Erased),
+                        lifetime: Lifetime::Static,
                         pointee: Box::new(tuple_ty.clone()),
                     })
             {

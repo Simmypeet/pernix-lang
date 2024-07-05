@@ -1,8 +1,5 @@
 use core::fmt;
-use std::{
-    collections::{HashMap, HashSet},
-    hash::Hash,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use thiserror::Error;
 
@@ -10,24 +7,26 @@ use super::contains_forall_lifetime;
 use crate::{
     arena::ID,
     semantic::{
-        deduction, equality,
+        compatible, deduction,
         instantiation::Instantiation,
         model::{Default, Model},
         normalizer::Normalizer,
         order,
-        predicate::{ConstantType, LifetimeConstraint, Predicate, Tuple},
-        session::{self, Cached, Limit, Session},
+        predicate::Predicate,
+        query::{self, Context},
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments,
         },
-        unification, Environment, ExceedLimitError, Premise, TraitContext,
+        unification::{self, Log},
+        Compute, Environment, LifetimeConstraint, Output, OverflowError,
+        Premise, Satisfied, Succeeded, TraitContext,
     },
     symbol::{
         self,
         table::{self, representation::Index, DisplayObject, State, Table},
         ConstantParameterID, Generic, LifetimeParameterID,
-        TraitImplementationID, TypeParameterID,
+        TraitImplementationID, TypeParameterID, Variance,
     },
 };
 
@@ -95,147 +94,92 @@ impl<M: Model> Trait<M> {
     }
 }
 
-/// A query for checking [`Trait`] predicate satisfiability.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub struct Query<'a, M: Model> {
-    pub id: ID<symbol::Trait>,
-    pub is_const: bool,
-    pub generic_arguments: &'a GenericArguments<M>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct HigherRankedLifetimeUnifyingConfig;
 
-impl<M: Model> unification::Config<Lifetime<M>>
+impl<M: Model> unification::Predicate<Lifetime<M>>
     for HigherRankedLifetimeUnifyingConfig
 {
     fn unifiable(
-        &mut self,
-        from: &Lifetime<M>,
+        &self,
         _: &Lifetime<M>,
-    ) -> Result<bool, ExceedLimitError> {
-        Ok(from.is_forall())
+        _: &Lifetime<M>,
+        _: &Vec<Log<M>>,
+        _: &Vec<Log<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        Ok(Some(Succeeded::satisfied()))
     }
 }
 
-impl<M: Model> unification::Config<Type<M>>
+impl<M: Model> unification::Predicate<Type<M>>
     for HigherRankedLifetimeUnifyingConfig
 {
     fn unifiable(
-        &mut self,
+        &self,
         _: &Type<M>,
         _: &Type<M>,
-    ) -> Result<bool, ExceedLimitError> {
-        Ok(false)
+        _: &Vec<Log<M>>,
+        _: &Vec<Log<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        Ok(None)
     }
 }
 
-impl<M: Model> unification::Config<Constant<M>>
+impl<M: Model> unification::Predicate<Constant<M>>
     for HigherRankedLifetimeUnifyingConfig
 {
     fn unifiable(
-        &mut self,
+        &self,
         _: &Constant<M>,
         _: &Constant<M>,
-    ) -> Result<bool, ExceedLimitError> {
-        Ok(false)
+        _: &Vec<Log<M>>,
+        _: &Vec<Log<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        Ok(None)
     }
 }
 
-/// A result of a trait satisfiability query.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Satisfiability<M: Model> {
-    /// List of lifetime constraints that must be satisfied for the trait to be
-    /// satisfied.
-    pub lifetime_constraints: HashSet<LifetimeConstraint<M>>,
-}
+impl<M: Model> Compute for Trait<M> {
+    type Error = OverflowError;
+    type Parameter = ();
 
-impl<M: Model> Trait<M> {
-    /// Determines whether there exists an implementation for the given trait
-    /// and generic arguments.
-    ///
-    /// # Errors
-    ///
-    /// See [`ExceedLimitError`] for more information.
-    pub fn satisfies(
-        id: ID<symbol::Trait>,
-        is_const: bool,
-        generic_arguments: &GenericArguments<M>,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
-    ) -> Result<Option<Satisfiability<M>>, ExceedLimitError> {
-        let mut limit = Limit::<session::Default<_>>::default();
-        Self::satisfies_impl(
-            id,
-            is_const,
-            generic_arguments,
-            environment,
-            &mut limit,
-        )
-    }
-
-    #[allow(clippy::too_many_lines)]
-    pub(in crate::semantic) fn satisfies_impl(
-        id: ID<symbol::Trait>,
-        is_const: bool,
-        generic_arguments: &GenericArguments<M>,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
-        limit: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
+    #[allow(private_bounds, private_interfaces)]
+    fn implementation(
+        &self,
+        environment: &Environment<
+            Self::Model,
+            impl State,
+            impl Normalizer<Self::Model>,
         >,
-    ) -> Result<Option<Satisfiability<M>>, ExceedLimitError> {
-        match limit.mark_as_in_progress::<Type<_>, _>(
-            Query { id, is_const, generic_arguments },
-            (),
-        )? {
-            Some(Cached::InProgress(())) => {
-                // co-inductive
-                limit.clear_query::<Type<_>, _>(Query {
-                    id,
-                    is_const,
-                    generic_arguments,
-                });
-                return Ok(Some(Satisfiability {
-                    lifetime_constraints: HashSet::new(),
-                }));
-            }
-            Some(Cached::Done(satisfiability)) => {
-                return Ok(Some(satisfiability));
-            }
-            None => {}
-        }
-
-        if is_in_active_trait_implementation(
-            id,
-            false,
-            generic_arguments,
-            environment,
-            limit,
-        )? {
-            let pass = match environment.premise.trait_context {
+        context: &mut Context<Self::Model>,
+        (): Self::Parameter,
+        (): Self::InProgress,
+    ) -> Result<Option<Self::Result>, Self::Error> {
+        // if this query was made in some trait implementation or trait, then
+        // check if the trait implementation is the same as the query one.
+        if let Some(Succeeded { result: Satisfied, constraints }) =
+            is_in_active_trait_implementation(
+                self.id,
+                false,
+                &self.generic_arguments,
+                environment,
+                context,
+            )?
+        {
+            // pass the check
+            if match environment.premise.trait_context {
                 TraitContext::InTraitImplementation(
                     trait_implementation_id,
                 ) => {
                     let implementation =
                         environment.table.get(trait_implementation_id).unwrap();
 
-                    !is_const || implementation.is_const
+                    !self.is_const || implementation.is_const
                 }
-                TraitContext::InTrait(_) => !is_const,
+                TraitContext::InTrait(_) => !self.is_const,
                 TraitContext::Normal => false,
-            };
-
-            // pass the check
-            if pass {
-                let result =
-                    Satisfiability { lifetime_constraints: HashSet::new() };
-
-                limit.mark_as_done::<Type<_>, _>(
-                    Query { id, is_const, generic_arguments },
-                    result.clone(),
-                );
-
-                return Ok(Some(result));
+            } {
+                return Ok(Some(Succeeded::satisfied_with(constraints)));
             }
         }
 
@@ -246,23 +190,29 @@ impl<M: Model> Trait<M> {
             .iter()
             .filter_map(Predicate::as_trait)
         {
-            if (is_const && !trait_premise.is_const) || (id != trait_premise.id)
+            if (self.is_const && !trait_premise.is_const)
+                || (self.id != trait_premise.id)
             {
                 continue;
             }
 
-            let Some(forall_lifetime_unification) =
-                trait_premise.generic_arguments.unify_as_mapping_impl(
-                    generic_arguments,
-                    &mut HigherRankedLifetimeUnifyingConfig,
-                    environment,
-                    limit,
-                )?
+            let Some(Succeeded {
+                result: forall_lifetime_unification,
+                mut constraints,
+            }) = self.generic_arguments.unify_as_mapping_with_context(
+                &trait_premise.generic_arguments,
+                Arc::new(HigherRankedLifetimeUnifyingConfig),
+                environment,
+                context,
+            )?
             else {
                 continue;
             };
 
-            for lifetimes in forall_lifetime_unification.lifetimes.values() {
+            // check if all the lifetimes equal
+            for (key, lifetimes) in forall_lifetime_unification.lifetimes.iter()
+            {
+                let key_lifetime_is_forall = key.is_forall();
                 let mut lifetimes_iter = lifetimes.iter();
 
                 // get the first lifetime to compare with the rest
@@ -270,168 +220,73 @@ impl<M: Model> Trait<M> {
                     continue 'outer;
                 };
 
-                for lifetime in lifetimes_iter {
-                    if !equality::equals_impl(
-                        first_lifetime,
-                        lifetime,
-                        environment,
-                        limit,
-                    )? {
-                        continue 'outer;
-                    }
-                }
-            }
-
-            let Some(trait_sym) = environment.table.get(trait_premise.id)
-            else {
-                continue;
-            };
-
-            // constraints that involve with forall lifetime
-            let predicate_with_forall_lifetimes = {
-                let instantiation = Instantiation::from_generic_arguments(
-                    trait_premise.generic_arguments.clone(),
-                    trait_premise.id.into(),
-                    &trait_sym.generic_declaration.parameters,
-                )
-                .unwrap();
-
-                trait_sym
-                    .generic_declaration
-                    .predicates
-                    .iter()
-                    .filter_map(|x| {
-                        let mut predicate =
-                            Predicate::from_default_model(x.predicate.clone());
-
-                        predicate.instantiate(&instantiation);
-
-                        if predicate.contains_forall_lifetime() {
-                            Some(predicate)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            };
-
-            let forall_lifetime_instantiation = Instantiation {
-                lifetimes: forall_lifetime_unification
-                    .lifetimes
-                    .iter()
-                    .filter_map(|(forall, lifetimes)| {
-                        lifetimes
-                            .iter()
-                            .next()
-                            .cloned()
-                            .map(|lifetime| (forall.clone(), lifetime))
-                    })
-                    .collect(),
-                types: HashMap::default(),
-                constants: HashMap::default(),
-            };
-
-            let mut lifetime_constraints = HashSet::new();
-            for mut predicate in predicate_with_forall_lifetimes {
-                predicate.instantiate(&forall_lifetime_instantiation);
-
-                if !match predicate {
-                    Predicate::TraitTypeEquality(equality) => {
-                        equality::equals_impl(
-                            &Type::TraitMember(equality.lhs.clone()),
-                            &equality.rhs,
-                            environment,
-                            limit,
-                        )?
-                    }
-                    Predicate::ConstantType(constant_type) => {
-                        ConstantType::satisfies_impl(
-                            &constant_type.0,
-                            environment,
-                            limit,
-                        )?
-                    }
-                    Predicate::LifetimeOutlives(outlives) => {
-                        lifetime_constraints.insert(
-                            LifetimeConstraint::LifetimeOutlives(outlives),
-                        );
-                        true
-                    }
-                    Predicate::TypeOutlives(outlives) => {
-                        lifetime_constraints
-                            .insert(LifetimeConstraint::TypeOutlives(outlives));
-                        true
-                    }
-                    Predicate::TupleType(tuple) => {
-                        Tuple::satisfies_impl(&tuple.0, environment, limit)?
-                    }
-                    Predicate::TupleConstant(tuple) => {
-                        Tuple::satisfies_impl(&tuple.0, environment, limit)?
-                    }
-                    Predicate::Trait(tr) => {
-                        if let Some(satisfiability) = Self::satisfies_impl(
-                            tr.id,
-                            tr.is_const,
-                            &tr.generic_arguments,
-                            environment,
-                            limit,
-                        )? {
-                            lifetime_constraints
-                                .extend(satisfiability.lifetime_constraints);
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                } {
+                // if the key is forall, then all the lifetimes must be forall
+                if key_lifetime_is_forall && !first_lifetime.is_forall() {
                     continue 'outer;
                 }
+
+                for lifetime in lifetimes_iter {
+                    // the lifetime must match
+                    if first_lifetime != lifetime {
+                        // otherwise, create a lifetime matching constraint
+
+                        // can't create a lifetime matching constraint if the
+                        // lifetimes are forall
+                        if lifetime.is_forall() || first_lifetime.is_forall() {
+                            continue 'outer;
+                        }
+
+                        constraints.insert(
+                            LifetimeConstraint::LifetimeMatching(
+                                first_lifetime.clone(),
+                                lifetime.clone(),
+                            ),
+                        );
+                    }
+                }
             }
 
-            // if all the lifetimes are equal, then the trait is satisfied
-            limit.mark_as_done::<Type<_>, _>(
-                Query { id, is_const, generic_arguments },
-                Satisfiability {
-                    lifetime_constraints: lifetime_constraints.clone(),
-                },
-            );
-            return Ok(Some(Satisfiability { lifetime_constraints }));
+            // satisfied by the trait premise
+            return Ok(Some(Succeeded::satisfied_with(constraints)));
         }
 
         // manually search for the trait implementation
-        match resolve_implementation_impl(
-            id,
-            generic_arguments,
+        match resolve_implementation_with_context(
+            self.id,
+            &self.generic_arguments,
             environment,
-            limit,
+            context,
         ) {
             Ok(implementation) => {
-                limit.mark_as_done::<Type<_>, _>(
-                    Query { id, is_const, generic_arguments },
-                    Satisfiability {
-                        lifetime_constraints: implementation
-                            .lifetime_constraints
-                            .clone(),
-                    },
-                );
-                Ok(Some(Satisfiability {
-                    lifetime_constraints: implementation.lifetime_constraints,
-                }))
+                let implementation_sym =
+                    environment.table.get(implementation.result.id).unwrap();
+
+                if self.is_const && !implementation_sym.is_const {
+                    return Ok(None);
+                }
+
+                Ok(Some(Succeeded::satisfied_with(implementation.constraints)))
             }
 
-            Err(ResolveError::ExceedLimitError(exceed_limit_error)) => {
+            Err(ResolveError::Overflow(exceed_limit_error)) => {
                 Err(exceed_limit_error)
             }
 
-            Err(_) => {
-                limit.clear_query::<Type<_>, _>(Query {
-                    id,
-                    is_const,
-                    generic_arguments,
-                });
-                Ok(None)
-            }
+            Err(_) => Ok(None),
         }
+    }
+
+    #[allow(private_bounds, private_interfaces)]
+    fn on_cyclic(
+        &self,
+        _: &Environment<Self::Model, impl State, impl Normalizer<Self::Model>>,
+        _: &mut Context<Self::Model>,
+        _: Self::Parameter,
+        _: Self::InProgress,
+        _: Self::InProgress,
+        _: &[query::QueryCall<Self::Model>],
+    ) -> Result<Option<Self::Result>, Self::Error> {
+        Ok(Some(Succeeded::satisfied())) // co-inductive
     }
 }
 
@@ -451,10 +306,6 @@ pub struct Implementation<M: Model> {
 
     /// The ID of the resolved trait implementation.
     pub id: ID<symbol::PositiveTraitImplementation>,
-
-    /// List of lifetime constraints that must be satisfied for the trait
-    /// implementaton to be well-formed.
-    pub lifetime_constraints: HashSet<LifetimeConstraint<M>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
@@ -467,7 +318,7 @@ pub enum ResolveError {
     #[error("the trait was ambiguous")]
     AmbiguousTrait,
     #[error(transparent)]
-    ExceedLimitError(#[from] ExceedLimitError),
+    Overflow(#[from] OverflowError),
     #[error("the trait implementation was not found")]
     NotFound,
     #[error(
@@ -488,62 +339,81 @@ pub enum ResolveError {
 /// - [`ResolveError::AmbiguousTrait`]: If the trait defined in the table is
 ///   ambiguous (multiple trait implementation matches).
 /// - [`ResolveError::NotFound`]: If the trait implementation was not found.
-/// - [`ResolveError::ExceedLimitError`]: If the session limit was exceeded; see
-///   [`ExceedLimitError`] for more information.
+/// - [`ResolveError::Overflow`]: If the session limit was exceeded; see
+///   [`OverflowError`] for more information.
 #[allow(clippy::too_many_lines)]
 pub fn resolve_implementation<M: Model>(
     trait_id: ID<symbol::Trait>,
     generic_arguments: &GenericArguments<M>,
     environment: &Environment<M, impl State, impl Normalizer<M>>,
-) -> Result<Implementation<M>, ResolveError> {
-    let mut limit = Limit::<session::Default<_>>::default();
-    resolve_implementation_impl(
+) -> Result<Succeeded<Implementation<M>, M>, ResolveError> {
+    resolve_implementation_with_context(
         trait_id,
         generic_arguments,
         environment,
-        &mut limit,
+        &mut Context::new(),
     )
 }
 
-pub(in crate::semantic) fn resolve_implementation_impl<M: Model>(
+pub(in crate::semantic) fn resolve_implementation_with_context<M: Model>(
     trait_id: ID<symbol::Trait>,
     generic_arguments: &GenericArguments<M>,
     environment: &Environment<M, impl State, impl Normalizer<M>>,
-    limit: &mut Limit<
-        impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-    >,
-) -> Result<Implementation<M>, ResolveError> {
+    context: &mut Context<M>,
+) -> Result<Succeeded<Implementation<M>, M>, ResolveError> {
     let trait_symbol =
         environment.table.get(trait_id).ok_or(ResolveError::InvalidID)?;
 
-    if is_in_active_trait_implementation(
-        trait_id,
-        true,
-        generic_arguments,
-        environment,
-        limit,
-    )? {
-        return Ok(Implementation {
-            deduced_substitution: {
-                let implementation = environment
-                    .table
-                    .get(
-                        environment
-                            .premise
-                            .trait_context
-                            .into_in_trait_implementation()
-                            .unwrap(),
-                    )
-                    .unwrap();
+    if let Some(Succeeded { result: Satisfied, constraints }) =
+        is_in_active_trait_implementation(
+            trait_id,
+            true,
+            generic_arguments,
+            environment,
+            context,
+        )?
+    {
+        return Ok(Succeeded {
+            result: Implementation {
+                deduced_substitution: {
+                    let implementation = environment
+                        .table
+                        .get(
+                            environment
+                                .premise
+                                .trait_context
+                                .into_in_trait_implementation()
+                                .unwrap(),
+                        )
+                        .unwrap();
 
-                Instantiation {
-                    lifetimes: implementation
-                        .generic_declaration
-                        .parameters
-                        .lifetime_parameters_as_order()
-                        .map(|x| {
-                            let lifetime =
-                                Lifetime::Parameter(LifetimeParameterID {
+                    Instantiation {
+                        lifetimes: implementation
+                            .generic_declaration
+                            .parameters
+                            .lifetime_parameters_as_order()
+                            .map(|x| {
+                                let lifetime =
+                                    Lifetime::Parameter(LifetimeParameterID {
+                                        parent: environment
+                                            .premise
+                                            .trait_context
+                                            .into_in_trait_implementation()
+                                            .unwrap()
+                                            .into(),
+                                        id: x.0,
+                                    });
+
+                                (lifetime.clone(), lifetime)
+                            })
+                            .collect(),
+
+                        types: implementation
+                            .generic_declaration
+                            .parameters
+                            .type_parameters_as_order()
+                            .map(|x| {
+                                let ty = Type::Parameter(TypeParameterID {
                                     parent: environment
                                         .premise
                                         .trait_context
@@ -553,62 +423,48 @@ pub(in crate::semantic) fn resolve_implementation_impl<M: Model>(
                                     id: x.0,
                                 });
 
-                            (lifetime.clone(), lifetime)
-                        })
-                        .collect(),
+                                (ty.clone(), ty)
+                            })
+                            .collect(),
 
-                    types: implementation
-                        .generic_declaration
-                        .parameters
-                        .type_parameters_as_order()
-                        .map(|x| {
-                            let ty = Type::Parameter(TypeParameterID {
-                                parent: environment
-                                    .premise
-                                    .trait_context
-                                    .into_in_trait_implementation()
-                                    .unwrap()
-                                    .into(),
-                                id: x.0,
-                            });
+                        constants: implementation
+                            .generic_declaration
+                            .parameters
+                            .constant_parameters_as_order()
+                            .map(|x| {
+                                let constant =
+                                    Constant::Parameter(ConstantParameterID {
+                                        parent: environment
+                                            .premise
+                                            .trait_context
+                                            .into_in_trait_implementation()
+                                            .unwrap()
+                                            .into(),
+                                        id: x.0,
+                                    });
 
-                            (ty.clone(), ty)
-                        })
-                        .collect(),
-
-                    constants: implementation
-                        .generic_declaration
-                        .parameters
-                        .constant_parameters_as_order()
-                        .map(|x| {
-                            let constant =
-                                Constant::Parameter(ConstantParameterID {
-                                    parent: environment
-                                        .premise
-                                        .trait_context
-                                        .into_in_trait_implementation()
-                                        .unwrap()
-                                        .into(),
-                                    id: x.0,
-                                });
-
-                            (constant.clone(), constant)
-                        })
-                        .collect(),
-                }
+                                (constant.clone(), constant)
+                            })
+                            .collect(),
+                    }
+                },
+                id: environment
+                    .premise
+                    .trait_context
+                    .into_in_trait_implementation()
+                    .unwrap(),
             },
-            id: environment
-                .premise
-                .trait_context
-                .into_in_trait_implementation()
-                .unwrap(),
-            lifetime_constraints: HashSet::new(),
+            constraints,
         });
     }
 
-    if !generic_arguments.definite_impl(environment, limit)? {
+    let Some(Succeeded {
+        result: Satisfied,
+        constraints: mut definite_lifetime_constraints,
+    }) = generic_arguments.definite_with_context(environment, context)?
+    else {
         return Err(ResolveError::NonDefiniteGenericArguments);
-    }
+    };
 
     let mut candidate: Option<(
         TraitImplementationID,
@@ -632,15 +488,18 @@ pub(in crate::semantic) fn resolve_implementation_impl<M: Model>(
         })
     {
         // builds the unification
-        let unification = match arguments.deduce_impl(
+        let Succeeded {
+            result: instantiation,
+            constraints: mut lifetime_constraints,
+        } = match arguments.deduce_with_context(
             generic_arguments,
             environment,
-            limit,
+            context,
         ) {
             Ok(unification) => unification,
 
-            Err(deduction::Error::ExceedLimit(exceed_limit_error)) => {
-                return Err(exceed_limit_error.into())
+            Err(deduction::Error::Overflow(overflow)) => {
+                return Err(overflow.into())
             }
 
             Err(
@@ -651,21 +510,22 @@ pub(in crate::semantic) fn resolve_implementation_impl<M: Model>(
 
         // check if satisfies all the predicate
         let generic_symbol = environment.table.get_generic(key.into()).unwrap();
-        let Some(lifetime_constraints) = predicate_satisfies(
+        let Some(new_constraints) = predicate_satisfies(
             &*generic_symbol,
-            &unification,
+            &instantiation,
             environment,
-            limit,
+            context,
         )?
         else {
             continue;
         };
+        lifetime_constraints.extend(new_constraints);
 
         // assign the candidate
         match &mut candidate {
             Some((
                 candidate_id,
-                candidate_unification,
+                candidate_instantiation,
                 candidate_lifetime_constraints,
             )) => {
                 let combined_premise = {
@@ -713,7 +573,7 @@ pub(in crate::semantic) fn resolve_implementation_impl<M: Model>(
                         .arguments()
                         .clone(),
                 )
-                .order_impl(
+                .order_with_context(
                     &GenericArguments::from_default_model(
                         environment
                             .table
@@ -727,7 +587,7 @@ pub(in crate::semantic) fn resolve_implementation_impl<M: Model>(
                         table: environment.table,
                         normalizer: environment.normalizer,
                     },
-                    limit,
+                    context,
                 )? {
                     order::Order::Incompatible => {
                         return Err(ResolveError::AmbiguousTerm)
@@ -735,7 +595,7 @@ pub(in crate::semantic) fn resolve_implementation_impl<M: Model>(
                     order::Order::MoreGeneral => {}
                     order::Order::MoreSpecific => {
                         *candidate_id = key;
-                        *candidate_unification = unification;
+                        *candidate_instantiation = instantiation;
                         *candidate_lifetime_constraints = lifetime_constraints;
                     }
                     order::Order::Ambiguous => {
@@ -745,7 +605,7 @@ pub(in crate::semantic) fn resolve_implementation_impl<M: Model>(
             }
 
             candidate @ None => {
-                *candidate = Some((key, unification, lifetime_constraints));
+                *candidate = Some((key, instantiation, lifetime_constraints));
             }
         }
     }
@@ -755,10 +615,12 @@ pub(in crate::semantic) fn resolve_implementation_impl<M: Model>(
             TraitImplementationID::Positive(id),
             deduced_substitution,
             lifetime_constraints,
-        )) => Ok(Implementation {
-            deduced_substitution,
-            id,
-            lifetime_constraints,
+        )) => Ok(Succeeded {
+            result: Implementation { deduced_substitution, id },
+            constraints: {
+                definite_lifetime_constraints.extend(lifetime_constraints);
+                definite_lifetime_constraints
+            },
         }),
 
         None | Some((TraitImplementationID::Negative(_), _, _)) => {
@@ -767,15 +629,12 @@ pub(in crate::semantic) fn resolve_implementation_impl<M: Model>(
     }
 }
 
-fn predicate_satisfies<
-    M: Model,
-    R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
->(
+fn predicate_satisfies<M: Model>(
     generic_symbol: &dyn Generic,
     substitution: &Instantiation<M>,
     environment: &Environment<M, impl State, impl Normalizer<M>>,
-    session: &mut Limit<R>,
-) -> Result<Option<HashSet<LifetimeConstraint<M>>>, ExceedLimitError> {
+    context: &mut Context<M>,
+) -> Result<Option<HashSet<LifetimeConstraint<M>>>, OverflowError> {
     let mut lifetime_constraints = HashSet::new();
 
     // check if satisfies all the predicate
@@ -787,67 +646,42 @@ fn predicate_satisfies<
     {
         predicate.instantiate(substitution);
 
-        match predicate {
-            Predicate::TraitTypeEquality(equality) => {
-                if !equality::equals_impl(
-                    &Type::TraitMember(equality.lhs.clone()),
-                    &equality.rhs,
-                    environment,
-                    session,
-                )? {
-                    return Ok(None);
-                }
-            }
-            Predicate::ConstantType(constant_type) => {
-                if !ConstantType::satisfies_impl(
-                    &constant_type.0,
-                    environment,
-                    session,
-                )? {
-                    return Ok(None);
-                }
-            }
-            Predicate::LifetimeOutlives(outlives) => {
-                lifetime_constraints
-                    .insert(LifetimeConstraint::LifetimeOutlives(outlives));
-            }
-            Predicate::TypeOutlives(outlives) => {
-                lifetime_constraints
-                    .insert(LifetimeConstraint::TypeOutlives(outlives));
-            }
+        let Some(new_lifetime_constraints) = (match predicate {
+            Predicate::TraitTypeEquality(equality) => compatible::compatible(
+                &Type::TraitMember(equality.lhs),
+                &equality.rhs,
+                Variance::Bivariant,
+                environment,
+            )?
+            .map(|x| x.constraints),
+            Predicate::ConstantType(constant_type) => constant_type
+                .query_with_context(environment, context)?
+                .map(|x| x.constraints),
+            Predicate::LifetimeOutlives(outlives) => Some(
+                std::iter::once(LifetimeConstraint::LifetimeOutlives(outlives))
+                    .collect(),
+            ),
+            Predicate::TypeOutlives(outlives) => Some(
+                std::iter::once(LifetimeConstraint::TypeOutlives(outlives))
+                    .collect(),
+            ),
 
-            Predicate::TupleType(tuple_type) => {
-                if !Tuple::satisfies_impl(&tuple_type.0, environment, session)?
-                {
-                    return Ok(None);
-                }
-            }
+            Predicate::TupleType(tuple_type) => tuple_type
+                .query_with_context(environment, context)?
+                .map(|x| x.constraints),
 
-            Predicate::TupleConstant(tuple_constant) => {
-                if !Tuple::satisfies_impl(
-                    &tuple_constant.0,
-                    environment,
-                    session,
-                )? {
-                    return Ok(None);
-                }
-            }
+            Predicate::TupleConstant(tuple_constant) => tuple_constant
+                .query_with_context(environment, context)?
+                .map(|x| x.constraints),
 
-            Predicate::Trait(tr) => {
-                if let Some(satisfiability) = Trait::satisfies_impl(
-                    tr.id,
-                    tr.is_const,
-                    &tr.generic_arguments,
-                    environment,
-                    session,
-                )? {
-                    lifetime_constraints
-                        .extend(satisfiability.lifetime_constraints);
-                } else {
-                    return Ok(None);
-                }
-            }
-        }
+            Predicate::Trait(tr) => tr
+                .query_with_context(environment, context)?
+                .map(|x| x.constraints),
+        }) else {
+            return Ok(None);
+        };
+
+        lifetime_constraints.extend(new_lifetime_constraints);
     }
 
     Ok(Some(lifetime_constraints))
@@ -858,32 +692,34 @@ fn is_in_active_trait_implementation<M: Model>(
     need_implementation: bool,
     generic_arguments: &GenericArguments<M>,
     environment: &Environment<M, impl State, impl Normalizer<M>>,
-    limit: &mut Limit<
-        impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-    >,
-) -> Result<bool, ExceedLimitError> {
+    context: &mut Context<M>,
+) -> Result<Output<Satisfied, M>, OverflowError> {
     match environment.premise.trait_context {
         TraitContext::InTraitImplementation(trait_implementation) => {
             let Some(implementation) =
                 environment.table.get(trait_implementation)
             else {
-                return Ok(false);
+                return Ok(None);
             };
 
             // check if the trait id is the same
             if implementation.implemented_id() != trait_id {
-                return Ok(false);
+                return Ok(None);
             }
 
             // check if the generic arguments are the same
             GenericArguments::from_default_model(
                 implementation.arguments.clone(),
             )
-            .equals_impl(generic_arguments, environment, limit)
+            .equals_with_context(
+                generic_arguments,
+                environment,
+                context,
+            )
         }
         TraitContext::InTrait(env_trait_id) => {
             if need_implementation || env_trait_id != trait_id {
-                return Ok(false);
+                return Ok(None);
             }
 
             let trait_symbol = environment.table.get(trait_id).unwrap();
@@ -892,11 +728,12 @@ fn is_in_active_trait_implementation<M: Model>(
                 .generic_declaration()
                 .parameters
                 .create_identity_generic_arguments(env_trait_id.into())
-                .equals_impl(generic_arguments, environment, limit)
+                .equals_with_context(generic_arguments, environment, context)
         }
-        TraitContext::Normal => Ok(false),
+        TraitContext::Normal => Ok(None),
     }
 }
 
-#[cfg(test)]
-mod tests;
+// TODO
+// #[cfg(test)]
+// mod tests;

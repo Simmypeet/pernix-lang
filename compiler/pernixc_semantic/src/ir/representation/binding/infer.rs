@@ -23,7 +23,8 @@ use crate::{
             r#type::{self, Type},
             Never, Term,
         },
-        unification, Environment, ExceedLimitError, Premise,
+        unification::{self, Log},
+        Environment, OverflowError, Premise,
     },
     symbol::table::{self, Building, Table},
 };
@@ -514,7 +515,7 @@ pub enum UnifyError {
         "cannot unify the term due to the undecidability (exceeding the \
          computation limit)"
     )]
-    ExceedLimitError(#[from] ExceedLimitError),
+    ExceedLimitError(#[from] OverflowError),
 
     #[error("the two types cannot be unified or are mismatched")]
     IncompatibleTypes { lhs: Type<Model>, rhs: Type<Model> },
@@ -658,32 +659,38 @@ impl Context {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct UnificationConfig;
 
-impl unification::Config<Lifetime<Model>> for UnificationConfig {
-    fn unifiable(
+impl unification::Predicate<Lifetime<Model>> for UnificationConfig {
+    fn unifiable<'a>(
         &mut self,
         _: &Lifetime<Model>,
         _: &Lifetime<Model>,
-    ) -> Result<bool, ExceedLimitError> {
+        _: impl ExactSizeIterator<Item = &'a Log<Model>>,
+        _: impl ExactSizeIterator<Item = &'a Log<Model>>,
+    ) -> Result<bool, OverflowError> {
         Ok(true)
     }
 }
 
-impl unification::Config<Type<Model>> for UnificationConfig {
-    fn unifiable(
+impl unification::Predicate<Type<Model>> for UnificationConfig {
+    fn unifiable<'a>(
         &mut self,
         from: &Type<Model>,
         to: &Type<Model>,
-    ) -> Result<bool, ExceedLimitError> {
+        _: impl ExactSizeIterator<Item = &'a Log<Model>>,
+        _: impl ExactSizeIterator<Item = &'a Log<Model>>,
+    ) -> Result<bool, OverflowError> {
         Ok(from.is_inference() || to.is_inference())
     }
 }
 
-impl unification::Config<Constant<Model>> for UnificationConfig {
-    fn unifiable(
+impl unification::Predicate<Constant<Model>> for UnificationConfig {
+    fn unifiable<'a>(
         &mut self,
         from: &Constant<Model>,
         to: &Constant<Model>,
-    ) -> Result<bool, ExceedLimitError> {
+        _: impl ExactSizeIterator<Item = &'a Log<Model>>,
+        _: impl ExactSizeIterator<Item = &'a Log<Model>>,
+    ) -> Result<bool, OverflowError> {
         Ok(from.is_inference() || to.is_inference())
     }
 }
@@ -692,14 +699,14 @@ impl Normalizer<Model> for Context {
     fn normalize_lifetime(
         _: &Erased,
         _: &Environment<Model, impl table::State, Self>,
-    ) -> Result<Option<Lifetime<Model>>, ExceedLimitError> {
+    ) -> Result<Option<Lifetime<Model>>, OverflowError> {
         Ok(None)
     }
 
     fn normalize_type(
         ty: &InferenceVariable<Type<Model>>,
         environment: &Environment<Model, impl table::State, Self>,
-    ) -> Result<Option<Type<Model>>, ExceedLimitError> {
+    ) -> Result<Option<Type<Model>>, OverflowError> {
         Ok(
             if let Some(Inference::Known(normalized)) =
                 environment.normalizer.type_inference_context.get_inference(*ty)
@@ -714,7 +721,7 @@ impl Normalizer<Model> for Context {
     fn normalize_constant(
         constant: &InferenceVariable<Constant<Model>>,
         environment: &Environment<Model, impl table::State, Self>,
-    ) -> Result<Option<Constant<Model>>, ExceedLimitError> {
+    ) -> Result<Option<Constant<Model>>, OverflowError> {
         Ok(
             if let Some(Inference::Known(normalized)) = environment
                 .normalizer
@@ -1160,14 +1167,14 @@ impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
     fn normalize_lifetime(
         _: &<IntermediaryModel as model::Model>::LifetimeInference,
         _: &Environment<IntermediaryModel, impl table::State, Self>,
-    ) -> Result<Option<Lifetime<IntermediaryModel>>, ExceedLimitError> {
+    ) -> Result<Option<Lifetime<IntermediaryModel>>, OverflowError> {
         Ok(Some(Lifetime::Inference(Erased)))
     }
 
     fn normalize_type(
         ty: &<IntermediaryModel as model::Model>::TypeInference,
         environment: &Environment<IntermediaryModel, impl table::State, Self>,
-    ) -> Result<Option<Type<IntermediaryModel>>, ExceedLimitError> {
+    ) -> Result<Option<Type<IntermediaryModel>>, OverflowError> {
         match ty {
             InferenceOrConstraint::InferenceID(inference_id) => {
                 match environment
@@ -1200,7 +1207,7 @@ impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
     fn normalize_constant(
         constant: &<IntermediaryModel as model::Model>::ConstantInference,
         environment: &Environment<IntermediaryModel, impl table::State, Self>,
-    ) -> Result<Option<Constant<IntermediaryModel>>, ExceedLimitError> {
+    ) -> Result<Option<Constant<IntermediaryModel>>, OverflowError> {
         match constant {
             InferenceOrConstraint::InferenceID(inference_id) => {
                 match environment

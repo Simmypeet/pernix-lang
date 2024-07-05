@@ -321,7 +321,7 @@ macro_rules! implements_tuple {
         for (idx, element) in $self.elements.$iter().enumerate() {
             if !element.term.$accept_single(
                 $visitor,
-                SubTupleLocation::Single(idx).into().into(),
+                T::Location::from(SubTupleLocation::Single(idx).into()),
             ) {
                 return false;
             }

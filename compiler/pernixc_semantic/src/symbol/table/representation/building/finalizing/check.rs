@@ -29,7 +29,7 @@ use crate::{
             lifetime::{self, Lifetime},
             r#type, GenericArguments, Term,
         },
-        Environment, ExceedLimitError, Premise,
+        Environment, OverflowError, OutlivesConstraint, Premise,
     },
     symbol::{
         table::{
@@ -93,7 +93,7 @@ where
                                 predicate_declaration_span: None,
                             }));
                         }
-                        Err(ExceedLimitError) => {
+                        Err(OverflowError) => {
                             handler.receive(Box::new(UndecidablePredicate {
                                 instantiation_span: resolution_span.clone(),
                                 predicate,
@@ -272,7 +272,7 @@ where
         &self,
         predicate: &Predicate<M>,
         do_outlives_check: bool,
-    ) -> Result<bool, ExceedLimitError> {
+    ) -> Result<bool, OverflowError> {
         let result = match &predicate {
             predicate::Predicate::TraitTypeEquality(eq) => equality::equals(
                 &r#type::Type::TraitMember(eq.lhs.clone()),
@@ -303,7 +303,7 @@ where
                 Tuple::satisfies(&pred.0, self)
             }
             predicate::Predicate::Trait(pred) => {
-                || -> Result<bool, ExceedLimitError> {
+                || -> Result<bool, OverflowError> {
                     let Some(lifetime_constraints) = Trait::satisfies(
                         pred.id,
                         pred.is_const,
@@ -320,29 +320,25 @@ where
                             lifetime_constraints.lifetime_constraints
                         {
                             match constraint {
-                            predicate::LifetimeConstraint::LifetimeOutlives(
-                                pred,
-                            ) => {
-                                if !Outlives::satisfies(
-                                    &pred.operand,
-                                    &pred.bound,
-                                    self,
-                                )? {
-                                    return Ok(false);
+                                OutlivesConstraint::Lifetime(pred) => {
+                                    if !Outlives::satisfies(
+                                        &pred.operand,
+                                        &pred.bound,
+                                        self,
+                                    )? {
+                                        return Ok(false);
+                                    }
+                                }
+                                OutlivesConstraint::Type(pred) => {
+                                    if !Outlives::satisfies(
+                                        &pred.operand,
+                                        &pred.bound,
+                                        self,
+                                    )? {
+                                        return Ok(false);
+                                    }
                                 }
                             }
-                            predicate::LifetimeConstraint::TypeOutlives(
-                                pred,
-                            ) => {
-                                if !Outlives::satisfies(
-                                    &pred.operand,
-                                    &pred.bound,
-                                    self,
-                                )? {
-                                    return Ok(false);
-                                }
-                            }
-                        }
                         }
                     }
 
@@ -440,7 +436,7 @@ where
                     predicate_declaration_span: None,
                 }));
             }
-            Err(ExceedLimitError) => {
+            Err(OverflowError) => {
                 handler.receive(Box::new(error::UndecidablePredicate {
                     instantiation_span: instantiation_span.clone(),
                     predicate: Tuple(unpacked_term.clone()).into(),

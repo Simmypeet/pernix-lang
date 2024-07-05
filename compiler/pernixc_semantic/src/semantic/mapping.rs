@@ -7,7 +7,7 @@ use getset::Getters;
 use super::{
     model::Model,
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-    unification::{self, Unification},
+    unification::{self, Unifier},
 };
 
 /// Represents an equality mapping between two terms.
@@ -102,9 +102,9 @@ impl<M: Model> Mapping<M> {
     /// unification into this mapping recursively.
     pub fn append_from_unification<T: Term<Model = M>>(
         &mut self,
-        unification: Unification<T>,
+        unifier: Unifier<T>,
     ) {
-        match unification.r#match {
+        match unifier.matching {
             unification::Matching::Unifiable(lhs, rhs) => {
                 T::get_mapping_mut(self).entry(lhs).or_default().insert(rhs);
             }
@@ -127,12 +127,10 @@ impl<M: Model> Mapping<M> {
 
     /// Creates a new mapping from all the
     /// [`unification::Matching::Unifiable`]s in the given unification.
-    pub fn from_unification<T: Term<Model = M>>(
-        unification: Unification<T>,
-    ) -> Self {
+    pub fn from_unification<T: Term<Model = M>>(unifier: Unifier<T>) -> Self {
         let mut mapping = Self::default();
 
-        mapping.append_from_unification(unification);
+        mapping.append_from_unification(unifier);
 
         mapping
     }

@@ -12,7 +12,7 @@ use crate::{
     semantic::{
         model::Default,
         normalizer::NoOp,
-        session::{self, Session},
+        query::{self, Session},
         term::{
             constant::Constant,
             lifetime::Lifetime,
@@ -94,7 +94,7 @@ impl<
             + 'static,
     > Arbitrary for Incompatible<T>
 where
-    session::Default<Default>: Session<T>,
+    query::Default<Default>: Session<T>,
 {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;

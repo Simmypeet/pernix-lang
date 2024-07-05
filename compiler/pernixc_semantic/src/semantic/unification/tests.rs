@@ -7,20 +7,18 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use super::{unify, Config, Unification};
+use super::{unify, Log, Predicate, Unification};
 use crate::{
     semantic::{
-        equality::equals,
-        equivalent::Equivalent,
         model::Default,
         normalizer::NoOp,
-        session::{self, Session},
+        query,
         sub_term::Location,
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments, Symbol, Term, Tuple, TupleElement,
         },
-        Environment, ExceedLimitError, Premise,
+        Environment, OverflowError, Premise,
     },
     symbol::{
         table::{Building, Table},
@@ -31,32 +29,38 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct GenericParameterUnifyConfig;
 
-impl Config<Lifetime<Default>> for GenericParameterUnifyConfig {
-    fn unifiable(
+impl Predicate<Lifetime<Default>> for GenericParameterUnifyConfig {
+    fn unifiable<'a>(
         &mut self,
         from: &Lifetime<Default>,
         _: &Lifetime<Default>,
-    ) -> Result<bool, ExceedLimitError> {
+        _: impl ExactSizeIterator<Item = &'a Log<Default>>,
+        _: impl ExactSizeIterator<Item = &'a Log<Default>>,
+    ) -> Result<bool, OverflowError> {
         Ok(from.is_parameter())
     }
 }
 
-impl Config<Type<Default>> for GenericParameterUnifyConfig {
-    fn unifiable(
+impl Predicate<Type<Default>> for GenericParameterUnifyConfig {
+    fn unifiable<'a>(
         &mut self,
         from: &Type<Default>,
         _: &Type<Default>,
-    ) -> Result<bool, ExceedLimitError> {
+        _: impl ExactSizeIterator<Item = &'a Log<Default>>,
+        _: impl ExactSizeIterator<Item = &'a Log<Default>>,
+    ) -> Result<bool, OverflowError> {
         Ok(from.is_parameter())
     }
 }
 
-impl Config<Constant<Default>> for GenericParameterUnifyConfig {
-    fn unifiable(
+impl Predicate<Constant<Default>> for GenericParameterUnifyConfig {
+    fn unifiable<'a>(
         &mut self,
         from: &Constant<Default>,
         _: &Constant<Default>,
-    ) -> Result<bool, ExceedLimitError> {
+        _: impl ExactSizeIterator<Item = &'a Log<Default>>,
+        _: impl ExactSizeIterator<Item = &'a Log<Default>>,
+    ) -> Result<bool, OverflowError> {
         Ok(from.is_parameter())
     }
 }
@@ -66,7 +70,7 @@ impl Config<Constant<Default>> for GenericParameterUnifyConfig {
 )]
 pub enum ApplyPropertyError {
     #[error("{0}")]
-    ExceedLimitError(#[from] ExceedLimitError),
+    ExceedLimitError(#[from] OverflowError),
     #[error("failed to apply the environment")]
     TypeAliasIDCollision,
 }
@@ -190,7 +194,7 @@ pub struct TupleCongruence<T> {
 
 impl<T: Term> Property<T> for TupleCongruence<T>
 where
-    session::Default<Default>: Session<T>,
+    query::Default<Default>: Session<T>,
     Tuple<T>: Into<T>,
 {
     fn apply(
@@ -251,7 +255,7 @@ impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T>
     for SymbolCongruence<ID>
 where
     Symbol<Default, ID>: Into<T>,
-    session::Default<Default>: Session<T>,
+    query::Default<Default>: Session<T>,
 {
     fn apply(
         &self,
@@ -370,7 +374,15 @@ impl<T: Term<Model = Default> + 'static> Property<T> for Mapping<T> {
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
 
-        if T::unifiable(&lhs, &rhs, &mut GenericParameterUnifyConfig).unwrap() {
+        if T::unifiable(
+            &lhs,
+            &rhs,
+            std::iter::empty(),
+            std::iter::empty(),
+            &mut GenericParameterUnifyConfig,
+        )
+        .unwrap()
+        {
             return Ok(());
         }
 
@@ -416,11 +428,18 @@ fn add_equality_mapping_from_unification<T: Term<Model = Default>>(
     unification: &Unification<T>,
     equality_mapping: &mut Equivalent<Default>,
 ) -> TestCaseResult {
-    match &unification.r#match {
+    match &unification.matching {
         super::Matching::Unifiable(lhs, rhs) => {
             let mut config = GenericParameterUnifyConfig;
 
-            prop_assert!(T::unifiable(lhs, rhs, &mut config).unwrap());
+            prop_assert!(T::unifiable(
+                lhs,
+                rhs,
+                std::iter::empty(),
+                std::iter::empty(),
+                &mut config
+            )
+            .unwrap());
             equality_mapping.insert(lhs.clone(), rhs.clone());
 
             Ok(())
@@ -457,11 +476,11 @@ fn rewrite_term<T: Term + 'static>(
     lhs: &mut T,
     unification: Unification<T>,
 ) -> TestCaseResult {
-    if let Some(rewritten) = unification.rewritten_lhs {
+    if let Some(rewritten) = unification.rewritten_from {
         *lhs = rewritten;
     }
 
-    match unification.r#match {
+    match unification.matching {
         super::Matching::Unifiable(new_lhs, rhs) => {
             prop_assert_eq!(&*lhs, &new_lhs);
             *lhs = rhs;
@@ -518,7 +537,7 @@ pub fn property_based_testing<T: Term<Model = Default> + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult
 where
-    session::Default<Default>: Session<T>,
+    query::Default<Default>: Session<T>,
 {
     let mut table = Table::default();
     let mut premise = Premise::default();

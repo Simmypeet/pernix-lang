@@ -14,14 +14,14 @@ use crate::{
         model::Default,
         normalizer::NoOp,
         predicate::{Equality, Predicate},
-        session::{self, Session},
+        query::{self, Session},
         term::{
             constant::Constant,
             lifetime::Lifetime,
             r#type::{Primitive, SymbolID, TraitMember, Type},
             GenericArguments, Local, Symbol, Term,
         },
-        Environment, ExceedLimitError, Premise,
+        Environment, OverflowError, Premise,
     },
     symbol::{
         table::{representation::Insertion, Building, Table},
@@ -194,7 +194,7 @@ pub trait Property<T>: 'static + Debug {
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(T, T), ExceedLimitError>;
+    ) -> Result<(T, T), OverflowError>;
 }
 
 impl Arbitrary for Box<dyn Property<Type<Default>>> {
@@ -272,7 +272,7 @@ impl<T: Term + Debug + 'static> Property<T> for Identity<T> {
         _: &mut Table<Building>,
         _: &mut Premise<Default>,
         _: ID<Module>,
-    ) -> Result<(T, T), ExceedLimitError> {
+    ) -> Result<(T, T), OverflowError> {
         Ok((self.term.clone(), self.term.clone()))
     }
 }
@@ -290,7 +290,7 @@ where
     Box<dyn Property<T>>:
         Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
     T::TraitMember: Arbitrary<Strategy = BoxedStrategy<T::TraitMember>>,
-    session::Default<Default>: Session<T>,
+    query::Default<Default>: Session<T>,
 {
     type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
     type Strategy = BoxedStrategy<Self>;
@@ -310,7 +310,7 @@ where
 
 impl<T: Term<Model = Default> + Debug + 'static> Property<T> for Mapping<T>
 where
-    session::Default<Default>: Session<T>,
+    query::Default<Default>: Session<T>,
     Equality<T::TraitMember, T>: Into<Predicate<Default>>,
 {
     fn generate(
@@ -318,7 +318,7 @@ where
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(T, T), ExceedLimitError> {
+    ) -> Result<(T, T), OverflowError> {
         let (inner_lhs, inner_rhs) =
             self.property.generate(table, premise, root_module_id)?;
 
@@ -370,7 +370,7 @@ where
     Local<T>: Into<T>,
     Box<dyn Property<T>>:
         Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
-    session::Default<Default>: Session<T>,
+    query::Default<Default>: Session<T>,
 {
     type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
     type Strategy = BoxedStrategy<Self>;
@@ -386,14 +386,14 @@ impl<T: Term<Model = Default> + Debug + 'static> Property<T>
     for LocalCongruence<T>
 where
     Local<T>: Into<T>,
-    session::Default<Default>: Session<T>,
+    query::Default<Default>: Session<T>,
 {
     fn generate(
         &self,
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(T, T), ExceedLimitError> {
+    ) -> Result<(T, T), OverflowError> {
         let (lhs, rhs) =
             self.strategy.generate(table, premise, root_module_id)?;
 
@@ -461,14 +461,14 @@ impl<ID: Debug + 'static + Copy, T: Term<Model = Default> + 'static> Property<T>
     for SymbolCongruence<ID>
 where
     Symbol<Default, ID>: Into<T>,
-    session::Default<Default>: Session<T>,
+    query::Default<Default>: Session<T>,
 {
     fn generate(
         &self,
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: arena::ID<Module>,
-    ) -> Result<(T, T), ExceedLimitError> {
+    ) -> Result<(T, T), OverflowError> {
         let mut lhs_generic_arguments = GenericArguments::default();
         let mut rhs_generic_arguments = GenericArguments::default();
 
@@ -534,7 +534,7 @@ impl Property<Type<Default>> for TypeAlias {
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(Type<Default>, Type<Default>), ExceedLimitError> where {
+    ) -> Result<(Type<Default>, Type<Default>), OverflowError> where {
         let (inner_lhs, inner_rhs) =
             self.property.generate(table, premise, root_module_id)?;
 
@@ -600,7 +600,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     decoy: Decoy,
 ) -> TestCaseResult
 where
-    session::Default<Default>: Session<T>,
+    query::Default<Default>: Session<T>,
 {
     let mut premise = Premise::default();
     let mut table = Table::<Building>::default();

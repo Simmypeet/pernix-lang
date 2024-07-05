@@ -13,7 +13,7 @@ use crate::{
         model::Default,
         normalizer::NoOp,
         predicate::definite,
-        session::{self, Session},
+        query::{self, Session},
         term::{
             constant::{self, Constant},
             r#type::{self, SymbolID, Type},
@@ -256,7 +256,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult
 where
-    session::Default<Default>: Session<T>,
+    query::Default<Default>: Session<T>,
 {
     let mut premise = Premise::default();
     let mut table = Table::<Building>::default();

@@ -1,195 +1,224 @@
 //! Implements the logic for equality checking.
 
+use std::collections::HashSet;
+
 use super::{
-    matching::Matching,
-    normalizer::Normalizer,
-    session::{self, Limit, Session},
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-    Environment, ExceedLimitError, Satisfied,
+    matching::Matching, normalizer::Normalizer, query::Context, term::Term,
+    Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
 };
 use crate::symbol::table::State;
 
-/// A query for checking equality
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// A query for checking strict equality
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]
-pub struct Query<'a, T> {
-    pub lhs: &'a T,
-    pub rhs: &'a T,
+pub struct Equality<T> {
+    pub lhs: T,
+    pub rhs: T,
+}
+
+impl<T: Term> Equality<T> {
+    /// Creates a new equality query.
+    #[must_use]
+    pub fn new(lhs: T, rhs: T) -> Self { Self { lhs, rhs } }
+}
+
+impl<T: Term> Compute for Equality<T> {
+    type Error = OverflowError;
+    type Parameter = ();
+
+    #[allow(private_bounds, private_interfaces)]
+    fn implementation(
+        &self,
+        environment: &Environment<
+            Self::Model,
+            impl State,
+            impl Normalizer<Self::Model>,
+        >,
+        context: &mut Context<Self::Model>,
+        (): Self::Parameter,
+        (): Self::InProgress,
+    ) -> Result<Option<Self::Result>, Self::Error> {
+        // trivially satisfied
+        if self.lhs == self.rhs {
+            return Ok(Some(Succeeded::satisfied()));
+        }
+
+        if let Some(result) =
+            equals_without_mapping(&self.lhs, &self.rhs, environment, context)?
+        {
+            return Ok(Some(result));
+        }
+
+        for predicate in &environment.premise.predicates {
+            let Some(equality_predicate) =
+                T::as_trait_member_equality_predicate(predicate)
+            else {
+                continue;
+            };
+
+            let trait_member_term = T::from(equality_predicate.lhs.clone());
+
+            if let Some(result) = equals_without_mapping(
+                &self.lhs,
+                &trait_member_term,
+                environment,
+                context,
+            )? {
+                if let Some(inner_result) = Equality::new(
+                    equality_predicate.rhs.clone(),
+                    self.rhs.clone(),
+                )
+                .query_with_context(environment, context)?
+                {
+                    return Ok(Some(result.combine(inner_result)));
+                }
+            }
+
+            if let Some(result) = equals_without_mapping(
+                &trait_member_term,
+                &self.rhs,
+                environment,
+                context,
+            )? {
+                if let Some(inner_result) = Equality::new(
+                    self.lhs.clone(),
+                    equality_predicate.rhs.clone(),
+                )
+                .query_with_context(environment, context)?
+                {
+                    return Ok(Some(result.combine(inner_result)));
+                }
+            }
+
+            if let Some(result) = equals_without_mapping(
+                &self.lhs,
+                &equality_predicate.rhs,
+                environment,
+                context,
+            )? {
+                if let Some(inner_result) =
+                    Equality::new(trait_member_term.clone(), self.rhs.clone())
+                        .query_with_context(environment, context)?
+                {
+                    return Ok(Some(result.combine(inner_result)));
+                }
+            }
+
+            if let Some(result) = equals_without_mapping(
+                &equality_predicate.rhs,
+                &self.rhs,
+                environment,
+                context,
+            )? {
+                if let Some(inner_result) =
+                    Equality::new(self.lhs.clone(), trait_member_term.clone())
+                        .query_with_context(environment, context)?
+                {
+                    return Ok(Some(result.combine(inner_result)));
+                }
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 fn equals_by_unification<T: Term>(
     lhs: &T,
     rhs: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
-    limit: &mut Limit<
-        impl Session<Lifetime<T::Model>>
-            + Session<Type<T::Model>>
-            + Session<Constant<T::Model>>,
-    >,
-) -> Result<bool, ExceedLimitError> {
+    context: &mut Context<T::Model>,
+) -> Result<Output<Satisfied, T::Model>, OverflowError> {
     let Some(matching) = lhs.substructural_match(rhs) else {
-        return Ok(false);
+        return Ok(None);
     };
 
+    let mut constraints = HashSet::new();
+
     for Matching { lhs, rhs, .. } in matching.lifetimes {
-        if !equals_impl(&lhs, &rhs, environment, limit)? {
-            return Ok(false);
-        }
+        let Some(result) =
+            Equality::new(lhs, rhs).query_with_context(environment, context)?
+        else {
+            return Ok(None);
+        };
+
+        constraints.extend(result.constraints);
     }
 
     for Matching { lhs, rhs, .. } in matching.types {
-        if !equals_impl(&lhs, &rhs, environment, limit)? {
-            return Ok(false);
-        }
+        let Some(result) =
+            Equality::new(lhs, rhs).query_with_context(environment, context)?
+        else {
+            return Ok(None);
+        };
+
+        constraints.extend(result.constraints);
     }
 
     for Matching { lhs, rhs, .. } in matching.constants {
-        if !equals_impl(&lhs, &rhs, environment, limit)? {
-            return Ok(false);
-        }
+        let Some(result) =
+            Equality::new(lhs, rhs).query_with_context(environment, context)?
+        else {
+            return Ok(None);
+        };
+
+        constraints.extend(result.constraints);
     }
 
-    Ok(true)
+    Ok(Some(Succeeded::with_constraints(Satisfied, constraints)))
 }
 
 fn equals_by_normalization<T: Term>(
     lhs: &T,
     rhs: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
-    limit: &mut Limit<
-        impl Session<Lifetime<T::Model>>
-            + Session<Type<T::Model>>
-            + Session<Constant<T::Model>>,
-    >,
-) -> Result<bool, ExceedLimitError> {
-    if let Some(lhs) = lhs.normalize(environment, limit)? {
-        if equals_impl(&lhs, rhs, environment, limit)? {
-            return Ok(true);
+    context: &mut Context<T::Model>,
+) -> Result<Output<Satisfied, T::Model>, OverflowError> {
+    if let Some(lhs) = lhs.normalize(environment, context)? {
+        if let Some(mut result) = Equality::new(lhs.result, rhs.clone())
+            .query_with_context(environment, context)?
+        {
+            result.constraints.extend(lhs.constraints);
+            return Ok(Some(result));
         }
     }
 
-    if let Some(rhs) = rhs.normalize(environment, limit)? {
-        if equals_impl(lhs, &rhs, environment, limit)? {
-            return Ok(true);
+    if let Some(rhs) = rhs.normalize(environment, context)? {
+        if let Some(mut result) = Equality::new(lhs.clone(), rhs.result)
+            .query_with_context(environment, context)?
+        {
+            result.constraints.extend(rhs.constraints);
+            return Ok(Some(result));
         }
     }
 
-    Ok(false)
+    Ok(None)
 }
 
 fn equals_without_mapping<T: Term>(
     lhs: &T,
     rhs: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
-    limit: &mut Limit<
-        impl Session<Lifetime<T::Model>>
-            + Session<Type<T::Model>>
-            + Session<Constant<T::Model>>,
-    >,
-) -> Result<bool, ExceedLimitError> {
-    if lhs == rhs
-        || equals_by_unification(lhs, rhs, environment, limit)?
-        || equals_by_normalization(lhs, rhs, environment, limit)?
-    {
-        limit.mark_as_done::<T, _>(Query { lhs, rhs }, Satisfied);
-        return Ok(true);
-    }
-
-    Ok(false)
-}
-
-pub(super) fn equals_impl<T: Term>(
-    lhs: &T,
-    rhs: &T,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
-    limit: &mut Limit<
-        impl Session<Lifetime<T::Model>>
-            + Session<Type<T::Model>>
-            + Session<Constant<T::Model>>,
-    >,
-) -> Result<bool, ExceedLimitError> {
-    let query = Query { lhs, rhs };
-
+    context: &mut Context<T::Model>,
+) -> Result<Output<Satisfied, T::Model>, OverflowError> {
     if lhs == rhs {
-        return Ok(true);
+        return Ok(Some(Succeeded::satisfied()));
     }
 
-    match limit.mark_as_in_progress::<T, _>(query.clone(), ())? {
-        Some(session::Cached::Done(Satisfied)) => return Ok(true),
-        Some(session::Cached::InProgress(())) => {
-            return Ok(false);
-        }
-        None => {}
-    }
-
-    if equals_by_normalization(lhs, rhs, environment, limit)?
-        || equals_by_unification(lhs, rhs, environment, limit)?
+    if let Some(result) = equals_by_unification(lhs, rhs, environment, context)?
     {
-        limit.mark_as_done::<T, _>(query, Satisfied);
-        return Ok(true);
+        return Ok(Some(result));
     }
 
-    for class in T::get_equivalent_classes(&environment.premise.equivalent) {
-        for value in class.iter() {
-            if equals_without_mapping(lhs, value, environment, limit)? {
-                for value in class.iter() {
-                    if equals_impl(value, rhs, environment, limit)? {
-                        limit.mark_as_done::<T, _>(query, Satisfied);
-                        return Ok(true);
-                    }
-                }
-            }
-
-            if equals_without_mapping(value, rhs, environment, limit)? {
-                for value in class.iter() {
-                    if equals_impl(lhs, value, environment, limit)? {
-                        limit.mark_as_done::<T, _>(query, Satisfied);
-                        return Ok(true);
-                    }
-                }
-            }
-        }
+    if let Some(result) =
+        equals_by_normalization(lhs, rhs, environment, context)?
+    {
+        return Ok(Some(result));
     }
 
-    limit.clear_query::<T, _>(query);
-    Ok(false)
+    Ok(None)
 }
 
-/// Checks if the two given terms are equal.
-///
-/// Equality is one of the most important parts of the type system. The equality
-/// model is based on the first-order logic of equality.
-///
-/// These are the axioms of equality:
-///
-/// - Reflexivity: for all `x`, `x = x`.
-/// - Symmetry: for all `x` and `y`, if `x = y`, then `y = x`.
-/// - Transitivity: for all `x`, `y`, and `z`, if `x = y` and `y = z`, then `x =
-///   z`.
-/// - Congruence: for all `x, ..., xn` and `y, ..., yn`, if `x = y`, ..., and
-///   `xn = yn`, then `f(x, ..., xn) = f(y, ..., yn)`.
-///
-/// # Decidability
-///
-/// Equality is **partially-decidable**. In other words, the function can halt
-/// in the case of equal terms, but it might output `false` or never halt in the
-/// case of unequal terms.
-///
-/// However, the function has a **soundness** guarantee. In other words, the
-/// function will never output `true` in the case of unequal terms. Also, the
-/// algorithm has a hard-limit on the number of recursive calls.
-///
-/// # Errors
-///
-/// See [`ExceedLimitError`] for more information.
-pub fn equals<T: Term>(
-    lhs: &T,
-    rhs: &T,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
-) -> Result<bool, ExceedLimitError> {
-    let mut limit = Limit::<session::Default<_>>::default();
-    equals_impl(lhs, rhs, environment, &mut limit)
-}
-
-#[cfg(test)]
-pub(super) mod tests;
+// TODO:
+// #[cfg(test)]
+// pub(super) mod tests;

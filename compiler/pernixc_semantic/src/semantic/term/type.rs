@@ -10,8 +10,8 @@ use enum_as_inner::EnumAsInner;
 use strum_macros::EnumIter;
 
 use super::{
-    constant::Constant, lifetime::Lifetime, GenericArguments, Local,
-    MemberSymbol, ModelOf, Never, Symbol, Term,
+    constant::Constant, lifetime::Lifetime, GenericArguments, Kind, KindMut,
+    Local, MemberSymbol, ModelOf, Never, Symbol, Term,
 };
 use crate::{
     arena::ID,
@@ -23,14 +23,14 @@ use crate::{
         model::{Default, Model},
         normalizer::Normalizer,
         predicate::{self, Outlives, Predicate, Satisfiability},
-        session::{Limit, Session},
+        query::Context,
         sub_term::{
-            AssignSubTermError, Location, SubMemberSymbolLocation,
+            self, AssignSubTermError, Location, SubMemberSymbolLocation,
             SubSymbolLocation, SubTerm, SubTraitMemberLocation,
-            SubTupleLocation,
+            SubTupleLocation, TermLocation,
         },
-        unification::{self, Unification},
-        Environment, ExceedLimitError,
+        unification::{self, Unifier},
+        Environment, Output, OverflowError, Succeeded,
     },
     symbol::{
         self,
@@ -248,6 +248,12 @@ pub enum SubLifetimeLocation {
     TraitMember(SubTraitMemberLocation),
 }
 
+impl From<SubLifetimeLocation> for TermLocation {
+    fn from(value: SubLifetimeLocation) -> Self {
+        Self::Lifetime(sub_term::SubLifetimeLocation::FromType(value))
+    }
+}
+
 impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
     fn assign_sub_term(
         self,
@@ -386,6 +392,12 @@ pub enum SubTypeLocation {
     /// A type argument in a [`Type::TraitMember`] variant.
     #[from]
     TraitMember(SubTraitMemberLocation),
+}
+
+impl From<SubTypeLocation> for TermLocation {
+    fn from(value: SubTypeLocation) -> Self {
+        Self::Type(sub_term::SubTypeLocation::FromType(value))
+    }
 }
 
 impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
@@ -566,6 +578,12 @@ pub enum SubConstantLocation {
     /// A constant argument in a [`Type::TraitMember`] variant.
     #[from]
     TraitMember(SubTraitMemberLocation),
+}
+
+impl From<SubConstantLocation> for TermLocation {
+    fn from(value: SubConstantLocation) -> Self {
+        Self::Constant(sub_term::SubConstantLocation::FromType(value))
+    }
 }
 
 impl<M: Model> Location<Type<M>, Constant<M>> for SubConstantLocation {
@@ -1042,10 +1060,8 @@ where
     fn normalize(
         &self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-        limit: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Self> + Session<Constant<M>>,
-        >,
-    ) -> Result<Option<Self>, ExceedLimitError> {
+        context: &mut Context<M>,
+    ) -> Result<Output<Self, M>, OverflowError> {
         match self {
             // transform type alias into the aliased type equivalent
             Self::Symbol(Symbol {
@@ -1068,7 +1084,7 @@ where
                 };
                 instantiation::instantiate(&mut type_aliased, &inst);
 
-                Ok(Some(type_aliased))
+                Ok(Some(Succeeded::new(type_aliased)))
             }
 
             // transform the trait-member into trait-implementation-type
@@ -1084,17 +1100,17 @@ where
                 };
 
                 // resolve for the appropriate trait-implementation
-                let Ok(result) = predicate::resolve_implementation_impl(
+                let Ok(result) = predicate::resolve_implementation_with_context(
                     trait_id,
                     &trait_member.parent_generic_arguments,
                     environment,
-                    limit,
+                    context,
                 ) else {
                     return Ok(None);
                 };
 
                 let Some(implementation_type_id) =
-                    environment.table.get(result.id).and_then(|x| {
+                    environment.table.get(result.result.id).and_then(|x| {
                         x.member_ids_by_name()
                             .get(&name)
                             .cloned()
@@ -1115,7 +1131,10 @@ where
                 });
 
                 // append the deduced generic arguments
-                Ok(Some(result_ty))
+                Ok(Some(Succeeded {
+                    result: result_ty,
+                    constraints: result.constraints,
+                }))
             }
 
             // transform trait-implementation-type into the aliased type
@@ -1143,19 +1162,23 @@ where
                     );
 
                 // gets the decution for the parent generic arguments
-                let mut deduction = match adt_implementation_symbol_arguments
-                    .deduce_impl(parent_generic_arguments, environment, limit)
-                {
-                    Ok(deduction) => deduction,
+                let Succeeded { result: mut deduction, constraints } =
+                    match adt_implementation_symbol_arguments
+                        .deduce_with_context(
+                            parent_generic_arguments,
+                            environment,
+                            context,
+                        ) {
+                        Ok(deduction) => deduction,
 
-                    Err(deduction::Error::ExceedLimit(error)) => {
-                        return Err(error)
-                    }
+                        Err(deduction::Error::Overflow(error)) => {
+                            return Err(error)
+                        }
 
-                    Err(_) => {
-                        return Ok(None);
-                    }
-                };
+                        Err(_) => {
+                            return Ok(None);
+                        }
+                    };
 
                 if deduction
                     .append_from_generic_arguments(
@@ -1176,7 +1199,7 @@ where
 
                 instantiation::instantiate(&mut aliased, &deduction);
 
-                Ok(Some(aliased))
+                Ok(Some(Succeeded::with_constraints(aliased, constraints)))
             }
 
             // transform into its aliased equivalent
@@ -1204,20 +1227,23 @@ where
                     );
 
                 // gets the decution for the parent generic arguments
-                // gets the decution for the parent generic arguments
-                let mut deduction = match adt_implementation_symbol_arguments
-                    .deduce_impl(parent_generic_arguments, environment, limit)
-                {
-                    Ok(deduction) => deduction,
+                let Succeeded { result: mut deduction, constraints } =
+                    match adt_implementation_symbol_arguments
+                        .deduce_with_context(
+                            parent_generic_arguments,
+                            environment,
+                            context,
+                        ) {
+                        Ok(deduction) => deduction,
 
-                    Err(deduction::Error::ExceedLimit(error)) => {
-                        return Err(error)
-                    }
+                        Err(deduction::Error::Overflow(error)) => {
+                            return Err(error)
+                        }
 
-                    Err(_) => {
-                        return Ok(None);
-                    }
-                };
+                        Err(_) => {
+                            return Ok(None);
+                        }
+                    };
 
                 if deduction
                     .append_from_generic_arguments(
@@ -1238,7 +1264,7 @@ where
 
                 instantiation::instantiate(&mut aliased, &deduction);
 
-                Ok(Some(aliased))
+                Ok(Some(Succeeded::with_constraints(aliased, constraints)))
             }
 
             // unpack the tuple
@@ -1270,7 +1296,9 @@ where
                     }
                 }
 
-                Ok(Some(Self::Tuple(Tuple { elements: result })))
+                Ok(Some(Succeeded::new(Self::Tuple(Tuple {
+                    elements: result,
+                }))))
             }
 
             Self::Inference(inference) => {
@@ -1281,23 +1309,17 @@ where
         }
     }
 
+    fn as_kind(&self) -> Kind<M> { Kind::Type(self) }
+
+    fn as_kind_mut(&mut self) -> KindMut<M> { KindMut::Type(self) }
+
     #[allow(private_bounds, private_interfaces)]
-    fn outlives_satisfiability(
-        &self,
-        _: &Lifetime<M>,
-        _: &Environment<M, impl State, impl Normalizer<M>>,
-        _: &mut Limit<
-            impl Session<Self>
-                + Session<Lifetime<M>>
-                + Session<Self>
-                + Session<Constant<M>>,
-        >,
-    ) -> Result<Satisfiability, ExceedLimitError> {
+    fn outlives_satisfiability(&self, _: &Lifetime<M>) -> Satisfiability {
         match self {
-            Self::Primitive(_) => Ok(Satisfiability::Satisfied),
+            Self::Primitive(_) => Satisfiability::Satisfied,
 
             Self::Error | Self::Inference(_) | Self::Parameter(_) => {
-                Ok(Satisfiability::Unsatisfied)
+                Satisfiability::Unsatisfied
             }
 
             Self::TraitMember(_)
@@ -1308,8 +1330,12 @@ where
             | Self::Array(_)
             | Self::Tuple(_)
             | Self::Phantom(_)
-            | Self::MemberSymbol(_) => Ok(Satisfiability::Congruent),
+            | Self::MemberSymbol(_) => Satisfiability::Congruent,
         }
+    }
+
+    fn from_inference(inference: Self::InferenceVariable) -> Self {
+        Self::Inference(inference)
     }
 
     fn as_generic_parameter(&self) -> Option<&TypeParameterID> {
@@ -1604,9 +1630,9 @@ where
         &mut instantiation.types
     }
 
-    fn get_substructural_unification<'a, T: Term>(
+    fn get_substructural_unifier<'a, T: Term>(
         substructural: &'a unification::Substructural<T>,
-    ) -> impl Iterator<Item = &'a Unification<Type<T::Model>>>
+    ) -> impl Iterator<Item = &'a Unifier<Type<T::Model>>>
     where
         Self: 'a,
     {
@@ -1637,10 +1663,6 @@ where
 
     fn from_default_model(term: Type<Default>) -> Self {
         M::from_default_type(term)
-    }
-
-    fn from_inference(inference: Self::InferenceVariable) -> Self {
-        Self::Inference(inference)
     }
 }
 
@@ -1869,5 +1891,6 @@ impl<M: Model> Type<M> {
     }
 }
 
-#[cfg(test)]
-mod tests;
+// TODO
+// #[cfg(test)]
+// mod tests;

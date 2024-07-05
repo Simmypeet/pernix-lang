@@ -1,94 +1,204 @@
 use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
     semantic::{
-        equality, get_equivalences_impl,
+        equality, get_equivalences_with_context,
         instantiation::{self, Instantiation},
         model::Model,
         normalizer::Normalizer,
-        session::{self, Limit, Session},
-        term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-        visitor, Environment, ExceedLimitError, Satisfied,
+        query::{self, Context, Query},
+        term::Term,
+        visitor, Compute, Environment, Output, OverflowError, Satisfied,
+        Succeeded,
     },
     symbol::table::{self, DisplayObject, State, Table},
 };
 
 #[derive(Debug)]
-struct Visitor<
-    'a,
-    'l,
-    T: State,
-    N: Normalizer<M>,
-    R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-    M: Model,
-> {
-    constant_type: Result<bool, ExceedLimitError>,
+struct Visitor<'a, 'c, T: State, N: Normalizer<M>, M: Model> {
+    constant_type: Result<Output<Satisfied, M>, OverflowError>,
     environment: &'a Environment<'a, M, T, N>,
-    limit: &'l mut Limit<R>,
+    context: &'c mut Context<M>,
 }
 
-impl<
-        'a,
-        'l,
-        'v,
-        U: Term,
-        T: State,
-        N: Normalizer<U::Model>,
-        R: Session<U>
-            + Session<Lifetime<U::Model>>
-            + Session<Type<U::Model>>
-            + Session<Constant<U::Model>>,
-    > visitor::Visitor<'v, U> for Visitor<'a, 'l, T, N, R, U::Model>
+impl<'a, 'c, 'v, U: Term, T: State, N: Normalizer<U::Model>>
+    visitor::Visitor<'v, U> for Visitor<'a, 'c, T, N, U::Model>
 {
     fn visit(&mut self, term: &U, _: U::Location) -> bool {
-        match satisfies_internal(
-            term,
-            QuerySource::Normal,
+        match ConstantType(term.clone()).query_with_context_full(
             self.environment,
-            self.limit,
+            self.context,
+            (),
+            QuerySource::Normal,
         ) {
-            result @ (Err(_) | Ok(false)) => {
+            result @ (Err(_) | Ok(None)) => {
                 self.constant_type = result;
                 false
             }
 
-            Ok(true) => true,
+            Ok(Some(result)) => match &mut self.constant_type {
+                Ok(Some(current)) => {
+                    current.constraints.extend(result.constraints);
+                    true
+                }
+
+                _ => false,
+            },
         }
     }
 }
 
-/// A query for checking constant type predicate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Query<'a, T>(pub &'a T);
-
 /// Describes the source of the query for constant type predicate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum QuerySource {
     /// Used to reason the satisfiability by querying it by an another
     /// equivalent type.
     FromEquivalence,
 
     /// Normal
+    #[default]
     Normal,
 }
 
 /// Represents a type can be used as a type of a compile-time constant value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConstantType<M: Model>(pub Type<M>);
+pub struct ConstantType<T>(pub T);
 
-impl<T: State, M: Model> table::Display<T> for ConstantType<M>
+impl<T: Term> Compute for ConstantType<T> {
+    type Error = OverflowError;
+    type Parameter = ();
+
+    #[allow(private_bounds, private_interfaces)]
+    fn implementation(
+        &self,
+        environment: &Environment<
+            Self::Model,
+            impl State,
+            impl Normalizer<Self::Model>,
+        >,
+        context: &mut Context<Self::Model>,
+        (): Self::Parameter,
+        _: Self::InProgress,
+    ) -> Result<Option<Self::Result>, Self::Error> {
+        let satisfiability = self.0.definite_satisfiability();
+
+        // trivially satisfiable
+        if satisfiability == Satisfiability::Satisfied {
+            return Ok(Some(Succeeded::satisfied()));
+        }
+
+        // if the term is congruent, then we need to check the sub-terms
+        if satisfiability == Satisfiability::Congruent {
+            let mut visitor = Visitor {
+                constant_type: Ok(Some(Succeeded::satisfied())),
+                environment,
+                context,
+            };
+
+            let _ = self.0.accept_one_level(&mut visitor);
+
+            if let Some(mut result) = visitor.constant_type? {
+                // look for the fields of the term as well (if it's an ADT)
+                let mut found_error = false;
+                match self.0.get_adt_fields(environment.table) {
+                    Some(fields) => {
+                        for field in fields {
+                            let Some(new_result) = ConstantType(field.clone())
+                                .query_with_context_full(
+                                    environment,
+                                    context,
+                                    (),
+                                    QuerySource::Normal,
+                                )?
+                            else {
+                                found_error = true;
+                                break;
+                            };
+
+                            result.constraints.extend(new_result.constraints);
+                        }
+                    }
+                    None => {}
+                }
+
+                if !found_error {
+                    return Ok(Some(result));
+                }
+            }
+        }
+
+        // satisfiable with premises
+        for premise_term in environment
+            .premise
+            .predicates
+            .iter()
+            .filter_map(|x| T::as_constant_type_predicate(x))
+        {
+            if let Some(result) =
+                equality::Equality::new(self.0.clone(), premise_term.clone())
+                    .query_with_context(environment, context)?
+            {
+                return Ok(Some(result));
+            }
+        }
+
+        // satisfiable with equivalence
+        for Succeeded { result: eq, constraints } in
+            get_equivalences_with_context(&self.0, environment, context)?
+        {
+            if let Some(mut result) = ConstantType(eq.clone())
+                .query_with_context_full(
+                    environment,
+                    context,
+                    (),
+                    QuerySource::FromEquivalence,
+                )?
+            {
+                result.constraints.extend(constraints);
+                return Ok(Some(result));
+            }
+        }
+
+        Ok(None)
+    }
+
+    #[allow(private_bounds, private_interfaces)]
+    fn on_cyclic(
+        &self,
+        _: &Environment<Self::Model, impl State, impl Normalizer<Self::Model>>,
+        _: &mut Context<Self::Model>,
+        _: Self::Parameter,
+        _: Self::InProgress,
+        _: Self::InProgress,
+        call_stacks: &[query::QueryCall<Self::Model>],
+    ) -> Result<Option<Self::Result>, Self::Error> {
+        for call in call_stacks.iter().skip(1) {
+            let Some(query) = <Self as Query>::from_call(call) else {
+                continue;
+            };
+
+            if query.in_progress == QuerySource::Normal {
+                return Ok(Some(Succeeded::satisfied()));
+            }
+        }
+
+        Ok(None)
+    }
+}
+
+impl<S: State, T: Term> table::Display<S> for ConstantType<T>
 where
-    Type<M>: table::Display<T>,
+    T: table::Display<S>,
 {
     fn fmt(
         &self,
-        table: &Table<T>,
+        table: &Table<S>,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         write!(f, "const type {}", DisplayObject { display: &self.0, table })
     }
 }
 
-impl<M: Model> ConstantType<M> {
+impl<T: Term> ConstantType<T> {
     /// Checks if the type contains a `forall` lifetime.
     #[must_use]
     pub fn contains_forall_lifetime(&self) -> bool {
@@ -96,126 +206,7 @@ impl<M: Model> ConstantType<M> {
     }
 
     /// Applies the instantiation to the type.
-    pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
+    pub fn instantiate(&mut self, instantiation: &Instantiation<T::Model>) {
         instantiation::instantiate(&mut self.0, instantiation);
-    }
-}
-
-fn satisfies_internal<T: Term, N: Normalizer<T::Model>>(
-    term: &T,
-    query_source: QuerySource,
-    environment: &Environment<T::Model, impl State, N>,
-    limit: &mut Limit<
-        impl Session<Lifetime<T::Model>>
-            + Session<Type<T::Model>>
-            + Session<Constant<T::Model>>,
-    >,
-) -> Result<bool, ExceedLimitError> {
-    let satisfiability = term.definite_satisfiability();
-
-    // trivially satisfiable
-    if satisfiability == Satisfiability::Satisfied {
-        return Ok(true);
-    }
-
-    match limit.mark_as_in_progress::<T, _>(Query(term), query_source)? {
-        Some(session::Cached::Done(Satisfied)) => return Ok(true),
-        Some(session::Cached::InProgress(source)) => {
-            return Ok(match source {
-                QuerySource::FromEquivalence => false,
-                QuerySource::Normal => true,
-            })
-        }
-        None => {}
-    }
-
-    // if the term is congruent, then we need to check the sub-terms
-    if satisfiability == Satisfiability::Congruent {
-        let mut visitor =
-            Visitor { constant_type: Ok(true), environment, limit };
-
-        let _ = term.accept_one_level(&mut visitor);
-
-        if visitor.constant_type? {
-            let mut result = false;
-
-            // look for the fields of the term as well (if it's an ADT)
-            match term.get_adt_fields(environment.table) {
-                Some(fields) => 'result: {
-                    for field in fields {
-                        if !satisfies_internal(
-                            &field,
-                            QuerySource::Normal,
-                            environment,
-                            limit,
-                        )? {
-                            break 'result;
-                        }
-                    }
-
-                    result = true;
-                }
-                None => result = true,
-            }
-
-            if result {
-                limit.mark_as_done::<T, _>(Query(term), Satisfied);
-                return Ok(true);
-            }
-        }
-    }
-
-    // satisfiable with premises
-    for premise_term in environment
-        .premise
-        .predicates
-        .iter()
-        .filter_map(|x| T::as_constant_type_predicate(x))
-    {
-        if equality::equals_impl(term, premise_term, environment, limit)? {
-            limit.mark_as_done::<T, _>(Query(term), Satisfied);
-            return Ok(true);
-        }
-    }
-
-    // satisfiable with equivalence
-    for eq in get_equivalences_impl(term, environment, limit)? {
-        if satisfies_internal(
-            &eq,
-            QuerySource::FromEquivalence,
-            environment,
-            limit,
-        )? {
-            limit.mark_as_done::<T, _>(Query(term), Satisfied);
-            return Ok(true);
-        }
-    }
-
-    limit.clear_query::<T, _>(Query(term));
-    Ok(false)
-}
-
-impl<M: Model> ConstantType<M> {
-    /// Checks if the given type satisfies the predicate.
-    ///
-    /// # Errors
-    ///
-    /// See [`ExceedLimitError`] for more information.
-    pub fn satisfies(
-        ty: &Type<M>,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
-    ) -> Result<bool, ExceedLimitError> {
-        let mut limit = Limit::<session::Default<_>>::default();
-        satisfies_internal(ty, QuerySource::Normal, environment, &mut limit)
-    }
-
-    pub(in crate::semantic) fn satisfies_impl(
-        ty: &Type<M>,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
-        limit: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-        >,
-    ) -> Result<bool, ExceedLimitError> {
-        satisfies_internal(ty, QuerySource::Normal, environment, limit)
     }
 }

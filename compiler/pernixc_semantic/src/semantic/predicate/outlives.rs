@@ -1,38 +1,40 @@
-use super::contains_forall_lifetime;
+use std::sync::Arc;
+
+use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
     semantic::{
-        get_equivalences_impl,
+        get_equivalences_with_context,
         instantiation::{self, Instantiation},
         mapping::Mapping,
         model::Model,
         normalizer::Normalizer,
-        predicate::Satisfiability,
-        session::{self, Cached, Limit, Session},
-        term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-        unification::{self, Unification},
-        visitor, Environment, ExceedLimitError, Satisfied,
+        query::Context,
+        term::{
+            constant::Constant, lifetime::Lifetime, r#type::Type, ModelOf, Term,
+        },
+        unification::{self, Log, Unification, Unifier},
+        visitor, Compute, Environment, LifetimeConstraint, Output,
+        OverflowError, Satisfied, Succeeded,
     },
     symbol::table::{self, DisplayObject, State, Table},
 };
 
-/// A query for checking [`Outlives`] predicate satisfiability.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Query<'a, T: Term> {
-    /// The term that must outlive the bound.
-    pub operand: &'a T,
-
-    /// The lifetime that the term must outlive.
-    pub bound: &'a Lifetime<T::Model>,
-}
-
 /// A predicate that a term outlives a lifetime.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Outlives<T: Term> {
+pub struct Outlives<T: ModelOf> {
     /// The term that must outlive the bound.
     pub operand: T,
 
     /// The lifetime that the term must outlive.
     pub bound: Lifetime<T::Model>,
+}
+
+impl<T: ModelOf> Outlives<T> {
+    /// Creates a new outlives predicate.
+    #[must_use]
+    pub fn new(operand: T, bound: Lifetime<T::Model>) -> Self {
+        Self { operand, bound }
+    }
 }
 
 impl<S: State, T: table::Display<S> + Term> table::Display<S> for Outlives<T>
@@ -68,45 +70,25 @@ impl<T: Term> Outlives<T> {
     }
 }
 
-struct Visitor<
-    'a,
-    'l,
-    T: State,
-    N: Normalizer<M>,
-    R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-    M: Model,
-> {
-    outlives: Result<bool, ExceedLimitError>,
+struct Visitor<'a, 'c, T: State, N: Normalizer<M>, M: Model> {
+    outlives: Result<Option<Satisfied>, OverflowError>,
     bound: &'a Lifetime<M>,
     environment: &'a Environment<'a, M, T, N>,
-    limit: &'l mut Limit<R>,
+    context: &'c mut Context<M>,
 }
 
-impl<
-        'a,
-        'l,
-        'v,
-        U: Term,
-        T: State,
-        N: Normalizer<U::Model>,
-        R: Session<U>
-            + Session<Lifetime<U::Model>>
-            + Session<Type<U::Model>>
-            + Session<Constant<U::Model>>,
-    > visitor::Visitor<'v, U> for Visitor<'a, 'l, T, N, R, U::Model>
+impl<'a, 'l, 'v, U: Term, T: State, N: Normalizer<U::Model>>
+    visitor::Visitor<'v, U> for Visitor<'a, 'l, T, N, U::Model>
 {
     fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
-        match Outlives::satisfies_impl(
-            term,
-            self.bound,
-            self.environment,
-            self.limit,
-        ) {
-            result @ (Err(_) | Ok(false)) => {
+        match Outlives::new(term.clone(), self.bound.clone())
+            .query_with_context(self.environment, self.context)
+        {
+            result @ (Err(_) | Ok(None)) => {
                 self.outlives = result;
                 false
             }
-            Ok(true) => true,
+            Ok(Some(Satisfied)) => true,
         }
     }
 }
@@ -114,143 +96,154 @@ impl<
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct OutlivesUnifyingConfig;
 
-impl<M: Model> unification::Config<Lifetime<M>> for OutlivesUnifyingConfig {
+impl<M: Model> unification::Predicate<Lifetime<M>> for OutlivesUnifyingConfig {
     fn unifiable(
-        &mut self,
+        &self,
         _: &Lifetime<M>,
         _: &Lifetime<M>,
-    ) -> Result<bool, ExceedLimitError> {
-        Ok(true)
+        _: &Vec<Log<M>>,
+        _: &Vec<Log<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        Ok(Some(Succeeded::satisfied()))
     }
 }
 
-impl<M: Model> unification::Config<Type<M>> for OutlivesUnifyingConfig {
+impl<M: Model> unification::Predicate<Type<M>> for OutlivesUnifyingConfig {
     fn unifiable(
-        &mut self,
+        &self,
         _: &Type<M>,
         _: &Type<M>,
-    ) -> Result<bool, ExceedLimitError> {
-        Ok(false)
+        _: &Vec<Log<M>>,
+        _: &Vec<Log<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        Ok(None)
     }
 }
 
-impl<M: Model> unification::Config<Constant<M>> for OutlivesUnifyingConfig {
+impl<M: Model> unification::Predicate<Constant<M>> for OutlivesUnifyingConfig {
     fn unifiable(
-        &mut self,
+        &self,
         _: &Constant<M>,
         _: &Constant<M>,
-    ) -> Result<bool, ExceedLimitError> {
-        Ok(false)
+        _: &Vec<Log<M>>,
+        _: &Vec<Log<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        Ok(None)
     }
 }
 
-impl<T: Term> Outlives<T> {
-    fn satisfies_by_lifetime_matching(
-        unification: Unification<T>,
-        environment: &Environment<
-            T::Model,
-            impl State,
-            impl Normalizer<T::Model>,
-        >,
-        limit: &mut Limit<
-            impl Session<Lifetime<T::Model>>
-                + Session<Type<T::Model>>
-                + Session<Constant<T::Model>>,
-        >,
-    ) -> Result<bool, ExceedLimitError> {
-        let mapping = Mapping::from_unification(unification);
-
-        assert!(mapping.types.is_empty());
-        assert!(mapping.constants.is_empty());
-
-        for (bound, operands) in mapping.lifetimes {
-            for operand in operands {
-                if !Outlives::satisfies_impl(
-                    &bound,
-                    &operand,
-                    environment,
-                    limit,
-                )? {
-                    return Ok(false);
+impl<M: Model> LifetimeConstraint<M> {
+    pub fn satisifies_with_context(
+        &self,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
+        context: &mut Context<M>,
+    ) -> Result<Option<Satisfied>, OverflowError> {
+        match self {
+            LifetimeConstraint::LifetimeOutlives(outlives) => {
+                outlives.query_with_context(environment, context)
+            }
+            LifetimeConstraint::TypeOutlives(outlives) => {
+                outlives.query_with_context(environment, context)
+            }
+            LifetimeConstraint::LifetimeMatching(lhs, rhs) => {
+                if lhs == rhs {
+                    return Ok(Some(Satisfied));
                 }
+
+                let lhs_outlives_rhs = Outlives::new(lhs.clone(), rhs.clone())
+                    .query_with_context(environment, context)?;
+                let rhs_outlives_lhs = Outlives::new(rhs.clone(), lhs.clone())
+                    .query_with_context(environment, context)?;
+
+                Ok(match (lhs_outlives_rhs, rhs_outlives_lhs) {
+                    (Some(Satisfied), Some(Satisfied)) => Some(Satisfied),
+                    _ => None,
+                })
             }
         }
-
-        Ok(true)
     }
+}
 
-    /// Determines whether a predicate of the term and the bound is satisfiable.
-    ///
-    /// # Errors
-    ///
-    /// See [`ExceedLimitError`] for more information.
-    pub fn satisfies(
-        operand: &T,
-        bound: &Lifetime<T::Model>,
+impl<T: Term> Compute for Outlives<T> {
+    type Error = OverflowError;
+    type Parameter = ();
+
+    #[allow(private_bounds, private_interfaces)]
+    fn implementation(
+        &self,
         environment: &Environment<
-            T::Model,
+            Self::Model,
             impl State,
-            impl Normalizer<T::Model>,
+            impl Normalizer<Self::Model>,
         >,
-    ) -> Result<bool, ExceedLimitError> {
-        let mut limit = Limit::<session::Default<_>>::default();
-
-        Self::satisfies_impl(operand, bound, environment, &mut limit)
-    }
-
-    pub(in crate::semantic) fn satisfies_impl(
-        operand: &T,
-        bound: &Lifetime<T::Model>,
-        environment: &Environment<
-            T::Model,
-            impl State,
-            impl Normalizer<T::Model>,
-        >,
-        limit: &mut Limit<
-            impl Session<Lifetime<T::Model>>
-                + Session<Type<T::Model>>
-                + Session<Constant<T::Model>>,
-        >,
-    ) -> Result<bool, ExceedLimitError> {
-        let satisfiability =
-            operand.outlives_satisfiability(bound, environment, limit)?;
+        context: &mut Context<Self::Model>,
+        (): Self::Parameter,
+        (): Self::InProgress,
+    ) -> Result<Option<Self::Result>, Self::Error> {
+        let satisfiability = self.operand.outlives_satisfiability(&self.bound);
 
         if satisfiability == Satisfiability::Satisfied {
-            return Ok(true);
-        }
-
-        match limit.mark_as_in_progress::<T, _>(Query { operand, bound }, ())? {
-            Some(Cached::Done(Satisfied)) => return Ok(true),
-            Some(Cached::InProgress(())) => return Ok(false),
-            None => {}
+            return Ok(Some(Satisfied));
         }
 
         // check if all sub-terms are satisfiable
         if satisfiability == Satisfiability::Congruent {
-            let mut visitor =
-                Visitor { outlives: Ok(true), bound, environment, limit };
+            let mut visitor = Visitor {
+                outlives: Ok(Some(Satisfied)),
+                bound: &self.bound,
+                environment,
+                context,
+            };
 
-            let _ = operand.accept_one_level(&mut visitor);
+            let _ = self.operand.accept_one_level(&mut visitor);
 
-            if visitor.outlives? {
-                limit.mark_as_done::<T, _>(Query { operand, bound }, Satisfied);
-                return Ok(true);
+            if let Some(Satisfied) = visitor.outlives? {
+                return Ok(Some(Satisfied));
             }
         }
 
         // look for operand equivalences
-        for operand_eq in get_equivalences_impl(operand, environment, limit)? {
-            if Self::satisfies_impl(&operand_eq, bound, environment, limit)? {
-                limit.mark_as_done::<T, _>(Query { operand, bound }, Satisfied);
-                return Ok(true);
+        for Succeeded {
+            result: operand_eq,
+            constraints: additional_outlives,
+        } in
+            get_equivalences_with_context(&self.operand, environment, context)?
+        {
+            // additional constraints must be satisifed
+            for constraint in additional_outlives {
+                let Some(Satisfied) =
+                    constraint.satisifies_with_context(environment, context)?
+                else {
+                    return Ok(Some(Satisfied));
+                };
+            }
+
+            if let Some(Satisfied) =
+                Outlives::new(operand_eq, self.bound.clone())
+                    .query_with_context(environment, context)?
+            {
+                return Ok(Some(Satisfied));
             }
         }
 
         // look for bound equivalences
-        for bound_eq in get_equivalences_impl(bound, environment, limit)? {
-            if Self::satisfies_impl(operand, &bound_eq, environment, limit)? {
-                limit.mark_as_done::<T, _>(Query { operand, bound }, Satisfied);
-                return Ok(true);
+        for Succeeded { result: bound_eq, constraints: additional_outlives } in
+            get_equivalences_with_context(&self.bound, environment, context)?
+        {
+            // additional constraints must be satisified
+            for constraint in additional_outlives {
+                let Some(Satisfied) =
+                    constraint.satisifies_with_context(environment, context)?
+                else {
+                    return Ok(Some(Satisfied));
+                };
+            }
+
+            if let Some(Satisfied) =
+                Outlives::new(self.operand.clone(), bound_eq)
+                    .query_with_context(environment, context)?
+            {
+                return Ok(Some(Satisfied));
             }
         }
 
@@ -260,36 +253,76 @@ impl<T: Term> Outlives<T> {
             .iter()
             .filter_map(|x| T::as_outlive_predicate(x))
         {
-            let Some(unification) = unification::unify_impl(
-                operand,
-                next_operand,
-                &mut OutlivesUnifyingConfig,
-                environment,
-                limit,
-            )?
+            let Some(Succeeded { result, constraints: additional_outlives }) =
+                Unification::new(
+                    self.operand.clone(),
+                    next_operand.clone(),
+                    Arc::new(OutlivesUnifyingConfig),
+                )
+                .query_with_context(environment, context)?
             else {
                 continue;
             };
 
-            if !Self::satisfies_by_lifetime_matching(
-                unification,
+            for constraint in additional_outlives {
+                let Some(Satisfied) =
+                    constraint.satisifies_with_context(environment, context)?
+                else {
+                    return Ok(Some(Satisfied));
+                };
+            }
+
+            if Self::satisfies_by_lifetime_matching(
+                result,
                 environment,
-                limit,
-            )? {
+                context,
+            )?
+            .is_none()
+            {
                 continue;
             }
 
-            if Outlives::satisfies_impl(next_bound, bound, environment, limit)?
+            if let Some(Satisified) =
+                Outlives::new(next_bound.clone(), self.bound.clone())
+                    .query_with_context(environment, context)?
             {
-                limit.mark_as_done::<T, _>(Query { operand, bound }, Satisfied);
-                return Ok(true);
+                return Ok(Some(Satisified));
             }
         }
 
-        limit.clear_query::<T, _>(Query { operand, bound });
-        Ok(false)
+        Ok(None)
     }
 }
 
-#[cfg(test)]
-mod tests;
+impl<T: Term> Outlives<T> {
+    fn satisfies_by_lifetime_matching(
+        unifier: Unifier<T>,
+        environment: &Environment<
+            T::Model,
+            impl State,
+            impl Normalizer<T::Model>,
+        >,
+        context: &mut Context<T::Model>,
+    ) -> Result<Option<Satisfied>, OverflowError> {
+        let mapping = Mapping::from_unification(unifier);
+
+        assert!(mapping.types.is_empty());
+        assert!(mapping.constants.is_empty());
+
+        for (bound, operands) in mapping.lifetimes {
+            for operand in operands {
+                let Some(Satisfied) = Outlives::new(bound.clone(), operand)
+                    .query_with_context(environment, context)?
+                else {
+                    return Ok(None);
+                };
+            }
+        }
+
+        Ok(Some(Satisfied))
+    }
+}
+
+// TODO
+// #[cfg(test)]
+// mod tests;

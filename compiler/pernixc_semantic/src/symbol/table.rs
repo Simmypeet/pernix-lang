@@ -128,7 +128,7 @@ impl<T: Container, S: Debug + Sized + Send + Sync + 'static> DerefMut
     fn deref_mut(&mut self) -> &mut Self::Target { &mut self.representation }
 }
 
-pub use representation::{build, BuildTableError};
+pub use representation::BuildTableError;
 
 #[cfg(test)]
 mod tests;

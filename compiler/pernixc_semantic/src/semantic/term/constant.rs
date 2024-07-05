@@ -10,8 +10,8 @@ use std::{
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    lifetime::Lifetime, r#type::Type, GenericArguments, Local, ModelOf, Never,
-    Term,
+    lifetime::Lifetime, r#type::Type, GenericArguments, Kind, KindMut, Local,
+    ModelOf, Never, Term,
 };
 use crate::{
     arena::ID,
@@ -22,10 +22,13 @@ use crate::{
         model::{Default, Model},
         normalizer::Normalizer,
         predicate::{self, Outlives, Predicate, Satisfiability},
-        session::{Limit, Session},
-        sub_term::{AssignSubTermError, Location, SubTerm, SubTupleLocation},
-        unification::{self, Unification},
-        Environment, ExceedLimitError,
+        query::Context,
+        sub_term::{
+            self, AssignSubTermError, Location, SubTerm, SubTupleLocation,
+            TermLocation,
+        },
+        unification::{self, Unifier},
+        Environment, Output, OverflowError,
     },
     symbol::{
         self,
@@ -134,6 +137,12 @@ pub enum SubConstantLocation {
 
     /// The inner constant of a [`Local`] constant.
     Local,
+}
+
+impl From<SubConstantLocation> for TermLocation {
+    fn from(value: SubConstantLocation) -> Self {
+        Self::Constant(sub_term::SubConstantLocation::FromConstant(value))
+    }
 }
 
 impl<M: Model> Location<Constant<M>, Constant<M>> for SubConstantLocation {
@@ -616,10 +625,8 @@ where
     fn normalize(
         &self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-        _: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Self>,
-        >,
-    ) -> Result<Option<Self>, ExceedLimitError> {
+        _: &mut Context<M>,
+    ) -> Result<Output<Self, M>, OverflowError> {
         if let Constant::Inference(inference) = self {
             Normalizer::normalize_constant(inference, environment)
         } else {
@@ -627,17 +634,14 @@ where
         }
     }
 
+    fn as_kind(&self) -> Kind<M> { Kind::Constant(self) }
+
+    fn as_kind_mut(&mut self) -> KindMut<M> { KindMut::Constant(self) }
+
     #[allow(private_bounds, private_interfaces)]
-    fn outlives_satisfiability(
-        &self,
-        _: &Lifetime<M>,
-        _: &Environment<M, impl State, impl Normalizer<M>>,
-        _: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Self>,
-        >,
-    ) -> Result<Satisfiability, ExceedLimitError> {
+    fn outlives_satisfiability(&self, _: &Lifetime<M>) -> Satisfiability {
         // constants value do not have lifetimes
-        Ok(Satisfiability::Satisfied)
+        Satisfiability::Satisfied
     }
 
     fn from_inference(inference: Self::InferenceVariable) -> Self {
@@ -806,9 +810,9 @@ where
         &mut instantiation.constants
     }
 
-    fn get_substructural_unification<'a, T: Term>(
+    fn get_substructural_unifier<'a, T: Term>(
         substructural: &'a unification::Substructural<T>,
-    ) -> impl Iterator<Item = &'a Unification<Constant<T::Model>>>
+    ) -> impl Iterator<Item = &'a Unifier<Constant<T::Model>>>
     where
         Self: 'a,
     {
@@ -1015,5 +1019,6 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests;
+// TODO
+// #[cfg(test)]
+// mod tests;

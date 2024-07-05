@@ -1,3 +1,5 @@
+//! Contains the definition of [`Requirement`] and [`requires()`]
+
 use std::collections::HashSet;
 
 use super::{
@@ -8,7 +10,7 @@ use super::{
     model::Model,
     normalizer::Normalizer,
     predicate::{self, Outlives, Predicate},
-    session::{self, Limit, Session},
+    query::{self, Limit, Session},
     term::{
         constant::Constant,
         lifetime::Lifetime,
@@ -16,7 +18,7 @@ use super::{
         GenericArguments, ModelOf, Term,
     },
     visitor::{self, Recursive},
-    Environment, ExceedLimitError,
+    Environment, OverflowError,
 };
 use crate::{
     semantic::deduction,
@@ -40,6 +42,7 @@ pub enum Requirement<M: Model> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
+#[allow(missing_docs)]
 pub enum Error<M: Model> {
     #[error("found a `GenericID` that does not exist in the table")]
     InvalidID(GenericID),
@@ -51,7 +54,7 @@ pub enum Error<M: Model> {
     MismatchedGenericArgumentCount(#[from] MismatchedGenericArgumentCountError),
 
     #[error(transparent)]
-    ExceedLimit(#[from] ExceedLimitError),
+    ExceedLimit(#[from] OverflowError),
 
     #[error("failed to deduce the generic arguments with the implementation")]
     DeductionFailure {
@@ -449,7 +452,7 @@ pub fn requires<T: Term>(
     term: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
 ) -> Result<HashSet<Requirement<T::Model>>, Error<T::Model>> {
-    let mut limit = Limit::<session::Default<_>>::default();
+    let mut limit = Limit::<query::Default<_>>::default();
     requires_impl(term, environment, &mut limit)
 }
 

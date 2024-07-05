@@ -6,10 +6,10 @@ use super::{
     equality,
     model::Model,
     normalizer::Normalizer,
-    session::{self, Cached, Limit, Session},
+    query::{self, Node, Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     visitor::Mutable,
-    Environment, ExceedLimitError,
+    Environment, OverflowError,
 };
 use crate::symbol::table::State;
 
@@ -67,9 +67,9 @@ fn simplify_internal<T: Term>(
     >,
 ) -> Option<T> {
     match limit.mark_as_in_progress::<T, _>(Query(term), ()) {
-        Ok(Some(Cached::Done(result))) => return Some(result),
+        Ok(Some(Node::Done(result))) => return Some(result),
 
-        Ok(Some(Cached::InProgress(()))) | Err(ExceedLimitError) => {
+        Ok(Some(Node::InProgress(()))) | Err(OverflowError) => {
             return None
         }
 
@@ -140,7 +140,7 @@ pub fn simplify<T: Term>(
     term: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
 ) -> T {
-    let mut limit = Limit::<session::Default<_>>::default();
+    let mut limit = Limit::<query::Default<_>>::default();
 
     simplify_internal(term, environment, &mut limit)
         .unwrap_or_else(|| term.clone())

@@ -1,19 +1,14 @@
 use super::contains_forall_lifetime;
 use crate::{
     semantic::{
-        equality, get_equivalences_impl,
+        equality, get_equivalences_with_context,
         instantiation::{self, Instantiation},
         normalizer::Normalizer,
-        session::{self, Cached, Limit, Session},
-        term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-        Environment, ExceedLimitError, Satisfied,
+        term::Term,
+        Compute, Environment, OverflowError, Succeeded,
     },
     symbol::table::{self, DisplayObject, State, Table},
 };
-
-/// A query for checking [`Tuple`] predicate satisfiability.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Query<'a, T>(pub &'a T);
 
 /// The predicate meaning that the term is a tuple and is unpackable.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -42,46 +37,25 @@ impl<T: Term> Tuple<T> {
     }
 }
 
-impl<T: Term> Tuple<T> {
-    /// Determines whether a predicate of the term is satisfiable.
-    ///
-    /// # Errors
-    ///
-    /// See [`ExceedLimitError`] for more information.
-    pub fn satisfies(
-        term: &T,
-        environment: &Environment<
-            T::Model,
-            impl State,
-            impl Normalizer<T::Model>,
-        >,
-    ) -> Result<bool, ExceedLimitError> {
-        let mut limit = Limit::<session::Default<_>>::default();
-        Self::satisfies_impl(term, environment, &mut limit)
-    }
+impl<T: Term> Compute for Tuple<T> {
+    type Error = OverflowError;
+    type Parameter = ();
 
-    pub(in crate::semantic) fn satisfies_impl(
-        term: &T,
+    #[allow(private_bounds, private_interfaces)]
+    fn implementation(
+        &self,
         environment: &Environment<
-            T::Model,
+            Self::Model,
             impl State,
-            impl Normalizer<T::Model>,
+            impl Normalizer<Self::Model>,
         >,
-        limit: &mut Limit<
-            impl Session<Lifetime<T::Model>>
-                + Session<Type<T::Model>>
-                + Session<Constant<T::Model>>,
-        >,
-    ) -> Result<bool, ExceedLimitError> {
+        context: &mut crate::semantic::query::Context<Self::Model>,
+        (): Self::Parameter,
+        (): Self::InProgress,
+    ) -> Result<Option<Self::Result>, Self::Error> {
         // trivially satisfied
-        if term.as_tuple().is_some() {
-            return Ok(true);
-        }
-
-        match limit.mark_as_in_progress::<T, _>(Query(term), ())? {
-            Some(Cached::Done(Satisfied)) => return Ok(true),
-            Some(Cached::InProgress(())) => return Ok(false),
-            None => {}
+        if self.0.as_tuple().is_some() {
+            return Ok(Some(Succeeded::satisfied()));
         }
 
         // check from predicates
@@ -91,21 +65,26 @@ impl<T: Term> Tuple<T> {
             .iter()
             .filter_map(|x| T::as_tuple_predicate(x))
         {
-            if equality::equals_impl(&predicate.0, term, environment, limit)? {
-                limit.mark_as_done::<T, _>(Query(term), Satisfied);
-                return Ok(true);
+            if let Some(result) =
+                equality::Equality::new(predicate.0.clone(), self.0.clone())
+                    .query_with_context(environment, context)?
+            {
+                return Ok(Some(result));
             }
         }
 
         // get the equivalences
-        for eq in get_equivalences_impl(term, environment, limit)? {
-            if Self::satisfies_impl(&eq, environment, limit)? {
-                limit.mark_as_done::<T, _>(Query(term), Satisfied);
-                return Ok(true);
+        for Succeeded { result: eq, constraints } in
+            get_equivalences_with_context(&self.0, environment, context)?
+        {
+            if let Some(mut result) =
+                Tuple(eq).query_with_context(environment, context)?
+            {
+                result.constraints.extend(constraints);
+                return Ok(Some(result));
             }
         }
 
-        limit.clear_query::<T, _>(Query(term));
-        Ok(false)
+        Ok(None)
     }
 }

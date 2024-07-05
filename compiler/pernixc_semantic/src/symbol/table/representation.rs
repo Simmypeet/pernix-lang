@@ -9,18 +9,12 @@ use std::{
 use getset::Getters;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use paste::paste;
-use pernixc_base::{
-    diagnostic::Handler,
-    source_file::{SourceElement, Span},
-};
-use pernixc_syntax::syntax_tree::{target::Target, AccessModifier};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use pernixc_base::source_file::Span;
+use pernixc_syntax::syntax_tree::AccessModifier;
 
-use self::building::drafting::Drafter;
-use super::{Building, State, Suboptimal, Success, Table};
+use super::{State, Suboptimal, Table};
 use crate::{
     arena::{Arena, ID},
-    error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
     semantic::{
         model::{Default, Model},
         predicate::Predicate,
@@ -41,7 +35,7 @@ use crate::{
     },
 };
 
-pub(crate) mod building;
+// pub(crate) mod building;
 
 /// A trait used to access the symbols defined in the table.
 pub trait Element: Sized + Debug + Send + Sync + 'static {
@@ -964,7 +958,6 @@ impl<T: Container> Representation<T> {
     ///
     /// See [`GetTermAccessibilityError`] for more information.
     #[must_use]
-    #[allow(clippy::uninhabited_references)]
     pub fn get_type_accessibility(
         &self,
         ty: &r#type::Type<Default>,
@@ -1102,7 +1095,6 @@ impl<T: Container> Representation<T> {
     ///
     /// See [`GetTermAccessibilityError`] for more information.
     #[must_use]
-    #[allow(clippy::uninhabited_references)]
     pub fn get_constant_accessibility(
         &self,
         constant: &constant::Constant<Default>,
@@ -1539,6 +1531,7 @@ pub enum BuildTableError {
     Suboptimal(Table<Suboptimal>),
 }
 
+/*
 fn convert_rw_locked_arena<T: 'static>(
     arena: Arena<RwLock<T>, ID<T>>,
 ) -> Arena<T, ID<T>> {
@@ -1772,6 +1765,7 @@ pub fn build(
         Ok(Table { representation, state: Success(()) })
     }
 }
+*/
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
@@ -2072,7 +2066,8 @@ impl<T: Container> Representation<T> {
 impl<T: State + std::default::Default> std::default::Default for Table<T> {
     fn default() -> Self {
         let mut representation = Representation::default();
-        representation.initialize_core();
+        // TODO
+        // representation.initialize_core();
 
         Self { representation, state: T::default() }
     }

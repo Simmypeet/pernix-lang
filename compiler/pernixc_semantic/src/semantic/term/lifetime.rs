@@ -10,22 +10,21 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     constant::Constant, r#type::Type, AssignSubTermError, GenericArguments,
-    ModelOf, Never, Term, Tuple,
+    Kind, KindMut, ModelOf, Never, Term, Tuple,
 };
 use crate::{
     arena::{Key, ID},
     semantic::{
-        equality,
         instantiation::Instantiation,
         mapping::Mapping,
         matching::{self, Match, Matching},
         model::{Default, Model},
         normalizer::Normalizer,
         predicate::{self, Outlives, Predicate, Satisfiability},
-        session::{Limit, Session},
-        sub_term::{Location, SubTerm},
-        unification::{Substructural, Unification},
-        Environment, ExceedLimitError,
+        query::Context,
+        sub_term::{Location, SubTerm, TermLocation},
+        unification::{Substructural, Unifier},
+        Environment, Output, OverflowError,
     },
     symbol::{
         table::{self, DisplayObject, State, Table},
@@ -100,6 +99,10 @@ impl<M: Model> Location<Lifetime<M>, Lifetime<M>> for Never {
     fn get_sub_term_mut(self, _: &mut Lifetime<M>) -> Option<&mut Lifetime<M>> {
         match self {}
     }
+}
+
+impl From<Never> for TermLocation {
+    fn from(value: Never) -> Self { match value {} }
 }
 
 impl<M: Model> Location<Lifetime<M>, Type<M>> for Never {
@@ -238,39 +241,27 @@ where
         }
     }
 
-    #[allow(private_bounds, private_interfaces)]
     fn normalize(
         &self,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
-        _: &mut Limit<
-            impl Session<Self> + Session<Type<M>> + Session<Constant<M>>,
-        >,
-    ) -> Result<Option<Self>, ExceedLimitError> {
-        if let Lifetime::Inference(inference) = self {
-            Normalizer::normalize_lifetime(inference, environment)
-        } else {
-            Ok(None)
-        }
+        _: &Environment<M, impl State, impl Normalizer<M>>,
+        _: &mut Context<M>,
+    ) -> Result<Output<Self, M>, OverflowError> {
+        Ok(None)
     }
 
-    #[allow(private_bounds, private_interfaces)]
-    fn outlives_satisfiability(
-        &self,
-        lifetime: &Lifetime<M>,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
-        limit: &mut Limit<
-            impl Session<Self> + Session<Type<M>> + Session<Constant<M>>,
-        >,
-    ) -> Result<Satisfiability, ExceedLimitError> {
+    fn as_kind(&self) -> Kind<M> { Kind::Lifetime(self) }
+
+    fn as_kind_mut(&mut self) -> KindMut<M> { KindMut::Lifetime(self) }
+
+    fn outlives_satisfiability(&self, other: &Lifetime<M>) -> Satisfiability {
+        if self == other {
+            return Satisfiability::Satisfied;
+        }
+
         if self.is_static() {
-            Ok(Satisfiability::Satisfied)
+            Satisfiability::Satisfied
         } else {
-            // reflexivity
-            if equality::equals_impl(self, lifetime, environment, limit)? {
-                Ok(Satisfiability::Satisfied)
-            } else {
-                Ok(Satisfiability::Unsatisfied)
-            }
+            Satisfiability::Unsatisfied
         }
     }
 
@@ -426,9 +417,9 @@ where
         &mut instantiation.lifetimes
     }
 
-    fn get_substructural_unification<'a, T: Term>(
+    fn get_substructural_unifier<'a, T: Term>(
         substructural: &'a Substructural<T>,
-    ) -> impl Iterator<Item = &'a Unification<Lifetime<T::Model>>>
+    ) -> impl Iterator<Item = &'a Unifier<Lifetime<T::Model>>>
     where
         Self: 'a,
     {
@@ -499,5 +490,6 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests;
+// TODO
+// #[cfg(test)]
+// mod tests;

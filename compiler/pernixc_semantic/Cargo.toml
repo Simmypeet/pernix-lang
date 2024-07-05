@@ -19,6 +19,7 @@ lazy_static = { workspace = true }
 derive_more = { workspace = true }
 parking_lot = { workspace = true }
 paste = { workspace = true }
+by_address = { workspace = true }
 take_mut = { workspace = true }
 rayon = { workspace = true }
 bitflags = { workspace = true }

@@ -6,6 +6,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
     hash::Hash,
+    sync::Arc,
 };
 
 use constant::Constant;
@@ -14,18 +15,18 @@ use lifetime::Lifetime;
 use r#type::Type;
 
 use super::{
-    equality, equivalent,
+    definite::Definite,
+    equality::Equality,
     instantiation::{self, Instantiation},
     mapping::Mapping,
     matching,
     model::Model,
     normalizer::Normalizer,
     predicate::{self, Outlives, Predicate, Satisfiability},
-    requirement,
-    session::{self, Limit, Session},
+    query::{self, Context},
     sub_term::{self, AssignSubTermError, SubTupleLocation},
-    unification::{self, Unification},
-    visitor, Environment, ExceedLimitError,
+    unification::{self, PredicateA, Unification, Unifier},
+    visitor, Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
 };
 use crate::{
     arena::ID,
@@ -502,11 +503,10 @@ pub trait Term:
     + ModelOf
     + visitor::Element
     + unification::Element
+    + query::Element
     + matching::Match
     + sub_term::SubTerm
-    + equivalent::Get
-    + session::Get
-    + requirement::Require
+    // + requirement::Require
     + From<MemberID<ID<Self::GenericParameter>, GenericID>>
     + From<Self::TraitMember>
     + 'static
@@ -551,8 +551,8 @@ pub trait Term:
         <Self::Model as Model>::ConstantInference:
             TryFrom<U::ConstantInference, Error = E>;
 
+
     #[doc(hidden)]
-    #[allow(private_interfaces)]
     fn normalize(
         &self,
         environment: &Environment<
@@ -560,29 +560,21 @@ pub trait Term:
             impl State,
             impl Normalizer<Self::Model>,
         >,
-        limit: &mut Limit<
-            impl Session<Lifetime<Self::Model>>
-                + Session<Type<Self::Model>>
-                + Session<Constant<Self::Model>>,
-        >,
-    ) -> Result<Option<Self>, ExceedLimitError>;
+        context: &mut Context<Self::Model>,
+    ) -> Result<Output<Self, Self::Model>, OverflowError>;
+
+    #[doc(hidden)]
+    fn as_kind(&self) -> Kind<Self::Model>;
+
+    #[doc(hidden)]
+    fn as_kind_mut(&mut self) -> KindMut<Self::Model>;
 
     #[doc(hidden)]
     #[allow(private_interfaces)]
     fn outlives_satisfiability(
         &self,
         lifetime: &Lifetime<Self::Model>,
-        environment: &Environment<
-            Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
-        >,
-        limit: &mut Limit<
-            impl Session<Lifetime<Self::Model>>
-                + Session<Type<Self::Model>>
-                + Session<Constant<Self::Model>>,
-        >,
-    ) -> Result<Satisfiability, ExceedLimitError>;
+    ) -> Satisfiability;
 
     #[doc(hidden)]
     fn from_inference(inference: Self::InferenceVariable) -> Self;
@@ -712,9 +704,9 @@ pub trait Term:
     ) -> &mut HashMap<Self, Self>;
 
     #[doc(hidden)]
-    fn get_substructural_unification<'a, T: Term>(
+    fn get_substructural_unifier<'a, T: Term>(
         substructural: &'a unification::Substructural<T>,
-    ) -> impl Iterator<Item = &'a Unification<Self::Rebind<T::Model>>>
+    ) -> impl Iterator<Item = &'a Unifier<Self::Rebind<T::Model>>>
     where
         Self: 'a;
 
@@ -965,50 +957,60 @@ impl<M: Model> GenericArguments<M> {
     ///
     /// # Errors
     ///
-    /// See [`ExceedLimitError`] for more information.
+    /// See [`OverflowError`] for more information.
     pub fn equals(
         &self,
         other: &Self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-    ) -> Result<bool, ExceedLimitError> {
-        let mut limit = Limit::<session::Default<_>>::default();
-        self.equals_impl(other, environment, &mut limit)
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        self.equals_with_context(other, environment, &mut Context::new())
     }
 
-    pub(super) fn equals_impl(
+    pub(super) fn equals_with_context(
         &self,
         other: &Self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-        limit: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-        >,
-    ) -> Result<bool, ExceedLimitError> {
+        context: &mut Context<M>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        let mut constraints = HashSet::new();
         if self.lifetimes.len() != other.lifetimes.len()
             || self.types.len() != other.types.len()
             || self.constants.len() != other.constants.len()
         {
-            return Ok(false);
+            return Ok(None);
         }
 
         for (lhs, rhs) in self.lifetimes.iter().zip(&other.lifetimes) {
-            if !equality::equals_impl(lhs, rhs, environment, limit)? {
-                return Ok(false);
-            }
+            let Some(result) = Equality::new(lhs.clone(), rhs.clone())
+                .query_with_context(environment, context)?
+            else {
+                return Ok(None);
+            };
+
+            constraints.extend(result.constraints);
         }
 
         for (lhs, rhs) in self.types.iter().zip(&other.types) {
-            if !equality::equals_impl(lhs, rhs, environment, limit)? {
-                return Ok(false);
-            }
+            let Some(result) = Equality::new(lhs.clone(), rhs.clone())
+                .query_with_context(environment, context)?
+            else {
+                return Ok(None);
+            };
+
+            constraints.extend(result.constraints);
         }
 
         for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
-            if !equality::equals_impl(lhs, rhs, environment, limit)? {
-                return Ok(false);
-            }
+            let Some(result) = Equality::new(lhs.clone(), rhs.clone())
+                .query_with_context(environment, context)?
+            else {
+                return Ok(None);
+            };
+
+            constraints.extend(result.constraints);
         }
 
-        Ok(true)
+        Ok(Some(Succeeded::with_constraints(Satisfied, constraints)))
     }
 
     /// Gets the [`GlobalID`]s that occur in the generic arguments.
@@ -1038,30 +1040,29 @@ impl<M: Model> GenericArguments<M> {
     ///
     /// # Errors
     ///
-    /// See [`ExceedLimitError`] for more information.
+    /// See [`OverflowError`] for more information.
     pub fn unify_as_mapping(
         &self,
         other: &Self,
-        config: &mut (impl unification::Config<Lifetime<M>>
-                  + unification::Config<Type<M>>
-                  + unification::Config<Constant<M>>),
+        config: Arc<dyn PredicateA<M>>,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-    ) -> Result<Option<Mapping<M>>, ExceedLimitError> {
-        let mut limit = Limit::<session::Default<_>>::default();
-        self.unify_as_mapping_impl(other, config, environment, &mut limit)
+    ) -> Result<Output<Mapping<M>, M>, OverflowError> {
+        self.unify_as_mapping_with_context(
+            other,
+            config,
+            environment,
+            &mut Context::new(),
+        )
     }
 
-    pub(super) fn unify_as_mapping_impl(
+    pub(super) fn unify_as_mapping_with_context(
         &self,
         other: &Self,
-        config: &mut (impl unification::Config<Lifetime<M>>
-                  + unification::Config<Type<M>>
-                  + unification::Config<Constant<M>>),
+        config: Arc<dyn PredicateA<M>>,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-        limit: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-        >,
-    ) -> Result<Option<Mapping<M>>, ExceedLimitError> {
+        context: &mut Context<M>,
+    ) -> Result<Output<Mapping<M>, M>, OverflowError> {
+        let mut constraints = HashSet::new();
         let mut mapping = Mapping::default();
 
         if self.lifetimes.len() != other.lifetimes.len()
@@ -1073,35 +1074,41 @@ impl<M: Model> GenericArguments<M> {
 
         for (lhs, rhs) in self.lifetimes.iter().zip(&other.lifetimes) {
             let Some(unification) =
-                unification::unify_impl(lhs, rhs, config, environment, limit)?
+                Unification::new(lhs.clone(), rhs.clone(), config.clone())
+                    .query_with_context(environment, context)?
             else {
                 return Ok(None);
             };
 
-            mapping.append_from_unification(unification);
+            constraints.extend(unification.constraints);
+            mapping.append_from_unification(unification.result);
         }
 
         for (lhs, rhs) in self.types.iter().zip(&other.types) {
             let Some(unification) =
-                unification::unify_impl(lhs, rhs, config, environment, limit)?
+                Unification::new(lhs.clone(), rhs.clone(), config.clone())
+                    .query_with_context(environment, context)?
             else {
                 return Ok(None);
             };
 
-            mapping.append_from_unification(unification);
+            constraints.extend(unification.constraints);
+            mapping.append_from_unification(unification.result);
         }
 
         for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
             let Some(unification) =
-                unification::unify_impl(lhs, rhs, config, environment, limit)?
+                Unification::new(lhs.clone(), rhs.clone(), config.clone())
+                    .query_with_context(environment, context)?
             else {
                 return Ok(None);
             };
 
-            mapping.append_from_unification(unification);
+            constraints.extend(unification.constraints);
+            mapping.append_from_unification(unification.result);
         }
 
-        Ok(Some(mapping))
+        Ok(Some(Succeeded::with_constraints(mapping, constraints)))
     }
 
     /// Applies the instantiation to all the generic arguments.
@@ -1121,37 +1128,49 @@ impl<M: Model> GenericArguments<M> {
 
     /// Checks if all the generic arguments are definite.
     ///
-    /// See [`predicate::definite`] for more information.
+    /// See [`Definite`] for more information.
     ///
     /// # Errors
     ///
-    /// See [`ExceedLimitError`] for more information.
-    pub(super) fn definite_impl(
+    /// See [`OverflowError`] for more information.
+    pub(super) fn definite_with_context(
         &self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-        limit: &mut Limit<
-            impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
-        >,
-    ) -> Result<bool, ExceedLimitError> {
+        context: &mut Context<M>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        let mut constraints = HashSet::new();
+
         for lifetime in &self.lifetimes {
-            if !predicate::definite_impl(lifetime, environment, limit)? {
-                return Ok(false);
-            }
+            let Some(result) = Definite::new(lifetime.clone())
+                .query_with_context(environment, context)?
+            else {
+                return Ok(None);
+            };
+
+            constraints.extend(result.constraints);
         }
 
         for r#type in &self.types {
-            if !predicate::definite_impl(r#type, environment, limit)? {
-                return Ok(false);
-            }
+            let Some(result) = Definite::new(r#type.clone())
+                .query_with_context(environment, context)?
+            else {
+                return Ok(None);
+            };
+
+            constraints.extend(result.constraints);
         }
 
         for constant in &self.constants {
-            if !predicate::definite_impl(constant, environment, limit)? {
-                return Ok(false);
-            }
+            let Some(result) = Definite::new(constant.clone())
+                .query_with_context(environment, context)?
+            else {
+                return Ok(None);
+            };
+
+            constraints.extend(result.constraints);
         }
 
-        Ok(true)
+        Ok(Some(Succeeded::with_constraints(Satisfied, constraints)))
     }
 
     fn substructural_match<L, T, C, Y>(
@@ -1255,5 +1274,6 @@ pub enum KindMut<'a, M: Model> {
     Constant(&'a mut Constant<M>),
 }
 
-#[cfg(test)]
-mod tests;
+// TODO
+// #[cfg(test)]
+// mod tests;

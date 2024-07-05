@@ -1,7 +1,6 @@
 //! Contains various definition of predicates.
 
 mod constant_type;
-mod definite;
 mod outlives;
 mod r#trait;
 mod tuple;
@@ -75,14 +74,6 @@ fn contains_forall_lifetime<T: Term>(term: &T) -> bool {
     visitor.contains_forall_lifetime
 }
 
-/// Enumeration containing either a lifetime or a type outlives predicate.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum LifetimeConstraint<M: Model> {
-    LifetimeOutlives(Outlives<Lifetime<M>>),
-    TypeOutlives(Outlives<Type<M>>),
-}
-
 /// Describes a satisfiability of a certain predicate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Satisfiability {
@@ -97,20 +88,14 @@ pub enum Satisfiability {
     Congruent,
 }
 
-pub use constant_type::{
-    ConstantType, Query as ConstantTypeQuery,
-    QuerySource as ConstantTypeQuerySource,
-};
-pub(super) use definite::definite_impl;
-pub use definite::{definite, Query as DefiniteQuery};
-pub use outlives::{Outlives, Query as OutlivesQuery};
-pub(super) use r#trait::resolve_implementation_impl;
+pub use constant_type::{ConstantType, QuerySource as ConstantTypeQuerySource};
+pub use outlives::Outlives;
+pub(super) use r#trait::resolve_implementation_with_context;
 pub use r#trait::{
-    resolve_implementation, Implementation, Query as TraitQuery,
-    ResolveError as TraitResolveError, Satisfiability as TraitSatisfiability,
+    resolve_implementation, Implementation, ResolveError as TraitResolveError,
     Trait,
 };
-pub use tuple::{Query as TupleQuery, Tuple};
+pub use tuple::Tuple;
 
 /// A predicate that can appear in the where clause.
 #[derive(
@@ -127,7 +112,7 @@ pub use tuple::{Query as TupleQuery, Tuple};
 #[allow(missing_docs)]
 pub enum Predicate<M: Model> {
     TraitTypeEquality(Equality<r#type::TraitMember<M>, Type<M>>),
-    ConstantType(ConstantType<M>),
+    ConstantType(ConstantType<Type<M>>),
     LifetimeOutlives(Outlives<Lifetime<M>>),
     TypeOutlives(Outlives<Type<M>>),
     TupleType(Tuple<Type<M>>),
@@ -184,7 +169,7 @@ impl<M: Model> Predicate<M> {
 impl<T: State, M: Model> table::Display<T> for Predicate<M>
 where
     Equality<r#type::TraitMember<M>, Type<M>>: table::Display<T>,
-    ConstantType<M>: table::Display<T>,
+    ConstantType<Type<M>>: table::Display<T>,
     Outlives<Lifetime<M>>: table::Display<T>,
     Outlives<Type<M>>: table::Display<T>,
     Tuple<Type<M>>: table::Display<T>,

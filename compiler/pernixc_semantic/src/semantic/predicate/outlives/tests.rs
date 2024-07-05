@@ -20,7 +20,7 @@ use crate::{
             r#type::{self, Type},
             GenericArguments, Symbol, Term,
         },
-        Environment, ExceedLimitError, Premise,
+        Environment, OverflowError, Premise,
     },
     symbol::{
         table::{representation::Insertion, Building, Table},
@@ -36,7 +36,7 @@ pub trait Property<T>: 'static + Debug {
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(T, Lifetime<Default>), ExceedLimitError>;
+    ) -> Result<(T, Lifetime<Default>), OverflowError>;
 }
 
 #[derive(Debug)]
@@ -54,7 +54,7 @@ where
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(T, Lifetime<Default>), ExceedLimitError> {
+    ) -> Result<(T, Lifetime<Default>), OverflowError> {
         let (inner_operand, inner_bound) =
             self.property.generate(table, premise, root_module_id)?;
 
@@ -104,7 +104,7 @@ impl Property<Type<Default>> for LifetimeMatching {
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(Type<Default>, Lifetime<Default>), ExceedLimitError> {
+    ) -> Result<(Type<Default>, Lifetime<Default>), OverflowError> {
         let mut operand_lifetimes = Vec::new();
         let mut bound_lifetimes = Vec::new();
 
@@ -182,7 +182,7 @@ impl Property<Lifetime<Default>> for Reflexive {
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(Lifetime<Default>, Lifetime<Default>), ExceedLimitError> {
+    ) -> Result<(Lifetime<Default>, Lifetime<Default>), OverflowError> {
         let (term, bound) =
             self.term.generate(table, premise, root_module_id)?;
 
@@ -229,7 +229,7 @@ where
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         _: ID<Module>,
-    ) -> Result<(T, Lifetime<Default>), ExceedLimitError> {
+    ) -> Result<(T, Lifetime<Default>), OverflowError> {
         if !Outlives::satisfies(&self.term, &self.bound, &Environment {
             premise,
             table,
@@ -257,7 +257,7 @@ impl<T: Term<Model = Default>> Property<T> for Transitive<T> {
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(T, Lifetime<Default>), ExceedLimitError> {
+    ) -> Result<(T, Lifetime<Default>), OverflowError> {
         let (inner_operand, inner_bound) =
             self.inner_property.generate(table, premise, root_module_id)?;
 

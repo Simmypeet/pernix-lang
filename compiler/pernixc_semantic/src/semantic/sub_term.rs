@@ -56,6 +56,7 @@ pub trait Location<Term, SubTerm>:
     + Hash
     + Send
     + Sync
+    + Into<TermLocation>
     + 'static
 {
     /// Assigns the `sub_term` to the given `term` at this location.

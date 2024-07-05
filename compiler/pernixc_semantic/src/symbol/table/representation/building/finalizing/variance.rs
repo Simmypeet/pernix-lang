@@ -18,7 +18,7 @@ use crate::{
             },
             Term,
         },
-        visitor, Environment, ExceedLimitError, Premise,
+        visitor, Environment, OverflowError, Premise,
     },
     symbol::{
         table::{State, Table},
@@ -29,7 +29,7 @@ use crate::{
 
 struct TermCollector<'a, Term, T: State> {
     target: &'a Term,
-    locations: Result<Vec<Vec<TermLocation>>, ExceedLimitError>,
+    locations: Result<Vec<Vec<TermLocation>>, OverflowError>,
 
     environment: &'a Environment<'a, Default, T, NoOp>,
 }
@@ -71,7 +71,7 @@ impl<'a, 'v, U: Term<Model = Default>, T: State> visitor::Recursive<'v, U>
 
         match equality::equals(term, self.target, self.environment) {
             Ok(ok) => {
-                if ok {
+                if ok.is_some() {
                     locations_list.push(locations.collect());
                 }
 
@@ -92,7 +92,7 @@ impl<S: State> Table<S> {
         &self,
         respect_to_type: &Type<Default>,
         mut locations: Vec<TermLocation>,
-    ) -> Result<Option<Variance>, ExceedLimitError>
+    ) -> Result<Option<Variance>, OverflowError>
     where
         for<'a, 'v> TermCollector<'a, U, T>: visitor::Recursive<'v, Lifetime<Default>>
             + visitor::Recursive<'v, Type<Default>>
@@ -331,7 +331,7 @@ pub(super) fn get_variance_for<U: Term, T: State>(
     term: &U,
     respect_to_type: &Type<Default>,
     environment: &Environment<Default, T, NoOp>,
-) -> Result<Option<Variance>, ExceedLimitError>
+) -> Result<Option<Variance>, OverflowError>
 where
     for<'a, 'v> TermCollector<'a, U, T>: visitor::Recursive<'v, Lifetime<Default>>
         + visitor::Recursive<'v, Type<Default>>
@@ -346,7 +346,7 @@ fn get_variance_for_internal<U: Term, T: State>(
     respect_to_type: &Type<Default>,
     is_root: bool,
     environment: &Environment<Default, T, NoOp>,
-) -> Result<Option<Variance>, ExceedLimitError>
+) -> Result<Option<Variance>, OverflowError>
 where
     for<'a, 'v> TermCollector<'a, U, T>: visitor::Recursive<'v, Lifetime<Default>>
         + visitor::Recursive<'v, Type<Default>>
@@ -495,7 +495,7 @@ fn get_all_term_locations<Term: visitor::Element, T: State>(
     target_term: &Term,
     respect_to_type: &Type<Default>,
     environment: &Environment<Default, T, NoOp>,
-) -> Result<Vec<Vec<TermLocation>>, ExceedLimitError>
+) -> Result<Vec<Vec<TermLocation>>, OverflowError>
 where
     for<'a, 'v> TermCollector<'a, Term, T>: visitor::Recursive<'v, Lifetime<Default>>
         + visitor::Recursive<'v, Type<Default>>

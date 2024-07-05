@@ -46,6 +46,7 @@ pub struct Tree {
 
 impl Tree {
     /// Creates a new scope tree -- initially containing only the root scope.
+    #[must_use]
     pub fn new() -> Self {
         let mut scopes = Arena::new();
         let root_scope_id = scopes.insert(Scope {
