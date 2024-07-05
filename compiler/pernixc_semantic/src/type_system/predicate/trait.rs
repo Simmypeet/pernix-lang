@@ -732,6 +732,5 @@ fn is_in_active_trait_implementation<M: Model>(
     }
 }
 
-// TODO
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

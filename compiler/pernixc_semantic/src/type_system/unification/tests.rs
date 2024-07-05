@@ -1,5 +1,4 @@
 use std::{fmt::Debug, result::Result, sync::Arc};
-
 use proptest::{
     arbitrary::Arbitrary,
     prop_assert, prop_assert_eq, prop_oneof, proptest,

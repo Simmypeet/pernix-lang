@@ -94,9 +94,11 @@ impl<'a, 'l, 'v, U: Term, T: State, N: Normalizer<U::Model>>
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-struct OutlivesUnifyingConfig;
+struct OutlivesUnifyingPredicate;
 
-impl<M: Model> unification::Predicate<Lifetime<M>> for OutlivesUnifyingConfig {
+impl<M: Model> unification::Predicate<Lifetime<M>>
+    for OutlivesUnifyingPredicate
+{
     fn unifiable(
         &self,
         _: &Lifetime<M>,
@@ -108,7 +110,7 @@ impl<M: Model> unification::Predicate<Lifetime<M>> for OutlivesUnifyingConfig {
     }
 }
 
-impl<M: Model> unification::Predicate<Type<M>> for OutlivesUnifyingConfig {
+impl<M: Model> unification::Predicate<Type<M>> for OutlivesUnifyingPredicate {
     fn unifiable(
         &self,
         _: &Type<M>,
@@ -120,7 +122,9 @@ impl<M: Model> unification::Predicate<Type<M>> for OutlivesUnifyingConfig {
     }
 }
 
-impl<M: Model> unification::Predicate<Constant<M>> for OutlivesUnifyingConfig {
+impl<M: Model> unification::Predicate<Constant<M>>
+    for OutlivesUnifyingPredicate
+{
     fn unifiable(
         &self,
         _: &Constant<M>,
@@ -257,7 +261,7 @@ impl<T: Term> Compute for Outlives<T> {
                 Unification::new(
                     self.operand.clone(),
                     next_operand.clone(),
-                    Arc::new(OutlivesUnifyingConfig),
+                    Arc::new(OutlivesUnifyingPredicate),
                 )
                 .query_with_context(environment, context)?
             else {
@@ -323,6 +327,5 @@ impl<T: Term> Outlives<T> {
     }
 }
 
-// TODO
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

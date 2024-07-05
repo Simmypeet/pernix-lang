@@ -9,7 +9,11 @@ use proptest::{
 
 use crate::{
     arena::ID,
-    semantic::{
+    symbol::{
+        table::{representation::Insertion, Building, Table},
+        Module,
+    },
+    type_system::{
         equality,
         model::Default,
         normalizer::NoOp,
@@ -20,11 +24,7 @@ use crate::{
             r#type::{self, Type},
             GenericArguments, Symbol, Term,
         },
-        Environment, OverflowError, Premise,
-    },
-    symbol::{
-        table::{representation::Insertion, Building, Table},
-        Module,
+        Compute, Environment, OverflowError, Premise,
     },
 };
 
@@ -37,6 +37,8 @@ pub trait Property<T>: 'static + Debug {
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
     ) -> Result<(T, Lifetime<Default>), OverflowError>;
+
+    fn node_count(&self) -> usize;
 }
 
 #[derive(Debug)]
@@ -58,11 +60,11 @@ where
         let (inner_operand, inner_bound) =
             self.property.generate(table, premise, root_module_id)?;
 
-        if !Outlives::satisfies(
-            &T::from(self.equality.clone()),
-            &inner_bound,
-            &Environment { premise, table, normalizer: &NoOp },
-        )? {
+        let outlives =
+            Outlives::new(T::from(self.equality.clone()), inner_bound);
+        let environment = Environment { premise, table, normalizer: &NoOp };
+
+        if outlives.query(&environment)?.is_none() {
             premise.append_from_predicates(std::iter::once(
                 Equality { lhs: self.equality.clone(), rhs: inner_operand }
                     .into(),
@@ -71,6 +73,8 @@ where
 
         Ok((T::from(self.equality.clone()), inner_bound))
     }
+
+    fn node_count(&self) -> usize { self.property.node_count() + 1 }
 }
 
 impl<T: Term> Arbitrary for ByEquality<T>
@@ -125,11 +129,10 @@ impl Property<Type<Default>> for LifetimeMatching {
             },
         });
 
-        if !Outlives::satisfies(&ty_operand, &self.bound, &Environment {
-            premise,
-            table,
-            normalizer: &NoOp,
-        })? {
+        if Outlives::new(ty_operand.clone(), self.bound)
+            .query(&Environment { premise, table, normalizer: &NoOp })?
+            .is_none()
+        {
             premise.append_from_predicates(std::iter::once(
                 Predicate::TypeOutlives(Outlives {
                     operand: Type::Symbol(Symbol {
@@ -146,6 +149,14 @@ impl Property<Type<Default>> for LifetimeMatching {
         }
 
         Ok((ty_operand, self.bound))
+    }
+
+    fn node_count(&self) -> usize {
+        1 + self
+            .lifetime_properties
+            .iter()
+            .map(|x| x.node_count())
+            .sum::<usize>()
     }
 }
 
@@ -188,6 +199,8 @@ impl Property<Lifetime<Default>> for Reflexive {
 
         Ok((term, bound))
     }
+
+    fn node_count(&self) -> usize { 1 }
 }
 
 impl Arbitrary for Reflexive {
@@ -230,11 +243,10 @@ where
         premise: &mut Premise<Default>,
         _: ID<Module>,
     ) -> Result<(T, Lifetime<Default>), OverflowError> {
-        if !Outlives::satisfies(&self.term, &self.bound, &Environment {
-            premise,
-            table,
-            normalizer: &NoOp,
-        })? {
+        if Outlives::new(self.term.clone(), self.bound)
+            .query(&Environment { premise, table, normalizer: &NoOp })?
+            .is_none()
+        {
             premise.append_from_predicates(std::iter::once(
                 Outlives { operand: self.term.clone(), bound: self.bound }
                     .into(),
@@ -243,6 +255,8 @@ where
 
         Ok((self.term.clone(), self.bound))
     }
+
+    fn node_count(&self) -> usize { 1 }
 }
 
 #[derive(Debug)]
@@ -261,11 +275,10 @@ impl<T: Term<Model = Default>> Property<T> for Transitive<T> {
         let (inner_operand, inner_bound) =
             self.inner_property.generate(table, premise, root_module_id)?;
 
-        if !Outlives::satisfies(
-            &inner_operand,
-            &self.final_bound,
-            &Environment { premise, table, normalizer: &NoOp },
-        )? {
+        if Outlives::new(inner_operand.clone(), self.final_bound)
+            .query(&Environment { premise, table, normalizer: &NoOp })?
+            .is_none()
+        {
             premise.append_from_predicates(std::iter::once(
                 Predicate::LifetimeOutlives(Outlives {
                     operand: inner_bound,
@@ -276,6 +289,8 @@ impl<T: Term<Model = Default>> Property<T> for Transitive<T> {
 
         Ok((inner_operand, self.final_bound.clone()))
     }
+
+    fn node_count(&self) -> usize { 1 + self.inner_property.node_count() }
 }
 
 impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + 'static> Arbitrary
@@ -355,10 +370,10 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     let environment =
         &Environment { table: &table, premise: &premise, normalizer: &NoOp };
 
-    prop_assert!(Outlives::satisfies(&term1, &term2, environment,)
-        .map_err(|_| TestCaseError::reject("too complex property"))?);
-
-    dbg!(property);
+    prop_assert!(Outlives::new(term1, term2)
+        .query(environment)
+        .map_err(|_| TestCaseError::reject("too complex property"))?
+        .is_some());
 
     Ok(())
 }
@@ -395,11 +410,7 @@ proptest! {
             normalizer: &NoOp
         };
         prop_assert!(
-            Outlives::satisfies(
-                &constant,
-                &lifetime,
-                environment,
-            ).unwrap()
+            Outlives::new(constant, lifetime).query(environment)?.is_some()
         );
     }
 }

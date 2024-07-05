@@ -6,26 +6,13 @@ use std::{
 use lazy_static::lazy_static;
 use proptest::{
     arbitrary::Arbitrary,
-    prop_assert_eq, proptest,
+    prop_assert, prop_assert_eq, proptest,
     strategy::{BoxedStrategy, LazyJust, Strategy},
     test_runner::TestCaseResult,
 };
 
 use crate::{
     arena::ID,
-    semantic::{
-        instantiation::{self, Instantiation},
-        model::Default,
-        normalizer::NoOp,
-        order::Order,
-        predicate::{self, definite},
-        term::{
-            constant::Constant, lifetime::Lifetime, r#type::Type,
-            GenericArguments, Kind,
-        },
-        visitor::RecursiveIterator,
-        Environment, Premise,
-    },
     symbol::{
         self,
         table::{
@@ -37,6 +24,20 @@ use crate::{
         PositiveTraitImplementationDefinition, Trait, TraitDefinition,
         TypeParameter,
     },
+    type_system::{
+        definite::Definite,
+        instantiation::{self, Instantiation},
+        model::Default,
+        normalizer::NoOp,
+        order::Order,
+        predicate,
+        term::{
+            constant::Constant, lifetime::Lifetime, r#type::Type,
+            GenericArguments, Kind,
+        },
+        visitor::RecursiveIterator,
+        Compute, Environment, Premise, Succeeded,
+    },
 };
 
 lazy_static! {
@@ -46,12 +47,12 @@ lazy_static! {
 fn definite_lifetime() -> impl Strategy<Value = Lifetime<Default>> {
     Lifetime::arbitrary().prop_filter("filter out non-definite terms", |term| {
         matches!(
-            definite::definite(term, &Environment {
+            Definite(term.clone()).query(&Environment {
                 premise: &Premise::default(),
                 table: &*TABLE,
-                normalizer: &NoOp
-            },),
-            Ok(true)
+                normalizer: &NoOp,
+            }),
+            Ok(Some(_))
         ) && !RecursiveIterator::new(term)
             .any(|(x, _)| matches!(x, Kind::Type(Type::TraitMember(_))))
     })
@@ -60,12 +61,12 @@ fn definite_lifetime() -> impl Strategy<Value = Lifetime<Default>> {
 fn definite_type() -> impl Strategy<Value = Type<Default>> {
     Type::arbitrary().prop_filter("filter out non-definite terms", |term| {
         matches!(
-            definite::definite(term, &Environment {
+            Definite(term.clone()).query(&Environment {
                 premise: &Premise::default(),
                 table: &*TABLE,
-                normalizer: &NoOp
-            },),
-            Ok(true)
+                normalizer: &NoOp,
+            }),
+            Ok(Some(_))
         ) && !RecursiveIterator::new(term)
             .any(|(x, _)| matches!(x, Kind::Type(Type::TraitMember(_))))
     })
@@ -74,12 +75,12 @@ fn definite_type() -> impl Strategy<Value = Type<Default>> {
 fn definite_constant() -> impl Strategy<Value = Constant<Default>> {
     Constant::arbitrary().prop_filter("filter out non-definite terms", |term| {
         matches!(
-            definite::definite(term, &Environment {
+            Definite(term.clone()).query(&Environment {
                 premise: &Premise::default(),
                 table: &*TABLE,
-                normalizer: &NoOp
-            },),
-            Ok(true)
+                normalizer: &NoOp,
+            }),
+            Ok(Some(_))
         ) && !RecursiveIterator::new(term)
             .any(|(x, _)| matches!(x, Kind::Type(Type::TraitMember(_))))
     })
@@ -113,7 +114,7 @@ impl SingleImplementation {
     fn assert(&self) -> TestCaseResult {
         let premise = Premise::default();
 
-        let result = super::resolve_implementation(
+        let Succeeded { result, constraints } = super::resolve_implementation(
             self.trait_id,
             &self.generic_arguments,
             &Environment {
@@ -123,12 +124,13 @@ impl SingleImplementation {
             },
         )?;
 
+        prop_assert!(constraints.is_empty());
+
         prop_assert_eq!(result.id, self.target_implementation_id);
         prop_assert_eq!(
             &result.deduced_substitution,
             &self.expected_instantiation
         );
-        prop_assert_eq!(result.lifetime_constraints.len(), 0);
 
         Ok(())
     }
@@ -489,7 +491,7 @@ impl SpecializedImplementation {
         // should match to the specialized implementation
         let premise = Premise::default();
 
-        let result = super::resolve_implementation(
+        let Succeeded { result, constraints } = super::resolve_implementation(
             self.trait_id,
             &self.generic_arguments,
             &Environment {
@@ -504,7 +506,7 @@ impl SpecializedImplementation {
             &result.deduced_substitution,
             &self.expected_specialized_instantitation
         );
-        prop_assert_eq!(result.lifetime_constraints.len(), 0);
+        prop_assert!(constraints.is_empty());
 
         Ok(())
     }
@@ -843,7 +845,7 @@ impl FallbackToGeneralImplementation {
         // should match to the general implementation
         let premise = Premise::default();
 
-        let result = super::resolve_implementation(
+        let Succeeded { result, constraints } = super::resolve_implementation(
             self.0.trait_id,
             &self.0.generic_arguments,
             &Environment {
@@ -858,7 +860,7 @@ impl FallbackToGeneralImplementation {
             &result.deduced_substitution,
             &self.0.expected_general_instantitation
         );
-        prop_assert_eq!(result.lifetime_constraints.len(), 0);
+        prop_assert!(constraints.is_empty());
 
         Ok(())
     }
