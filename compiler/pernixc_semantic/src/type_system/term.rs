@@ -30,11 +30,11 @@ use super::{
 };
 use crate::{
     arena::ID,
-    semantic::model::Default,
     symbol::{
         table::{self, DisplayObject, State, Table},
         GenericID, GenericParameter, GlobalID, MemberID,
     },
+    type_system::model::Default,
 };
 
 pub mod constant;
@@ -1274,6 +1274,5 @@ pub enum KindMut<'a, M: Model> {
     Constant(&'a mut Constant<M>),
 }
 
-// TODO
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

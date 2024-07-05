@@ -12,8 +12,8 @@ use super::{
 };
 use crate::{
     arena::ID,
-    semantic::{model::Default, term::TupleElement},
     symbol::{GenericID, MemberID},
+    type_system::{model::Default, term::TupleElement},
 };
 
 impl<T: 'static> Arbitrary for ID<T> {

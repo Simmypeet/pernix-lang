@@ -1,6 +1,6 @@
 use super::contains_forall_lifetime;
 use crate::{
-    semantic::{
+    type_system::{
         equality, get_equivalences_with_context,
         instantiation::{self, Instantiation},
         normalizer::Normalizer,
@@ -49,7 +49,7 @@ impl<T: Term> Compute for Tuple<T> {
             impl State,
             impl Normalizer<Self::Model>,
         >,
-        context: &mut crate::semantic::query::Context<Self::Model>,
+        context: &mut crate::type_system::query::Context<Self::Model>,
         (): Self::Parameter,
         (): Self::InProgress,
     ) -> Result<Option<Self::Result>, Self::Error> {

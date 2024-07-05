@@ -213,7 +213,33 @@ fn get_equivalences_with_context<T: Term>(
     let mut equivalences = (term.normalize(environment, context)?)
         .map_or_else(Vec::new, |result| vec![result]);
 
-    todo!();
+    for equivalence in environment
+        .premise
+        .predicates
+        .iter()
+        .filter_map(|x| T::as_trait_member_equality_predicate(x))
+    {
+        let lhs = T::from(equivalence.lhs.clone());
+        let rhs = &equivalence.rhs;
+
+        if let Some(result) = equality::Equality::new(lhs.clone(), term.clone())
+            .query_with_context(environment, context)?
+        {
+            equivalences.push(Succeeded::with_constraints(
+                rhs.clone(),
+                result.constraints,
+            ));
+        }
+
+        if let Some(result) = equality::Equality::new(rhs.clone(), term.clone())
+            .query_with_context(environment, context)?
+        {
+            equivalences.push(Succeeded::with_constraints(
+                lhs.clone(),
+                result.constraints,
+            ));
+        }
+    }
 
     Ok(equivalences)
 }

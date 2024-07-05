@@ -344,8 +344,24 @@ impl<M: Model> GenericArguments<M> {
                 extract(unification.lifetimes, Lifetime::is_parameter);
             let (type_param_map, trait_type_map) =
                 extract(unification.types, Type::is_parameter);
-            let (constant_param_map, _) =
+            let (constant_param_map, other_constant_map) =
                 extract(unification.constants, Constant::is_parameter);
+
+            assert!(other_constant_map.is_empty());
+
+            // add lifetime constraints
+            for (key, values) in other_lifetime_map {
+                for value in values {
+                    if key == value {
+                        continue;
+                    }
+
+                    constraints.insert(LifetimeConstraint::LifetimeMatching(
+                        key.clone(),
+                        value.clone(),
+                    ));
+                }
+            }
 
             let Some(Succeeded {
                 result: lifetimes,

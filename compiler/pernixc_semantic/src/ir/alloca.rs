@@ -2,7 +2,7 @@
 
 use pernixc_base::source_file::Span;
 
-use crate::semantic::{model::Model, term::r#type::Type};
+use crate::type_system::{model::Model, term::r#type::Type};
 
 /// Represents a stack memory allocation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

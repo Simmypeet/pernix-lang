@@ -7,11 +7,11 @@ use proptest::{
 use super::Lifetime;
 use crate::{
     arena::ID,
-    semantic::{
+    symbol::{GenericID, LifetimeParameterID},
+    type_system::{
         model::Default,
         term::{constant::Constant, r#type::Type},
     },
-    symbol::{GenericID, LifetimeParameterID},
 };
 
 impl Arbitrary for Lifetime<Default> {

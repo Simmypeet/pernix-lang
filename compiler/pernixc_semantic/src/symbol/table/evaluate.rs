@@ -6,7 +6,7 @@ use pernixc_syntax::syntax_tree::expression::Expression;
 use super::{State, Table};
 use crate::{
     error,
-    semantic::{model::Default, term::constant::Constant},
+    type_system::{model::Default, term::constant::Constant},
     symbol::GlobalID,
 };
 

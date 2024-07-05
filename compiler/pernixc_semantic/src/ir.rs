@@ -37,7 +37,7 @@
 use std::{fmt::Debug, hash::Hash};
 
 use self::representation::Representation;
-use crate::semantic::model::{self, Model};
+use crate::type_system::model::{self, Model};
 
 pub mod address;
 pub mod alloca;

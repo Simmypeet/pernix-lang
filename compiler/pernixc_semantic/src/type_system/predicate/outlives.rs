@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
-    semantic::{
+    type_system::{
         get_equivalences_with_context,
         instantiation::{self, Instantiation},
         mapping::Mapping,

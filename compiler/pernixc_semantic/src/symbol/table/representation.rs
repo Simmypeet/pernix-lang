@@ -15,7 +15,7 @@ use pernixc_syntax::syntax_tree::AccessModifier;
 use super::{State, Suboptimal, Table};
 use crate::{
     arena::{Arena, ID},
-    semantic::{
+    type_system::{
         model::{Default, Model},
         predicate::Predicate,
         term::{constant, lifetime::Lifetime, r#type, GenericArguments},

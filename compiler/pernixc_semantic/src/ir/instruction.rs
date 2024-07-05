@@ -8,7 +8,7 @@ use super::{
     register::Register,
     scope::Scope,
 };
-use crate::{arena::ID, semantic::model::Model};
+use crate::{arena::ID, type_system::model::Model};
 
 /// An enumeration containing all the possible sources of an unconditional jump.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

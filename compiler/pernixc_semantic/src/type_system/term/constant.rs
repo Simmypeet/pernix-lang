@@ -15,7 +15,12 @@ use super::{
 };
 use crate::{
     arena::ID,
-    semantic::{
+    symbol::{
+        self,
+        table::{self, representation::Index, DisplayObject, State, Table},
+        ConstantParameter, ConstantParameterID, GenericID, GlobalID, Variant,
+    },
+    type_system::{
         instantiation::Instantiation,
         mapping::Mapping,
         matching::{self, Match},
@@ -29,11 +34,6 @@ use crate::{
         },
         unification::{self, Unifier},
         Environment, Output, OverflowError,
-    },
-    symbol::{
-        self,
-        table::{self, representation::Index, DisplayObject, State, Table},
-        ConstantParameter, ConstantParameterID, GenericID, GlobalID, Variant,
     },
 };
 
@@ -1019,6 +1019,5 @@ where
     }
 }
 
-// TODO
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

@@ -7,11 +7,11 @@ use proptest::{
 use super::{Array, Constant, Enum, MemberSymbolID, Primitive, Struct};
 use crate::{
     arena::ID,
-    semantic::{
+    symbol::ConstantParameterID,
+    type_system::{
         model::Default,
         term::{Local, Tuple},
     },
-    symbol::ConstantParameterID,
 };
 
 impl Arbitrary for Primitive {

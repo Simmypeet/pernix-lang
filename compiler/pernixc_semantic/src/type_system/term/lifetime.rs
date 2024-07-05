@@ -14,7 +14,11 @@ use super::{
 };
 use crate::{
     arena::{Key, ID},
-    semantic::{
+    symbol::{
+        table::{self, DisplayObject, State, Table},
+        GenericID, LifetimeParameter, LifetimeParameterID, MemberID,
+    },
+    type_system::{
         instantiation::Instantiation,
         mapping::Mapping,
         matching::{self, Match, Matching},
@@ -25,10 +29,6 @@ use crate::{
         sub_term::{Location, SubTerm, TermLocation},
         unification::{Substructural, Unifier},
         Environment, Output, OverflowError,
-    },
-    symbol::{
-        table::{self, DisplayObject, State, Table},
-        GenericID, LifetimeParameter, LifetimeParameterID, MemberID,
     },
 };
 
@@ -490,6 +490,5 @@ where
     }
 }
 
-// TODO
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

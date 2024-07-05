@@ -17,7 +17,7 @@ use super::{
     Succeeded,
 };
 use crate::{
-    semantic::sub_term::{Location, SubLifetimeLocation},
+    type_system::sub_term::{Location, SubLifetimeLocation},
     symbol::{
         table::{State, Table},
         AdtID, Variance,

@@ -8,7 +8,7 @@ use super::address::Stack;
 use crate::{
     arena::ID,
     error::{AlreadyBoundName, Error},
-    semantic::model::Model,
+    type_system::model::Model,
     symbol::{Field, Struct},
 };
 

@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     arena::ID,
-    semantic::{
+    type_system::{
         get_equivalences_with_context,
         instantiation::{self, Instantiation},
         term::{constant, r#type, Tuple},

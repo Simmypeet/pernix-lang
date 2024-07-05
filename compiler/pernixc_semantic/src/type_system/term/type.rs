@@ -15,7 +15,12 @@ use super::{
 };
 use crate::{
     arena::ID,
-    semantic::{
+    symbol::{
+        self,
+        table::{self, representation::Index, DisplayObject, State, Table},
+        Enum, GenericID, GlobalID, Struct, TypeParameter, TypeParameterID,
+    },
+    type_system::{
         deduction,
         instantiation::{self, Instantiation},
         mapping::Mapping,
@@ -31,11 +36,6 @@ use crate::{
         },
         unification::{self, Unifier},
         Environment, Output, OverflowError, Succeeded,
-    },
-    symbol::{
-        self,
-        table::{self, representation::Index, DisplayObject, State, Table},
-        Enum, GenericID, GlobalID, Struct, TypeParameter, TypeParameterID,
     },
 };
 
@@ -1891,6 +1891,5 @@ impl<M: Model> Type<M> {
     }
 }
 
-// TODO
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

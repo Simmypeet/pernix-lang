@@ -15,7 +15,7 @@ use enum_as_inner::EnumAsInner;
 use super::{alloca::Alloca, register::Register};
 use crate::{
     arena::ID,
-    semantic::model::Model,
+    type_system::model::Model,
     symbol::{self, Parameter},
 };
 

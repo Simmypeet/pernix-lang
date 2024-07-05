@@ -1,6 +1,6 @@
 use super::{predicate::Satisfiability, query::Context, Compute};
 use crate::{
-    semantic::{
+    type_system::{
         get_equivalences_with_context, model::Model, normalizer::Normalizer,
         term::Term, visitor, Environment, Output, OverflowError, Satisfied,
         Succeeded,

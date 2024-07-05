@@ -7,7 +7,7 @@ use getset::{CopyGetters, Getters};
 use super::instruction::{Instruction, Terminator};
 use crate::{
     arena::{Arena, ID},
-    semantic::model::Model,
+    type_system::model::Model,
 };
 
 /// Represents a list of instructions executed in sequence.

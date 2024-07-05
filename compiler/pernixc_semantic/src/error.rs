@@ -17,7 +17,7 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    semantic::{
+    type_system::{
         model::Model,
         predicate::Predicate,
         term::r#type::{Qualifier, Type},

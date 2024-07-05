@@ -1,6 +1,6 @@
 use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
-    semantic::{
+    type_system::{
         equality, get_equivalences_with_context,
         instantiation::{self, Instantiation},
         model::Model,

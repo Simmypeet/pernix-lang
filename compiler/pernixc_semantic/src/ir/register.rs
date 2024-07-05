@@ -11,7 +11,7 @@ use pernixc_base::source_file::Span;
 use super::address::{Address, Memory};
 use crate::{
     arena::ID,
-    semantic::{
+    type_system::{
         model::Model,
         term::r#type::{Qualifier, Type},
     },

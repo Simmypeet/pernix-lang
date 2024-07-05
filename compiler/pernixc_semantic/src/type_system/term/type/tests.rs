@@ -12,14 +12,14 @@ use super::{
 };
 use crate::{
     arena::ID,
-    semantic::{
+    symbol::TypeParameterID,
+    type_system::{
         model::Default,
         term::{
             constant::Constant, lifetime::Lifetime, Local, MemberSymbol,
             Symbol, Tuple,
         },
     },
-    symbol::TypeParameterID,
 };
 
 impl Arbitrary for Primitive {

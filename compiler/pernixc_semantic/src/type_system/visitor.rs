@@ -17,7 +17,7 @@ use super::{
         GenericArguments, Kind, Never, Term, Tuple,
     },
 };
-use crate::semantic::sub_term::{
+use crate::type_system::sub_term::{
     SubMemberSymbolLocation, SubSymbolLocation, SubTraitMemberLocation,
     SubTupleLocation,
 };

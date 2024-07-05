@@ -6,7 +6,7 @@ use thiserror::Error;
 use super::contains_forall_lifetime;
 use crate::{
     arena::ID,
-    semantic::{
+    type_system::{
         compatible, deduction,
         instantiation::Instantiation,
         model::{Default, Model},
@@ -355,7 +355,7 @@ pub fn resolve_implementation<M: Model>(
     )
 }
 
-pub(in crate::semantic) fn resolve_implementation_with_context<M: Model>(
+pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
     trait_id: ID<symbol::Trait>,
     generic_arguments: &GenericArguments<M>,
     environment: &Environment<M, impl State, impl Normalizer<M>>,

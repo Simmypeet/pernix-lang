@@ -219,6 +219,5 @@ fn equals_without_mapping<T: Term>(
     Ok(None)
 }
 
-// TODO:
 // #[cfg(test)]
 // pub(super) mod tests;

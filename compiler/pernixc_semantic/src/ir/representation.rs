@@ -3,7 +3,7 @@
 use getset::Getters;
 
 use super::{control_flow_graph::ControlFlowGraph, register::Register, scope};
-use crate::{arena::Arena, ir::alloca::Alloca, semantic::model::Model};
+use crate::{arena::Arena, ir::alloca::Alloca, type_system::model::Model};
 
 // pub mod binding;
 

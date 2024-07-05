@@ -26,7 +26,7 @@ use crate::{
         MoreThanOneUnpackedInTupleType, NoGenericArgumentsRequired,
         ResolutionAmbiguity, SymbolNotFound,
     },
-    semantic::{
+    type_system::{
         model::{Default, Model},
         term::{
             self, constant,

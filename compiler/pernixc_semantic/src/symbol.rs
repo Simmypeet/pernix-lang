@@ -15,7 +15,7 @@ use pernixc_base::source_file::Span;
 use crate::{
     arena::{Arena, Map, ID},
     ir::{self, Suboptimal, Success},
-    semantic::{
+    type_system::{
         model::{Default, Model},
         predicate,
         term::{constant, lifetime, r#type, GenericArguments},
