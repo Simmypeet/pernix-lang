@@ -536,7 +536,7 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
                         .get_generic((*candidate_id).into())
                         .unwrap();
 
-                    combined_premise.append_from_predicates(
+                    combined_premise.predicates.extend(
                         current_geenric_sym
                             .generic_declaration()
                             .predicates
@@ -547,7 +547,7 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
                                 )
                             }),
                     );
-                    combined_premise.append_from_predicates(
+                    combined_premise.predicates.extend(
                         candidate_generic_sym
                             .generic_declaration()
                             .predicates
@@ -648,7 +648,7 @@ fn predicate_satisfies<M: Model>(
             Predicate::TraitTypeEquality(equality) => compatible::compatible(
                 &Type::TraitMember(equality.lhs),
                 &equality.rhs,
-                Variance::Bivariant,
+                Variance::Covariant,
                 environment,
             )?
             .map(|x| x.constraints),

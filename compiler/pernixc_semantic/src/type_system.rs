@@ -3,15 +3,17 @@
 use std::collections::HashSet;
 
 use enum_as_inner::EnumAsInner;
-use getset::Getters;
+use getset::{CopyGetters, Getters};
 use predicate::Outlives;
 use query::{Cached, Context, Query, QueryCall};
+use term::constant::Constant;
+use unification::Log;
 
 use self::{
     model::Model,
     normalizer::Normalizer,
     predicate::Predicate,
-    term::{lifetime::Lifetime, r#type::Type, Term},
+    term::{lifetime::Lifetime, r#type::Type},
 };
 use crate::{
     arena::ID,
@@ -25,6 +27,7 @@ pub mod compatible;
 pub mod deduction;
 pub mod definite;
 pub mod equality;
+pub mod equivalence;
 pub mod fresh;
 pub mod instantiation;
 pub mod mapping;
@@ -34,13 +37,57 @@ pub mod normalizer;
 pub mod order;
 pub mod predicate;
 pub mod query;
-// pub mod requirement;
-// pub mod simplify;
+pub mod simplify;
 pub mod sub_term;
 pub mod term;
 pub mod type_check;
 pub mod unification;
 pub mod visitor;
+
+/// A struct implementing the [`unification::Predicate`] that allows the
+/// lifetime to be unified.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct LifetimeUnifyingPredicate;
+
+impl<M: Model> unification::Predicate<Lifetime<M>>
+    for LifetimeUnifyingPredicate
+{
+    fn unifiable(
+        &self,
+        _: &Lifetime<M>,
+        _: &Lifetime<M>,
+        _: &Vec<Log<M>>,
+        _: &Vec<Log<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        Ok(Some(Succeeded::satisfied()))
+    }
+}
+
+impl<M: Model> unification::Predicate<Type<M>> for LifetimeUnifyingPredicate {
+    fn unifiable(
+        &self,
+        _: &Type<M>,
+        _: &Type<M>,
+        _: &Vec<Log<M>>,
+        _: &Vec<Log<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        Ok(None)
+    }
+}
+
+impl<M: Model> unification::Predicate<Constant<M>>
+    for LifetimeUnifyingPredicate
+{
+    fn unifiable(
+        &self,
+        _: &Constant<M>,
+        _: &Constant<M>,
+        _: &Vec<Log<M>>,
+        _: &Vec<Log<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        Ok(None)
+    }
+}
 
 /// An error that occurs when the number of queries exceeds the limit.
 ///
@@ -122,6 +169,16 @@ impl<M: Model> Succeeded<Satisfied, M> {
 /// [`Succeeded`] is returned with the result and additional constraints.
 pub type Output<Result, M> = Option<Succeeded<Result, M>>;
 
+/// Contains the premise of the semantic logic.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Premise<M: Model> {
+    /// List of predicates that will be considered as facts.
+    pub predicates: HashSet<Predicate<M>>,
+
+    /// The extra trait context that has a particular effect on the semantic.
+    pub trait_context: TraitContext,
+}
+
 /// Extra environment content that has a particular effect on the semantic
 #[derive(
     Debug,
@@ -147,38 +204,8 @@ pub enum TraitContext {
     Normal,
 }
 
-/// The foundation truth used to derive further arguments.
-#[derive(Debug, Clone, Default, Getters)]
-pub struct Premise<M: Model> {
-    /// The list of predicates
-    #[get = "pub"]
-    predicates: HashSet<Predicate<M>>,
-
-    /// The environment of the premise.
-    pub trait_context: TraitContext,
-}
-
-impl<M: Model> Premise<M> {
-    /// Appends the given predicates to the premise.
-    pub fn append_from_predicates(
-        &mut self,
-        predicates: impl Iterator<Item = Predicate<M>>,
-    ) {
-        self.predicates.extend(predicates);
-    }
-
-    /// Creates a new [`Premise`] with the given predicates.
-    pub fn from_predicates(
-        predicates: impl Iterator<Item = Predicate<M>>,
-    ) -> Self {
-        let mut premise = Self::default();
-        premise.append_from_predicates(predicates);
-        premise
-    }
-}
-
 /// A structure that contains the environment of the semantic logic.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Getters, CopyGetters)]
 pub struct Environment<'a, M: Model, T: State, N: Normalizer<M>> {
     /// The premise of the semantic logic.
     pub premise: &'a Premise<M>,
@@ -188,60 +215,6 @@ pub struct Environment<'a, M: Model, T: State, N: Normalizer<M>> {
 
     /// The normalizer used to normalize the inference variables.
     pub normalizer: &'a N,
-}
-
-/// Gets the list of equivalent terms for the given term.
-///
-/// This including normalized term and equivalent classes.
-///
-/// # Errors
-///
-/// See [`ExceedLimitError`] for more information.
-pub fn get_equivalences<T: Term>(
-    term: &T,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
-) -> Result<Vec<Succeeded<T, T::Model>>, OverflowError> {
-    let mut context = Context::default();
-    get_equivalences_with_context(term, environment, &mut context)
-}
-
-fn get_equivalences_with_context<T: Term>(
-    term: &T,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
-    context: &mut Context<T::Model>,
-) -> Result<Vec<Succeeded<T, T::Model>>, OverflowError> {
-    let mut equivalences = (term.normalize(environment, context)?)
-        .map_or_else(Vec::new, |result| vec![result]);
-
-    for equivalence in environment
-        .premise
-        .predicates
-        .iter()
-        .filter_map(|x| T::as_trait_member_equality_predicate(x))
-    {
-        let lhs = T::from(equivalence.lhs.clone());
-        let rhs = &equivalence.rhs;
-
-        if let Some(result) = equality::Equality::new(lhs.clone(), term.clone())
-            .query_with_context(environment, context)?
-        {
-            equivalences.push(Succeeded::with_constraints(
-                rhs.clone(),
-                result.constraints,
-            ));
-        }
-
-        if let Some(result) = equality::Equality::new(rhs.clone(), term.clone())
-            .query_with_context(environment, context)?
-        {
-            equivalences.push(Succeeded::with_constraints(
-                lhs.clone(),
-                result.constraints,
-            ));
-        }
-    }
-
-    Ok(equivalences)
 }
 
 /// A trait used for computing the result of the query.
@@ -362,10 +335,12 @@ pub trait Compute: Query {
 
         match result {
             Ok(Some(result)) => {
+                // remembers the result
                 assert!(context.mark_as_done(self, result.clone()));
                 Ok(Some(result))
             }
             result @ (Ok(None) | Err(_)) => {
+                // reset the query state
                 assert!(context.clear_query(self).is_some());
                 result
             }

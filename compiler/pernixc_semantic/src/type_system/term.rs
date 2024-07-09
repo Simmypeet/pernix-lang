@@ -17,6 +17,7 @@ use r#type::Type;
 use super::{
     definite::Definite,
     equality::Equality,
+    equivalence,
     instantiation::{self, Instantiation},
     mapping::Mapping,
     matching,
@@ -24,6 +25,7 @@ use super::{
     normalizer::Normalizer,
     predicate::{self, Outlives, Predicate, Satisfiability},
     query::{self, Context},
+    simplify,
     sub_term::{self, AssignSubTermError, SubTupleLocation},
     unification::{self, PredicateA, Unification, Unifier},
     visitor, Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
@@ -491,7 +493,13 @@ pub trait ModelOf {
     type Model: Model;
 }
 
-/// Contains the functionality for determining the properties of a term.
+/// A trait implemented by all three fundamental terms of the language:
+/// [`Lifetime`], [`Type`], and [`Constant`].
+///
+/// This trait provides a common interface for all terms to be used in the
+/// type system. Since most of the queries and operations in the type system are
+/// generic over the kind of term, this trait allows for a common interface to
+/// be used for all terms.
 #[allow(private_bounds)]
 pub trait Term:
     Debug
@@ -506,8 +514,10 @@ pub trait Term:
     + query::Element
     + matching::Match
     + sub_term::SubTerm
-    // + requirement::Require
+    + simplify::Simplify
+    + equivalence::Equivalence
     + From<MemberID<ID<Self::GenericParameter>, GenericID>>
+    + From<Error>
     + From<Self::TraitMember>
     + 'static
 {
@@ -529,7 +539,7 @@ pub trait Term:
         + Send
         + Sync;
 
-    /// Rebinds this kind of term to another model.
+    /// Changes the model of the term to another model.
     type Rebind<M: Model>: Term<Model = M>;
 
     /// Converts a term from another model to this model.
@@ -551,7 +561,16 @@ pub trait Term:
         <Self::Model as Model>::ConstantInference:
             TryFrom<U::ConstantInference, Error = E>;
 
-
+    /// An algorithm that normalizes the term.
+    ///
+    /// Normalization converts the term into a canonical form. For example,
+    /// a type alias is expanded into its definition.
+    ///
+    /// ```pnx
+    /// public type A = int32
+    /// ```
+    ///
+    /// The type `A` is normalized into `int32`.
     #[doc(hidden)]
     fn normalize(
         &self,
@@ -570,12 +589,12 @@ pub trait Term:
     fn as_kind_mut(&mut self) -> KindMut<Self::Model>;
 
     #[doc(hidden)]
-    #[allow(private_interfaces)]
     fn outlives_satisfiability(
         &self,
         lifetime: &Lifetime<Self::Model>,
     ) -> Satisfiability;
 
+    /// Converts the inference variable of this kind of term into the term.
     #[doc(hidden)]
     fn from_inference(inference: Self::InferenceVariable) -> Self;
 
@@ -667,10 +686,7 @@ pub trait Term:
     #[doc(hidden)]
     fn into_trait_member_equality_predicate(
         predicate: Predicate<Self::Model>,
-    ) -> Result<
-        Equality<Self::TraitMember, Self>,
-        Predicate<Self::Model>,
-    >;
+    ) -> Result<Equality<Self::TraitMember, Self>, Predicate<Self::Model>>;
 
     #[doc(hidden)]
     fn as_tuple_predicate(
@@ -1274,6 +1290,11 @@ pub enum KindMut<'a, M: Model> {
     Type(&'a mut Type<M>),
     Constant(&'a mut Constant<M>),
 }
+
+/// Represents an errornuos term. Used for representing errors in the type
+/// system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Error;
 
 #[cfg(test)]
 mod tests;

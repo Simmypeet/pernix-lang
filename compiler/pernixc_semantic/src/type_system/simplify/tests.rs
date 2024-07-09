@@ -1,17 +1,22 @@
 use crate::{
     arena::ID,
-    semantic::{
+    symbol::{
+        table::{Building, Table},
+        GenericID, LifetimeParameterID,
+    },
+    type_system::{
+        equality::Equality,
         model::Default,
         normalizer::NoOp,
-        predicate::{Equality, Predicate},
+        predicate::Predicate,
         simplify::simplify,
         term::{
+            lifetime::Lifetime,
             r#type::{Primitive, SymbolID, TraitMember, Type},
             GenericArguments, Symbol,
         },
-        Environment, Premise,
+        Environment, LifetimeConstraint, Premise, Succeeded,
     },
-    symbol::table::{Building, Table},
 };
 
 #[test]
@@ -25,21 +30,22 @@ fn basic_case() {
     let equivalent = Type::Primitive(Primitive::Bool);
     let table = Table::<Building>::default();
 
-    let premise = Premise::from_predicates(std::iter::once(
-        Predicate::TraitTypeEquality(Equality {
-            lhs: trait_member.clone(),
-            rhs: equivalent.clone(),
-        }),
-    ));
+    let mut premise = Premise::default();
 
-    let simplified = simplify(&Type::TraitMember(trait_member), &Environment {
-        premise: &premise,
-        table: &table,
-        normalizer: &NoOp,
-    })
-    .unwrap();
+    premise.predicates.insert(Predicate::TraitTypeEquality(Equality {
+        lhs: trait_member.clone(),
+        rhs: equivalent.clone(),
+    }));
+
+    let Succeeded { result: simplified, constraints } =
+        simplify(&Type::TraitMember(trait_member), &Environment {
+            premise: &premise,
+            table: &table,
+            normalizer: &NoOp,
+        });
 
     assert_eq!(simplified, equivalent);
+    assert!(constraints.is_empty());
 }
 
 #[test]
@@ -53,14 +59,13 @@ fn sub_term_case() {
     let equivalent = Type::Primitive(Primitive::Bool);
     let table = Table::<Building>::default();
 
-    let premise = Premise::from_predicates(std::iter::once(
-        Predicate::TraitTypeEquality(Equality {
-            lhs: trait_member.clone(),
-            rhs: equivalent.clone(),
-        }),
-    ));
+    let mut premise = Premise::default();
+    premise.predicates.insert(Predicate::TraitTypeEquality(Equality {
+        lhs: trait_member.clone(),
+        rhs: equivalent.clone(),
+    }));
 
-    let simplified = simplify(
+    let Succeeded { result: simplified, constraints } = simplify(
         &Type::Symbol(Symbol {
             id: SymbolID::Struct(ID::new(0)),
             generic_arguments: GenericArguments {
@@ -77,8 +82,7 @@ fn sub_term_case() {
             },
         }),
         &Environment { premise: &premise, table: &table, normalizer: &NoOp },
-    )
-    .unwrap();
+    );
 
     assert_eq!(
         simplified,
@@ -98,6 +102,8 @@ fn sub_term_case() {
             },
         })
     );
+
+    assert!(constraints.is_empty());
 }
 
 #[test]
@@ -111,22 +117,79 @@ fn already_simplified_case() {
     let equivalent = Type::Primitive(Primitive::Bool);
     let table = Table::<Building>::default();
 
-    let premise = Premise::from_predicates(std::iter::once(
-        Predicate::TraitTypeEquality(Equality {
-            lhs: trait_member,
-            rhs: equivalent.clone(),
-        }),
-    ));
+    let mut premise = Premise::default();
+    premise.predicates.insert(Predicate::TraitTypeEquality(Equality {
+        lhs: trait_member,
+        rhs: equivalent.clone(),
+    }));
 
-    let simplified = simplify(&equivalent, &Environment {
-        premise: &premise,
-        table: &table,
-        normalizer: &NoOp,
-    })
-    .unwrap();
+    let Succeeded { result: simplified, constraints } =
+        simplify(&equivalent, &Environment {
+            premise: &premise,
+            table: &table,
+            normalizer: &NoOp,
+        });
 
     assert_eq!(simplified, equivalent);
+    assert!(constraints.is_empty());
 }
+
+#[test]
+fn with_lifetime_matching() {
+    let first_lifetime = Lifetime::Parameter(LifetimeParameterID {
+        parent: GenericID::Struct(ID::new(0)),
+        id: ID::new(0),
+    });
+    let second_lifetime = Lifetime::Parameter(LifetimeParameterID {
+        parent: GenericID::Struct(ID::new(0)),
+        id: ID::new(1),
+    });
+
+    let to_be_simplified = TraitMember::<Default> {
+        id: ID::new(0),
+        member_generic_arguments: GenericArguments::default(),
+        parent_generic_arguments: GenericArguments {
+            lifetimes: vec![first_lifetime.clone()],
+            types: Vec::new(),
+            constants: Vec::new(),
+        },
+    };
+
+    let trait_member = TraitMember::<Default> {
+        id: ID::new(0),
+        member_generic_arguments: GenericArguments::default(),
+        parent_generic_arguments: GenericArguments {
+            lifetimes: vec![second_lifetime.clone()],
+            types: Vec::new(),
+            constants: Vec::new(),
+        },
+    };
+
+    let equivalent = Type::Primitive(Primitive::Bool);
+    let table = Table::<Building>::default();
+
+    let mut premise = Premise::default();
+    premise.predicates.insert(Predicate::TraitTypeEquality(Equality {
+        lhs: trait_member.clone(),
+        rhs: equivalent.clone(),
+    }));
+
+    let Succeeded { result: simplified, constraints } =
+        simplify(&Type::TraitMember(to_be_simplified), &Environment {
+            premise: &premise,
+            table: &table,
+            normalizer: &NoOp,
+        });
+
+    assert_eq!(simplified, equivalent);
+    assert_eq!(constraints.len(), 1);
+    assert!(constraints.contains(&LifetimeConstraint::LifetimeMatching(
+        first_lifetime,
+        second_lifetime
+    )));
+}
+
+/*
 
 #[test]
 fn transitive_case() {
@@ -143,40 +206,41 @@ fn transitive_case() {
     let equivalent = Type::Primitive(Primitive::Bool);
 
     let table = Table::<Building>::default();
-    let premise = Premise::from_predicates(
-        [
-            Predicate::TraitTypeEquality(Equality {
-                lhs: first_trait_member.clone(),
-                rhs: equivalent.clone(),
-            }),
-            Predicate::TraitTypeEquality(Equality {
-                lhs: second_trait_member.clone(),
-                rhs: equivalent.clone(),
-            }),
-        ]
-        .into_iter(),
-    );
+    let mut premise = Premise::default();
+    premise.predicates.extend([
+        Predicate::TraitTypeEquality(Equality {
+            lhs: first_trait_member.clone(),
+            rhs: equivalent.clone(),
+        }),
+        Predicate::TraitTypeEquality(Equality {
+            lhs: second_trait_member.clone(),
+            rhs: equivalent.clone(),
+        }),
+    ]);
 
-    let result1 =
+    let Succeeded { result: result1, constraints: constraints1 } =
         simplify(&Type::TraitMember(first_trait_member), &Environment {
             premise: &premise,
             table: &table,
             normalizer: &NoOp,
-        })
-        .unwrap();
+        });
 
-    let result2 =
+    let Succeeded { result: result2, constraints: constraints2 } =
         simplify(&Type::TraitMember(second_trait_member), &Environment {
             premise: &premise,
             table: &table,
             normalizer: &NoOp,
-        })
-        .unwrap();
+        });
 
     assert_eq!(result1, result2);
+
+    assert!(constraints1.is_empty());
+    assert!(constraints2.is_empty());
+
     assert_eq!(result1, equivalent);
     assert_eq!(result2, equivalent);
 }
+
 
 #[test]
 fn multiple_equivalent_but_same_case() {
@@ -315,3 +379,4 @@ fn ambiguous_case() {
 
     assert_eq!(result_from_starting, Type::TraitMember(starting_trait_member));
 }
+*/

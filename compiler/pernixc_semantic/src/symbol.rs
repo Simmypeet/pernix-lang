@@ -528,9 +528,6 @@ pub type LifetimeParameterID = MemberID<ID<LifetimeParameter>, GenericID>;
 /// An enumeration of either an invariant or covariant variance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Variance {
-    /// The term is bivariant and can be changed to any subtype or supertype.
-    Bivariant,
-
     /// The term is covariant and can be changed to a subtype.
     ///
     /// This is the most common variance; that is, the lifetime can be changed
@@ -552,20 +549,20 @@ pub enum Variance {
 }
 
 impl Variance {
-    /// Chains two variance together.
+    /// Combines the two variances.
+    ///
+    /// The [`self`] is the variance of the parent and the [`child`] is the
+    /// variance of the inner type.
+    ///
+    /// For example, to find the variance of `T` in `&'a T`, the variance of
+    /// `&'a` is [`self`] and the variance of `T` is [`child`].
     #[must_use]
-    pub const fn chain(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Bivariant, other) | (other, Self::Bivariant) => other,
-
-            (Self::Invariant, _)
-            | (_, Self::Invariant)
-            | (Self::Covariant, Self::Contravariant)
-            | (Self::Contravariant, Self::Covariant) => Self::Invariant,
-
-            (Self::Covariant, Self::Covariant) => Self::Covariant,
-
-            (Self::Contravariant, Self::Contravariant) => Self::Contravariant,
+    pub const fn xfrom(self, child: Self) -> Self {
+        match (self, child) {
+            (Self::Invariant, _) | (_, Self::Invariant) => Self::Invariant,
+            (amb, Self::Covariant) => amb,
+            (Self::Covariant, Self::Contravariant) => Self::Contravariant,
+            (Self::Contravariant, Self::Contravariant) => Self::Covariant,
         }
     }
 }

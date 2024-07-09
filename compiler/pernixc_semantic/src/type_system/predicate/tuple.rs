@@ -1,13 +1,14 @@
 use super::contains_forall_lifetime;
 use crate::{
+    symbol::table::{self, DisplayObject, State, Table},
     type_system::{
-        equality, get_equivalences_with_context,
+        equality,
+        equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
         normalizer::Normalizer,
         term::Term,
         Compute, Environment, OverflowError, Succeeded,
     },
-    symbol::table::{self, DisplayObject, State, Table},
 };
 
 /// The predicate meaning that the term is a tuple and is unpackable.

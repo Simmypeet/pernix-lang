@@ -57,12 +57,10 @@ fn symmetric() {
     let equivalence = Type::Primitive(Primitive::Bool);
 
     let mut premise = Premise::default();
-    premise.append_from_predicates(std::iter::once(
-        Predicate::TraitTypeEquality(Equality {
-            lhs: trait_member.clone(),
-            rhs: equivalence.clone(),
-        }),
-    ));
+    premise.predicates.insert(Predicate::TraitTypeEquality(Equality {
+        lhs: trait_member.clone(),
+        rhs: equivalence.clone(),
+    }));
 
     let environment = Environment {
         premise: &premise,
@@ -98,12 +96,10 @@ fn not_equal() {
     let equivalence = Type::Primitive(Primitive::Bool);
 
     let mut premise = Premise::default();
-    premise.append_from_predicates(std::iter::once(
-        Predicate::TraitTypeEquality(Equality {
-            lhs: trait_member.clone(),
-            rhs: equivalence.clone(),
-        }),
-    ));
+    premise.predicates.insert(Predicate::TraitTypeEquality(Equality {
+        lhs: trait_member.clone(),
+        rhs: equivalence.clone(),
+    }));
 
     let environment = Environment {
         premise: &premise,
@@ -143,19 +139,16 @@ fn transitivity() {
     let equivalence = Type::Primitive(Primitive::Bool);
 
     let mut premise = Premise::default();
-    premise.append_from_predicates(
-        [
-            Predicate::TraitTypeEquality(Equality {
-                lhs: first_trait_member.clone(),
-                rhs: Type::TraitMember(second_trait_member.clone()),
-            }),
-            Predicate::TraitTypeEquality(Equality {
-                lhs: second_trait_member,
-                rhs: equivalence.clone(),
-            }),
-        ]
-        .into_iter(),
-    );
+    premise.predicates.extend([
+        Predicate::TraitTypeEquality(Equality {
+            lhs: first_trait_member.clone(),
+            rhs: Type::TraitMember(second_trait_member.clone()),
+        }),
+        Predicate::TraitTypeEquality(Equality {
+            lhs: second_trait_member,
+            rhs: equivalence.clone(),
+        }),
+    ]);
 
     let environment = Environment {
         premise: &premise,
@@ -197,19 +190,16 @@ fn congruence() {
     let second_equivalence = Type::Primitive(Primitive::Int32);
 
     let mut premise = Premise::default();
-    premise.append_from_predicates(
-        [
-            Predicate::TraitTypeEquality(Equality {
-                lhs: first_trait_member.clone(),
-                rhs: first_equivalence.clone(),
-            }),
-            Predicate::TraitTypeEquality(Equality {
-                lhs: second_trait_member.clone(),
-                rhs: second_equivalence.clone(),
-            }),
-        ]
-        .into_iter(),
-    );
+    premise.predicates.extend([
+        Predicate::TraitTypeEquality(Equality {
+            lhs: first_trait_member.clone(),
+            rhs: first_equivalence.clone(),
+        }),
+        Predicate::TraitTypeEquality(Equality {
+            lhs: second_trait_member.clone(),
+            rhs: second_equivalence.clone(),
+        }),
+    ]);
 
     let table = Table::<Building>::default();
     let lhs = Type::Symbol(Symbol {
@@ -405,7 +395,7 @@ where
         };
 
         if should_map {
-            premise.append_from_predicates(std::iter::once(
+            premise.predicates.insert(
                 Equality {
                     lhs: self.target_trait_member.clone(),
                     rhs: if self.map_at_lhs {
@@ -415,7 +405,7 @@ where
                     },
                 }
                 .into(),
-            ));
+            );
         }
 
         if self.map_at_lhs {
@@ -744,8 +734,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
 
         remove_equality_recursive(&mut predicates_cloned, &to_remove);
 
-        let mut modified_premise =
-            Premise::from_predicates(predicates_cloned.into_iter());
+        let mut modified_premise = Premise::default();
+        modified_premise.predicates = predicates_cloned;
         modified_premise.trait_context = premise.trait_context.clone();
 
         let modified_environment = &Environment {
@@ -796,9 +786,9 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     }
     */
 
-    premise.append_from_predicates(
-        decoy.types.into_iter().map(Predicate::TraitTypeEquality),
-    );
+    premise
+        .predicates
+        .extend(decoy.types.into_iter().map(Predicate::TraitTypeEquality));
 
     let environment =
         &Environment { premise: &premise, table: &table, normalizer: &NoOp };

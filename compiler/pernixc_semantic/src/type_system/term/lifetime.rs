@@ -9,8 +9,8 @@ use std::{
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    constant::Constant, r#type::Type, AssignSubTermError, GenericArguments,
-    Kind, KindMut, ModelOf, Never, Term, Tuple,
+    constant::Constant, r#type::Type, AssignSubTermError, Error,
+    GenericArguments, Kind, KindMut, ModelOf, Never, Term, Tuple,
 };
 use crate::{
     arena::{Key, ID},
@@ -72,8 +72,8 @@ pub enum Lifetime<M: Model> {
     Inference(M::LifetimeInference),
     #[from]
     Forall(Forall),
-
-    Error,
+    #[from]
+    Error(Error),
 }
 
 impl<M: Model> ModelOf for Lifetime<M> {
@@ -213,7 +213,7 @@ where
         M::ConstantInference: From<U::ConstantInference>,
     {
         match term {
-            Lifetime::Error => Self::Error,
+            Lifetime::Error(Error) => Self::Error(Error),
             Lifetime::Static => Self::Static,
             Lifetime::Parameter(parameter) => Self::Parameter(parameter),
             Lifetime::Inference(inference) => {
@@ -232,7 +232,7 @@ where
         M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
     {
         match term {
-            Lifetime::Error => Ok(Self::Error),
+            Lifetime::Error(Error) => Ok(Self::Error(Error)),
             Lifetime::Static => Ok(Self::Static),
             Lifetime::Parameter(parameter) => Ok(Self::Parameter(parameter)),
             Lifetime::Inference(inference) => {
@@ -399,7 +399,7 @@ where
         match self {
             Self::Static => Satisfiability::Satisfied,
 
-            Self::Error
+            Self::Error(_)
             | Self::Parameter(_)
             | Self::Inference(_)
             | Self::Forall(_) => Satisfiability::Unsatisfied,
@@ -486,7 +486,7 @@ where
             Self::Forall(_) => {
                 write!(f, "'?")
             }
-            Self::Error => write!(f, "'{{error}}"),
+            Self::Error(_) => write!(f, "'{{error}}"),
         }
     }
 }

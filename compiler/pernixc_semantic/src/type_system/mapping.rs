@@ -127,7 +127,7 @@ impl<M: Model> Mapping<M> {
 
     /// Creates a new mapping from all the
     /// [`unification::Matching::Unifiable`]s in the given unification.
-    pub fn from_unification<T: Term<Model = M>>(unifier: Unifier<T>) -> Self {
+    pub fn from_unifier<T: Term<Model = M>>(unifier: Unifier<T>) -> Self {
         let mut mapping = Self::default();
 
         mapping.append_from_unification(unifier);

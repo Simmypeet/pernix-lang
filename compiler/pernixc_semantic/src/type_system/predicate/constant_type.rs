@@ -2,7 +2,8 @@ use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
     symbol::table::{self, DisplayObject, State, Table},
     type_system::{
-        equality, get_equivalences_with_context,
+        equality,
+        equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
         model::Model,
         normalizer::Normalizer,

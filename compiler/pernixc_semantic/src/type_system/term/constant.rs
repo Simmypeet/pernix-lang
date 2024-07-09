@@ -10,8 +10,8 @@ use std::{
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    lifetime::Lifetime, r#type::Type, GenericArguments, Kind, KindMut, Local,
-    ModelOf, Never, Term,
+    lifetime::Lifetime, r#type::Type, Error, GenericArguments, Kind, KindMut,
+    Local, ModelOf, Never, Term,
 };
 use crate::{
     arena::ID,
@@ -315,7 +315,8 @@ pub enum Constant<M: Model> {
     Tuple(Tuple<M>),
 
     Phantom,
-    Error,
+    #[from]
+    Error(Error),
 }
 
 impl<M: Model> From<Never> for Constant<M> {
@@ -564,7 +565,7 @@ where
                 Self::Tuple(Tuple::from_other_model(tuple))
             }
             Constant::Phantom => Self::Phantom,
-            Constant::Error => Self::Error,
+            Constant::Error(Error) => Self::Error(Error),
         }
     }
 
@@ -619,7 +620,7 @@ where
                 Self::Tuple(Tuple::try_from_other_model(tuple)?)
             }
             Constant::Phantom => Self::Phantom,
-            Constant::Error => Self::Error,
+            Constant::Error(Error) => Self::Error(Error),
         })
     }
 
@@ -782,7 +783,7 @@ where
 
     fn definite_satisfiability(&self) -> Satisfiability {
         match self {
-            Self::Error | Self::Parameter(_) | Self::Inference(_) => {
+            Self::Error(_) | Self::Parameter(_) | Self::Inference(_) => {
                 Satisfiability::Unsatisfied
             }
 
@@ -858,7 +859,7 @@ impl<M: Model> Constant<M> {
     ) -> Option<Vec<GlobalID>> {
         let mut occurrences = match self {
             Self::Phantom
-            | Self::Error
+            | Self::Error(_)
             | Self::Parameter(_)
             | Self::Primitive(_)
             | Self::Inference(_) => {
@@ -1016,7 +1017,7 @@ where
             Self::Tuple(tuple) => {
                 write!(f, "{}", DisplayObject { display: tuple, table })
             }
-            Self::Error => write!(f, "{{error}}"),
+            Self::Error(_) => write!(f, "{{error}}"),
         }
     }
 }

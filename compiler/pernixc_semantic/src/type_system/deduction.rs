@@ -22,46 +22,10 @@ use super::{
     Compute, Environment, LifetimeConstraint, Output, OverflowError, Satisfied,
     Succeeded,
 };
-use crate::symbol::{table::State, GenericKind, Variance};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-struct CompatiblePredicate;
-
-impl<M: Model> unification::Predicate<Lifetime<M>> for CompatiblePredicate {
-    fn unifiable(
-        &self,
-        _: &Lifetime<M>,
-        _: &Lifetime<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
-        Ok(None)
-    }
-}
-
-impl<M: Model> unification::Predicate<Type<M>> for CompatiblePredicate {
-    fn unifiable(
-        &self,
-        _: &Type<M>,
-        _: &Type<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
-        Ok(None)
-    }
-}
-
-impl<M: Model> unification::Predicate<Constant<M>> for CompatiblePredicate {
-    fn unifiable(
-        &self,
-        _: &Constant<M>,
-        _: &Constant<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
-        Ok(None)
-    }
-}
+use crate::{
+    symbol::{table::State, GenericKind, Variance},
+    type_system::LifetimeUnifyingPredicate,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct DuductionPredicate;
@@ -403,7 +367,7 @@ impl<M: Model> GenericArguments<M> {
                         }) = Unification::new(
                             lhs.clone(),
                             rhs.clone(),
-                            Arc::new(CompatiblePredicate),
+                            Arc::new(LifetimeUnifyingPredicate),
                         )
                         .query_with_context(environment, context)?
                         else {
@@ -470,7 +434,7 @@ impl<M: Model> GenericArguments<M> {
                     compatible::compatible_with_context(
                         term,
                         target,
-                        Variance::Bivariant,
+                        Variance::Covariant,
                         environment,
                         context,
                     )

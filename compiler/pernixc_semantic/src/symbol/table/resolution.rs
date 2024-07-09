@@ -26,15 +26,6 @@ use crate::{
         MoreThanOneUnpackedInTupleType, NoGenericArgumentsRequired,
         ResolutionAmbiguity, SymbolNotFound,
     },
-    type_system::{
-        model::{Default, Model},
-        term::{
-            self, constant,
-            lifetime::{Forall, Lifetime},
-            r#type::{self, Qualifier, SymbolID},
-            GenericArguments, Local, Term, TupleElement,
-        },
-    },
     symbol::{
         self, AdtImplementationConstant, AdtImplementationFunction,
         AdtImplementationType, Constant, ConstantParameter, Enum, Function,
@@ -43,6 +34,15 @@ use crate::{
         TraitImplementationConstant, TraitImplementationFunction,
         TraitImplementationType, TraitType, Type, TypeParameter,
         TypeParameterID,
+    },
+    type_system::{
+        model::{Default, Model},
+        term::{
+            self, constant,
+            lifetime::{Forall, Lifetime},
+            r#type::{self, Qualifier, SymbolID},
+            GenericArguments, Local, Term, TupleElement,
+        },
     },
 };
 
@@ -317,7 +317,7 @@ impl<M: Model> GenericParameter<M> for ConstantParameter {
 
             Err(
                 evaluate::Error::SemanticError | evaluate::Error::Suboptimal,
-            ) => Ok(constant::Constant::Error),
+            ) => Ok(constant::Constant::Error(term::Error)),
         }
     }
 
@@ -963,7 +963,7 @@ impl<S: State> Table<S> {
                 }
 
                 self.resolve_lifetime_parameter(ident, referring_site, handler)?
-                    .map_or(Lifetime::Error, Lifetime::Parameter)
+                    .map_or(Lifetime::Error(term::Error), Lifetime::Parameter)
             }
         };
 
@@ -1286,7 +1286,7 @@ impl<S: State> Table<S> {
                     handler.receive(Box::new(ExpectLifetime {
                         expected_span: reference.span(),
                     }));
-                    Lifetime::Error
+                    Lifetime::Error(term::Error)
                 };
 
                 let qualifier = match reference.qualifier() {
@@ -1383,7 +1383,7 @@ impl<S: State> Table<S> {
                     handler.receive(Box::new(MoreThanOneUnpackedInTupleType {
                         illegal_tuple_type_span: syntax_tree.span(),
                     }));
-                    return Ok(r#type::Type::Error);
+                    return Ok(r#type::Type::Error(term::Error));
                 }
 
                 r#type::Type::Tuple(r#type::Tuple { elements })
@@ -1407,7 +1407,7 @@ impl<S: State> Table<S> {
                         Err(
                             evaluate::Error::SemanticError
                             | evaluate::Error::Suboptimal,
-                        ) => constant::Constant::Error,
+                        ) => constant::Constant::Error(term::Error),
                     },
                 );
                 let element_ty = self.resolve_type(
@@ -1496,7 +1496,7 @@ impl<S: State> Table<S> {
                 }
 
                 Err(Error::Abort | Error::SemanticError) => {
-                    return Ok(r#type::Type::Error);
+                    return Ok(r#type::Type::Error(term::Error));
                 }
             };
 
@@ -1508,7 +1508,7 @@ impl<S: State> Table<S> {
                     resolved_global_id: resolution.global_id(),
                 }));
 
-                Ok(r#type::Type::Error)
+                Ok(r#type::Type::Error(term::Error))
             }
         }
     }

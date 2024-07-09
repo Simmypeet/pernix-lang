@@ -4,18 +4,16 @@ use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
     symbol::table::{self, DisplayObject, State, Table},
     type_system::{
-        get_equivalences_with_context,
+        equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
         mapping::Mapping,
         model::Model,
         normalizer::Normalizer,
         query::Context,
-        term::{
-            constant::Constant, lifetime::Lifetime, r#type::Type, ModelOf, Term,
-        },
-        unification::{self, Log, Unification, Unifier},
-        visitor, Compute, Environment, LifetimeConstraint, Output,
-        OverflowError, Satisfied, Succeeded,
+        term::{lifetime::Lifetime, ModelOf, Term},
+        unification::{Unification, Unifier},
+        visitor, Compute, Environment, LifetimeConstraint,
+        LifetimeUnifyingPredicate, OverflowError, Satisfied, Succeeded,
     },
 };
 
@@ -90,49 +88,6 @@ impl<'a, 'l, 'v, U: Term, T: State, N: Normalizer<U::Model>>
             }
             Ok(Some(Satisfied)) => true,
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-struct OutlivesUnifyingPredicate;
-
-impl<M: Model> unification::Predicate<Lifetime<M>>
-    for OutlivesUnifyingPredicate
-{
-    fn unifiable(
-        &self,
-        _: &Lifetime<M>,
-        _: &Lifetime<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
-        Ok(Some(Succeeded::satisfied()))
-    }
-}
-
-impl<M: Model> unification::Predicate<Type<M>> for OutlivesUnifyingPredicate {
-    fn unifiable(
-        &self,
-        _: &Type<M>,
-        _: &Type<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
-        Ok(None)
-    }
-}
-
-impl<M: Model> unification::Predicate<Constant<M>>
-    for OutlivesUnifyingPredicate
-{
-    fn unifiable(
-        &self,
-        _: &Constant<M>,
-        _: &Constant<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
-        Ok(None)
     }
 }
 
@@ -230,27 +185,6 @@ impl<T: Term> Compute for Outlives<T> {
             }
         }
 
-        // look for bound equivalences
-        for Succeeded { result: bound_eq, constraints: additional_outlives } in
-            get_equivalences_with_context(&self.bound, environment, context)?
-        {
-            // additional constraints must be satisified
-            for constraint in additional_outlives {
-                let Some(Satisfied) =
-                    constraint.satisifies_with_context(environment, context)?
-                else {
-                    return Ok(Some(Satisfied));
-                };
-            }
-
-            if let Some(Satisfied) =
-                Outlives::new(self.operand.clone(), bound_eq)
-                    .query_with_context(environment, context)?
-            {
-                return Ok(Some(Satisfied));
-            }
-        }
-
         for Self { operand: next_operand, bound: next_bound } in environment
             .premise
             .predicates
@@ -261,7 +195,7 @@ impl<T: Term> Compute for Outlives<T> {
                 Unification::new(
                     self.operand.clone(),
                     next_operand.clone(),
-                    Arc::new(OutlivesUnifyingPredicate),
+                    Arc::new(LifetimeUnifyingPredicate),
                 )
                 .query_with_context(environment, context)?
             else {
@@ -294,6 +228,27 @@ impl<T: Term> Compute for Outlives<T> {
             }
         }
 
+        // look for bound equivalences
+        for Succeeded { result: bound_eq, constraints: additional_outlives } in
+            get_equivalences_with_context(&self.bound, environment, context)?
+        {
+            // additional constraints must be satisified
+            for constraint in additional_outlives {
+                let Some(Satisfied) =
+                    constraint.satisifies_with_context(environment, context)?
+                else {
+                    return Ok(Some(Satisfied));
+                };
+            }
+
+            if let Some(Satisfied) =
+                Outlives::new(self.operand.clone(), bound_eq)
+                    .query_with_context(environment, context)?
+            {
+                return Ok(Some(Satisfied));
+            }
+        }
+
         Ok(None)
     }
 }
@@ -308,7 +263,7 @@ impl<T: Term> Outlives<T> {
         >,
         context: &mut Context<T::Model>,
     ) -> Result<Option<Satisfied>, OverflowError> {
-        let mapping = Mapping::from_unification(unifier);
+        let mapping = Mapping::from_unifier(unifier);
 
         assert!(mapping.types.is_empty());
         assert!(mapping.constants.is_empty());

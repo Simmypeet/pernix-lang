@@ -1,4 +1,5 @@
 use std::{fmt::Debug, result::Result, sync::Arc};
+
 use proptest::{
     arbitrary::Arbitrary,
     prop_assert, prop_assert_eq, prop_oneof, proptest,
@@ -386,12 +387,10 @@ impl Property<Type<Default>> for Mapping {
 
         let mapped = self.property.generate().1;
 
-        premise.append_from_predicates(std::iter::once(
-            Predicate::TraitTypeEquality(Equality::new(
-                self.trait_member.clone(),
-                mapped,
-            )),
-        ));
+        premise.predicates.insert(Predicate::TraitTypeEquality(Equality::new(
+            self.trait_member.clone(),
+            mapped,
+        )));
 
         Ok(())
     }

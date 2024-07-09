@@ -463,7 +463,7 @@ macro_rules! implements_type {
         $(, $ref:ident)?
     ) => {
         match $self {
-            Self::Error | Self::Primitive(_) | Self::Parameter(_) | Self::Inference(_) => {
+            Self::Error(_) | Self::Primitive(_) | Self::Parameter(_) | Self::Inference(_) => {
                 Err(VisitNonApplicationTermError)
             }
 
@@ -726,7 +726,7 @@ macro_rules! implements_constant {
         $(, $ref:ident)?
     ) => {
         match $self {
-            Self::Error
+            Self::Error(_)
             | Self::Phantom
             | Self::Primitive(_)
             | Self::Parameter(_)

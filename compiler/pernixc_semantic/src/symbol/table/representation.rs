@@ -1014,7 +1014,7 @@ impl<T: Container> Representation<T> {
                 .get_accessibility(parameter.parent.into())
                 .ok_or(GetTermAccessibilityError::InvalidID),
 
-            r#type::Type::Error | r#type::Type::Primitive(_) => {
+            r#type::Type::Error(_) | r#type::Type::Primitive(_) => {
                 Ok(Accessibility::Public)
             }
 
@@ -1137,7 +1137,7 @@ impl<T: Container> Representation<T> {
                 .get_accessibility(id.parent.into())
                 .ok_or(GetTermAccessibilityError::InvalidID)?),
 
-            constant::Constant::Error
+            constant::Constant::Error(_)
             | constant::Constant::Phantom
             | constant::Constant::Primitive(_) => Ok(Accessibility::Public),
 
@@ -1188,7 +1188,7 @@ impl<T: Container> Representation<T> {
 
             Lifetime::Inference(never) => match *never {},
 
-            Lifetime::Error | Lifetime::Forall(_) | Lifetime::Static => {
+            Lifetime::Error(_) | Lifetime::Forall(_) | Lifetime::Static => {
                 Ok(Accessibility::Public)
             }
         }
@@ -1263,7 +1263,7 @@ impl<T: Container> Representation<T> {
 
             let generic = self.get_generic(generic_id)?;
 
-            premise.append_from_predicates(
+            premise.predicates.extend(
                 generic.generic_declaration().predicates.iter().map(|x| {
                     Predicate::from_default_model(x.predicate.clone())
                 }),

@@ -10,8 +10,8 @@ use enum_as_inner::EnumAsInner;
 use strum_macros::EnumIter;
 
 use super::{
-    constant::Constant, lifetime::Lifetime, GenericArguments, Kind, KindMut,
-    Local, MemberSymbol, ModelOf, Never, Symbol, Term,
+    constant::Constant, lifetime::Lifetime, Error, GenericArguments, Kind,
+    KindMut, Local, MemberSymbol, ModelOf, Never, Symbol, Term,
 };
 use crate::{
     arena::ID,
@@ -778,6 +778,36 @@ impl<M: Model> Match for Type<M> {
                 lhs.substructural_match(rhs)
             }
 
+            (Self::TraitMember(lhs), Self::TraitMember(rhs))
+                if lhs.id == rhs.id =>
+            {
+                lhs.parent_generic_arguments
+                    .substructural_match(
+                        &rhs.parent_generic_arguments,
+                        matching::Substructural::default(),
+                        |x| {
+                            SubTraitMemberLocation(SubMemberSymbolLocation {
+                                index: x,
+                                from_parent: true,
+                            })
+                        },
+                    )
+                    .and_then(|x| {
+                        lhs.member_generic_arguments.substructural_match(
+                            &rhs.member_generic_arguments,
+                            x,
+                            |x| {
+                                SubTraitMemberLocation(
+                                    SubMemberSymbolLocation {
+                                        index: x,
+                                        from_parent: false,
+                                    },
+                                )
+                            },
+                        )
+                    })
+            }
+
             (Self::MemberSymbol(lhs), Self::MemberSymbol(rhs))
                 if lhs.id == rhs.id =>
             {
@@ -866,7 +896,8 @@ pub enum Type<M: Model> {
     MemberSymbol(MemberSymbol<M, MemberSymbolID>),
     #[from]
     TraitMember(TraitMember<M>),
-    Error,
+    #[from]
+    Error(Error),
 }
 
 /// The set of types that can be inferred. Used in type inference.
@@ -999,7 +1030,7 @@ where
             Type::TraitMember(trait_member) => {
                 Self::TraitMember(TraitMember::from_other_model(trait_member))
             }
-            Type::Error => Self::Error,
+            Type::Error(Error) => Self::Error(Error),
         }
     }
 
@@ -1052,7 +1083,7 @@ where
             Type::TraitMember(trait_member) => Self::TraitMember(
                 TraitMember::try_from_other_model(trait_member)?,
             ),
-            Type::Error => Self::Error,
+            Type::Error(Error) => Self::Error(Error),
         })
     }
 
@@ -1318,7 +1349,7 @@ where
         match self {
             Self::Primitive(_) => Satisfiability::Satisfied,
 
-            Self::Error | Self::Inference(_) | Self::Parameter(_) => {
+            Self::Error(_) | Self::Inference(_) | Self::Parameter(_) => {
                 Satisfiability::Unsatisfied
             }
 
@@ -1557,7 +1588,7 @@ where
 
     fn definite_satisfiability(&self) -> Satisfiability {
         match self {
-            Self::Error | Self::Parameter(_) | Self::Inference(_) => {
+            Self::Error(_) | Self::Parameter(_) | Self::Inference(_) => {
                 Satisfiability::Unsatisfied
             }
 
@@ -1595,7 +1626,7 @@ where
                 }
             },
 
-            Self::Error
+            Self::Error(_)
             | Self::TraitMember(_)
             | Self::Parameter(_)
             | Self::Inference(_)
@@ -1772,7 +1803,7 @@ where
                     display: &*phantom.0
                 })
             }
-            Self::Error => {
+            Self::Error(_) => {
                 write!(f, "{{error}}")
             }
         }
@@ -1787,7 +1818,7 @@ impl<M: Model> Type<M> {
         table: &Table<impl State>,
     ) -> Option<Vec<GlobalID>> {
         let mut occurrences = match self {
-            Self::Error
+            Self::Error(_)
             | Self::Primitive(_)
             | Self::Parameter(_)
             | Self::Inference(_) => {

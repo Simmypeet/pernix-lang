@@ -9,7 +9,9 @@ use by_address::ByAddress;
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    equality, get_equivalences_with_context, matching,
+    equality,
+    equivalence::get_equivalences_with_context,
+    matching,
     model::Model,
     normalizer::Normalizer,
     query::{self, Context},

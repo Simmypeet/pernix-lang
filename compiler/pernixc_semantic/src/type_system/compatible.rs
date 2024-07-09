@@ -26,15 +26,10 @@ use crate::{
     type_system::sub_term::{Location, SubLifetimeLocation},
 };
 
-// TODO: Maybe move the `get_variance_of` to a separate module
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum GetVarianceError {
     /// The location points to an invalid location in the term.
     InvalidLocation,
-
-    /// The iterator of locations is exhausted.
-    EmptyLocationIterator,
 
     /// The term is a constant, the constant doesn't have a variance.
     Constant,
@@ -166,21 +161,11 @@ impl<M: Model> Type<M> {
     fn get_variance_of(
         &self,
         table: &Table<impl State>,
+        parent_variance: Variance,
         mut locations: impl Iterator<Item = TermLocation>,
     ) -> Result<Variance, GetVarianceError> {
-        const fn combine_variance_result(
-            variance: Variance,
-            result: Result<Variance, GetVarianceError>,
-        ) -> Result<Variance, GetVarianceError> {
-            match result {
-                Ok(inner_variance) => Ok(variance.chain(inner_variance)),
-                Err(GetVarianceError::EmptyLocationIterator) => Ok(variance),
-                Err(error) => Err(error),
-            }
-        }
-
         let Some(location) = locations.next() else {
-            return Err(GetVarianceError::EmptyLocationIterator);
+            return Ok(parent_variance);
         };
 
         match location {
@@ -218,11 +203,12 @@ impl<M: Model> Type<M> {
                             .get(location.0)
                             .ok_or(GetVarianceError::InvalidLocation)?;
 
-                        Ok(*adt
-                            .generic_parameter_variances()
-                            .variances_by_lifetime_ids
-                            .get(id)
-                            .unwrap())
+                        Ok(parent_variance.xfrom(
+                            *adt.generic_parameter_variances()
+                                .variances_by_lifetime_ids
+                                .get(id)
+                                .unwrap(),
+                        ))
                     }
 
                     // lifetime in the reference
@@ -235,7 +221,32 @@ impl<M: Model> Type<M> {
                             return Err(GetVarianceError::InvalidLocation);
                         }
 
-                        Ok(Variance::Covariant)
+                        Ok(parent_variance.xfrom(Variance::Covariant))
+                    }
+
+                    // lifetime in the trait member
+                    (
+                        r#type::SubLifetimeLocation::TraitMember(location),
+                        Self::TraitMember(term),
+                    ) => {
+                        // there's no sub-term in the lifetime
+                        if locations.next().is_some() {
+                            return Err(GetVarianceError::InvalidLocation);
+                        }
+
+                        let invalid = if location.0.from_parent {
+                            location.0.index
+                                >= term.parent_generic_arguments.lifetimes.len()
+                        } else {
+                            location.0.index
+                                >= term.member_generic_arguments.lifetimes.len()
+                        };
+
+                        if invalid {
+                            return Err(GetVarianceError::InvalidLocation);
+                        }
+
+                        Ok(parent_variance.xfrom(Variance::Invariant))
                     }
 
                     _ => Err(GetVarianceError::InvalidLocation),
@@ -270,11 +281,13 @@ impl<M: Model> Type<M> {
                             .get(location.0)
                             .ok_or(GetVarianceError::InvalidLocation)?;
 
-                        let current_variance = adt
-                            .generic_parameter_variances()
-                            .variances_by_type_ids
-                            .get(id)
-                            .unwrap();
+                        let current_variance = parent_variance.xfrom(
+                            adt.generic_parameter_variances()
+                                .variances_by_type_ids
+                                .get(id)
+                                .copied()
+                                .unwrap(),
+                        );
 
                         let inner_term = symbol
                             .generic_arguments
@@ -282,9 +295,10 @@ impl<M: Model> Type<M> {
                             .get(location.0)
                             .ok_or(GetVarianceError::InvalidLocation)?;
 
-                        combine_variance_result(
-                            *current_variance,
-                            inner_term.get_variance_of(table, locations),
+                        inner_term.get_variance_of(
+                            table,
+                            current_variance,
+                            locations,
                         )
                     }
 
@@ -292,19 +306,22 @@ impl<M: Model> Type<M> {
                         r#type::SubTypeLocation::Reference,
                         Self::Reference(reference),
                     ) => {
-                        let current_variance = match reference.qualifier {
-                            r#type::Qualifier::Immutable => Variance::Covariant,
+                        let current_variance =
+                            parent_variance.xfrom(match reference.qualifier {
+                                r#type::Qualifier::Immutable => {
+                                    Variance::Covariant
+                                }
 
-                            r#type::Qualifier::Mutable
-                            | r#type::Qualifier::Unique => Variance::Invariant,
-                        };
+                                r#type::Qualifier::Mutable
+                                | r#type::Qualifier::Unique => {
+                                    Variance::Invariant
+                                }
+                            });
 
-                        let inner_variance =
-                            reference.pointee.get_variance_of(table, locations);
-
-                        combine_variance_result(
+                        reference.pointee.get_variance_of(
+                            table,
                             current_variance,
-                            inner_variance,
+                            locations,
                         )
                     }
 
@@ -312,39 +329,44 @@ impl<M: Model> Type<M> {
                         r#type::SubTypeLocation::Pointer,
                         Self::Pointer(pointer),
                     ) => {
-                        let current_variance = match pointer.qualifier {
-                            r#type::Qualifier::Immutable => Variance::Covariant,
+                        let current_variance =
+                            parent_variance.xfrom(match pointer.qualifier {
+                                r#type::Qualifier::Immutable => {
+                                    Variance::Covariant
+                                }
 
-                            r#type::Qualifier::Mutable
-                            | r#type::Qualifier::Unique => Variance::Invariant,
-                        };
+                                r#type::Qualifier::Mutable
+                                | r#type::Qualifier::Unique => {
+                                    Variance::Invariant
+                                }
+                            });
 
-                        let inner_variance =
-                            pointer.pointee.get_variance_of(table, locations);
-
-                        combine_variance_result(
+                        pointer.pointee.get_variance_of(
+                            table,
                             current_variance,
-                            inner_variance,
+                            locations,
                         )
                     }
 
                     (r#type::SubTypeLocation::Array, Self::Array(array)) => {
-                        let inner_variance =
-                            array.r#type.get_variance_of(table, locations);
+                        let current_variance =
+                            parent_variance.xfrom(Variance::Covariant);
 
-                        combine_variance_result(
-                            Variance::Covariant,
-                            inner_variance,
+                        array.r#type.get_variance_of(
+                            table,
+                            current_variance,
+                            locations,
                         )
                     }
 
                     (r#type::SubTypeLocation::Local, Self::Local(local)) => {
-                        let inner_variance =
-                            local.0.get_variance_of(table, locations);
+                        let current_variance =
+                            parent_variance.xfrom(Variance::Covariant);
 
-                        combine_variance_result(
-                            Variance::Covariant,
-                            inner_variance,
+                        local.0.get_variance_of(
+                            table,
+                            current_variance,
+                            locations,
                         )
                     }
 
@@ -352,12 +374,13 @@ impl<M: Model> Type<M> {
                         r#type::SubTypeLocation::Phantom,
                         Self::Phantom(phantom),
                     ) => {
-                        let inner_variance =
-                            phantom.0.get_variance_of(table, locations);
+                        let current_variance =
+                            parent_variance.xfrom(Variance::Covariant);
 
-                        combine_variance_result(
-                            Variance::Covariant,
-                            inner_variance,
+                        phantom.0.get_variance_of(
+                            table,
+                            current_variance,
+                            locations,
                         )
                     }
 
@@ -365,16 +388,17 @@ impl<M: Model> Type<M> {
                         location @ r#type::SubTypeLocation::Tuple(_),
                         tuple @ Self::Tuple(_),
                     ) => {
-                        let tuple = location
+                        let sub_term = location
                             .get_sub_term(tuple)
                             .ok_or(GetVarianceError::InvalidLocation)?;
 
-                        let inner_variance =
-                            tuple.get_variance_of(table, locations);
+                        let current_variance =
+                            parent_variance.xfrom(Variance::Covariant);
 
-                        combine_variance_result(
-                            Variance::Covariant,
-                            inner_variance,
+                        sub_term.get_variance_of(
+                            table,
+                            current_variance,
+                            locations,
                         )
                     }
 
@@ -400,12 +424,13 @@ impl<M: Model> Type<M> {
                         }
                         .ok_or(GetVarianceError::InvalidLocation)?;
 
-                        let inner_variance =
-                            inner_term.get_variance_of(table, locations);
+                        let current_variance =
+                            parent_variance.xfrom(Variance::Invariant);
 
-                        combine_variance_result(
-                            Variance::Covariant,
-                            inner_variance,
+                        inner_term.get_variance_of(
+                            table,
+                            current_variance,
+                            locations,
                         )
                     }
 
@@ -453,7 +478,7 @@ pub(super) fn compatible_with_context<M: Model>(
 fn append_outlives_constraints_from_unification<M: Model>(
     mut current_from: Type<M>,
     unifier: unification::Unifier<Type<M>>,
-    current_variance: Variance,
+    parent_variance: Variance,
     table: &Table<impl State>,
     outlives: &mut HashSet<LifetimeConstraint<M>>,
 ) -> bool {
@@ -470,12 +495,12 @@ fn append_outlives_constraints_from_unification<M: Model>(
             for (location, unification) in substructural.lifetimes {
                 match current_from.get_variance_of(
                     table,
+                    parent_variance,
                     std::iter::once(TermLocation::Lifetime(
                         SubLifetimeLocation::FromType(location),
                     )),
                 ) {
                     Ok(variance) => match variance {
-                        Variance::Bivariant => { /*no need to add constraint*/ }
                         Variance::Covariant => {
                             // 'from: 'to
                             if let Matching::Unifiable(from, to) =
@@ -525,13 +550,14 @@ fn append_outlives_constraints_from_unification<M: Model>(
 
             // look for matched types
             for (location, unification) in substructural.types {
-                let new_variance = match current_from.get_variance_of(
+                let current_variance = match current_from.get_variance_of(
                     table,
+                    parent_variance,
                     std::iter::once(TermLocation::Type(
                         SubTypeLocation::FromType(location),
                     )),
                 ) {
-                    Ok(variance) => current_variance.chain(variance),
+                    Ok(current_variance) => current_variance,
                     Err(_) => return false,
                 };
 
@@ -540,7 +566,7 @@ fn append_outlives_constraints_from_unification<M: Model>(
                 if !append_outlives_constraints_from_unification(
                     new_from,
                     unification,
-                    new_variance,
+                    current_variance,
                     table,
                     outlives,
                 ) {

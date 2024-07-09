@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use super::{
     equality::Equality,
+    equivalence::get_equivalences_with_context,
     instantiation::MismatchedGenericArgumentCountError,
     model::Model,
     normalizer::Normalizer,
@@ -19,7 +20,6 @@ use crate::{
         ConstantParameterID,
     },
     type_system::{
-        get_equivalences_with_context,
         instantiation::{self, Instantiation},
         term::{constant, r#type, Tuple},
     },
