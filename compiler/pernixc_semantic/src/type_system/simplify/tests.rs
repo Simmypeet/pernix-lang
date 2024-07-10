@@ -17,6 +17,7 @@ use crate::{
         },
         Environment, LifetimeConstraint, Premise, Succeeded,
     },
+    unordered_pair::UnorderedPair,
 };
 
 #[test]
@@ -184,8 +185,7 @@ fn with_lifetime_matching() {
     assert_eq!(simplified, equivalent);
     assert_eq!(constraints.len(), 1);
     assert!(constraints.contains(&LifetimeConstraint::LifetimeMatching(
-        first_lifetime,
-        second_lifetime
+        UnorderedPair::new(first_lifetime, second_lifetime)
     )));
 }
 

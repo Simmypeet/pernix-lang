@@ -7,7 +7,7 @@ use std::{
 };
 
 use super::{
-    compatible,
+    compatible::Compatible,
     equality::Equality,
     instantiation::{self, Instantiation},
     mapping::Mapping,
@@ -25,6 +25,7 @@ use super::{
 use crate::{
     symbol::{table::State, GenericKind, Variance},
     type_system::LifetimeUnifyingPredicate,
+    unordered_pair::UnorderedPair,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -321,8 +322,7 @@ impl<M: Model> GenericArguments<M> {
                     }
 
                     constraints.insert(LifetimeConstraint::LifetimeMatching(
-                        key.clone(),
-                        value.clone(),
+                        UnorderedPair::new(key.clone(), value),
                     ));
                 }
             }
@@ -341,8 +341,10 @@ impl<M: Model> GenericArguments<M> {
                         Ok(Some(Succeeded::satisfied_with(
                             std::iter::once(
                                 LifetimeConstraint::LifetimeMatching(
-                                    lhs.clone(),
-                                    rhs.clone(),
+                                    UnorderedPair::new(
+                                        lhs.clone(),
+                                        rhs.clone(),
+                                    ),
                                 ),
                             )
                             .collect(),
@@ -389,8 +391,7 @@ impl<M: Model> GenericArguments<M> {
 
                                 constraints.insert(
                                     LifetimeConstraint::LifetimeMatching(
-                                        lhs.clone(),
-                                        rhs.clone(),
+                                        UnorderedPair::new(lhs.clone(), rhs),
                                     ),
                                 );
                             }
@@ -431,8 +432,7 @@ impl<M: Model> GenericArguments<M> {
                 environment,
                 context,
                 |term, target, environment, context| {
-                    compatible::compatible_with_context(
-                        term,
+                    term.compatible_with_context(
                         target,
                         Variance::Covariant,
                         environment,

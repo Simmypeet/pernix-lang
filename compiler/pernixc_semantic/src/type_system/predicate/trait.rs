@@ -13,7 +13,8 @@ use crate::{
         TraitImplementationID, TypeParameterID, Variance,
     },
     type_system::{
-        compatible, deduction,
+        compatible::Compatible,
+        deduction,
         instantiation::Instantiation,
         model::{Default, Model},
         normalizer::Normalizer,
@@ -24,10 +25,10 @@ use crate::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments,
         },
-        unification::{self, Log},
-        Compute, Environment, LifetimeConstraint, Output, OverflowError,
-        Premise, Satisfied, Succeeded, TraitContext,
+        Compute, Environment, LifetimeConstraint, LifetimeUnifyingPredicate,
+        Output, OverflowError, Premise, Satisfied, Succeeded, TraitContext,
     },
+    unordered_pair::UnorderedPair,
 };
 
 /// Represents a predicate stating that there exists an implementation for the
@@ -94,51 +95,6 @@ impl<M: Model> Trait<M> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct HigherRankedLifetimeUnifyingConfig;
-
-impl<M: Model> unification::Predicate<Lifetime<M>>
-    for HigherRankedLifetimeUnifyingConfig
-{
-    fn unifiable(
-        &self,
-        _: &Lifetime<M>,
-        _: &Lifetime<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
-        Ok(Some(Succeeded::satisfied()))
-    }
-}
-
-impl<M: Model> unification::Predicate<Type<M>>
-    for HigherRankedLifetimeUnifyingConfig
-{
-    fn unifiable(
-        &self,
-        _: &Type<M>,
-        _: &Type<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
-        Ok(None)
-    }
-}
-
-impl<M: Model> unification::Predicate<Constant<M>>
-    for HigherRankedLifetimeUnifyingConfig
-{
-    fn unifiable(
-        &self,
-        _: &Constant<M>,
-        _: &Constant<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
-        Ok(None)
-    }
-}
-
 impl<M: Model> Compute for Trait<M> {
     type Error = OverflowError;
     type Parameter = ();
@@ -201,7 +157,7 @@ impl<M: Model> Compute for Trait<M> {
                 mut constraints,
             }) = self.generic_arguments.unify_as_mapping_with_context(
                 &trait_premise.generic_arguments,
-                Arc::new(HigherRankedLifetimeUnifyingConfig),
+                Arc::new(LifetimeUnifyingPredicate),
                 environment,
                 context,
             )?
@@ -238,8 +194,10 @@ impl<M: Model> Compute for Trait<M> {
 
                         constraints.insert(
                             LifetimeConstraint::LifetimeMatching(
-                                first_lifetime.clone(),
-                                lifetime.clone(),
+                                UnorderedPair::new(
+                                    first_lifetime.clone(),
+                                    lifetime.clone(),
+                                ),
                             ),
                         );
                     }
@@ -645,13 +603,16 @@ fn predicate_satisfies<M: Model>(
         predicate.instantiate(substitution);
 
         let Some(new_lifetime_constraints) = (match predicate {
-            Predicate::TraitTypeEquality(equality) => compatible::compatible(
-                &Type::TraitMember(equality.lhs),
-                &equality.rhs,
-                Variance::Covariant,
-                environment,
-            )?
-            .map(|x| x.constraints),
+            Predicate::TraitTypeEquality(equality) => {
+                Type::TraitMember(equality.lhs)
+                    .compatible_with_context(
+                        &equality.rhs,
+                        Variance::Covariant,
+                        environment,
+                        context,
+                    )?
+                    .map(|x| x.constraints)
+            }
             Predicate::ConstantType(constant_type) => constant_type
                 .query_with_context(environment, context)?
                 .map(|x| x.constraints),

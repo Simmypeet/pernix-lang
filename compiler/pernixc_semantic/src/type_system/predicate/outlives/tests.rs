@@ -10,8 +10,12 @@ use proptest::{
 use crate::{
     arena::ID,
     symbol::{
-        table::{representation::Insertion, Building, Table},
-        Module,
+        table::{
+            representation::{IndexMut, Insertion},
+            Building, Table,
+        },
+        Accessibility, AdtTemplate, GenericDeclaration, LifetimeParameter,
+        Module, StructDefinition, Variance,
     },
     type_system::{
         equality,
@@ -21,12 +25,26 @@ use crate::{
         term::{
             constant::Constant,
             lifetime::Lifetime,
-            r#type::{self, Type},
+            r#type::{SymbolID, Type},
             GenericArguments, Symbol, Term,
         },
         Compute, Environment, OverflowError, Premise,
     },
 };
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+pub enum GenerateError {
+    #[error(transparent)]
+    Overflow(#[from] OverflowError),
+
+    #[error(
+        "duplicated struct name found, it most likely comes from \
+         `LifetimeMatching` property"
+    )]
+    DuplicatedStructName,
+}
 
 /// A trait for generating term for checking predicate
 pub trait Property<T>: 'static + Debug {
@@ -36,7 +54,7 @@ pub trait Property<T>: 'static + Debug {
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(T, Lifetime<Default>), OverflowError>;
+    ) -> Result<(T, Lifetime<Default>), GenerateError>;
 
     fn node_count(&self) -> usize;
 }
@@ -56,7 +74,7 @@ where
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(T, Lifetime<Default>), OverflowError> {
+    ) -> Result<(T, Lifetime<Default>), GenerateError> {
         let (inner_operand, inner_bound) =
             self.property.generate(table, premise, root_module_id)?;
 
@@ -97,7 +115,7 @@ where
 
 #[derive(Debug)]
 pub struct LifetimeMatching {
-    pub id: r#type::SymbolID,
+    pub struct_name: String,
     pub lifetime_properties: Vec<Box<dyn Property<Lifetime<Default>>>>,
     pub bound: Lifetime<Default>,
 }
@@ -108,7 +126,7 @@ impl Property<Type<Default>> for LifetimeMatching {
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(Type<Default>, Lifetime<Default>), OverflowError> {
+    ) -> Result<(Type<Default>, Lifetime<Default>), GenerateError> {
         let mut operand_lifetimes = Vec::new();
         let mut bound_lifetimes = Vec::new();
 
@@ -120,8 +138,44 @@ impl Property<Type<Default>> for LifetimeMatching {
             bound_lifetimes.push(bound);
         }
 
+        let Insertion { id, duplication } = table
+            .insert_member(
+                self.struct_name.clone(),
+                Accessibility::Public,
+                root_module_id,
+                None,
+                GenericDeclaration::default(),
+                AdtTemplate::<StructDefinition>::default(),
+            )
+            .unwrap();
+
+        if duplication.is_some() {
+            return Err(GenerateError::DuplicatedStructName);
+        }
+
+        // create lifetime generic parmaeters and variances
+        {
+            let struct_sym = table.get_mut(id).unwrap();
+
+            for _ in 0..self.lifetime_properties.len() {
+                let lifetime_param = struct_sym
+                    .generic_declaration
+                    .parameters
+                    .add_lifetime_parameter(LifetimeParameter {
+                        name: None,
+                        span: None,
+                    })
+                    .unwrap();
+
+                struct_sym
+                    .generic_parameter_variances
+                    .variances_by_lifetime_ids
+                    .insert(lifetime_param, Variance::Covariant);
+            }
+        }
+
         let ty_operand = Type::Symbol(Symbol {
-            id: self.id,
+            id: SymbolID::Struct(id),
             generic_arguments: GenericArguments {
                 lifetimes: operand_lifetimes,
                 types: Vec::new(),
@@ -135,7 +189,7 @@ impl Property<Type<Default>> for LifetimeMatching {
         {
             premise.predicates.insert(Predicate::TypeOutlives(Outlives {
                 operand: Type::Symbol(Symbol {
-                    id: self.id,
+                    id: SymbolID::Struct(id),
                     generic_arguments: GenericArguments {
                         lifetimes: bound_lifetimes,
                         types: Vec::new(),
@@ -164,15 +218,15 @@ impl Arbitrary for LifetimeMatching {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            r#type::SymbolID::arbitrary(),
+            "[a-zA-Z_][a-zA-Z0-9_]*",
             proptest::collection::vec(
                 Box::<dyn Property<Lifetime<_>>>::arbitrary(),
                 1..=8,
             ),
             Lifetime::arbitrary(),
         )
-            .prop_map(|(id, lifetime_properties, bound)| Self {
-                id,
+            .prop_map(|(struct_name, lifetime_properties, bound)| Self {
+                struct_name,
                 lifetime_properties,
                 bound,
             })
@@ -191,7 +245,7 @@ impl Property<Lifetime<Default>> for Reflexive {
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(Lifetime<Default>, Lifetime<Default>), OverflowError> {
+    ) -> Result<(Lifetime<Default>, Lifetime<Default>), GenerateError> {
         let (term, bound) =
             self.term.generate(table, premise, root_module_id)?;
 
@@ -240,7 +294,7 @@ where
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         _: ID<Module>,
-    ) -> Result<(T, Lifetime<Default>), OverflowError> {
+    ) -> Result<(T, Lifetime<Default>), GenerateError> {
         if Outlives::new(self.term.clone(), self.bound)
             .query(&Environment { premise, table, normalizer: &NoOp })?
             .is_none()
@@ -269,7 +323,7 @@ impl<T: Term<Model = Default>> Property<T> for Transitive<T> {
         table: &mut Table<Building>,
         premise: &mut Premise<Default>,
         root_module_id: ID<Module>,
-    ) -> Result<(T, Lifetime<Default>), OverflowError> {
+    ) -> Result<(T, Lifetime<Default>), GenerateError> {
         let (inner_operand, inner_bound) =
             self.inner_property.generate(table, premise, root_module_id)?;
 
@@ -351,8 +405,6 @@ impl Arbitrary for Box<dyn Property<Lifetime<Default>>> {
 fn property_based_testing<T: Term<Model = Default> + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult {
-    dbg!(property);
-
     let mut premise = Premise::default();
     let mut table = Table::<Building>::default();
 
@@ -364,6 +416,9 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     let (term1, term2) = property
         .generate(&mut table, &mut premise, root_module_id)
         .map_err(|_| TestCaseError::reject("too complex property"))?;
+
+    println!("{term1:#?}: {term2:#?}");
+    println!("{premise:#?}");
 
     let environment =
         &Environment { table: &table, premise: &premise, normalizer: &NoOp };
@@ -391,7 +446,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore] // TODO: Fix the stackoverflow
     fn property_based_testing_type(
         property in Box::<dyn Property<Type<Default>>>::arbitrary()
     ) {

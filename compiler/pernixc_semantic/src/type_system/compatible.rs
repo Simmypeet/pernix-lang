@@ -1,8 +1,9 @@
-//! Contains the definition of [`compatible`] logic.
+//! Contains the definition of [`Compatible`] logic.
 
 use std::{collections::HashSet, sync::Arc};
 
 use super::{
+    equality::Equality,
     model::Model,
     normalizer::Normalizer,
     predicate::Outlives,
@@ -12,7 +13,7 @@ use super::{
         constant::Constant,
         lifetime::Lifetime,
         r#type::{self, Type},
-        MemberSymbol, Symbol,
+        MemberSymbol, ModelOf, Symbol,
     },
     unification::{self, Matching, Unification},
     Compute, Environment, LifetimeConstraint, Output, OverflowError, Satisfied,
@@ -24,6 +25,7 @@ use crate::{
         AdtID, Variance,
     },
     type_system::sub_term::{Location, SubLifetimeLocation},
+    unordered_pair::UnorderedPair,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -443,37 +445,6 @@ impl<M: Model> Type<M> {
     }
 }
 
-pub(super) fn compatible_with_context<M: Model>(
-    term: &Type<M>,
-    target: &Type<M>,
-    variance: Variance,
-    environment: &Environment<M, impl State, impl Normalizer<M>>,
-    context: &mut Context<M>,
-) -> Result<Output<Satisfied, M>, OverflowError> {
-    let Some(Succeeded { result: unification, mut constraints }) =
-        Unification::new(
-            term.clone(),
-            target.clone(),
-            Arc::new(LifetimeMatching { from: term.clone() }),
-        )
-        .query_with_context(environment, context)?
-    else {
-        return Ok(None);
-    };
-
-    if !append_outlives_constraints_from_unification(
-        term.clone(),
-        unification,
-        variance,
-        environment.table,
-        &mut constraints,
-    ) {
-        return Ok(None);
-    }
-
-    Ok(Some(Succeeded::with_constraints(Satisfied, constraints)))
-}
-
 #[must_use]
 fn append_outlives_constraints_from_unification<M: Model>(
     mut current_from: Type<M>,
@@ -533,8 +504,10 @@ fn append_outlives_constraints_from_unification<M: Model>(
                             {
                                 outlives.insert(
                                     LifetimeConstraint::LifetimeMatching(
-                                        from.clone(),
-                                        to.clone(),
+                                        UnorderedPair::new(
+                                            from.clone(),
+                                            to.clone(),
+                                        ),
                                     ),
                                 );
                             }
@@ -580,33 +553,142 @@ fn append_outlives_constraints_from_unification<M: Model>(
     true
 }
 
-/// Checks if the `term` is compatible with the `target` type.
-///
-/// This is similar to the equality check, but it allows the lifetimes to be
-/// variant. The variance of the lifetimes is determined by the variance of the
-/// type that contains the lifetime.
-///
-/// The result is `Satisfied` if the `term` is compatible with the `target` with
-/// the list of outlives constraints.
-///
-/// # Parameters
-///
-/// - `term`: The term to be checked.
-/// - `target`: The target type to be checked against.
-/// - `variance`: The variance to used for determining the constraint of the
-///   lifetimes. For the most cases, the default should be
-///   [`Variance::Bivariant`]
-pub fn compatible<M: Model>(
-    term: &Type<M>,
-    target: &Type<M>,
-    variance: Variance,
-    environment: &Environment<M, impl State, impl Normalizer<M>>,
-) -> Result<Output<Satisfied, M>, OverflowError> {
-    compatible_with_context(
-        term,
-        target,
-        variance,
-        environment,
-        &mut Context::new(),
-    )
+/// A trait for determining the equality of two terms while considering the
+/// variance of the lifetime.
+pub trait Compatible: ModelOf {
+    /// The implementation of [`Compatible`] algortihm with the context.
+    ///
+    /// # Parameters
+    ///
+    /// - `self`: The term to be checked.
+    /// - `target`: The target term to be checked against.
+    /// - `variance`: The variance to used for determining the constraint of the
+    ///   lifetimes. For the most cases, the default should be
+    ///   [`Variance::Covariant`]
+    fn compatible_with_context(
+        &self,
+        target: &Self,
+        variance: Variance,
+        environment: &Environment<
+            Self::Model,
+            impl State,
+            impl Normalizer<Self::Model>,
+        >,
+        context: &mut Context<Self::Model>,
+    ) -> Result<Output<Satisfied, Self::Model>, OverflowError>;
+
+    /// A delegate method for [`compatible_with_context`] with the default
+    /// context.
+    fn compatible(
+        &self,
+        target: &Self,
+        variance: Variance,
+        environment: &Environment<
+            Self::Model,
+            impl State,
+            impl Normalizer<Self::Model>,
+        >,
+    ) -> Result<Output<Satisfied, Self::Model>, OverflowError> {
+        self.compatible_with_context(
+            target,
+            variance,
+            environment,
+            &mut Context::new(),
+        )
+    }
 }
+
+impl<M: Model> Compatible for Lifetime<M> {
+    fn compatible_with_context(
+        &self,
+        target: &Self,
+        variance: Variance,
+        _: &Environment<Self::Model, impl State, impl Normalizer<Self::Model>>,
+        _: &mut Context<Self::Model>,
+    ) -> Result<Output<Satisfied, Self::Model>, OverflowError> {
+        if self == target {
+            return Ok(Some(Succeeded::satisfied()));
+        }
+
+        let constraint = match variance {
+            Variance::Covariant => {
+                LifetimeConstraint::LifetimeOutlives(Outlives {
+                    operand: self.clone(),
+                    bound: target.clone(),
+                })
+            }
+            Variance::Contravariant => {
+                LifetimeConstraint::LifetimeOutlives(Outlives {
+                    operand: target.clone(),
+                    bound: self.clone(),
+                })
+            }
+            Variance::Invariant => LifetimeConstraint::LifetimeMatching(
+                UnorderedPair::new(self.clone(), target.clone()),
+            ),
+        };
+
+        Ok(Some(Succeeded::with_constraints(
+            Satisfied,
+            std::iter::once(constraint).collect(),
+        )))
+    }
+}
+
+impl<M: Model> Compatible for Type<M> {
+    fn compatible_with_context(
+        &self,
+        target: &Self,
+        variance: Variance,
+        environment: &Environment<
+            Self::Model,
+            impl State,
+            impl Normalizer<Self::Model>,
+        >,
+        context: &mut Context<Self::Model>,
+    ) -> Result<Output<Satisfied, Self::Model>, OverflowError> {
+        let Some(Succeeded { result: unification, mut constraints }) =
+            Unification::new(
+                self.clone(),
+                target.clone(),
+                Arc::new(LifetimeMatching { from: self.clone() }),
+            )
+            .query_with_context(environment, context)?
+        else {
+            return Ok(None);
+        };
+
+        if !append_outlives_constraints_from_unification(
+            self.clone(),
+            unification,
+            variance,
+            environment.table,
+            &mut constraints,
+        ) {
+            return Ok(None);
+        }
+
+        Ok(Some(Succeeded::with_constraints(Satisfied, constraints)))
+    }
+}
+
+impl<M: Model> Compatible for Constant<M> {
+    fn compatible_with_context(
+        &self,
+        target: &Self,
+        _: Variance,
+        environment: &Environment<
+            Self::Model,
+            impl State,
+            impl Normalizer<Self::Model>,
+        >,
+        context: &mut Context<Self::Model>,
+    ) -> Result<Output<Satisfied, Self::Model>, OverflowError> {
+        // use default strict equality for constant
+        Equality::new(self.clone(), target.clone())
+            .query_with_context(environment, context)
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -2,7 +2,7 @@
 //! premises.
 
 use super::{
-    compatible,
+    compatible::Compatible,
     model::Model,
     normalizer::Normalizer,
     predicate::Predicate,
@@ -12,7 +12,7 @@ use super::{
     },
     Environment, OverflowError, Succeeded,
 };
-use crate::symbol::table::State;
+use crate::symbol::{table::State, Variance};
 
 /// A trait used for retrieving equivalences of a term based on the equality
 /// premises.
@@ -55,10 +55,9 @@ impl<M: Model> Equivalence for Type<M> {
             let lhs = &lhs;
             let rhs = &equivalence.rhs;
 
-            if let Some(result) = compatible::compatible_with_context(
-                self,
+            if let Some(result) = self.compatible_with_context(
                 lhs,
-                crate::symbol::Variance::Covariant,
+                Variance::Covariant,
                 environment,
                 context,
             )? {
@@ -68,10 +67,9 @@ impl<M: Model> Equivalence for Type<M> {
                 });
             }
 
-            if let Some(result) = compatible::compatible_with_context(
-                self,
+            if let Some(result) = self.compatible_with_context(
                 rhs,
-                crate::symbol::Variance::Covariant,
+                Variance::Covariant,
                 environment,
                 context,
             )? {

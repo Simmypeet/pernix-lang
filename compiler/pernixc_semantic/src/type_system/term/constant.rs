@@ -201,7 +201,7 @@ impl<M: Model> Location<Constant<M>, Constant<M>> for SubConstantLocation {
             }
 
             (
-                Self::Enum,
+               Self::Enum,
                 Constant::Enum(Enum {
                     associated_value: Some(constant), ..
                 }),

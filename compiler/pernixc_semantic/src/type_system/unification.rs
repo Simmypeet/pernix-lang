@@ -2,10 +2,10 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    hash::{Hash, Hasher},
     sync::Arc,
 };
 
-use by_address::ByAddress;
 use enum_as_inner::EnumAsInner;
 
 use super::{
@@ -24,40 +24,91 @@ use super::{
 use crate::symbol::table::State;
 
 /// A query for performing unification.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub struct Unification<T: ModelOf> {
     pub from: T,
     pub to: T,
-    pub predicate: ByAddress<Arc<dyn PredicateA<T::Model>>>,
+    pub predicate: Arc<dyn PredicateA<T::Model>>,
+}
+
+impl<T: ModelOf + PartialEq> PartialEq for Unification<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.from == other.from
+            && self.to == other.to
+            && &*self.predicate == &*other.predicate
+    }
+}
+
+impl<T: ModelOf + Eq> Eq for Unification<T> {}
+
+impl<T: ModelOf + Hash> Hash for Unification<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.from.hash(state);
+        self.to.hash(state);
+        self.predicate.hash(state);
+    }
 }
 
 impl<T: ModelOf> Unification<T> {
     /// Creates a new unification query.
     #[must_use]
     pub fn new(from: T, to: T, unifier: Arc<dyn PredicateA<T::Model>>) -> Self {
-        Self { from, to, predicate: ByAddress(unifier) }
+        Self { from, to, predicate: unifier }
     }
 }
 
 /// A super trait which includes the [`Unifier`] trait for all kinds of terms.
 pub trait PredicateA<M: Model>:
     std::fmt::Debug
+    + std::any::Any
     + Predicate<Lifetime<M>>
     + Predicate<Type<M>>
     + Predicate<Constant<M>>
 {
+    #[doc(hidden)]
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    #[doc(hidden)]
+    fn dyn_eq(&self, other: &dyn PredicateA<M>) -> bool;
+
+    #[doc(hidden)]
+    fn dyn_hash(&self, state: &mut dyn Hasher);
 }
 
 impl<
         M: Model,
         T: std::fmt::Debug
+            + std::any::Any
+            + Hash
             + Predicate<Lifetime<M>>
             + Predicate<Type<M>>
-            + Predicate<Constant<M>>,
+            + Predicate<Constant<M>>
+            + PartialEq,
     > PredicateA<M> for T
 {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
+    fn dyn_eq(&self, other: &dyn PredicateA<M>) -> bool {
+        if let Some(other) = other.as_any().downcast_ref::<T>() {
+            self == other
+        } else {
+            false
+        }
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) { self.hash(&mut state) }
 }
+
+impl<M: Model> PartialEq for dyn PredicateA<M> {
+    fn eq(&self, other: &Self) -> bool { self.dyn_eq(other) }
+}
+
+impl<M: Model> Hash for dyn PredicateA<M> {
+    fn hash<H: Hasher>(&self, state: &mut H) { self.dyn_hash(state) }
+}
+
+impl<M: Model> Eq for dyn PredicateA<M> {}
 
 /// An object used for determining if two terms are unifiable.
 pub trait Predicate<T: Term> {
@@ -221,7 +272,7 @@ impl<T: Term> Compute for Unification<T> {
             &self.to,
             from_logs,
             to_logs,
-            self.predicate.0.clone(),
+            self.predicate.clone(),
             environment,
             context,
         )

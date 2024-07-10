@@ -15,6 +15,7 @@ use lifetime::Lifetime;
 use r#type::Type;
 
 use super::{
+    compatible,
     definite::Definite,
     equality::Equality,
     equivalence,
@@ -516,6 +517,7 @@ pub trait Term:
     + sub_term::SubTerm
     + simplify::Simplify
     + equivalence::Equivalence
+    + compatible::Compatible
     + From<MemberID<ID<Self::GenericParameter>, GenericID>>
     + From<Error>
     + From<Self::TraitMember>

@@ -17,6 +17,7 @@ use crate::{
         mapping::Mapping, query::Context, unification::Unification, Compute,
         LifetimeUnifyingPredicate,
     },
+    unordered_pair::UnorderedPair,
 };
 
 pub(super) trait Simplify: ModelOf + Sized {
@@ -130,10 +131,13 @@ fn simplify_internal<T: Term>(
 
                 for (lhs, values) in mappings.lifetimes {
                     for rhs in values {
+                        if lhs == rhs {
+                            continue;
+                        }
+
                         constraints.insert(
                             LifetimeConstraint::LifetimeMatching(
-                                lhs.clone(),
-                                rhs,
+                                UnorderedPair::new(lhs.clone(), rhs),
                             ),
                         );
                     }

@@ -1,19 +1,18 @@
-use std::sync::Arc;
-
 use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
-    symbol::table::{self, DisplayObject, State, Table},
+    symbol::{
+        table::{self, DisplayObject, State, Table},
+        Variance,
+    },
     type_system::{
         equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
-        mapping::Mapping,
         model::Model,
         normalizer::Normalizer,
         query::Context,
         term::{lifetime::Lifetime, ModelOf, Term},
-        unification::{Unification, Unifier},
-        visitor, Compute, Environment, LifetimeConstraint,
-        LifetimeUnifyingPredicate, OverflowError, Satisfied, Succeeded,
+        visitor, Compute, Environment, LifetimeConstraint, OverflowError,
+        Satisfied, Succeeded,
     },
 };
 
@@ -104,7 +103,10 @@ impl<M: Model> LifetimeConstraint<M> {
             LifetimeConstraint::TypeOutlives(outlives) => {
                 outlives.query_with_context(environment, context)
             }
-            LifetimeConstraint::LifetimeMatching(lhs, rhs) => {
+            LifetimeConstraint::LifetimeMatching(pair) => {
+                let lhs = pair.first();
+                let rhs = pair.second();
+
                 if lhs == rhs {
                     return Ok(Some(Satisfied));
                 }
@@ -161,6 +163,39 @@ impl<T: Term> Compute for Outlives<T> {
             }
         }
 
+        for Self { operand: next_operand, bound: next_bound } in environment
+            .premise
+            .predicates
+            .iter()
+            .filter_map(|x| T::as_outlive_predicate(x))
+        {
+            let Some(Succeeded { result: Satisfied, constraints }) =
+                self.operand.compatible_with_context(
+                    next_operand,
+                    Variance::Covariant,
+                    environment,
+                    context,
+                )?
+            else {
+                continue;
+            };
+
+            for constraint in constraints {
+                let Some(Satisfied) =
+                    constraint.satisifies_with_context(environment, context)?
+                else {
+                    return Ok(Some(Satisfied));
+                };
+            }
+
+            if let Some(Satisfied) =
+                Outlives::new(next_bound.clone(), self.bound.clone())
+                    .query_with_context(environment, context)?
+            {
+                return Ok(Some(Satisfied));
+            }
+        }
+
         // look for operand equivalences
         for Succeeded {
             result: operand_eq,
@@ -179,49 +214,6 @@ impl<T: Term> Compute for Outlives<T> {
 
             if let Some(Satisfied) =
                 Outlives::new(operand_eq, self.bound.clone())
-                    .query_with_context(environment, context)?
-            {
-                return Ok(Some(Satisfied));
-            }
-        }
-
-        for Self { operand: next_operand, bound: next_bound } in environment
-            .premise
-            .predicates
-            .iter()
-            .filter_map(|x| T::as_outlive_predicate(x))
-        {
-            let Some(Succeeded { result, constraints: additional_outlives }) =
-                Unification::new(
-                    self.operand.clone(),
-                    next_operand.clone(),
-                    Arc::new(LifetimeUnifyingPredicate),
-                )
-                .query_with_context(environment, context)?
-            else {
-                continue;
-            };
-
-            for constraint in additional_outlives {
-                let Some(Satisfied) =
-                    constraint.satisifies_with_context(environment, context)?
-                else {
-                    return Ok(Some(Satisfied));
-                };
-            }
-
-            if Self::satisfies_by_lifetime_matching(
-                result,
-                environment,
-                context,
-            )?
-            .is_none()
-            {
-                continue;
-            }
-
-            if let Some(Satisfied) =
-                Outlives::new(next_bound.clone(), self.bound.clone())
                     .query_with_context(environment, context)?
             {
                 return Ok(Some(Satisfied));
@@ -250,35 +242,6 @@ impl<T: Term> Compute for Outlives<T> {
         }
 
         Ok(None)
-    }
-}
-
-impl<T: Term> Outlives<T> {
-    fn satisfies_by_lifetime_matching(
-        unifier: Unifier<T>,
-        environment: &Environment<
-            T::Model,
-            impl State,
-            impl Normalizer<T::Model>,
-        >,
-        context: &mut Context<T::Model>,
-    ) -> Result<Option<Satisfied>, OverflowError> {
-        let mapping = Mapping::from_unifier(unifier);
-
-        assert!(mapping.types.is_empty());
-        assert!(mapping.constants.is_empty());
-
-        for (bound, operands) in mapping.lifetimes {
-            for operand in operands {
-                let Some(Satisfied) = Outlives::new(bound.clone(), operand)
-                    .query_with_context(environment, context)?
-                else {
-                    return Ok(None);
-                };
-            }
-        }
-
-        Ok(Some(Satisfied))
     }
 }
 

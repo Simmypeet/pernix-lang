@@ -21,6 +21,7 @@ use crate::{
         table::{State, Table},
         PositiveTraitImplementation, Trait,
     },
+    unordered_pair::UnorderedPair,
 };
 
 pub mod compatible;
@@ -112,7 +113,7 @@ pub struct Satisfied;
 pub enum LifetimeConstraint<M: Model> {
     LifetimeOutlives(Outlives<Lifetime<M>>),
     TypeOutlives(Outlives<Type<M>>),
-    LifetimeMatching(Lifetime<M>, Lifetime<M>),
+    LifetimeMatching(UnorderedPair<Lifetime<M>>),
 }
 
 /// The result of the semantic logic in the success case.
