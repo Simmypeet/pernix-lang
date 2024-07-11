@@ -539,7 +539,7 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
                             .clone(),
                     ),
                     &Environment {
-                        premise: &combined_premise,
+                        premise: combined_premise,
                         table: environment.table,
                         normalizer: environment.normalizer,
                     },

@@ -460,12 +460,8 @@ pub enum MergeAccessibilityError {
 impl From<MergeAccessibilityError> for GetTermAccessibilityError {
     fn from(err: MergeAccessibilityError) -> Self {
         match err {
-            MergeAccessibilityError::InvalidModuleID => {
-                GetTermAccessibilityError::InvalidID
-            }
-            MergeAccessibilityError::Unrelated => {
-                GetTermAccessibilityError::Unrealated
-            }
+            MergeAccessibilityError::InvalidModuleID => Self::InvalidID,
+            MergeAccessibilityError::Unrelated => Self::Unrealated,
         }
     }
 }
@@ -496,6 +492,7 @@ impl<T: Container> Representation<T> {
     ///
     /// Returns `None` if either `first` or `second` contains an invalid
     /// module ID.
+    #[must_use]
     pub fn accessibility_hierarchy_relationship(
         &self,
         first: Accessibility,
@@ -503,14 +500,10 @@ impl<T: Container> Representation<T> {
     ) -> Option<HierarchyRelationship> {
         // check if the module IDs are valid.
         if let Accessibility::Scoped(first) = first {
-            if self.get(first).is_none() {
-                return None;
-            }
+            let _ = self.get(first)?;
         }
         if let Accessibility::Scoped(second) = second {
-            if self.get(second).is_none() {
-                return None;
-            }
+            let _ = self.get(second)?;
         }
 
         match (first, second) {
@@ -536,6 +529,7 @@ impl<T: Container> Representation<T> {
     /// # Returns
     ///
     /// Returns `None` if either `first` or `second` is not a valid ID.
+    #[must_use]
     pub fn symbol_hierarchy_relationship(
         &self,
         first: GlobalID,
@@ -924,10 +918,8 @@ impl<T: Container> Representation<T> {
             (Accessibility::Public, Accessibility::Public) => {
                 Accessibility::Public
             }
-            (Accessibility::Public, Accessibility::Scoped(scope)) => {
-                Accessibility::Scoped(scope)
-            }
-            (Accessibility::Scoped(scope), Accessibility::Public) => {
+            (Accessibility::Public, Accessibility::Scoped(scope))
+            | (Accessibility::Scoped(scope), Accessibility::Public) => {
                 Accessibility::Scoped(scope)
             }
             (Accessibility::Scoped(first), Accessibility::Scoped(second)) => {
@@ -938,10 +930,8 @@ impl<T: Container> Representation<T> {
                     HierarchyRelationship::Parent => {
                         Accessibility::Scoped(second)
                     }
-                    HierarchyRelationship::Child => {
-                        Accessibility::Scoped(first)
-                    }
-                    HierarchyRelationship::Equivalent => {
+                    HierarchyRelationship::Child
+                    | HierarchyRelationship::Equivalent => {
                         Accessibility::Scoped(first)
                     }
                     HierarchyRelationship::Unrelated => {
@@ -957,7 +947,7 @@ impl<T: Container> Representation<T> {
     /// # Errors
     ///
     /// See [`GetTermAccessibilityError`] for more information.
-    #[must_use]
+    #[allow(clippy::too_many_lines, clippy::uninhabited_references)]
     pub fn get_type_accessibility(
         &self,
         ty: &r#type::Type<Default>,
@@ -1094,7 +1084,7 @@ impl<T: Container> Representation<T> {
     /// # Errors
     ///
     /// See [`GetTermAccessibilityError`] for more information.
-    #[must_use]
+    #[allow(clippy::uninhabited_references)]
     pub fn get_constant_accessibility(
         &self,
         constant: &constant::Constant<Default>,
@@ -1149,8 +1139,8 @@ impl<T: Container> Representation<T> {
                 if let Some(associated_value) = &constant.associated_value {
                     current_min = self.merge_accessibility_down(
                         current_min,
-                        self.get_constant_accessibility(&*associated_value)?,
-                    )?
+                        self.get_constant_accessibility(associated_value)?,
+                    )?;
                 }
 
                 Ok(current_min)
@@ -1176,7 +1166,7 @@ impl<T: Container> Representation<T> {
     /// # Errors
     ///
     /// See [`GetTermAccessibilityError`] for more information.
-    #[must_use]
+    #[allow(clippy::uninhabited_references)]
     pub fn get_lifetime_accessibility(
         &self,
         lifetime: &Lifetime<Default>,
@@ -1199,7 +1189,6 @@ impl<T: Container> Representation<T> {
     /// # Errors
     ///
     /// See [`GetTermAccessibilityError`] for more information.
-    #[must_use]
     pub fn get_generic_arguments_accessibility(
         &self,
         generic_arguments: &GenericArguments<Default>,
@@ -1210,21 +1199,21 @@ impl<T: Container> Representation<T> {
             current_min = self.merge_accessibility_down(
                 current_min,
                 self.get_lifetime_accessibility(lifetime)?,
-            )?
+            )?;
         }
 
         for ty in &generic_arguments.types {
             current_min = self.merge_accessibility_down(
                 current_min,
                 self.get_type_accessibility(ty)?,
-            )?
+            )?;
         }
 
         for constant in &generic_arguments.constants {
             current_min = self.merge_accessibility_down(
                 current_min,
                 self.get_constant_accessibility(constant)?,
-            )?
+            )?;
         }
 
         Ok(current_min)
@@ -1290,6 +1279,7 @@ impl<T: Container> Representation<T> {
     /// # Returns
     ///
     /// Returns [`None`] if the given `parent_id` is not a valid ID.
+    #[must_use]
     pub fn create_accessibility(
         &self,
         parent_id: GlobalID,
@@ -1400,6 +1390,7 @@ impl<T: Container> Representation<T> {
     /// # Returns
     ///
     /// Returns `None` if the given ID is not a valid ID.
+    #[must_use]
     pub fn get_implementation(
         &self,
         implementation_id: ImplementationID,
@@ -1828,8 +1819,7 @@ impl<T: Container> Representation<T> {
             usings: HashSet::new(),
         }));
 
-        let duplication = match self.root_module_ids_by_name.entry(name.clone())
-        {
+        let duplication = match self.root_module_ids_by_name.entry(name) {
             Entry::Occupied(entry) => Some(*entry.get()),
             Entry::Vacant(entry) => {
                 entry.insert(id);
@@ -1845,7 +1835,7 @@ impl<T: Container> Representation<T> {
     /// # Errors
     ///
     /// See [`InsertImplementationError`] for more information.
-    #[allow(private_bounds)]
+    #[allow(private_bounds, clippy::type_complexity)]
     pub fn insert_implementation<
         Definition,
         Implemented: symbol::ImplementedSealed + Element + Global,
@@ -1853,7 +1843,7 @@ impl<T: Container> Representation<T> {
     >(
         &mut self,
         implemented_id: ID<Implemented>,
-        parent_module_id: ID<Module>,
+        parent_id: ID<Module>,
         generic_declaration: GenericDeclaration,
         span: Option<Span>,
         arguments: GenericArguments<Default>,
@@ -1882,7 +1872,7 @@ impl<T: Container> Representation<T> {
 
         ID<Implemented>: Into<GlobalID>,
     {
-        if self.modules.get(parent_module_id).is_none() {
+        if self.modules.get(parent_id).is_none() {
             return Err(InsertImplementationError::InvalidParentModuleID);
         }
 
@@ -1902,7 +1892,7 @@ impl<T: Container> Representation<T> {
             T::wrap(GenericTemplate {
                 name,
                 accessibility,
-                parent_id: parent_module_id.into(),
+                parent_id,
                 span,
                 generic_declaration,
                 definition: ImplementationTemplate {
@@ -1936,14 +1926,12 @@ impl<T: Container> Representation<T> {
         span: Option<Span>,
     ) -> Option<Insertion<Variant, ID<Variant>>> {
         // the given `parent_id` does not exist, fatal error
-        if self.get(parent_enum_id).is_none() {
-            return None;
-        }
+        let _ = self.get(parent_enum_id)?;
 
         // create trait member
         let member_id = self.variants.insert(T::wrap(Variant {
             name: name.clone(),
-            parent_enum_id: parent_enum_id.into(),
+            parent_enum_id,
             associated_type,
             span,
         }));
@@ -1954,7 +1942,7 @@ impl<T: Container> Representation<T> {
         let duplication = match parent_symbol.variant_ids_by_name.entry(name) {
             Entry::Occupied(entry) => Some(*entry.get()),
             Entry::Vacant(entry) => {
-                entry.insert(member_id.into());
+                entry.insert(member_id);
                 None
             }
         };
@@ -1989,9 +1977,7 @@ impl<T: Container> Representation<T> {
         GenericTemplate<ParentID, Definition>: Element,
     {
         // the given `parent_id` does not exist, fatal error
-        if self.get(parent_id).is_none() {
-            return None;
-        }
+        let _ = self.get(parent_id)?;
 
         // create trait member
         let member_id = GenericTemplate::get_arena_mut(self).insert(T::wrap(
@@ -2034,9 +2020,7 @@ impl<T: Container> Representation<T> {
         span: Option<Span>,
     ) -> Option<Insertion<Module, ModuleMemberID>> {
         // the given `parent_module_id` does not exist, fatal error
-        if self.get(parent_module_id).is_none() {
-            return None;
-        }
+        let _ = self.get(parent_module_id)?;
 
         // create module member
         let member_id = self.modules.insert(T::wrap(Module {

@@ -82,7 +82,7 @@ pub struct Building<
 
 impl<T: Container, S: Debug + Sized + Send + Sync + 'static> Building<T, S> {
     /// Creates a new building state object with the given inner state.
-    pub fn new(state: S) -> Self {
+    pub const fn new(state: S) -> Self {
         Self { _phantom: PhantomData, inner_state: state }
     }
 }

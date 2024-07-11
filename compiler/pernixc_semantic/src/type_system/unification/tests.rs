@@ -489,8 +489,11 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
 
     property.apply(&mut table, &mut premise)?;
 
-    let environment =
-        Environment { premise: &premise, table: &table, normalizer: &NoOp };
+    let environment = Environment {
+        premise: premise.clone(),
+        table: &table,
+        normalizer: &NoOp,
+    };
 
     if Equality::new(lhs.clone(), rhs.clone())
         .query(&environment)
@@ -513,7 +516,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
         rewrite_term(&mut lhs, unifier)?;
 
         let environment =
-            Environment { premise: &premise, table: &table, normalizer: &NoOp };
+            Environment { premise, table: &table, normalizer: &NoOp };
 
         let Some(satisfied) = Equality::new(lhs, rhs)
             .query(&environment)

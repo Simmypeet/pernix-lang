@@ -1,8 +1,10 @@
 use super::contains_forall_lifetime;
 use crate::{
-    symbol::table::{self, DisplayObject, State, Table},
+    symbol::{
+        table::{self, DisplayObject, State, Table},
+        Variance,
+    },
     type_system::{
-        equality,
         equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
         normalizer::Normalizer,
@@ -66,10 +68,12 @@ impl<T: Term> Compute for Tuple<T> {
             .iter()
             .filter_map(|x| T::as_tuple_predicate(x))
         {
-            if let Some(result) =
-                equality::Equality::new(predicate.0.clone(), self.0.clone())
-                    .query_with_context(environment, context)?
-            {
+            if let Some(result) = self.0.compatible_with_context(
+                &predicate.0,
+                Variance::Covariant,
+                environment,
+                context,
+            )? {
                 return Ok(Some(result));
             }
         }

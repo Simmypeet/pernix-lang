@@ -48,7 +48,7 @@ fn definite_lifetime() -> impl Strategy<Value = Lifetime<Default>> {
     Lifetime::arbitrary().prop_filter("filter out non-definite terms", |term| {
         matches!(
             Definite(term.clone()).query(&Environment {
-                premise: &Premise::default(),
+                premise: Premise::default(),
                 table: &*TABLE,
                 normalizer: &NoOp,
             }),
@@ -62,7 +62,7 @@ fn definite_type() -> impl Strategy<Value = Type<Default>> {
     Type::arbitrary().prop_filter("filter out non-definite terms", |term| {
         matches!(
             Definite(term.clone()).query(&Environment {
-                premise: &Premise::default(),
+                premise: Premise::default(),
                 table: &*TABLE,
                 normalizer: &NoOp,
             }),
@@ -76,7 +76,7 @@ fn definite_constant() -> impl Strategy<Value = Constant<Default>> {
     Constant::arbitrary().prop_filter("filter out non-definite terms", |term| {
         matches!(
             Definite(term.clone()).query(&Environment {
-                premise: &Premise::default(),
+                premise: Premise::default(),
                 table: &*TABLE,
                 normalizer: &NoOp,
             }),
@@ -117,11 +117,7 @@ impl SingleImplementation {
         let Succeeded { result, constraints } = super::resolve_implementation(
             self.trait_id,
             &self.generic_arguments,
-            &Environment {
-                premise: &premise,
-                table: &self.table,
-                normalizer: &NoOp,
-            },
+            &Environment { premise, table: &self.table, normalizer: &NoOp },
         )?;
 
         prop_assert!(constraints.is_empty());
@@ -489,13 +485,11 @@ pub struct SpecializedImplementation {
 impl SpecializedImplementation {
     fn assert(&self) -> TestCaseResult {
         // should match to the specialized implementation
-        let premise = Premise::default();
-
         let Succeeded { result, constraints } = super::resolve_implementation(
             self.trait_id,
             &self.generic_arguments,
             &Environment {
-                premise: &premise,
+                premise: Premise::default(),
                 table: &self.table,
                 normalizer: &NoOp,
             },
@@ -709,11 +703,13 @@ impl SpecializedImplementation {
 
         general_implementation.arguments = generic_arguments;
 
-        let premise = Premise::default();
-
         if general_implementation.arguments.clone().order(
             &starting_generic_arguments,
-            &Environment { premise: &premise, table, normalizer: &NoOp },
+            &Environment {
+                premise: Premise::default(),
+                table,
+                normalizer: &NoOp,
+            },
         ) != Ok(Order::MoreGeneral)
         {
             return None;
@@ -843,13 +839,11 @@ pub struct FallbackToGeneralImplementation(SpecializedImplementation);
 impl FallbackToGeneralImplementation {
     fn assert(&self) -> TestCaseResult {
         // should match to the general implementation
-        let premise = Premise::default();
-
         let Succeeded { result, constraints } = super::resolve_implementation(
             self.0.trait_id,
             &self.0.generic_arguments,
             &Environment {
-                premise: &premise,
+                premise: Premise::default(),
                 table: &self.0.table,
                 normalizer: &NoOp,
             },

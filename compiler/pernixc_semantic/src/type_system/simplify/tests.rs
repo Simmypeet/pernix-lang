@@ -40,7 +40,7 @@ fn basic_case() {
 
     let Succeeded { result: simplified, constraints } =
         simplify(&Type::TraitMember(trait_member), &Environment {
-            premise: &premise,
+            premise,
             table: &table,
             normalizer: &NoOp,
         });
@@ -82,7 +82,7 @@ fn sub_term_case() {
                 constants: Vec::new(),
             },
         }),
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp },
+        &Environment { premise, table: &table, normalizer: &NoOp },
     );
 
     assert_eq!(
@@ -126,7 +126,7 @@ fn already_simplified_case() {
 
     let Succeeded { result: simplified, constraints } =
         simplify(&equivalent, &Environment {
-            premise: &premise,
+            premise,
             table: &table,
             normalizer: &NoOp,
         });
@@ -177,7 +177,7 @@ fn with_lifetime_matching() {
 
     let Succeeded { result: simplified, constraints } =
         simplify(&Type::TraitMember(to_be_simplified), &Environment {
-            premise: &premise,
+            premise,
             table: &table,
             normalizer: &NoOp,
         });

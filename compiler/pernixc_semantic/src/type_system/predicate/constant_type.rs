@@ -1,8 +1,10 @@
 use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
-    symbol::table::{self, DisplayObject, State, Table},
+    symbol::{
+        table::{self, DisplayObject, State, Table},
+        Variance,
+    },
     type_system::{
-        equality,
         equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
         model::Model,
@@ -134,10 +136,12 @@ impl<T: Term> Compute for ConstantType<T> {
             .iter()
             .filter_map(|x| T::as_constant_type_predicate(x))
         {
-            if let Some(result) =
-                equality::Equality::new(self.0.clone(), premise_term.clone())
-                    .query_with_context(environment, context)?
-            {
+            if let Some(result) = self.0.compatible_with_context(
+                &premise_term,
+                Variance::Covariant,
+                environment,
+                context,
+            )? {
                 return Ok(Some(result));
             }
         }

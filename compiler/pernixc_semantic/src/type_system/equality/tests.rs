@@ -30,14 +30,13 @@ use crate::{
 
 #[test]
 fn reflexive() {
-    let premise = Premise::<Default>::default();
     let table = Table::<Building>::default();
 
     let term = Type::Primitive(Primitive::Bool);
 
     let result = Equality::new(term.clone(), term)
         .query(&Environment {
-            premise: &premise,
+            premise: Premise::<Default>::default(),
             table: &table,
             normalizer: &NoOp,
         })
@@ -63,7 +62,7 @@ fn symmetric() {
     }));
 
     let environment = Environment {
-        premise: &premise,
+        premise,
         table: &Table::<Building>::default(),
         normalizer: &NoOp,
     };
@@ -102,7 +101,7 @@ fn not_equal() {
     }));
 
     let environment = Environment {
-        premise: &premise,
+        premise,
         table: &Table::<Building>::default(),
         normalizer: &NoOp,
     };
@@ -151,7 +150,7 @@ fn transitivity() {
     ]);
 
     let environment = Environment {
-        premise: &premise,
+        premise,
         table: &Table::<Building>::default(),
         normalizer: &NoOp,
     };
@@ -222,8 +221,7 @@ fn congruence() {
         },
     });
 
-    let environment =
-        Environment { premise: &premise, table: &table, normalizer: &NoOp };
+    let environment = Environment { premise, table: &table, normalizer: &NoOp };
 
     assert!(Equality::new(lhs.clone(), rhs.clone())
         .query(&environment)
@@ -383,14 +381,22 @@ where
                 self.target_trait_member.clone().into(),
                 inner_rhs.clone(),
             )
-            .query(&Environment { premise, table, normalizer: &NoOp })?
+            .query(&Environment {
+                premise: premise.clone(),
+                table,
+                normalizer: &NoOp,
+            })?
             .is_none()
         } else {
             Equality::new(
                 inner_lhs.clone(),
                 self.target_trait_member.clone().into(),
             )
-            .query(&Environment { premise, table, normalizer: &NoOp })?
+            .query(&Environment {
+                premise: premise.clone(),
+                table,
+                normalizer: &NoOp,
+            })?
             .is_none()
         };
 
@@ -619,11 +625,19 @@ impl Property<Type<Default>> for TypeAlias {
 
         let should_add_symbol = if self.aliased_at_lhs {
             Equality::new(ty_alias.clone(), inner_rhs.clone())
-                .query(&Environment { premise, table, normalizer: &NoOp })?
+                .query(&Environment {
+                    premise: premise.clone(),
+                    table,
+                    normalizer: &NoOp,
+                })?
                 .is_none()
         } else {
             Equality::new(inner_lhs.clone(), ty_alias.clone())
-                .query(&Environment { premise, table, normalizer: &NoOp })?
+                .query(&Environment {
+                    premise: premise.clone(),
+                    table,
+                    normalizer: &NoOp,
+                })?
                 .is_none()
         };
 
@@ -708,8 +722,11 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
         .generate(&mut table, &mut premise, module_id.id)
         .map_err(|_| TestCaseError::reject("too complex property"))?;
 
-    let environment =
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp };
+    let environment = &Environment {
+        premise: premise.clone(),
+        table: &table,
+        normalizer: &NoOp,
+    };
     prop_assert!(Equality::new(term1.clone(), term2.clone())
         .query(&environment)
         .map_err(|_| TestCaseError::reject("too complex property"))?
@@ -739,7 +756,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
         modified_premise.trait_context = premise.trait_context.clone();
 
         let modified_environment = &Environment {
-            premise: &modified_premise,
+            premise: modified_premise,
             table: &table,
             normalizer: &NoOp,
         };
@@ -791,7 +808,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
         .extend(decoy.types.into_iter().map(Predicate::TraitTypeEquality));
 
     let environment =
-        &Environment { premise: &premise, table: &table, normalizer: &NoOp };
+        &Environment { premise, table: &table, normalizer: &NoOp };
     prop_assert!(Equality::new(term1.clone(), term2.clone())
         .query(&environment)
         .map_err(|_| TestCaseError::reject("too complex property"))?

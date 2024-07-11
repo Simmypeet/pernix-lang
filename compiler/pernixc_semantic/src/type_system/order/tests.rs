@@ -118,7 +118,7 @@ impl<
                     )
                     .query(&Environment {
                         table: &Table::<Building>::default(),
-                        premise: &Premise::default(),
+                        premise: Premise::default(),
                         normalizer: &NoOp,
                     }) else {
                         return None;
@@ -480,7 +480,7 @@ proptest! {
             &rhs,
             &Environment {
                 table: &Table::<Building>::default(),
-                premise: &Premise::default(),
+                premise: Premise::default(),
                 normalizer: &NoOp,
             }
         )?;

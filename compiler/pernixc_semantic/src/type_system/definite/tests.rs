@@ -239,7 +239,11 @@ impl Property<Type<Default>> for TypeAlias {
         });
 
         let should_add = Definite(generated_term.clone())
-            .query(&Environment { premise, table, normalizer: &NoOp })?
+            .query(&Environment {
+                premise: premise.clone(),
+                table,
+                normalizer: &NoOp,
+            })?
             .is_none();
 
         if should_add {
@@ -278,7 +282,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     let term = property.generate(module_id, &mut table, &mut premise)?;
 
     let environment =
-        &Environment { table: &table, premise: &premise, normalizer: &NoOp };
+        &Environment { table: &table, premise, normalizer: &NoOp };
 
     prop_assert!(Definite(term)
         .query(environment)

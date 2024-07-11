@@ -340,10 +340,8 @@ pub struct GenericTemplate<ParentID: Copy, Definition> {
     pub definition: Definition,
 }
 
-impl<ParentID: Copy, Definition> Global
+impl<ParentID: Copy + Into<GlobalID>, Definition> Global
     for GenericTemplate<ParentID, Definition>
-where
-    ParentID: Into<GlobalID>,
 {
     fn name(&self) -> &str { &self.name }
 
@@ -354,10 +352,8 @@ where
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
-impl<ParentID: Copy, Definition> Generic
+impl<ParentID: Copy + Into<GlobalID>, Definition> Generic
     for GenericTemplate<ParentID, Definition>
-where
-    ParentID: Into<GlobalID>,
 {
     fn generic_declaration(&self) -> &GenericDeclaration {
         &self.generic_declaration
@@ -384,10 +380,8 @@ pub struct AdtTemplate<Definition> {
     pub definition: Definition,
 }
 
-impl<ParentID: Copy, Definition> Adt
+impl<ParentID: Copy + Into<GlobalID>, Definition> Adt
     for GenericTemplate<ParentID, AdtTemplate<Definition>>
-where
-    ParentID: Into<GlobalID>,
 {
     fn generic_parameter_variances(&self) -> &GenericParameterVariances {
         &self.generic_parameter_variances
@@ -964,6 +958,7 @@ impl StructDefinition {
 
     /// Returns an iterator of all fields that iterates in order as they are
     /// declared.
+    #[must_use]
     pub fn fields_as_order(
         &self,
     ) -> impl ExactSizeIterator<Item = (ID<Field>, &Field)> {
@@ -1248,13 +1243,12 @@ pub struct ImplementationTemplate<ImplementedID: Copy, Definition> {
     pub definition: Definition,
 }
 
-impl<ParentID: Copy, ImplementedID: Copy, Definition> Implementation
+impl<ParentID: Copy + Into<GlobalID>, ImplementedID: Copy, Definition>
+    Implementation
     for GenericTemplate<
         ParentID,
         ImplementationTemplate<ImplementedID, Definition>,
     >
-where
-    ParentID: Into<GlobalID>,
 {
     fn arguments(&self) -> &GenericArguments<Default> { &self.arguments }
 }

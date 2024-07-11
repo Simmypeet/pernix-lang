@@ -80,7 +80,8 @@ where
 
         let outlives =
             Outlives::new(T::from(self.equality.clone()), inner_bound);
-        let environment = Environment { premise, table, normalizer: &NoOp };
+        let environment =
+            Environment { premise: premise.clone(), table, normalizer: &NoOp };
 
         if outlives.query(&environment)?.is_none() {
             premise.predicates.insert(
@@ -184,7 +185,11 @@ impl Property<Type<Default>> for LifetimeMatching {
         });
 
         if Outlives::new(ty_operand.clone(), self.bound)
-            .query(&Environment { premise, table, normalizer: &NoOp })?
+            .query(&Environment {
+                premise: premise.clone(),
+                table,
+                normalizer: &NoOp,
+            })?
             .is_none()
         {
             premise.predicates.insert(Predicate::TypeOutlives(Outlives {
@@ -296,7 +301,11 @@ where
         _: ID<Module>,
     ) -> Result<(T, Lifetime<Default>), GenerateError> {
         if Outlives::new(self.term.clone(), self.bound)
-            .query(&Environment { premise, table, normalizer: &NoOp })?
+            .query(&Environment {
+                premise: premise.clone(),
+                table,
+                normalizer: &NoOp,
+            })?
             .is_none()
         {
             premise.predicates.insert(
@@ -328,7 +337,11 @@ impl<T: Term<Model = Default>> Property<T> for Transitive<T> {
             self.inner_property.generate(table, premise, root_module_id)?;
 
         if Outlives::new(inner_operand.clone(), self.final_bound)
-            .query(&Environment { premise, table, normalizer: &NoOp })?
+            .query(&Environment {
+                premise: premise.clone(),
+                table,
+                normalizer: &NoOp,
+            })?
             .is_none()
         {
             premise.predicates.insert(Predicate::LifetimeOutlives(Outlives {
@@ -421,7 +434,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     println!("{premise:#?}");
 
     let environment =
-        &Environment { table: &table, premise: &premise, normalizer: &NoOp };
+        &Environment { table: &table, premise, normalizer: &NoOp };
 
     prop_assert!(Outlives::new(term1, term2)
         .query(environment)
@@ -459,7 +472,7 @@ proptest! {
     ) {
         let environment = &Environment {
             table: &Table::<Building>::default(),
-            premise: &Premise::default(),
+            premise: Premise::default(),
             normalizer: &NoOp
         };
         prop_assert!(

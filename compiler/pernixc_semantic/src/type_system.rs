@@ -209,13 +209,28 @@ pub enum TraitContext {
 #[derive(Debug, Clone, Getters, CopyGetters)]
 pub struct Environment<'a, M: Model, T: State, N: Normalizer<M>> {
     /// The premise of the semantic logic.
-    pub premise: &'a Premise<M>,
+    #[get = "pub"]
+    premise: Premise<M>,
 
     /// The table that contains the information of symbols.
-    pub table: &'a Table<T>,
+    #[get_copy = "pub"]
+    table: &'a Table<T>,
 
     /// The normalizer used to normalize the inference variables.
-    pub normalizer: &'a N,
+    #[get_copy = "pub"]
+    normalizer: &'a N,
+}
+
+impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
+    /// Creates a new [`Environment`]
+    #[must_use]
+    pub fn new(
+        _premise: Premise<M>,
+        _table: &'a Table<T>,
+        _normalizer: &'a N,
+    ) -> Self {
+        todo!()
+    }
 }
 
 /// A trait used for computing the result of the query.

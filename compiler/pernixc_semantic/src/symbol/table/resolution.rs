@@ -1092,17 +1092,13 @@ impl<S: State> Table<S> {
                         .generic_declaration()
                         .parameters
                         .default_type_parameters()
-                        .iter()
-                        .cloned()
-                        .collect::<Vec<_>>()
+                        .clone()
                 }),
                 generic_declaration
                     .generic_declaration()
                     .parameters
                     .default_constant_parameters()
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>(),
+                    .clone(),
             )
         };
 
@@ -1138,7 +1134,6 @@ impl<S: State> Table<S> {
     }
 
     fn resolution_to_type<M: Model>(
-        &self,
         resolution: Resolution<M>,
     ) -> Result<r#type::Type<M>, Resolution<M>> {
         match resolution {
@@ -1500,7 +1495,7 @@ impl<S: State> Table<S> {
                 }
             };
 
-        match self.resolution_to_type(resolution) {
+        match Self::resolution_to_type(resolution) {
             Ok(ty) => Ok(ty),
             Err(resolution) => {
                 handler.receive(Box::new(ExpectType {
@@ -1875,7 +1870,7 @@ impl<S: State> Table<S> {
                     handler,
                     &next_resolution,
                     generic_identifier,
-                )
+                );
             }
 
             latest_resolution = Some(next_resolution);
