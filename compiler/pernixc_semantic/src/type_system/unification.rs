@@ -216,7 +216,7 @@ pub enum Log<M: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
 pub enum Matching<T: SubTerm> {
     /// The two terms are unified by passing the predicate check in the
-    /// [`Config`].
+    /// [`Predicate`].
     Unifiable(T, T),
 
     /// The two terms are substructural and can be unified by unifying their
@@ -463,7 +463,6 @@ pub(super) fn unify<T: Term>(
             return Ok(Some(unification));
         }
     }
-
     for Succeeded { result: eq_to, constraints } in
         get_equivalences_with_context(to, environment, context)?
     {

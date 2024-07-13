@@ -106,34 +106,6 @@ impl<T: Term> Compute for Equality<T, T> {
                     return Ok(Some(result.combine(inner_result)));
                 }
             }
-
-            if let Some(result) = equals_without_mapping(
-                &self.lhs,
-                &equality_predicate.rhs,
-                environment,
-                context,
-            )? {
-                if let Some(inner_result) =
-                    Equality::new(trait_member_term.clone(), self.rhs.clone())
-                        .query_with_context(environment, context)?
-                {
-                    return Ok(Some(result.combine(inner_result)));
-                }
-            }
-
-            if let Some(result) = equals_without_mapping(
-                &equality_predicate.rhs,
-                &self.rhs,
-                environment,
-                context,
-            )? {
-                if let Some(inner_result) =
-                    Equality::new(self.lhs.clone(), trait_member_term.clone())
-                        .query_with_context(environment, context)?
-                {
-                    return Ok(Some(result.combine(inner_result)));
-                }
-            }
         }
 
         Ok(None)

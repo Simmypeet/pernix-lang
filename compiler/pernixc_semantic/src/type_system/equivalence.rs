@@ -66,18 +66,6 @@ impl<M: Model> Equivalence for Type<M> {
                     constraints: result.constraints,
                 });
             }
-
-            if let Some(result) = self.compatible_with_context(
-                rhs,
-                Variance::Covariant,
-                environment,
-                context,
-            )? {
-                equivalences.push(Succeeded {
-                    result: lhs.clone(),
-                    constraints: result.constraints,
-                });
-            }
         }
 
         Ok(equivalences)

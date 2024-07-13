@@ -54,18 +54,14 @@ struct LifetimeMatching<M: Model> {
 impl<M: Model> unification::Predicate<Lifetime<M>> for LifetimeMatching<M> {
     fn unifiable(
         &self,
-        from: &Lifetime<M>,
-        to: &Lifetime<M>,
+        _: &Lifetime<M>,
+        _: &Lifetime<M>,
         from_logs: &Vec<unification::Log<M>>,
         _: &Vec<unification::Log<M>>,
     ) -> Result<Output<Satisfied, M>, OverflowError> {
-        if from == to {
-            return Ok(Some(Succeeded::satisfied()));
-        }
-
         let mut current_from = self.from.clone();
 
-        for log in from_logs {
+        for (idx, log) in from_logs.iter().enumerate() {
             match log {
                 unification::Log::Substructural(location) => match location {
                     TermLocation::Lifetime(lifetime) => {
@@ -87,6 +83,9 @@ impl<M: Model> unification::Predicate<Lifetime<M>> for LifetimeMatching<M> {
                         ) {
                             return Ok(None);
                         }
+
+                        // should be the last location
+                        assert_eq!(idx, from_logs.len() - 1);
                     }
                     TermLocation::Type(location) => {
                         let SubTypeLocation::FromType(location) = location;

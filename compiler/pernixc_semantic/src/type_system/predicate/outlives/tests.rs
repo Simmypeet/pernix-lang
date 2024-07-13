@@ -430,9 +430,6 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
         .generate(&mut table, &mut premise, root_module_id)
         .map_err(|_| TestCaseError::reject("too complex property"))?;
 
-    println!("{term1:#?}: {term2:#?}");
-    println!("{premise:#?}");
-
     let environment =
         &Environment { table: &table, premise, normalizer: &NoOp };
 

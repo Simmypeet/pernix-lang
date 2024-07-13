@@ -782,8 +782,6 @@ fn reference_bound_tuple() {
         panic!("Expected a named pattern")
     };
 
-    dbg!(&binder.intermediate_representation.registers);
-
     let load_address_register = binder
         .intermediate_representation
         .registers

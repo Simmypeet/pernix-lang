@@ -209,6 +209,7 @@ impl<M: Model> Context<M> {
         in_progress: Q::InProgress,
     ) -> Result<Option<Cached<Q::InProgress, Q::Result>>, OverflowError> {
         if self.current_count >= self.limit {
+            dbg!(&self.call_stack);
             return Err(OverflowError);
         }
         self.current_count += 1;
