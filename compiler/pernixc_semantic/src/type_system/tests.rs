@@ -278,7 +278,7 @@ fn check_ambiguous_equality() {
     });
 
     let second_trait_type_equality = Predicate::TraitTypeEquality(Equality {
-        lhs: trait_b(Type::TraitMember(trait_a(a_lt))),
+        lhs: trait_b(Type::TraitMember(trait_a(Lifetime::Static))),
         rhs: Type::Primitive(Primitive::Int32),
     });
 
@@ -324,5 +324,79 @@ fn check_ambiguous_equality() {
             && error.contains(
                 third_trait_type_equality.as_trait_type_equality().unwrap(),
             )
+    }));
+}
+
+#[test]
+fn check_recursive_equality() {
+    /*
+     * TraitA['a] = bool
+     *
+     * TraitB[bool] = TraitB[TraitA['static']]
+     */
+
+    let trait_a = |lifetime| r#type::TraitMember {
+        id: ID::new(0),
+        member_generic_arguments: GenericArguments {
+            lifetimes: vec![lifetime],
+            types: Vec::new(),
+            constants: Vec::new(),
+        },
+        parent_generic_arguments: GenericArguments::default(),
+    };
+    let trait_b = |ty| r#type::TraitMember {
+        id: ID::new(1),
+        member_generic_arguments: GenericArguments {
+            lifetimes: Vec::new(),
+            types: vec![ty],
+            constants: Vec::new(),
+        },
+        parent_generic_arguments: GenericArguments::default(),
+    };
+
+    let first_trait_type_equality = Predicate::TraitTypeEquality(Equality {
+        lhs: trait_a(Lifetime::Parameter(LifetimeParameterID {
+            parent: GenericID::Struct(ID::new(0)),
+            id: ID::new(0),
+        })),
+        rhs: Type::Primitive(Primitive::Bool),
+    });
+    let second_trait_type_equality = Predicate::TraitTypeEquality(Equality {
+        lhs: trait_b(Type::Primitive(Primitive::Bool)),
+        rhs: Type::TraitMember(trait_b(Type::TraitMember(trait_a(
+            Lifetime::Static,
+        )))),
+    });
+    let premise = Premise::<Default> {
+        predicates: [
+            first_trait_type_equality.clone(),
+            second_trait_type_equality.clone(),
+        ]
+        .into_iter()
+        .collect(),
+        trait_context: TraitContext::Normal,
+    };
+
+    let table = Table::<Building>::default();
+    let normalizer = NoOp;
+
+    let (environment, errors) = Environment::new(premise, &table, &normalizer);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(environment.premise.predicates.len(), 1);
+
+    assert!(environment
+        .premise
+        .predicates
+        .contains(&first_trait_type_equality));
+
+    assert!(errors.iter().any(|error| {
+        let NewEnvironmentError::RecursiveTraitTypeEqualityPredicate(error) =
+            error
+        else {
+            return false;
+        };
+
+        error == second_trait_type_equality.as_trait_type_equality().unwrap()
     }));
 }

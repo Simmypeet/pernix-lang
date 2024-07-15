@@ -28,6 +28,9 @@ pub trait Normalizer<M: Model>: Sized {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct NoOp;
 
+/// The instance of [`NoOp`] normalizer.
+pub const NO_OP: NoOp = NoOp;
+
 impl<M: Model> Normalizer<M> for NoOp {
     fn normalize_type(
         _: &<M as Model>::TypeInference,

@@ -1,6 +1,6 @@
 //! Contains the semantic logic of the compiler (i.e. type checking/system).
 
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, fmt::Debug, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use equality::Equality;
@@ -208,7 +208,7 @@ pub enum TraitContext {
 }
 
 /// A structure that contains the environment of the semantic logic.
-#[derive(Debug, Clone, Getters, CopyGetters)]
+#[derive(Debug, Getters, CopyGetters)]
 pub struct Environment<'a, M: Model, T: State, N: Normalizer<M>> {
     /// The premise of the semantic logic.
     #[get = "pub"]
@@ -221,6 +221,18 @@ pub struct Environment<'a, M: Model, T: State, N: Normalizer<M>> {
     /// The normalizer used to normalize the inference variables.
     #[get_copy = "pub"]
     normalizer: &'a N,
+}
+
+impl<'a, M: Model, T: State, N: Normalizer<M>> Clone
+    for Environment<'a, M, T, N>
+{
+    fn clone(&self) -> Self {
+        Self {
+            premise: self.premise.clone(),
+            table: self.table,
+            normalizer: self.normalizer,
+        }
+    }
 }
 
 /// An enumeration of all errors encountered while creating a new environment.
@@ -259,7 +271,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
     ) -> (Self, Vec<NewEnvironmentError<M>>) {
         fn check_ambiguous_predicates<
             'a,
-            T: Clone + Into<Predicate<M>>,
+            T: Clone + Into<Predicate<M>> + Debug,
             M: Model,
             S: State,
             N: Normalizer<M>,
@@ -332,6 +344,13 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                 for j in i + 1..predicates.len() {
                     let predicate_j = &predicates[j];
 
+                    if remove_on_check {
+                        assert!(environment
+                            .premise
+                            .predicates
+                            .remove(&predicate_j.clone().into()));
+                    }
+
                     match ambiguity_check(predicate_i, predicate_j, environment)
                     {
                         Ok(true) => {
@@ -340,6 +359,10 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                                 .push(vec![predicate_i.clone()]);
 
                             if remove_on_check {
+                                assert!(environment
+                                    .premise
+                                    .predicates
+                                    .insert(predicate_j.clone().into()));
                                 assert!(environment
                                     .premise
                                     .predicates
@@ -362,11 +385,22 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                                 assert!(environment
                                     .premise
                                     .predicates
+                                    .insert(predicate_j.clone().into()));
+                                assert!(environment
+                                    .premise
+                                    .predicates
                                     .insert(predicate_i.clone().into()));
                             }
                             continue 'outer; // no more checking for this
                                              // predicate.
                         }
+                    }
+
+                    if remove_on_check {
+                        assert!(environment
+                            .premise
+                            .predicates
+                            .insert(predicate_j.clone().into()));
                     }
                 }
 

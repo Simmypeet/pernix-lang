@@ -105,16 +105,34 @@ fn simplify_internal<T: Term>(
             break 'out;
         }
 
-        let mut equivalents = Vec::new();
+        let mut equivalent = None;
 
-        // look for the equivalents
-        for trait_type_equality in environment
+        let mut environment_cloned = environment.clone();
+        let all_trait_type_equalities = environment_cloned
             .premise
             .predicates
             .iter()
-            .filter_map(T::as_trait_member_equality_predicate)
+            .filter(|x| T::as_trait_member_equality_predicate(x).is_some())
+            .cloned()
+            .collect::<Vec<_>>();
+
+        // look for the equivalents
+        'choice: for (i, trait_type_equality) in
+            all_trait_type_equalities.iter().enumerate()
         {
-            let lhs_trait_member = T::from(trait_type_equality.lhs.clone());
+            let Some(trait_type_equality_unwrapped) =
+                T::as_trait_member_equality_predicate(trait_type_equality)
+            else {
+                unreachable!()
+            };
+
+            let lhs_trait_member =
+                T::from(trait_type_equality_unwrapped.lhs.clone());
+
+            assert!(environment_cloned
+                .premise
+                .predicates
+                .remove(&trait_type_equality));
 
             if let Ok(Some(Succeeded { result: unifier, mut constraints })) =
                 Unification::new(
@@ -122,8 +140,63 @@ fn simplify_internal<T: Term>(
                     lhs_trait_member,
                     Arc::new(LifetimeUnifyingPredicate),
                 )
-                .query(environment)
+                .query(&environment_cloned)
             {
+                for (j, another_trait_type_equality) in
+                    all_trait_type_equalities.iter().enumerate()
+                {
+                    // skip the current trait type equality
+                    if i == j {
+                        continue;
+                    }
+
+                    assert!(environment_cloned
+                        .premise
+                        .predicates
+                        .remove(another_trait_type_equality));
+
+                    // check if the current rhs is equivalent to the other lhs
+                    let Some(another_trait_type_equality_unwrapped) =
+                        T::as_trait_member_equality_predicate(
+                            another_trait_type_equality,
+                        )
+                    else {
+                        unreachable!()
+                    };
+
+                    let unification = Unification::new(
+                        trait_type_equality_unwrapped.rhs.clone(),
+                        T::from(
+                            another_trait_type_equality_unwrapped.lhs.clone(),
+                        ),
+                        Arc::new(LifetimeUnifyingPredicate),
+                    )
+                    .query(&environment_cloned);
+
+                    dbg!(
+                        &unification,
+                        &environment_cloned.premise,
+                        trait_type_equality_unwrapped,
+                        another_trait_type_equality
+                    );
+
+                    // add back the other trait type equality
+                    environment_cloned
+                        .premise
+                        .predicates
+                        .insert(another_trait_type_equality.clone());
+
+                    // skip if the unification is successful
+                    if matches!(unification, Ok(Some(_))) {
+                        continue 'choice;
+                    }
+                }
+
+                // multiple equivalent is not allowed
+                if equivalent.is_some() {
+                    break 'out;
+                }
+
                 let mappings = Mapping::from_unifier(unifier);
 
                 assert!(mappings.types.is_empty());
@@ -143,18 +216,22 @@ fn simplify_internal<T: Term>(
                     }
                 }
 
-                equivalents.push(Succeeded {
-                    result: trait_type_equality.rhs.clone(),
+                equivalent = Some(Succeeded {
+                    result: trait_type_equality_unwrapped.rhs.clone(),
                     constraints,
-                })
+                });
             }
+
+            environment_cloned
+                .premise
+                .predicates
+                .insert(trait_type_equality.clone());
         }
 
         // there must be exactly only one equivalent to avoid ambiguity
-        if equivalents.len() == 1 {
-            let Succeeded { result: equivalent_term, constraints } =
-                equivalents.pop().unwrap();
-
+        if let Some(Succeeded { result: equivalent_term, constraints }) =
+            equivalent
+        {
             let Some(Succeeded {
                 result: equivalent,
                 constraints: new_constraints,
