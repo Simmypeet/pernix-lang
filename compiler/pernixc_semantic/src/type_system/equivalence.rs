@@ -10,9 +10,10 @@ use super::{
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, ModelOf, Term,
     },
+    variance::Variance,
     Environment, OverflowError, Succeeded,
 };
-use crate::symbol::{table::State, Variance};
+use crate::symbol::table::State;
 
 /// A trait used for retrieving equivalences of a term based on the equality
 /// premises.

@@ -203,7 +203,7 @@ impl<M: Model> Context<M> {
     /// Returns `None` if this query hasn't been stored before, otherwise
     /// returns the [`Cached`] value of the query.
     #[allow(private_bounds, private_interfaces)]
-    pub fn mark_as_in_progress<Q: Query<Model = M>>(
+    pub fn mark_as_in_progress<Q: Sealed<Model = M>>(
         &mut self,
         query: Q,
         in_progress: Q::InProgress,
@@ -236,7 +236,7 @@ impl<M: Model> Context<M> {
     /// Returns `false` if the `query` is not the last query in the call stack.
     #[must_use]
     #[allow(private_bounds, private_interfaces)]
-    pub fn mark_as_done<Q: Query<Model = M>>(
+    pub fn mark_as_done<Q: Sealed<Model = M>>(
         &mut self,
         query: &Q,
         result: Q::Result,
@@ -263,7 +263,7 @@ impl<M: Model> Context<M> {
     ///
     /// Returns `false` if the `query` is not the last query in the call stack.
     #[allow(private_bounds, private_interfaces)]
-    pub fn clear_query<Q: Query<Model = M>>(
+    pub fn clear_query<Q: Sealed<Model = M>>(
         &mut self,
         query: &Q,
     ) -> Option<Cached<Q::InProgress, Q::Result>> {
@@ -286,16 +286,18 @@ impl<M: Model> Context<M> {
 ///
 /// It specifies the informations required to compute the query NOT the
 /// implementation logic.
-pub(super) trait Query: Clone + Eq + std::hash::Hash {
-    /// The type used to store the query in progress state.
-    type InProgress: Clone + Default;
-
-    /// The result type returned by the query.
-    type Result: Clone;
-
-    /// The model of the query.
+pub trait Query {
+    /// The model in which the query is computed.
     type Model: Model;
 
+    /// The additional in-progress state of the query.
+    type InProgress: Clone + Default;
+
+    /// The result of the query.
+    type Result: Clone;
+}
+
+pub(super) trait Sealed: Clone + Eq + std::hash::Hash + Query {
     /// Gets the map of the query from the context.
     #[allow(dead_code)]
     fn get_map(
@@ -932,10 +934,12 @@ impl<M: Model> Element for Constant<M> {
 }
 
 impl<T: Term> Query for Equality<T> {
+    type Model = T::Model;
     type InProgress = ();
     type Result = Succeeded<Satisfied, T::Model>;
-    type Model = T::Model;
+}
 
+impl<T: Term> Sealed for Equality<T> {
     fn get_map(
         context: &Context<Self::Model>,
     ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
@@ -963,10 +967,12 @@ impl<T: Term> Query for Equality<T> {
 }
 
 impl<T: Term> Query for Definite<T> {
+    type Model = T::Model;
     type InProgress = ();
     type Result = Succeeded<Satisfied, T::Model>;
-    type Model = T::Model;
+}
 
+impl<T: Term> Sealed for Definite<T> {
     fn get_map(
         context: &Context<Self::Model>,
     ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
@@ -994,10 +1000,12 @@ impl<T: Term> Query for Definite<T> {
 }
 
 impl<T: Term> Query for Unification<T> {
+    type Model = T::Model;
     type InProgress = ();
     type Result = Succeeded<Unifier<T>, T::Model>;
-    type Model = T::Model;
+}
 
+impl<T: Term> Sealed for Unification<T> {
     fn get_map(
         context: &Context<Self::Model>,
     ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
@@ -1025,10 +1033,12 @@ impl<T: Term> Query for Unification<T> {
 }
 
 impl<T: Term> Query for predicate::Tuple<T> {
+    type Model = T::Model;
     type InProgress = ();
     type Result = Succeeded<Satisfied, T::Model>;
-    type Model = T::Model;
+}
 
+impl<T: Term> Sealed for predicate::Tuple<T> {
     fn get_map(
         context: &Context<Self::Model>,
     ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
@@ -1056,10 +1066,12 @@ impl<T: Term> Query for predicate::Tuple<T> {
 }
 
 impl<T: Term> Query for predicate::Outlives<T> {
+    type Model = T::Model;
     type InProgress = ();
     type Result = Satisfied;
-    type Model = T::Model;
+}
 
+impl<T: Term> Sealed for predicate::Outlives<T> {
     fn get_map(
         context: &Context<Self::Model>,
     ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
@@ -1087,10 +1099,12 @@ impl<T: Term> Query for predicate::Outlives<T> {
 }
 
 impl<T: Term> Query for predicate::ConstantType<T> {
+    type Model = T::Model;
     type InProgress = ConstantTypeQuerySource;
     type Result = Succeeded<Satisfied, T::Model>;
-    type Model = T::Model;
+}
 
+impl<T: Term> Sealed for predicate::ConstantType<T> {
     fn get_map(
         context: &Context<Self::Model>,
     ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
@@ -1118,10 +1132,12 @@ impl<T: Term> Query for predicate::ConstantType<T> {
 }
 
 impl<M: Model> Query for predicate::Trait<M> {
+    type Model = M;
     type InProgress = ();
     type Result = Succeeded<Satisfied, M>;
-    type Model = M;
+}
 
+impl<M: Model> Sealed for predicate::Trait<M> {
     fn get_map(
         context: &Context<Self::Model>,
     ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
@@ -1149,10 +1165,12 @@ impl<M: Model> Query for predicate::Trait<M> {
 }
 
 impl<M: Model> Query for TypeCheck<M> {
+    type Model = M;
     type InProgress = ();
     type Result = Succeeded<Satisfied, M>;
-    type Model = M;
+}
 
+impl<M: Model> Sealed for TypeCheck<M> {
     fn get_map(
         context: &Context<Self::Model>,
     ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {

@@ -5,31 +5,26 @@ use pernixc_base::diagnostic::Handler;
 
 use crate::{
     error::Error,
-    semantic::{
-        equality,
-        model::Default,
-        normalizer::NoOp,
-        sub_term::{self, Location, TermLocation},
-        term::{
-            constant::Constant,
-            lifetime::Lifetime,
-            r#type::{
-                Qualifier, SubLifetimeLocation, SubTypeLocation, SymbolID, Type,
-            },
-            Term,
-        },
-        visitor, Environment, OverflowError, Premise,
-    },
     symbol::{
         table::{State, Table},
-        AdtID, GenericID, GenericParameterVariances, GenericParameters,
+        GenericID, GenericParameterVariances, GenericParameters,
         LifetimeParameterID, TypeParameterID, Variance,
+    },
+    type_system::{
+        environment::Environment,
+        equality::Equality,
+        model::Default,
+        normalizer::{NoOp, NO_OP},
+        sub_term::TermLocation,
+        term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+        variance::GetVarianceError,
+        visitor, Compute, Premise,
     },
 };
 
 struct TermCollector<'a, Term, T: State> {
     target: &'a Term,
-    locations: Result<Vec<Vec<TermLocation>>, OverflowError>,
+    locations: Vec<Vec<TermLocation>>,
 
     environment: &'a Environment<'a, Default, T, NoOp>,
 }
@@ -44,7 +39,7 @@ macro_rules! implements_visitor {
                 _: &'v $first_term,
                 _: impl Iterator<Item = TermLocation>,
             ) -> bool {
-                self.locations.is_ok()
+                true
             }
         }
     };
@@ -65,320 +60,53 @@ impl<'a, 'v, U: Term<Model = Default>, T: State> visitor::Recursive<'v, U>
         term: &U,
         locations: impl Iterator<Item = TermLocation>,
     ) -> bool {
-        let Ok(locations_list) = &mut self.locations else {
-            return false;
-        };
-
-        match equality::equals(term, self.target, self.environment) {
-            Ok(ok) => {
-                if ok.is_some() {
-                    locations_list.push(locations.collect());
-                }
-
-                true
-            }
-
-            Err(error) => {
-                self.locations = Err(error);
-                false
-            }
+        if let Ok(Some(_)) = Equality::new(term.clone(), self.target.clone())
+            .query(self.environment)
+        {
+            self.locations.push(locations.collect());
         }
+
+        true
     }
 }
 
-impl<S: State> Table<S> {
-    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
-    fn get_variance_for_locations<U: Term, T: State>(
-        &self,
-        respect_to_type: &Type<Default>,
-        mut locations: Vec<TermLocation>,
-    ) -> Result<Option<Variance>, OverflowError>
-    where
-        for<'a, 'v> TermCollector<'a, U, T>: visitor::Recursive<'v, Lifetime<Default>>
-            + visitor::Recursive<'v, Type<Default>>
-            + visitor::Recursive<'v, Constant<Default>>,
-    {
-        let this_location = if locations.is_empty() {
-            return Ok(Some(Variance::Bivariant));
-        } else {
-            locations.remove(0)
-        };
-
-        match this_location {
-            TermLocation::Lifetime(
-                sub_term::SubLifetimeLocation::FromType(location),
-            ) => match (location, respect_to_type) {
-                // lifetime in the symbol kind
-                (
-                    SubLifetimeLocation::Symbol(location),
-                    Type::Symbol(symbol),
-                ) => {
-                    match symbol.id {
-                        id @ (SymbolID::Struct(_) | SymbolID::Enum(_)) => {
-                            let adt_id = match id {
-                                SymbolID::Struct(id) => AdtID::Struct(id),
-                                SymbolID::Enum(id) => AdtID::Enum(id),
-                                SymbolID::Type(_) => unreachable!(),
-                            };
-
-                            assert!(locations.is_empty());
-
-                            let adt = self.get_adt(adt_id).unwrap();
-                            // gets the id based on the position
-                            let id = adt
-                                .generic_declaration()
-                                .parameters
-                                .lifetime_order()[location.0];
-
-                            Ok(adt
-                                .generic_parameter_variances()
-                                .variances_by_lifetime_ids
-                                .get(&id)
-                                .copied())
-                        }
-
-                        // results None, we need to normalize the type
-                        SymbolID::Type(_) => Ok(None),
-                    }
-                }
-
-                // lifetime in the reference
-                (SubLifetimeLocation::Reference, Type::Reference(_)) => {
-                    assert!(locations.is_empty());
-
-                    Ok(Some(Variance::Covariant))
-                }
-
-                (location, ty) => unreachable!(
-                    "mismatched location and type: {:?}, {:?}",
-                    location, ty
-                ),
-            },
-
-            TermLocation::Type(sub_term::SubTypeLocation::FromType(
-                location,
-            )) => {
-                match (location, respect_to_type) {
-                    (
-                        SubTypeLocation::Symbol(location),
-                        Type::Symbol(symbol),
-                    ) => {
-                        match symbol.id {
-                            id @ (SymbolID::Struct(_) | SymbolID::Enum(_)) => {
-                                let adt_id = match id {
-                                    SymbolID::Struct(id) => AdtID::Struct(id),
-                                    SymbolID::Enum(id) => AdtID::Enum(id),
-                                    SymbolID::Type(_) => unreachable!(),
-                                };
-
-                                let adt = self.get_adt(adt_id).unwrap();
-                                // gets the id based on the position
-                                let id = adt
-                                    .generic_declaration()
-                                    .parameters
-                                    .type_order()[location.0];
-
-                                let inner_variance = self
-                                    .get_variance_for_locations(
-                                        &symbol.generic_arguments.types
-                                            [location.0],
-                                        locations,
-                                    )?;
-
-                                Ok(
-                                    match (
-                                        inner_variance,
-                                        adt.generic_parameter_variances()
-                                            .variances_by_type_ids
-                                            .get(&id)
-                                            .copied(),
-                                    ) {
-                                        (Some(first), Some(second)) => {
-                                            Some(first.chain(second))
-                                        }
-
-                                        (Some(variance), None)
-                                        | (None, Some(variance)) => {
-                                            Some(variance)
-                                        }
-
-                                        (None, None) => None,
-                                    },
-                                )
-                            }
-
-                            SymbolID::Type(_) => Ok(None),
-                        }
-                    }
-
-                    (SubTypeLocation::Pointer, Type::Pointer(pointer)) => {
-                        if pointer.qualifier == Qualifier::Mutable
-                            || pointer.qualifier == Qualifier::Unique
-                        {
-                            Ok(Some(Variance::Invariant))
-                        } else {
-                            Ok(Some(
-                                self.get_variance_for_locations(
-                                    &pointer.pointee,
-                                    locations,
-                                )?
-                                .map_or(
-                                    Variance::Covariant,
-                                    |variance| {
-                                        variance.chain(Variance::Covariant)
-                                    },
-                                ),
-                            ))
-                        }
-                    }
-
-                    (
-                        SubTypeLocation::Reference,
-                        Type::Reference(reference),
-                    ) => {
-                        if reference.qualifier == Qualifier::Mutable
-                            || reference.qualifier == Qualifier::Unique
-                        {
-                            Ok(Some(Variance::Invariant))
-                        } else {
-                            Ok(Some(
-                                self.get_variance_for_locations(
-                                    &reference.pointee,
-                                    locations,
-                                )?
-                                .map_or(
-                                    Variance::Covariant,
-                                    |variance| {
-                                        variance.chain(Variance::Covariant)
-                                    },
-                                ),
-                            ))
-                        }
-                    }
-
-                    (SubTypeLocation::Array, Type::Array(array)) => Ok(Some(
-                        self.get_variance_for_locations(
-                            &array.r#type,
-                            locations,
-                        )?
-                        .map_or(Variance::Covariant, |variance| {
-                            variance.chain(Variance::Covariant)
-                        }),
-                    )),
-
-                    (
-                        location @ SubTypeLocation::Tuple(_),
-                        tuple @ Type::Tuple(_),
-                    ) => {
-                        let tuple = location.get_sub_term(tuple).unwrap();
-
-                        Ok(Some(
-                            self.get_variance_for_locations(&tuple, locations)?
-                                .map_or(Variance::Covariant, |variance| {
-                                    variance.chain(Variance::Covariant)
-                                }),
-                        ))
-                    }
-
-                    (SubTypeLocation::Local, Type::Local(local)) => Ok(Some(
-                        self.get_variance_for_locations(&local.0, locations)?
-                            .map_or(Variance::Covariant, |variance| {
-                                variance.chain(Variance::Covariant)
-                            }),
-                    )),
-
-                    (SubTypeLocation::Phantom, Type::Phantom(phantom)) => {
-                        Ok(Some(
-                            self.get_variance_for_locations(
-                                &phantom.0, locations,
-                            )?
-                            .map_or(Variance::Covariant, |variance| {
-                                variance.chain(Variance::Covariant)
-                            }),
-                        ))
-                    }
-
-                    (
-                        SubTypeLocation::MemberSymbol(_),
-                        Type::MemberSymbol(_),
-                    ) => Ok(None),
-
-                    (SubTypeLocation::TraitMember(_), Type::TraitMember(_)) => {
-                        Ok(Some(Variance::Invariant))
-                    }
-
-                    _ => unreachable!(),
-                }
-            }
-
-            TermLocation::Constant(
-                sub_term::SubConstantLocation::FromConstant(_),
-            ) => Ok(Some(Variance::Invariant)),
-
-            _ => unreachable!(),
-        }
-    }
-}
-
-/// Gets the variance constraint of a particular term with respect to the
-/// given type.
-///
-/// # Errors
-///
-/// See [`ExceedLimitError`] for more information.
-#[allow(private_bounds)]
-pub(super) fn get_variance_for<U: Term, T: State>(
+fn get_variance_for<U: Term, T: State>(
     term: &U,
     respect_to_type: &Type<Default>,
     environment: &Environment<Default, T, NoOp>,
-) -> Result<Option<Variance>, OverflowError>
+) -> Option<Variance>
 where
     for<'a, 'v> TermCollector<'a, U, T>: visitor::Recursive<'v, Lifetime<Default>>
         + visitor::Recursive<'v, Type<Default>>
         + visitor::Recursive<'v, Constant<Default>>,
 {
-    get_variance_for_internal(term, respect_to_type, true, environment)
-}
+    let locations = get_all_term_locations(term, respect_to_type, environment);
 
-#[allow(clippy::too_many_arguments)]
-fn get_variance_for_internal<U: Term, T: State>(
-    term: &U,
-    respect_to_type: &Type<Default>,
-    is_root: bool,
-    environment: &Environment<Default, T, NoOp>,
-) -> Result<Option<Variance>, OverflowError>
-where
-    for<'a, 'v> TermCollector<'a, U, T>: visitor::Recursive<'v, Lifetime<Default>>
-        + visitor::Recursive<'v, Type<Default>>
-        + visitor::Recursive<'v, Constant<Default>>,
-{
-    let locations = get_all_term_locations(term, respect_to_type, environment)?;
-
-    let mut variance: Option<Variance> = None;
+    let mut current_variance: Option<Variance> = None;
 
     for locations in locations {
-        if locations.is_empty() && is_root {
-            match &mut variance {
-                Some(variance) => {
-                    *variance = variance.chain(Variance::Covariant);
+        match respect_to_type.get_variance_of(
+            environment.table(),
+            Variance::Covariant,
+            locations.into_iter(),
+        ) {
+            // successfully get the variance
+            Ok(variance) => match current_variance {
+                Some(current_variance_unwrap) => {
+                    current_variance =
+                        Some(current_variance_unwrap.combine(variance));
                 }
-                None => variance = Some(Variance::Covariant),
+                None => current_variance = Some(variance),
+            },
+
+            Err(error) => {
+                // the only possible error should be `NoVarianceInfo`
+                assert!(matches!(error, GetVarianceError::NoVarianceInfo(_)));
             }
-            continue;
         }
-
-        let new_variance = environment
-            .table
-            .get_variance_for_locations(respect_to_type, locations)?;
-
-        variance = match (variance, new_variance) {
-            (None, Some(variance)) | (Some(variance), None) => Some(variance),
-            (Some(first), Some(second)) => Some(first.chain(second)),
-            (None, None) => None,
-        };
     }
 
-    Ok(variance)
+    current_variance
 }
 
 impl<T: State> Table<T> {
@@ -387,12 +115,14 @@ impl<T: State> Table<T> {
         &self,
         generic_parameters: &GenericParameters,
         generic_parameter_variances: &mut GenericParameterVariances,
-        active_premise: &Premise<Default>,
+        active_premise: Premise<Default>,
         generic_id: GenericID,
         type_usages: impl Iterator<Item = &'a Type<Default>> + Clone,
         partial_variance: bool,
         _: &dyn Handler<Box<dyn Error>>,
     ) {
+        let (environment, _) = Environment::new(active_premise, self, &NO_OP);
+
         for (id, _) in generic_parameters.lifetime_parameters_as_order() {
             let lifetime_term = Lifetime::Parameter(LifetimeParameterID {
                 parent: generic_id,
@@ -400,44 +130,37 @@ impl<T: State> Table<T> {
             });
 
             for ty in type_usages.clone() {
-                match get_variance_for(&lifetime_term, ty, &Environment {
-                    premise: active_premise,
-                    table: self,
-                    normalizer: &NoOp,
-                }) {
-                    Ok(variance) => {
-                        match (
-                            generic_parameter_variances
-                                .variances_by_lifetime_ids
-                                .get_mut(&id),
-                            variance,
-                        ) {
-                            (None, None) => {
-                                if !partial_variance {
-                                    assert!(generic_parameter_variances
-                                        .variances_by_lifetime_ids
-                                        .insert(id, Variance::Bivariant)
-                                        .is_none());
-                                }
-                            }
-                            (None, Some(variance)) => {
+                let variance =
+                    get_variance_for(&lifetime_term, ty, &environment);
+                {
+                    match (
+                        generic_parameter_variances
+                            .variances_by_lifetime_ids
+                            .get_mut(&id),
+                        variance,
+                    ) {
+                        (None, None) => {
+                            if !partial_variance {
                                 assert!(generic_parameter_variances
                                     .variances_by_lifetime_ids
-                                    .insert(id, variance)
+                                    .insert(id, Variance::Covariant)
                                     .is_none());
                             }
-                            (Some(current), None) => {
-                                if !partial_variance {
-                                    *current =
-                                        current.chain(Variance::Bivariant);
-                                }
-                            }
-                            (Some(current), Some(variance)) => {
-                                *current = current.chain(variance);
-                            }
                         }
+
+                        (None, Some(variance)) => {
+                            assert!(generic_parameter_variances
+                                .variances_by_lifetime_ids
+                                .insert(id, variance)
+                                .is_none());
+                        }
+
+                        (Some(current), Some(variance)) => {
+                            *current = current.combine(variance);
+                        }
+
+                        (Some(_), None) => {}
                     }
-                    Err(_) => todo!("report undecdiable variance"),
                 }
             }
         }
@@ -447,44 +170,35 @@ impl<T: State> Table<T> {
                 Type::Parameter(TypeParameterID { parent: generic_id, id });
 
             for ty in type_usages.clone() {
-                match get_variance_for(&type_term, ty, &Environment {
-                    premise: active_premise,
-                    table: self,
-                    normalizer: &NoOp,
-                }) {
-                    Ok(variance) => {
-                        match (
-                            generic_parameter_variances
+                let variance = get_variance_for(&type_term, ty, &environment);
+
+                match (
+                    generic_parameter_variances
+                        .variances_by_type_ids
+                        .get_mut(&id),
+                    variance,
+                ) {
+                    (None, None) => {
+                        if !partial_variance {
+                            assert!(generic_parameter_variances
                                 .variances_by_type_ids
-                                .get_mut(&id),
-                            variance,
-                        ) {
-                            (None, None) => {
-                                if !partial_variance {
-                                    assert!(generic_parameter_variances
-                                        .variances_by_type_ids
-                                        .insert(id, Variance::Bivariant)
-                                        .is_none());
-                                }
-                            }
-                            (None, Some(variance)) => {
-                                assert!(generic_parameter_variances
-                                    .variances_by_type_ids
-                                    .insert(id, variance)
-                                    .is_none());
-                            }
-                            (Some(current), None) => {
-                                if !partial_variance {
-                                    *current =
-                                        current.chain(Variance::Bivariant);
-                                }
-                            }
-                            (Some(current), Some(variance)) => {
-                                *current = current.chain(variance);
-                            }
+                                .insert(id, Variance::Covariant)
+                                .is_none());
                         }
                     }
-                    Err(_) => todo!("report undecdiable variance"),
+
+                    (None, Some(variance)) => {
+                        assert!(generic_parameter_variances
+                            .variances_by_type_ids
+                            .insert(id, variance)
+                            .is_none());
+                    }
+
+                    (Some(current), Some(variance)) => {
+                        *current = current.combine(variance);
+                    }
+
+                    (Some(_), None) => {}
                 }
             }
         }
@@ -495,7 +209,7 @@ fn get_all_term_locations<Term: visitor::Element, T: State>(
     target_term: &Term,
     respect_to_type: &Type<Default>,
     environment: &Environment<Default, T, NoOp>,
-) -> Result<Vec<Vec<TermLocation>>, OverflowError>
+) -> Vec<Vec<TermLocation>>
 where
     for<'a, 'v> TermCollector<'a, Term, T>: visitor::Recursive<'v, Lifetime<Default>>
         + visitor::Recursive<'v, Type<Default>>
@@ -503,7 +217,7 @@ where
 {
     let mut collector = TermCollector {
         target: target_term,
-        locations: Ok(Vec::new()),
+        locations: Vec::new(),
 
         environment,
     };

@@ -7,17 +7,18 @@ use proptest::{
 use strum::IntoEnumIterator;
 
 use crate::{
-    semantic::{
+    symbol::table::{Building, Table},
+    type_system::{
+        environment::Environment,
         model::{Default, Model},
-        normalizer::NoOp,
+        normalizer::NO_OP,
         predicate,
         term::{
             r#type::{Primitive, Type},
             GenericArguments, Tuple, TupleElement,
         },
-        Environment,
+        Compute,
     },
-    symbol::table::{Building, Table},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -55,7 +56,7 @@ impl Arbitrary for PrimitivesTuple {
 }
 
 fn check_primitives_tuple_copyable_impl(
-    tuple: PrimitivesTuple,
+    tuple: &PrimitivesTuple,
 ) -> TestCaseResult {
     let table = Table::<Building>::default();
 
@@ -71,27 +72,25 @@ fn check_primitives_tuple_copyable_impl(
 
     let active_premise =
         table.get_active_premise(core_module_id.into()).unwrap();
+    let (environment, _) = Environment::new(active_premise, &table, &NO_OP);
 
-    let satisfiability = predicate::Trait::satisfies(
-        copy_trait_id,
-        true,
-        &GenericArguments {
+    let trait_predicate = predicate::Trait {
+        id: copy_trait_id,
+        is_const: true,
+        generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![tuple_type],
             constants: Vec::new(),
         },
-        &Environment {
-            premise: &active_premise,
-            table: &table,
-            normalizer: &NoOp,
-        },
-    )?;
+    };
+
+    let satisfiability = trait_predicate.query(&environment)?;
 
     let Some(satisfiability) = satisfiability else {
         return Err(TestCaseError::fail("unsatisfied"));
     };
 
-    assert_eq!(satisfiability.lifetime_constraints.len(), 0);
+    assert_eq!(satisfiability.constraints.len(), 0);
 
     Ok(())
 }
@@ -101,6 +100,6 @@ proptest! {
     fn check_primitives_tuple_copyable(
         tuple in PrimitivesTuple::arbitrary()
     ) {
-        check_primitives_tuple_copyable_impl(tuple)?;
+        check_primitives_tuple_copyable_impl(&tuple)?;
    }
 }

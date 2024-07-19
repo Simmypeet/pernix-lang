@@ -10,7 +10,7 @@ use crate::{
         self,
         table::{self, representation::Index, DisplayObject, State, Table},
         ConstantParameterID, Generic, LifetimeParameterID,
-        TraitImplementationID, TypeParameterID, Variance,
+        TraitImplementationID, TypeParameterID,
     },
     type_system::{
         compatible::Compatible,
@@ -25,8 +25,9 @@ use crate::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments,
         },
+        variance::Variance,
         Compute, Environment, LifetimeConstraint, LifetimeUnifyingPredicate,
-        Output, OverflowError, Premise, Satisfied, Succeeded, TraitContext,
+        Output, OverflowError, Satisfied, Succeeded, TraitContext,
     },
     unordered_pair::UnorderedPair,
 };
@@ -155,52 +156,37 @@ impl<M: Model> Compute for Trait<M> {
             let Some(Succeeded {
                 result: forall_lifetime_unification,
                 mut constraints,
-            }) = self.generic_arguments.unify_as_mapping_with_context(
-                &trait_premise.generic_arguments,
-                Arc::new(LifetimeUnifyingPredicate),
-                environment,
-                context,
-            )?
+            }) =
+                trait_premise.generic_arguments.unify_as_mapping_with_context(
+                    &self.generic_arguments,
+                    Arc::new(LifetimeUnifyingPredicate),
+                    environment,
+                    context,
+                )?
             else {
                 continue;
             };
 
             // check if all the lifetimes equal
-            for (key, lifetimes) in forall_lifetime_unification.lifetimes.iter()
+            for (
+                key,       /* from premise */
+                lifetimes, /* from query */
+            ) in forall_lifetime_unification.lifetimes.iter()
             {
-                let key_lifetime_is_forall = key.is_forall();
-                let mut lifetimes_iter = lifetimes.iter();
-
-                // get the first lifetime to compare with the rest
-                let Some(first_lifetime) = lifetimes_iter.next() else {
-                    continue 'outer;
-                };
-
-                // if the key is forall, then all the lifetimes must be forall
-                if key_lifetime_is_forall && !first_lifetime.is_forall() {
-                    continue 'outer;
-                }
-
-                for lifetime in lifetimes_iter {
-                    // the lifetime must match
-                    if first_lifetime != lifetime {
-                        // otherwise, create a lifetime matching constraint
-
-                        // can't create a lifetime matching constraint if the
-                        // lifetimes are forall
-                        if lifetime.is_forall() || first_lifetime.is_forall() {
-                            continue 'outer;
-                        }
-
-                        constraints.insert(
-                            LifetimeConstraint::LifetimeMatching(
-                                UnorderedPair::new(
-                                    first_lifetime.clone(),
-                                    lifetime.clone(),
-                                ),
-                            ),
-                        );
+                for lifetime in lifetimes {
+                    // should be the same
+                    if lifetime.is_forall() && !key.is_forall() {
+                        continue 'outer;
                     }
+
+                    // already equals, no need for extra lifetime
+                    if lifetime == key {
+                        continue;
+                    }
+
+                    constraints.insert(LifetimeConstraint::LifetimeMatching(
+                        UnorderedPair::new(key.clone(), lifetime.clone()),
+                    ));
                 }
             }
 
@@ -484,42 +470,6 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
                 candidate_instantiation,
                 candidate_lifetime_constraints,
             )) => {
-                let combined_premise = {
-                    let mut combined_premise = Premise::default();
-
-                    let current_geenric_sym =
-                        environment.table.get_generic(key.into()).unwrap();
-                    let candidate_generic_sym = environment
-                        .table
-                        .get_generic((*candidate_id).into())
-                        .unwrap();
-
-                    combined_premise.predicates.extend(
-                        current_geenric_sym
-                            .generic_declaration()
-                            .predicates
-                            .iter()
-                            .map(|x| {
-                                Predicate::from_default_model(
-                                    x.predicate.clone(),
-                                )
-                            }),
-                    );
-                    combined_premise.predicates.extend(
-                        candidate_generic_sym
-                            .generic_declaration()
-                            .predicates
-                            .iter()
-                            .map(|x| {
-                                Predicate::from_default_model(
-                                    x.predicate.clone(),
-                                )
-                            }),
-                    );
-
-                    combined_premise
-                };
-
                 // check which one is more specific
                 match GenericArguments::from_default_model(
                     environment
@@ -538,11 +488,7 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
                             .arguments()
                             .clone(),
                     ),
-                    &Environment {
-                        premise: combined_premise,
-                        table: environment.table,
-                        normalizer: environment.normalizer,
-                    },
+                    environment,
                     context,
                 )? {
                     order::Order::Incompatible => {

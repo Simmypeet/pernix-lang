@@ -5,7 +5,6 @@ use super::{r#enum, Finalize};
 use crate::{
     arena::ID,
     error::{self, PrivateEntityLeakedToPublicInterface},
-    semantic::{normalizer::NoOp, simplify::simplify, Environment},
     symbol::{
         table::{
             representation::{
@@ -19,6 +18,7 @@ use crate::{
         },
         Variant,
     },
+    type_system::{environment::Environment, normalizer::NO_OP},
 };
 
 /// The generic parameters of the parent enum are built.
@@ -101,6 +101,9 @@ impl Finalize for Variant {
                     let active_premise =
                         table.get_active_premise(symbol_id.into()).unwrap();
 
+                    let (environment, _) =
+                        Environment::new(active_premise, table, &NO_OP);
+
                     // assign the simplfiied type to the variant
                     table
                         .representation
@@ -108,11 +111,13 @@ impl Finalize for Variant {
                         .get(symbol_id)
                         .unwrap()
                         .write()
-                        .associated_type = Some(simplify(&ty, &Environment {
-                        premise: &active_premise,
-                        table,
-                        normalizer: &NoOp,
-                    }));
+                        .associated_type = Some(
+                        environment.simplify_and_check_lifetime_constraints(
+                            &ty,
+                            &association.ty().span(),
+                            handler,
+                        ),
+                    );
                 }
             }
 

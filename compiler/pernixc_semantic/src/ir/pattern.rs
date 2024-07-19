@@ -8,8 +8,8 @@ use super::address::Stack;
 use crate::{
     arena::ID,
     error::{AlreadyBoundName, Error},
-    type_system::model::Model,
     symbol::{Field, Struct},
+    type_system::model::Model,
 };
 
 /// A trait that is implemented by [`Refutable`] and [`Irrefutable`].

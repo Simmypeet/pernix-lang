@@ -6,15 +6,21 @@ use pernixc_syntax::syntax_tree::target::{self, Target};
 use crate::{
     error::Error,
     symbol::{
-        table::{build, representation::Index, Success, Table},
+        table::{
+            representation::{build, Index},
+            Success, Table,
+        },
         Variance,
     },
 };
 
 #[derive(Debug, derive_more::From)]
 pub enum ParseTargetError {
+    #[allow(dead_code)]
     Target(target::Error),
+    #[allow(dead_code)]
     Syntax(pernixc_syntax::error::Error),
+    #[allow(dead_code)]
     Lexical(pernixc_lexical::error::Error),
 }
 
@@ -93,7 +99,7 @@ fn basic_variances() {
                 .get(&struct_a_b_param)
                 .copied()
                 .unwrap(),
-            Variance::Bivariant
+            Variance::Covariant
         );
         assert_eq!(
             struct_a_sym
@@ -257,7 +263,7 @@ fn single_struct_recursive_bivariant() {
                 .get(&struct_a_t_param)
                 .copied()
                 .unwrap(),
-            Variance::Bivariant
+            Variance::Covariant
         );
     }
 }
@@ -313,7 +319,7 @@ fn multiple_struct_recursive_bivariant() {
                 .get(&struct_a_t_param)
                 .copied()
                 .unwrap(),
-            Variance::Bivariant
+            Variance::Covariant
         );
         assert_eq!(
             struct_b_sym
@@ -322,7 +328,7 @@ fn multiple_struct_recursive_bivariant() {
                 .get(&struct_b_t_param)
                 .copied()
                 .unwrap(),
-            Variance::Bivariant
+            Variance::Covariant
         );
     }
 }

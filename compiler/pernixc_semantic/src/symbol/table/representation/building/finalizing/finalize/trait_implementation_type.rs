@@ -5,7 +5,6 @@ use super::{trait_implementation, trait_type, Finalize};
 use crate::{
     arena::ID,
     error,
-    semantic::instantiation::Instantiation,
     symbol::{
         table::{
             representation::{
@@ -19,6 +18,7 @@ use crate::{
         },
         TraitImplementationType,
     },
+    type_system::instantiation::Instantiation,
 };
 
 /// Generic parameters are built
@@ -147,7 +147,7 @@ impl Finalize for TraitImplementationType {
                 let Some(trait_type_id) = trait_sym
                     .member_ids_by_name
                     .get(trait_implementation_type_sym.name())
-                    .cloned()
+                    .copied()
                     .and_then(|x| x.into_type().ok())
                 else {
                     return;

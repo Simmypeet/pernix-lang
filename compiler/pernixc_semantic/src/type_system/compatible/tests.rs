@@ -9,7 +9,7 @@ use crate::{
         },
         Accessibility, AdtTemplate, GenericDeclaration, GenericID,
         LifetimeParameter, LifetimeParameterID, StructDefinition,
-        TypeDefinition, Variance,
+        TypeDefinition,
     },
     type_system::{
         compatible::Compatible,
@@ -21,6 +21,7 @@ use crate::{
             r#type::{Primitive, Qualifier, Reference, SymbolID, Type},
             GenericArguments, Symbol,
         },
+        variance::Variance,
         Environment, LifetimeConstraint, Premise,
     },
     unordered_pair::UnorderedPair,
@@ -38,21 +39,21 @@ proptest! {
         };
 
          assert!(term
-            .compatible(&term,Variance::Covariant, &environment)
+            .compatible(&term, Variance::Covariant, &environment)
             .unwrap()
             .unwrap()
             .constraints
             .is_empty());
 
          assert!(term
-            .compatible(&term,Variance::Contravariant, &environment)
+            .compatible(&term, Variance::Contravariant, &environment)
             .unwrap()
             .unwrap()
             .constraints
             .is_empty());
 
          assert!(term
-            .compatible(&term,Variance::Invariant, &environment)
+            .compatible(&term, Variance::Invariant, &environment)
             .unwrap()
             .unwrap()
             .constraints
@@ -61,6 +62,7 @@ proptest! {
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn basic_compatible() {
     // Variance::Covariant: &'a bool :> &'static bool then 'a: 'static
     let a_lt = Lifetime::Parameter(LifetimeParameterID {
@@ -120,6 +122,7 @@ fn basic_compatible() {
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn compatible_with_adt() {
     let mut table = Table::<Building>::default();
 

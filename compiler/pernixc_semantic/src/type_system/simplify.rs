@@ -173,13 +173,6 @@ fn simplify_internal<T: Term>(
                     )
                     .query(&environment_cloned);
 
-                    dbg!(
-                        &unification,
-                        &environment_cloned.premise,
-                        trait_type_equality_unwrapped,
-                        another_trait_type_equality
-                    );
-
                     // add back the other trait type equality
                     environment_cloned
                         .premise
@@ -188,6 +181,10 @@ fn simplify_internal<T: Term>(
 
                     // skip if the unification is successful
                     if matches!(unification, Ok(Some(_))) {
+                        environment_cloned
+                            .premise
+                            .predicates
+                            .insert(trait_type_equality.clone());
                         continue 'choice;
                     }
                 }

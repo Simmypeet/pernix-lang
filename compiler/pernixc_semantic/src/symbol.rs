@@ -19,6 +19,7 @@ use crate::{
         model::{Default, Model},
         predicate,
         term::{constant, lifetime, r#type, GenericArguments},
+        variance::Variance,
     },
 };
 
@@ -518,48 +519,6 @@ pub type ConstantParameterID = MemberID<ID<ConstantParameter>, GenericID>;
 
 /// An ID to a lifetime parameter.
 pub type LifetimeParameterID = MemberID<ID<LifetimeParameter>, GenericID>;
-
-/// An enumeration of either an invariant or covariant variance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub enum Variance {
-    /// The term is covariant and can be changed to a subtype.
-    ///
-    /// This is the most common variance; that is, the lifetime can be changed
-    /// to a smaller lifetime e.g. `'static` to `'a`.
-    Covariant,
-
-    /// The term is contravariant and can be changed to a supertype.
-    ///
-    /// This is the opposite of convariant; that is, the lifetime can be
-    /// changed to a larger lifetime e.g. `'a` to `'static`. This is
-    /// generally used in the parameter of a function i.e. the function
-    /// parameter used to accept a particular lifetime `'a` can be changed
-    /// to accept a larger lifetime `'static`.
-    Contravariant,
-
-    /// The term is invariant and cannot be changed.
-    #[default]
-    Invariant,
-}
-
-impl Variance {
-    /// Combines the two variances.
-    ///
-    /// The [`self`] is the variance of the parent and the [`child`] is the
-    /// variance of the inner type.
-    ///
-    /// For example, to find the variance of `T` in `&'a T`, the variance of
-    /// `&'a` is [`self`] and the variance of `T` is [`child`].
-    #[must_use]
-    pub const fn xfrom(self, child: Self) -> Self {
-        match (self, child) {
-            (Self::Invariant, _) | (_, Self::Invariant) => Self::Invariant,
-            (amb, Self::Covariant) => amb,
-            (Self::Covariant, Self::Contravariant) => Self::Contravariant,
-            (Self::Contravariant, Self::Contravariant) => Self::Covariant,
-        }
-    }
-}
 
 /// Represents a lifetime parameter, denoted by `'a` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

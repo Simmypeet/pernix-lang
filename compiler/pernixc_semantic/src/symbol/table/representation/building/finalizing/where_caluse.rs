@@ -17,12 +17,6 @@ use crate::{
     error::{
         self, ExpectTrait, ExpectedTraitMember, RedefinedHigherRankedLifetime,
     },
-    semantic::{
-        instantiation::Instantiation,
-        model::Default,
-        predicate::{self, Equality, Outlives},
-        term::{self, lifetime::Forall},
-    },
     symbol::{
         self,
         table::{
@@ -32,6 +26,13 @@ use crate::{
             Building, Table,
         },
         Generic, GenericID, GlobalID, PredicateKind, Trait,
+    },
+    type_system::{
+        equality::Equality,
+        instantiation::Instantiation,
+        model::Default,
+        predicate::{self, Outlives},
+        term::{self, lifetime::Forall},
     },
 };
 

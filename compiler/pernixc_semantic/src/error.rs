@@ -22,16 +22,19 @@ use crate::{
             self, representation::Index, Display, DisplayObject, State,
             Suboptimal, Table,
         },
-        Accessibility, AdtID, ConstantParameterID, Field, GenericID,
-        GenericKind, GenericParameter, GlobalID, LocalGenericParameterID,
-        MemberID, Module, PositiveTraitImplementation, Struct, Trait,
-        TraitImplementationID, TraitImplementationMemberID, TraitMemberID,
-        Variant,
+        Accessibility, AdtID, AdtImplementation, ConstantParameterID, Field,
+        GenericID, GenericKind, GenericParameter, GlobalID,
+        LocalGenericParameterID, MemberID, Module, PositiveTraitImplementation,
+        Struct, Trait, TraitImplementationID, TraitImplementationMemberID,
+        TraitMemberID, Variant,
     },
     type_system::{
         model::Model,
         predicate::Predicate,
-        term::r#type::{Qualifier, Type},
+        term::{
+            r#type::{Qualifier, Type},
+            GenericArguments,
+        },
     },
 };
 
@@ -2494,6 +2497,53 @@ where
             span: &self.span,
             help_display: Option::<i32>::None,
         })?;
+
+        Ok(())
+    }
+}
+
+/// The generic arguments are not compatible with the generic arguments defined
+/// in the implementation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedImplementationArguments<M: Model> {
+    /// The ID of the ADT implementation where the generic arguments are
+    /// mismatched.
+    pub adt_implementation_id: ID<AdtImplementation>,
+
+    /// The generic arguments found in the implementation.
+    pub found_generic_arguments: GenericArguments<M>,
+
+    /// The span of the instantiation that causes the mismatch.
+    pub instantiation_span: Span,
+}
+
+impl<T: State, M: Model> Display<T> for MismatchedImplementationArguments<M> {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let adt_implementation_symbol =
+            table.get(self.adt_implementation_id).ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the generic arguments are not compatible with the \
+                      generic arguments defined in the implementation",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.instantiation_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        if let Some(span) = adt_implementation_symbol.span() {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("the implementation is defined here"),
+            })?;
+
+            write!(f, "\n{}", Message {
+                severity: Severity::Info,
+                display: "the implementation is defined here",
+            })?;
+        }
 
         Ok(())
     }

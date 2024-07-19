@@ -5,7 +5,6 @@ use super::Finalize;
 use crate::{
     arena::ID,
     error::{self, DuplicatedField, PrivateEntityLeakedToPublicInterface},
-    semantic::{normalizer::NoOp, simplify::simplify, Environment},
     symbol::{
         table::{
             representation::{
@@ -19,6 +18,7 @@ use crate::{
         },
         Field, GenericParameterVariances, HierarchyRelationship, Struct,
     },
+    type_system::{environment::Environment, normalizer::NoOp},
 };
 
 /// Generic parameters are built
@@ -73,8 +73,11 @@ impl Finalize for Struct {
             }
 
             STRUCTURAL_AND_PARTIAL_VARIANCE_STATE => {
-                let active_premise =
-                    table.get_active_premise(symbol_id.into()).unwrap();
+                let (environment, _) = Environment::new(
+                    table.get_active_premise(symbol_id.into()).unwrap(),
+                    table,
+                    &NoOp,
+                );
 
                 for field_syn in syntax_tree
                     .body()
@@ -107,11 +110,10 @@ impl Finalize for Struct {
                     if let Ok(ty_accessibility) =
                         table.get_type_accessibility(&ty)
                     {
-                        if let Some(HierarchyRelationship::Child) = table
-                            .accessibility_hierarchy_relationship(
-                                ty_accessibility,
-                                field_accessibility,
-                            )
+                        if table.accessibility_hierarchy_relationship(
+                            ty_accessibility,
+                            field_accessibility,
+                        ) == Some(HierarchyRelationship::Child)
                         {
                             handler.receive(Box::new(
                                 PrivateEntityLeakedToPublicInterface {
@@ -121,12 +123,12 @@ impl Finalize for Struct {
                                     leaked_span: field_syn.r#type().span(),
                                     public_interface_id: symbol_id.into(),
                                 },
-                            ))
+                            ));
                         }
                     }
 
                     // build all the occurrences to partial
-                    let _ = data.build_all_occurrences_to::<build_preset::PartialComplete>(
+                    data.build_all_occurrences_to::<build_preset::PartialComplete>(
                         table,
                         symbol_id.into(),
                         false,
@@ -136,11 +138,12 @@ impl Finalize for Struct {
                     let field = Field {
                         accessibility: field_accessibility,
                         name: field_syn.identifier().span.str().to_owned(),
-                        r#type: simplify(&ty, &Environment {
-                            premise: &active_premise,
-                            table,
-                            normalizer: &NoOp,
-                        }),
+                        r#type: environment
+                            .simplify_and_check_lifetime_constraints(
+                                &ty,
+                                &field_syn.r#type().span(),
+                                handler,
+                            ),
                         span: Some(field_syn.identifier().span.clone()),
                     };
 
@@ -191,7 +194,7 @@ impl Finalize for Struct {
                     table.build_variance(
                         &struct_sym.generic_declaration.parameters,
                         &mut generic_parameter_variances,
-                        &active_premise,
+                        table.get_active_premise(symbol_id.into()).unwrap(),
                         symbol_id.into(),
                         type_usages.iter(),
                         true,
@@ -242,7 +245,7 @@ impl Finalize for Struct {
                 table.build_variance(
                     &struct_sym.generic_declaration.parameters,
                     &mut generic_parameter_variances,
-                    &premise,
+                    premise,
                     symbol_id.into(),
                     type_usages.iter(),
                     false,

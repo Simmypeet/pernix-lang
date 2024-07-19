@@ -5,22 +5,11 @@ use super::Finalize;
 use crate::{
     arena::ID,
     error,
-    ir::representation::binding::Binder,
-    semantic::{
-        normalizer::NoOp,
-        simplify::simplify,
-        term::r#type::{self, Type},
-        Environment,
-    },
     symbol::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::{
-                        self,
-                        build_preset::{self, Complete},
-                    },
-                    occurrences::Occurrences,
+                    finalizer::build_preset, occurrences::Occurrences,
                     Finalizer,
                 },
                 RwLockContainer,
@@ -28,6 +17,11 @@ use crate::{
             resolution, Building, Table,
         },
         Function, Parameter,
+    },
+    type_system::{
+        environment::Environment,
+        normalizer::NO_OP,
+        term::{self, r#type::Type},
     },
 };
 
@@ -88,6 +82,8 @@ impl Finalize for Function {
 
                 let active_premise =
                     table.get_active_premise(symbol_id.into()).unwrap();
+                let (environment, _) =
+                    Environment::new(active_premise, table, &NO_OP);
 
                 // build the parameters
                 for parameter in syntax_tree
@@ -110,16 +106,15 @@ impl Finalize for Function {
                             },
                             handler,
                         )
-                        .unwrap_or(r#type::Type::default());
+                        .unwrap_or(Type::Error(term::Error));
 
                     // build the occurrences
-                    let _ = data
-                        .build_all_occurrences_to::<build_preset::Complete>(
-                            table,
-                            symbol_id.into(),
-                            false,
-                            handler,
-                        );
+                    data.build_all_occurrences_to::<build_preset::Complete>(
+                        table,
+                        symbol_id.into(),
+                        false,
+                        handler,
+                    );
 
                     let mut function_write = table
                         .representation
@@ -130,11 +125,12 @@ impl Finalize for Function {
 
                     let parameter_id =
                         function_write.parameters.insert(Parameter {
-                            r#type: simplify(&parameter_ty, &Environment {
-                                premise: &active_premise,
-                                table,
-                                normalizer: &NoOp,
-                            }),
+                            r#type: environment
+                                .simplify_and_check_lifetime_constraints(
+                                    &parameter_ty,
+                                    &parameter.r#type().span(),
+                                    handler,
+                                ),
                             span: Some(parameter.span()),
                         });
                     function_write.parameter_order.push(parameter_id);
@@ -142,62 +138,68 @@ impl Finalize for Function {
 
                 // build the return type
                 {
-                    let return_ty = syntax_tree
-                        .signature()
-                        .return_type()
-                        .as_ref()
-                        .map_or_else(Type::default, |ty| {
-                            table
-                                .resolve_type(
-                                    ty.r#type(),
-                                    symbol_id.into(),
-                                    resolution::Config {
-                                        ellided_lifetime_provider: None,
-                                        ellided_type_provider: None,
-                                        ellided_constant_provider: None,
-                                        observer: Some(data),
-                                        higher_ranked_liftimes: None,
-                                    },
-                                    handler,
-                                )
-                                .unwrap_or_default()
-                        });
+                    if let Some(return_type_syn) =
+                        syntax_tree.signature().return_type()
+                    {
+                        let return_type = table
+                            .resolve_type(
+                                return_type_syn.r#type(),
+                                symbol_id.into(),
+                                resolution::Config {
+                                    ellided_lifetime_provider: None,
+                                    ellided_type_provider: None,
+                                    ellided_constant_provider: None,
+                                    observer: Some(data),
+                                    higher_ranked_liftimes: None,
+                                },
+                                handler,
+                            )
+                            .unwrap();
 
-                    let _ = data
-                        .build_all_occurrences_to::<build_preset::Complete>(
+                        data.build_all_occurrences_to::<build_preset::Complete>(
                             table,
                             symbol_id.into(),
                             false,
                             handler,
                         );
 
-                    table
-                        .representation
-                        .functions
-                        .get(symbol_id)
-                        .unwrap()
-                        .write()
-                        .return_type = simplify(&return_ty, &Environment {
-                        premise: &active_premise,
-                        table,
-                        normalizer: &NoOp,
-                    })
+                        table
+                            .representation
+                            .functions
+                            .get(symbol_id)
+                            .unwrap()
+                            .write()
+                            .return_type = environment
+                            .simplify_and_check_lifetime_constraints(
+                                &return_type,
+                                &return_type_syn.r#type().span(),
+                                handler,
+                            );
+                    } else {
+                        table
+                            .representation
+                            .functions
+                            .get(symbol_id)
+                            .unwrap()
+                            .write()
+                            .return_type = Type::Tuple(term::Tuple::default())
+                    }
                 }
 
                 // build the occurrences
-                let _ = data
-                    .build_all_occurrences_to::<build_preset::Complete>(
-                        table,
-                        symbol_id.into(),
-                        false,
-                        handler,
-                    );
+                data.build_all_occurrences_to::<build_preset::Complete>(
+                    table,
+                    symbol_id.into(),
+                    false,
+                    handler,
+                );
             }
 
             DEFINITION_AND_CHECK_STATE => {
                 // check all the occurrences
                 table.check_occurrences(symbol_id.into(), data, handler);
 
+                /*
                 // build the complete definition of the function
                 {
                     let irrefutable_patterns = syntax_tree
@@ -224,6 +226,7 @@ impl Finalize for Function {
                         binder.bind_statement(statement, handler);
                     }
                 }
+                */
             }
 
             _ => panic!("invalid state flag"),

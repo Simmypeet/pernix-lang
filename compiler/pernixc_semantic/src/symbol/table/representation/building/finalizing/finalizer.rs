@@ -21,7 +21,6 @@ use super::finalize::{Finalize, StateFlag};
 use crate::{
     arena::ID,
     error::{self, CyclicDependency},
-    semantic::model::Model,
     symbol::{
         table::{
             representation::RwLockContainer,
@@ -36,6 +35,7 @@ use crate::{
         TraitImplementationFunction, TraitImplementationType, TraitType, Type,
         Variant,
     },
+    type_system::model::Model,
 };
 
 pub(in crate::symbol::table) mod build_preset;
@@ -630,92 +630,68 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), BuildSymbolError> {
         match dependency {
-            GlobalID::Struct(id) => {
-                if let Some(state) = B::r#struct() {
-                    self.build_to(
-                        id,
-                        dependant,
-                        state,
-                        cyclic_dependency_as_error,
-                        handler,
-                    )
-                } else {
-                    Ok(())
-                }
-            }
+            GlobalID::Struct(id) => B::r#struct().map_or(Ok(()), |state| {
+                self.build_to(
+                    id,
+                    dependant,
+                    state,
+                    cyclic_dependency_as_error,
+                    handler,
+                )
+            }),
 
-            GlobalID::Enum(id) => {
-                if let Some(state) = B::r#enum() {
-                    self.build_to(
-                        id,
-                        dependant,
-                        state,
-                        cyclic_dependency_as_error,
-                        handler,
-                    )
-                } else {
-                    Ok(())
-                }
-            }
+            GlobalID::Enum(id) => B::r#enum().map_or(Ok(()), |state| {
+                self.build_to(
+                    id,
+                    dependant,
+                    state,
+                    cyclic_dependency_as_error,
+                    handler,
+                )
+            }),
 
-            GlobalID::Variant(id) => {
-                if let Some(state) = B::variant() {
-                    self.build_to(
-                        id,
-                        dependant,
-                        state,
-                        cyclic_dependency_as_error,
-                        handler,
-                    )
-                } else {
-                    Ok(())
-                }
-            }
+            GlobalID::Variant(id) => B::variant().map_or(Ok(()), |state| {
+                self.build_to(
+                    id,
+                    dependant,
+                    state,
+                    cyclic_dependency_as_error,
+                    handler,
+                )
+            }),
 
-            GlobalID::Constant(id) => {
-                if let Some(state) = B::constant() {
-                    self.build_to(
-                        id,
-                        dependant,
-                        state,
-                        cyclic_dependency_as_error,
-                        handler,
-                    )
-                } else {
-                    Ok(())
-                }
-            }
+            GlobalID::Constant(id) => B::constant().map_or(Ok(()), |state| {
+                self.build_to(
+                    id,
+                    dependant,
+                    state,
+                    cyclic_dependency_as_error,
+                    handler,
+                )
+            }),
 
-            GlobalID::Function(id) => {
-                if let Some(state) = B::function() {
-                    self.build_to(
-                        id,
-                        dependant,
-                        state,
-                        cyclic_dependency_as_error,
-                        handler,
-                    )
-                } else {
-                    Ok(())
-                }
-            }
+            GlobalID::Function(id) => B::function().map_or(Ok(()), |state| {
+                self.build_to(
+                    id,
+                    dependant,
+                    state,
+                    cyclic_dependency_as_error,
+                    handler,
+                )
+            }),
 
-            GlobalID::Type(id) => {
-                if let Some(state) = B::r#type() {
-                    self.build_to(
-                        id,
-                        dependant,
-                        state,
-                        cyclic_dependency_as_error,
-                        handler,
-                    )
-                } else {
-                    Ok(())
-                }
-            }
+            GlobalID::Type(id) => B::r#type().map_or(Ok(()), |state| {
+                self.build_to(
+                    id,
+                    dependant,
+                    state,
+                    cyclic_dependency_as_error,
+                    handler,
+                )
+            }),
 
             GlobalID::AdtImplementation(id) => {
-                if let Some(state) = B::adt_implementation() {
+                B::adt_implementation().map_or(Ok(()), |state| {
                     self.build_to(
                         id,
                         dependant,
@@ -723,13 +699,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         cyclic_dependency_as_error,
                         handler,
                     )
-                } else {
-                    Ok(())
-                }
+                })
             }
 
             GlobalID::AdtImplementationConstant(id) => {
-                if let Some(state) = B::adt_implementation_constant() {
+                B::adt_implementation_constant().map_or(Ok(()), |state| {
                     self.build_to(
                         id,
                         dependant,
@@ -737,13 +711,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         cyclic_dependency_as_error,
                         handler,
                     )
-                } else {
-                    Ok(())
-                }
+                })
             }
 
             GlobalID::AdtImplementationFunction(id) => {
-                if let Some(state) = B::adt_implementation_function() {
+                B::adt_implementation_function().map_or(Ok(()), |state| {
                     self.build_to(
                         id,
                         dependant,
@@ -751,13 +723,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         cyclic_dependency_as_error,
                         handler,
                     )
-                } else {
-                    Ok(())
-                }
+                })
             }
 
-            GlobalID::AdtImplementationType(id) => {
-                if let Some(state) = B::adt_implementation_type() {
+            GlobalID::AdtImplementationType(id) => B::adt_implementation_type()
+                .map_or(Ok(()), |state| {
                     self.build_to(
                         id,
                         dependant,
@@ -765,29 +735,22 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         cyclic_dependency_as_error,
                         handler,
                     )
-                } else {
-                    Ok(())
-                }
-            }
+                }),
 
-            GlobalID::Trait(id) => {
-                if let Some(state) = B::r#trait() {
-                    self.build_to(
-                        id,
-                        dependant,
-                        state,
-                        cyclic_dependency_as_error,
-                        handler,
-                    )
-                } else {
-                    Ok(())
-                }
-            }
+            GlobalID::Trait(id) => B::r#trait().map_or(Ok(()), |state| {
+                self.build_to(
+                    id,
+                    dependant,
+                    state,
+                    cyclic_dependency_as_error,
+                    handler,
+                )
+            }),
 
             GlobalID::Module(_) => Ok(()),
 
             GlobalID::TraitType(id) => {
-                if let Some(state) = B::trait_type() {
+                B::trait_type().map_or(Ok(()), |state| {
                     self.build_to(
                         id,
                         dependant,
@@ -795,13 +758,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         cyclic_dependency_as_error,
                         handler,
                     )
-                } else {
-                    Ok(())
-                }
+                })
             }
 
             GlobalID::TraitFunction(id) => {
-                if let Some(state) = B::trait_function() {
+                B::trait_function().map_or(Ok(()), |state| {
                     self.build_to(
                         id,
                         dependant,
@@ -809,13 +770,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         cyclic_dependency_as_error,
                         handler,
                     )
-                } else {
-                    Ok(())
-                }
+                })
             }
 
             GlobalID::TraitConstant(id) => {
-                if let Some(state) = B::trait_constant() {
+                B::trait_constant().map_or(Ok(()), |state| {
                     self.build_to(
                         id,
                         dependant,
@@ -823,13 +782,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         cyclic_dependency_as_error,
                         handler,
                     )
-                } else {
-                    Ok(())
-                }
+                })
             }
 
             GlobalID::PositiveTraitImplementation(id) => {
-                if let Some(state) = B::trait_implementation() {
+                B::trait_implementation().map_or(Ok(()), |state| {
                     self.build_to(
                         id,
                         dependant,
@@ -837,13 +794,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         cyclic_dependency_as_error,
                         handler,
                     )
-                } else {
-                    Ok(())
-                }
+                })
             }
 
             GlobalID::NegativeTraitImplementation(id) => {
-                if let Some(state) = B::negative_trait_implementation() {
+                B::negative_trait_implementation().map_or(Ok(()), |state| {
                     self.build_to(
                         id,
                         dependant,
@@ -851,13 +806,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         cyclic_dependency_as_error,
                         handler,
                     )
-                } else {
-                    Ok(())
-                }
+                })
             }
 
             GlobalID::TraitImplementationFunction(id) => {
-                if let Some(state) = B::trait_implementation_function() {
+                B::trait_implementation_function().map_or(Ok(()), |state| {
                     self.build_to(
                         id,
                         dependant,
@@ -865,13 +818,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         cyclic_dependency_as_error,
                         handler,
                     )
-                } else {
-                    Ok(())
-                }
+                })
             }
 
             GlobalID::TraitImplementationType(id) => {
-                if let Some(state) = B::trait_implementation_type() {
+                B::trait_implementation_type().map_or(Ok(()), |state| {
                     self.build_to(
                         id,
                         dependant,
@@ -879,13 +830,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         cyclic_dependency_as_error,
                         handler,
                     )
-                } else {
-                    Ok(())
-                }
+                })
             }
 
             GlobalID::TraitImplementationConstant(id) => {
-                if let Some(state) = B::trait_implementation_constant() {
+                B::trait_implementation_constant().map_or(Ok(()), |state| {
                     self.build_to(
                         id,
                         dependant,
@@ -893,9 +842,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         cyclic_dependency_as_error,
                         handler,
                     )
-                } else {
-                    Ok(())
-                }
+                })
             }
         }
     }
@@ -1014,9 +961,8 @@ impl<T: BuildPreset, M: Model>
             true,
             handler,
         ) {
-            Ok(()) => true,
+            Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => true,
             Err(BuildSymbolError::CyclicDependency) => false,
-            Err(BuildSymbolError::EntryNotFound(_)) => true,
             Err(BuildSymbolError::InvalidStateFlag { .. }) => {
                 panic!("invalid state falg")
             }
@@ -1038,7 +984,7 @@ impl<T: BuildPreset, M: Model>
         _: &Table<Building<RwLockContainer, Finalizer>>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        _: &crate::semantic::term::r#type::Type<M>,
+        _: &crate::type_system::term::r#type::Type<M>,
         _: &pernixc_syntax::syntax_tree::r#type::Type,
     ) {
     }
@@ -1048,7 +994,7 @@ impl<T: BuildPreset, M: Model>
         _: &Table<Building<RwLockContainer, Finalizer>>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        _: &crate::semantic::term::lifetime::Lifetime<M>,
+        _: &crate::type_system::term::lifetime::Lifetime<M>,
         _: &pernixc_syntax::syntax_tree::Lifetime,
     ) {
     }
@@ -1058,7 +1004,7 @@ impl<T: BuildPreset, M: Model>
         _: &Table<Building<RwLockContainer, Finalizer>>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        _: &crate::semantic::term::constant::Constant<M>,
+        _: &crate::type_system::term::constant::Constant<M>,
         _: &pernixc_syntax::syntax_tree::expression::Expression,
     ) {
     }
@@ -1068,7 +1014,7 @@ impl<T: BuildPreset, M: Model>
         _: &Table<Building<RwLockContainer, Finalizer>>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        _: &crate::semantic::term::r#type::Type<M>,
+        _: &crate::type_system::term::r#type::Type<M>,
         _: &pernixc_syntax::syntax_tree::r#type::Type,
     ) {
     }
@@ -1078,7 +1024,7 @@ impl<T: BuildPreset, M: Model>
         _: &Table<Building<RwLockContainer, Finalizer>>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        _: &crate::semantic::term::constant::Constant<M>,
+        _: &crate::type_system::term::constant::Constant<M>,
         _: &pernixc_syntax::syntax_tree::expression::Expression,
     ) {
     }

@@ -15,7 +15,7 @@ use crate::{
             Building, Table,
         },
         Accessibility, AdtTemplate, GenericDeclaration, LifetimeParameter,
-        Module, StructDefinition, Variance,
+        Module, StructDefinition,
     },
     type_system::{
         equality,
@@ -28,6 +28,7 @@ use crate::{
             r#type::{SymbolID, Type},
             GenericArguments, Symbol, Term,
         },
+        variance::Variance,
         Compute, Environment, OverflowError, Premise,
     },
 };

@@ -6,16 +6,6 @@ use strum::IntoEnumIterator;
 
 use crate::{
     arena::ID,
-    semantic::{
-        model::Default,
-        predicate::{self, Outlives},
-        term::{
-            constant::Constant,
-            lifetime::Lifetime,
-            r#type::{Array, Primitive, Qualifier, Reference, Type},
-            GenericArguments, Tuple, TupleElement,
-        },
-    },
     symbol::{
         self,
         table::representation::{
@@ -27,6 +17,16 @@ use crate::{
         PositiveTraitImplementationDefinition, PredicateKind, Trait,
         TraitDefinition, TraitFunctionDefinition,
         TraitImplementationFunctionDefinition, TypeParameter,
+    },
+    type_system::{
+        model::Default,
+        predicate::{self, Outlives},
+        term::{
+            constant::Constant,
+            lifetime::Lifetime,
+            r#type::{Array, Primitive, Qualifier, Reference, Type},
+            GenericArguments, Tuple, TupleElement,
+        },
     },
 };
 
@@ -45,7 +45,7 @@ impl<C: Container> Representation<C> {
                 core_module_id,
                 copy_trait_id,
                 Type::Primitive(primitive_ty),
-            )
+            );
         }
 
         self.initialize_array_copy_implementation(
@@ -67,7 +67,7 @@ impl<C: Container> Representation<C> {
             Qualifier::Mutable,
         );
 
-        assert!(duplication.is_none())
+        assert!(duplication.is_none());
     }
 
     /// Initializes the `Drop` trait of the core module.
@@ -227,7 +227,7 @@ impl<C: Container> Representation<C> {
 
         let reference_type = Type::Reference(Reference {
             qualifier,
-            lifetime: implementation_lt_parameter_term.clone(),
+            lifetime: implementation_lt_parameter_term,
             pointee: Box::new(implementation_ty_parameter_term.clone()),
         });
 
@@ -417,6 +417,7 @@ impl<C: Container> Representation<C> {
     ///     { ... }
     /// }
     /// ```
+    #[allow(clippy::too_many_lines)]
     fn initialize_tuple_copy_implementation(
         &mut self,
         core_module_id: ID<Module>,
@@ -523,7 +524,7 @@ impl<C: Container> Representation<C> {
                         is_const: true,
                         generic_arguments: GenericArguments {
                             lifetimes: Vec::new(),
-                            types: vec![t_type.clone()],
+                            types: vec![t_type],
                             constants: Vec::new(),
                         },
                     }),
@@ -619,7 +620,7 @@ impl<C: Container> Representation<C> {
         function.insert_parameter(Parameter {
             r#type: Type::Reference(Reference {
                 qualifier: Qualifier::Immutable,
-                lifetime: function_lifetime_parameter.clone(),
+                lifetime: function_lifetime_parameter,
                 pointee: Box::new(copy_type.clone()),
             }),
             span: None,
@@ -680,15 +681,13 @@ impl<C: Container> Representation<C> {
         assert!(duplication.is_none());
 
         // the copy function
-        {
-            self.insert_copy_function::<_, TraitFunctionDefinition>(
-                copy_trait_id,
-                Type::Parameter(MemberID {
-                    parent: copy_trait_id.into(),
-                    id: type_parameter_id,
-                }),
-            )
-        };
+        self.insert_copy_function::<_, TraitFunctionDefinition>(
+            copy_trait_id,
+            Type::Parameter(MemberID {
+                parent: copy_trait_id.into(),
+                id: type_parameter_id,
+            }),
+        );
 
         copy_trait_id
     }

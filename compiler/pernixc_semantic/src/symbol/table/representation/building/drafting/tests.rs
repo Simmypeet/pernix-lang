@@ -40,7 +40,7 @@ fn name_strategy() -> impl Strategy<Value = String> {
 }
 
 impl<T: Container> Representation<T> {
-    pub fn validate_access_modifier(
+    fn validate_access_modifier(
         &self,
         access_modifier: AccessModifier,
         global_id: GlobalID,
@@ -778,8 +778,11 @@ impl<'a> Display for RootModule<'a> {
 
 #[derive(Debug, derive_more::From)]
 pub enum ParseTargetError {
+    #[allow(dead_code)]
     Target(target::Error),
+    #[allow(dead_code)]
     Syntax(pernixc_syntax::error::Error),
+    #[allow(dead_code)]
     Lexical(pernixc_lexical::error::Error),
 }
 

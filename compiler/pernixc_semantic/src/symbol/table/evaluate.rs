@@ -6,8 +6,8 @@ use pernixc_syntax::syntax_tree::expression::Expression;
 use super::{State, Table};
 use crate::{
     error,
-    type_system::{model::Default, term::constant::Constant},
     symbol::GlobalID,
+    type_system::{model::Default, term::constant::Constant},
 };
 
 /// The error type for evaluating compile-time-constant expressions.

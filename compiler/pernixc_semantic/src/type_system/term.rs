@@ -448,6 +448,12 @@ impl<T: State> table::Display<T> for Never {
     }
 }
 
+/// The trait used for specifying the model of a term.
+pub trait ModelOf {
+    /// In which model does the term belong to.
+    type Model: Model;
+}
+
 /// The term under the `local` modifier.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Local<T: Term>(pub Box<T>)
@@ -486,12 +492,6 @@ where
     {
         Ok(Self(Box::new(T::try_from_other_model(*local.0)?)))
     }
-}
-
-/// The trait used for specifying the model of a term.
-pub trait ModelOf {
-    /// In which model does the term belong to.
-    type Model: Model;
 }
 
 /// A trait implemented by all three fundamental terms of the language:

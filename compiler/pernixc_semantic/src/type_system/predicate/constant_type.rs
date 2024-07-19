@@ -1,16 +1,14 @@
 use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
-    symbol::{
-        table::{self, DisplayObject, State, Table},
-        Variance,
-    },
+    symbol::table::{self, DisplayObject, State, Table},
     type_system::{
         equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
         model::Model,
         normalizer::Normalizer,
-        query::{self, Context, Query},
+        query::{self, Context, Sealed},
         term::Term,
+        variance::Variance,
         visitor, Compute, Environment, Output, OverflowError, Satisfied,
         Succeeded,
     },
@@ -175,7 +173,7 @@ impl<T: Term> Compute for ConstantType<T> {
         call_stacks: &[query::QueryCall<Self::Model>],
     ) -> Result<Option<Self::Result>, Self::Error> {
         for call in call_stacks.iter().skip(1) {
-            let Some(query) = <Self as Query>::from_call(call) else {
+            let Some(query) = <Self as Sealed>::from_call(call) else {
                 continue;
             };
 

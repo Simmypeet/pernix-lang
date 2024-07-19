@@ -45,5 +45,5 @@ impl<T: Ord> UnorderedPair<T> {
 
     /// Destructures the unordered pair into a tuple.
     #[must_use]
-    pub fn to_tuple(self) -> (T, T) { (self.0, self.1) }
+    pub fn into_tuple(self) -> (T, T) { (self.0, self.1) }
 }

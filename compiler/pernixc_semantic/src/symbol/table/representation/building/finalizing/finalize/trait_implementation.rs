@@ -58,6 +58,7 @@ impl Finalize for PositiveTraitImplementation {
                     handler,
                 );
             }
+
             GENERIC_ARGUMENTS_STATE => {
                 let parent_trait_id =
                     table.get(symbol_id).unwrap().implemented_id;
@@ -99,12 +100,14 @@ impl Finalize for PositiveTraitImplementation {
                     .arguments =
                     generic_arguments.ok().and_then(|x| x).unwrap_or_default();
             }
+
             WHERE_CLAUSE_STATE => table.create_where_clause_predicates(
                 symbol_id,
                 syntax_tree.where_clause().as_ref(),
                 data,
                 handler,
             ),
+
             COMPLETE_STATE => {
                 // build all the trait member
                 let member_ids = table
@@ -132,6 +135,7 @@ impl Finalize for PositiveTraitImplementation {
                     handler,
                 );
             }
+
             CHECK_STATE => {
                 // make sure the implemented trait has the where clause
                 let parent_trait_id =
@@ -147,6 +151,7 @@ impl Finalize for PositiveTraitImplementation {
                 table.check_occurrences(symbol_id.into(), data, handler);
                 table.implementation_signature_check(symbol_id, handler);
             }
+
             _ => panic!("invalid state flag"),
         }
     }

@@ -4,7 +4,10 @@
 //! so that their names appear in the table. The symbols are not yet built
 //! with full/correct information.
 
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::{
+    collections::{hash_map::Entry, HashMap, HashSet},
+    ops::Not,
+};
 
 use parking_lot::RwLock;
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
@@ -13,7 +16,7 @@ use pernixc_syntax::syntax_tree::{
     self,
     item::{ImplementationKind, ImplementationMember},
     target::ModuleTree,
-    GenericIdentifier,
+    ConnectedList, GenericIdentifier,
 };
 
 use super::finalizing::{self, Finalize, Finalizer};
@@ -25,7 +28,6 @@ use crate::{
         SymbolIsMoreAccessibleThanParent, UnimplementedTraitMembers,
         UnknownTraitImplementationMember,
     },
-    semantic::term::GenericArguments,
     symbol::{
         self,
         table::{
@@ -40,6 +42,7 @@ use crate::{
         PositiveTraitImplementationDefinition, Struct, Trait,
         TraitImplementationMemberID, TraitMemberID, Type, Variant,
     },
+    type_system::term::GenericArguments,
 };
 
 #[derive(Debug, Default)]
@@ -72,7 +75,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
 
         // draft each variant
         for variant_syn in
-            body.dissolve().1.into_iter().flat_map(|x| x.into_elements())
+            body.dissolve().1.into_iter().flat_map(ConnectedList::into_elements)
         {
             let name = variant_syn.identifier().span.str().to_owned();
 
@@ -194,7 +197,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 handler.receive(Box::new(SymbolIsMoreAccessibleThanParent {
                     symbol_id: trait_member_id.into(),
                     parent_id: trait_id.into(),
-                }))
+                }));
             }
         }
     }
@@ -252,6 +255,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
         insertion.id
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(in crate::symbol::table::representation) fn draft_module(
         &mut self,
         syntax_tree: ModuleTree,
@@ -437,8 +441,9 @@ impl Table<Building<RwLockContainer, Drafter>> {
                         .member_ids_by_name
                         .get(syn.signature().identifier().span.str())
                         .copied()
-                        .map(|x| self.get_accessibility(x.into()).unwrap())
-                        .unwrap_or(Accessibility::Public);
+                        .map_or(Accessibility::Public, |x| {
+                            self.get_accessibility(x.into()).unwrap()
+                        });
 
                     TraitImplementationMemberID::Type(self.draft_member(
                         syn,
@@ -455,8 +460,9 @@ impl Table<Building<RwLockContainer, Drafter>> {
                         .member_ids_by_name
                         .get(syn.signature().identifier().span.str())
                         .copied()
-                        .map(|x| self.get_accessibility(x.into()).unwrap())
-                        .unwrap_or(Accessibility::Public);
+                        .map_or(Accessibility::Public, |x| {
+                            self.get_accessibility(x.into()).unwrap()
+                        });
 
                     TraitImplementationMemberID::Function(self.draft_member(
                         syn,
@@ -473,8 +479,9 @@ impl Table<Building<RwLockContainer, Drafter>> {
                         .member_ids_by_name
                         .get(syn.signature().identifier().span.str())
                         .copied()
-                        .map(|x| self.get_accessibility(x.into()).unwrap())
-                        .unwrap_or(Accessibility::Public);
+                        .map_or(Accessibility::Public, |x| {
+                            self.get_accessibility(x.into()).unwrap()
+                        });
 
                     TraitImplementationMemberID::Constant(self.draft_member(
                         syn,
@@ -559,11 +566,13 @@ impl Table<Building<RwLockContainer, Drafter>> {
             .filter_map(|(name, id)| {
                 implementation_sym
                     .member_ids_by_name
-                    .get(name)
-                    .is_none()
+                    .contains_key(name)
+                    .not()
                     .then_some(*id)
             })
             .collect::<HashSet<_>>();
+
+        drop(trait_sym);
 
         if !unimplemented_trait_member_ids.is_empty() {
             handler.receive(Box::new(UnimplementedTraitMembers {

@@ -12,24 +12,11 @@ use super::{occurrences::Occurrences, Finalizer};
 use crate::{
     arena::ID,
     error::{
-        self, ExtraneousTraitMemberPredicate,
+        self, Error, ExtraneousTraitMemberPredicate,
         MismatchedGenericParameterCountInImplementation,
+        MismatchedImplementationArguments,
         MismatchedImplementationConstantTypeParameter, UndecidablePredicate,
-        UnsatisfiedTraitMemberPredicate, UnsatisifedPredicate,
-        UnusedGenericParameterInImplementation,
-    },
-    semantic::{
-        equality,
-        instantiation::{self, Instantiation},
-        model::{Default, Model},
-        normalizer::{NoOp, Normalizer},
-        predicate::{self, ConstantType, Outlives, Predicate, Trait, Tuple},
-        term::{
-            self, constant,
-            lifetime::{self, Lifetime},
-            r#type, GenericArguments, Term,
-        },
-        Environment, OverflowError, OutlivesConstraint, Premise,
+        UnsatisifedPredicate, UnusedGenericParameterInImplementation,
     },
     symbol::{
         table::{
@@ -42,7 +29,36 @@ use crate::{
         LifetimeParameter, LifetimeParameterID, TraitImplementationMemberID,
         TraitMemberID, TypeParameter, TypeParameterID,
     },
+    type_system::{
+        compatible::Compatible,
+        deduction,
+        environment::Environment,
+        instantiation::{self, Instantiation},
+        model::{Default, Model},
+        normalizer::{Normalizer, NO_OP},
+        predicate::{self, Outlives, Predicate, Tuple},
+        simplify,
+        term::{
+            self, constant,
+            lifetime::{self, Lifetime},
+            r#type, GenericArguments, Term,
+        },
+        type_check::TypeCheck,
+        variance::Variance,
+        Compute, LifetimeConstraint, OverflowError, Premise, Satisfied,
+        Succeeded,
+    },
 };
+
+/// An enumeration of ways the predicate can be erroneous.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum PredicateError<M: Model> {
+    /// The predicate isn't satisfied.
+    Unsatisfied(Predicate<M>),
+
+    /// The type system can't determine if the predicate is satisfiable or not.
+    Undecidable(Predicate<M>),
+}
 
 impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N>
 where
@@ -60,7 +76,7 @@ where
     /// - `session`: The session to use for caching and limiting the
     ///   computation.
     /// - `handler`: The handler to report the errors.
-    pub fn check_resolution_occurrence(
+    pub(super) fn check_resolution_occurrence(
         &self,
         resolution: &resolution::Resolution<M>,
         resolution_span: &Span,
@@ -68,8 +84,9 @@ where
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match resolution {
-            resolution::Resolution::Module(_) => {}
-            resolution::Resolution::Variant(_) => {}
+            resolution::Resolution::Module(_)
+            | resolution::Resolution::Variant(_) => {}
+
             resolution::Resolution::Generic(generic) => {
                 // check for trait predicates
                 if let resolution::GenericID::Trait(trait_id) = generic.id {
@@ -82,24 +99,28 @@ where
                                 .clone(),
                         });
 
-                    match self
-                        .predicate_satisfied(&predicate, do_outlives_check)
-                    {
-                        Ok(true) => {}
-                        Ok(false) => {
-                            handler.receive(Box::new(UnsatisifedPredicate {
-                                predicate,
-                                instantiation_span: resolution_span.clone(),
-                                predicate_declaration_span: None,
-                            }));
-                        }
-                        Err(OverflowError) => {
-                            handler.receive(Box::new(UndecidablePredicate {
-                                instantiation_span: resolution_span.clone(),
-                                predicate,
-                                predicate_declaration_span: None,
-                            }));
-                        }
+                    let errors =
+                        self.predicate_satisfied(predicate, do_outlives_check);
+
+                    for error in errors {
+                        let error: Box<dyn crate::error::Error> = match error {
+                            PredicateError::Unsatisfied(predicate) => {
+                                Box::new(UnsatisifedPredicate {
+                                    predicate,
+                                    instantiation_span: resolution_span.clone(),
+                                    predicate_declaration_span: None,
+                                })
+                            }
+                            PredicateError::Undecidable(predicate) => {
+                                Box::new(UndecidablePredicate {
+                                    instantiation_span: resolution_span.clone(),
+                                    predicate,
+                                    predicate_declaration_span: None,
+                                })
+                            }
+                        };
+
+                        handler.receive(error);
                     }
                 }
 
@@ -109,8 +130,9 @@ where
                     resolution_span,
                     do_outlives_check,
                     handler,
-                )
+                );
             }
+
             resolution::Resolution::MemberGeneric(member_generic) => {
                 // additional adt implementation check
 
@@ -119,47 +141,118 @@ where
                 let adt_implementation_check = match member_generic.id {
                     resolution::MemberGenericID::AdtImplementationFunction(
                         id,
-                    ) => Some(self.table.get(id).unwrap().parent_id),
+                    ) => Some(self.table().get(id).unwrap().parent_id),
                     resolution::MemberGenericID::AdtImplementationType(id) => {
-                        Some(self.table.get(id).unwrap().parent_id)
+                        Some(self.table().get(id).unwrap().parent_id)
                     }
                     resolution::MemberGenericID::AdtImplementationConstant(
                         id,
-                    ) => Some(self.table.get(id).unwrap().parent_id),
+                    ) => Some(self.table().get(id).unwrap().parent_id),
 
                     _ => None,
                 };
 
-                if let Some(adt_implementation_id) = adt_implementation_check {
-                    let adt_implementation =
-                        self.table.get(adt_implementation_id).unwrap();
+                // extract the instantiation for the parent
+                let mut parent_instantiation =
+                    if let Some(adt_implementation_id) =
+                        adt_implementation_check
+                    {
+                        // deduce the generic arguments
 
-                    let deduced = match GenericArguments::from_default_model(
+                        let adt_implementation =
+                            self.table().get(adt_implementation_id).unwrap();
+
+                        let result = match GenericArguments::from_default_model(
                         adt_implementation.arguments.clone(),
                     )
                     .deduce(&member_generic.parent_generic_arguments, self)
                     {
                         Ok(deduced) => deduced,
-                        Err(_) => todo!("report undecidable error"),
+
+                        Err(
+                            deduction::Error::MismatchedGenericArgumentCount(_),
+                        ) => {
+                            unreachable!()
+                        }
+
+                        Err(deduction::Error::UnificationFailure(_)) => {
+                            handler.receive(Box::new(
+                                MismatchedImplementationArguments {
+                                    adt_implementation_id,
+                                    found_generic_arguments: member_generic
+                                        .parent_generic_arguments
+                                        .clone(),
+                                    instantiation_span: resolution_span.clone(),
+                                },
+                            ));
+
+                            return; // can't continue
+                        }
+
+                        Err(deduction::Error::Overflow(_)) => {
+                            todo!("report overflow")
+                        }
                     };
 
-                    // check if the deduced generic arguments are correct
-                    self.check_instantiation_predicates(
-                        adt_implementation_id.into(),
-                        &deduced,
-                        resolution_span,
-                        do_outlives_check,
-                        handler,
-                    );
-                }
+                        self.check_lifetime_constraints(
+                            result.constraints,
+                            resolution_span,
+                            handler,
+                        );
 
-                self.check_instantiation_predicates_by_generic_arguments(
+                        // check if the deduced generic arguments are correct
+                        self.check_instantiation_predicates(
+                            adt_implementation_id.into(),
+                            &result.result,
+                            resolution_span,
+                            do_outlives_check,
+                            handler,
+                        );
+
+                        result.result
+                    } else {
+                        let parent_id = GenericID::try_from(
+                            self.table()
+                                .get_global(member_generic.id.into())
+                                .unwrap()
+                                .parent_global_id()
+                                .unwrap(), // should have parent
+                        )
+                        .unwrap(); // parent should be a generic
+
+                        Instantiation::from_generic_arguments(
+                            member_generic.parent_generic_arguments.clone(),
+                            parent_id,
+                            &self
+                                .table()
+                                .get_generic(parent_id)
+                                .unwrap()
+                                .generic_declaration()
+                                .parameters,
+                        )
+                        .unwrap() // should have no mismatched
+                    };
+
+                parent_instantiation
+                    .append_from_generic_arguments(
+                        member_generic.generic_arguments.clone(),
+                        member_generic.id.into(),
+                        &self
+                            .table()
+                            .get_generic(member_generic.id.into())
+                            .unwrap()
+                            .generic_declaration()
+                            .parameters,
+                    )
+                    .unwrap();
+
+                self.check_instantiation_predicates(
                     member_generic.id.into(),
-                    member_generic.generic_arguments.clone(),
+                    &parent_instantiation,
                     resolution_span,
                     do_outlives_check,
                     handler,
-                )
+                );
             }
         }
     }
@@ -179,7 +272,7 @@ where
     /// - `session`: The session to use for caching and limiting the
     ///   computation.
     /// - `handler`: The handler to report the errors.
-    pub fn check_instantiation_predicates_by_generic_arguments(
+    pub(super) fn check_instantiation_predicates_by_generic_arguments(
         &self,
         instantiated: GenericID,
         generic_arguments: GenericArguments<M>,
@@ -195,7 +288,7 @@ where
                 generic_arguments,
                 instantiated,
                 &self
-                    .table
+                    .table()
                     .get_generic(instantiated)
                     .unwrap()
                     .generic_declaration()
@@ -205,7 +298,7 @@ where
             instantiation_span,
             do_outlives_check,
             handler,
-        )
+        );
     }
 
     /// Do where clause predicates check for the given instantiation. The errors
@@ -222,7 +315,7 @@ where
     /// - `session`: The session to use for caching and limiting the
     ///  computation.
     /// - `handler`: The handler to report the errors.
-    pub fn check_instantiation_predicates(
+    pub(super) fn check_instantiation_predicates(
         &self,
         instantiated: GenericID,
         instantiation: &Instantiation<M>,
@@ -234,7 +327,7 @@ where
     {
         // get all the predicates and instantiate them with the given generic
         // arguments
-        let instantiated_sym = self.table.get_generic(instantiated).unwrap();
+        let instantiated_sym = self.table().get_generic(instantiated).unwrap();
 
         #[allow(clippy::significant_drop_in_scrutinee)]
         for predicate_info in &instantiated_sym.generic_declaration().predicates
@@ -244,114 +337,192 @@ where
 
             predicate.instantiate(instantiation);
 
-            match self.predicate_satisfied(&predicate, do_outlives_check) {
-                Ok(false) => handler.receive(Box::new(UnsatisifedPredicate {
-                    predicate,
-                    instantiation_span: instantiation_span.clone(),
-                    predicate_declaration_span: predicate_info
-                        .kind
-                        .span()
-                        .cloned(),
-                })),
+            let errors = self.predicate_satisfied(predicate, do_outlives_check);
 
-                Ok(true) => {}
+            for error in errors {
+                let error: Box<dyn Error> = match error {
+                    PredicateError::Unsatisfied(predicate) => {
+                        Box::new(UnsatisifedPredicate {
+                            predicate,
+                            instantiation_span: instantiation_span.clone(),
+                            predicate_declaration_span: predicate_info
+                                .kind
+                                .span()
+                                .cloned(),
+                        })
+                    }
+                    PredicateError::Undecidable(predicate) => {
+                        Box::new(UndecidablePredicate {
+                            instantiation_span: instantiation_span.clone(),
+                            predicate,
+                            predicate_declaration_span: predicate_info
+                                .kind
+                                .span()
+                                .cloned(),
+                        })
+                    }
+                };
 
-                Err(_) => handler.receive(Box::new(UndecidablePredicate {
-                    instantiation_span: instantiation_span.clone(),
-                    predicate,
-                    predicate_declaration_span: predicate_info
-                        .kind
-                        .span()
-                        .cloned(),
-                })),
+                handler.receive(error);
             }
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn predicate_satisfied(
         &self,
-        predicate: &Predicate<M>,
+        predicate: Predicate<M>,
         do_outlives_check: bool,
-    ) -> Result<bool, OverflowError> {
+    ) -> Vec<PredicateError<M>> {
         let result = match &predicate {
-            predicate::Predicate::TraitTypeEquality(eq) => equality::equals(
-                &r#type::Type::TraitMember(eq.lhs.clone()),
-                &eq.rhs,
-                self,
-            ),
-            predicate::Predicate::ConstantType(pred) => {
-                ConstantType::satisfies(&pred.0, self)
+            predicate::Predicate::TraitTypeEquality(eq) => {
+                r#type::Type::TraitMember(eq.lhs.clone()).compatible(
+                    &eq.rhs,
+                    Variance::Covariant,
+                    self,
+                )
             }
+            predicate::Predicate::ConstantType(pred) => pred.query(self),
             predicate::Predicate::LifetimeOutlives(pred) => {
                 if !do_outlives_check {
-                    return Ok(true);
+                    return Vec::new();
                 }
 
-                Outlives::satisfies(&pred.operand, &pred.bound, self)
+                return match pred.query(self) {
+                    Ok(Some(Satisfied)) => vec![],
+
+                    Ok(None) => {
+                        vec![PredicateError::Unsatisfied(predicate)]
+                    }
+
+                    Err(OverflowError) => {
+                        vec![PredicateError::Undecidable(predicate)]
+                    }
+                };
             }
             predicate::Predicate::TypeOutlives(pred) => {
                 if !do_outlives_check {
-                    return Ok(true);
+                    return Vec::new();
                 }
 
-                Outlives::satisfies(&pred.operand, &pred.bound, self)
-            }
-            predicate::Predicate::TupleType(pred) => {
-                Tuple::satisfies(&pred.0, self)
-            }
-            predicate::Predicate::TupleConstant(pred) => {
-                Tuple::satisfies(&pred.0, self)
-            }
-            predicate::Predicate::Trait(pred) => {
-                || -> Result<bool, OverflowError> {
-                    let Some(lifetime_constraints) = Trait::satisfies(
-                        pred.id,
-                        pred.is_const,
-                        &pred.generic_arguments,
-                        self,
-                    )?
-                    else {
-                        return Ok(false);
-                    };
+                return match pred.query(self) {
+                    Ok(Some(Satisfied)) => vec![],
 
-                    if do_outlives_check {
-                        // check if the lifetime constraints are satisfied
-                        for constraint in
-                            lifetime_constraints.lifetime_constraints
-                        {
-                            match constraint {
-                                OutlivesConstraint::Lifetime(pred) => {
-                                    if !Outlives::satisfies(
-                                        &pred.operand,
-                                        &pred.bound,
-                                        self,
-                                    )? {
-                                        return Ok(false);
-                                    }
+                    Ok(None) => {
+                        vec![PredicateError::Unsatisfied(predicate)]
+                    }
+
+                    Err(OverflowError) => {
+                        vec![PredicateError::Undecidable(predicate)]
+                    }
+                };
+            }
+            predicate::Predicate::TupleType(pred) => pred.query(self),
+            predicate::Predicate::TupleConstant(pred) => pred.query(self),
+            predicate::Predicate::Trait(pred) => pred.query(self),
+        };
+
+        match result {
+            Ok(Some(Succeeded { result: Satisfied, constraints })) => {
+                // if do_outlives_check is false, then we don't need to check
+                if !do_outlives_check {
+                    return Vec::new();
+                }
+
+                let mut errors = Vec::new();
+
+                for constraint in constraints {
+                    match constraint {
+                        LifetimeConstraint::LifetimeOutlives(pred) => {
+                            match pred.query(self) {
+                                Ok(None) => {
+                                    errors.push(PredicateError::Unsatisfied(
+                                        Predicate::LifetimeOutlives(pred),
+                                    ));
                                 }
-                                OutlivesConstraint::Type(pred) => {
-                                    if !Outlives::satisfies(
-                                        &pred.operand,
-                                        &pred.bound,
-                                        self,
-                                    )? {
-                                        return Ok(false);
-                                    }
+                                Err(_) => {
+                                    errors.push(PredicateError::Undecidable(
+                                        Predicate::LifetimeOutlives(pred),
+                                    ));
                                 }
+
+                                Ok(Some(_)) => {}
+                            }
+                        }
+
+                        LifetimeConstraint::TypeOutlives(pred) => {
+                            match pred.query(self) {
+                                Ok(None) => {
+                                    errors.push(PredicateError::Unsatisfied(
+                                        Predicate::TypeOutlives(pred),
+                                    ));
+                                }
+                                Err(_) => {
+                                    errors.push(PredicateError::Undecidable(
+                                        Predicate::TypeOutlives(pred),
+                                    ));
+                                }
+
+                                Ok(Some(_)) => {}
+                            }
+                        }
+
+                        LifetimeConstraint::LifetimeMatching(pred) => {
+                            let (lt_1, lt_2) = pred.into_tuple();
+
+                            let pred_1 = Outlives {
+                                operand: lt_1.clone(),
+                                bound: lt_2.clone(),
+                            };
+                            let pred_2 =
+                                Outlives { operand: lt_2, bound: lt_1 };
+
+                            match pred_1.query(self) {
+                                Ok(None) => {
+                                    errors.push(PredicateError::Unsatisfied(
+                                        Predicate::LifetimeOutlives(pred_1),
+                                    ));
+                                }
+                                Err(_) => {
+                                    errors.push(PredicateError::Undecidable(
+                                        Predicate::LifetimeOutlives(pred_1),
+                                    ));
+                                }
+
+                                Ok(Some(_)) => {}
+                            }
+
+                            match pred_2.query(self) {
+                                Ok(None) => {
+                                    errors.push(PredicateError::Unsatisfied(
+                                        Predicate::LifetimeOutlives(pred_2),
+                                    ));
+                                }
+                                Err(_) => {
+                                    errors.push(PredicateError::Undecidable(
+                                        Predicate::LifetimeOutlives(pred_2),
+                                    ));
+                                }
+
+                                Ok(Some(_)) => {}
                             }
                         }
                     }
+                }
 
-                    Ok(true)
-                }()
+                errors
             }
-        };
 
-        result
+            Ok(None) => vec![PredicateError::Unsatisfied(predicate)],
+
+            Err(OverflowError) => {
+                vec![PredicateError::Undecidable(predicate)]
+            }
+        }
     }
 
     /// Do predicates check for the given type occurrences.
-    pub fn check_type_ocurrence(
+    pub(super) fn check_type_ocurrence(
         &self,
         ty: &r#type::Type<M>,
         instantiation_span: &Span,
@@ -359,7 +530,7 @@ where
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match ty {
-            r#type::Type::Error
+            r#type::Type::Error(_)
             | term::r#type::Type::Tuple(_)
             | term::r#type::Type::Local(_)
             | term::r#type::Type::Phantom(_)
@@ -373,13 +544,15 @@ where
 
             term::r#type::Type::Reference(reference) => {
                 if do_outlives_check {
-                    match Outlives::satisfies(
-                        &*reference.pointee,
-                        &reference.lifetime,
-                        self,
-                    ) {
-                        Ok(true) => {}
-                        Ok(false) => {
+                    let outlives = Outlives {
+                        operand: (*reference.pointee).clone(),
+                        bound: reference.lifetime.clone(),
+                    };
+
+                    match outlives.query(self) {
+                        Ok(Some(Satisfied)) => {}
+
+                        Ok(None) => {
                             handler.receive(Box::new(UnsatisifedPredicate {
                                 predicate: predicate::Predicate::TypeOutlives(
                                     Outlives {
@@ -394,17 +567,12 @@ where
                                 predicate_declaration_span: None,
                             }));
                         }
-                        Err(_) => {
+
+                        Err(OverflowError) => {
                             handler.receive(Box::new(UndecidablePredicate {
                                 instantiation_span: instantiation_span.clone(),
                                 predicate: predicate::Predicate::TypeOutlives(
-                                    Outlives {
-                                        operand: reference
-                                            .pointee
-                                            .deref()
-                                            .clone(),
-                                        bound: reference.lifetime.clone(),
-                                    },
+                                    outlives,
                                 ),
                                 predicate_declaration_span: None,
                             }));
@@ -412,56 +580,205 @@ where
                     }
                 }
             }
-            term::r#type::Type::Array(_) => {
-                todo!("check if the length is type of usize")
+
+            term::r#type::Type::Array(array) => {
+                let expected_type =
+                    r#type::Type::Primitive(r#type::Primitive::Usize);
+                let type_check =
+                    TypeCheck::new(array.length.clone(), expected_type);
+
+                match type_check.query(self) {
+                    Ok(Some(Succeeded { result: Satisfied, .. })) => {}
+
+                    Ok(None) => todo!("report unsatisfied"),
+
+                    Err(_) => {
+                        todo!("report undecidable")
+                    }
+                }
             }
         }
     }
 
     fn check_unpacked_ocurrences<U: Term<Model = M> + 'a>(
         &self,
-        unpacked_term: &U,
+        unpacked_term: U,
         instantiation_span: &Span,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         predicate::Predicate<M>:
             From<Tuple<U>> + table::Display<table::Suboptimal>,
     {
-        match Tuple::satisfies(unpacked_term, self) {
-            Ok(true) => {}
-            Ok(false) => {
-                handler.receive(Box::new(error::UnsatisifedPredicate {
-                    predicate: Tuple(unpacked_term.clone()).into(),
-                    instantiation_span: instantiation_span.clone(),
-                    predicate_declaration_span: None,
-                }));
-            }
-            Err(OverflowError) => {
-                handler.receive(Box::new(error::UndecidablePredicate {
-                    instantiation_span: instantiation_span.clone(),
-                    predicate: Tuple(unpacked_term.clone()).into(),
-                    predicate_declaration_span: None,
-                }));
+        let tuple_predicate = Tuple(unpacked_term);
+
+        let errors = self.predicate_satisfied(tuple_predicate.into(), true);
+
+        for error in errors {
+            let error: Box<dyn error::Error> = match error {
+                PredicateError::Unsatisfied(predicate) => {
+                    Box::new(UnsatisifedPredicate {
+                        predicate,
+                        instantiation_span: instantiation_span.clone(),
+                        predicate_declaration_span: None,
+                    })
+                }
+                PredicateError::Undecidable(predicate) => {
+                    Box::new(UndecidablePredicate {
+                        instantiation_span: instantiation_span.clone(),
+                        predicate,
+                        predicate_declaration_span: None,
+                    })
+                }
+            };
+
+            handler.receive(error);
+        }
+    }
+
+    /// Checks if the gien list of lifetime constraints are satisfiable or not.
+    ///
+    /// If the lifetime constraints are not satisfiable, then the errors are
+    /// reported to the `handler`.
+    pub(super) fn check_lifetime_constraints(
+        &self,
+        lifetime_constraints: impl IntoIterator<Item = LifetimeConstraint<M>>,
+        instantiation_span: &Span,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        for lifetime_constraint in lifetime_constraints {
+            match lifetime_constraint {
+                LifetimeConstraint::LifetimeOutlives(outlives) => {
+                    match outlives.query(self) {
+                        Ok(Some(Satisfied)) => {}
+
+                        Ok(None) => {
+                            handler.receive(Box::new(UnsatisifedPredicate {
+                                predicate: Predicate::LifetimeOutlives(
+                                    outlives,
+                                ),
+                                instantiation_span: instantiation_span.clone(),
+                                predicate_declaration_span: None,
+                            }));
+                        }
+
+                        Err(OverflowError) => {
+                            handler.receive(Box::new(UndecidablePredicate {
+                                instantiation_span: instantiation_span.clone(),
+                                predicate:
+                                    predicate::Predicate::LifetimeOutlives(
+                                        outlives,
+                                    ),
+                                predicate_declaration_span: None,
+                            }));
+                        }
+                    }
+                }
+                LifetimeConstraint::TypeOutlives(outlives) => {
+                    match outlives.query(self) {
+                        Ok(Some(Satisfied)) => {}
+
+                        Ok(None) => {
+                            handler.receive(Box::new(UnsatisifedPredicate {
+                                predicate: Predicate::TypeOutlives(outlives),
+                                instantiation_span: instantiation_span.clone(),
+                                predicate_declaration_span: None,
+                            }));
+                        }
+
+                        Err(OverflowError) => {
+                            handler.receive(Box::new(UndecidablePredicate {
+                                instantiation_span: instantiation_span.clone(),
+                                predicate: Predicate::TypeOutlives(outlives),
+                                predicate_declaration_span: None,
+                            }));
+                        }
+                    }
+                }
+                LifetimeConstraint::LifetimeMatching(matching) => {
+                    let (lt_1, lt_2) = matching.into_tuple();
+
+                    let pred_1 =
+                        Outlives { operand: lt_1.clone(), bound: lt_2.clone() };
+                    let pred_2 = Outlives { operand: lt_2, bound: lt_1 };
+
+                    match pred_1.query(self) {
+                        Ok(None) => {
+                            handler.receive(Box::new(UnsatisifedPredicate {
+                                predicate: Predicate::LifetimeOutlives(pred_1),
+                                instantiation_span: instantiation_span.clone(),
+                                predicate_declaration_span: None,
+                            }));
+                        }
+
+                        Err(OverflowError) => {
+                            handler.receive(Box::new(UndecidablePredicate {
+                                instantiation_span: instantiation_span.clone(),
+                                predicate: Predicate::LifetimeOutlives(pred_1),
+                                predicate_declaration_span: None,
+                            }));
+                        }
+
+                        Ok(Some(_)) => {}
+                    }
+
+                    match pred_2.query(self) {
+                        Ok(None) => {
+                            handler.receive(Box::new(UnsatisifedPredicate {
+                                predicate: Predicate::LifetimeOutlives(pred_2),
+                                instantiation_span: instantiation_span.clone(),
+                                predicate_declaration_span: None,
+                            }));
+                        }
+
+                        Err(OverflowError) => {
+                            handler.receive(Box::new(UndecidablePredicate {
+                                instantiation_span: instantiation_span.clone(),
+                                predicate: Predicate::LifetimeOutlives(pred_2),
+                                predicate_declaration_span: None,
+                            }));
+                        }
+
+                        Ok(Some(_)) => {}
+                    }
+                }
             }
         }
+    }
+
+    /// Simplifies the given [`r#type::Type`] term and immediately checks for
+    /// the lifetime constraints coming with simplification.
+    ///
+    /// The errors (if any) are reported to the `handler`.
+    pub(super) fn simplify_and_check_lifetime_constraints(
+        &self,
+        ty: &r#type::Type<M>,
+        instantiation_span: &Span,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> r#type::Type<M> {
+        let Succeeded { result: simplified, constraints } =
+            simplify::simplify(ty, self);
+
+        self.check_lifetime_constraints(
+            constraints,
+            instantiation_span,
+            handler,
+        );
+
+        simplified
     }
 }
 
 impl Table<Building<RwLockContainer, Finalizer>> {
     /// Checks if the occurrences of symbols are valid (i.e. they satisfy the
     /// where clause predicates).
-    pub fn check_occurrences(
+    pub(super) fn check_occurrences(
         &self,
         id: GlobalID,
         occurrences: &Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         let active_premise = self.get_active_premise(id).unwrap();
-        let environment = Environment {
-            premise: &active_premise,
-            table: self,
-            normalizer: &NoOp,
-        };
+        let (environment, _) = Environment::new(active_premise, self, &NO_OP);
 
         // check resolution occurrences
         for (resolution, generic_identifier) in occurrences.resolutions() {
@@ -470,39 +787,39 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 &generic_identifier.span(),
                 true,
                 handler,
-            )
+            );
         }
 
         // check type occurrences
         for (ty, syn) in occurrences.types() {
-            environment.check_type_ocurrence(ty, &syn.span(), true, handler)
+            environment.check_type_ocurrence(ty, &syn.span(), true, handler);
         }
 
         // check unpacked type occurrences
         for (unpacked, syn) in occurrences.unpacked_types() {
             environment.check_unpacked_ocurrences(
-                unpacked,
+                unpacked.clone(),
                 &syn.span(),
                 handler,
-            )
+            );
         }
 
         // check unpacked constant occurrences
         for (unpacked, syn) in occurrences.unpacked_constants() {
             environment.check_unpacked_ocurrences(
-                unpacked,
+                unpacked.clone(),
                 &syn.span(),
                 handler,
-            )
+            );
         }
     }
 }
 
 /// Contains all the unused generic parameters in a generic arguments.
-pub struct UnusedGenericParameters {
-    pub lifetimes: HashSet<LifetimeParameterID>,
-    pub types: HashSet<TypeParameterID>,
-    pub constants: HashSet<ConstantParameterID>,
+struct UnusedGenericParameters {
+    lifetimes: HashSet<LifetimeParameterID>,
+    types: HashSet<TypeParameterID>,
+    constants: HashSet<ConstantParameterID>,
 }
 
 impl UnusedGenericParameters {
@@ -515,7 +832,7 @@ impl UnusedGenericParameters {
     /// - `generic_parameters`: The [`GenericParameters`] to compare the
     /// - `generic_arguments`: The generic arguments to search for unused
     ///   parameters.
-    pub fn get_unused_generic_parameters(
+    pub(super) fn get_unused_generic_parameters(
         generic_id: GenericID,
         generic_parameters: &GenericParameters,
         generic_arguments: &GenericArguments<Default>,
@@ -544,7 +861,7 @@ impl UnusedGenericParameters {
     }
 
     /// Reports the unused generic parameters in an implementation.
-    pub fn report_as_unused_generic_parameters_in_implementation<
+    pub(super) fn report_as_unused_generic_parameters_in_implementation<
         ID: Into<GenericID> + Copy + std::fmt::Debug + Send + Sync + 'static,
     >(
         &self,
@@ -628,7 +945,7 @@ impl UnusedGenericParameters {
 
             r#type::Type::TraitMember(_)
             | r#type::Type::Inference(_)
-            | r#type::Type::Error
+            | r#type::Type::Error(_)
             | r#type::Type::Primitive(_) => {}
         }
     }
@@ -641,7 +958,7 @@ impl UnusedGenericParameters {
 
             lifetime::Lifetime::Inference(_)
             | lifetime::Lifetime::Static
-            | lifetime::Lifetime::Error
+            | lifetime::Lifetime::Error(_)
             | lifetime::Lifetime::Forall(_) => {}
         }
     }
@@ -653,7 +970,7 @@ impl UnusedGenericParameters {
             }
 
             constant::Constant::Phantom
-            | constant::Constant::Error
+            | constant::Constant::Error(_)
             | constant::Constant::Primitive(_)
             | constant::Constant::Inference(_) => {}
 
@@ -840,6 +1157,12 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let implementation_member_active_premise =
             self.get_active_premise(implementation_member_id.into()).unwrap();
 
+        let (environment, _) = Environment::new(
+            implementation_member_active_premise.clone(),
+            self,
+            &NO_OP,
+        );
+
         for ((tr_const_id, tr_const_param), (im_const_id, im_const_param)) in
             trait_member_sym
                 .generic_declaration()
@@ -855,116 +1178,123 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             let mut tr_const_ty = tr_const_param.r#type.clone();
             instantiation::instantiate(&mut tr_const_ty, &trait_instantiation);
 
-            match equality::equals(
+            match im_const_param.r#type.compatible(
                 &tr_const_ty,
-                &im_const_param.r#type,
-                &Environment {
-                    table: self,
-                    premise: &implementation_member_active_premise,
-                    normalizer: &NoOp,
-                },
+                Variance::Covariant,
+                &environment,
             ) {
-                Ok(false) => handler.receive(Box::new(
+                Ok(Some(_)) => {}
+
+                Ok(None) => handler.receive(Box::new(
                     MismatchedImplementationConstantTypeParameter {
                         implementation_member_constant_parameter_id:
                             ConstantParameterID {
-                                parent: trait_member_id.into(),
+                                parent: implementation_member_id.into(),
                                 id: im_const_id,
                             },
-                        trait_member_constant_parameter_id:
+                        trait_member_constant_parameter_id: {
                             ConstantParameterID {
                                 parent: trait_member_id.into(),
                                 id: tr_const_id,
-                            },
+                            }
+                        },
                     },
                 )),
-                Ok(true) => {}
-                Err(_) => todo!(),
+
+                Err(_) => todo!("report undecidable error"),
             }
         }
-        let implementation_member_environment = Environment {
-            premise: &implementation_member_active_premise,
-            table: self,
-            normalizer: &NoOp,
-        };
 
         // check if the predicates match
         for predicate in &trait_member_sym.generic_declaration().predicates {
             let mut predicate_instantiated = predicate.predicate.clone();
             predicate_instantiated.instantiate(&trait_instantiation);
 
-            match implementation_member_environment
-                .predicate_satisfied(&predicate_instantiated, true)
+            for error in
+                environment.predicate_satisfied(predicate_instantiated, true)
             {
-                Ok(false) => {
-                    handler.receive(Box::new(
-                        UnsatisfiedTraitMemberPredicate {
-                            trait_implementation_id: implementation_member_id,
-                            predicate: predicate_instantiated,
-                            predicate_span: predicate.kind.span().cloned(),
-                        },
-                    ));
+                match error {
+                    PredicateError::Undecidable(predicate) => {
+                        handler.receive(Box::new(UndecidablePredicate {
+                            instantiation_span: implementation_member_sym
+                                .span()
+                                .cloned()
+                                .unwrap(),
+                            predicate,
+                            predicate_declaration_span: trait_member_sym
+                                .span()
+                                .cloned(),
+                        }));
+                    }
+                    PredicateError::Unsatisfied(predicate) => {
+                        handler.receive(Box::new(UnsatisifedPredicate {
+                            predicate,
+                            instantiation_span: implementation_member_sym
+                                .span()
+                                .cloned()
+                                .unwrap(),
+                            predicate_declaration_span: trait_member_sym
+                                .span()
+                                .cloned(),
+                        }));
+                    }
                 }
-                Ok(true) => {}
-                Err(_) => handler.receive(Box::new(UndecidablePredicate {
-                    instantiation_span: implementation_member_sym
-                        .span()
-                        .cloned()
-                        .unwrap(),
-                    predicate: predicate_instantiated,
-                    predicate_declaration_span: None,
-                })),
             }
         }
 
         let trait_member_active_premise = {
             let stub = self.get_active_premise(trait_member_id.into()).unwrap();
 
-            let mut trait_member_active_premise = Premise::default();
-
-            trait_member_active_premise.trait_context =
-                implementation_member_active_premise.trait_context;
-            trait_member_active_premise.append_from_predicates(
-                stub.predicates().iter().map(|x| {
-                    let mut predicate = x.clone();
-                    predicate.instantiate(&trait_instantiation);
-                    predicate
-                }),
-            );
-
-            trait_member_active_premise
+            Premise {
+                trait_context: implementation_member_active_premise
+                    .trait_context,
+                predicates: stub
+                    .predicates
+                    .into_iter()
+                    .map(|mut x| {
+                        x.instantiate(&trait_instantiation);
+                        x
+                    })
+                    .collect(),
+            }
         };
-        let trait_member_environment = Environment {
-            premise: &trait_member_active_premise,
-            table: self,
-            normalizer: &NoOp,
-        };
+
+        let (environment, _) =
+            Environment::new(trait_member_active_premise, self, &NO_OP);
 
         // check for any extraneous predicates defined in the implementation
         // member that are not in the trait member
-        for predicate in
+        for predicate_decl in
             &implementation_member_sym.generic_declaration().predicates
         {
-            match trait_member_environment
-                .predicate_satisfied(&predicate.predicate, true)
+            for error in environment
+                .predicate_satisfied(predicate_decl.predicate.clone(), true)
             {
-                Ok(false) => {
-                    handler.receive(Box::new(ExtraneousTraitMemberPredicate {
-                        trait_implementation_member_id:
-                            implementation_member_id,
-                        predicate: predicate.predicate.clone(),
-                        predicate_span: predicate.kind.span().cloned(),
-                    }));
+                match error {
+                    PredicateError::Undecidable(predicate) => {
+                        handler.receive(Box::new(UndecidablePredicate {
+                            instantiation_span: implementation_member_sym
+                                .span()
+                                .cloned()
+                                .unwrap(),
+                            predicate,
+                            predicate_declaration_span: None,
+                        }));
+                    }
+                    PredicateError::Unsatisfied(predicate) => {
+                        handler.receive(Box::new(
+                            ExtraneousTraitMemberPredicate {
+                                trait_implementation_member_id:
+                                    implementation_member_id,
+                                predicate,
+                                predicate_span: predicate_decl
+                                    .kind
+                                    .span()
+                                    .cloned(),
+                            },
+                        ));
+                    }
                 }
-                Ok(true) => {}
-                Err(_) => handler.receive(Box::new(UndecidablePredicate {
-                    instantiation_span: implementation_member_sym
-                        .span()
-                        .cloned()
-                        .unwrap(),
-                    predicate: predicate.predicate.clone(),
-                    predicate_declaration_span: None,
-                })),
             }
         }
     }
@@ -1087,8 +1417,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let premise =
             self.get_active_premise(implementation_id.into()).unwrap();
 
-        let environment =
-            Environment { premise: &premise, table: self, normalizer: &NoOp };
+        let (environment, _) = Environment::new(premise, self, &NO_OP);
 
         environment.check_instantiation_predicates_by_generic_arguments(
             implementation_sym.implemented_id.into(),
@@ -1099,3 +1428,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         );
     }
 }
+
+#[cfg(test)]
+mod tests;

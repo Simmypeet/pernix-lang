@@ -19,11 +19,12 @@ use super::{
         Term,
     },
     unification::{self, Log, Unification},
+    variance::Variance,
     Compute, Environment, LifetimeConstraint, Output, OverflowError, Satisfied,
     Succeeded,
 };
 use crate::{
-    symbol::{table::State, GenericKind, Variance},
+    symbol::{table::State, GenericKind},
     type_system::LifetimeUnifyingPredicate,
     unordered_pair::UnorderedPair,
 };

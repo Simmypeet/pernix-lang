@@ -89,13 +89,12 @@ impl Finalize for Enum {
                 }
 
                 // build all the occurrences to partial complete
-                let _ = data
-                    .build_all_occurrences_to::<build_preset::PartialComplete>(
-                        table,
-                        symbol_id.into(),
-                        false,
-                        handler,
-                    );
+                data.build_all_occurrences_to::<build_preset::PartialComplete>(
+                    table,
+                    symbol_id.into(),
+                    false,
+                    handler,
+                );
 
                 // build the variance
                 let premise =
@@ -117,7 +116,7 @@ impl Finalize for Enum {
                 table.build_variance(
                     &enum_sym.generic_declaration.parameters,
                     &mut generic_parameter_variances,
-                    &premise,
+                    premise,
                     symbol_id.into(),
                     type_usages.iter(),
                     true,
@@ -166,7 +165,7 @@ impl Finalize for Enum {
                 table.build_variance(
                     &enum_sym.generic_declaration.parameters,
                     &mut generic_parameter_variances,
-                    &premise,
+                    premise,
                     symbol_id.into(),
                     type_usages.iter(),
                     false,

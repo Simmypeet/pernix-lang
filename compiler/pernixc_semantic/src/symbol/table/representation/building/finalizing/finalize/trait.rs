@@ -8,7 +8,6 @@ use crate::{
     error::{
         self, AmbiguousImplementation, UndecidableImplementationSpecialization,
     },
-    semantic::{normalizer::NoOp, order, Environment, Premise},
     symbol::{
         table::{
             representation::{
@@ -22,6 +21,7 @@ use crate::{
         },
         GlobalID, Trait, TraitImplementationID,
     },
+    type_system::{environment::Environment, normalizer::NO_OP, order},
 };
 
 /// Generic parameters are built
@@ -128,7 +128,14 @@ impl Finalize for Trait {
                         .collect::<Vec<_>>()
                 };
 
+                let (environment, _) = Environment::new(
+                    table.get_active_premise(symbol_id.into()).unwrap(),
+                    table,
+                    &NO_OP,
+                );
+
                 let trait_sym = table.get(symbol_id).unwrap();
+
                 for (i, lhs) in implementation_ids.iter().copied().enumerate() {
                     let lhs_arguments = match lhs {
                         TraitImplementationID::Positive(id) => {
@@ -205,11 +212,7 @@ impl Finalize for Trait {
                         }
 
                         let Ok(result) =
-                            lhs_arguments.order(&rhs_arguments, &Environment {
-                                table,
-                                premise: &Premise::default(),
-                                normalizer: &NoOp,
-                            })
+                            lhs_arguments.order(&rhs_arguments, &environment)
                         else {
                             handler.receive(Box::new(
                                 UndecidableImplementationSpecialization {

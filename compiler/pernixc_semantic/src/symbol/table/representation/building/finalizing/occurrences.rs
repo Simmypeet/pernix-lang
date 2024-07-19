@@ -10,7 +10,6 @@ use super::finalizer::{
 };
 use crate::{
     error,
-    semantic::{model::Default, term},
     symbol::{
         table::{
             representation::{
@@ -21,6 +20,7 @@ use crate::{
         },
         GlobalID,
     },
+    type_system::{model::Default, term},
 };
 
 /// A structure containing the list of all resolution resolved so far in the
@@ -106,7 +106,7 @@ impl Occurrences {
         }
 
         for (resolution, _) in &self.resolutions {
-            global_ids.push(resolution.global_id())
+            global_ids.push(resolution.global_id());
         }
 
         global_ids.sort_unstable();

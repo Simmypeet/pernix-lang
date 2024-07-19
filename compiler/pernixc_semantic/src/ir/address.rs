@@ -15,8 +15,8 @@ use enum_as_inner::EnumAsInner;
 use super::{alloca::Alloca, register::Register};
 use crate::{
     arena::ID,
-    type_system::model::Model,
     symbol::{self, Parameter},
+    type_system::model::Model,
 };
 
 /// The address points to a field in a struct.

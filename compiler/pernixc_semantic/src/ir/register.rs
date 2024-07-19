@@ -11,11 +11,11 @@ use pernixc_base::source_file::Span;
 use super::address::{Address, Memory};
 use crate::{
     arena::ID,
+    symbol::{self, Field},
     type_system::{
         model::Model,
         term::r#type::{Qualifier, Type},
     },
-    symbol::{self, Field},
 };
 
 /// Represents an element of a [`Tuple`].

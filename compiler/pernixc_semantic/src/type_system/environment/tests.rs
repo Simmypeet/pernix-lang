@@ -1,22 +1,22 @@
-use super::{
-    equality::Equality,
-    model::Default,
-    normalizer::NoOp,
-    predicate::{self, Predicate},
-    term::{
-        lifetime::Lifetime,
-        r#type::{self, Primitive, Qualifier, Reference, Type},
-        GenericArguments,
-    },
-    Environment, Premise, TraitContext,
-};
 use crate::{
     arena::ID,
     symbol::{
         table::{Building, Table},
         GenericID, LifetimeParameterID, TypeParameterID,
     },
-    type_system::NewEnvironmentError,
+    type_system::{
+        environment::{Environment, NewEnvironmentError},
+        equality::Equality,
+        model::Default,
+        normalizer::NoOp,
+        predicate::{self, Predicate},
+        term::{
+            lifetime::Lifetime,
+            r#type::{self, Primitive, Qualifier, Reference, Type},
+            GenericArguments,
+        },
+        Premise, TraitContext,
+    },
 };
 
 #[test]
