@@ -1,16 +1,20 @@
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree;
 
-use super::Finalize;
+use super::{adt_implementation, Finalize};
 use crate::{
     arena::ID,
-    error,
+    error::{self, PrivateEntityLeakedToPublicInterface},
     symbol::{
         table::{
             representation::{
-                building::finalizing::Finalizer, RwLockContainer, Table,
+                building::finalizing::{
+                    finalizer::build_preset, occurrences::Occurrences,
+                    Finalizer,
+                },
+                RwLockContainer, Table,
             },
-            Building,
+            resolution, Building,
         },
         AdtImplementationType,
     },
@@ -20,7 +24,6 @@ use crate::{
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
 /// Where cluase predicates are built
-#[allow(unused)]
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The complete information of the ADT implementation type is built.
@@ -32,15 +35,100 @@ pub const CHECK_STATE: usize = 3;
 impl Finalize for AdtImplementationType {
     type SyntaxTree = syntax_tree::item::Type;
     const FINAL_STATE: usize = CHECK_STATE;
-    type Data = ();
+    type Data = Occurrences;
 
     fn finalize(
-        _table: &Table<Building<RwLockContainer, Finalizer>>,
-        _symbol_id: ID<Self>,
-        _state_flag: usize,
-        _syntax_tree: &Self::SyntaxTree,
-        _data: &mut Self::Data,
-        _handler: &dyn Handler<Box<dyn error::Error>>,
+        table: &Table<Building<RwLockContainer, Finalizer>>,
+        symbol_id: ID<Self>,
+        state_flag: usize,
+        syntax_tree: &Self::SyntaxTree,
+        data: &mut Self::Data,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
+        match state_flag {
+            GENERIC_PARAMETER_STATE => {
+                table.create_generic_parameters(
+                    symbol_id,
+                    syntax_tree.signature().generic_parameters().as_ref(),
+                    data,
+                    handler,
+                );
+            }
+
+            WHERE_CLAUSE_STATE => {
+                table.create_where_clause_predicates(
+                    symbol_id,
+                    syntax_tree.definition().where_clause().as_ref(),
+                    data,
+                    handler,
+                );
+            }
+
+            COMPLETE_STATE => {
+                let parent_implementation_id = table
+                    .adt_implementation_types()
+                    .get(symbol_id)
+                    .unwrap()
+                    .read()
+                    .parent_id;
+                let _ = table.build_to(
+                    parent_implementation_id,
+                    Some(symbol_id.into()),
+                    adt_implementation::GENERIC_ARGUMENTS_STATE,
+                    true,
+                    handler,
+                );
+
+                let ty = table
+                    .resolve_type(
+                        syntax_tree.definition().ty(),
+                        symbol_id.into(),
+                        resolution::Config {
+                            ellided_lifetime_provider: None,
+                            ellided_type_provider: None,
+                            ellided_constant_provider: None,
+                            observer: Some(data),
+                            higher_ranked_lifetimes: None,
+                        },
+                        handler,
+                    )
+                    .unwrap_or_default();
+
+                let ty_accessible = table.get_type_accessibility(&ty).unwrap();
+
+                // private entity leaked to public interface
+                if ty_accessible
+                    < table.get_accessibility(symbol_id.into()).unwrap()
+                {
+                    handler.receive(Box::new(
+                        PrivateEntityLeakedToPublicInterface {
+                            entity: ty.clone(),
+                            entity_overall_accessibility: ty_accessible,
+                            leaked_span: syntax_tree.definition().ty().span(),
+                            public_interface_id: symbol_id.into(),
+                        },
+                    ));
+                }
+
+                table
+                    .adt_implementation_types()
+                    .get(symbol_id)
+                    .unwrap()
+                    .write()
+                    .r#type = ty;
+                data.build_all_occurrences_to::<build_preset::Complete>(
+                    table,
+                    symbol_id.into(),
+                    false,
+                    handler,
+                );
+            }
+
+            CHECK_STATE => {
+                table.check_occurrences(symbol_id.into(), data, handler);
+            }
+
+            _ => unreachable!(),
+        }
     }
 }

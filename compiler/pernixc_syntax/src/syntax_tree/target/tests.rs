@@ -189,7 +189,7 @@ impl ModuleTree {
 proptest! {
     #[test]
     #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
-    fn target_test(
+    fn target(
         mut target_module_tree in ModuleTree::arbitrary()
     ) {
         target_module_tree.signature = None;

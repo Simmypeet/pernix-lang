@@ -1,6 +1,9 @@
 //! Contains the definition of [`Compatible`] logic.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use super::{
     equality::Equality,
@@ -11,7 +14,7 @@ use super::{
     sub_term::{SubTypeLocation, TermLocation},
     term::{
         constant::Constant,
-        lifetime::Lifetime,
+        lifetime::{Forall, Lifetime},
         r#type::{self, Type},
         MemberSymbol, ModelOf, Symbol,
     },
@@ -25,6 +28,16 @@ use crate::{
     type_system::sub_term::{Location, SubLifetimeLocation},
     unordered_pair::UnorderedPair,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForallLifetimesInstantiation<M: Model> {
+    pub lifetimes_by_forall: HashMap<Forall, Lifetime<M>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Compatibility<M: Model> {
+    pub forall_lifetimes_instantiation: ForallLifetimesInstantiation<M>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct LifetimeMatching<M: Model> {
@@ -269,8 +282,8 @@ pub trait Compatible: ModelOf {
         context: &mut Context<Self::Model>,
     ) -> Result<Output<Satisfied, Self::Model>, OverflowError>;
 
-    /// A delegate method for [`compatible_with_context`] with the default
-    /// context.
+    /// A delegate method for [`Self::compatible_with_context()`] with the
+    /// default context.
     fn compatible(
         &self,
         target: &Self,

@@ -102,7 +102,7 @@ impl Finalize for Function {
                                 ellided_type_provider: None,
                                 ellided_constant_provider: None,
                                 observer: Some(data),
-                                higher_ranked_liftimes: None,
+                                higher_ranked_lifetimes: None,
                             },
                             handler,
                         )
@@ -150,7 +150,7 @@ impl Finalize for Function {
                                     ellided_type_provider: None,
                                     ellided_constant_provider: None,
                                     observer: Some(data),
-                                    higher_ranked_liftimes: None,
+                                    higher_ranked_lifetimes: None,
                                 },
                                 handler,
                             )
@@ -182,7 +182,7 @@ impl Finalize for Function {
                             .get(symbol_id)
                             .unwrap()
                             .write()
-                            .return_type = Type::Tuple(term::Tuple::default())
+                            .return_type = Type::Tuple(term::Tuple::default());
                     }
                 }
 

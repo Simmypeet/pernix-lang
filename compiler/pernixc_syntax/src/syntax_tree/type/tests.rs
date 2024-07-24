@@ -476,7 +476,7 @@ impl Display for Type {
 proptest! {
     #[test]
     #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
-    fn type_specifier_test(
+    fn r#type(
         type_specifier_input in Type::arbitrary(),
     ) {
         let source = type_specifier_input.to_string();

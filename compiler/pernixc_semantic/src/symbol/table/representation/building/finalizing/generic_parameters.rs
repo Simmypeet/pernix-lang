@@ -179,7 +179,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             ellided_type_provider: None,
                             ellided_constant_provider: None,
                             observer: Some(occurrences),
-                            higher_ranked_liftimes: None,
+                            higher_ranked_lifetimes: None,
                         },
                         handler,
                     )

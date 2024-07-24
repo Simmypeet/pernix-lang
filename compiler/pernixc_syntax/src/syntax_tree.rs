@@ -23,6 +23,7 @@ use crate::{
 pub mod expression;
 pub mod item;
 pub mod pattern;
+pub mod predicate;
 pub mod statement;
 pub mod target;
 pub mod r#type;
@@ -80,7 +81,7 @@ impl<'a> Parser<'a> {
     /// - if the parser position is not at the delimited list of the given
     ///   delimiter.
     /// - any error returned by the given parser function.
-    pub fn parse_enclosed_list<T: std::fmt::Debug>(
+    pub fn parse_delimited_list<T: std::fmt::Debug>(
         &mut self,
         delimiter: Delimiter,
         separator: char,
@@ -406,6 +407,26 @@ impl SourceElement for GenericIdentifier {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// LifetimeParameter:
+///     '\'' Identifier
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct LifetimeParameter {
+    #[get = "pub"]
+    apostrophe: Punctuation,
+    #[get = "pub"]
+    identifier: Identifier,
+}
+
+impl SourceElement for LifetimeParameter {
+    fn span(&self) -> Span {
+        self.apostrophe.span.join(&self.identifier.span).unwrap()
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// QualifiedIdentifier:
 ///     '::'? GenericIdentifier ('::' GenericIdentifier)*
 ///     ;
@@ -570,6 +591,55 @@ impl<'a> Parser<'a> {
         Some(QualifiedIdentifier { leading_scope_separator, first, rest })
     }
 
+    /// Parses a [`LifetimeParameter`]
+    pub fn parse_lifetime_parameter(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<LifetimeParameter> {
+        let apostrophe = self.parse_punctuation('\'', true, handler)?;
+        let identifier = self.parse_identifier(handler)?;
+
+        Some(LifetimeParameter { apostrophe, identifier })
+    }
+
+    /// Parses a [`Lifetime`]
+    pub fn parse_lifetime(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Lifetime> {
+        let apostrophe = self.parse_punctuation('\'', true, handler)?;
+        let identifier = match self.stop_at_significant() {
+            Reading::Unit(Token::Identifier(identifier)) => {
+                // eat identifier
+                self.forward();
+
+                LifetimeIdentifier::Identifier(identifier)
+            }
+
+            Reading::Unit(Token::Keyword(
+                keyword @ Keyword { kind: KeywordKind::Static, .. },
+            )) => {
+                // eat keyword
+                self.forward();
+
+                LifetimeIdentifier::Static(keyword)
+            }
+
+            found => {
+                handler.receive(Error {
+                    expected: SyntaxKind::Identifier,
+                    alternatives: vec![SyntaxKind::Keyword(
+                        KeywordKind::Static,
+                    )],
+                    found: found.into_token(),
+                });
+                return None;
+            }
+        };
+
+        Some(Lifetime { apostrophe, identifier })
+    }
+
     /// Parses a [`GenericArgument`]
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_generic_argument(
@@ -640,7 +710,7 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<Error>,
     ) -> Option<GenericArguments> {
-        let arguments = self.parse_enclosed_list(
+        let arguments = self.parse_delimited_list(
             Delimiter::Bracket,
             ',',
             |parser| parser.parse_generic_argument(handler),

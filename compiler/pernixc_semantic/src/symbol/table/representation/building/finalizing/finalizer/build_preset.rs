@@ -4,7 +4,7 @@ use crate::symbol::table::representation::building::finalizing::finalize::{
     adt_implementation, adt_implementation_constant,
     adt_implementation_function, adt_implementation_type, constant, function,
     negative_trait_implementation, r#enum, r#struct, r#trait, r#type,
-    trait_constant, trait_function, trait_implementation,
+    trait_constant, trait_function, positive_trait_implementation,
     trait_implementation_constant, trait_implementation_function,
     trait_implementation_type, trait_type, variant, StateFlag,
 };
@@ -82,7 +82,7 @@ impl BuildPreset for GenericParameter {
         Some(trait_function::GENERIC_PARAMETER_STATE)
     }
     fn trait_implementation() -> Option<StateFlag> {
-        Some(trait_implementation::GENERIC_PARAMETER_STATE)
+        Some(positive_trait_implementation::GENERIC_PARAMETER_STATE)
     }
     fn trait_implementation_constant() -> Option<StateFlag> {
         Some(trait_implementation_constant::GENERIC_PARAMETER_STATE)
@@ -133,7 +133,7 @@ impl BuildPreset for Check {
         Some(trait_function::CHECK_STATE)
     }
     fn trait_implementation() -> Option<StateFlag> {
-        Some(trait_implementation::CHECK_STATE)
+        Some(positive_trait_implementation::CHECK_STATE)
     }
     fn trait_implementation_constant() -> Option<StateFlag> {
         Some(trait_implementation_constant::CHECK_STATE)
@@ -180,7 +180,7 @@ impl BuildPreset for Complete {
         Some(trait_function::SIGNATURE_STATE)
     }
     fn trait_implementation() -> Option<StateFlag> {
-        Some(trait_implementation::COMPLETE_STATE)
+        Some(positive_trait_implementation::COMPLETE_STATE)
     }
     fn trait_implementation_constant() -> Option<StateFlag> {
         Some(trait_implementation_constant::COMPLETE_STATE)
@@ -235,7 +235,7 @@ impl BuildPreset for PartialComplete {
         Some(trait_function::SIGNATURE_STATE)
     }
     fn trait_implementation() -> Option<StateFlag> {
-        Some(trait_implementation::COMPLETE_STATE)
+        Some(positive_trait_implementation::COMPLETE_STATE)
     }
     fn trait_implementation_constant() -> Option<StateFlag> {
         Some(trait_implementation_constant::COMPLETE_STATE)

@@ -463,7 +463,7 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<error::Error>,
     ) -> Option<Structural<T>> {
-        let enclosed_tree = self.parse_enclosed_list(
+        let enclosed_tree = self.parse_delimited_list(
             Delimiter::Brace,
             ',',
             |parser| {
@@ -506,7 +506,7 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<error::Error>,
     ) -> Option<Tuple<T>> {
-        let enclosed_tree = self.parse_enclosed_list(
+        let enclosed_tree = self.parse_delimited_list(
             Delimiter::Parenthesis,
             ',',
             |parser| T::parse(parser, handler).map(Box::new),

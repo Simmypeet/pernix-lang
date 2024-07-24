@@ -129,6 +129,3 @@ impl<T: Container, S: Debug + Sized + Send + Sync + 'static> DerefMut
 }
 
 pub use representation::{build, BuildTableError};
-
-#[cfg(test)]
-mod tests;

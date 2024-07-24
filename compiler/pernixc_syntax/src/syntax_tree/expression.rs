@@ -1728,7 +1728,7 @@ impl Parser<'_> {
         &mut self,
         handler: &dyn Handler<Error>,
     ) -> Option<Parenthesized> {
-        let enclosed_tree = self.parse_enclosed_list(
+        let enclosed_tree = self.parse_delimited_list(
             Delimiter::Parenthesis,
             ',',
             |parser| {
@@ -1782,7 +1782,7 @@ impl Parser<'_> {
             Reading::IntoDelimited(Delimiter::Brace, _) => {
                 // handle struct literal
 
-                let delimited_list = self.parse_enclosed_list(
+                let delimited_list = self.parse_delimited_list(
                     Delimiter::Brace,
                     ',',
                     |this| {
@@ -1991,7 +1991,7 @@ impl Parser<'_> {
 
                 Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
                     // handle call
-                    let delimited_list = self.parse_enclosed_list(
+                    let delimited_list = self.parse_delimited_list(
                         Delimiter::Parenthesis,
                         ',',
                         |this| this.parse_expression(handler).map(Box::new),
@@ -2078,7 +2078,7 @@ impl Parser<'_> {
             }
 
             Reading::IntoDelimited(Delimiter::Bracket, _) => {
-                let delimited_list = self.parse_enclosed_list(
+                let delimited_list = self.parse_delimited_list(
                     Delimiter::Bracket,
                     ',',
                     |this| {

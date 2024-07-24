@@ -146,7 +146,7 @@ impl<C: Container> Representation<C> {
             drop_function.insert_parameter(Parameter {
                 r#type: Type::Reference(Reference {
                     qualifier: Qualifier::Unique,
-                    lifetime: lifetime_parameter_term,
+                    lifetime: lifetime_parameter_term.clone(),
                     pointee: Box::new(type_parameter_term.clone()),
                 }),
                 span: None,
@@ -227,7 +227,7 @@ impl<C: Container> Representation<C> {
 
         let reference_type = Type::Reference(Reference {
             qualifier,
-            lifetime: implementation_lt_parameter_term,
+            lifetime: implementation_lt_parameter_term.clone(),
             pointee: Box::new(implementation_ty_parameter_term.clone()),
         });
 
@@ -620,7 +620,7 @@ impl<C: Container> Representation<C> {
         function.insert_parameter(Parameter {
             r#type: Type::Reference(Reference {
                 qualifier: Qualifier::Immutable,
-                lifetime: function_lifetime_parameter,
+                lifetime: function_lifetime_parameter.clone(),
                 pointee: Box::new(copy_type.clone()),
             }),
             span: None,

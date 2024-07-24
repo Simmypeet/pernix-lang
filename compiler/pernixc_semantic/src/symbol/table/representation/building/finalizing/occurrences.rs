@@ -4,9 +4,12 @@ use getset::Getters;
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree::{self, GenericIdentifier};
 
-use super::finalizer::{
-    build_preset::{self, BuildPreset},
-    BuildSymbolError,
+use super::{
+    finalize::positive_trait_implementation,
+    finalizer::{
+        build_preset::{self, BuildPreset},
+        BuildSymbolError,
+    },
 };
 use crate::{
     error,
@@ -134,12 +137,13 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
         global_id: GlobalID,
         _: &pernixc_lexical::token::Identifier,
     ) -> bool {
-        match table.build_preset::<build_preset::GenericParameter>(
-            global_id,
-            Some(referring_site),
-            true,
-            handler,
-        ) {
+        let first_result = match table
+            .build_preset::<build_preset::GenericParameter>(
+                global_id,
+                Some(referring_site),
+                true,
+                handler,
+            ) {
             Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => true,
 
             Err(BuildSymbolError::CyclicDependency) => false,
@@ -147,6 +151,60 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
             Err(BuildSymbolError::InvalidStateFlag { .. }) => {
                 panic!("invalid state flag")
             }
+        };
+
+        // this variable will either be AdtImplementation or
+        // PositiveTraitImplementation
+        let implementaion_member_parent_id = match global_id {
+            id @ (GlobalID::TraitImplementationFunction(_)
+            | GlobalID::TraitImplementationType(_)
+            | GlobalID::TraitImplementationConstant(_)
+            | GlobalID::AdtImplementationFunction(_)
+            | GlobalID::AdtImplementationType(_)
+            | GlobalID::AdtImplementationConstant(_)) => {
+                Some(table.get_global(id).unwrap().parent_global_id().unwrap())
+            }
+
+            _ => None,
+        };
+
+        match implementaion_member_parent_id {
+            Some(GlobalID::PositiveTraitImplementation(id)) => {
+                match table.build_to(
+                    id,
+                    Some(referring_site),
+                    positive_trait_implementation::GENERIC_ARGUMENTS_STATE,
+                    true,
+                    handler,
+                ) {
+                    Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => true,
+
+                    Err(BuildSymbolError::CyclicDependency) => false,
+
+                    Err(BuildSymbolError::InvalidStateFlag { .. }) => {
+                        panic!("invalid state flag")
+                    }
+                }
+            }
+            Some(GlobalID::AdtImplementation(id)) => {
+                match table.build_to(
+                    id,
+                    Some(referring_site),
+                    positive_trait_implementation::GENERIC_ARGUMENTS_STATE,
+                    true,
+                    handler,
+                ) {
+                    Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => true,
+
+                    Err(BuildSymbolError::CyclicDependency) => false,
+
+                    Err(BuildSymbolError::InvalidStateFlag { .. }) => {
+                        panic!("invalid state flag")
+                    }
+                }
+            }
+
+            _ => first_result,
         }
     }
 
@@ -180,7 +238,7 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
         lifetime: &term::lifetime::Lifetime<Default>,
         syntax_tree: &syntax_tree::Lifetime,
     ) {
-        self.lifetimes.push((*lifetime, syntax_tree.clone()));
+        self.lifetimes.push((lifetime.clone(), syntax_tree.clone()));
     }
 
     fn on_constant_arguments_resolved(

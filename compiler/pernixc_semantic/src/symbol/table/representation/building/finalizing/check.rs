@@ -76,6 +76,7 @@ where
     /// - `session`: The session to use for caching and limiting the
     ///   computation.
     /// - `handler`: The handler to report the errors.
+    #[allow(clippy::too_many_lines)]
     pub(super) fn check_resolution_occurrence(
         &self,
         resolution: &resolution::Resolution<M>,

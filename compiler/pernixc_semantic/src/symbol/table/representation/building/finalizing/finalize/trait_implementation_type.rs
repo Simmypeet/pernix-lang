@@ -1,7 +1,7 @@
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{trait_implementation, trait_type, Finalize};
+use super::{positive_trait_implementation, trait_type, Finalize};
 use crate::{
     arena::ID,
     error,
@@ -59,7 +59,7 @@ impl Finalize for TraitImplementationType {
                 let _ = table.build_to(
                     parent_implementation_id,
                     Some(symbol_id.into()),
-                    trait_implementation::GENERIC_PARAMETER_STATE,
+                    positive_trait_implementation::GENERIC_PARAMETER_STATE,
                     true,
                     handler,
                 );
@@ -71,6 +71,7 @@ impl Finalize for TraitImplementationType {
                     handler,
                 );
             }
+
             WHERE_CLAUSE_STATE => {
                 table.create_where_clause_predicates(
                     symbol_id,
@@ -79,7 +80,22 @@ impl Finalize for TraitImplementationType {
                     handler,
                 );
             }
+
             COMPLETE_STATE => {
+                let parent_implementation_id = table
+                    .trait_implementation_types
+                    .get(symbol_id)
+                    .unwrap()
+                    .read()
+                    .parent_id;
+                let _ = table.build_to(
+                    parent_implementation_id,
+                    Some(symbol_id.into()),
+                    positive_trait_implementation::GENERIC_ARGUMENTS_STATE,
+                    true,
+                    handler,
+                );
+
                 table
                     .trait_implementation_types
                     .get(symbol_id)
@@ -94,7 +110,7 @@ impl Finalize for TraitImplementationType {
                             ellided_type_provider: None,
                             ellided_constant_provider: None,
                             observer: Some(data),
-                            higher_ranked_liftimes: None,
+                            higher_ranked_lifetimes: None,
                         },
                         handler,
                     )
@@ -107,6 +123,7 @@ impl Finalize for TraitImplementationType {
                     handler,
                 );
             }
+
             CHECK_STATE => {
                 let (trait_implementation_id, trait_id) = {
                     let trait_implementation_type_sym =
@@ -126,7 +143,7 @@ impl Finalize for TraitImplementationType {
                 let _ = table.build_to(
                     trait_implementation_id,
                     Some(symbol_id.into()),
-                    trait_implementation::WHERE_CLAUSE_STATE,
+                    positive_trait_implementation::WHERE_CLAUSE_STATE,
                     true,
                     handler,
                 );

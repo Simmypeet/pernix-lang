@@ -643,7 +643,7 @@ impl<T: State> Display<T> for CyclicDependency {
 
 /// The generic arguments were supplied in the wrong order.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MisOrderedGenericArgument {
+pub struct MisorderedGenericArgument {
     /// The kind of the mis-ordered generic argument.
     pub generic_kind: GenericKind,
 
@@ -651,7 +651,7 @@ pub struct MisOrderedGenericArgument {
     pub generic_argument: Span,
 }
 
-impl<T: State> Display<T> for MisOrderedGenericArgument {
+impl<T: State> Display<T> for MisorderedGenericArgument {
     fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,

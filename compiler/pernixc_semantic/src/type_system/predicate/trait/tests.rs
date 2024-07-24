@@ -318,13 +318,15 @@ impl SingleImplementation {
         let all_lifetimes = generic_arguments
             .lifetimes
             .iter()
-            .copied()
+            .cloned()
             .chain(
                 generic_arguments
                     .types
                     .iter()
                     .flat_map(RecursiveIterator::new)
-                    .filter_map(|(term, _)| term.as_lifetime().map(|x| **x)),
+                    .filter_map(|(term, _)| {
+                        term.as_lifetime().map(|x| (*x).clone())
+                    }),
             )
             .collect::<HashSet<_>>();
 
@@ -349,7 +351,7 @@ impl SingleImplementation {
                 }),
             );
             let instantiation = Instantiation {
-                lifetimes: std::iter::once(pair).collect(),
+                lifetimes: std::iter::once(pair.clone()).collect(),
                 types: HashMap::new(),
                 constants: HashMap::new(),
             };
@@ -655,13 +657,15 @@ impl SpecializedImplementation {
         let all_lifetimes = generic_arguments
             .lifetimes
             .iter()
-            .copied()
+            .cloned()
             .chain(
                 generic_arguments
                     .types
                     .iter()
                     .flat_map(RecursiveIterator::new)
-                    .filter_map(|(term, _)| term.as_lifetime().map(|x| **x)),
+                    .filter_map(|(term, _)| {
+                        term.as_lifetime().map(|x| (*x).clone())
+                    }),
             )
             .collect::<HashSet<_>>();
 
@@ -686,7 +690,7 @@ impl SpecializedImplementation {
                 }),
             );
             let instantiation = Instantiation {
-                lifetimes: std::iter::once(pair).collect(),
+                lifetimes: std::iter::once(pair.clone()).collect(),
                 types: HashMap::new(),
                 constants: HashMap::new(),
             };

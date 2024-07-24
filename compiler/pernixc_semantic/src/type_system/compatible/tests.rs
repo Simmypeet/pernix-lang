@@ -73,13 +73,13 @@ fn basic_compatible() {
 
     let a_t = Type::<Default>::Reference(Reference {
         qualifier: Qualifier::Immutable,
-        lifetime: a_lt,
+        lifetime: a_lt.clone(),
         pointee: Box::new(Type::Primitive(Primitive::Bool)),
     });
 
     let static_t = Type::<Default>::Reference(Reference {
         qualifier: Qualifier::Immutable,
-        lifetime: static_lt,
+        lifetime: static_lt.clone(),
         pointee: Box::new(Type::Primitive(Primitive::Bool)),
     });
 
@@ -98,18 +98,18 @@ fn basic_compatible() {
         let expected_constraint = match variance {
             Variance::Covariant => {
                 LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: a_lt,
-                    bound: static_lt,
+                    operand: a_lt.clone(),
+                    bound: static_lt.clone(),
                 })
             }
             Variance::Contravariant => {
                 LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: static_lt,
-                    bound: a_lt,
+                    operand: static_lt.clone(),
+                    bound: a_lt.clone(),
                 })
             }
             Variance::Invariant => LifetimeConstraint::LifetimeMatching(
-                UnorderedPair::new(static_lt, a_lt),
+                UnorderedPair::new(static_lt.clone(), a_lt.clone()),
             ),
         };
 
@@ -183,7 +183,7 @@ fn compatible_with_adt() {
         let a_t = Type::<Default>::Symbol(Symbol {
             id: adt_sym_id.into(),
             generic_arguments: GenericArguments {
-                lifetimes: vec![a_lt],
+                lifetimes: vec![a_lt.clone()],
                 types: Vec::new(),
                 constants: Vec::new(),
             },
@@ -193,7 +193,7 @@ fn compatible_with_adt() {
         let b_t = Type::<Default>::Symbol(Symbol {
             id: adt_sym_id.into(),
             generic_arguments: GenericArguments {
-                lifetimes: vec![b_lt],
+                lifetimes: vec![b_lt.clone()],
                 types: Vec::new(),
                 constants: Vec::new(),
             },
@@ -213,18 +213,18 @@ fn compatible_with_adt() {
         let expected_constraint = match variance {
             Variance::Covariant => {
                 LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: a_lt,
-                    bound: b_lt,
+                    operand: a_lt.clone(),
+                    bound: b_lt.clone(),
                 })
             }
             Variance::Contravariant => {
                 LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: b_lt,
-                    bound: a_lt,
+                    operand: b_lt.clone(),
+                    bound: a_lt.clone(),
                 })
             }
             Variance::Invariant => LifetimeConstraint::LifetimeMatching(
-                UnorderedPair::new(a_lt, b_lt),
+                UnorderedPair::new(a_lt.clone(), b_lt.clone()),
             ),
         };
 
@@ -259,19 +259,19 @@ fn compatible_with_mutable_reference() {
 
     let lhs = Type::<Default>::Reference(Reference {
         qualifier: Qualifier::Mutable,
-        lifetime: a_lt,
+        lifetime: a_lt.clone(),
         pointee: Box::new(Type::Reference(Reference {
             qualifier: Qualifier::Immutable,
-            lifetime: b_lt,
+            lifetime: b_lt.clone(),
             pointee: Box::new(Type::Primitive(Primitive::Bool)),
         })),
     });
     let rhs = Type::<Default>::Reference(Reference {
         qualifier: Qualifier::Mutable,
-        lifetime: c_lt,
+        lifetime: c_lt.clone(),
         pointee: Box::new(Type::Reference(Reference {
             qualifier: Qualifier::Immutable,
-            lifetime: d_lt,
+            lifetime: d_lt.clone(),
             pointee: Box::new(Type::Primitive(Primitive::Bool)),
         })),
     });
@@ -290,11 +290,13 @@ fn compatible_with_mutable_reference() {
     assert_eq!(result.constraints.len(), 2);
 
     let a_and_c = LifetimeConstraint::LifetimeOutlives(Outlives {
-        operand: a_lt,
-        bound: c_lt,
+        operand: a_lt.clone(),
+        bound: c_lt.clone(),
     });
-    let b_and_d =
-        LifetimeConstraint::LifetimeMatching(UnorderedPair::new(b_lt, d_lt));
+    let b_and_d = LifetimeConstraint::LifetimeMatching(UnorderedPair::new(
+        b_lt.clone(),
+        d_lt.clone(),
+    ));
 
     assert!(result.constraints.contains(&a_and_c));
     assert!(result.constraints.contains(&b_and_d));
@@ -395,7 +397,7 @@ fn compatible_with_normalization() {
     let eq_lhs = Type::<Default>::Symbol(Symbol {
         id: ty_alias_id.into(),
         generic_arguments: GenericArguments {
-            lifetimes: vec![a_lt],
+            lifetimes: vec![a_lt.clone()],
             types: Vec::new(),
             constants: Vec::new(),
         },
@@ -403,7 +405,7 @@ fn compatible_with_normalization() {
     let eq_rhs = Type::<Default>::Symbol(Symbol {
         id: ty_alias_id.into(),
         generic_arguments: GenericArguments {
-            lifetimes: vec![b_lt],
+            lifetimes: vec![b_lt.clone()],
             types: Vec::new(),
             constants: Vec::new(),
         },
@@ -435,18 +437,18 @@ fn compatible_with_normalization() {
         let expected_constraint = match variance {
             Variance::Covariant => {
                 LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: a_lt,
-                    bound: b_lt,
+                    operand: a_lt.clone(),
+                    bound: b_lt.clone(),
                 })
             }
             Variance::Contravariant => {
                 LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: b_lt,
-                    bound: a_lt,
+                    operand: b_lt.clone(),
+                    bound: a_lt.clone(),
                 })
             }
             Variance::Invariant => LifetimeConstraint::LifetimeMatching(
-                UnorderedPair::new(a_lt, b_lt),
+                UnorderedPair::new(a_lt.clone(), b_lt.clone()),
             ),
         };
 

@@ -163,10 +163,16 @@ try_from_ids!(
     (Trait, Trait),
     (TraitType, TraitType),
     (TraitFunction, TraitFunction),
+    (TraitConstant, TraitConstant),
     (PositiveTraitImplementation, PositiveTraitImplementation),
     (NegativeTraitImplementation, NegativeTraitImplementation),
     (TraitImplementationType, TraitImplementationType),
-    (TraitImplementationFunction, TraitImplementationFunction)
+    (TraitImplementationFunction, TraitImplementationFunction),
+    (TraitImplementationConstant, TraitImplementationConstant),
+    (AdtImplementation, AdtImplementation),
+    (AdtImplementationType, AdtImplementationType),
+    (AdtImplementationFunction, AdtImplementationFunction),
+    (AdtImplementationConstant, AdtImplementationConstant)
 );
 
 /// Represents a kind of symbol that accepts generic arguments.

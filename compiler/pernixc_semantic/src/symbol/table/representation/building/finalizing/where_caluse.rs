@@ -3,11 +3,7 @@
 use std::collections::{hash_map::Entry, HashMap};
 
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
-use pernixc_syntax::syntax_tree::{
-    self,
-    item::{LifetimePredicateOperand, TuplePredicateOperand},
-    ConnectedList,
-};
+use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
 use super::{
     finalize::r#trait, finalizer, occurrences::Occurrences, Finalizer,
@@ -30,7 +26,6 @@ use crate::{
     type_system::{
         equality::Equality,
         instantiation::Instantiation,
-        model::Default,
         predicate::{self, Outlives},
         term::{self, lifetime::Forall},
     },
@@ -42,15 +37,25 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     fn create_trait_member_predicate<T: Generic + Element>(
         &self,
         generic_id: ID<T>,
-        syntax_tree: &syntax_tree::item::TraitMemberEqualityPredicate,
-        mut config: resolution::Config<
-            Building<RwLockContainer, Finalizer>,
-            Default,
-        >,
+        syntax_tree: &syntax_tree::predicate::TraitTypeEquality,
+        occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
     {
+        let higher_ranked_lifetimes = syntax_tree
+            .higher_ranked_lifetimes()
+            .as_ref()
+            .map(|x| Self::create_higher_ranked_lifetimes(x, handler));
+
+        let mut config = resolution::Config {
+            ellided_lifetime_provider: None,
+            ellided_type_provider: None,
+            ellided_constant_provider: None,
+            observer: Some(occurrences),
+            higher_ranked_lifetimes: higher_ranked_lifetimes.as_ref(),
+        };
+
         let Ok(resolution) = self.resolve(
             syntax_tree.qualified_identifier(),
             generic_id.into(),
@@ -112,90 +117,27 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     >(
         &self,
         generic_id: ID<T>,
-        syntax_tree: &syntax_tree::item::TraitPredicate,
+        syntax_tree: &syntax_tree::predicate::Trait,
         occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
     {
-        let (forall_lifetimes_by_name, syntax_trees_by_foall_lifetimes) =
-            syntax_tree
-                .higher_ranked_lifetime_parameters()
+        for trait_bound in syntax_tree.bounds().elements() {
+            let higher_ranked_lifetimes = trait_bound
+                .higher_rankded_lifetimes()
                 .as_ref()
-                .map_or_else(
-                    || (HashMap::default(), HashMap::default()),
-                    |x| {
-                        let mut forall_lifetimes_by_name = HashMap::new();
-                        let mut syntax_trees_by_foall_lifetimes =
-                            HashMap::new();
-
-                        for syn in x
-                            .lifetime_parameter_list()
-                            .iter()
-                            .flat_map(ConnectedList::elements)
-                        {
-                            match forall_lifetimes_by_name
-                                .entry(syn.identifier().span.str().to_owned())
-                            {
-                                Entry::Vacant(entry) => {
-                                    let forall = Forall::generate();
-                                    entry.insert(forall);
-                                    assert!(syntax_trees_by_foall_lifetimes
-                                        .insert(forall, syn)
-                                        .is_none());
-                                }
-                                Entry::Occupied(_) => {
-                                    handler.receive(Box::new(
-                                        RedefinedHigherRankedLifetime {
-                                            redefinition_span: syn.span(),
-                                        },
-                                    ));
-                                }
-                            }
-                        }
-
-                        (
-                            forall_lifetimes_by_name,
-                            syntax_trees_by_foall_lifetimes,
-                        )
-                    },
-                );
-
-        for qualified_identifier in
-            syntax_tree.qualified_identifiers().elements()
-        {
-            let mut forall_lifetimes_by_name_cloned = HashMap::new();
-            let mut syntax_trees_by_foall_lifetimes_cloned = HashMap::new();
-
-            for (name, forall) in &forall_lifetimes_by_name {
-                let syn = syntax_trees_by_foall_lifetimes.get(forall).unwrap();
-                let new_forall = Forall::generate();
-
-                assert!(
-                    forall_lifetimes_by_name_cloned
-                        .insert(name.clone(), new_forall)
-                        .is_none(),
-                    "should have no duplication"
-                );
-                assert!(
-                    syntax_trees_by_foall_lifetimes_cloned
-                        .insert(new_forall, syn)
-                        .is_none(),
-                    "should have no duplication"
-                );
-            }
+                .map(|x| Self::create_higher_ranked_lifetimes(x, handler));
 
             let Ok(resolution) = self.resolve(
-                qualified_identifier,
+                trait_bound.qualified_identifier(),
                 generic_id.into(),
                 resolution::Config {
                     ellided_lifetime_provider: None,
                     ellided_type_provider: None,
                     ellided_constant_provider: None,
                     observer: Some(occurrences),
-                    higher_ranked_liftimes: Some(
-                        &forall_lifetimes_by_name_cloned,
-                    ),
+                    higher_ranked_lifetimes: higher_ranked_lifetimes.as_ref(),
                 },
                 handler,
             ) else {
@@ -218,7 +160,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
                     let trait_predicate = predicate::Trait {
                         id: trait_id,
-                        is_const: syntax_tree.const_keyword().is_some(),
+                        is_const: trait_bound.const_keyword().is_some(),
                         generic_arguments: generic_arguments.clone(),
                     };
 
@@ -233,7 +175,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                                 trait_predicate,
                             ),
                             kind: PredicateKind::Explicit(Some(
-                                qualified_identifier.span(),
+                                trait_bound.span(),
                             )),
                         });
 
@@ -271,7 +213,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                                 Some(symbol::Predicate {
                                     predicate,
                                     kind: PredicateKind::ImpliedByTraitBound(
-                                        Some(qualified_identifier.span()),
+                                        Some(trait_bound.span()),
                                     ),
                                 })
                             }),
@@ -280,7 +222,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
                 resolution => handler.receive(Box::new(ExpectTrait {
                     found_id: resolution.global_id(),
-                    trait_path: qualified_identifier.span(),
+                    trait_path: trait_bound.span(),
                 })),
             }
         }
@@ -292,16 +234,21 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     >(
         &self,
         generic_id: ID<T>,
-        syntax_tree: &syntax_tree::item::LifetimePredicate,
-        mut config: resolution::Config<
-            Building<RwLockContainer, Finalizer>,
-            Default,
-        >,
+        syntax_tree: &syntax_tree::predicate::Outlives,
+        occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
     {
         let mut bounds = Vec::new();
+
+        let mut config = resolution::Config {
+            ellided_lifetime_provider: None,
+            ellided_type_provider: None,
+            ellided_constant_provider: None,
+            observer: Some(occurrences),
+            higher_ranked_lifetimes: None,
+        };
 
         for bound_syn in syntax_tree.bounds().elements() {
             let Ok(bound) = self.resolve_lifetime(
@@ -316,27 +263,26 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             bounds.push(bound);
         }
 
-        for operand in syntax_tree.operands().elements() {
-            match operand {
-                LifetimePredicateOperand::LifetimeParameter(lt_parameter) => {
-                    let Ok(Some(lifetime_parameter_id)) = self
-                        .resolve_lifetime_parameter(
-                            lt_parameter.identifier(),
-                            generic_id.into(),
-                            handler,
-                        )
-                    else {
-                        return;
-                    };
+        match syntax_tree.operand() {
+            syntax_tree::predicate::OutlivesOperand::LifetimeParameter(
+                lt_parameter,
+            ) => {
+                let Ok(Some(lifetime_parameter_id)) = self
+                    .resolve_lifetime_parameter(
+                        lt_parameter.identifier(),
+                        generic_id.into(),
+                        handler,
+                    )
+                else {
+                    return;
+                };
 
-                    let mut generic_symbol =
-                        T::get_arena(self).get(generic_id).unwrap().write();
+                let mut generic_symbol =
+                    T::get_arena(self).get(generic_id).unwrap().write();
 
-                    for bound in bounds.iter().copied() {
-                        generic_symbol
-                            .generic_declaration_mut()
-                            .predicates
-                            .push(symbol::Predicate {
+                for bound in bounds.iter().cloned() {
+                    generic_symbol.generic_declaration_mut().predicates.push(
+                        symbol::Predicate {
                             predicate: predicate::Predicate::LifetimeOutlives(
                                 Outlives {
                                     operand:
@@ -349,35 +295,36 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             kind: PredicateKind::Explicit(Some(
                                 syntax_tree.span(),
                             )),
-                        });
-                    }
+                        },
+                    );
                 }
-                LifetimePredicateOperand::Type(qualified_identifier) => {
-                    let Ok(ty) = self.resolve_type(
-                        qualified_identifier,
-                        generic_id.into(),
-                        config.reborrow(),
-                        handler,
-                    ) else {
-                        return;
-                    };
+            }
+            syntax_tree::predicate::OutlivesOperand::Type(
+                qualified_identifier,
+            ) => {
+                let Ok(ty) = self.resolve_type(
+                    qualified_identifier,
+                    generic_id.into(),
+                    config.reborrow(),
+                    handler,
+                ) else {
+                    return;
+                };
 
-                    let mut generic_symbol =
-                        T::get_arena(self).get(generic_id).unwrap().write();
+                let mut generic_symbol =
+                    T::get_arena(self).get(generic_id).unwrap().write();
 
-                    for bound in bounds.iter().copied() {
-                        generic_symbol
-                            .generic_declaration_mut()
-                            .predicates
-                            .push(symbol::Predicate {
-                                predicate: predicate::Predicate::TypeOutlives(
-                                    Outlives { operand: ty.clone(), bound },
-                                ),
-                                kind: PredicateKind::Explicit(Some(
-                                    syntax_tree.span(),
-                                )),
-                            });
-                    }
+                for bound in bounds.iter().cloned() {
+                    generic_symbol.generic_declaration_mut().predicates.push(
+                        symbol::Predicate {
+                            predicate: predicate::Predicate::TypeOutlives(
+                                Outlives { operand: ty.clone(), bound },
+                            ),
+                            kind: PredicateKind::Explicit(Some(
+                                syntax_tree.span(),
+                            )),
+                        },
+                    );
                 }
             }
         }
@@ -390,20 +337,30 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     >(
         &self,
         generic_id: ID<T>,
-        syntax_tree: &syntax_tree::item::ConstantTypePredicate,
-        mut config: resolution::Config<
-            Building<RwLockContainer, Finalizer>,
-            Default,
-        >,
+        syntax_tree: &syntax_tree::predicate::ConstantType,
+        occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
     {
-        for constant_type in syntax_tree.types().elements() {
+        for bound in syntax_tree.bounds().elements() {
+            let higher_ranked_lifetimes = bound
+                .higher_ranked_lifetimes()
+                .as_ref()
+                .map(|x| Self::create_higher_ranked_lifetimes(x, handler));
+
+            let config = resolution::Config {
+                ellided_lifetime_provider: None,
+                ellided_type_provider: None,
+                ellided_constant_provider: None,
+                observer: Some(occurrences),
+                higher_ranked_lifetimes: higher_ranked_lifetimes.as_ref(),
+            };
+
             let Ok(ty) = self.resolve_type(
-                constant_type,
+                bound.r#type(),
                 generic_id.into(),
-                config.reborrow(),
+                config,
                 handler,
             ) else {
                 continue;
@@ -428,22 +385,33 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     fn create_tuple_predicates<T: Generic + Element>(
         &self,
         generic_id: ID<T>,
-        syntax_tree: &syntax_tree::item::TuplePredicate,
-        mut config: resolution::Config<
-            Building<RwLockContainer, Finalizer>,
-            Default,
-        >,
+        syntax_tree: &syntax_tree::predicate::Tuple,
+        occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
     {
         for tuple in syntax_tree.operands().elements() {
-            match tuple {
-                TuplePredicateOperand::Type(ty) => {
+            match tuple.kind() {
+                syntax_tree::predicate::TupleOperandKind::Type(ty) => {
+                    let higher_ranked_lifetimes =
+                        tuple.higher_ranked_lifetimes().as_ref().map(|x| {
+                            Self::create_higher_ranked_lifetimes(x, handler)
+                        });
+
+                    let config = resolution::Config {
+                        ellided_lifetime_provider: None,
+                        ellided_type_provider: None,
+                        ellided_constant_provider: None,
+                        observer: Some(occurrences),
+                        higher_ranked_lifetimes: higher_ranked_lifetimes
+                            .as_ref(),
+                    };
+
                     let Ok(ty) = self.resolve_type(
                         ty,
                         generic_id.into(),
-                        config.reborrow(),
+                        config,
                         handler,
                     ) else {
                         continue;
@@ -463,7 +431,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         },
                     );
                 }
-                TuplePredicateOperand::Constant(expr) => {
+                syntax_tree::predicate::TupleOperandKind::Constant(expr) => {
                     let Ok(constant) = self.evaluate(
                         expr.expression(),
                         generic_id.into(),
@@ -490,6 +458,35 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         }
     }
 
+    fn create_higher_ranked_lifetimes(
+        syntax_tree: &syntax_tree::predicate::HigherRankedLifetimes,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> HashMap<String, Forall> {
+        let mut forall_lifetimes_by_name = HashMap::new();
+
+        for syn in syntax_tree
+            .lifetime_parameter_list()
+            .iter()
+            .flat_map(ConnectedList::elements)
+        {
+            match forall_lifetimes_by_name
+                .entry(syn.identifier().span.str().to_owned())
+            {
+                Entry::Vacant(entry) => {
+                    let forall = Forall::generate(Some(syn.span()));
+                    entry.insert(forall);
+                }
+                Entry::Occupied(_) => {
+                    handler.receive(Box::new(RedefinedHigherRankedLifetime {
+                        redefinition_span: syn.span(),
+                    }));
+                }
+            }
+        }
+
+        forall_lifetimes_by_name
+    }
+
     /// Creates where clause predicates for the given generic symbol.
     pub(in crate::symbol::table::representation::building) fn create_where_clause_predicates<
         T: Generic + table::representation::Element + finalizer::Element,
@@ -508,65 +505,46 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
         for clause in where_clause.predicate_list().elements() {
             match clause {
-                syntax_tree::item::Predicate::TraitMember(trait_member) => self
-                    .create_trait_member_predicate(
-                        generic_id,
-                        trait_member,
-                        resolution::Config {
-                            ellided_lifetime_provider: None,
-                            ellided_type_provider: None,
-                            ellided_constant_provider: None,
-                            observer: Some(occurrences),
-                            higher_ranked_liftimes: None,
-                        },
-                        handler,
-                    ),
-                syntax_tree::item::Predicate::Trait(trait_bound) => self
+                syntax_tree::predicate::Predicate::TraitTypeEquality(
+                    trait_member,
+                ) => self.create_trait_member_predicate(
+                    generic_id,
+                    trait_member,
+                    occurrences,
+                    handler,
+                ),
+                syntax_tree::predicate::Predicate::Trait(trait_bound) => self
                     .create_trait_bound_predicates(
                         generic_id,
                         trait_bound,
                         occurrences,
                         handler,
                     ),
-                syntax_tree::item::Predicate::Lifetime(lifetime_predicates) => {
+                syntax_tree::predicate::Predicate::Outlives(
+                    lifetime_predicates,
+                ) => {
                     self.create_lifetime_outlives_predicates(
                         generic_id,
                         lifetime_predicates,
-                        resolution::Config {
-                            ellided_lifetime_provider: None,
-                            ellided_type_provider: None,
-                            ellided_constant_provider: None,
-                            observer: Some(occurrences),
-                            higher_ranked_liftimes: None,
-                        },
+                        occurrences,
                         handler,
                     );
                 }
-                syntax_tree::item::Predicate::ConstantType(constant_types) => {
+                syntax_tree::predicate::Predicate::ConstantType(
+                    constant_types,
+                ) => {
                     self.create_constant_type_predicates(
                         generic_id,
                         constant_types,
-                        resolution::Config {
-                            ellided_lifetime_provider: None,
-                            ellided_type_provider: None,
-                            ellided_constant_provider: None,
-                            observer: Some(occurrences),
-                            higher_ranked_liftimes: None,
-                        },
+                        occurrences,
                         handler,
                     );
                 }
-                syntax_tree::item::Predicate::Tuple(tuple_types) => {
+                syntax_tree::predicate::Predicate::Tuple(tuple_types) => {
                     self.create_tuple_predicates(
                         generic_id,
                         tuple_types,
-                        resolution::Config {
-                            ellided_lifetime_provider: None,
-                            ellided_type_provider: None,
-                            ellided_constant_provider: None,
-                            observer: Some(occurrences),
-                            higher_ranked_liftimes: None,
-                        },
+                        occurrences,
                         handler,
                     );
                 }

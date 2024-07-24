@@ -317,8 +317,8 @@ impl<
         let mut lifetime_rhs = Vec::new();
 
         for (lhs, rhs) in &self.lifetimes {
-            lifetime_lhs.push(*lhs);
-            lifetime_rhs.push(*rhs);
+            lifetime_lhs.push(lhs.clone());
+            lifetime_rhs.push(rhs.clone());
         }
 
         let mut types_lhs = Vec::new();
@@ -428,8 +428,8 @@ proptest! {
         let mut lifetime_rhs = Vec::new();
 
         for (lhs, rhs) in &lifetimes {
-            lifetime_lhs.push(*lhs);
-            lifetime_rhs.push(*rhs);
+            lifetime_lhs.push(lhs.clone());
+            lifetime_rhs.push(rhs.clone());
         }
 
         let mut types_lhs = Vec::new();

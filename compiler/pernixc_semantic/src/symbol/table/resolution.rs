@@ -22,7 +22,7 @@ use crate::{
     arena::ID,
     error::{
         self, ExpectLifetime, ExpectType, LifetimeParameterNotFound,
-        MisOrderedGenericArgument, MismatchedGenericArgumentCount,
+        MismatchedGenericArgumentCount, MisorderedGenericArgument,
         MoreThanOneUnpackedInTupleType, NoGenericArgumentsRequired,
         ResolutionAmbiguity, SymbolNotFound,
     },
@@ -627,7 +627,7 @@ pub struct Config<'lp, 'tp, 'cp, 'ob, 'hrlt, S: State, M: Model> {
 
     /// If specified, when resolving a lifetime parameter, these higher-ranked
     /// lifetimes map will be taken into consideration.
-    pub higher_ranked_liftimes: Option<&'hrlt HashMap<String, Forall>>,
+    pub higher_ranked_lifetimes: Option<&'hrlt HashMap<String, Forall>>,
 }
 
 impl<'lp, 'tp, 'cp, 'ob, 'hrlt, S: State, M: Model>
@@ -655,7 +655,7 @@ impl<'lp, 'tp, 'cp, 'ob, 'hrlt, S: State, M: Model>
                 Some(observer) => Some(&mut **observer),
                 None => None,
             },
-            higher_ranked_liftimes: self.higher_ranked_liftimes,
+            higher_ranked_lifetimes: self.higher_ranked_lifetimes,
         }
     }
 }
@@ -961,12 +961,12 @@ impl<S: State> Table<S> {
             LifetimeIdentifier::Static(..) => Lifetime::Static,
             LifetimeIdentifier::Identifier(ident) => {
                 if let Some(higher_ranked_lifetimes) =
-                    config.higher_ranked_liftimes
+                    config.higher_ranked_lifetimes
                 {
                     if let Some(forall) =
                         higher_ranked_lifetimes.get(ident.span.str())
                     {
-                        return Ok(Lifetime::Forall(*forall));
+                        return Ok(Lifetime::Forall(forall.clone()));
                     }
                 }
 
@@ -1002,7 +1002,7 @@ impl<S: State> Table<S> {
         resolved_id: GlobalID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Option<GenericArguments<M>>, Error> {
+    ) -> Result<Option<GenericArguments<M>>, ResolveTermError> {
         let Ok(generic_id) = symbol::GenericID::try_from(resolved_id) else {
             if let Some(generic_arguments) =
                 generic_identifier.generic_arguments()
@@ -1023,43 +1023,45 @@ impl<S: State> Table<S> {
 
         // extracts the generic arguments from the syntax tree to the list of
         // syntax trees
-        for generic_arguments in
+        for generic_argument in
             generic_identifier.generic_arguments().iter().flat_map(|x| {
                 x.argument_list().iter().flat_map(ConnectedList::elements)
             })
         {
-            match generic_arguments {
+            let misordered = match generic_argument {
                 syntax_tree::GenericArgument::Constant(arg) => {
                     constant_argument_syns.push(&**arg.expression());
+
+                    false
                 }
-                syntax_tree::GenericArgument::Type(arg)
-                    if constant_argument_syns.is_empty() =>
-                {
+                syntax_tree::GenericArgument::Type(arg) => {
                     type_argument_syns.push(&**arg);
+
+                    !constant_argument_syns.is_empty()
                 }
-                syntax_tree::GenericArgument::Lifetime(arg)
-                    if constant_argument_syns.is_empty()
-                        && type_argument_syns.is_empty() =>
-                {
+                syntax_tree::GenericArgument::Lifetime(arg) => {
                     lifetime_argument_syns.push(arg);
+
+                    !constant_argument_syns.is_empty()
+                        || !type_argument_syns.is_empty()
                 }
-                arg => {
-                    handler.receive(Box::new(MisOrderedGenericArgument {
-                        generic_kind: match arg {
-                            syntax_tree::GenericArgument::Type(_) => {
-                                GenericKind::Type
-                            }
-                            syntax_tree::GenericArgument::Constant(_) => {
-                                GenericKind::Constant
-                            }
-                            syntax_tree::GenericArgument::Lifetime(_) => {
-                                GenericKind::Lifetime
-                            }
-                        },
-                        generic_argument: arg.span(),
-                    }));
-                    return Err(Error::SemanticError);
-                }
+            };
+
+            if misordered {
+                handler.receive(Box::new(MisorderedGenericArgument {
+                    generic_kind: match generic_argument {
+                        syntax_tree::GenericArgument::Type(_) => {
+                            GenericKind::Type
+                        }
+                        syntax_tree::GenericArgument::Constant(_) => {
+                            GenericKind::Constant
+                        }
+                        syntax_tree::GenericArgument::Lifetime(_) => {
+                            GenericKind::Lifetime
+                        }
+                    },
+                    generic_argument: generic_argument.span(),
+                }));
             }
         }
 
@@ -1535,7 +1537,11 @@ impl<S: State> Table<S> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn resolve_generic_arguments_kinds<'a, M: Model, G: GenericParameter<M>>(
+    fn resolve_generic_arguments_kinds<
+        'a,
+        M: Model,
+        G: GenericParameter<M> + std::fmt::Debug,
+    >(
         &self,
         syntax_trees: impl ExactSizeIterator<Item = &'a G::SyntaxTree>,
         parameters: impl ExactSizeIterator<Item = &'a G>,
@@ -1548,7 +1554,7 @@ impl<S: State> Table<S> {
         referring_site: GlobalID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Vec<G::Argument>, Error>
+    ) -> Result<Vec<G::Argument>, ResolveTermError>
     where
         G::Argument: Clone,
     {
@@ -1565,7 +1571,9 @@ impl<S: State> Table<S> {
                     expected_count: parameters.len(),
                     supplied_count: syntax_trees.len(),
                 }));
-                return Err(Error::SemanticError);
+
+                // return the error terms
+                return Ok(parameters.map(|_| term::Error.into()).collect());
             };
 
             Ok(parameters.map(|_| provider.create()).collect())
@@ -1588,7 +1596,6 @@ impl<S: State> Table<S> {
                     expected_count: parameters.len(),
                     supplied_count: syntax_trees.len(),
                 }));
-                return Err(Error::SemanticError);
             }
 
             let mut arguments = syntax_trees
@@ -1618,18 +1625,36 @@ impl<S: State> Table<S> {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
-            if let Some(defaults) = defaults {
-                let leftovers = parameters.len() - arguments.len();
-                let default_fill_count = leftovers.min(defaults.len());
-                let default_len = defaults.len();
+            if valid_count {
+                if let Some(defaults) = defaults {
+                    let leftovers = parameters.len() - arguments.len();
+                    let default_fill_count = leftovers.min(defaults.len());
+                    let default_len = defaults.len();
+
+                    arguments.extend(
+                        defaults
+                            .skip(default_len - default_fill_count)
+                            .cloned()
+                            .map(G::Argument::from_default_model),
+                    );
+                }
+            } else {
+                // extend the arguments with error term
+                let extra_term_count = parameters.len() - arguments.len();
 
                 arguments.extend(
-                    defaults
-                        .skip(default_len - default_fill_count)
-                        .cloned()
-                        .map(G::Argument::from_default_model),
+                    std::iter::repeat(term::Error.into())
+                        .take(extra_term_count),
                 );
             }
+
+            assert!(
+                arguments.len() == parameters.len(),
+                "{:#?} {:#?} {:#?}",
+                arguments,
+                parameters.into_iter().collect::<Vec<_>>(),
+                valid_count
+            );
 
             Ok(arguments)
         }
@@ -1736,33 +1761,60 @@ impl<S: State> Table<S> {
             GlobalID::AdtImplementationFunction(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
-                    parent_generic_arguments: self
-                        .get_parent_generic_arguments_from_latest_resolution(
-                            self.get(id).unwrap().parent_id.into(),
-                            latest_resolution,
-                        ),
+                    parent_generic_arguments: latest_resolution.map_or_else(
+                        || {
+                            let adt_impl_id = self.get(id).unwrap().parent_id;
+                            GenericArguments::from_default_model(
+                                self.get(adt_impl_id)
+                                    .unwrap()
+                                    .arguments
+                                    .clone(),
+                            )
+                        },
+                        |resolution| {
+                            resolution.into_generic().unwrap().generic_arguments
+                        },
+                    ),
                     generic_arguments: generic_arguments.unwrap(),
                 })
             }
             GlobalID::AdtImplementationType(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
-                    parent_generic_arguments: self
-                        .get_parent_generic_arguments_from_latest_resolution(
-                            self.get(id).unwrap().parent_id.into(),
-                            latest_resolution,
-                        ),
+                    parent_generic_arguments: latest_resolution.map_or_else(
+                        || {
+                            let adt_impl_id = self.get(id).unwrap().parent_id;
+                            GenericArguments::from_default_model(
+                                self.get(adt_impl_id)
+                                    .unwrap()
+                                    .arguments
+                                    .clone(),
+                            )
+                        },
+                        |resolution| {
+                            resolution.into_generic().unwrap().generic_arguments
+                        },
+                    ),
                     generic_arguments: generic_arguments.unwrap(),
                 })
             }
             GlobalID::AdtImplementationConstant(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
-                    parent_generic_arguments: self
-                        .get_parent_generic_arguments_from_latest_resolution(
-                            self.get(id).unwrap().parent_id.into(),
-                            latest_resolution,
-                        ),
+                    parent_generic_arguments: latest_resolution.map_or_else(
+                        || {
+                            let adt_impl_id = self.get(id).unwrap().parent_id;
+                            GenericArguments::from_default_model(
+                                self.get(adt_impl_id)
+                                    .unwrap()
+                                    .arguments
+                                    .clone(),
+                            )
+                        },
+                        |resolution| {
+                            resolution.into_generic().unwrap().generic_arguments
+                        },
+                    ),
                     generic_arguments: generic_arguments.unwrap(),
                 })
             }

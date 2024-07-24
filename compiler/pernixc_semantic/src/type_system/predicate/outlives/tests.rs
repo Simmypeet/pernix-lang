@@ -80,7 +80,7 @@ where
             self.property.generate(table, premise, root_module_id)?;
 
         let outlives =
-            Outlives::new(T::from(self.equality.clone()), inner_bound);
+            Outlives::new(T::from(self.equality.clone()), inner_bound.clone());
         let environment =
             Environment { premise: premise.clone(), table, normalizer: &NoOp };
 
@@ -185,7 +185,7 @@ impl Property<Type<Default>> for LifetimeMatching {
             },
         });
 
-        if Outlives::new(ty_operand.clone(), self.bound)
+        if Outlives::new(ty_operand.clone(), self.bound.clone())
             .query(&Environment {
                 premise: premise.clone(),
                 table,
@@ -202,11 +202,11 @@ impl Property<Type<Default>> for LifetimeMatching {
                         constants: Vec::new(),
                     },
                 }),
-                bound: self.bound,
+                bound: self.bound.clone(),
             }));
         }
 
-        Ok((ty_operand, self.bound))
+        Ok((ty_operand, self.bound.clone()))
     }
 
     fn node_count(&self) -> usize {
@@ -301,7 +301,7 @@ where
         premise: &mut Premise<Default>,
         _: ID<Module>,
     ) -> Result<(T, Lifetime<Default>), GenerateError> {
-        if Outlives::new(self.term.clone(), self.bound)
+        if Outlives::new(self.term.clone(), self.bound.clone())
             .query(&Environment {
                 premise: premise.clone(),
                 table,
@@ -310,12 +310,15 @@ where
             .is_none()
         {
             premise.predicates.insert(
-                Outlives { operand: self.term.clone(), bound: self.bound }
-                    .into(),
+                Outlives {
+                    operand: self.term.clone(),
+                    bound: self.bound.clone(),
+                }
+                .into(),
             );
         }
 
-        Ok((self.term.clone(), self.bound))
+        Ok((self.term.clone(), self.bound.clone()))
     }
 
     fn node_count(&self) -> usize { 1 }
@@ -337,7 +340,7 @@ impl<T: Term<Model = Default>> Property<T> for Transitive<T> {
         let (inner_operand, inner_bound) =
             self.inner_property.generate(table, premise, root_module_id)?;
 
-        if Outlives::new(inner_operand.clone(), self.final_bound)
+        if Outlives::new(inner_operand.clone(), self.final_bound.clone())
             .query(&Environment {
                 premise: premise.clone(),
                 table,
@@ -347,7 +350,7 @@ impl<T: Term<Model = Default>> Property<T> for Transitive<T> {
         {
             premise.predicates.insert(Predicate::LifetimeOutlives(Outlives {
                 operand: inner_bound,
-                bound: self.final_bound,
+                bound: self.final_bound.clone(),
             }));
         }
 

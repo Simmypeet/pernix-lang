@@ -422,7 +422,7 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<Error>,
     ) -> Option<Tuple> {
-        let type_specifiers = self.parse_enclosed_list(
+        let type_specifiers = self.parse_delimited_list(
             Delimiter::Parenthesis,
             ',',
             |parser| {

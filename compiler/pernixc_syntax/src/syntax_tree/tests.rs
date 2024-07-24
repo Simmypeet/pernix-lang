@@ -675,6 +675,35 @@ impl Display for Numeric {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LifetimeParameter {
+    pub identifier: Identifier,
+}
+
+impl Input<&super::LifetimeParameter> for &LifetimeParameter {
+    fn assert(self, output: &super::LifetimeParameter) -> TestCaseResult {
+        self.identifier.assert(output.identifier())
+    }
+}
+
+impl Arbitrary for LifetimeParameter {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        Identifier::arbitrary()
+            .prop_map(|identifier| Self { identifier })
+            .boxed()
+    }
+}
+
+impl Display for LifetimeParameter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "'{}", self.identifier)
+    }
+}
+
+
 proptest! {
     #[allow(clippy::ignored_unit_patterns)]
     #[test]

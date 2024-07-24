@@ -7,6 +7,8 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
+use getset::Getters;
+use pernixc_base::source_file::Span;
 
 use super::{
     constant::Constant, r#type::Type, AssignSubTermError, Error,
@@ -33,29 +35,56 @@ use crate::{
     },
 };
 
-/// Represents a for-all quantified lifetime, denoted by `for<'a>` syntax, used
-/// in higher-ranked trait bounds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Forall(pub(crate) usize);
+/// Represents a for-all quantified lifetime, denoted by `for['a]` syntax, used
+/// in higher-ranked predicates.
+#[derive(Debug, Clone, Getters)]
+pub struct Forall {
+    /// The unique ID of the forall lifetime.
+    id: usize,
+
+    /// The span where the forall lifetime was declared.
+    ///
+    /// This field doesn't influence the equality, ordering, and hashing od the
+    /// this struct.
+    pub span: Option<Span>,
+}
 
 impl Forall {
+    /// Generates a new higher-ranked lifetime.
     #[allow(missing_docs)]
-    pub fn generate() -> Self {
+    pub fn generate(span: Option<Span>) -> Self {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-        Self(COUNTER.fetch_add(1, Ordering::SeqCst))
+        let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+
+        Self { id, span }
     }
 }
 
-/// Represents a lifetime inference variable in Hindley Milner type inference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Inference(pub Never); /* will be changed */
+impl PartialEq for Forall {
+    fn eq(&self, other: &Self) -> bool { self.id == other.id }
+}
+
+impl Eq for Forall {}
+
+impl PartialOrd for Forall {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.id.partial_cmp(&other.id)
+    }
+}
+
+impl Ord for Forall {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.id.cmp(&other.id) }
+}
+
+impl std::hash::Hash for Forall {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.id.hash(state) }
+}
 
 /// Represents a lifetime annotation term.
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,

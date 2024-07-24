@@ -262,8 +262,8 @@ fn transitive_case() {
     let c_lt = lt(2);
 
     let trait_a = trait_member(0, a_lt);
-    let trait_b_b = trait_member(1, b_lt);
-    let trait_b_c = trait_member(1, c_lt);
+    let trait_b_b = trait_member(1, b_lt.clone());
+    let trait_b_c = trait_member(1, c_lt.clone());
     let equivalent = Type::Primitive(Primitive::Bool);
 
     let table = Table::<Building>::default();

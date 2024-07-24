@@ -2173,7 +2173,7 @@ proptest! {
     })]
     #[allow(clippy::ignored_unit_patterns)]
     #[test]
-    fn expression_test(
+    fn expression(
         expression_input in Expression::arbitrary(),
     ) {
         let source = expression_input.to_string();

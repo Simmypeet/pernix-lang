@@ -14,7 +14,7 @@ use crate::{
                 },
                 Index, RwLockContainer,
             },
-            resolution, Building, Table,
+            Building, Table,
         },
         NegativeTraitImplementation,
     },
@@ -23,11 +23,11 @@ use crate::{
 /// Generic parameters are built
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
-/// The geenric arguments of the implementation are built.
-pub const GENERIC_ARGUMENTS_STATE: usize = 1;
-
 /// Where cluase predicates are built
-pub const WHERE_CLAUSE_STATE: usize = 2;
+pub const WHERE_CLAUSE_STATE: usize = 1;
+
+/// The geenric arguments of the implementation are built.
+pub const GENERIC_ARGUMENTS_STATE: usize = 2;
 
 /// The complete information of the implementation is built.
 pub const COMPLETE_STATE: usize = 3;
@@ -58,47 +58,6 @@ impl Finalize for NegativeTraitImplementation {
                 );
             }
 
-            GENERIC_ARGUMENTS_STATE => {
-                let parent_trait_id =
-                    table.get(symbol_id).unwrap().implemented_id;
-
-                // make sure the trait has the generic parameters
-                let _ = table.build_to(
-                    parent_trait_id,
-                    Some(symbol_id.into()),
-                    r#trait::GENERIC_PARAMETER_STATE,
-                    true,
-                    handler,
-                );
-
-                let generic_identifier = syntax_tree
-                    .qualified_identifier()
-                    .generic_identifiers()
-                    .last()
-                    .unwrap();
-
-                let generic_arguments = table.resolve_generic_arguments(
-                    generic_identifier,
-                    symbol_id.into(),
-                    parent_trait_id.into(),
-                    resolution::Config {
-                        ellided_lifetime_provider: None,
-                        ellided_type_provider: None,
-                        ellided_constant_provider: None,
-                        observer: Some(data),
-                        higher_ranked_liftimes: None,
-                    },
-                    handler,
-                );
-
-                table
-                    .negative_trait_implementations
-                    .get(symbol_id)
-                    .unwrap()
-                    .write()
-                    .arguments =
-                    generic_arguments.ok().and_then(|x| x).unwrap_or_default();
-            }
             WHERE_CLAUSE_STATE => {
                 table.create_where_clause_predicates(
                     symbol_id,
@@ -107,6 +66,35 @@ impl Finalize for NegativeTraitImplementation {
                     handler,
                 );
             }
+
+            GENERIC_ARGUMENTS_STATE => {
+                let parent_trait_id =
+                    table.get(symbol_id).unwrap().implemented_id;
+
+                let generic_identifier = syntax_tree
+                    .qualified_identifier()
+                    .rest()
+                    .last()
+                    .map_or_else(
+                        || syntax_tree.qualified_identifier().first(),
+                        |(_, ident)| ident,
+                    );
+
+                table
+                    .negative_trait_implementations
+                    .get(symbol_id)
+                    .unwrap()
+                    .write()
+                    .arguments = table.create_implementation_arguments(
+                    symbol_id.into(),
+                    parent_trait_id,
+                    r#trait::GENERIC_PARAMETER_STATE,
+                    generic_identifier,
+                    data,
+                    handler,
+                );
+            }
+
             COMPLETE_STATE => {
                 data.build_all_occurrences_to::<build_preset::Complete>(
                     table,
@@ -115,10 +103,12 @@ impl Finalize for NegativeTraitImplementation {
                     handler,
                 );
             }
+
             CHECK_STATE => {
                 table.check_occurrences(symbol_id.into(), data, handler);
                 table.implementation_signature_check(symbol_id, handler);
             }
+
             _ => panic!("invalid state flag"),
         }
     }

@@ -23,7 +23,7 @@ pub(in crate::symbol::table::representation::building) mod r#struct;
 pub(in crate::symbol::table::representation::building) mod r#trait;
 pub(in crate::symbol::table::representation::building) mod trait_constant;
 pub(in crate::symbol::table::representation::building) mod trait_function;
-pub(in crate::symbol::table::representation::building) mod trait_implementation;
+pub(in crate::symbol::table::representation::building) mod positive_trait_implementation;
 pub(in crate::symbol::table::representation::building) mod trait_implementation_constant;
 pub(in crate::symbol::table::representation::building) mod trait_implementation_function;
 pub(in crate::symbol::table::representation::building) mod trait_implementation_type;

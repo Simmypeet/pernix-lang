@@ -4,7 +4,7 @@ use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
 use pernixc_syntax::syntax_tree::target::{self, Target};
 
 use crate::{
-    error::{Error, UnsatisifedPredicate},
+    error::{Error, MismatchedImplementationArguments, UnsatisifedPredicate},
     symbol::{
         table::{self, representation::Index, Suboptimal, Success, Table},
         LifetimeParameterID, TypeParameterID,
@@ -259,4 +259,30 @@ fn trait_occurrence() {
             id: qux_b_param,
         }),
     )
+}
+
+#[test]
+fn mismatched_implementation_argument() {
+    const SOURCE_CODE: &str = r#"
+    public struct Tuple[T, U] {
+        public first:  T,
+        public second: T,
+    }
+
+    implements[T] Tuple[T, T] {
+        public type Output = T;
+    }
+
+    public type Instantiation = Tuple[int32, int64]::Output;
+    "#;
+
+    let BuildTableError { table: _, errors } =
+        build_table_from_source(SOURCE_CODE).unwrap_err();
+
+    errors.iter().any(|error| {
+        error
+            .as_any()
+            .downcast_ref::<MismatchedImplementationArguments<model::Default>>()
+            .is_some()
+    });
 }

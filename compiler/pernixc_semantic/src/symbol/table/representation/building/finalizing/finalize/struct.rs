@@ -94,7 +94,7 @@ impl Finalize for Struct {
                                 ellided_type_provider: None,
                                 ellided_constant_provider: None,
                                 observer: Some(data),
-                                higher_ranked_liftimes: None,
+                                higher_ranked_lifetimes: None,
                             },
                             handler,
                         )
