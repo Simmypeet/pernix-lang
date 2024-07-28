@@ -1,6 +1,6 @@
 //! Contains the definition of [`Requirement`] and [`requires()`]
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use super::{
     instantiation::{
@@ -66,7 +66,7 @@ pub enum Error<M: Model> {
 pub(super) trait Require: ModelOf {
     fn requires<S: State>(
         &self,
-        requirements: &mut HashSet<Requirement<Self::Model>>,
+        requirements: &mut BTreeSet<Requirement<Self::Model>>,
         environment: &Environment<Self::Model, S, impl Normalizer<Self::Model>>,
         limit: &mut Limit<
             impl Session<Lifetime<Self::Model>>
@@ -82,7 +82,7 @@ where
 {
     fn requires<S: State>(
         &self,
-        _: &mut HashSet<Requirement<M>>,
+        _: &mut BTreeSet<Requirement<M>>,
         _: &Environment<M, S, impl Normalizer<M>>,
         _: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
@@ -98,7 +98,7 @@ where
 {
     fn requires<S: State>(
         &self,
-        requirements: &mut HashSet<Requirement<M>>,
+        requirements: &mut BTreeSet<Requirement<M>>,
         environment: &Environment<M, S, impl Normalizer<M>>,
         limit: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
@@ -355,7 +355,7 @@ where
 {
     fn requires<S: State>(
         &self,
-        requirements: &mut HashSet<Requirement<M>>,
+        requirements: &mut BTreeSet<Requirement<M>>,
         _: &Environment<M, S, impl Normalizer<M>>,
         _: &mut Limit<
             impl Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
@@ -401,7 +401,7 @@ struct RequirementVisitor<
     N: Normalizer<M>,
     R: Session<Lifetime<M>> + Session<Type<M>> + Session<Constant<M>>,
 > {
-    requirements: &'h mut HashSet<Requirement<M>>,
+    requirements: &'h mut BTreeSet<Requirement<M>>,
     environment: &'e Environment<'e, M, S, N>,
     result: Result<(), Error<M>>,
     limit: &'l mut Limit<R>,
@@ -451,7 +451,7 @@ impl<
 pub fn requires<T: Term>(
     term: &T,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
-) -> Result<HashSet<Requirement<T::Model>>, Error<T::Model>> {
+) -> Result<BTreeSet<Requirement<T::Model>>, Error<T::Model>> {
     let mut limit = Limit::<query::Default<_>>::default();
     requires_impl(term, environment, &mut limit)
 }
@@ -464,8 +464,8 @@ pub(super) fn requires_impl<T: Term>(
             + Session<Type<T::Model>>
             + Session<Constant<T::Model>>,
     >,
-) -> Result<HashSet<Requirement<T::Model>>, Error<T::Model>> {
-    let mut requirements = HashSet::new();
+) -> Result<BTreeSet<Requirement<T::Model>>, Error<T::Model>> {
+    let mut requirements = BTreeSet::new();
     let mut visitor = RequirementVisitor {
         requirements: &mut requirements,
         environment,

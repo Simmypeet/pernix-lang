@@ -1,6 +1,6 @@
 //! Contains the logic for simplifying the type term.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::BTreeSet, sync::Arc};
 
 use super::{
     model::Model,
@@ -24,41 +24,41 @@ pub(super) trait Simplify: ModelOf + Sized {
     #[allow(private_interfaces)]
     fn simplified_mut(
         simplified: &mut Simplified<Self::Model>,
-    ) -> &mut HashSet<Self>;
+    ) -> &mut BTreeSet<Self>;
 }
 
 impl<M: Model> Simplify for Lifetime<M> {
     #[allow(private_interfaces)]
-    fn simplified_mut(simplified: &mut Simplified<M>) -> &mut HashSet<Self> {
+    fn simplified_mut(simplified: &mut Simplified<M>) -> &mut BTreeSet<Self> {
         &mut simplified.simplified_lifetimes
     }
 }
 
 impl<M: Model> Simplify for Type<M> {
     #[allow(private_interfaces)]
-    fn simplified_mut(simplified: &mut Simplified<M>) -> &mut HashSet<Self> {
+    fn simplified_mut(simplified: &mut Simplified<M>) -> &mut BTreeSet<Self> {
         &mut simplified.simplified_types
     }
 }
 
 impl<M: Model> Simplify for Constant<M> {
     #[allow(private_interfaces)]
-    fn simplified_mut(simplified: &mut Simplified<M>) -> &mut HashSet<Self> {
+    fn simplified_mut(simplified: &mut Simplified<M>) -> &mut BTreeSet<Self> {
         &mut simplified.simplified_constants
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct Simplified<M: Model> {
-    simplified_lifetimes: HashSet<Lifetime<M>>,
-    simplified_types: HashSet<Type<M>>,
-    simplified_constants: HashSet<Constant<M>>,
+    simplified_lifetimes: BTreeSet<Lifetime<M>>,
+    simplified_types: BTreeSet<Type<M>>,
+    simplified_constants: BTreeSet<Constant<M>>,
 }
 
 struct Visitor<'e, 's, T: State, N: Normalizer<M>, M: Model> {
     environment: &'e Environment<'e, M, T, N>,
     simplified: &'s mut Simplified<M>,
-    lifetime_constraints: HashSet<LifetimeConstraint<M>>,
+    lifetime_constraints: BTreeSet<LifetimeConstraint<M>>,
 }
 
 impl<'e, 's, U: Term, T: State, N: Normalizer<U::Model>> Mutable<U>
@@ -92,12 +92,12 @@ fn simplify_internal<T: Term>(
     let mut visitor = Visitor {
         environment,
         simplified,
-        lifetime_constraints: HashSet::new(),
+        lifetime_constraints: BTreeSet::new(),
     };
     let _ = new_term.accept_one_level_mut(&mut visitor);
 
     // extract out the lifetime constraints
-    let Visitor { mut lifetime_constraints, .. } = visitor;
+    let Visitor { lifetime_constraints: mut outside_constraints, .. } = visitor;
 
     // check for trait type equality
     'out: {
@@ -237,13 +237,14 @@ fn simplify_internal<T: Term>(
                 break 'out;
             };
 
-            lifetime_constraints.extend(constraints);
-            lifetime_constraints.extend(new_constraints);
+            outside_constraints.extend(constraints);
+            outside_constraints.extend(new_constraints);
 
             assert!(T::simplified_mut(simplified).remove(term));
+
             return Some(Succeeded {
                 result: equivalent,
-                constraints: lifetime_constraints,
+                constraints: outside_constraints,
             });
         }
     }
@@ -264,20 +265,20 @@ fn simplify_internal<T: Term>(
             break 'out;
         };
 
-        lifetime_constraints.extend(constraints);
-        lifetime_constraints.extend(new_constraints);
+        outside_constraints.extend(constraints);
+        outside_constraints.extend(new_constraints);
 
         assert!(T::simplified_mut(simplified).remove(term));
         return Some(Succeeded {
             result: equivalent,
-            constraints: lifetime_constraints,
+            constraints: outside_constraints,
         });
     }
 
     assert!(T::simplified_mut(simplified).remove(term));
     return Some(Succeeded {
         result: new_term,
-        constraints: lifetime_constraints,
+        constraints: outside_constraints,
     });
 }
 

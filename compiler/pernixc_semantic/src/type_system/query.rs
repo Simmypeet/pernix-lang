@@ -1,6 +1,6 @@
-//! Contains the definition of [`Session`].
+//! Contains the definition of [`Query`] and [`Context`].
 
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{btree_map::Entry, BTreeMap};
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -9,7 +9,7 @@ use super::{
     definite::Definite,
     equality::Equality,
     model::Model,
-    predicate::{self, ConstantTypeQuerySource},
+    predicate::{self, ConstantTypeQuerySource, TraitSatisfied},
     sub_term::SubTerm,
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     type_check::TypeCheck,
@@ -65,15 +65,7 @@ pub enum QueryCall<M: Model> {
     TypeOutlives(Call<predicate::Outlives<Type<M>>, ()>),
     ConstantOutlives(Call<predicate::Outlives<Constant<M>>, ()>),
 
-    LifetimeConstantType(
-        Call<predicate::ConstantType<Lifetime<M>>, ConstantTypeQuerySource>,
-    ),
-    TypeConstantType(
-        Call<predicate::ConstantType<Type<M>>, ConstantTypeQuerySource>,
-    ),
-    ConstantConstantType(
-        Call<predicate::ConstantType<Constant<M>>, ConstantTypeQuerySource>,
-    ),
+    ConstantType(Call<predicate::ConstantType<M>, ConstantTypeQuerySource>),
 
     #[from]
     TraitSatisfiability(Call<predicate::Trait<M>, ()>),
@@ -86,66 +78,63 @@ pub enum QueryCall<M: Model> {
 #[derive(Debug, Clone, Getters)]
 pub struct Context<M: Model> {
     lifetime_equality:
-        HashMap<Equality<Lifetime<M>>, Cached<(), Succeeded<Satisfied, M>>>,
+        BTreeMap<Equality<Lifetime<M>>, Cached<(), Succeeded<Satisfied, M>>>,
     type_equality:
-        HashMap<Equality<Type<M>>, Cached<(), Succeeded<Satisfied, M>>>,
+        BTreeMap<Equality<Type<M>>, Cached<(), Succeeded<Satisfied, M>>>,
     constant_equality:
-        HashMap<Equality<Constant<M>>, Cached<(), Succeeded<Satisfied, M>>>,
+        BTreeMap<Equality<Constant<M>>, Cached<(), Succeeded<Satisfied, M>>>,
 
     lifetime_definite:
-        HashMap<Definite<Lifetime<M>>, Cached<(), Succeeded<Satisfied, M>>>,
+        BTreeMap<Definite<Lifetime<M>>, Cached<(), Succeeded<Satisfied, M>>>,
     type_definite:
-        HashMap<Definite<Type<M>>, Cached<(), Succeeded<Satisfied, M>>>,
+        BTreeMap<Definite<Type<M>>, Cached<(), Succeeded<Satisfied, M>>>,
     constant_definite:
-        HashMap<Definite<Constant<M>>, Cached<(), Succeeded<Satisfied, M>>>,
+        BTreeMap<Definite<Constant<M>>, Cached<(), Succeeded<Satisfied, M>>>,
 
-    lifetime_unification: HashMap<
+    lifetime_unification: BTreeMap<
         Unification<Lifetime<M>>,
         Cached<(), Succeeded<Unifier<Lifetime<M>>, M>>,
     >,
-    type_unification: HashMap<
+    type_unification: BTreeMap<
         Unification<Type<M>>,
         Cached<(), Succeeded<Unifier<Type<M>>, M>>,
     >,
-    constant_unification: HashMap<
+    constant_unification: BTreeMap<
         Unification<Constant<M>>,
         Cached<(), Succeeded<Unifier<Constant<M>>, M>>,
     >,
 
-    lifetime_tuple: HashMap<
+    lifetime_tuple: BTreeMap<
         predicate::Tuple<Lifetime<M>>,
         Cached<(), Succeeded<Satisfied, M>>,
     >,
-    type_tuple:
-        HashMap<predicate::Tuple<Type<M>>, Cached<(), Succeeded<Satisfied, M>>>,
-    constant_tuple: HashMap<
+    type_tuple: BTreeMap<
+        predicate::Tuple<Type<M>>,
+        Cached<(), Succeeded<Satisfied, M>>,
+    >,
+    constant_tuple: BTreeMap<
         predicate::Tuple<Constant<M>>,
         Cached<(), Succeeded<Satisfied, M>>,
     >,
 
     lifetime_outlives:
-        HashMap<predicate::Outlives<Lifetime<M>>, Cached<(), Satisfied>>,
-    type_outlives: HashMap<predicate::Outlives<Type<M>>, Cached<(), Satisfied>>,
+        BTreeMap<predicate::Outlives<Lifetime<M>>, Cached<(), Satisfied>>,
+    type_outlives:
+        BTreeMap<predicate::Outlives<Type<M>>, Cached<(), Satisfied>>,
     constant_outlives:
-        HashMap<predicate::Outlives<Constant<M>>, Cached<(), Satisfied>>,
+        BTreeMap<predicate::Outlives<Constant<M>>, Cached<(), Satisfied>>,
 
-    lifetime_constant_type: HashMap<
-        predicate::ConstantType<Lifetime<M>>,
-        Cached<ConstantTypeQuerySource, Succeeded<Satisfied, M>>,
-    >,
-    type_constant_type: HashMap<
-        predicate::ConstantType<Type<M>>,
-        Cached<ConstantTypeQuerySource, Succeeded<Satisfied, M>>,
-    >,
-    constant_constant_type: HashMap<
-        predicate::ConstantType<Constant<M>>,
+    constant_type: BTreeMap<
+        predicate::ConstantType<M>,
         Cached<ConstantTypeQuerySource, Succeeded<Satisfied, M>>,
     >,
 
-    trait_satisfiability:
-        HashMap<predicate::Trait<M>, Cached<(), Succeeded<Satisfied, M>>>,
+    trait_satisfiability: BTreeMap<
+        predicate::Trait<M>,
+        Cached<(), Succeeded<TraitSatisfied<M>, M>>,
+    >,
 
-    type_check: HashMap<TypeCheck<M>, Cached<(), Succeeded<Satisfied, M>>>,
+    type_check: BTreeMap<TypeCheck<M>, Cached<(), Succeeded<Satisfied, M>>>,
 
     /// The call stack of the queries.
     #[get = "pub"]
@@ -158,26 +147,24 @@ pub struct Context<M: Model> {
 impl<M: Model> Default for Context<M> {
     fn default() -> Self {
         Self {
-            lifetime_equality: HashMap::default(),
-            type_equality: HashMap::default(),
-            constant_equality: HashMap::default(),
-            lifetime_definite: HashMap::default(),
-            type_definite: HashMap::default(),
-            constant_definite: HashMap::default(),
-            lifetime_unification: HashMap::default(),
-            type_unification: HashMap::default(),
-            constant_unification: HashMap::default(),
-            lifetime_tuple: HashMap::default(),
-            type_tuple: HashMap::default(),
-            constant_tuple: HashMap::default(),
-            lifetime_outlives: HashMap::default(),
-            type_outlives: HashMap::default(),
-            constant_outlives: HashMap::default(),
-            lifetime_constant_type: HashMap::default(),
-            type_constant_type: HashMap::default(),
-            constant_constant_type: HashMap::default(),
-            trait_satisfiability: HashMap::default(),
-            type_check: HashMap::default(),
+            lifetime_equality: BTreeMap::default(),
+            type_equality: BTreeMap::default(),
+            constant_equality: BTreeMap::default(),
+            lifetime_definite: BTreeMap::default(),
+            type_definite: BTreeMap::default(),
+            constant_definite: BTreeMap::default(),
+            lifetime_unification: BTreeMap::default(),
+            type_unification: BTreeMap::default(),
+            constant_unification: BTreeMap::default(),
+            lifetime_tuple: BTreeMap::default(),
+            type_tuple: BTreeMap::default(),
+            constant_tuple: BTreeMap::default(),
+            lifetime_outlives: BTreeMap::default(),
+            type_outlives: BTreeMap::default(),
+            constant_outlives: BTreeMap::default(),
+            constant_type: BTreeMap::default(),
+            trait_satisfiability: BTreeMap::default(),
+            type_check: BTreeMap::default(),
 
             call_stack: Vec::new(),
 
@@ -297,17 +284,17 @@ pub trait Query {
     type Result: Clone;
 }
 
-pub(super) trait Sealed: Clone + Eq + std::hash::Hash + Query {
+pub(super) trait Sealed: Clone + Ord + Query {
     /// Gets the map of the query from the context.
     #[allow(dead_code)]
     fn get_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>>;
+    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>>;
 
     /// Gets the mutable map of the query from the context.
     fn get_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<Self, Cached<Self::InProgress, Self::Result>>;
+    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>>;
 
     /// Converts the [`QueryCall`] to the [`Call`] type of this query.
     fn from_call(
@@ -326,10 +313,10 @@ pub(super) trait Sealed: Clone + Eq + std::hash::Hash + Query {
 pub(super) trait Element: SubTerm {
     fn get_equality_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Equality<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>;
+    ) -> &BTreeMap<Equality<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>;
     fn get_equality_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         Equality<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     >;
@@ -340,10 +327,10 @@ pub(super) trait Element: SubTerm {
 
     fn get_definite_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Definite<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>;
+    ) -> &BTreeMap<Definite<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>;
     fn get_definite_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         Definite<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     >;
@@ -354,13 +341,13 @@ pub(super) trait Element: SubTerm {
 
     fn get_unification_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<
+    ) -> &BTreeMap<
         Unification<Self>,
         Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
     >;
     fn get_unification_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         Unification<Self>,
         Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
     >;
@@ -373,13 +360,13 @@ pub(super) trait Element: SubTerm {
 
     fn get_tuple_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<
+    ) -> &BTreeMap<
         predicate::Tuple<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     >;
     fn get_tuple_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         predicate::Tuple<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     >;
@@ -391,49 +378,29 @@ pub(super) trait Element: SubTerm {
 
     fn get_outlives_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<predicate::Outlives<Self>, Cached<(), Satisfied>>;
+    ) -> &BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>>;
     fn get_outlives_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<predicate::Outlives<Self>, Cached<(), Satisfied>>;
+    ) -> &mut BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>>;
     fn from_call_to_outlives(
         call: &QueryCall<Self::Model>,
     ) -> Option<&Call<predicate::Outlives<Self>, ()>>;
     fn outlives_into_call(
         outlives: predicate::Outlives<Self>,
     ) -> QueryCall<Self::Model>;
-
-    fn get_constant_type_map(
-        context: &Context<Self::Model>,
-    ) -> &HashMap<
-        predicate::ConstantType<Self>,
-        Cached<ConstantTypeQuerySource, Succeeded<Satisfied, Self::Model>>,
-    >;
-    fn get_constant_type_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
-        predicate::ConstantType<Self>,
-        Cached<ConstantTypeQuerySource, Succeeded<Satisfied, Self::Model>>,
-    >;
-    fn from_call_to_constant_type(
-        call: &QueryCall<Self::Model>,
-    ) -> Option<&Call<predicate::ConstantType<Self>, ConstantTypeQuerySource>>;
-    fn constant_type_into_call(
-        constant_type: predicate::ConstantType<Self>,
-        in_progress: ConstantTypeQuerySource,
-    ) -> QueryCall<Self::Model>;
 }
 
 impl<M: Model> Element for Lifetime<M> {
     fn get_equality_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Equality<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
+    ) -> &BTreeMap<Equality<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
     {
         &context.lifetime_equality
     }
 
     fn get_equality_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         Equality<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     > {
@@ -452,14 +419,14 @@ impl<M: Model> Element for Lifetime<M> {
 
     fn get_definite_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Definite<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
+    ) -> &BTreeMap<Definite<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
     {
         &context.lifetime_definite
     }
 
     fn get_definite_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         Definite<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     > {
@@ -478,7 +445,7 @@ impl<M: Model> Element for Lifetime<M> {
 
     fn get_unification_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<
+    ) -> &BTreeMap<
         Unification<Self>,
         Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
     > {
@@ -487,7 +454,7 @@ impl<M: Model> Element for Lifetime<M> {
 
     fn get_unification_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         Unification<Self>,
         Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
     > {
@@ -508,7 +475,7 @@ impl<M: Model> Element for Lifetime<M> {
 
     fn get_tuple_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<
+    ) -> &BTreeMap<
         predicate::Tuple<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     > {
@@ -517,7 +484,7 @@ impl<M: Model> Element for Lifetime<M> {
 
     fn get_tuple_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         predicate::Tuple<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     > {
@@ -538,13 +505,13 @@ impl<M: Model> Element for Lifetime<M> {
 
     fn get_outlives_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
+    ) -> &BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
         &context.lifetime_outlives
     }
 
     fn get_outlives_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
+    ) -> &mut BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
         &mut context.lifetime_outlives
     }
 
@@ -559,51 +526,19 @@ impl<M: Model> Element for Lifetime<M> {
     ) -> QueryCall<Self::Model> {
         QueryCall::LifetimeOutlives(Call::new(outlives, ()))
     }
-
-    fn get_constant_type_map(
-        context: &Context<Self::Model>,
-    ) -> &HashMap<
-        predicate::ConstantType<Self>,
-        Cached<ConstantTypeQuerySource, Succeeded<Satisfied, Self::Model>>,
-    > {
-        &context.lifetime_constant_type
-    }
-
-    fn get_constant_type_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
-        predicate::ConstantType<Self>,
-        Cached<ConstantTypeQuerySource, Succeeded<Satisfied, Self::Model>>,
-    > {
-        &mut context.lifetime_constant_type
-    }
-
-    fn from_call_to_constant_type(
-        call: &QueryCall<Self::Model>,
-    ) -> Option<&Call<predicate::ConstantType<Self>, ConstantTypeQuerySource>>
-    {
-        call.as_lifetime_constant_type()
-    }
-
-    fn constant_type_into_call(
-        constant_type: predicate::ConstantType<Self>,
-        in_progress: ConstantTypeQuerySource,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::LifetimeConstantType(Call::new(constant_type, in_progress))
-    }
 }
 
 impl<M: Model> Element for Type<M> {
     fn get_equality_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Equality<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
+    ) -> &BTreeMap<Equality<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
     {
         &context.type_equality
     }
 
     fn get_equality_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         Equality<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     > {
@@ -622,14 +557,14 @@ impl<M: Model> Element for Type<M> {
 
     fn get_definite_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Definite<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
+    ) -> &BTreeMap<Definite<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
     {
         &context.type_definite
     }
 
     fn get_definite_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         Definite<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     > {
@@ -648,7 +583,7 @@ impl<M: Model> Element for Type<M> {
 
     fn get_unification_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<
+    ) -> &BTreeMap<
         Unification<Self>,
         Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
     > {
@@ -657,7 +592,7 @@ impl<M: Model> Element for Type<M> {
 
     fn get_unification_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         Unification<Self>,
         Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
     > {
@@ -678,7 +613,7 @@ impl<M: Model> Element for Type<M> {
 
     fn get_tuple_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<
+    ) -> &BTreeMap<
         predicate::Tuple<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     > {
@@ -687,7 +622,7 @@ impl<M: Model> Element for Type<M> {
 
     fn get_tuple_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         predicate::Tuple<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     > {
@@ -708,13 +643,13 @@ impl<M: Model> Element for Type<M> {
 
     fn get_outlives_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
+    ) -> &BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
         &context.type_outlives
     }
 
     fn get_outlives_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
+    ) -> &mut BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
         &mut context.type_outlives
     }
 
@@ -729,51 +664,19 @@ impl<M: Model> Element for Type<M> {
     ) -> QueryCall<Self::Model> {
         QueryCall::TypeOutlives(Call::new(outlives, ()))
     }
-
-    fn get_constant_type_map(
-        context: &Context<Self::Model>,
-    ) -> &HashMap<
-        predicate::ConstantType<Self>,
-        Cached<ConstantTypeQuerySource, Succeeded<Satisfied, Self::Model>>,
-    > {
-        &context.type_constant_type
-    }
-
-    fn get_constant_type_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
-        predicate::ConstantType<Self>,
-        Cached<ConstantTypeQuerySource, Succeeded<Satisfied, Self::Model>>,
-    > {
-        &mut context.type_constant_type
-    }
-
-    fn from_call_to_constant_type(
-        call: &QueryCall<Self::Model>,
-    ) -> Option<&Call<predicate::ConstantType<Self>, ConstantTypeQuerySource>>
-    {
-        call.as_type_constant_type()
-    }
-
-    fn constant_type_into_call(
-        constant_type: predicate::ConstantType<Self>,
-        in_progress: ConstantTypeQuerySource,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::TypeConstantType(Call::new(constant_type, in_progress))
-    }
 }
 
 impl<M: Model> Element for Constant<M> {
     fn get_equality_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Equality<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
+    ) -> &BTreeMap<Equality<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
     {
         &context.constant_equality
     }
 
     fn get_equality_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         Equality<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     > {
@@ -792,14 +695,14 @@ impl<M: Model> Element for Constant<M> {
 
     fn get_definite_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Definite<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
+    ) -> &BTreeMap<Definite<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
     {
         &context.constant_definite
     }
 
     fn get_definite_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         Definite<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     > {
@@ -818,7 +721,7 @@ impl<M: Model> Element for Constant<M> {
 
     fn get_unification_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<
+    ) -> &BTreeMap<
         Unification<Self>,
         Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
     > {
@@ -827,7 +730,7 @@ impl<M: Model> Element for Constant<M> {
 
     fn get_unification_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         Unification<Self>,
         Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
     > {
@@ -848,7 +751,7 @@ impl<M: Model> Element for Constant<M> {
 
     fn get_tuple_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<
+    ) -> &BTreeMap<
         predicate::Tuple<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     > {
@@ -857,7 +760,7 @@ impl<M: Model> Element for Constant<M> {
 
     fn get_tuple_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
+    ) -> &mut BTreeMap<
         predicate::Tuple<Self>,
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     > {
@@ -878,13 +781,13 @@ impl<M: Model> Element for Constant<M> {
 
     fn get_outlives_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
+    ) -> &BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
         &context.constant_outlives
     }
 
     fn get_outlives_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
+    ) -> &mut BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
         &mut context.constant_outlives
     }
 
@@ -899,38 +802,6 @@ impl<M: Model> Element for Constant<M> {
     ) -> QueryCall<Self::Model> {
         QueryCall::ConstantOutlives(Call::new(outlives, ()))
     }
-
-    fn get_constant_type_map(
-        context: &Context<Self::Model>,
-    ) -> &HashMap<
-        predicate::ConstantType<Self>,
-        Cached<ConstantTypeQuerySource, Succeeded<Satisfied, Self::Model>>,
-    > {
-        &context.constant_constant_type
-    }
-
-    fn get_constant_type_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<
-        predicate::ConstantType<Self>,
-        Cached<ConstantTypeQuerySource, Succeeded<Satisfied, Self::Model>>,
-    > {
-        &mut context.constant_constant_type
-    }
-
-    fn from_call_to_constant_type(
-        call: &QueryCall<Self::Model>,
-    ) -> Option<&Call<predicate::ConstantType<Self>, ConstantTypeQuerySource>>
-    {
-        call.as_constant_constant_type()
-    }
-
-    fn constant_type_into_call(
-        constant_type: predicate::ConstantType<Self>,
-        in_progress: ConstantTypeQuerySource,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::ConstantConstantType(Call::new(constant_type, in_progress))
-    }
 }
 
 impl<T: Term> Query for Equality<T> {
@@ -942,13 +813,13 @@ impl<T: Term> Query for Equality<T> {
 impl<T: Term> Sealed for Equality<T> {
     fn get_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         T::get_equality_map(context)
     }
 
     fn get_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         T::get_equality_map_mut(context)
     }
 
@@ -975,13 +846,13 @@ impl<T: Term> Query for Definite<T> {
 impl<T: Term> Sealed for Definite<T> {
     fn get_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         T::get_definite_map(context)
     }
 
     fn get_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         T::get_definite_map_mut(context)
     }
 
@@ -1008,13 +879,13 @@ impl<T: Term> Query for Unification<T> {
 impl<T: Term> Sealed for Unification<T> {
     fn get_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         T::get_unification_map(context)
     }
 
     fn get_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         T::get_unification_map_mut(context)
     }
 
@@ -1041,13 +912,13 @@ impl<T: Term> Query for predicate::Tuple<T> {
 impl<T: Term> Sealed for predicate::Tuple<T> {
     fn get_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         T::get_tuple_map(context)
     }
 
     fn get_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         T::get_tuple_map_mut(context)
     }
 
@@ -1074,13 +945,13 @@ impl<T: Term> Query for predicate::Outlives<T> {
 impl<T: Term> Sealed for predicate::Outlives<T> {
     fn get_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         T::get_outlives_map(context)
     }
 
     fn get_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         T::get_outlives_map_mut(context)
     }
 
@@ -1098,55 +969,55 @@ impl<T: Term> Sealed for predicate::Outlives<T> {
     }
 }
 
-impl<T: Term> Query for predicate::ConstantType<T> {
-    type Model = T::Model;
+impl<M: Model> Query for predicate::ConstantType<M> {
+    type Model = M;
     type InProgress = ConstantTypeQuerySource;
-    type Result = Succeeded<Satisfied, T::Model>;
+    type Result = Succeeded<Satisfied, M>;
 }
 
-impl<T: Term> Sealed for predicate::ConstantType<T> {
+impl<M: Model> Sealed for predicate::ConstantType<M> {
     fn get_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
-        T::get_constant_type_map(context)
+    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
+        &context.constant_type
     }
 
     fn get_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<Self, Cached<Self::InProgress, Self::Result>> {
-        T::get_constant_type_map_mut(context)
+    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
+        &mut context.constant_type
     }
 
     fn from_call(
         call: &QueryCall<Self::Model>,
     ) -> Option<&Call<Self, Self::InProgress>> {
-        T::from_call_to_constant_type(call)
+        call.as_constant_type()
     }
 
     fn into_query_call(
         query: Self,
         in_progress: Self::InProgress,
     ) -> QueryCall<Self::Model> {
-        T::constant_type_into_call(query, in_progress)
+        QueryCall::ConstantType(Call::new(query, in_progress))
     }
 }
 
 impl<M: Model> Query for predicate::Trait<M> {
     type Model = M;
     type InProgress = ();
-    type Result = Succeeded<Satisfied, M>;
+    type Result = Succeeded<TraitSatisfied<M>, M>;
 }
 
 impl<M: Model> Sealed for predicate::Trait<M> {
     fn get_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         &context.trait_satisfiability
     }
 
     fn get_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         &mut context.trait_satisfiability
     }
 
@@ -1173,13 +1044,13 @@ impl<M: Model> Query for TypeCheck<M> {
 impl<M: Model> Sealed for TypeCheck<M> {
     fn get_map(
         context: &Context<Self::Model>,
-    ) -> &HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         &context.type_check
     }
 
     fn get_map_mut(
         context: &mut Context<Self::Model>,
-    ) -> &mut HashMap<Self, Cached<Self::InProgress, Self::Result>> {
+    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
         &mut context.type_check
     }
 

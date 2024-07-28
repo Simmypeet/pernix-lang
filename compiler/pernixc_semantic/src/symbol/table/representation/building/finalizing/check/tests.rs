@@ -94,7 +94,7 @@ fn check_lifetime_matching_error(
 
 #[test]
 fn simplify_and_check_lifetime_constraints() {
-    const SOURCE_CODE: &str = r#"
+    const SOURCE_CODE: &str = r"
     public trait Foo['a, T] {
         public type Bar;
     }
@@ -108,7 +108,7 @@ fn simplify_and_check_lifetime_constraints() {
         public second: &'a int32,
         public third: &'b int32,
     }
-    "#;
+    ";
 
     let BuildTableError { table, errors } =
         build_table_from_source(SOURCE_CODE).unwrap_err();
@@ -149,8 +149,9 @@ fn simplify_and_check_lifetime_constraints() {
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn trait_occurrence() {
-    const SOURCE_CODE: &str = r#"
+    const SOURCE_CODE: &str = r"
     public trait Foo['a, T] {
         public type Output;
     }
@@ -165,7 +166,7 @@ fn trait_occurrence() {
     {
         public first: Foo['b, T]::Output
     }
-    "#;
+    ";
 
     let BuildTableError { table, errors } =
         build_table_from_source(SOURCE_CODE).unwrap_err();
@@ -263,7 +264,7 @@ fn trait_occurrence() {
 
 #[test]
 fn mismatched_implementation_argument() {
-    const SOURCE_CODE: &str = r#"
+    const SOURCE_CODE: &str = r"
     public struct Tuple[T, U] {
         public first:  T,
         public second: T,
@@ -274,7 +275,7 @@ fn mismatched_implementation_argument() {
     }
 
     public type Instantiation = Tuple[int32, int64]::Output;
-    "#;
+    ";
 
     let BuildTableError { table: _, errors } =
         build_table_from_source(SOURCE_CODE).unwrap_err();

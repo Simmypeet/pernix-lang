@@ -2,7 +2,7 @@
 
 use core::fmt;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     fmt::Debug,
 };
 
@@ -1212,6 +1212,7 @@ where
                     };
 
                 if deduction
+                    .instantiation
                     .append_from_generic_arguments(
                         member_generic_arguments.clone(),
                         (*id).into(),
@@ -1228,7 +1229,10 @@ where
                     implementation_type_symbol.r#type.clone(),
                 );
 
-                instantiation::instantiate(&mut aliased, &deduction);
+                instantiation::instantiate(
+                    &mut aliased,
+                    &deduction.instantiation,
+                );
 
                 Ok(Some(Succeeded::with_constraints(aliased, constraints)))
             }
@@ -1277,6 +1281,7 @@ where
                     };
 
                 if deduction
+                    .instantiation
                     .append_from_generic_arguments(
                         member_generic_arguments.clone(),
                         (*id).into(),
@@ -1293,7 +1298,10 @@ where
                     implementation_type_symbol.r#type.clone(),
                 );
 
-                instantiation::instantiate(&mut aliased, &deduction);
+                instantiation::instantiate(
+                    &mut aliased,
+                    &deduction.instantiation,
+                );
 
                 Ok(Some(Succeeded::with_constraints(aliased, constraints)))
             }
@@ -1534,22 +1542,6 @@ where
         predicate.into_type_outlives()
     }
 
-    fn as_constant_type_predicate(predicate: &Predicate<M>) -> Option<&Self> {
-        predicate.as_constant_type().map(|x| &x.0)
-    }
-
-    fn as_constant_type_predicate_mut(
-        predicate: &mut Predicate<M>,
-    ) -> Option<&mut Self> {
-        predicate.as_constant_type_mut().map(|x| &mut x.0)
-    }
-
-    fn into_constant_type_predicate(
-        predicate: Predicate<M>,
-    ) -> Result<Self, Predicate<M>> {
-        predicate.into_constant_type().map(|x| x.0)
-    }
-
     fn as_trait_member_equality_predicate(
         predicate: &Predicate<M>,
     ) -> Option<&Equality<TraitMember<M>, Self>> {
@@ -1606,58 +1598,15 @@ where
         }
     }
 
-    fn constant_type_satisfiability(&self) -> Satisfiability {
-        match self {
-            Self::Primitive(primitive_type) => match primitive_type {
-                Primitive::Int8
-                | Primitive::Int16
-                | Primitive::Int32
-                | Primitive::Int64
-                | Primitive::Uint8
-                | Primitive::Uint16
-                | Primitive::Uint32
-                | Primitive::Uint64
-                | Primitive::Bool
-                | Primitive::Usize
-                | Primitive::Isize => Satisfiability::Satisfied,
-
-                Primitive::Float32 | Primitive::Float64 => {
-                    Satisfiability::Unsatisfied
-                }
-            },
-
-            Self::Error(_)
-            | Self::TraitMember(_)
-            | Self::Parameter(_)
-            | Self::Inference(_)
-            | Self::MemberSymbol(_) => Satisfiability::Unsatisfied,
-
-            Self::Symbol(Symbol { id, .. }) => match id {
-                SymbolID::Struct(_) | SymbolID::Enum(_) => {
-                    Satisfiability::Congruent
-                }
-
-                SymbolID::Type(_) => Satisfiability::Unsatisfied,
-            },
-
-            Self::Pointer(_)
-            | Self::Reference(_)
-            | Self::Array(_)
-            | Self::Tuple(_)
-            | Self::Phantom(_)
-            | Self::Local(_) => Satisfiability::Congruent,
-        }
-    }
-
     fn get_instantiation(
         instantiation: &Instantiation<M>,
-    ) -> &HashMap<Self, Self> {
+    ) -> &BTreeMap<Self, Self> {
         &instantiation.types
     }
 
     fn get_instantiation_mut(
         instantiation: &mut Instantiation<M>,
-    ) -> &mut HashMap<Self, Self> {
+    ) -> &mut BTreeMap<Self, Self> {
         &mut instantiation.types
     }
 
@@ -1670,13 +1619,13 @@ where
         substructural.types.values()
     }
 
-    fn get_mapping(mapping: &Mapping<M>) -> &HashMap<Self, HashSet<Self>> {
+    fn get_mapping(mapping: &Mapping<M>) -> &BTreeMap<Self, BTreeSet<Self>> {
         &mapping.types
     }
 
     fn get_mapping_mut(
         mapping: &mut Mapping<M>,
-    ) -> &mut HashMap<Self, HashSet<Self>> {
+    ) -> &mut BTreeMap<Self, BTreeSet<Self>> {
         &mut mapping.types
     }
 

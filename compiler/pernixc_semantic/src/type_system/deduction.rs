@@ -1,13 +1,13 @@
 //! Contains the generic arguments deduction logic.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     hash::Hash,
     sync::Arc,
 };
 
 use super::{
-    compatible::Compatible,
+    compatible::{Compatibility, Compatible},
     equality::Equality,
     instantiation::{self, Instantiation},
     mapping::Mapping,
@@ -20,12 +20,11 @@ use super::{
     },
     unification::{self, Log, Unification},
     variance::Variance,
-    Compute, Environment, LifetimeConstraint, Output, OverflowError, Satisfied,
-    Succeeded,
+    Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
 };
 use crate::{
     symbol::{table::State, GenericKind},
-    type_system::LifetimeUnifyingPredicate,
+    type_system::{LifetimeConstraint, LifetimeUnifyingPredicate},
     unordered_pair::UnorderedPair,
 };
 
@@ -95,12 +94,12 @@ fn unify<T: Term>(
     Ok(Some(existing))
 }
 
-fn extract<K: Eq + Hash, V>(
-    map: HashMap<K, V>,
+fn extract<K: Ord, V>(
+    map: BTreeMap<K, V>,
     mut predicate: impl FnMut(&K) -> bool,
-) -> (HashMap<K, V>, HashMap<K, V>) {
-    let mut positive = HashMap::new();
-    let mut negative = HashMap::new();
+) -> (BTreeMap<K, V>, BTreeMap<K, V>) {
+    let mut positive = BTreeMap::new();
+    let mut negative = BTreeMap::new();
 
     for (key, value) in map {
         if predicate(&key) {
@@ -114,7 +113,7 @@ fn extract<K: Eq + Hash, V>(
 }
 
 fn mapping_equals<T: Term, S: State, N: Normalizer<T::Model>>(
-    unification: HashMap<T, HashSet<T>>,
+    unification: BTreeMap<T, BTreeSet<T>>,
     substitution: &Instantiation<T::Model>,
     environment: &Environment<T::Model, S, N>,
     context: &mut Context<T::Model>,
@@ -126,7 +125,7 @@ fn mapping_equals<T: Term, S: State, N: Normalizer<T::Model>>(
     )
         -> Result<Output<Satisfied, T::Model>, OverflowError>,
 ) -> Result<Output<Satisfied, T::Model>, OverflowError> {
-    let mut constraints = HashSet::new();
+    let mut constraints = BTreeSet::new();
 
     for (mut key, values) in unification {
         instantiation::instantiate(&mut key, substitution);
@@ -153,7 +152,7 @@ fn from_unification_to_substitution<
     S: State,
     N: Normalizer<T::Model>,
 >(
-    unification: HashMap<T, HashSet<T>>,
+    unification: BTreeMap<T, BTreeSet<T>>,
     environment: &Environment<T::Model, S, N>,
     context: &mut Context<T::Model>,
     mut compatible: impl FnMut(
@@ -163,9 +162,10 @@ fn from_unification_to_substitution<
         &mut Context<T::Model>,
     )
         -> Result<Output<Satisfied, T::Model>, OverflowError>,
-) -> Result<Output<HashMap<T, T>, T::Model>, OverflowError> {
-    let mut result = HashMap::new();
-    let mut constraints = HashSet::new();
+) -> Result<Output<BTreeMap<T, T>, T::Model>, OverflowError> {
+    let mut result = BTreeMap::new();
+
+    let mut constraints = BTreeSet::new();
 
     for (key, values) in unification {
         let mut values = values.into_iter();
@@ -210,7 +210,7 @@ pub struct MismatchedGenericArgumentCountError {
 pub struct UnificationFailureError;
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
 pub enum Error {
@@ -224,6 +224,17 @@ pub enum Error {
     UnificationFailure(#[from] UnificationFailureError),
 }
 
+/// Results of deduction from generic arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Deduction<M: Model> {
+    /// The instantiation of all generic parameters.
+    pub instantiation: Instantiation<M>,
+
+    /// If `true`, the lifetime parameter in the generic arguments of the
+    /// implementation is not general to accomodate forall lifetimes.
+    pub is_not_general_enough: bool,
+}
+
 impl<M: Model> GenericArguments<M> {
     /// Performs generic parameter deduction.
     ///
@@ -232,40 +243,40 @@ impl<M: Model> GenericArguments<M> {
     /// See [`OverflowError`] for more information.
     pub fn deduce(
         &self,
-        another: &Self,
+        target: &Self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-    ) -> Result<Succeeded<Instantiation<M>, M>, Error> {
-        self.deduce_with_context(another, environment, &mut Context::new())
+    ) -> Result<Succeeded<Deduction<M>, M>, Error> {
+        self.deduce_with_context(target, environment, &mut Context::new())
     }
 
     #[allow(clippy::too_many_lines)]
     pub(super) fn deduce_with_context(
         &self,
-        another: &Self,
+        target: &Self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
         context: &mut Context<M>,
-    ) -> Result<Succeeded<Instantiation<M>, M>, Error> {
+    ) -> Result<Succeeded<Deduction<M>, M>, Error> {
         // arity check
-        if self.lifetimes.len() != another.lifetimes.len() {
+        if self.lifetimes.len() != target.lifetimes.len() {
             return Err(MismatchedGenericArgumentCountError {
                 lhs_count: self.lifetimes.len(),
-                rhs_count: another.lifetimes.len(),
+                rhs_count: target.lifetimes.len(),
                 kind: GenericKind::Lifetime,
             }
             .into());
         }
-        if self.types.len() != another.types.len() {
+        if self.types.len() != target.types.len() {
             return Err(MismatchedGenericArgumentCountError {
                 lhs_count: self.types.len(),
-                rhs_count: another.types.len(),
+                rhs_count: target.types.len(),
                 kind: GenericKind::Type,
             }
             .into());
         }
-        if self.constants.len() != another.constants.len() {
+        if self.constants.len() != target.constants.len() {
             return Err(MismatchedGenericArgumentCountError {
                 lhs_count: self.constants.len(),
-                rhs_count: another.constants.len(),
+                rhs_count: target.constants.len(),
                 kind: GenericKind::Constant,
             }
             .into());
@@ -274,7 +285,7 @@ impl<M: Model> GenericArguments<M> {
         // unify all kinds of generic arguments
         let Some(unification) = unify(
             &self.lifetimes,
-            &another.lifetimes,
+            &target.lifetimes,
             environment,
             context,
             Succeeded::new(Mapping::default()),
@@ -284,7 +295,7 @@ impl<M: Model> GenericArguments<M> {
         };
         let Some(unification) = unify(
             &self.types,
-            &another.types,
+            &target.types,
             environment,
             context,
             unification,
@@ -294,7 +305,7 @@ impl<M: Model> GenericArguments<M> {
         };
         let Some(Succeeded { result: unification, mut constraints }) = unify(
             &self.constants,
-            &another.constants,
+            &target.constants,
             environment,
             context,
             unification,
@@ -302,6 +313,9 @@ impl<M: Model> GenericArguments<M> {
         else {
             return Err(UnificationFailureError.into());
         };
+
+        // flag determining whether the unification is general enough or not.
+        let mut is_not_general_enough = false;
 
         // separate out the unification between generic parameters and trait
         // members
@@ -322,9 +336,15 @@ impl<M: Model> GenericArguments<M> {
                         continue;
                     }
 
-                    constraints.insert(LifetimeConstraint::LifetimeMatching(
-                        UnorderedPair::new(key.clone(), value),
-                    ));
+                    if value.is_forall() || key.is_forall() {
+                        is_not_general_enough = true;
+                    } else {
+                        constraints.insert(
+                            LifetimeConstraint::LifetimeMatching(
+                                UnorderedPair::new(key.clone(), value),
+                            ),
+                        );
+                    }
                 }
             }
 
@@ -337,6 +357,10 @@ impl<M: Model> GenericArguments<M> {
                 context,
                 |lhs, rhs, _, _| {
                     if lhs == rhs {
+                        Ok(Some(Succeeded::satisfied()))
+                    } else if lhs.is_forall() || rhs.is_forall() {
+                        is_not_general_enough = true;
+
                         Ok(Some(Succeeded::satisfied()))
                     } else {
                         Ok(Some(Succeeded::satisfied_with(
@@ -356,6 +380,7 @@ impl<M: Model> GenericArguments<M> {
             else {
                 return Err(UnificationFailureError.into());
             };
+
             constraints.extend(new_constraints);
 
             let Some(Succeeded { result: types, constraints: new_constraints }) =
@@ -390,11 +415,18 @@ impl<M: Model> GenericArguments<M> {
                                     continue;
                                 }
 
-                                constraints.insert(
-                                    LifetimeConstraint::LifetimeMatching(
-                                        UnorderedPair::new(lhs.clone(), rhs),
-                                    ),
-                                );
+                                if lhs.is_forall() || rhs.is_forall() {
+                                    is_not_general_enough = true;
+                                } else {
+                                    constraints.insert(
+                                        LifetimeConstraint::LifetimeMatching(
+                                            UnorderedPair::new(
+                                                lhs.clone(),
+                                                rhs,
+                                            ),
+                                        ),
+                                    );
+                                }
                             }
                         }
 
@@ -421,6 +453,7 @@ impl<M: Model> GenericArguments<M> {
             else {
                 return Err(UnificationFailureError.into());
             };
+
             constraints.extend(new_constraints);
 
             (Instantiation { lifetimes, types, constants }, trait_type_map)
@@ -432,20 +465,38 @@ impl<M: Model> GenericArguments<M> {
                 &base_unification,
                 environment,
                 context,
-                |term, target, environment, context| {
-                    term.compatible_with_context(
+                |term, target, environment, context| match term
+                    .compatible_with_context(
                         target,
                         Variance::Covariant,
                         environment,
                         context,
-                    )
+                    )? {
+                    Some(Succeeded {
+                        result: Compatibility { forall_lifetime_errors, .. },
+                        constraints,
+                    }) => {
+                        if !forall_lifetime_errors.is_empty() {
+                            is_not_general_enough = true;
+                        }
+
+                        Ok(Some(Succeeded::satisfied_with(constraints)))
+                    }
+                    None => Ok(None),
                 },
             )?
         else {
             return Err(UnificationFailureError.into());
         };
+
         constraints.extend(new_constraints);
 
-        Ok(Succeeded::with_constraints(base_unification, constraints))
+        Ok(Succeeded {
+            result: Deduction {
+                instantiation: base_unification,
+                is_not_general_enough,
+            },
+            constraints,
+        })
     }
 }

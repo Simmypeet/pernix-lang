@@ -1,6 +1,6 @@
 //! Contains the semantic logic of the compiler (i.e. type checking/system).
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use enum_as_inner::EnumAsInner;
 use environment::Environment;
@@ -103,7 +103,7 @@ impl<M: Model> unification::Predicate<Constant<M>>
 pub struct OverflowError;
 
 /// A tag type signaling that the predicate/query is satisfied.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Satisfied;
 
 /// Contains constraints related to lifetimes.
@@ -116,28 +116,34 @@ pub enum LifetimeConstraint<M: Model> {
 }
 
 /// The result of the semantic logic in the success case.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Succeeded<Result, M: Model> {
     /// The result of the query in the success case.
     pub result: Result,
 
-    /// The additional outlives constraints that must be satisfied for the
-    /// query to be considered successful.
-    pub constraints: HashSet<LifetimeConstraint<M>>,
+    /// The additional constraints related to lifetimes that must be satisfied
+    /// for the query to be considered successful.
+    pub constraints: BTreeSet<LifetimeConstraint<M>>,
+}
+
+impl<Result: Default, M: Model> Default for Succeeded<Result, M> {
+    fn default() -> Self {
+        Self { result: Default::default(), constraints: BTreeSet::new() }
+    }
 }
 
 impl<Result, M: Model> Succeeded<Result, M> {
     /// Creates a new [`Succeeded`] with the given result and no constraints.
     #[must_use]
     pub fn new(result: Result) -> Self {
-        Self { result, constraints: HashSet::new() }
+        Self { result, constraints: BTreeSet::new() }
     }
 
     /// Creates a new [`Succeeded`] with the given result and constraints.
     #[must_use]
     pub fn with_constraints(
         result: Result,
-        constraints: HashSet<LifetimeConstraint<M>>,
+        constraints: BTreeSet<LifetimeConstraint<M>>,
     ) -> Self {
         Self { result, constraints }
     }
@@ -151,7 +157,9 @@ impl<M: Model> Succeeded<Satisfied, M> {
     /// Creates a new [`Succeeded`] with the [`Satisfied`] result and
     /// constraints.
     #[must_use]
-    pub fn satisfied_with(constraints: HashSet<LifetimeConstraint<M>>) -> Self {
+    pub fn satisfied_with(
+        constraints: BTreeSet<LifetimeConstraint<M>>,
+    ) -> Self {
         Self::with_constraints(Satisfied, constraints)
     }
 
@@ -173,7 +181,7 @@ pub type Output<Result, M> = Option<Succeeded<Result, M>>;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Premise<M: Model> {
     /// List of predicates that will be considered as facts.
-    pub predicates: HashSet<Predicate<M>>,
+    pub predicates: BTreeSet<Predicate<M>>,
 
     /// The extra trait context that has a particular effect on the semantic.
     pub trait_context: TraitContext,

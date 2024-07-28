@@ -40,7 +40,7 @@ pub struct TraitTypeEquality {
 }
 
 impl TraitTypeEquality {
-    /// Dissolves the [`TraitMemberBound`] into a tuple of its fields.
+    /// Dissolves the [`TraitTypeEquality`] into a tuple of its fields.
     #[must_use]
     pub fn dissolve(
         self,

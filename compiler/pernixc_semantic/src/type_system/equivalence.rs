@@ -2,7 +2,7 @@
 //! premises.
 
 use super::{
-    compatible::Compatible,
+    compatible::{Compatibility, Compatible},
     model::Model,
     normalizer::Normalizer,
     predicate::Predicate,
@@ -28,6 +28,7 @@ pub(super) trait Equivalence: ModelOf + Sized {
         context: &mut Context<Self::Model>,
     ) -> Result<Vec<Succeeded<Self, Self::Model>>, OverflowError>;
 }
+
 impl<M: Model> Equivalence for Lifetime<M> {
     fn get_equivalences(
         &self,
@@ -56,16 +57,29 @@ impl<M: Model> Equivalence for Type<M> {
             let lhs = &lhs;
             let rhs = &equivalence.rhs;
 
-            if let Some(result) = self.compatible_with_context(
+            if let Some(Succeeded {
+                result:
+                    Compatibility {
+                        forall_lifetime_instantiations,
+                        forall_lifetime_errors,
+                    },
+                constraints,
+            }) = self.compatible_with_context(
                 lhs,
                 Variance::Covariant,
                 environment,
                 context,
             )? {
-                equivalences.push(Succeeded {
-                    result: rhs.clone(),
-                    constraints: result.constraints,
-                });
+                let mut result = rhs.clone();
+
+                // instantiate the forall lifetime
+                forall_lifetime_instantiations.instantiate(&mut result);
+
+                if !forall_lifetime_errors.is_empty() {
+                    continue; // sadly
+                }
+
+                equivalences.push(Succeeded { result, constraints });
             }
         }
 

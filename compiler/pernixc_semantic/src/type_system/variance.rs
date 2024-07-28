@@ -93,6 +93,9 @@ pub enum GetVarianceError {
 
 impl<M: Model> Type<M> {
     /// Retrieves the variance of the term at the given location.
+    ///
+    /// This function early returns the `parent_variance` if the variance is
+    /// [`Variance::Invariant`] or if the location is empty.
     #[allow(clippy::too_many_lines)]
     pub fn get_variance_of(
         &self,
@@ -103,6 +106,11 @@ impl<M: Model> Type<M> {
         let Some(location) = locations.next() else {
             return Ok(parent_variance);
         };
+
+        // early return if the parent variance is invariant
+        if parent_variance == Variance::Invariant {
+            return Ok(Variance::Invariant);
+        }
 
         match location {
             TermLocation::Lifetime(location) => {
@@ -116,8 +124,7 @@ impl<M: Model> Type<M> {
                     ) => {
                         let adt_id = match symbol.id {
                             r#type::SymbolID::Struct(id) => AdtID::Struct(id),
-                            r#type::SymbolID::Enum(id) => AdtID::Enum(id),
-                            r#type::SymbolID::Type(_) => {
+                            r#type::SymbolID::Enum(id) => AdtID::Enum(id), r#type::SymbolID::Type(_) => {
                                 return Err(GetVarianceError::Undeterminable)
                             }
                         };

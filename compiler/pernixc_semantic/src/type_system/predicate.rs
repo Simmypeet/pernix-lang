@@ -94,7 +94,7 @@ pub use outlives::Outlives;
 pub(super) use r#trait::resolve_implementation_with_context;
 pub use r#trait::{
     resolve_implementation, Implementation, ResolveError as TraitResolveError,
-    Trait,
+    Satisfied as TraitSatisfied, Trait,
 };
 pub use tuple::Tuple;
 
@@ -113,7 +113,7 @@ pub use tuple::Tuple;
 #[allow(missing_docs)]
 pub enum Predicate<M: Model> {
     TraitTypeEquality(Equality<r#type::TraitMember<M>, Type<M>>),
-    ConstantType(ConstantType<Type<M>>),
+    ConstantType(ConstantType<M>),
     LifetimeOutlives(Outlives<Lifetime<M>>),
     TypeOutlives(Outlives<Type<M>>),
     TupleType(Tuple<Type<M>>),
@@ -170,7 +170,7 @@ impl<M: Model> Predicate<M> {
 impl<T: State, M: Model> table::Display<T> for Predicate<M>
 where
     Equality<r#type::TraitMember<M>, Type<M>>: table::Display<T>,
-    ConstantType<Type<M>>: table::Display<T>,
+    ConstantType<M>: table::Display<T>,
     Outlives<Lifetime<M>>: table::Display<T>,
     Outlives<Type<M>>: table::Display<T>,
     Tuple<Type<M>>: table::Display<T>,

@@ -2,7 +2,7 @@
 
 use core::fmt;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -372,20 +372,6 @@ where
         predicate.into_lifetime_outlives()
     }
 
-    fn as_constant_type_predicate(_: &Predicate<M>) -> Option<&Self> { None }
-
-    fn as_constant_type_predicate_mut(
-        _: &mut Predicate<M>,
-    ) -> Option<&mut Self> {
-        None
-    }
-
-    fn into_constant_type_predicate(
-        predicate: Predicate<M>,
-    ) -> Result<Self, Predicate<M>> {
-        Err(predicate)
-    }
-
     fn as_trait_member_equality_predicate(
         _: &Predicate<M>,
     ) -> Option<&Equality<Never, Self>> {
@@ -424,26 +410,15 @@ where
         Satisfiability::Satisfied
     }
 
-    fn constant_type_satisfiability(&self) -> Satisfiability {
-        match self {
-            Self::Static => Satisfiability::Satisfied,
-
-            Self::Error(_)
-            | Self::Parameter(_)
-            | Self::Inference(_)
-            | Self::Forall(_) => Satisfiability::Unsatisfied,
-        }
-    }
-
     fn get_instantiation(
         instantiation: &Instantiation<M>,
-    ) -> &HashMap<Self, Self> {
+    ) -> &BTreeMap<Self, Self> {
         &instantiation.lifetimes
     }
 
     fn get_instantiation_mut(
         instantiation: &mut Instantiation<M>,
-    ) -> &mut HashMap<Self, Self> {
+    ) -> &mut BTreeMap<Self, Self> {
         &mut instantiation.lifetimes
     }
 
@@ -456,13 +431,13 @@ where
         substructural.lifetimes.values()
     }
 
-    fn get_mapping(mapping: &Mapping<M>) -> &HashMap<Self, HashSet<Self>> {
+    fn get_mapping(mapping: &Mapping<M>) -> &BTreeMap<Self, BTreeSet<Self>> {
         &mapping.lifetimes
     }
 
     fn get_mapping_mut(
         mapping: &mut Mapping<M>,
-    ) -> &mut HashMap<Self, HashSet<Self>> {
+    ) -> &mut BTreeMap<Self, BTreeSet<Self>> {
         &mut mapping.lifetimes
     }
 

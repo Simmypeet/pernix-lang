@@ -3,8 +3,8 @@ use std::{fmt::Debug, hash::Hash};
 use crate::symbol::table::representation::building::finalizing::finalize::{
     adt_implementation, adt_implementation_constant,
     adt_implementation_function, adt_implementation_type, constant, function,
-    negative_trait_implementation, r#enum, r#struct, r#trait, r#type,
-    trait_constant, trait_function, positive_trait_implementation,
+    negative_trait_implementation, positive_trait_implementation, r#enum,
+    r#struct, r#trait, r#type, trait_constant, trait_function,
     trait_implementation_constant, trait_implementation_function,
     trait_implementation_type, trait_type, variant, StateFlag,
 };

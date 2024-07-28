@@ -1,6 +1,6 @@
 //! Contains the definition of [`Mapping`]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use getset::Getters;
 
@@ -14,9 +14,9 @@ use super::{
 #[derive(Debug, Clone, PartialEq, Eq, Default, Getters)]
 #[allow(missing_docs)]
 pub struct Mapping<M: Model> {
-    pub lifetimes: HashMap<Lifetime<M>, HashSet<Lifetime<M>>>,
-    pub types: HashMap<Type<M>, HashSet<Type<M>>>,
-    pub constants: HashMap<Constant<M>, HashSet<Constant<M>>>,
+    pub lifetimes: BTreeMap<Lifetime<M>, BTreeSet<Lifetime<M>>>,
+    pub types: BTreeMap<Type<M>, BTreeSet<Type<M>>>,
+    pub constants: BTreeMap<Constant<M>, BTreeSet<Constant<M>>>,
 }
 
 impl<M: Model> Mapping<M> {
@@ -49,7 +49,7 @@ impl<M: Model> Mapping<M> {
     fn remove_recursive_internal<T: Term<Model = M>>(
         &mut self,
         term: &T,
-    ) -> HashSet<T> {
+    ) -> BTreeSet<T> {
         let map = T::get_mapping_mut(self);
 
         let mut terms = map.remove(term).unwrap_or_default();
@@ -88,12 +88,12 @@ impl<M: Model> Mapping<M> {
     pub fn mapping_count(&self) -> usize {
         self.lifetimes
             .values()
-            .map(HashSet::len)
+            .map(BTreeSet::len)
             .chain(
                 self.types
                     .values()
-                    .map(HashSet::len)
-                    .chain(self.constants.values().map(HashSet::len)),
+                    .map(BTreeSet::len)
+                    .chain(self.constants.values().map(BTreeSet::len)),
             )
             .sum()
     }

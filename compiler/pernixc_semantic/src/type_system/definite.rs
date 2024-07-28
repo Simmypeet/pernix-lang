@@ -102,6 +102,7 @@ impl<T: Term> Compute for Definite<T> {
                 Definite(eq).query_with_context(environment, context)?
             {
                 result.constraints.extend(constraints);
+
                 return Ok(Some(result));
             }
         }

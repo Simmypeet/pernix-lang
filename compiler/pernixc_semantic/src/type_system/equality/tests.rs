@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Debug};
+use std::{collections::BTreeSet, fmt::Debug};
 
 use proptest::{
     arbitrary::Arbitrary,
@@ -680,7 +680,7 @@ impl Property<Type<Default>> for TypeAlias {
 }
 
 fn remove_equality_recursive(
-    predicates: &mut HashSet<Predicate<Default>>,
+    predicates: &mut BTreeSet<Predicate<Default>>,
     trait_member: &TraitMember<Default>,
 ) {
     let to_be_removeds = predicates

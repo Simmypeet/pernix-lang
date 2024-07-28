@@ -3,7 +3,7 @@
 use core::fmt;
 use std::{
     self,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     ops::Deref,
 };
 
@@ -731,20 +731,6 @@ where
         Err(predicate)
     }
 
-    fn as_constant_type_predicate(_: &Predicate<M>) -> Option<&Self> { None }
-
-    fn as_constant_type_predicate_mut(
-        _: &mut Predicate<M>,
-    ) -> Option<&mut Self> {
-        None
-    }
-
-    fn into_constant_type_predicate(
-        predicate: Predicate<M>,
-    ) -> Result<Self, Predicate<M>> {
-        Err(predicate)
-    }
-
     fn as_trait_member_equality_predicate(
         _: &Predicate<M>,
     ) -> Option<&Equality<Never, Self>> {
@@ -797,19 +783,15 @@ where
         }
     }
 
-    fn constant_type_satisfiability(&self) -> Satisfiability {
-        Satisfiability::Satisfied
-    }
-
     fn get_instantiation(
         instantiation: &Instantiation<M>,
-    ) -> &HashMap<Self, Self> {
+    ) -> &BTreeMap<Self, Self> {
         &instantiation.constants
     }
 
     fn get_instantiation_mut(
         instantiation: &mut Instantiation<M>,
-    ) -> &mut HashMap<Self, Self> {
+    ) -> &mut BTreeMap<Self, Self> {
         &mut instantiation.constants
     }
 
@@ -822,13 +804,13 @@ where
         substructural.constants.values()
     }
 
-    fn get_mapping(mapping: &Mapping<M>) -> &HashMap<Self, HashSet<Self>> {
+    fn get_mapping(mapping: &Mapping<M>) -> &BTreeMap<Self, BTreeSet<Self>> {
         &mapping.constants
     }
 
     fn get_mapping_mut(
         mapping: &mut Mapping<M>,
-    ) -> &mut HashMap<Self, HashSet<Self>> {
+    ) -> &mut BTreeMap<Self, BTreeSet<Self>> {
         &mut mapping.constants
     }
 

@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     ops::Not,
 };
 
@@ -123,10 +123,7 @@ impl SingleImplementation {
         prop_assert!(constraints.is_empty());
 
         prop_assert_eq!(result.id, self.target_implementation_id);
-        prop_assert_eq!(
-            &result.deduced_substitution,
-            &self.expected_instantiation
-        );
+        prop_assert_eq!(&result.instantiation, &self.expected_instantiation);
 
         Ok(())
     }
@@ -255,9 +252,9 @@ impl SingleImplementation {
                 }),
             );
             let instantiation = Instantiation {
-                lifetimes: HashMap::new(),
+                lifetimes: BTreeMap::new(),
                 types: std::iter::once(pair.clone()).collect(),
-                constants: HashMap::new(),
+                constants: BTreeMap::new(),
             };
 
             generic_arguments.instantiate(&instantiation);
@@ -303,8 +300,8 @@ impl SingleImplementation {
                 }),
             );
             let instantiation = Instantiation {
-                lifetimes: HashMap::new(),
-                types: HashMap::new(),
+                lifetimes: BTreeMap::new(),
+                types: BTreeMap::new(),
                 constants: std::iter::once(pair.clone()).collect(),
             };
 
@@ -328,7 +325,7 @@ impl SingleImplementation {
                         term.as_lifetime().map(|x| (*x).clone())
                     }),
             )
-            .collect::<HashSet<_>>();
+            .collect::<BTreeSet<_>>();
 
         for lt in all_lifetimes {
             // no need to check for existence because it is guaranteed to not
@@ -352,8 +349,8 @@ impl SingleImplementation {
             );
             let instantiation = Instantiation {
                 lifetimes: std::iter::once(pair.clone()).collect(),
-                types: HashMap::new(),
-                constants: HashMap::new(),
+                types: BTreeMap::new(),
+                constants: BTreeMap::new(),
             };
 
             generic_arguments.instantiate(&instantiation);
@@ -499,7 +496,7 @@ impl SpecializedImplementation {
 
         prop_assert_eq!(result.id, self.specialized_implementation_id);
         prop_assert_eq!(
-            &result.deduced_substitution,
+            &result.instantiation,
             &self.expected_specialized_instantitation
         );
         prop_assert!(constraints.is_empty());
@@ -543,7 +540,7 @@ impl SpecializedImplementation {
             .filter_map(|(term, _)| term.as_type().copied())
             .filter(|x| x.is_parameter())
             .cloned()
-            .collect::<HashSet<_>>();
+            .collect::<BTreeSet<_>>();
 
         let all_constant_parameters = generic_arguments
             .constants
@@ -555,7 +552,7 @@ impl SpecializedImplementation {
             .filter_map(|(term, _)| term.as_constant().copied())
             .filter(|x| x.is_parameter())
             .cloned()
-            .collect::<HashSet<_>>();
+            .collect::<BTreeSet<_>>();
 
         for ty in to_be_substituted_type.into_iter().chain(all_type_parameters)
         {
@@ -584,9 +581,9 @@ impl SpecializedImplementation {
                 }),
             );
             let instantiation = Instantiation {
-                lifetimes: HashMap::new(),
+                lifetimes: BTreeMap::new(),
                 types: std::iter::once(pair.clone()).collect(),
-                constants: HashMap::new(),
+                constants: BTreeMap::new(),
             };
 
             generic_arguments.instantiate(&instantiation);
@@ -638,8 +635,8 @@ impl SpecializedImplementation {
                 }),
             );
             let instantiation = Instantiation {
-                lifetimes: HashMap::new(),
-                types: HashMap::new(),
+                lifetimes: BTreeMap::new(),
+                types: BTreeMap::new(),
                 constants: std::iter::once(pair.clone()).collect(),
             };
 
@@ -667,7 +664,7 @@ impl SpecializedImplementation {
                         term.as_lifetime().map(|x| (*x).clone())
                     }),
             )
-            .collect::<HashSet<_>>();
+            .collect::<BTreeSet<_>>();
 
         for lt in all_lifetimes {
             // no need to check for existence because it is guaranteed to not
@@ -691,8 +688,8 @@ impl SpecializedImplementation {
             );
             let instantiation = Instantiation {
                 lifetimes: std::iter::once(pair.clone()).collect(),
-                types: HashMap::new(),
-                constants: HashMap::new(),
+                types: BTreeMap::new(),
+                constants: BTreeMap::new(),
             };
 
             generic_arguments.instantiate(&instantiation);
@@ -855,7 +852,7 @@ impl FallbackToGeneralImplementation {
 
         prop_assert_eq!(result.id, self.0.general_implementation_id);
         prop_assert_eq!(
-            &result.deduced_substitution,
+            &result.instantiation,
             &self.0.expected_general_instantitation
         );
         prop_assert!(constraints.is_empty());

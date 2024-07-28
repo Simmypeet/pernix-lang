@@ -1,6 +1,6 @@
 //! Contains the code related to type checking the [`Constant`].
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use super::{
     equality::Equality,
@@ -134,7 +134,7 @@ where
     Tuple<U>: Into<U>,
 {
     // list of all outlives constraints
-    let mut constraints = HashSet::new();
+    let mut constraints = BTreeSet::new();
 
     let this_unpacked_count =
         this.elements.iter().filter(|value| value.is_unpacked).count();
@@ -214,7 +214,7 @@ where
     };
     constraints.extend(result.constraints);
 
-    Ok(Some(Succeeded::with_constraints(Satisfied, constraints)))
+    Ok(Some(Succeeded::satisfied_with(constraints)))
 }
 
 impl<M: Model> Check<Constant<M>> for Type<M> {
@@ -249,7 +249,7 @@ impl<M: Model> Compute for TypeCheck<M> {
         (): Self::Parameter,
         (): Self::InProgress,
     ) -> Result<Option<Self::Result>, Self::Error> {
-        let result = (|| -> Result<Output<Satisfied, M>, Error> {
+        let result = (|| {
             match (&self.r#type, &self.constant) {
                 // check integer and boolean
                 (
@@ -317,7 +317,7 @@ impl<M: Model> Compute for TypeCheck<M> {
                         &struct_sym.generic_declaration.parameters,
                     )?;
 
-                    let mut constraints = HashSet::new();
+                    let mut constraints = BTreeSet::new();
 
                     for (field_value, (_, field_sym)) in
                         value.fields.iter().zip(struct_sym.fields_as_order())
@@ -341,10 +341,7 @@ impl<M: Model> Compute for TypeCheck<M> {
                         constraints.extend(result.constraints);
                     }
 
-                    Ok(Some(Succeeded::with_constraints(
-                        Satisfied,
-                        constraints,
-                    )))
+                    Ok(Some(Succeeded::satisfied_with(constraints)))
                 }
 
                 // check enum type
@@ -431,10 +428,7 @@ impl<M: Model> Compute for TypeCheck<M> {
                         constraints.extend(result.constraints);
                     }
 
-                    Ok(Some(Succeeded::with_constraints(
-                        Satisfied,
-                        constraints,
-                    )))
+                    Ok(Some(Succeeded::satisfied_with(constraints)))
                 }
 
                 (ty, Constant::Parameter(constant_parameter)) => {
@@ -478,7 +472,7 @@ impl<M: Model> Compute for TypeCheck<M> {
                         if tuple_type.elements.len()
                             == tuple_const.elements.len()
                         {
-                            let mut constraints = HashSet::new();
+                            let mut constraints = BTreeSet::new();
 
                             for (ty, value) in tuple_type
                                 .elements
@@ -502,8 +496,7 @@ impl<M: Model> Compute for TypeCheck<M> {
                                 constraints.extend(result.constraints);
                             }
 
-                            return Ok(Some(Succeeded::with_constraints(
-                                Satisfied,
+                            return Ok(Some(Succeeded::satisfied_with(
                                 constraints,
                             )));
                         }

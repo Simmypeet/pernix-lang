@@ -1,7 +1,7 @@
 //! Contains the code related to applying substitutions to terms.
 
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{btree_map::Entry, BTreeMap},
     hash::Hash,
 };
 
@@ -23,12 +23,12 @@ use crate::{
 };
 
 /// Represents an instantiation of generic parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[allow(missing_docs)]
 pub struct Instantiation<M: Model> {
-    pub lifetimes: HashMap<Lifetime<M>, Lifetime<M>>,
-    pub types: HashMap<Type<M>, Type<M>>,
-    pub constants: HashMap<Constant<M>, Constant<M>>,
+    pub lifetimes: BTreeMap<Lifetime<M>, Lifetime<M>>,
+    pub types: BTreeMap<Type<M>, Type<M>>,
+    pub constants: BTreeMap<Constant<M>, Constant<M>>,
 }
 
 struct Instantiater<'a, M: Model> {

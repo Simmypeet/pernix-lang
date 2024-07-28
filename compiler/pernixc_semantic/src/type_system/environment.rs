@@ -57,7 +57,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Clone
 #[allow(missing_docs)]
 pub enum NewEnvironmentError<M: Model> {
     AmbiguousTraitPredicates(Vec<predicate::Trait<M>>),
-    AmbiguousConstantTypePredicates(Vec<predicate::ConstantType<Type<M>>>),
+    AmbiguousConstantTypePredicates(Vec<predicate::ConstantType<M>>),
     AmbiguousTupleTypePredicates(Vec<predicate::Tuple<Type<M>>>),
     AmbiguousTupleConstantPredicate(Vec<predicate::Tuple<Constant<M>>>),
     AmbiguousTraitTypeEqualityPredicates(

@@ -2,15 +2,21 @@ use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
     symbol::table::{self, DisplayObject, State, Table},
     type_system::{
+        compatible::{Compatibility, Compatible},
         equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
         model::Model,
         normalizer::Normalizer,
         query::{self, Context, Sealed},
-        term::Term,
+        term::{
+            constant::Constant,
+            lifetime::Lifetime,
+            r#type::{Primitive, SymbolID, Type},
+            Symbol, Term,
+        },
         variance::Variance,
-        visitor, Compute, Environment, Output, OverflowError, Satisfied,
-        Succeeded,
+        visitor::{self, Element},
+        Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
     },
 };
 
@@ -21,30 +27,66 @@ struct Visitor<'a, 'c, T: State, N: Normalizer<M>, M: Model> {
     context: &'c mut Context<M>,
 }
 
-impl<'a, 'c, 'v, U: Term, T: State, N: Normalizer<U::Model>>
-    visitor::Visitor<'v, U> for Visitor<'a, 'c, T, N, U::Model>
+impl<'a, 'c, 'v, M: Model, T: State, N: Normalizer<M>>
+    visitor::Visitor<'v, Lifetime<M>> for Visitor<'a, 'c, T, N, M>
 {
-    fn visit(&mut self, term: &U, _: U::Location) -> bool {
-        match ConstantType(term.clone()).query_with_context_full(
-            self.environment,
-            self.context,
-            (),
-            QuerySource::Normal,
-        ) {
-            result @ (Err(_) | Ok(None)) => {
-                self.constant_type = result;
-                false
-            }
-
-            Ok(Some(result)) => match &mut self.constant_type {
-                Ok(Some(current)) => {
-                    current.constraints.extend(result.constraints);
-                    true
-                }
-
-                _ => false,
-            },
+    fn visit(
+        &mut self,
+        _: &Lifetime<M>,
+        _: <Lifetime<M> as Element>::Location,
+    ) -> bool {
+        if self.constant_type.is_ok() {
+            self.constant_type = Ok(None)
         }
+
+        false
+    }
+}
+
+impl<'a, 'c, 'v, M: Model, T: State, N: Normalizer<M>>
+    visitor::Visitor<'v, Type<M>> for Visitor<'a, 'c, T, N, M>
+{
+    fn visit(
+        &mut self,
+        term: &Type<M>,
+        _: <Type<M> as Element>::Location,
+    ) -> bool {
+        match &mut self.constant_type {
+            Ok(Some(satisified)) => {
+                match ConstantType(term.clone()).query_with_context_full(
+                    self.environment,
+                    self.context,
+                    (),
+                    QuerySource::Normal,
+                ) {
+                    Ok(Some(new_satisfied)) => {
+                        satisified
+                            .constraints
+                            .extend(new_satisfied.constraints);
+                        true
+                    }
+
+                    result @ (Ok(None) | Err(_)) => {
+                        self.constant_type = result;
+                        false
+                    }
+                }
+            }
+            Ok(None) => false,
+            Err(_) => false,
+        }
+    }
+}
+
+impl<'a, 'c, 'v, M: Model, T: State, N: Normalizer<M>>
+    visitor::Visitor<'v, Constant<M>> for Visitor<'a, 'c, T, N, M>
+{
+    fn visit(
+        &mut self,
+        _: &Constant<M>,
+        _: <Constant<M> as Element>::Location,
+    ) -> bool {
+        false
     }
 }
 
@@ -62,9 +104,9 @@ pub enum QuerySource {
 
 /// Represents a type can be used as a type of a compile-time constant value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConstantType<T>(pub T);
+pub struct ConstantType<M: Model>(pub Type<M>);
 
-impl<T: Term> Compute for ConstantType<T> {
+impl<M: Model> Compute for ConstantType<M> {
     type Error = OverflowError;
     type Parameter = ();
 
@@ -80,7 +122,46 @@ impl<T: Term> Compute for ConstantType<T> {
         (): Self::Parameter,
         _: Self::InProgress,
     ) -> Result<Option<Self::Result>, Self::Error> {
-        let satisfiability = self.0.definite_satisfiability();
+        let satisfiability = match self.0 {
+            Type::Primitive(primitive_type) => match primitive_type {
+                Primitive::Int8
+                | Primitive::Int16
+                | Primitive::Int32
+                | Primitive::Int64
+                | Primitive::Uint8
+                | Primitive::Uint16
+                | Primitive::Uint32
+                | Primitive::Uint64
+                | Primitive::Bool
+                | Primitive::Usize
+                | Primitive::Isize => Satisfiability::Satisfied,
+
+                Primitive::Float32 | Primitive::Float64 => {
+                    Satisfiability::Unsatisfied
+                }
+            },
+
+            Type::Error(_)
+            | Type::TraitMember(_)
+            | Type::Parameter(_)
+            | Type::Inference(_)
+            | Type::MemberSymbol(_) => Satisfiability::Unsatisfied,
+
+            Type::Symbol(Symbol { id, .. }) => match id {
+                SymbolID::Struct(_) | SymbolID::Enum(_) => {
+                    Satisfiability::Congruent
+                }
+
+                SymbolID::Type(_) => Satisfiability::Unsatisfied,
+            },
+
+            Type::Pointer(_)
+            | Type::Reference(_)
+            | Type::Array(_)
+            | Type::Tuple(_)
+            | Type::Phantom(_)
+            | Type::Local(_) => Satisfiability::Congruent,
+        };
 
         // trivially satisfiable
         if satisfiability == Satisfiability::Satisfied {
@@ -132,15 +213,22 @@ impl<T: Term> Compute for ConstantType<T> {
             .premise
             .predicates
             .iter()
-            .filter_map(|x| T::as_constant_type_predicate(x))
+            .filter_map(|x| x.as_constant_type())
         {
-            if let Some(result) = self.0.compatible_with_context(
-                &premise_term,
+            if let Some(Succeeded {
+                result: Compatibility { forall_lifetime_errors, .. },
+                constraints,
+            }) = self.0.compatible_with_context(
+                &premise_term.0,
                 Variance::Covariant,
                 environment,
                 context,
             )? {
-                return Ok(Some(result));
+                if !forall_lifetime_errors.is_empty() {
+                    continue;
+                }
+
+                return Ok(Some(Succeeded::satisfied_with(constraints)));
             }
         }
 
@@ -186,9 +274,9 @@ impl<T: Term> Compute for ConstantType<T> {
     }
 }
 
-impl<S: State, T: Term> table::Display<S> for ConstantType<T>
+impl<S: State, M: Model> table::Display<S> for ConstantType<M>
 where
-    T: table::Display<S>,
+    Type<M>: table::Display<S>,
 {
     fn fmt(
         &self,
@@ -199,7 +287,7 @@ where
     }
 }
 
-impl<T: Term> ConstantType<T> {
+impl<M: Model> ConstantType<M> {
     /// Checks if the type contains a `forall` lifetime.
     #[must_use]
     pub fn contains_forall_lifetime(&self) -> bool {
@@ -207,7 +295,7 @@ impl<T: Term> ConstantType<T> {
     }
 
     /// Applies the instantiation to the type.
-    pub fn instantiate(&mut self, instantiation: &Instantiation<T::Model>) {
+    pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
         instantiation::instantiate(&mut self.0, instantiation);
     }
 }

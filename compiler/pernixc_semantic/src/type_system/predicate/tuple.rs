@@ -2,6 +2,7 @@ use super::contains_forall_lifetime;
 use crate::{
     symbol::table::{self, DisplayObject, State, Table},
     type_system::{
+        compatible::Compatibility,
         equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
         normalizer::Normalizer,
@@ -66,13 +67,20 @@ impl<T: Term> Compute for Tuple<T> {
             .iter()
             .filter_map(|x| T::as_tuple_predicate(x))
         {
-            if let Some(result) = self.0.compatible_with_context(
+            if let Some(Succeeded {
+                result: Compatibility { forall_lifetime_errors, .. },
+                constraints,
+            }) = self.0.compatible_with_context(
                 &predicate.0,
                 Variance::Covariant,
                 environment,
                 context,
             )? {
-                return Ok(Some(result));
+                if !forall_lifetime_errors.is_empty() {
+                    continue;
+                }
+
+                return Ok(Some(Succeeded::satisfied_with(constraints)));
             }
         }
 

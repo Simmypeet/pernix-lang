@@ -2,6 +2,7 @@ use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
     symbol::table::{self, DisplayObject, State, Table},
     type_system::{
+        compatible::Compatibility,
         equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
         model::Model,
@@ -98,9 +99,11 @@ impl<M: Model> LifetimeConstraint<M> {
             LifetimeConstraint::LifetimeOutlives(outlives) => {
                 outlives.query_with_context(environment, context)
             }
+
             LifetimeConstraint::TypeOutlives(outlives) => {
                 outlives.query_with_context(environment, context)
             }
+
             LifetimeConstraint::LifetimeMatching(pair) => {
                 let lhs = pair.first();
                 let rhs = pair.second();
@@ -168,16 +171,26 @@ impl<T: Term> Compute for Outlives<T> {
                 .iter()
                 .filter_map(|x| T::as_outlive_predicate(x))
         {
-            let Some(Succeeded { result: Satisfied, constraints }) =
-                self.operand.compatible_with_context(
-                    next_operand,
-                    Variance::Covariant,
-                    environment,
-                    context,
-                )?
+            let Some(Succeeded {
+                result:
+                    Compatibility {
+                        forall_lifetime_instantiations,
+                        forall_lifetime_errors,
+                    },
+                constraints,
+            }) = self.operand.compatible_with_context(
+                next_operand,
+                Variance::Covariant,
+                environment,
+                context,
+            )?
             else {
                 continue;
             };
+
+            if !forall_lifetime_errors.is_empty() {
+                continue;
+            }
 
             for constraint in constraints {
                 let Some(Satisfied) =
@@ -187,8 +200,11 @@ impl<T: Term> Compute for Outlives<T> {
                 };
             }
 
+            let mut next_bound = next_bound.clone();
+            forall_lifetime_instantiations.instantiate(&mut next_bound);
+
             if let Some(Satisfied) =
-                Outlives::new(next_bound.clone(), self.bound.clone())
+                Outlives::new(next_bound, self.bound.clone())
                     .query_with_context(environment, context)?
             {
                 return Ok(Some(Satisfied));

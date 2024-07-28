@@ -1,7 +1,7 @@
 //! Contains the the unification logic.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -50,6 +50,22 @@ impl<T: ModelOf + Hash> Hash for Unification<T> {
     }
 }
 
+impl<T: ModelOf + Ord> PartialOrd for Unification<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: ModelOf + Ord> Ord for Unification<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.from.cmp(&other.from).then_with(|| {
+            self.to
+                .cmp(&other.to)
+                .then_with(|| self.predicate.cmp(&other.predicate))
+        })
+    }
+}
+
 impl<T: ModelOf> Unification<T> {
     /// Creates a new unification query.
     #[must_use]
@@ -74,6 +90,9 @@ pub trait PredicateA<M: Model>:
 
     #[doc(hidden)]
     fn dyn_hash(&self, state: &mut dyn Hasher);
+
+    #[doc(hidden)]
+    fn dyn_ord(&self, other: &dyn PredicateA<M>) -> std::cmp::Ordering;
 }
 
 impl<
@@ -84,7 +103,10 @@ impl<
             + Predicate<Lifetime<M>>
             + Predicate<Type<M>>
             + Predicate<Constant<M>>
-            + PartialEq,
+            + PartialEq
+            + Eq
+            + PartialOrd
+            + Ord,
     > PredicateA<M> for T
 {
     fn as_any(&self) -> &dyn std::any::Any { self }
@@ -98,6 +120,23 @@ impl<
     }
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) { self.hash(&mut state) }
+
+    fn dyn_ord(&self, other: &dyn PredicateA<M>) -> std::cmp::Ordering {
+        let self_type_id = std::any::TypeId::of::<T>();
+        let other_type_id = other.as_any().type_id();
+
+        match self_type_id.cmp(&other_type_id) {
+            std::cmp::Ordering::Equal => {
+                let other = other
+                    .as_any()
+                    .downcast_ref::<T>()
+                    .expect("should be the same type");
+
+                self.cmp(other)
+            }
+            other => other,
+        }
+    }
 }
 
 impl<M: Model> PartialEq for dyn PredicateA<M> {
@@ -109,6 +148,16 @@ impl<M: Model> Hash for dyn PredicateA<M> {
 }
 
 impl<M: Model> Eq for dyn PredicateA<M> {}
+
+impl<M: Model> PartialOrd for dyn PredicateA<M> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.dyn_ord(other))
+    }
+}
+
+impl<M: Model> Ord for dyn PredicateA<M> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.dyn_ord(other) }
+}
 
 /// An object used for determining if two terms are unifiable.
 pub trait Predicate<T: Term> {
@@ -183,9 +232,11 @@ impl<M: Model> Element for Constant<M> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub struct Substructural<T: SubTerm> {
-    pub lifetimes: HashMap<T::SubLifetimeLocation, Unifier<Lifetime<T::Model>>>,
-    pub types: HashMap<T::SubTypeLocation, Unifier<Type<T::Model>>>,
-    pub constants: HashMap<T::SubConstantLocation, Unifier<Constant<T::Model>>>,
+    pub lifetimes:
+        BTreeMap<T::SubLifetimeLocation, Unifier<Lifetime<T::Model>>>,
+    pub types: BTreeMap<T::SubTypeLocation, Unifier<Type<T::Model>>>,
+    pub constants:
+        BTreeMap<T::SubConstantLocation, Unifier<Constant<T::Model>>>,
 }
 
 impl<T> Default for Substructural<T>
@@ -194,9 +245,9 @@ where
 {
     fn default() -> Self {
         Self {
-            lifetimes: HashMap::new(),
-            types: HashMap::new(),
-            constants: HashMap::new(),
+            lifetimes: BTreeMap::new(),
+            types: BTreeMap::new(),
+            constants: BTreeMap::new(),
         }
     }
 }
@@ -292,8 +343,8 @@ fn substructural_unify<T: Term>(
         return Ok(None);
     };
 
-    let mut constraints = HashSet::new();
     let mut result = Substructural::default();
+    let mut constraints = BTreeSet::new();
 
     for matching::Matching {
         lhs: from,

@@ -102,7 +102,7 @@ impl Arbitrary for TraitBound {
 impl Display for TraitBound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
-            write!(f, "{} ", higher_ranked_lifetimes)?;
+            write!(f, "{higher_ranked_lifetimes} ")?;
         }
 
         if self.const_keyword {
@@ -229,7 +229,7 @@ impl Arbitrary for TraitTypeEquality {
 impl Display for TraitTypeEquality {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
-            write!(f, "{} ", higher_ranked_lifetimes)?;
+            write!(f, "{higher_ranked_lifetimes} ")?;
         }
 
         Display::fmt(&self.qualified_identifier, f)?;
@@ -257,8 +257,7 @@ impl Input<&super::OutlivesOperand> for &OutlivesOperand {
             }
 
             _ => Err(TestCaseError::fail(format!(
-                "Expected {:?}, got {:?}",
-                self, output
+                "Expected {self:?}, got {output:?}"
             ))),
         }
     }
@@ -281,11 +280,11 @@ impl Arbitrary for OutlivesOperand {
 impl Display for OutlivesOperand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OutlivesOperand::LifetimeParameter(lifetime_parameter) => {
+            Self::LifetimeParameter(lifetime_parameter) => {
                 Display::fmt(lifetime_parameter, f)
             }
 
-            OutlivesOperand::Type(r#type) => Display::fmt(r#type, f),
+            Self::Type(r#type) => Display::fmt(r#type, f),
         }
     }
 }
@@ -360,7 +359,7 @@ impl Arbitrary for ConstantTypeBound {
 impl Display for ConstantTypeBound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
-            write!(f, "{} ", higher_ranked_lifetimes)?;
+            write!(f, "{higher_ranked_lifetimes} ")?;
         }
 
         Display::fmt(&self.r#type, f)
@@ -414,8 +413,7 @@ impl Input<&super::TupleOperandKind> for &TupleOperandKind {
             ) => a.assert(b),
 
             _ => Err(TestCaseError::fail(format!(
-                "Expected {:?}, got {:?}",
-                self, output
+                "Expected {self:?}, got {output:?}"
             ))),
         }
     }
@@ -437,8 +435,8 @@ impl Arbitrary for TupleOperandKind {
 impl Display for TupleOperandKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TupleOperandKind::Type(r#type) => Display::fmt(r#type, f),
-            TupleOperandKind::Constant(constant) => Display::fmt(constant, f),
+            Self::Type(r#type) => Display::fmt(r#type, f),
+            Self::Constant(constant) => Display::fmt(constant, f),
         }
     }
 }
@@ -478,7 +476,7 @@ impl Arbitrary for TupleOperand {
 impl Display for TupleOperand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
-            write!(f, "{} ", higher_ranked_lifetimes)?;
+            write!(f, "{higher_ranked_lifetimes} ")?;
         }
 
         Display::fmt(&self.kind, f)
@@ -543,8 +541,7 @@ impl Input<&super::Predicate> for &Predicate {
             (Predicate::Tuple(a), super::Predicate::Tuple(b)) => a.assert(b),
 
             _ => Err(TestCaseError::fail(format!(
-                "Expected {:?}, got {:?}",
-                self, output
+                "Expected {self:?}, got {output:?}"
             ))),
         }
     }
@@ -558,7 +555,7 @@ impl Arbitrary for Predicate {
         prop_oneof![
             Trait::arbitrary().prop_map(Predicate::Trait),
             TraitTypeEquality::arbitrary()
-               .prop_map(Predicate::TraitTypeEquality),
+                .prop_map(Predicate::TraitTypeEquality),
             Outlives::arbitrary().prop_map(Predicate::Outlives),
             ConstantType::arbitrary().prop_map(Predicate::ConstantType),
             Tuple::arbitrary().prop_map(Predicate::Tuple),
@@ -570,16 +567,14 @@ impl Arbitrary for Predicate {
 impl Display for Predicate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Predicate::Trait(trait_) => Display::fmt(trait_, f),
-            Predicate::TraitTypeEquality(trait_type_equality) => {
+            Self::Trait(trait_) => Display::fmt(trait_, f),
+            Self::TraitTypeEquality(trait_type_equality) => {
                 Display::fmt(trait_type_equality, f)
             }
 
-            Predicate::Outlives(outlives) => Display::fmt(outlives, f),
-            Predicate::ConstantType(constant_type) => {
-                Display::fmt(constant_type, f)
-            }
-            Predicate::Tuple(tuple) => Display::fmt(tuple, f),
+            Self::Outlives(outlives) => Display::fmt(outlives, f),
+            Self::ConstantType(constant_type) => Display::fmt(constant_type, f),
+            Self::Tuple(tuple) => Display::fmt(tuple, f),
         }
     }
 }
@@ -604,4 +599,3 @@ proptest! {
         predicate_input.assert(&item)?;
     }
 }
-

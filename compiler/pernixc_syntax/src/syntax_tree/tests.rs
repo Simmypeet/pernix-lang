@@ -703,7 +703,6 @@ impl Display for LifetimeParameter {
     }
 }
 
-
 proptest! {
     #[allow(clippy::ignored_unit_patterns)]
     #[test]

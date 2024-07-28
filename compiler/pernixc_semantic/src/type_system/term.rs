@@ -3,7 +3,7 @@
 
 use core::fmt;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     fmt::Debug,
     hash::Hash,
     sync::Arc,
@@ -661,21 +661,6 @@ pub trait Term:
     ) -> Result<Outlives<Self>, Predicate<Self::Model>>;
 
     #[doc(hidden)]
-    fn as_constant_type_predicate(
-        predicate: &Predicate<Self::Model>,
-    ) -> Option<&Self>;
-
-    #[doc(hidden)]
-    fn as_constant_type_predicate_mut(
-        predicate: &mut Predicate<Self::Model>,
-    ) -> Option<&mut Self>;
-
-    #[doc(hidden)]
-    fn into_constant_type_predicate(
-        predicate: Predicate<Self::Model>,
-    ) -> Result<Self, Predicate<Self::Model>>;
-
-    #[doc(hidden)]
     fn as_trait_member_equality_predicate(
         predicate: &Predicate<Self::Model>,
     ) -> Option<&Equality<Self::TraitMember, Self>>;
@@ -709,17 +694,14 @@ pub trait Term:
     fn definite_satisfiability(&self) -> Satisfiability;
 
     #[doc(hidden)]
-    fn constant_type_satisfiability(&self) -> Satisfiability;
-
-    #[doc(hidden)]
     fn get_instantiation(
         instantiation: &Instantiation<Self::Model>,
-    ) -> &HashMap<Self, Self>;
+    ) -> &BTreeMap<Self, Self>;
 
     #[doc(hidden)]
     fn get_instantiation_mut(
         instantiation: &mut Instantiation<Self::Model>,
-    ) -> &mut HashMap<Self, Self>;
+    ) -> &mut BTreeMap<Self, Self>;
 
     #[doc(hidden)]
     fn get_substructural_unifier<'a, T: Term>(
@@ -731,12 +713,12 @@ pub trait Term:
     #[doc(hidden)]
     fn get_mapping(
         mapping: &Mapping<Self::Model>,
-    ) -> &HashMap<Self, HashSet<Self>>;
+    ) -> &BTreeMap<Self, BTreeSet<Self>>;
 
     #[doc(hidden)]
     fn get_mapping_mut(
         mapping: &mut Mapping<Self::Model>,
-    ) -> &mut HashMap<Self, HashSet<Self>>;
+    ) -> &mut BTreeMap<Self, BTreeSet<Self>>;
 
     #[doc(hidden)]
     fn get_generic_arguments(
@@ -991,7 +973,8 @@ impl<M: Model> GenericArguments<M> {
         environment: &Environment<M, impl State, impl Normalizer<M>>,
         context: &mut Context<M>,
     ) -> Result<Output<Satisfied, M>, OverflowError> {
-        let mut constraints = HashSet::new();
+        let mut constraints = BTreeSet::new();
+
         if self.lifetimes.len() != other.lifetimes.len()
             || self.types.len() != other.types.len()
             || self.constants.len() != other.constants.len()
@@ -1029,7 +1012,7 @@ impl<M: Model> GenericArguments<M> {
             constraints.extend(result.constraints);
         }
 
-        Ok(Some(Succeeded::with_constraints(Satisfied, constraints)))
+        Ok(Some(Succeeded::satisfied_with(constraints)))
     }
 
     /// Gets the [`GlobalID`]s that occur in the generic arguments.
@@ -1081,7 +1064,8 @@ impl<M: Model> GenericArguments<M> {
         environment: &Environment<M, impl State, impl Normalizer<M>>,
         context: &mut Context<M>,
     ) -> Result<Output<Mapping<M>, M>, OverflowError> {
-        let mut constraints = HashSet::new();
+        let mut constraints = BTreeSet::new();
+
         let mut mapping = Mapping::default();
 
         if self.lifetimes.len() != other.lifetimes.len()
@@ -1157,7 +1141,7 @@ impl<M: Model> GenericArguments<M> {
         environment: &Environment<M, impl State, impl Normalizer<M>>,
         context: &mut Context<M>,
     ) -> Result<Output<Satisfied, M>, OverflowError> {
-        let mut constraints = HashSet::new();
+        let mut constraints = BTreeSet::new();
 
         for lifetime in &self.lifetimes {
             let Some(result) = Definite::new(lifetime.clone())
@@ -1189,7 +1173,7 @@ impl<M: Model> GenericArguments<M> {
             constraints.extend(result.constraints);
         }
 
-        Ok(Some(Succeeded::with_constraints(Satisfied, constraints)))
+        Ok(Some(Succeeded::satisfied_with(constraints)))
     }
 
     fn substructural_match<L, T, C, Y>(

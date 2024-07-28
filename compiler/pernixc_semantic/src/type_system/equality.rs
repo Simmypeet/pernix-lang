@@ -1,7 +1,5 @@
 //! Implements the logic for equality checking.
 
-use std::collections::HashSet;
-
 use super::{
     matching::Matching, normalizer::Normalizer, query::Context, term::Term,
     Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
@@ -122,7 +120,7 @@ fn equals_by_unification<T: Term>(
         return Ok(None);
     };
 
-    let mut constraints = HashSet::new();
+    let mut satisfied = Succeeded::default();
 
     for Matching { lhs, rhs, .. } in matching.lifetimes {
         let Some(result) =
@@ -131,7 +129,7 @@ fn equals_by_unification<T: Term>(
             return Ok(None);
         };
 
-        constraints.extend(result.constraints);
+        satisfied = satisfied.combine(result);
     }
 
     for Matching { lhs, rhs, .. } in matching.types {
@@ -141,7 +139,7 @@ fn equals_by_unification<T: Term>(
             return Ok(None);
         };
 
-        constraints.extend(result.constraints);
+        satisfied = satisfied.combine(result);
     }
 
     for Matching { lhs, rhs, .. } in matching.constants {
@@ -151,10 +149,10 @@ fn equals_by_unification<T: Term>(
             return Ok(None);
         };
 
-        constraints.extend(result.constraints);
+        satisfied = satisfied.combine(result);
     }
 
-    Ok(Some(Succeeded::with_constraints(Satisfied, constraints)))
+    Ok(Some(satisfied))
 }
 
 fn equals_by_normalization<T: Term>(
