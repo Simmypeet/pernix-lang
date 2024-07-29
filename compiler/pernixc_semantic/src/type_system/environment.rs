@@ -4,10 +4,12 @@ use std::{fmt::Debug, sync::Arc};
 use getset::{CopyGetters, Getters};
 
 use super::{
+    definite,
     equality::Equality,
     model::Model,
     normalizer::Normalizer,
     predicate::{self, Predicate},
+    query::Context,
     term::{
         constant::Constant,
         r#type::{self, Type},
@@ -63,6 +65,11 @@ pub enum NewEnvironmentError<M: Model> {
     AmbiguousTraitTypeEqualityPredicates(
         Vec<Equality<r#type::TraitMember<M>, Type<M>>>,
     ),
+
+    /// The given predicate premise is definite; meaning that it's trivially
+    /// known to be true/false.
+    DefinintePremise(Predicate<M>),
+
     /// The [`Equality::lhs`] occurs in the [`Equality::rhs`].
     RecursiveTraitTypeEqualityPredicate(
         Equality<r#type::TraitMember<M>, Type<M>>,
@@ -71,6 +78,217 @@ pub enum NewEnvironmentError<M: Model> {
     /// Encounters the [`OverflowError`] while calculating the requirements for
     /// the given [`Predicate`].
     OverflowCalculatingRequirement(Predicate<M>),
+}
+fn check_definite_predicate<
+    'a,
+    T: Clone + Into<Predicate<M>> + Debug,
+    M: Model,
+    S: State,
+    N: Normalizer<M>,
+>(
+    environment: &mut Environment<M, S, N>,
+    remove_on_check: bool,
+    predicates: &[T],
+    overflow_predicates: &mut Vec<Predicate<M>>,
+    definite_predicates: &mut Vec<Predicate<M>>,
+    definite_check: impl Fn(
+        &T,
+        &Environment<M, S, N>,
+    ) -> Result<bool, OverflowError>,
+) {
+    // pick a predicate
+    'outer: for i in 0..predicates.len() {
+        let predicate_i = &predicates[i];
+
+        // remove the predicate before checking
+        if remove_on_check {
+            assert!(environment
+                .premise
+                .predicates
+                .remove(&predicate_i.clone().into()));
+        }
+
+        match definite_check(predicate_i, &environment) {
+            Ok(true) => {
+                // add to the set
+                definite_predicates.push(predicate_i.clone().into());
+
+                if remove_on_check {
+                    assert!(environment
+                        .premise
+                        .predicates
+                        .insert(predicate_i.clone().into()));
+                }
+                continue 'outer; // no more checking for this
+                                 // predicate.
+            }
+
+            Ok(false) => {
+                // nothing to worry about
+            }
+
+            Err(_) => {
+                // add to the overflow set
+                overflow_predicates.push(predicate_i.clone().into());
+
+                if remove_on_check {
+                    assert!(environment
+                        .premise
+                        .predicates
+                        .insert(predicate_i.clone().into()));
+                }
+                continue 'outer; // no more checking for this
+                                 // predicate.
+            }
+        }
+
+        if remove_on_check {
+            assert!(environment
+                .premise
+                .predicates
+                .insert(predicate_i.clone().into()));
+        }
+    }
+}
+
+fn check_ambiguous_predicates<
+    'a,
+    T: Clone + Into<Predicate<M>> + Debug,
+    M: Model,
+    S: State,
+    N: Normalizer<M>,
+>(
+    environment: &mut Environment<M, S, N>,
+    remove_on_check: bool,
+    predicates: &[T],
+    overflow_predicates: &mut Vec<Predicate<M>>,
+    ambiguous_predicates: &mut Vec<Vec<T>>,
+    ambiguity_check: impl Fn(
+        &T,
+        &T,
+        &Environment<M, S, N>,
+    ) -> Result<bool, OverflowError>,
+) {
+    // pick a predicate
+    'outer: for i in 0..predicates.len() {
+        let predicate_i = &predicates[i];
+
+        // remove the predicate before checking
+        if remove_on_check {
+            assert!(environment
+                .premise
+                .predicates
+                .remove(&predicate_i.clone().into()));
+        }
+
+        // check in the ambiguity set
+        for ambiguous_predicates_set in &mut *ambiguous_predicates {
+            // pick the first element in the set
+            let first = &ambiguous_predicates_set[0];
+
+            match ambiguity_check(predicate_i, first, environment) {
+                Ok(true) => {
+                    // add to the set
+                    ambiguous_predicates_set.push(predicate_i.clone());
+
+                    if remove_on_check {
+                        assert!(environment
+                            .premise
+                            .predicates
+                            .insert(predicate_i.clone().into()));
+                    }
+                    continue 'outer; // no more checking for this
+                                     // predicate.
+                }
+
+                Ok(false) => {
+                    // nothing to worry about
+                }
+
+                Err(_) => {
+                    // add to the overflow set
+                    overflow_predicates.push(predicate_i.clone().into());
+
+                    if remove_on_check {
+                        assert!(environment
+                            .premise
+                            .predicates
+                            .insert(predicate_i.clone().into()));
+                    }
+                    continue 'outer; // no more checking for this
+                                     // predicate.
+                }
+            }
+        }
+
+        // create a new set
+        for j in i + 1..predicates.len() {
+            let predicate_j = &predicates[j];
+
+            if remove_on_check {
+                assert!(environment
+                    .premise
+                    .predicates
+                    .remove(&predicate_j.clone().into()));
+            }
+
+            match ambiguity_check(predicate_i, predicate_j, environment) {
+                Ok(true) => {
+                    // create a new set
+                    ambiguous_predicates.push(vec![predicate_i.clone()]);
+
+                    if remove_on_check {
+                        assert!(environment
+                            .premise
+                            .predicates
+                            .insert(predicate_j.clone().into()));
+                        assert!(environment
+                            .premise
+                            .predicates
+                            .insert(predicate_i.clone().into()));
+                    }
+                    continue 'outer; // no more checking for this
+                                     // predicate.
+                }
+
+                Ok(false) => {
+                    // nothing to worry about
+                }
+
+                Err(_) => {
+                    // add to the overflow set
+                    overflow_predicates.push(predicate_i.clone().into());
+
+                    if remove_on_check {
+                        assert!(environment
+                            .premise
+                            .predicates
+                            .insert(predicate_j.clone().into()));
+                        assert!(environment
+                            .premise
+                            .predicates
+                            .insert(predicate_i.clone().into()));
+                    }
+                    continue 'outer; // no more checking for this
+                                     // predicate.
+                }
+            }
+
+            if remove_on_check {
+                assert!(environment
+                    .premise
+                    .predicates
+                    .insert(predicate_j.clone().into()));
+            }
+        }
+
+        if remove_on_check {
+            assert!(environment
+                .premise
+                .predicates
+                .insert(predicate_i.clone().into()));
+        }
+    }
 }
 
 impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
@@ -84,150 +302,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
         table: &'a Table<T>,
         normalizer: &'a N,
     ) -> (Self, Vec<NewEnvironmentError<M>>) {
-        fn check_ambiguous_predicates<
-            'a,
-            T: Clone + Into<Predicate<M>> + Debug,
-            M: Model,
-            S: State,
-            N: Normalizer<M>,
-        >(
-            environment: &mut Environment<M, S, N>,
-            remove_on_check: bool,
-            predicates: &[T],
-            overflow_predicates: &mut Vec<Predicate<M>>,
-            ambiguous_predicates: &mut Vec<Vec<T>>,
-            ambiguity_check: impl Fn(
-                &T,
-                &T,
-                &Environment<M, S, N>,
-            ) -> Result<bool, OverflowError>,
-        ) {
-            // pick a predicate
-            'outer: for i in 0..predicates.len() {
-                let predicate_i = &predicates[i];
-
-                // remove the predicate before checking
-                if remove_on_check {
-                    assert!(environment
-                        .premise
-                        .predicates
-                        .remove(&predicate_i.clone().into()));
-                }
-
-                // check in the ambiguity set
-                for ambiguous_predicates_set in &mut *ambiguous_predicates {
-                    // pick the first element in the set
-                    let first = &ambiguous_predicates_set[0];
-
-                    match ambiguity_check(predicate_i, first, environment) {
-                        Ok(true) => {
-                            // add to the set
-                            ambiguous_predicates_set.push(predicate_i.clone());
-
-                            if remove_on_check {
-                                assert!(environment
-                                    .premise
-                                    .predicates
-                                    .insert(predicate_i.clone().into()));
-                            }
-                            continue 'outer; // no more checking for this
-                                             // predicate.
-                        }
-
-                        Ok(false) => {
-                            // nothing to worry about
-                        }
-
-                        Err(_) => {
-                            // add to the overflow set
-                            overflow_predicates
-                                .push(predicate_i.clone().into());
-
-                            if remove_on_check {
-                                assert!(environment
-                                    .premise
-                                    .predicates
-                                    .insert(predicate_i.clone().into()));
-                            }
-                            continue 'outer; // no more checking for this
-                                             // predicate.
-                        }
-                    }
-                }
-
-                // create a new set
-                for j in i + 1..predicates.len() {
-                    let predicate_j = &predicates[j];
-
-                    if remove_on_check {
-                        assert!(environment
-                            .premise
-                            .predicates
-                            .remove(&predicate_j.clone().into()));
-                    }
-
-                    match ambiguity_check(predicate_i, predicate_j, environment)
-                    {
-                        Ok(true) => {
-                            // create a new set
-                            ambiguous_predicates
-                                .push(vec![predicate_i.clone()]);
-
-                            if remove_on_check {
-                                assert!(environment
-                                    .premise
-                                    .predicates
-                                    .insert(predicate_j.clone().into()));
-                                assert!(environment
-                                    .premise
-                                    .predicates
-                                    .insert(predicate_i.clone().into()));
-                            }
-                            continue 'outer; // no more checking for this
-                                             // predicate.
-                        }
-
-                        Ok(false) => {
-                            // nothing to worry about
-                        }
-
-                        Err(_) => {
-                            // add to the overflow set
-                            overflow_predicates
-                                .push(predicate_i.clone().into());
-
-                            if remove_on_check {
-                                assert!(environment
-                                    .premise
-                                    .predicates
-                                    .insert(predicate_j.clone().into()));
-                                assert!(environment
-                                    .premise
-                                    .predicates
-                                    .insert(predicate_i.clone().into()));
-                            }
-                            continue 'outer; // no more checking for this
-                                             // predicate.
-                        }
-                    }
-
-                    if remove_on_check {
-                        assert!(environment
-                            .premise
-                            .predicates
-                            .insert(predicate_j.clone().into()));
-                    }
-                }
-
-                if remove_on_check {
-                    assert!(environment
-                        .premise
-                        .predicates
-                        .insert(predicate_i.clone().into()));
-                }
-            }
-        }
-
         let mut ambiguous_trait_predicates_set = Vec::new();
         let mut ambiguous_constant_type_predicates_set = Vec::new();
         let mut ambiguous_tuple_type_predicates_set = Vec::new();
@@ -235,6 +309,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
         let mut ambiguous_trait_type_equality_predicates_set = Vec::new();
         let mut recursive_trait_type_equality_predicates = Vec::new();
         let mut overflow_predicates = Vec::new();
+        let mut definite_predicate = Vec::new();
 
         let mut environment = Self { premise, table, normalizer };
 
@@ -399,6 +474,69 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                 .map(|x| x.is_some())
             },
         );
+
+        check_definite_predicate(
+            &mut environment,
+            false,
+            &all_trait_predicates,
+            &mut overflow_predicates,
+            &mut definite_predicate,
+            |predicate, environment| {
+                predicate
+                    .generic_arguments
+                    .definite_with_context(environment, &mut Context::default())
+                    .map(|x| x.is_some())
+            },
+        );
+        check_definite_predicate(
+            &mut environment,
+            false,
+            &all_constant_type_predicates,
+            &mut overflow_predicates,
+            &mut definite_predicate,
+            |predicate, environment| {
+                definite::Definite(predicate.0.clone())
+                    .query(environment)
+                    .map(|x| x.is_some())
+            },
+        );
+        check_definite_predicate(
+            &mut environment,
+            false,
+            &all_tuple_type_predicates,
+            &mut overflow_predicates,
+            &mut definite_predicate,
+            |predicate, environment| {
+                definite::Definite(predicate.0.clone())
+                    .query(environment)
+                    .map(|x| x.is_some())
+            },
+        );
+        check_definite_predicate(
+            &mut environment,
+            false,
+            &all_tuple_constant_predicates,
+            &mut overflow_predicates,
+            &mut definite_predicate,
+            |predicate, environment| {
+                definite::Definite(predicate.0.clone())
+                    .query(environment)
+                    .map(|x| x.is_some())
+            },
+        );
+        check_definite_predicate(
+            &mut environment,
+            true,
+            &all_trait_type_equality_predicates,
+            &mut overflow_predicates,
+            &mut definite_predicate,
+            |predicate, environment| {
+                definite::Definite(Type::TraitMember(predicate.lhs.clone()))
+                    .query(environment)
+                    .map(|x| x.is_some())
+            },
+        );
+
         for equality in all_trait_type_equality_predicates
             .iter()
             .cloned()
@@ -458,6 +596,9 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
             assert!(environment.premise.predicates.insert(equality));
         }
 
+        overflow_predicates.sort();
+        overflow_predicates.dedup();
+
         // remove the ambiguous and ill-formed predicates
         for predicate_to_remove in overflow_predicates
             .iter()
@@ -503,11 +644,9 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                     .cloned()
                     .map(Predicate::TraitTypeEquality),
             )
+            .chain(definite_predicate.iter().cloned())
         {
-            assert!(environment
-                .premise
-                .predicates
-                .remove(&predicate_to_remove));
+            environment.premise.predicates.remove(&predicate_to_remove);
         }
 
         (
@@ -541,6 +680,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                         NewEnvironmentError::RecursiveTraitTypeEqualityPredicate
                     )
                 )
+                .chain(definite_predicate.into_iter().map(NewEnvironmentError::DefinintePremise))
                 .collect(),
         )
     }

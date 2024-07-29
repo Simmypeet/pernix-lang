@@ -1330,7 +1330,7 @@ pub struct VariantAssociation {
     #[get = "pub"]
     left_paren: Punctuation,
     #[get = "pub"]
-    ty: r#type::Type,
+    r#type: r#type::Type,
     #[get = "pub"]
     right_paren: Punctuation,
 }
@@ -1339,7 +1339,7 @@ impl VariantAssociation {
     /// Dissolves the [`VariantAssociation`] into a tuple of its fields.
     #[must_use]
     pub fn dissolve(self) -> (Punctuation, r#type::Type, Punctuation) {
-        (self.left_paren, self.ty, self.right_paren)
+        (self.left_paren, self.r#type, self.right_paren)
     }
 }
 
@@ -2277,7 +2277,7 @@ impl<'a> Parser<'a> {
 
                     Some(VariantAssociation {
                         left_paren: delimited_tree.open,
-                        ty: delimited_tree.tree?,
+                        r#type: delimited_tree.tree?,
                         right_paren: delimited_tree.close,
                     })
                 } else {

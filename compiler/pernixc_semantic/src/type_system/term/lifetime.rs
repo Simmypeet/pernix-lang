@@ -487,9 +487,10 @@ where
             Self::Inference(inference) => {
                 write!(f, "{}", DisplayObject { display: inference, table })
             }
-            Self::Forall(_) => {
-                write!(f, "'?")
-            }
+            Self::Forall(forall_lifetime) => match &forall_lifetime.span {
+                Some(span) => write!(f, "'∀{}", span.str()),
+                None => write!(f, "'∀?"),
+            },
             Self::Error(_) => write!(f, "'{{error}}"),
         }
     }

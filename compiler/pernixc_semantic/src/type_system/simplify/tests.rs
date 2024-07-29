@@ -284,8 +284,8 @@ fn transitive_case() {
         trait_context: TraitContext::Normal,
     };
 
-    let (environment, errors) = Environment::new(premise, &table, &NO_OP);
-    assert!(errors.is_empty());
+    let environment =
+        Environment { premise, table: &table, normalizer: &NO_OP };
 
     let Succeeded { result: simplified, constraints } =
         simplify(&Type::TraitMember(trait_a), &environment);

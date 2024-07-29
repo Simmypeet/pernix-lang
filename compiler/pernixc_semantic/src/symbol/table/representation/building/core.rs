@@ -14,9 +14,9 @@ use crate::{
         Accessibility, ConstantParameter, FunctionIR, FunctionTemplate,
         GenericDeclaration, GenericID, GenericTemplate, Intrinsics,
         LifetimeParameter, MemberID, Module, Parameter, ParentSealed,
-        PositiveTraitImplementationDefinition, PredicateKind, Trait,
-        TraitDefinition, TraitFunctionDefinition,
-        TraitImplementationFunctionDefinition, TypeParameter,
+        PositiveTraitImplementationDefinition, Trait, TraitDefinition,
+        TraitFunctionDefinition, TraitImplementationFunctionDefinition,
+        TypeParameter,
     },
     type_system::{
         model::Default,
@@ -158,7 +158,7 @@ impl<C: Container> Representation<C> {
                         operand: type_parameter_term,
                         bound: lifetime_parameter_term,
                     }),
-                    kind: PredicateKind::Explicit(None),
+                    span: None,
                 },
             );
 
@@ -244,7 +244,7 @@ impl<C: Container> Representation<C> {
                 operand: implementation_ty_parameter_term,
                 bound: implementation_lt_parameter_term,
             }),
-            kind: PredicateKind::Explicit(None),
+            span: None,
         });
 
         drop(implementation);
@@ -528,7 +528,7 @@ impl<C: Container> Representation<C> {
                             constants: Vec::new(),
                         },
                     }),
-                    kind: PredicateKind::Explicit(None),
+                    span: None,
                 },
             );
             implementation.generic_declaration.predicates.push(
@@ -542,7 +542,7 @@ impl<C: Container> Representation<C> {
                             constants: Vec::new(),
                         },
                     }),
-                    kind: PredicateKind::Explicit(None),
+                    span: None,
                 },
             );
 
@@ -552,7 +552,7 @@ impl<C: Container> Representation<C> {
                     predicate: predicate::Predicate::TupleType(
                         predicate::Tuple(rest_type),
                     ),
-                    kind: PredicateKind::Explicit(None),
+                    span: None,
                 },
             );
 
@@ -631,7 +631,7 @@ impl<C: Container> Representation<C> {
                 operand: copy_type.clone(),
                 bound: function_lifetime_parameter,
             }),
-            kind: PredicateKind::Explicit(None),
+            span: None,
         });
 
         // set the return type

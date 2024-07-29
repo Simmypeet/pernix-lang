@@ -1607,7 +1607,7 @@ impl Input<&super::Variant> for &Variant {
         self.identifier.assert(output.identifier())?;
         match (self.association.as_ref(), output.association().as_ref()) {
             (None, None) => Ok(()),
-            (Some(expected), Some(output)) => expected.assert(&output.ty),
+            (Some(expected), Some(output)) => expected.assert(&output.r#type),
             (expected, output) => Err(TestCaseError::fail(format!(
                 "expected associated value {expected:?}, got {output:?}",
             ))),

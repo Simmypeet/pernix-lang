@@ -898,7 +898,7 @@ impl Arbitrary for FallbackToGeneralImplementation {
                         },
                         is_const: false,
                     }),
-                    kind: symbol::PredicateKind::Explicit(None),
+                    span: None,
                 }];
 
                 Self(prop)

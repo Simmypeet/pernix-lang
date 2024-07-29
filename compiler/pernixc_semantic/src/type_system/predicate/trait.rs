@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use enum_as_inner::EnumAsInner;
 use thiserror::Error;
 
-use super::contains_forall_lifetime;
+use super::contains_error;
 use crate::{
     arena::ID,
     symbol::{
@@ -81,7 +81,7 @@ where
         table: &Table<T>,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        write!(f, "trait ");
+        write!(f, "trait ")?;
 
         if self.is_const {
             write!(f, "const ")?;
@@ -99,14 +99,10 @@ where
 impl<M: Model> Trait<M> {
     /// Checks if the trait contains a `forall` lifetime.
     #[must_use]
-    pub fn contains_forall_lifetime(&self) -> bool {
-        self.generic_arguments.lifetimes.iter().any(Lifetime::is_forall)
-            || self.generic_arguments.types.iter().any(contains_forall_lifetime)
-            || self
-                .generic_arguments
-                .constants
-                .iter()
-                .any(contains_forall_lifetime)
+    pub fn contains_error(&self) -> bool {
+        self.generic_arguments.lifetimes.iter().any(Lifetime::is_error)
+            || self.generic_arguments.types.iter().any(contains_error)
+            || self.generic_arguments.constants.iter().any(contains_error)
     }
 }
 

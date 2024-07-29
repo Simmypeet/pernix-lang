@@ -8,17 +8,13 @@ use crate::{
     symbol::{
         table::{
             representation::{
-                building::finalizing::{
-                    finalizer::build_preset, occurrences::Occurrences,
-                    Finalizer,
-                },
+                building::finalizing::{occurrences::Occurrences, Finalizer},
                 Index, RwLockContainer,
             },
             resolution, Building, Table,
         },
         Variant,
     },
-    type_system::{environment::Environment, normalizer::NO_OP},
 };
 
 /// The generic parameters of the parent enum are built.
@@ -61,7 +57,7 @@ impl Finalize for Variant {
                 if let Some(association) = syntax_tree.association() {
                     let ty = table
                         .resolve_type(
-                            association.ty(),
+                            association.r#type(),
                             symbol_id.into(),
                             resolution::Config {
                                 ellided_lifetime_provider: None,
@@ -91,19 +87,6 @@ impl Finalize for Variant {
                         ));
                     }
 
-                    data.build_all_occurrences_to::<build_preset::PartialComplete>(
-                        table,
-                        symbol_id.into(),
-                        false,
-                        handler,
-                    );
-
-                    let active_premise =
-                        table.get_active_premise(symbol_id.into()).unwrap();
-
-                    let (environment, _) =
-                        Environment::new(active_premise, table, &NO_OP);
-
                     // assign the simplfiied type to the variant
                     table
                         .representation
@@ -111,13 +94,7 @@ impl Finalize for Variant {
                         .get(symbol_id)
                         .unwrap()
                         .write()
-                        .associated_type = Some(
-                        environment.simplify_and_check_lifetime_constraints(
-                            &ty,
-                            &association.ty().span(),
-                            handler,
-                        ),
-                    );
+                        .associated_type = Some(ty);
                 }
             }
 

@@ -86,6 +86,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                     associated_type: None,
                     parent_enum_id: enum_id,
                     span: Some(variant_syn.identifier().span.clone()),
+                    syntax_tree: Some(variant_syn.clone()),
                 }));
 
             // draft the variant

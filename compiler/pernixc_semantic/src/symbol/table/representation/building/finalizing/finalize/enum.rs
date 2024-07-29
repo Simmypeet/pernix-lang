@@ -1,4 +1,4 @@
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree;
 
 use super::{variant, Finalize};
@@ -18,6 +18,7 @@ use crate::{
         },
         Enum, GenericParameterVariances,
     },
+    type_system::{environment::Environment, normalizer::NO_OP},
 };
 
 /// Generic parameters are built
@@ -95,6 +96,53 @@ impl Finalize for Enum {
                     false,
                     handler,
                 );
+
+                let variant_ids = table
+                    .get(symbol_id)
+                    .unwrap()
+                    .variant_ids_by_name
+                    .values()
+                    .copied()
+                    .collect::<Vec<_>>();
+
+                let (environment, _) = Environment::new(
+                    table.get_active_premise(symbol_id.into()).unwrap(),
+                    table,
+                    &NO_OP,
+                );
+                for variant_id in variant_ids {
+                    let Some(mut variant_ty) =
+                        table.get(variant_id).unwrap().associated_type.clone()
+                    else {
+                        continue;
+                    };
+
+                    let variant_ty_syn = table
+                        .get(variant_id)
+                        .unwrap()
+                        .syntax_tree
+                        .as_ref()
+                        .map(|x| {
+                            x.association().as_ref().map(|x| x.r#type().span())
+                        })
+                        .unwrap()
+                        .unwrap();
+
+                    variant_ty = environment
+                        .simplify_and_check_lifetime_constraints(
+                            &variant_ty,
+                            &variant_ty_syn,
+                            handler,
+                        );
+
+                    table
+                        .representation
+                        .variants
+                        .get(variant_id)
+                        .unwrap()
+                        .write()
+                        .associated_type = Some(variant_ty);
+                }
 
                 // build the variance
                 let premise =

@@ -1,4 +1,4 @@
-use super::contains_forall_lifetime;
+use super::contains_error;
 use crate::{
     symbol::table::{self, DisplayObject, State, Table},
     type_system::{
@@ -29,9 +29,7 @@ impl<S: State, T: table::Display<S>> table::Display<S> for Tuple<T> {
 impl<T: Term> Tuple<T> {
     /// Checks if the term contains a `forall` lifetime.
     #[must_use]
-    pub fn contains_forall_lifetime(&self) -> bool {
-        contains_forall_lifetime(&self.0)
-    }
+    pub fn contains_error(&self) -> bool { contains_error(&self.0) }
 
     /// Applies a instantiation to the [`Tuple`] term.
     pub fn instantiate(&mut self, instantiation: &Instantiation<T::Model>) {

@@ -22,16 +22,25 @@ use crate::{
 #[test]
 fn check_ambiguous_without_equality() {
     /*
-     * const trait Test['a, &'b int32], trait Test['a, &'static int32],
-     * trait Test['static, &'static int32]
+     * const trait Test['a, &'b T], trait Test['a, &'static T],
+     * trait Test['static, &'static T]
      *
-     * const type &'a bool, const type &'static bool
+     * const type &'a T, const type &'static T
      *
-     * const type &'a int32, const type &'static int32
+     * const type &'a U, const type &'static U
      *
      * tuple type T
      * tuple type U
      */
+
+    let t_ty_parameter = Type::Parameter(TypeParameterID {
+        parent: GenericID::Struct(ID::new(0)),
+        id: ID::new(0),
+    });
+    let u_ty_parameter = Type::Parameter(TypeParameterID {
+        parent: GenericID::Struct(ID::new(0)),
+        id: ID::new(1),
+    });
 
     let generic_struct = GenericID::Struct(ID::new(0));
 
@@ -49,7 +58,7 @@ fn check_ambiguous_without_equality() {
                     parent: generic_struct,
                     id: ID::new(1),
                 }),
-                pointee: Box::new(Type::Primitive(Primitive::Bool)),
+                pointee: Box::new(t_ty_parameter.clone()),
             })],
             constants: Vec::new(),
         },
@@ -65,7 +74,7 @@ fn check_ambiguous_without_equality() {
             types: vec![Type::Reference(Reference {
                 qualifier: Qualifier::Immutable,
                 lifetime: Lifetime::Static,
-                pointee: Box::new(Type::Primitive(Primitive::Bool)),
+                pointee: Box::new(t_ty_parameter.clone()),
             })],
             constants: Vec::new(),
         },
@@ -78,7 +87,7 @@ fn check_ambiguous_without_equality() {
             types: vec![Type::Reference(Reference {
                 qualifier: Qualifier::Immutable,
                 lifetime: Lifetime::Static,
-                pointee: Box::new(Type::Primitive(Primitive::Bool)),
+                pointee: Box::new(t_ty_parameter.clone()),
             })],
             constants: Vec::new(),
         },
@@ -91,14 +100,14 @@ fn check_ambiguous_without_equality() {
                 parent: generic_struct,
                 id: ID::new(0),
             }),
-            pointee: Box::new(Type::Primitive(Primitive::Bool)),
+            pointee: Box::new(t_ty_parameter.clone()),
         }),
     ));
     let second_constant_type = Predicate::ConstantType(
         predicate::ConstantType(Type::Reference(Reference {
             qualifier: Qualifier::Immutable,
             lifetime: Lifetime::Static,
-            pointee: Box::new(Type::Primitive(Primitive::Bool)),
+            pointee: Box::new(t_ty_parameter.clone()),
         })),
     );
     let third_constant_type = Predicate::ConstantType(predicate::ConstantType(
@@ -108,25 +117,21 @@ fn check_ambiguous_without_equality() {
                 parent: generic_struct,
                 id: ID::new(0),
             }),
-            pointee: Box::new(Type::Primitive(Primitive::Int32)),
+            pointee: Box::new(u_ty_parameter.clone()),
         }),
     ));
     let fourth_constant_type = Predicate::ConstantType(
         predicate::ConstantType(Type::Reference(Reference {
             qualifier: Qualifier::Immutable,
             lifetime: Lifetime::Static,
-            pointee: Box::new(Type::Primitive(Primitive::Int32)),
+            pointee: Box::new(u_ty_parameter.clone()),
         })),
     );
 
     let first_tuple_type =
-        Predicate::TupleType(predicate::Tuple(Type::Parameter(
-            TypeParameterID { parent: generic_struct, id: ID::new(0) },
-        )));
+        Predicate::TupleType(predicate::Tuple(t_ty_parameter));
     let second_tuple_type =
-        Predicate::TupleType(predicate::Tuple(Type::Parameter(
-            TypeParameterID { parent: generic_struct, id: ID::new(1) },
-        )));
+        Predicate::TupleType(predicate::Tuple(u_ty_parameter));
 
     let premise: Premise<Default> = Premise {
         predicates: [
@@ -192,15 +197,24 @@ fn check_ambiguous_without_equality() {
 #[test]
 fn check_non_ambiguous_equality() {
     /*
-     * TraitA['a] = bool
-     * TraitB['a] = bool
+     * TraitA[T] = bool
+     * TraitB[T] = bool
      */
+
+    let t_ty_parameter = Type::Parameter(TypeParameterID {
+        parent: GenericID::Struct(ID::new(0)),
+        id: ID::new(0),
+    });
 
     let first_trait_type_equality = Predicate::TraitTypeEquality(Equality {
         lhs: r#type::TraitMember {
             id: ID::new(0),
             member_generic_arguments: GenericArguments::default(),
-            parent_generic_arguments: GenericArguments::default(),
+            parent_generic_arguments: GenericArguments {
+                lifetimes: Vec::new(),
+                types: vec![t_ty_parameter.clone()],
+                constants: Vec::new(),
+            },
         },
         rhs: Type::Primitive(Primitive::Bool),
     });
@@ -208,7 +222,11 @@ fn check_non_ambiguous_equality() {
         lhs: r#type::TraitMember {
             id: ID::new(1),
             member_generic_arguments: GenericArguments::default(),
-            parent_generic_arguments: GenericArguments::default(),
+            parent_generic_arguments: GenericArguments {
+                lifetimes: Vec::new(),
+                types: vec![t_ty_parameter],
+                constants: Vec::new(),
+            },
         },
         rhs: Type::Primitive(Primitive::Bool),
     });
@@ -243,11 +261,20 @@ fn check_non_ambiguous_equality() {
 #[test]
 fn check_ambiguous_equality() {
     /*
-     * TraitA['a] = bool
+     * TraitA['a, T] = T
      *
-     * TraitB[TraitA['static]] = int32
-     * TraitB[bool] = int32
+     * TraitB[TraitA['static, T]] = U
+     * TraitB[T] = U
      */
+
+    let t_ty_parameter = Type::Parameter(TypeParameterID {
+        parent: GenericID::Struct(ID::new(0)),
+        id: ID::new(0),
+    });
+    let u_ty_parameter = Type::Parameter(TypeParameterID {
+        parent: GenericID::Struct(ID::new(0)),
+        id: ID::new(1),
+    });
 
     let a_lt = Lifetime::Parameter(LifetimeParameterID {
         parent: GenericID::Struct(ID::new(0)),
@@ -266,7 +293,7 @@ fn check_ambiguous_equality() {
         id: ID::new(0),
         member_generic_arguments: GenericArguments {
             lifetimes: vec![lifetime],
-            types: Vec::new(),
+            types: vec![t_ty_parameter.clone()],
             constants: Vec::new(),
         },
         parent_generic_arguments: GenericArguments::default(),
@@ -274,17 +301,17 @@ fn check_ambiguous_equality() {
 
     let first_trait_type_equality = Predicate::TraitTypeEquality(Equality {
         lhs: trait_a(a_lt),
-        rhs: Type::Primitive(Primitive::Bool),
+        rhs: t_ty_parameter.clone(),
     });
 
     let second_trait_type_equality = Predicate::TraitTypeEquality(Equality {
         lhs: trait_b(Type::TraitMember(trait_a(Lifetime::Static))),
-        rhs: Type::Primitive(Primitive::Int32),
+        rhs: u_ty_parameter.clone(),
     });
 
     let third_trait_type_equality = Predicate::TraitTypeEquality(Equality {
-        lhs: trait_b(Type::Primitive(Primitive::Bool)),
-        rhs: Type::Primitive(Primitive::Int32),
+        lhs: trait_b(t_ty_parameter),
+        rhs: u_ty_parameter.clone(),
     });
 
     let premise = Premise::<Default> {
@@ -330,16 +357,21 @@ fn check_ambiguous_equality() {
 #[test]
 fn check_recursive_equality() {
     /*
-     * TraitA['a] = bool
+     * TraitA['a, T] = bool
      *
-     * TraitB[bool] = TraitB[TraitA['static']]
+     * TraitB[bool, T] = TraitB[TraitA['static', T], T]
      */
+
+    let t_ty_parameter = Type::Parameter(TypeParameterID {
+        parent: GenericID::Struct(ID::new(0)),
+        id: ID::new(0),
+    });
 
     let trait_a = |lifetime| r#type::TraitMember {
         id: ID::new(0),
         member_generic_arguments: GenericArguments {
             lifetimes: vec![lifetime],
-            types: Vec::new(),
+            types: vec![t_ty_parameter.clone()],
             constants: Vec::new(),
         },
         parent_generic_arguments: GenericArguments::default(),
@@ -348,7 +380,7 @@ fn check_recursive_equality() {
         id: ID::new(1),
         member_generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
-            types: vec![ty],
+            types: vec![ty, t_ty_parameter.clone()],
             constants: Vec::new(),
         },
         parent_generic_arguments: GenericArguments::default(),

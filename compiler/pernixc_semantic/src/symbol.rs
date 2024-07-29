@@ -11,6 +11,7 @@ use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use paste::paste;
 use pernixc_base::source_file::Span;
+use pernixc_syntax::syntax_tree;
 
 use crate::{
     arena::{Arena, Map, ID},
@@ -36,39 +37,14 @@ pub enum Accessibility {
     Scoped(ID<Module>),
 }
 
-/// Describes how a predicate is introduced.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PredicateKind {
-    /// Introduced explicitly by a where clause syntax. The optional span
-    /// represents the location of the where clause syntax.
-    Explicit(Option<Span>),
-
-    /// Introduced implicitly by a trait predicate. The optional span
-    /// represents the location of the trait predicate that introduces the
-    /// implicit predicate.
-    ImpliedByTraitBound(Option<Span>),
-}
-
-impl PredicateKind {
-    /// Gets the span of the predicate kind.
-    #[must_use]
-    pub const fn span(&self) -> Option<&Span> {
-        match self {
-            Self::Explicit(span) | Self::ImpliedByTraitBound(span) => {
-                span.as_ref()
-            }
-        }
-    }
-}
-
 /// Represents a predicate introduced by either a where clause or implication.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Predicate {
     /// The predicate itself.
     pub predicate: predicate::Predicate<Default>,
 
-    /// The kind of the predicate.
-    pub kind: PredicateKind,
+    /// The span where the predicate was declared.
+    pub span: Option<Span>,
 }
 
 /// An ID of all kinds of symbols that implements the [`Generic`] trait.
@@ -954,6 +930,9 @@ pub struct Variant {
     /// The span where the variant is declared.
     #[get = "pub"]
     span: Option<Span>,
+
+    /// The syntax tree of the variant.
+    syntax_tree: Option<syntax_tree::item::Variant>,
 }
 
 impl Global for Variant {

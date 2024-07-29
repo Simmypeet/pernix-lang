@@ -16,7 +16,7 @@ use crate::{
     },
     type_system::{
         environment::Environment,
-        model,
+        model::{self, Model},
         normalizer::{Normalizer, NO_OP},
         predicate, simplify,
         term::{self, Term},
@@ -32,6 +32,10 @@ fn simplify_generic_arguments<T: Term, S: SourceElement>(
     handler: &dyn Handler<Box<dyn Error>>,
 ) where
     predicate::Predicate<T::Model>: table::Display<table::Suboptimal>,
+
+    <T::Model as Model>::LifetimeInference: table::Display<table::Suboptimal>,
+    <T::Model as Model>::TypeInference: table::Display<table::Suboptimal>,
+    <T::Model as Model>::ConstantInference: table::Display<table::Suboptimal>,
 {
     for (idx, arguments) in generic_arguments.iter_mut().enumerate() {
         let Succeeded { result: simplified, constraints } =

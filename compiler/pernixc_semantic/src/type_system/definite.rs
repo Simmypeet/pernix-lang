@@ -24,6 +24,11 @@ impl<'a, 'c, 'v, U: Term, T: State, N: Normalizer<U::Model>>
     visitor::Visitor<'v, U> for Visitor<'a, 'c, T, N, U::Model>
 {
     fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
+        // early return
+        if let Ok(None) | Err(_) = self.definite {
+            return false;
+        }
+
         match Definite(term.clone())
             .query_with_context(self.environment, self.context)
         {

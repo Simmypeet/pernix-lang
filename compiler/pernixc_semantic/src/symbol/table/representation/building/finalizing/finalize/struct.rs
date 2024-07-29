@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
@@ -18,7 +20,7 @@ use crate::{
         },
         Field, GenericParameterVariances, HierarchyRelationship, Struct,
     },
-    type_system::{environment::Environment, normalizer::NoOp},
+    type_system::{environment::Environment, normalizer::NO_OP},
 };
 
 /// Generic parameters are built
@@ -73,11 +75,7 @@ impl Finalize for Struct {
             }
 
             STRUCTURAL_AND_PARTIAL_VARIANCE_STATE => {
-                let (environment, _) = Environment::new(
-                    table.get_active_premise(symbol_id.into()).unwrap(),
-                    table,
-                    &NoOp,
-                );
+                let mut field_syntax_trees_by_id = HashMap::new();
 
                 for field_syn in syntax_tree
                     .body()
@@ -127,23 +125,10 @@ impl Finalize for Struct {
                         }
                     }
 
-                    // build all the occurrences to partial
-                    data.build_all_occurrences_to::<build_preset::PartialComplete>(
-                        table,
-                        symbol_id.into(),
-                        false,
-                        handler,
-                    );
-
                     let field = Field {
                         accessibility: field_accessibility,
                         name: field_syn.identifier().span.str().to_owned(),
-                        r#type: environment
-                            .simplify_and_check_lifetime_constraints(
-                                &ty,
-                                &field_syn.r#type().span(),
-                                handler,
-                            ),
+                        r#type: ty,
                         span: Some(field_syn.identifier().span.clone()),
                     };
 
@@ -156,7 +141,12 @@ impl Finalize for Struct {
                         .write()
                         .insert_field(field)
                     {
-                        Ok(_) => {}
+                        Ok(id) => {
+                            assert!(field_syntax_trees_by_id
+                                .insert(id, field_syn)
+                                .is_none());
+                        }
+
                         Err((existing, _)) => {
                             handler.receive(Box::new(DuplicatedField {
                                 struct_id: symbol_id,
@@ -177,6 +167,35 @@ impl Finalize for Struct {
                     false,
                     handler,
                 );
+
+                // simplify all the types
+                let (environment, _) = Environment::new(
+                    table.get_active_premise(symbol_id.into()).unwrap(),
+                    table,
+                    &NO_OP,
+                );
+                for (field_id, field_syn) in field_syntax_trees_by_id.iter() {
+                    let mut field_ty = table.get(symbol_id).unwrap().fields
+                        [*field_id]
+                        .r#type
+                        .clone();
+
+                    field_ty = environment
+                        .simplify_and_check_lifetime_constraints(
+                            &field_ty,
+                            &field_syn.r#type().span(),
+                            handler,
+                        );
+
+                    table
+                        .representation
+                        .structs
+                        .get(symbol_id)
+                        .unwrap()
+                        .write()
+                        .fields[*field_id]
+                        .r#type = field_ty;
+                }
 
                 // partial variance information
                 {

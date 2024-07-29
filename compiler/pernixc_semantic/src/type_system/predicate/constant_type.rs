@@ -1,4 +1,4 @@
-use super::{contains_forall_lifetime, Satisfiability};
+use super::{contains_error, Satisfiability};
 use crate::{
     symbol::table::{self, DisplayObject, State, Table},
     type_system::{
@@ -290,9 +290,7 @@ where
 impl<M: Model> ConstantType<M> {
     /// Checks if the type contains a `forall` lifetime.
     #[must_use]
-    pub fn contains_forall_lifetime(&self) -> bool {
-        contains_forall_lifetime(&self.0)
-    }
+    pub fn contains_error(&self) -> bool { contains_error(&self.0) }
 
     /// Applies the instantiation to the type.
     pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {

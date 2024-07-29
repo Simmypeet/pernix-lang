@@ -47,6 +47,10 @@ impl<M: Model> Equivalence for Type<M> {
     ) -> Result<Vec<Succeeded<Self, M>>, OverflowError> {
         let mut equivalences = Vec::new();
 
+        if !self.is_trait_member() {
+            return Ok(equivalences);
+        }
+
         for equivalence in environment
             .premise
             .predicates

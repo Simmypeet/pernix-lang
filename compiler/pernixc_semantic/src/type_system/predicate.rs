@@ -23,20 +23,18 @@ use super::{
 use crate::symbol::table::{self, State};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct ContainsForallLifetimeVisitor {
-    contains_forall_lifetime: bool,
+struct ContainsErrorVisitor {
+    contains_error: bool,
 }
 
-impl<'v, M: Model> Recursive<'v, Lifetime<M>>
-    for ContainsForallLifetimeVisitor
-{
+impl<'v, M: Model> Recursive<'v, Lifetime<M>> for ContainsErrorVisitor {
     fn visit(
         &mut self,
-        term: &'v Lifetime<M>,
+        term: &Lifetime<M>,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
-        if term.is_forall() {
-            self.contains_forall_lifetime = true;
+        if term.is_error() {
+            self.contains_error = true;
             false
         } else {
             true
@@ -44,35 +42,42 @@ impl<'v, M: Model> Recursive<'v, Lifetime<M>>
     }
 }
 
-impl<'v, M: Model> Recursive<'v, Type<M>> for ContainsForallLifetimeVisitor {
+impl<'v, M: Model> Recursive<'v, Type<M>> for ContainsErrorVisitor {
     fn visit(
         &mut self,
-        _: &'v Type<M>,
+        term: &Type<M>,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
-        true
+        if term.is_error() {
+            self.contains_error = true;
+            false
+        } else {
+            true
+        }
     }
 }
 
-impl<'v, M: Model> Recursive<'v, Constant<M>>
-    for ContainsForallLifetimeVisitor
-{
+impl<'v, M: Model> Recursive<'v, Constant<M>> for ContainsErrorVisitor {
     fn visit(
         &mut self,
-        _: &'v Constant<M>,
+        term: &Constant<M>,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
-        true
+        if term.is_error() {
+            self.contains_error = true;
+            false
+        } else {
+            true
+        }
     }
 }
 
-fn contains_forall_lifetime<T: Term>(term: &T) -> bool {
-    let mut visitor =
-        ContainsForallLifetimeVisitor { contains_forall_lifetime: false };
+fn contains_error<T: Term>(term: &T) -> bool {
+    let mut visitor = ContainsErrorVisitor { contains_error: false };
 
     accept_recursive(term, &mut visitor);
 
-    visitor.contains_forall_lifetime
+    visitor.contains_error
 }
 
 /// Describes a satisfiability of a certain predicate.
@@ -195,23 +200,17 @@ where
 }
 
 impl<M: Model> Predicate<M> {
-    /// Checks if the predicate contains a `forall` lifetime.
+    /// Checks if the predicate has an errornous term.
     #[must_use]
-    pub fn contains_forall_lifetime(&self) -> bool {
+    pub fn contains_error(&self) -> bool {
         match self {
-            Self::TraitTypeEquality(equality) => {
-                equality.contains_forall_lifetime()
-            }
-            Self::ConstantType(constant_type) => {
-                constant_type.contains_forall_lifetime()
-            }
-            Self::LifetimeOutlives(outlives) => {
-                outlives.contains_forall_lifetime()
-            }
-            Self::TypeOutlives(outlives) => outlives.contains_forall_lifetime(),
-            Self::TupleType(tuple) => tuple.contains_forall_lifetime(),
-            Self::TupleConstant(tuple) => tuple.contains_forall_lifetime(),
-            Self::Trait(tr) => tr.contains_forall_lifetime(),
+            Self::TraitTypeEquality(equality) => equality.contains_error(),
+            Self::ConstantType(constant_type) => constant_type.contains_error(),
+            Self::LifetimeOutlives(outlives) => outlives.contains_error(),
+            Self::TypeOutlives(outlives) => outlives.contains_error(),
+            Self::TupleType(tuple) => tuple.contains_error(),
+            Self::TupleConstant(tuple) => tuple.contains_error(),
+            Self::Trait(tr) => tr.contains_error(),
         }
     }
 
@@ -237,11 +236,10 @@ impl<M: Model> Predicate<M> {
 
 impl<T: Term> Equality<T::TraitMember, T> {
     /// Checks if the predicate has a `forall` lifetime.
-    pub fn contains_forall_lifetime(&self) -> bool {
+    pub fn contains_error(&self) -> bool {
         let trait_member = T::from(self.lhs.clone());
 
-        contains_forall_lifetime(&trait_member)
-            || contains_forall_lifetime(&self.rhs)
+        contains_error(&trait_member) || contains_error(&self.rhs)
     }
 }
 

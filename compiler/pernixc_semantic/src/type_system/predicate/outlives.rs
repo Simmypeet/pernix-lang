@@ -1,4 +1,4 @@
-use super::{contains_forall_lifetime, Satisfiability};
+use super::{contains_error, Satisfiability};
 use crate::{
     symbol::table::{self, DisplayObject, State, Table},
     type_system::{
@@ -54,8 +54,8 @@ where
 impl<T: Term> Outlives<T> {
     /// Checks if the term contains a `forall` lifetime.
     #[must_use]
-    pub fn contains_forall_lifetime(&self) -> bool {
-        contains_forall_lifetime(&self.operand) || self.bound.is_forall()
+    pub fn contains_error(&self) -> bool {
+        contains_error(&self.operand) || self.bound.is_forall()
     }
 
     /// Applies a instantiation to the [`Outlives::operand`] and

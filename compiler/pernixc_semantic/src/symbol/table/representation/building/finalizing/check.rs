@@ -15,7 +15,8 @@ use crate::{
         self, Error, ExtraneousTraitMemberPredicate,
         MismatchedGenericParameterCountInImplementation,
         MismatchedImplementationArguments,
-        MismatchedImplementationConstantTypeParameter, UndecidablePredicate,
+        MismatchedImplementationConstantTypeParameter,
+        TraitImplementationIsNotGeneralEnough, UndecidablePredicate,
         UnsatisifedPredicate, UnusedGenericParameterInImplementation,
     },
     symbol::{
@@ -24,13 +25,14 @@ use crate::{
             representation::{Element, Index, RwLockContainer},
             resolution, Building, State, Table,
         },
-        ConstantParameter, ConstantParameterID, GenericID, GenericParameter,
-        GenericParameters, GenericTemplate, GlobalID, ImplementationTemplate,
-        LifetimeParameter, LifetimeParameterID, TraitImplementationMemberID,
-        TraitMemberID, TypeParameter, TypeParameterID,
+        ConstantParameter, ConstantParameterID, Generic, GenericID,
+        GenericParameter, GenericParameters, GenericTemplate, GlobalID,
+        ImplementationTemplate, LifetimeParameter, LifetimeParameterID,
+        TraitImplementationMemberID, TraitMemberID, TypeParameter,
+        TypeParameterID,
     },
     type_system::{
-        compatible::Compatible,
+        compatible::{Compatibility, Compatible},
         deduction,
         environment::Environment,
         instantiation::{self, Instantiation},
@@ -54,15 +56,90 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum PredicateError<M: Model> {
     /// The predicate isn't satisfied.
-    Unsatisfied(Predicate<M>),
+    Unsatisfied {
+        predicate: Predicate<M>,
+        predicate_declaration_span: Option<Span>,
+    },
 
     /// The type system can't determine if the predicate is satisfiable or not.
-    Undecidable(Predicate<M>),
+    Undecidable {
+        predicate: Predicate<M>,
+        predicate_declaration_span: Option<Span>,
+    },
+
+    /// The solved trait implementation is not general enough for the forall
+    /// lifetime requirements.
+    TraitImplementationIsNotGeneralEnough {
+        required_trait_predicate: predicate::Trait<M>,
+        resolved_implementation: predicate::Implementation<M>,
+        predicate_declaration_span: Option<Span>,
+    },
+}
+
+impl<M: Model> PredicateError<M>
+where
+    predicate::Predicate<M>: table::Display<table::Suboptimal>,
+
+    M::LifetimeInference: table::Display<table::Suboptimal>,
+    M::TypeInference: table::Display<table::Suboptimal>,
+    M::ConstantInference: table::Display<table::Suboptimal>,
+{
+    fn report(
+        self,
+        instantiation_span: Span,
+        handler: &dyn Handler<Box<dyn Error>>,
+    ) {
+        match self {
+            Self::Unsatisfied { predicate, predicate_declaration_span } => {
+                handler.receive(Box::new(UnsatisifedPredicate {
+                    predicate,
+                    instantiation_span,
+                    predicate_declaration_span,
+                }));
+            }
+
+            Self::Undecidable { predicate, predicate_declaration_span } => {
+                if predicate.contains_error() {
+                    return;
+                }
+
+                handler.receive(Box::new(UndecidablePredicate {
+                    instantiation_span,
+                    predicate,
+                    predicate_declaration_span,
+                }));
+            }
+
+            Self::TraitImplementationIsNotGeneralEnough {
+                required_trait_predicate,
+                resolved_implementation,
+                predicate_declaration_span,
+            } => {
+                if required_trait_predicate.contains_error() {
+                    return;
+                }
+
+                handler.receive(Box::new(
+                    TraitImplementationIsNotGeneralEnough {
+                        positive_trait_implementation_id:
+                            resolved_implementation.id,
+                        required_trait_predicate,
+                        instantiation_span,
+                        predicate_declaration_span,
+                    },
+                ));
+            }
+        }
+    }
 }
 
 impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N>
 where
     predicate::Predicate<M>: table::Display<table::Suboptimal>,
+
+    M::LifetimeInference: table::Display<table::Suboptimal>,
+    M::TypeInference: table::Display<table::Suboptimal>,
+    M::ConstantInference: table::Display<table::Suboptimal>,
 {
     /// Checks if the given `resolution` is well-formed. The errors are reported
     /// to the `handler`.
@@ -100,28 +177,14 @@ where
                                 .clone(),
                         });
 
-                    let errors =
-                        self.predicate_satisfied(predicate, do_outlives_check);
+                    let errors = self.predicate_satisfied(
+                        predicate,
+                        None,
+                        do_outlives_check,
+                    );
 
                     for error in errors {
-                        let error: Box<dyn crate::error::Error> = match error {
-                            PredicateError::Unsatisfied(predicate) => {
-                                Box::new(UnsatisifedPredicate {
-                                    predicate,
-                                    instantiation_span: resolution_span.clone(),
-                                    predicate_declaration_span: None,
-                                })
-                            }
-                            PredicateError::Undecidable(predicate) => {
-                                Box::new(UndecidablePredicate {
-                                    instantiation_span: resolution_span.clone(),
-                                    predicate,
-                                    predicate_declaration_span: None,
-                                })
-                            }
-                        };
-
-                        handler.receive(error);
+                        error.report(resolution_span.clone(), handler);
                     }
                 }
 
@@ -204,13 +267,13 @@ where
                         // check if the deduced generic arguments are correct
                         self.check_instantiation_predicates(
                             adt_implementation_id.into(),
-                            &result.result,
+                            &result.result.instantiation,
                             resolution_span,
                             do_outlives_check,
                             handler,
                         );
 
-                        result.result
+                        result.result.instantiation
                     } else {
                         let parent_id = GenericID::try_from(
                             self.table()
@@ -338,33 +401,14 @@ where
 
             predicate.instantiate(instantiation);
 
-            let errors = self.predicate_satisfied(predicate, do_outlives_check);
+            let errors = self.predicate_satisfied(
+                predicate,
+                predicate_info.span.clone(),
+                do_outlives_check,
+            );
 
             for error in errors {
-                let error: Box<dyn Error> = match error {
-                    PredicateError::Unsatisfied(predicate) => {
-                        Box::new(UnsatisifedPredicate {
-                            predicate,
-                            instantiation_span: instantiation_span.clone(),
-                            predicate_declaration_span: predicate_info
-                                .kind
-                                .span()
-                                .cloned(),
-                        })
-                    }
-                    PredicateError::Undecidable(predicate) => {
-                        Box::new(UndecidablePredicate {
-                            instantiation_span: instantiation_span.clone(),
-                            predicate,
-                            predicate_declaration_span: predicate_info
-                                .kind
-                                .span()
-                                .cloned(),
-                        })
-                    }
-                };
-
-                handler.receive(error);
+                error.report(instantiation_span.clone(), handler);
             }
         }
     }
@@ -373,17 +417,37 @@ where
     fn predicate_satisfied(
         &self,
         predicate: Predicate<M>,
+        predicate_declaration_span: Option<Span>,
         do_outlives_check: bool,
     ) -> Vec<PredicateError<M>> {
-        let result = match &predicate {
+        let (result, mut extra_predicate_error) = match &predicate {
             predicate::Predicate::TraitTypeEquality(eq) => {
-                r#type::Type::TraitMember(eq.lhs.clone()).compatible(
-                    &eq.rhs,
-                    Variance::Covariant,
-                    self,
+                let result = r#type::Type::TraitMember(eq.lhs.clone())
+                    .compatible(&eq.rhs, Variance::Covariant, self);
+
+                (
+                    match result {
+                        Ok(Some(Succeeded {
+                            result: Compatibility { forall_lifetime_errors, .. },
+                            constraints,
+                        })) => {
+                            if forall_lifetime_errors.is_empty() {
+                                Ok(Some(Succeeded::satisfied_with(constraints)))
+                            } else {
+                                Ok(None)
+                            }
+                        }
+
+                        Ok(None) => Ok(None),
+
+                        Err(OverflowError) => Err(OverflowError),
+                    },
+                    Vec::new(),
                 )
             }
-            predicate::Predicate::ConstantType(pred) => pred.query(self),
+            predicate::Predicate::ConstantType(pred) => {
+                (pred.query(self), Vec::new())
+            }
             predicate::Predicate::LifetimeOutlives(pred) => {
                 if !do_outlives_check {
                     return Vec::new();
@@ -393,11 +457,17 @@ where
                     Ok(Some(Satisfied)) => vec![],
 
                     Ok(None) => {
-                        vec![PredicateError::Unsatisfied(predicate)]
+                        vec![PredicateError::Unsatisfied {
+                            predicate,
+                            predicate_declaration_span,
+                        }]
                     }
 
                     Err(OverflowError) => {
-                        vec![PredicateError::Undecidable(predicate)]
+                        vec![PredicateError::Undecidable {
+                            predicate,
+                            predicate_declaration_span,
+                        }]
                     }
                 };
             }
@@ -410,17 +480,78 @@ where
                     Ok(Some(Satisfied)) => vec![],
 
                     Ok(None) => {
-                        vec![PredicateError::Unsatisfied(predicate)]
+                        vec![PredicateError::Unsatisfied {
+                            predicate,
+                            predicate_declaration_span,
+                        }]
                     }
 
                     Err(OverflowError) => {
-                        vec![PredicateError::Undecidable(predicate)]
+                        vec![PredicateError::Undecidable {
+                            predicate,
+                            predicate_declaration_span,
+                        }]
                     }
                 };
             }
-            predicate::Predicate::TupleType(pred) => pred.query(self),
-            predicate::Predicate::TupleConstant(pred) => pred.query(self),
-            predicate::Predicate::Trait(pred) => pred.query(self),
+            predicate::Predicate::TupleType(pred) => {
+                (pred.query(self), Vec::new())
+            }
+            predicate::Predicate::TupleConstant(pred) => {
+                (pred.query(self), Vec::new())
+            }
+            predicate::Predicate::Trait(pred) => match pred.query(self) {
+                Ok(None) => (Ok(None), Vec::new()),
+                Ok(Some(Succeeded { result, constraints })) => match result {
+                    predicate::TraitSatisfied::ByPremise
+                    | predicate::TraitSatisfied::ByTraitContext => (
+                        Ok(Some(Succeeded::satisfied_with(constraints))),
+                        Vec::new(),
+                    ),
+
+                    predicate::TraitSatisfied::ByImplementation(
+                        implementation,
+                    ) => {
+                        let mut errors = Vec::new();
+
+                        if implementation.is_not_general_enough {
+                            errors.push(PredicateError::TraitImplementationIsNotGeneralEnough {
+                                required_trait_predicate: pred.clone(),
+                                resolved_implementation: implementation.clone(),
+                                predicate_declaration_span,
+                            });
+                        }
+
+                        let implementation_sym =
+                            self.table().get(implementation.id).unwrap();
+
+                        // check for each predicate in the implementation
+                        for predicate in
+                            &implementation_sym.generic_declaration().predicates
+                        {
+                            let mut predicate_instantiated =
+                                Predicate::from_default_model(
+                                    predicate.predicate.clone(),
+                                );
+
+                            predicate_instantiated
+                                .instantiate(&implementation.instantiation);
+
+                            errors.extend(self.predicate_satisfied(
+                                predicate_instantiated,
+                                predicate.span.clone(),
+                                do_outlives_check,
+                            ));
+                        }
+
+                        (
+                            Ok(Some(Succeeded::satisfied_with(constraints))),
+                            errors,
+                        )
+                    }
+                },
+                Err(OverflowError) => (Err(OverflowError), Vec::new()),
+            },
         };
 
         match result {
@@ -430,21 +561,33 @@ where
                     return Vec::new();
                 }
 
-                let mut errors = Vec::new();
-
                 for constraint in constraints {
                     match constraint {
                         LifetimeConstraint::LifetimeOutlives(pred) => {
                             match pred.query(self) {
                                 Ok(None) => {
-                                    errors.push(PredicateError::Unsatisfied(
-                                        Predicate::LifetimeOutlives(pred),
-                                    ));
+                                    extra_predicate_error.push(
+                                        PredicateError::Unsatisfied {
+                                            predicate:
+                                                Predicate::LifetimeOutlives(
+                                                    pred,
+                                                ),
+
+                                            predicate_declaration_span: None,
+                                        },
+                                    );
                                 }
                                 Err(_) => {
-                                    errors.push(PredicateError::Undecidable(
-                                        Predicate::LifetimeOutlives(pred),
-                                    ));
+                                    extra_predicate_error.push(
+                                        PredicateError::Undecidable {
+                                            predicate:
+                                                Predicate::LifetimeOutlives(
+                                                    pred,
+                                                ),
+
+                                            predicate_declaration_span: None,
+                                        },
+                                    );
                                 }
 
                                 Ok(Some(_)) => {}
@@ -454,14 +597,26 @@ where
                         LifetimeConstraint::TypeOutlives(pred) => {
                             match pred.query(self) {
                                 Ok(None) => {
-                                    errors.push(PredicateError::Unsatisfied(
-                                        Predicate::TypeOutlives(pred),
-                                    ));
+                                    extra_predicate_error.push(
+                                        PredicateError::Unsatisfied {
+                                            predicate: Predicate::TypeOutlives(
+                                                pred,
+                                            ),
+
+                                            predicate_declaration_span: None,
+                                        },
+                                    );
                                 }
                                 Err(_) => {
-                                    errors.push(PredicateError::Undecidable(
-                                        Predicate::TypeOutlives(pred),
-                                    ));
+                                    extra_predicate_error.push(
+                                        PredicateError::Undecidable {
+                                            predicate: Predicate::TypeOutlives(
+                                                pred,
+                                            ),
+
+                                            predicate_declaration_span: None,
+                                        },
+                                    );
                                 }
 
                                 Ok(Some(_)) => {}
@@ -480,44 +635,84 @@ where
 
                             match pred_1.query(self) {
                                 Ok(None) => {
-                                    errors.push(PredicateError::Unsatisfied(
-                                        Predicate::LifetimeOutlives(pred_1),
-                                    ));
+                                    extra_predicate_error.push(
+                                        PredicateError::Unsatisfied {
+                                            predicate:
+                                                Predicate::LifetimeOutlives(
+                                                    pred_1,
+                                                ),
+
+                                            predicate_declaration_span: None,
+                                        },
+                                    );
                                 }
                                 Err(_) => {
-                                    errors.push(PredicateError::Undecidable(
-                                        Predicate::LifetimeOutlives(pred_1),
-                                    ));
+                                    extra_predicate_error.push(
+                                        PredicateError::Undecidable {
+                                            predicate:
+                                                Predicate::LifetimeOutlives(
+                                                    pred_1,
+                                                ),
+
+                                            predicate_declaration_span: None,
+                                        },
+                                    );
                                 }
 
-                                Ok(Some(_)) => {}
+                                Ok(Some(Satisfied)) => {}
                             }
 
                             match pred_2.query(self) {
                                 Ok(None) => {
-                                    errors.push(PredicateError::Unsatisfied(
-                                        Predicate::LifetimeOutlives(pred_2),
-                                    ));
+                                    extra_predicate_error.push(
+                                        PredicateError::Unsatisfied {
+                                            predicate:
+                                                Predicate::LifetimeOutlives(
+                                                    pred_2,
+                                                ),
+
+                                            predicate_declaration_span: None,
+                                        },
+                                    );
                                 }
                                 Err(_) => {
-                                    errors.push(PredicateError::Undecidable(
-                                        Predicate::LifetimeOutlives(pred_2),
-                                    ));
+                                    extra_predicate_error.push(
+                                        PredicateError::Undecidable {
+                                            predicate:
+                                                Predicate::LifetimeOutlives(
+                                                    pred_2,
+                                                ),
+
+                                            predicate_declaration_span: None,
+                                        },
+                                    );
                                 }
 
-                                Ok(Some(_)) => {}
+                                Ok(Some(Satisfied)) => {}
                             }
                         }
                     }
                 }
 
-                errors
+                extra_predicate_error
             }
 
-            Ok(None) => vec![PredicateError::Unsatisfied(predicate)],
+            Ok(None) => {
+                extra_predicate_error.push(PredicateError::Unsatisfied {
+                    predicate,
+                    predicate_declaration_span: None,
+                });
+
+                extra_predicate_error
+            }
 
             Err(OverflowError) => {
-                vec![PredicateError::Undecidable(predicate)]
+                extra_predicate_error.push(PredicateError::Undecidable {
+                    predicate,
+                    predicate_declaration_span: None,
+                });
+
+                extra_predicate_error
             }
         }
     }
@@ -612,27 +807,11 @@ where
     {
         let tuple_predicate = Tuple(unpacked_term);
 
-        let errors = self.predicate_satisfied(tuple_predicate.into(), true);
+        let errors =
+            self.predicate_satisfied(tuple_predicate.into(), None, true);
 
         for error in errors {
-            let error: Box<dyn error::Error> = match error {
-                PredicateError::Unsatisfied(predicate) => {
-                    Box::new(UnsatisifedPredicate {
-                        predicate,
-                        instantiation_span: instantiation_span.clone(),
-                        predicate_declaration_span: None,
-                    })
-                }
-                PredicateError::Undecidable(predicate) => {
-                    Box::new(UndecidablePredicate {
-                        instantiation_span: instantiation_span.clone(),
-                        predicate,
-                        predicate_declaration_span: None,
-                    })
-                }
-            };
-
-            handler.receive(error);
+            error.report(instantiation_span.clone(), handler);
         }
     }
 
@@ -1211,35 +1390,15 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             let mut predicate_instantiated = predicate.predicate.clone();
             predicate_instantiated.instantiate(&trait_instantiation);
 
-            for error in
-                environment.predicate_satisfied(predicate_instantiated, true)
-            {
-                match error {
-                    PredicateError::Undecidable(predicate) => {
-                        handler.receive(Box::new(UndecidablePredicate {
-                            instantiation_span: implementation_member_sym
-                                .span()
-                                .cloned()
-                                .unwrap(),
-                            predicate,
-                            predicate_declaration_span: trait_member_sym
-                                .span()
-                                .cloned(),
-                        }));
-                    }
-                    PredicateError::Unsatisfied(predicate) => {
-                        handler.receive(Box::new(UnsatisifedPredicate {
-                            predicate,
-                            instantiation_span: implementation_member_sym
-                                .span()
-                                .cloned()
-                                .unwrap(),
-                            predicate_declaration_span: trait_member_sym
-                                .span()
-                                .cloned(),
-                        }));
-                    }
-                }
+            for error in environment.predicate_satisfied(
+                predicate_instantiated,
+                predicate.span.clone(),
+                true,
+            ) {
+                error.report(
+                    implementation_member_sym.span().cloned().unwrap(),
+                    handler,
+                );
             }
         }
 
@@ -1268,11 +1427,17 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         for predicate_decl in
             &implementation_member_sym.generic_declaration().predicates
         {
-            for error in environment
-                .predicate_satisfied(predicate_decl.predicate.clone(), true)
-            {
+            for error in environment.predicate_satisfied(
+                predicate_decl.predicate.clone(),
+                predicate_decl.span.clone(),
+                true,
+            ) {
                 match error {
-                    PredicateError::Undecidable(predicate) => {
+                    PredicateError::Undecidable { predicate, .. } => {
+                        if predicate.contains_error() {
+                            continue;
+                        }
+
                         handler.receive(Box::new(UndecidablePredicate {
                             instantiation_span: implementation_member_sym
                                 .span()
@@ -1282,19 +1447,28 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             predicate_declaration_span: None,
                         }));
                     }
-                    PredicateError::Unsatisfied(predicate) => {
+
+                    PredicateError::Unsatisfied {
+                        predicate,
+                        predicate_declaration_span,
+                    } => {
+                        if predicate.contains_error() {
+                            continue;
+                        }
+
                         handler.receive(Box::new(
                             ExtraneousTraitMemberPredicate {
                                 trait_implementation_member_id:
                                     implementation_member_id,
                                 predicate,
-                                predicate_span: predicate_decl
-                                    .kind
-                                    .span()
-                                    .cloned(),
+                                predicate_span: predicate_declaration_span,
                             },
                         ));
                     }
+
+                    PredicateError::TraitImplementationIsNotGeneralEnough {
+                        ..
+                    } => todo!("report this error"),
                 }
             }
         }

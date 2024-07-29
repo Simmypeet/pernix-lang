@@ -21,7 +21,7 @@ use crate::{
             resolution::{self, MemberGeneric, MemberGenericID, Resolution},
             Building, Table,
         },
-        Generic, GenericID, GlobalID, PredicateKind, Trait,
+        Generic, GenericID, GlobalID, Trait,
     },
     type_system::{
         equality::Equality,
@@ -96,7 +96,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                                 rhs: resolve_ty,
                             },
                         ),
-                        kind: PredicateKind::Explicit(Some(syntax_tree.span())),
+                        span: Some(syntax_tree.span()),
                     },
                 );
             }
@@ -174,9 +174,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             predicate: predicate::Predicate::Trait(
                                 trait_predicate,
                             ),
-                            kind: PredicateKind::Explicit(Some(
-                                trait_bound.span(),
-                            )),
+                            span: Some(trait_bound.span()),
                         });
 
                     let trait_sym = self
@@ -206,15 +204,13 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                                 let mut predicate = x.predicate.clone();
                                 predicate.instantiate(&instantiation);
 
-                                if predicate.contains_forall_lifetime() {
+                                if predicate.contains_error() {
                                     return None;
                                 }
 
                                 Some(symbol::Predicate {
                                     predicate,
-                                    kind: PredicateKind::ImpliedByTraitBound(
-                                        Some(trait_bound.span()),
-                                    ),
+                                    span: Some(trait_bound.span()),
                                 })
                             }),
                     );
@@ -292,9 +288,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                                     bound,
                                 },
                             ),
-                            kind: PredicateKind::Explicit(Some(
-                                syntax_tree.span(),
-                            )),
+                            span: Some(syntax_tree.span()),
                         },
                     );
                 }
@@ -320,9 +314,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             predicate: predicate::Predicate::TypeOutlives(
                                 Outlives { operand: ty.clone(), bound },
                             ),
-                            kind: PredicateKind::Explicit(Some(
-                                syntax_tree.span(),
-                            )),
+                            span: Some(syntax_tree.span()),
                         },
                     );
                 }
@@ -374,7 +366,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     predicate: predicate::Predicate::ConstantType(
                         predicate::ConstantType(ty),
                     ),
-                    kind: PredicateKind::Explicit(Some(syntax_tree.span())),
+                    span: Some(syntax_tree.span()),
                 },
             );
         }
@@ -425,9 +417,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             predicate: predicate::Predicate::TupleType(
                                 predicate::Tuple(ty),
                             ),
-                            kind: PredicateKind::Explicit(Some(
-                                syntax_tree.span(),
-                            )),
+                            span: Some(syntax_tree.span()),
                         },
                     );
                 }
@@ -448,9 +438,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             predicate: predicate::Predicate::TupleConstant(
                                 predicate::Tuple(constant),
                             ),
-                            kind: PredicateKind::Explicit(Some(
-                                syntax_tree.span(),
-                            )),
+                            span: Some(syntax_tree.span()),
                         },
                     );
                 }
@@ -473,7 +461,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 .entry(syn.identifier().span.str().to_owned())
             {
                 Entry::Vacant(entry) => {
-                    let forall = Forall::generate(Some(syn.span()));
+                    let forall =
+                        Forall::generate(Some(syn.identifier().span.clone()));
                     entry.insert(forall);
                 }
                 Entry::Occupied(_) => {

@@ -73,35 +73,39 @@ impl<T: Term> Compute for Equality<T, T> {
 
             let trait_member_term = T::from(equality_predicate.lhs.clone());
 
-            if let Some(result) = equals_without_mapping(
-                &self.lhs,
-                &trait_member_term,
-                environment,
-                context,
-            )? {
-                if let Some(inner_result) = Equality::new(
-                    equality_predicate.rhs.clone(),
-                    self.rhs.clone(),
-                )
-                .query_with_context(environment, context)?
-                {
-                    return Ok(Some(result.combine(inner_result)));
+            if self.lhs.as_trait_member().is_some() {
+                if let Some(result) = equals_without_mapping(
+                    &self.lhs,
+                    &trait_member_term,
+                    environment,
+                    context,
+                )? {
+                    if let Some(inner_result) = Equality::new(
+                        equality_predicate.rhs.clone(),
+                        self.rhs.clone(),
+                    )
+                    .query_with_context(environment, context)?
+                    {
+                        return Ok(Some(result.combine(inner_result)));
+                    }
                 }
             }
 
-            if let Some(result) = equals_without_mapping(
-                &trait_member_term,
-                &self.rhs,
-                environment,
-                context,
-            )? {
-                if let Some(inner_result) = Equality::new(
-                    self.lhs.clone(),
-                    equality_predicate.rhs.clone(),
-                )
-                .query_with_context(environment, context)?
-                {
-                    return Ok(Some(result.combine(inner_result)));
+            if self.rhs.as_trait_member().is_some() {
+                if let Some(result) = equals_without_mapping(
+                    &trait_member_term,
+                    &self.rhs,
+                    environment,
+                    context,
+                )? {
+                    if let Some(inner_result) = Equality::new(
+                        self.lhs.clone(),
+                        equality_predicate.rhs.clone(),
+                    )
+                    .query_with_context(environment, context)?
+                    {
+                        return Ok(Some(result.combine(inner_result)));
+                    }
                 }
             }
         }

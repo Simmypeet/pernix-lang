@@ -30,7 +30,7 @@ use crate::{
     },
     type_system::{
         model::Model,
-        predicate::Predicate,
+        predicate::{self, Predicate},
         term::{
             r#type::{Qualifier, Type},
             GenericArguments,
@@ -1032,7 +1032,7 @@ impl<T: GenericParameter, S: State> Display<S>
 
         if let Some(existing_span) = generic_parameter.span() {
             write!(f, "\n{}", SourceCodeDisplay {
-                span: existing_span,
+                span: &existing_span,
                 help_display: Some("previously defined here"),
             })?;
         }
@@ -1221,7 +1221,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
                         .ok_or(fmt::Error)?;
 
                     (
-                        lifetime_param.span.as_ref(),
+                        lifetime_param.span(),
                         lifetime_param.name.as_deref().unwrap_or("`{unknown}"),
                         "lifetime parameter",
                     )
@@ -1235,7 +1235,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
                         .ok_or(fmt::Error)?;
 
                     (
-                        type_param.span.as_ref(),
+                        type_param.span(),
                         type_param.name.as_deref().unwrap_or("{unknown}"),
                         "type parameter",
                     )
@@ -1249,7 +1249,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
                         .ok_or(fmt::Error)?;
 
                     (
-                        constant_param.span.as_ref(),
+                        constant_param.span(),
                         constant_param.name.as_deref().unwrap_or("{unknown}"),
                         "constant parameter",
                     )
@@ -1266,7 +1266,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
 
         if let Some(span) = span {
             write!(f, "\n{}", SourceCodeDisplay {
-                span,
+                span: &span,
                 help_display: Some("consider removing it")
             })?;
         }
@@ -2542,6 +2542,128 @@ impl<T: State, M: Model> Display<T> for MismatchedImplementationArguments<M> {
             write!(f, "\n{}", Message {
                 severity: Severity::Info,
                 display: "the implementation is defined here",
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+/// The trait implementation is not general enough to satisfy the required
+/// trait predicate's forall lifetimes.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TraitImplementationIsNotGeneralEnough<M: Model> {
+    /// The ID of the trait implementation where the trait predicate is not
+    /// satisfied.
+    pub positive_trait_implementation_id: ID<PositiveTraitImplementation>,
+
+    /// The required trait predicate that is not satisfied.
+    pub required_trait_predicate: predicate::Trait<M>,
+
+    /// The span where the trait predicate was declared.
+    pub predicate_declaration_span: Option<Span>,
+
+    /// The span of the instantiation that cuases the error
+    pub instantiation_span: Span,
+}
+
+impl<T: State, M: Model> Display<T> for TraitImplementationIsNotGeneralEnough<M>
+where
+    Predicate<M>: table::Display<T>,
+
+    M::LifetimeInference: Display<T>,
+    M::TypeInference: Display<T>,
+    M::ConstantInference: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let positive_trait_implementation_symbol = table
+            .get(self.positive_trait_implementation_id)
+            .ok_or(fmt::Error)?;
+
+        let implemented_trait_qualified_name = table
+            .get_qualified_name(self.required_trait_predicate.id.into())
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the trait implementation is not general enough to satisfy \
+                 {}{}",
+                implemented_trait_qualified_name,
+                DisplayObject {
+                    table,
+                    display: &self.required_trait_predicate.generic_arguments
+                }
+            )
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.instantiation_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        if let Some(span) = positive_trait_implementation_symbol.span() {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("the implementation is defined here"),
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+/// The ADT implementation is not general enough to satisfy the required forall
+/// lifetimes in the generic arguments
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AdtImplementationIsNotGeneralEnough<M: Model> {
+    /// The ADT implementation ID where the generic arguments are not general
+    /// enough.
+    pub adt_implementation_id: ID<AdtImplementation>,
+
+    /// The generic arguments supplied to the ADT.
+    pub generic_arguments: GenericArguments<M>,
+
+    /// The span location of where the ADT is instantiated.
+    pub instantiation_span: Span,
+}
+
+impl<M: Model> Display<Suboptimal> for AdtImplementationIsNotGeneralEnough<M>
+where
+    GenericArguments<M>: table::Display<Suboptimal>,
+{
+    fn fmt(
+        &self,
+        table: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let adt_implementation_symbol =
+            table.get(self.adt_implementation_id).ok_or(fmt::Error)?;
+
+        let implemented_qualified_name = table
+            .get_qualified_name(
+                adt_implementation_symbol.implemented_id().into(),
+            )
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the implementation is not general enough for {}{}",
+                implemented_qualified_name,
+                DisplayObject { table, display: &self.generic_arguments }
+            )
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.instantiation_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        if let Some(span) = adt_implementation_symbol.span() {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("the implementation is defined here"),
             })?;
         }
 
