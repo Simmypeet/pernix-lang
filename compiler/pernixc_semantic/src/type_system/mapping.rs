@@ -100,7 +100,7 @@ impl<M: Model> Mapping<M> {
 
     /// Appends all the [`unification::Matching::Unifiable`]s from the given
     /// unification into this mapping recursively.
-    pub fn append_from_unification<T: Term<Model = M>>(
+    pub fn append_from_unifier<T: Term<Model = M>>(
         &mut self,
         unifier: Unifier<T>,
     ) {
@@ -110,15 +110,15 @@ impl<M: Model> Mapping<M> {
             }
             unification::Matching::Substructural(substructural) => {
                 for (_, unification) in substructural.lifetimes {
-                    self.append_from_unification(unification);
+                    self.append_from_unifier(unification);
                 }
 
                 for (_, unification) in substructural.types {
-                    self.append_from_unification(unification);
+                    self.append_from_unifier(unification);
                 }
 
                 for (_, unification) in substructural.constants {
-                    self.append_from_unification(unification);
+                    self.append_from_unifier(unification);
                 }
             }
             unification::Matching::Equality => {}
@@ -130,7 +130,7 @@ impl<M: Model> Mapping<M> {
     pub fn from_unifier<T: Term<Model = M>>(unifier: Unifier<T>) -> Self {
         let mut mapping = Self::default();
 
-        mapping.append_from_unification(unifier);
+        mapping.append_from_unifier(unifier);
 
         mapping
     }

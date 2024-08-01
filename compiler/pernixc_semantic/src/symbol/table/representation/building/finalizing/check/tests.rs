@@ -4,15 +4,23 @@ use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
 use pernixc_syntax::syntax_tree::target::{self, Target};
 
 use crate::{
-    error::{Error, MismatchedImplementationArguments, UnsatisifedPredicate},
+    error::{
+        AdtImplementationIsNotGeneralEnough, Error,
+        MismatchedImplementationArguments,
+        TraitImplementationIsNotGeneralEnough, UnsatisifedPredicate,
+    },
     symbol::{
         table::{self, representation::Index, Suboptimal, Success, Table},
-        LifetimeParameterID, TypeParameterID,
+        GenericID, LifetimeParameterID, TypeParameterID,
     },
     type_system::{
-        model,
-        predicate::{self, Predicate},
-        term::{lifetime::Lifetime, r#type::Type, GenericArguments},
+        equality, model,
+        predicate::{self, ConstantType, Outlives, Predicate},
+        term::{
+            lifetime::Lifetime,
+            r#type::{Primitive, Qualifier, Reference, Type},
+            GenericArguments, MemberSymbol,
+        },
     },
 };
 
@@ -90,6 +98,153 @@ fn check_lifetime_matching_error(
 
         outlives.operand == second_lifetime && outlives.bound == first_lifetime
     }));
+}
+
+#[test]
+fn predicate_requirements() {
+    const SOURCE_CODE: &str = r"
+    public trait Fizz['a, T] {}
+
+    public trait Identity[T] {
+        public type Output;
+    }
+
+    implements[T] Identity[T] {
+        public type Output = int32;
+    }
+
+    public type Qux['a, T] = &'a T
+    where
+        trait Fizz['a, T] + Identity[T],
+        Identity[T]::Output = T,
+        const T,
+        tuple T,
+        T: 'a,
+        'a: 'static;
+
+    public type Instantiate['a, 'b] = Qux['a, &'b float32];
+    ";
+
+    let BuildTableError { table, errors } =
+        build_table_from_source(SOURCE_CODE).unwrap_err();
+
+    let fizz_id = table
+        .get_by_qualified_name(["test", "Fizz"].into_iter())
+        .unwrap()
+        .into_trait()
+        .unwrap();
+
+    let qux_id = table
+        .get_by_qualified_name(["test", "Qux"].into_iter())
+        .unwrap()
+        .into_type()
+        .unwrap();
+
+    let identity_output_id = table
+        .get_by_qualified_name(["test", "Identity", "Output"].into_iter())
+        .unwrap()
+        .into_trait_type()
+        .unwrap();
+
+    let inst_id = table
+        .get_by_qualified_name(["test", "Instantiate"].into_iter())
+        .unwrap()
+        .into_type()
+        .unwrap();
+
+    let _qux_sym = table.get(qux_id).unwrap();
+    let inst_sym = table.get(inst_id).unwrap();
+
+    let inst_a_lt = Lifetime::Parameter(LifetimeParameterID {
+        parent: GenericID::Type(inst_id),
+        id: inst_sym
+            .generic_declaration
+            .parameters
+            .lifetime_parameter_ids_by_name()
+            .get("a")
+            .copied()
+            .unwrap(),
+    });
+    let inst_b_lt = Lifetime::Parameter(LifetimeParameterID {
+        parent: GenericID::Type(inst_id),
+        id: inst_sym
+            .generic_declaration
+            .parameters
+            .lifetime_parameter_ids_by_name()
+            .get("b")
+            .copied()
+            .unwrap(),
+    });
+
+    let ref_b_float32 = Type::Reference(Reference {
+        qualifier: Qualifier::Immutable,
+        lifetime: inst_b_lt.clone(),
+        pointee: Box::new(Type::Primitive(Primitive::Float32)),
+    });
+
+    let expect_predicate = |predicate| {
+        errors.iter().any(|x| {
+            let Some(error) = x
+                .as_any()
+                .downcast_ref::<UnsatisifedPredicate<model::Default>>()
+            else {
+                return false;
+            };
+
+            error.predicate == predicate
+        })
+    };
+
+    // Fizz['a, &'b float32]
+    let expected_fizz = Predicate::Trait(predicate::Trait {
+        id: fizz_id,
+        is_const: false,
+        generic_arguments: GenericArguments {
+            lifetimes: vec![inst_a_lt.clone()],
+            types: vec![ref_b_float32.clone()],
+            constants: Vec::new(),
+        },
+    });
+    assert!(expect_predicate(expected_fizz));
+
+    // Identity[&'b float32]::Output = &'b float32
+    let expected_identity = Predicate::TraitTypeEquality(equality::Equality {
+        lhs: MemberSymbol {
+            id: identity_output_id,
+            member_generic_arguments: GenericArguments::default(),
+            parent_generic_arguments: GenericArguments {
+                lifetimes: Vec::new(),
+                types: vec![ref_b_float32.clone()],
+                constants: Vec::new(),
+            },
+        },
+        rhs: ref_b_float32.clone(),
+    });
+    assert!(expect_predicate(expected_identity));
+
+    // const &'b float32
+    let expected_const =
+        Predicate::ConstantType(ConstantType(ref_b_float32.clone()));
+    assert!(expect_predicate(expected_const));
+
+    // tuple &'b float32
+    let expected_tuple =
+        Predicate::TupleType(predicate::Tuple(ref_b_float32.clone()));
+    assert!(expect_predicate(expected_tuple));
+
+    // &'b float32: 'a
+    let expected_type_outlives = Predicate::TypeOutlives(Outlives {
+        operand: ref_b_float32.clone(),
+        bound: inst_a_lt.clone(),
+    });
+    assert!(expect_predicate(expected_type_outlives));
+
+    // 'a: 'static
+    let expected_lifetime_outlives = Predicate::LifetimeOutlives(Outlives {
+        operand: inst_a_lt.clone(),
+        bound: Lifetime::Static,
+    });
+    assert!(expect_predicate(expected_lifetime_outlives));
 }
 
 #[test]
@@ -286,4 +441,172 @@ fn mismatched_implementation_argument() {
             .downcast_ref::<MismatchedImplementationArguments<model::Default>>()
             .is_some()
     });
+}
+
+#[test]
+fn implementation_is_not_general_enough() {
+    const SOURCE_CODE: &str = r"
+    public struct TwoReferences['a, 'b, T] 
+    where
+        T: 'a + 'b
+    {
+        public first: &'a T,
+        public second: &'a T,
+    }
+
+    implements['a, T] TwoReferences['a, 'a, T] 
+    where
+        T: 'a
+    {
+        public type MyAliass = T;
+    }
+
+    public type Constrainted[T] = T
+    where
+        T: 'static,
+        tuple for['x, 'y] TwoReferences['x, 'y, T]::MyAliass;
+    ";
+
+    let BuildTableError { table: _, errors } =
+        build_table_from_source(SOURCE_CODE).unwrap_err();
+
+    errors.iter().any(|error| {
+        error
+            .as_any()
+            .downcast_ref::<AdtImplementationIsNotGeneralEnough<model::Default>>()
+            .is_some()
+    });
+}
+
+#[test]
+fn trait_implementation_is_not_general_enough() {
+    const SOURCE_CODE: &str = r"
+    public trait Fizz['a, 'b, T] {
+        public type Buzz;
+    }
+
+    implements['a, T] Fizz['a, 'a, T] {
+        public type Buzz = T;
+    }
+
+    public type Qux[T] = T
+    where
+        trait for['x, 'y] Fizz['x, 'y, T];
+
+    public type Instantiate = Qux[int32];
+    ";
+
+    let BuildTableError { table: _, errors } =
+        build_table_from_source(SOURCE_CODE).unwrap_err();
+
+    errors.iter().any(|error| {
+        error
+            .as_any()
+            .downcast_ref::<TraitImplementationIsNotGeneralEnough<model::Default>>()
+            .is_some()
+    });
+}
+
+#[test]
+fn reference_type_occurrence() {
+    const SOURCE_CODE: &str = r"
+    public struct ReferenceWrapper['a, T] {
+        private inner: &'a T,
+    }
+    ";
+
+    let BuildTableError { table, errors } =
+        build_table_from_source(SOURCE_CODE).unwrap_err();
+
+    let reference_wrapper_id = table
+        .get_by_qualified_name(["test", "ReferenceWrapper"].into_iter())
+        .unwrap()
+        .into_struct()
+        .unwrap();
+
+    let reference_wrapper_sym = table.get(reference_wrapper_id).unwrap();
+
+    let a_lifetime_id = reference_wrapper_sym
+        .generic_declaration
+        .parameters
+        .lifetime_parameter_ids_by_name()
+        .get("a")
+        .copied()
+        .unwrap();
+
+    let t_type_id = reference_wrapper_sym
+        .generic_declaration
+        .parameters
+        .type_parameter_ids_by_name()
+        .get("T")
+        .copied()
+        .unwrap();
+
+    let expected_predicate = Predicate::TypeOutlives(Outlives {
+        operand: Type::Parameter(TypeParameterID {
+            parent: GenericID::Struct(reference_wrapper_id),
+            id: t_type_id,
+        }),
+        bound: Lifetime::Parameter(LifetimeParameterID {
+            parent: GenericID::Struct(reference_wrapper_id),
+            id: a_lifetime_id,
+        }),
+    });
+    assert!(errors.iter().any(|error| {
+        let Some(error) = error
+            .as_any()
+            .downcast_ref::<UnsatisifedPredicate<model::Default>>()
+        else {
+            return false;
+        };
+
+        error.predicate == expected_predicate
+    }),);
+}
+
+#[test]
+fn check_unpacked_ocurrence() {
+    const SOURCE_CODE: &str = r"
+    public struct SurroundedWithBools[T] {
+        public surrounded: (bool, ...T, bool),
+    }
+    ";
+
+    let BuildTableError { table, errors } =
+        build_table_from_source(SOURCE_CODE).unwrap_err();
+
+    let surrounded_with_bools_id = table
+        .get_by_qualified_name(["test", "SurroundedWithBools"].into_iter())
+        .unwrap()
+        .into_struct()
+        .unwrap();
+
+    let surrounded_with_bools_sym =
+        table.get(surrounded_with_bools_id).unwrap();
+
+    let t_type_id = surrounded_with_bools_sym
+        .generic_declaration
+        .parameters
+        .type_parameter_ids_by_name()
+        .get("T")
+        .copied()
+        .unwrap();
+
+    let expected_predicate = Predicate::TupleType(predicate::Tuple(
+        Type::Parameter(TypeParameterID {
+            parent: GenericID::Struct(surrounded_with_bools_id),
+            id: t_type_id,
+        }),
+    ));
+
+    assert!(errors.iter().any(|error| {
+        let Some(error) = error
+            .as_any()
+            .downcast_ref::<UnsatisifedPredicate<model::Default>>()
+        else {
+            return false;
+        };
+
+        error.predicate == expected_predicate
+    }));
 }

@@ -12,7 +12,8 @@ use super::{occurrences::Occurrences, Finalizer};
 use crate::{
     arena::ID,
     error::{
-        self, Error, ExtraneousTraitMemberPredicate,
+        self, AdtImplementationIsNotGeneralEnough, AmbiguousPredicates, Error,
+        ExtraneousTraitMemberPredicate,
         MismatchedGenericParameterCountInImplementation,
         MismatchedImplementationArguments,
         MismatchedImplementationConstantTypeParameter,
@@ -34,7 +35,7 @@ use crate::{
     type_system::{
         compatible::{Compatibility, Compatible},
         deduction,
-        environment::Environment,
+        environment::{Environment, NewEnvironmentError},
         instantiation::{self, Instantiation},
         model::{Default, Model},
         normalizer::{Normalizer, NO_OP},
@@ -272,6 +273,19 @@ where
                             do_outlives_check,
                             handler,
                         );
+
+                        // the implementation is not general enough
+                        if result.result.is_not_general_enough {
+                            handler.receive(Box::new(
+                                AdtImplementationIsNotGeneralEnough {
+                                    adt_implementation_id,
+                                    generic_arguments: member_generic
+                                        .parent_generic_arguments
+                                        .clone(),
+                                    instantiation_span: resolution_span.clone(),
+                                },
+                            ));
+                        }
 
                         result.result.instantiation
                     } else {
@@ -518,7 +532,7 @@ where
                             errors.push(PredicateError::TraitImplementationIsNotGeneralEnough {
                                 required_trait_predicate: pred.clone(),
                                 resolved_implementation: implementation.clone(),
-                                predicate_declaration_span,
+                                predicate_declaration_span: predicate_declaration_span.clone(),
                             });
                         }
 
@@ -700,7 +714,7 @@ where
             Ok(None) => {
                 extra_predicate_error.push(PredicateError::Unsatisfied {
                     predicate,
-                    predicate_declaration_span: None,
+                    predicate_declaration_span,
                 });
 
                 extra_predicate_error
@@ -709,7 +723,7 @@ where
             Err(OverflowError) => {
                 extra_predicate_error.push(PredicateError::Undecidable {
                     predicate,
-                    predicate_declaration_span: None,
+                    predicate_declaration_span,
                 });
 
                 extra_predicate_error
@@ -949,6 +963,42 @@ where
 }
 
 impl Table<Building<RwLockContainer, Finalizer>> {
+    pub(super) fn check_where_clause(
+        &self,
+        id: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        if GenericID::try_from(id).is_err() {
+            return;
+        };
+
+        let (_, errors) = Environment::new(
+            self.get_active_premise::<Default>(id).unwrap(),
+            self,
+            &NO_OP,
+        );
+
+        for error in errors {
+            match error {
+                NewEnvironmentError::AmbiguousPredicates(predicates) => handler
+                    .receive(Box::new(AmbiguousPredicates {
+                        predicates,
+                        occurred_at_global_id: id,
+                    })),
+
+                NewEnvironmentError::DefinintePremise(_) => todo!(),
+
+                NewEnvironmentError::RecursiveTraitTypeEqualityPredicate(_) => {
+                    todo!()
+                }
+
+                NewEnvironmentError::OverflowCalculatingRequirement(_) => {
+                    todo!()
+                }
+            }
+        }
+    }
+
     /// Checks if the occurrences of symbols are valid (i.e. they satisfy the
     /// where clause predicates).
     pub(super) fn check_occurrences(

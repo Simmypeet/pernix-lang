@@ -157,36 +157,34 @@ fn check_ambiguous_without_equality() {
     assert_eq!(errors.len(), 3);
 
     assert!(errors.iter().any(|error| {
-        let NewEnvironmentError::AmbiguousTraitPredicates(error) = error else {
+        let NewEnvironmentError::AmbiguousPredicates(error) = error else {
             return false;
         };
 
         error.len() == 3
-            && error.contains(first_trait.as_trait().unwrap())
-            && error.contains(second_trait.as_trait().unwrap())
-            && error.contains(third_trait.as_trait().unwrap())
+            && error.contains(&first_trait)
+            && error.contains(&second_trait)
+            && error.contains(&third_trait)
     }));
 
     assert!(errors.iter().any(|error| {
-        let NewEnvironmentError::AmbiguousConstantTypePredicates(error) = error
-        else {
+        let NewEnvironmentError::AmbiguousPredicates(error) = error else {
             return false;
         };
 
         error.len() == 2
-            && error.contains(first_constant_type.as_constant_type().unwrap())
-            && error.contains(second_constant_type.as_constant_type().unwrap())
+            && error.contains(&first_constant_type)
+            && error.contains(&second_constant_type)
     }));
 
     assert!(errors.iter().any(|error| {
-        let NewEnvironmentError::AmbiguousConstantTypePredicates(error) = error
-        else {
+        let NewEnvironmentError::AmbiguousPredicates(error) = error else {
             return false;
         };
 
         error.len() == 2
-            && error.contains(third_constant_type.as_constant_type().unwrap())
-            && error.contains(fourth_constant_type.as_constant_type().unwrap())
+            && error.contains(&third_constant_type)
+            && error.contains(&fourth_constant_type)
     }));
 
     assert_eq!(environment.premise.predicates.len(), 2);
@@ -338,19 +336,13 @@ fn check_ambiguous_equality() {
 
     assert_eq!(errors.len(), 1);
     assert!(errors.iter().any(|error| {
-        let NewEnvironmentError::AmbiguousTraitTypeEqualityPredicates(error) =
-            error
-        else {
+        let NewEnvironmentError::AmbiguousPredicates(error) = error else {
             return false;
         };
 
         error.len() == 2
-            && error.contains(
-                second_trait_type_equality.as_trait_type_equality().unwrap(),
-            )
-            && error.contains(
-                third_trait_type_equality.as_trait_type_equality().unwrap(),
-            )
+            && error.contains(&second_trait_type_equality)
+            && error.contains(&third_trait_type_equality)
     }));
 }
 

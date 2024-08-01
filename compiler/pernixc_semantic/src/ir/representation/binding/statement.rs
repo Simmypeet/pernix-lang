@@ -16,11 +16,11 @@ use crate::{
         instruction::{AllocaAllocation, Initialize, Instruction},
         pattern::{Irrefutable, NameBindingPoint, Wildcard},
     },
-    semantic::{
+    symbol::table::{self, resolution::Observer},
+    type_system::{
         simplify,
         term::r#type::{self, Type},
     },
-    symbol::table::{self, resolution::Observer},
 };
 
 impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
@@ -119,7 +119,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 
         // create the pattern
         variable_type =
-            simplify::simplify(&variable_type, &self.create_environment());
+            simplify::simplify(&variable_type, &self.create_environment())
+                .result;
 
         let pattern = self
             .create_irrefutable(

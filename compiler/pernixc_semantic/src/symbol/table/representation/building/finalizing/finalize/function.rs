@@ -5,11 +5,16 @@ use super::Finalize;
 use crate::{
     arena::ID,
     error,
+    ir::representation::binding::Binder,
     symbol::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::build_preset, occurrences::Occurrences,
+                    finalizer::{
+                        self,
+                        build_preset::{self, Complete},
+                    },
+                    occurrences::Occurrences,
                     Finalizer,
                 },
                 RwLockContainer,
@@ -198,8 +203,8 @@ impl Finalize for Function {
             DEFINITION_AND_CHECK_STATE => {
                 // check all the occurrences
                 table.check_occurrences(symbol_id.into(), data, handler);
+                table.check_where_clause(symbol_id.into(), handler);
 
-                /*
                 // build the complete definition of the function
                 {
                     let irrefutable_patterns = syntax_tree
@@ -226,7 +231,6 @@ impl Finalize for Function {
                         binder.bind_statement(statement, handler);
                     }
                 }
-                */
             }
 
             _ => panic!("invalid state flag"),

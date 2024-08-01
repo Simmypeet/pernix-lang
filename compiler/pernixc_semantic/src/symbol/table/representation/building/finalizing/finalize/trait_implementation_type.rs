@@ -171,6 +171,8 @@ impl Finalize for TraitImplementationType {
                 };
 
                 table.check_occurrences(symbol_id.into(), data, handler);
+                table.check_where_clause(symbol_id.into(), handler);
+
                 let _ = table.build_to(
                     trait_type_id,
                     Some(symbol_id.into()),

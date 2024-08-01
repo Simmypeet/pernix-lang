@@ -706,7 +706,7 @@ impl Display for LifetimeParameter {
 proptest! {
     #[allow(clippy::ignored_unit_patterns)]
     #[test]
-    fn qualified_identifier_test(
+    fn qualified_identifier(
         qualified_identifier_input in QualifiedIdentifier::arbitrary(),
     ) {
         let source = qualified_identifier_input.to_string();

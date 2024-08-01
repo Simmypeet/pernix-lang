@@ -5,7 +5,7 @@ use getset::Getters;
 use super::{control_flow_graph::ControlFlowGraph, register::Register, scope};
 use crate::{arena::Arena, ir::alloca::Alloca, type_system::model::Model};
 
-// pub mod binding;
+pub mod binding;
 
 /// An intermediate representation of the program.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Getters)]

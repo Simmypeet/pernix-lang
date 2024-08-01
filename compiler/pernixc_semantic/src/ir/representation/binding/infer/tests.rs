@@ -1,7 +1,7 @@
 use super::{Context, InferenceVariable};
 use crate::{
-    semantic::term::r#type::{self, Primitive, Type},
     symbol::table::{representation::Insertion, Building, Table},
+    type_system::term::r#type::{self, Primitive, Type},
 };
 
 impl Context {
@@ -105,7 +105,9 @@ fn simple_inferring_constraint() {
         b.as_inference().copied().unwrap(),
         r#type::Constraint::Floating,
     ));
-    assert!(inference.unify_type(&a, &b, &active_premise, &table).is_ok());
+    assert!(inference
+        .unify_type(&a, &b, active_premise.clone(), &table)
+        .is_ok());
 
     inference
         .assert_all_same_constraint([&a, &b], r#type::Constraint::Floating);
@@ -115,7 +117,9 @@ fn simple_inferring_constraint() {
         c.as_inference().copied().unwrap(),
         r#type::Constraint::Number,
     ));
-    assert!(inference.unify_type(&b, &c, &active_premise, &table).is_ok());
+    assert!(inference
+        .unify_type(&b, &c, active_premise.clone(), &table)
+        .is_ok());
 
     inference
         .assert_all_same_constraint([&a, &b, &c], r#type::Constraint::Floating);
@@ -124,7 +128,7 @@ fn simple_inferring_constraint() {
         .unify_type(
             &c,
             &Type::Primitive(Primitive::Float64),
-            &active_premise,
+            active_premise,
             &table,
         )
         .is_ok());

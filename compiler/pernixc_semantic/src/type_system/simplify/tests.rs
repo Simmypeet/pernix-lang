@@ -21,7 +21,7 @@ use crate::{
 };
 
 #[test]
-fn basic_case() {
+fn basic() {
     let trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
@@ -50,7 +50,7 @@ fn basic_case() {
 }
 
 #[test]
-fn sub_term_case() {
+fn sub_term() {
     let trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
@@ -108,7 +108,7 @@ fn sub_term_case() {
 }
 
 #[test]
-fn already_simplified_case() {
+fn already_simplified() {
     let trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
@@ -190,7 +190,7 @@ fn with_lifetime_matching() {
 }
 
 #[test]
-fn multiple_equivalences_case() {
+fn multiple_equivalences() {
     let first_trait_member = TraitMember::<Default> {
         id: ID::new(0),
         member_generic_arguments: GenericArguments::default(),
@@ -233,7 +233,7 @@ fn multiple_equivalences_case() {
 }
 
 #[test]
-fn transitive_case() {
+fn transitive() {
     // TraitA['a] = TraitB['b]
     // TraitB['c] = bool
     //

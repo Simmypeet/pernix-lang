@@ -32,7 +32,13 @@ use crate::{
         },
         register::{Assignment, Load, LoadKind, ReferenceOf, Register},
     },
-    semantic::{
+    symbol::{
+        table::{
+            self, representation::Index, resolution::Observer, State, Table,
+        },
+        GlobalID, Struct,
+    },
+    type_system::{
         fresh,
         instantiation::{
             self, Instantiation, MismatchedGenericArgumentCountError,
@@ -44,12 +50,6 @@ use crate::{
             r#type::{self, Qualifier, Reference, SymbolID, Type},
             Symbol,
         },
-    },
-    symbol::{
-        table::{
-            self, representation::Index, resolution::Observer, State, Table,
-        },
-        GlobalID, Struct,
     },
 };
 

@@ -88,7 +88,7 @@ fn unify<T: Term>(
         };
 
         existing.constraints.extend(new.constraints);
-        existing.result.append_from_unification(new.result);
+        existing.result.append_from_unifier(new.result);
     }
 
     Ok(Some(existing))
@@ -403,7 +403,7 @@ impl<M: Model> GenericArguments<M> {
                         };
 
                         let mut mapping = Mapping::default();
-                        mapping.append_from_unification(unification);
+                        mapping.append_from_unifier(unification);
 
                         assert!(mapping.types.is_empty());
                         assert!(mapping.constants.is_empty());

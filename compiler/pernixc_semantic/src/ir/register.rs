@@ -11,8 +11,9 @@ use pernixc_base::source_file::Span;
 use super::address::{Address, Memory};
 use crate::{
     arena::ID,
-    symbol::{self, Field},
+    symbol::{self, CallableID, Field},
     type_system::{
+        instantiation::Instantiation,
         model::Model,
         term::r#type::{Qualifier, Type},
     },
@@ -135,6 +136,19 @@ pub struct Variant<M: Model> {
     pub associated_value: Option<ID<Register<M>>>,
 }
 
+/// Represents a function call.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FunctionCall<M: Model> {
+    /// The ID of the function that is called.
+    pub callable_id: CallableID,
+
+    /// The arguments supplied to the function.
+    pub arguments: Vec<ID<Register<M>>>,
+
+    /// The generic instantiations of the function.
+    pub generic_instantiations: Instantiation<M>,
+}
+
 /// An enumeration of the different kinds of values that can be assigned in the
 /// register.
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
@@ -148,6 +162,7 @@ pub enum Assignment<M: Model> {
     Boolean(Boolean),
     Struct(Struct<M>),
     Variant(Variant<M>),
+    FunctionCall(FunctionCall<M>),
 
     /// The value is an error.
     Errored,

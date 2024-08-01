@@ -1,8 +1,11 @@
 //! Contains logic related to hindley-milner type inference algorithm.
 
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    sync::atomic::{AtomicUsize, Ordering},
+    collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use enum_as_inner::EnumAsInner;
@@ -11,7 +14,9 @@ use lazy_static::lazy_static;
 
 use crate::{
     arena::{Arena, ID},
-    semantic::{
+    symbol::table::{self, Building, Table},
+    type_system::{
+        environment::Environment,
         fresh::Fresh,
         mapping::Mapping,
         model,
@@ -23,10 +28,9 @@ use crate::{
             r#type::{self, Type},
             Never, Term,
         },
-        unification::{self, Log},
-        Environment, OverflowError, Premise,
+        unification::{self, Log, Unification},
+        Compute, Output, OverflowError, Premise, Satisfied, Succeeded,
     },
-    symbol::table::{self, Building, Table},
 };
 
 /// The model used for building the IR
@@ -354,7 +358,7 @@ impl<T: Term, C: Constraint<T> + 'static> ContextImpl<T, C> {
 
 impl<M: model::Model> Constraint<Type<M>> for r#type::Constraint {
     fn satisfies(&self, term: &Type<M>) -> bool {
-        use crate::semantic::term::r#type::Primitive;
+        use crate::type_system::term::r#type::Primitive;
 
         match self {
             Self::All => true,
@@ -660,58 +664,55 @@ impl Context {
 struct UnificationConfig;
 
 impl unification::Predicate<Lifetime<Model>> for UnificationConfig {
-    fn unifiable<'a>(
-        &mut self,
+    fn unifiable(
+        &self,
         _: &Lifetime<Model>,
         _: &Lifetime<Model>,
-        _: impl ExactSizeIterator<Item = &'a Log<Model>>,
-        _: impl ExactSizeIterator<Item = &'a Log<Model>>,
-    ) -> Result<bool, OverflowError> {
-        Ok(true)
+        _: &Vec<Log<Model>>,
+        _: &Vec<Log<Model>>,
+    ) -> Result<Output<Satisfied, Model>, OverflowError> {
+        Ok(Some(Succeeded::satisfied()))
     }
 }
 
 impl unification::Predicate<Type<Model>> for UnificationConfig {
-    fn unifiable<'a>(
-        &mut self,
+    fn unifiable(
+        &self,
         from: &Type<Model>,
         to: &Type<Model>,
-        _: impl ExactSizeIterator<Item = &'a Log<Model>>,
-        _: impl ExactSizeIterator<Item = &'a Log<Model>>,
-    ) -> Result<bool, OverflowError> {
-        Ok(from.is_inference() || to.is_inference())
+        _: &Vec<Log<Model>>,
+        _: &Vec<Log<Model>>,
+    ) -> Result<Output<Satisfied, Model>, OverflowError> {
+        Ok((from.is_inference() || to.is_inference())
+            .then_some(Succeeded::satisfied()))
     }
 }
 
 impl unification::Predicate<Constant<Model>> for UnificationConfig {
-    fn unifiable<'a>(
-        &mut self,
+    fn unifiable(
+        &self,
         from: &Constant<Model>,
         to: &Constant<Model>,
-        _: impl ExactSizeIterator<Item = &'a Log<Model>>,
-        _: impl ExactSizeIterator<Item = &'a Log<Model>>,
-    ) -> Result<bool, OverflowError> {
-        Ok(from.is_inference() || to.is_inference())
+        _: &Vec<Log<Model>>,
+        _: &Vec<Log<Model>>,
+    ) -> Result<Output<Satisfied, Model>, OverflowError> {
+        Ok((from.is_inference() || to.is_inference())
+            .then_some(Succeeded::satisfied()))
     }
 }
 
 impl Normalizer<Model> for Context {
-    fn normalize_lifetime(
-        _: &Erased,
-        _: &Environment<Model, impl table::State, Self>,
-    ) -> Result<Option<Lifetime<Model>>, OverflowError> {
-        Ok(None)
-    }
-
     fn normalize_type(
         ty: &InferenceVariable<Type<Model>>,
         environment: &Environment<Model, impl table::State, Self>,
-    ) -> Result<Option<Type<Model>>, OverflowError> {
+    ) -> Result<Output<Type<Model>, Model>, OverflowError> {
         Ok(
-            if let Some(Inference::Known(normalized)) =
-                environment.normalizer.type_inference_context.get_inference(*ty)
+            if let Some(Inference::Known(normalized)) = environment
+                .normalizer()
+                .type_inference_context
+                .get_inference(*ty)
             {
-                Some(normalized.clone())
+                Some(Succeeded::new(normalized.clone()))
             } else {
                 None
             },
@@ -721,14 +722,14 @@ impl Normalizer<Model> for Context {
     fn normalize_constant(
         constant: &InferenceVariable<Constant<Model>>,
         environment: &Environment<Model, impl table::State, Self>,
-    ) -> Result<Option<Constant<Model>>, OverflowError> {
+    ) -> Result<Output<Constant<Model>, Model>, OverflowError> {
         Ok(
             if let Some(Inference::Known(normalized)) = environment
-                .normalizer
+                .normalizer()
                 .constant_inference_context
                 .get_inference(*constant)
             {
-                Some(normalized.clone())
+                Some(Succeeded::new(normalized.clone()))
             } else {
                 None
             },
@@ -772,15 +773,15 @@ impl Context {
         C: 'static + Constraint<T>,
     >(
         &mut self,
-        premise: &Premise<Model>,
+        premise: Premise<Model>,
         table: &Table<S>,
-        mapping: &HashMap<T, HashSet<T>>,
+        mapping: &BTreeMap<T, BTreeSet<T>>,
         inference_context: &impl Fn(&mut Self) -> &mut ContextImpl<T, C>,
         unify: &impl Fn(
             &mut Self,
             &T,
             &T,
-            &Premise<Model>,
+            Premise<Model>,
             &Table<S>,
         ) -> Result<(), UnifyError>,
         constraint_error: &impl Fn(UnsatisfiedConstraintError<T, C>) -> UnifyError,
@@ -813,7 +814,11 @@ impl Context {
                             Inference::Known(known_rhs),
                         ) => {
                             unify(
-                                self, &known_lhs, &known_rhs, premise, table,
+                                self,
+                                &known_lhs,
+                                &known_rhs,
+                                premise.clone(),
+                                table,
                             )?;
                         }
 
@@ -892,7 +897,13 @@ impl Context {
                         .ok_or(UnregisteredInferenceVariableError(inference))?
                     {
                         Inference::Known(known) => {
-                            unify(self, &known, another_known, premise, table)?;
+                            unify(
+                                self,
+                                &known,
+                                another_known,
+                                premise.clone(),
+                                table,
+                            )?;
                         }
                         Inference::Inferring(inferring) => {
                             self.handle_known_and_infer(
@@ -924,19 +935,19 @@ impl Context {
         &mut self.constant_inference_context
     }
 
-    fn handle_unification<
+    fn handle_unifer<
         T: Term<Model = Model, InferenceVariable = InferenceVariable<T>>,
     >(
         &mut self,
-        unification: unification::Unification<T>,
-        premise: &Premise<Model>,
+        unifier: unification::Unifier<T>,
+        premise: Premise<Model>,
         table: &Table<impl table::State>,
     ) -> Result<(), UnifyError> {
         // turns the unification into mapping pairs
-        let mapping: Mapping<Model> = Mapping::from_unification(unification);
+        let mapping: Mapping<Model> = Mapping::from_unifier(unifier);
 
         self.handle_mapping(
-            premise,
+            premise.clone(),
             table,
             &mapping.types,
             &Self::type_inference_context_mut,
@@ -967,16 +978,18 @@ impl Context {
         &mut self,
         lhs: &Constant<Model>,
         rhs: &Constant<Model>,
-        premise: &Premise<Model>,
+        premise: Premise<Model>,
         table: &Table<impl table::State>,
     ) -> Result<(), UnifyError> {
+        let (environment, _) = Environment::new(premise.clone(), table, self);
+
         // obtains the unification result
-        let Some(unification) = unification::unify(
-            lhs,
-            rhs,
-            &mut UnificationConfig,
-            &Environment { premise, table, normalizer: self },
-        )?
+        let Some(Succeeded { result: unifier, .. }) = Unification::new(
+            lhs.clone(),
+            rhs.clone(),
+            Arc::new(UnificationConfig),
+        )
+        .query(&environment)?
         else {
             return Err(UnifyError::IncompatibleConstants {
                 lhs: lhs.clone(),
@@ -984,7 +997,7 @@ impl Context {
             });
         };
 
-        self.handle_unification(unification, premise, table)
+        self.handle_unifer(unifier, premise, table)
     }
 
     /// Unifies the two types and updates the inference context.
@@ -996,16 +1009,18 @@ impl Context {
         &mut self,
         lhs: &Type<Model>,
         rhs: &Type<Model>,
-        premise: &Premise<Model>,
+        premise: Premise<Model>,
         table: &Table<impl table::State>,
     ) -> Result<(), UnifyError> {
+        let (environment, _) = Environment::new(premise.clone(), table, self);
+
         // obtains the unification result
-        let Some(unification) = unification::unify(
-            lhs,
-            rhs,
-            &mut UnificationConfig,
-            &Environment { premise, table, normalizer: self },
-        )?
+        let Some(Succeeded { result: unifier, .. }) = Unification::new(
+            lhs.clone(),
+            rhs.clone(),
+            Arc::new(UnificationConfig),
+        )
+        .query(&environment)?
         else {
             return Err(UnifyError::IncompatibleTypes {
                 lhs: lhs.clone(),
@@ -1013,7 +1028,7 @@ impl Context {
             });
         };
 
-        self.handle_unification(unification, premise, table)
+        self.handle_unifer(unifier, premise, table)
     }
 }
 
@@ -1164,37 +1179,35 @@ struct ConstraintNormalizer<'a> {
 }
 
 impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
-    fn normalize_lifetime(
-        _: &<IntermediaryModel as model::Model>::LifetimeInference,
-        _: &Environment<IntermediaryModel, impl table::State, Self>,
-    ) -> Result<Option<Lifetime<IntermediaryModel>>, OverflowError> {
-        Ok(Some(Lifetime::Inference(Erased)))
-    }
-
     fn normalize_type(
         ty: &<IntermediaryModel as model::Model>::TypeInference,
         environment: &Environment<IntermediaryModel, impl table::State, Self>,
-    ) -> Result<Option<Type<IntermediaryModel>>, OverflowError> {
+    ) -> Result<Output<Type<IntermediaryModel>, IntermediaryModel>, OverflowError>
+    {
         match ty {
             InferenceOrConstraint::InferenceID(inference_id) => {
                 match environment
-                    .normalizer
+                    .normalizer()
                     .context
                     .get_inference(*inference_id)
                 {
                     Some(inference) => match inference {
-                        Inference::Known(known) => {
-                            Ok(Some(Type::from_other_model(known.clone())))
+                        Inference::Known(known) => Ok(Some(Succeeded::new(
+                            Type::from_other_model(known.clone()),
+                        ))),
+                        Inference::Inferring(constraint_id) => {
+                            Ok(Some(Succeeded::new(Type::Inference(
+                                InferenceOrConstraint::Constraint(
+                                    *environment
+                                        .normalizer()
+                                        .context
+                                        .get_constraint::<Type<_>>(
+                                            *constraint_id,
+                                        )
+                                        .unwrap(),
+                                ),
+                            ))))
                         }
-                        Inference::Inferring(constraint_id) => Ok(Some(
-                            Type::Inference(InferenceOrConstraint::Constraint(
-                                *environment
-                                    .normalizer
-                                    .context
-                                    .get_constraint::<Type<_>>(*constraint_id)
-                                    .unwrap(),
-                            )),
-                        )),
                     },
                     None => Ok(None),
                 }
@@ -1207,30 +1220,33 @@ impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
     fn normalize_constant(
         constant: &<IntermediaryModel as model::Model>::ConstantInference,
         environment: &Environment<IntermediaryModel, impl table::State, Self>,
-    ) -> Result<Option<Constant<IntermediaryModel>>, OverflowError> {
+    ) -> Result<
+        Output<Constant<IntermediaryModel>, IntermediaryModel>,
+        OverflowError,
+    > {
         match constant {
             InferenceOrConstraint::InferenceID(inference_id) => {
                 match environment
-                    .normalizer
+                    .normalizer()
                     .context
                     .get_inference(*inference_id)
                 {
                     Some(inference) => match inference {
-                        Inference::Known(known) => {
-                            Ok(Some(Constant::from_other_model(known.clone())))
-                        }
+                        Inference::Known(known) => Ok(Some(Succeeded::new(
+                            Constant::from_other_model(known.clone()),
+                        ))),
                         Inference::Inferring(constraint_id) => {
-                            Ok(Some(Constant::Inference(
+                            Ok(Some(Succeeded::new(Constant::Inference(
                                 InferenceOrConstraint::Constraint(
                                     *environment
-                                        .normalizer
+                                        .normalizer()
                                         .context
                                         .get_constraint::<Constant<_>>(
                                             *constraint_id,
                                         )
                                         .unwrap(),
                                 ),
-                            )))
+                            ))))
                         }
                     },
                     None => Ok(None),
@@ -1323,11 +1339,15 @@ impl Context {
         };
 
         // normalze all the inference variables
-        intermediary_type = simplify(&intermediary_type, &Environment {
-            premise: &DUMMY_PREMISE,
-            table: &DUMMY_TABLE,
-            normalizer: &ConstraintNormalizer { context: self },
-        });
+        let constraint_normalizer = ConstraintNormalizer { context: self };
+
+        let (environment, _) = Environment::new(
+            DUMMY_PREMISE.clone(),
+            &DUMMY_TABLE,
+            &constraint_normalizer,
+        );
+
+        intermediary_type = simplify(&intermediary_type, &environment).result;
 
         Type::try_from_other_model(intermediary_type)
     }

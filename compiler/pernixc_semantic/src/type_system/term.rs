@@ -1084,7 +1084,7 @@ impl<M: Model> GenericArguments<M> {
             };
 
             constraints.extend(unification.constraints);
-            mapping.append_from_unification(unification.result);
+            mapping.append_from_unifier(unification.result);
         }
 
         for (lhs, rhs) in self.types.iter().zip(&other.types) {
@@ -1096,7 +1096,7 @@ impl<M: Model> GenericArguments<M> {
             };
 
             constraints.extend(unification.constraints);
-            mapping.append_from_unification(unification.result);
+            mapping.append_from_unifier(unification.result);
         }
 
         for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
@@ -1108,7 +1108,7 @@ impl<M: Model> GenericArguments<M> {
             };
 
             constraints.extend(unification.constraints);
-            mapping.append_from_unification(unification.result);
+            mapping.append_from_unifier(unification.result);
         }
 
         Ok(Some(Succeeded::with_constraints(mapping, constraints)))

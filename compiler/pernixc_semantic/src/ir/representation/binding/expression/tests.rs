@@ -3,9 +3,10 @@ use pernixc_base::diagnostic::Storage;
 use crate::{
     arena::ID,
     error::{
-        DuplicatedFieldInitialization, Error, FieldIsNotAccessible,
-        FieldNotFound, FloatingPointLiteralHasIntegralSuffix,
-        InvalidNumericSuffix, MismatchedMutability,
+        DuplicatedFieldInitialization, Error, ExpectedAssociatedValue,
+        FieldIsNotAccessible, FieldNotFound,
+        FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
+        MismatchedArgumentCount, MismatchedMutability,
         MismatchedReferenceQualifier, MismatchedType, UninitializedFields,
     },
     ir::{
@@ -17,25 +18,28 @@ use crate::{
             Binder,
         },
     },
-    semantic::{
-        equality::equals,
-        term::{
-            lifetime::Lifetime,
-            r#type::{self, Constraint, Primitive, Qualifier, Reference, Type},
-            Local,
-        },
-    },
     symbol::{
         table::{
             representation::{
-                building::finalizing::Finalizer, IndexMut, Insertion,
+                building::finalizing::Finalizer, Index, IndexMut, Insertion,
                 RwLockContainer,
             },
             resolution::NoOpObserver,
             Building, Table,
         },
-        Accessibility, AdtTemplate, Field, Function, FunctionDefinition,
-        FunctionTemplate, GenericDeclaration, Module, Struct, StructDefinition,
+        Accessibility, AdtTemplate, Enum, EnumDefinition, Field, Function,
+        FunctionDefinition, FunctionTemplate, GenericDeclaration, GenericID,
+        Module, Parameter, Struct, StructDefinition, TypeParameter,
+        TypeParameterID, Variant,
+    },
+    type_system::{
+        equality::Equality,
+        term::{
+            lifetime::Lifetime,
+            r#type::{self, Constraint, Primitive, Qualifier, Reference, Type},
+            Local,
+        },
+        Compute,
     },
 };
 
@@ -65,7 +69,7 @@ fn create_dummy_function(
 }
 
 #[test]
-fn bind_numeric_literal_suffix() {
+fn numeric_literal_suffix() {
     const SOURCE: &str = r"432u64";
 
     let (table, function_id) = create_dummy_function();
@@ -113,7 +117,7 @@ fn bind_numeric_literal_suffix() {
 }
 
 #[test]
-fn bind_numeric_literal_float_infer() {
+fn numberic_literal_float_infer() {
     const SOURCE: &str = r"32.0";
 
     let (table, function_id) = create_dummy_function();
@@ -177,7 +181,7 @@ fn bind_numeric_literal_float_infer() {
 }
 
 #[test]
-fn bind_numeric_literal_number_infer() {
+fn numeric_literal_number_infer() {
     const SOURCE: &str = r"32";
 
     let (table, function_id) = create_dummy_function();
@@ -539,7 +543,7 @@ fn bind_prefix_operator() {
 
 #[test]
 #[allow(clippy::too_many_lines)]
-fn bind_prefix_type_mismatched() {
+fn prefix_type_mismatched_error() {
     const LOGICAL_NOT_SOURCE: &str = "!64";
     const NEGATE_SOURCE: &str = "-32u32";
     const BITWISE_NOT_SOURCE: &str = "~32.0";
@@ -946,16 +950,17 @@ fn reference_of_local() {
             let register =
                 binder.intermediate_representation.registers.get(id).unwrap();
 
-            assert!(equals(
-                &register.r#type,
-                &Type::Reference(Reference {
+            assert!(Equality::new(
+                register.r#type.clone(),
+                Type::Reference(Reference {
                     qualifier,
                     lifetime: Lifetime::Inference(Erased),
-                    pointee: Box::new(Type::Primitive(Primitive::Int32))
+                    pointee: Box::new(Type::Primitive(Primitive::Int32)),
                 }),
-                &binder.create_environment()
             )
-            .unwrap());
+            .query(&binder.create_environment())
+            .unwrap()
+            .is_some());
 
             let reference_of = register.assignment.as_reference_of().unwrap();
 
@@ -1185,7 +1190,7 @@ fn dereference_as_address() {
 }
 
 #[test]
-fn dereference_mismatched_qualifier() {
+fn dereference_mismatched_qualifier_error() {
     const VALUE_VARIABLE_DECLARATION: &str = "let mutable x = 6420i32;";
     const REFERENCE_VARIABLE_DECLARATION: &str = "let y = &mutable x;";
     const DEREFERENCE: &str = "*y";
@@ -1274,8 +1279,7 @@ impl TestTemplate {
             let struct_sym = self.table.get_mut(struct_id).unwrap();
 
             let x_field_id = struct_sym
-                .fields
-                .insert("x".to_string(), Field {
+                .insert_field(Field {
                     accessibility: x_accessibility,
                     name: "x".to_string(),
                     r#type: Type::Primitive(Primitive::Float32),
@@ -1284,8 +1288,7 @@ impl TestTemplate {
                 .unwrap();
 
             let y_field_id = struct_sym
-                .fields
-                .insert("y".to_string(), Field {
+                .insert_field(Field {
                     accessibility: y_accessibility,
                     name: "y".to_string(),
                     r#type: Type::Primitive(Primitive::Float32),
@@ -1548,5 +1551,719 @@ fn struct_field_is_not_accessible_error() {
         };
 
         error.struct_id == struct_id && error.field_id == x_field_id
+    }));
+}
+
+impl TestTemplate {
+    /*
+    public enum Sample[F, S] {
+        First(F),
+        Second(S),
+        Third(bool),
+        Fourth
+    }
+     */
+    fn crate_enum_template(
+        &mut self,
+        parent_module_id: ID<Module>,
+    ) -> (
+        ID<Enum>,
+        ID<Variant>, /* First */
+        ID<Variant>, /* Second */
+        ID<Variant>, /* Third */
+        ID<Variant>, /* Fourth */
+    ) {
+        let Insertion { id: enum_id, duplication } = self
+            .table
+            .insert_member(
+                "Sample".to_string(),
+                Accessibility::Public,
+                parent_module_id,
+                None,
+                GenericDeclaration::default(),
+                AdtTemplate::<EnumDefinition>::default(),
+            )
+            .unwrap();
+
+        assert!(duplication.is_none());
+
+        let f_ty_param = self
+            .table
+            .get_mut(enum_id)
+            .unwrap()
+            .generic_declaration
+            .parameters
+            .add_type_parameter(TypeParameter {
+                name: Some("F".to_string()),
+                span: None,
+            })
+            .unwrap();
+
+        let s_ty_param = self
+            .table
+            .get_mut(enum_id)
+            .unwrap()
+            .generic_declaration
+            .parameters
+            .add_type_parameter(TypeParameter {
+                name: Some("S".to_string()),
+                span: None,
+            })
+            .unwrap();
+
+        let (first_id, second_id, third_id, fourth_id) = {
+            let first_id = self
+                .table
+                .insert_variant(
+                    "First".to_string(),
+                    enum_id,
+                    Some(Type::Parameter(TypeParameterID {
+                        parent: GenericID::Enum(enum_id),
+                        id: f_ty_param,
+                    })),
+                    None,
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+
+            let second_id = self
+                .table
+                .insert_variant(
+                    "Second".to_string(),
+                    enum_id,
+                    Some(Type::Parameter(TypeParameterID {
+                        parent: GenericID::Enum(enum_id),
+                        id: s_ty_param,
+                    })),
+                    None,
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+
+            let third_id = self
+                .table
+                .insert_variant(
+                    "Third".to_string(),
+                    enum_id,
+                    Some(Type::Primitive(Primitive::Bool)),
+                    None,
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+
+            let fourth_id = self
+                .table
+                .insert_variant("Fourth".to_string(), enum_id, None, None)
+                .unwrap()
+                .unwrap_no_duplication();
+
+            (first_id, second_id, third_id, fourth_id)
+        };
+
+        (enum_id, first_id, second_id, third_id, fourth_id)
+    }
+}
+
+#[test]
+fn variant_call() {
+    const FIRST_ENUM_EXPRESSION: &str = "inner::Sample::First(32)";
+    const FOURTH_ENUM_EXPRESSION: &str = "inner::Sample::Fourth()";
+
+    let mut test_template = TestTemplate::new();
+    let module_id = test_template
+        .table
+        .insert_module(
+            "inner".to_string(),
+            Accessibility::Public,
+            test_template.test_module_id,
+            None,
+        )
+        .unwrap()
+        .unwrap_no_duplication();
+
+    let (_, first_id, _, _, fourth_id) =
+        test_template.crate_enum_template(module_id);
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let first_variant_call_expression = parse_expression(FIRST_ENUM_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_postfix()
+        .unwrap();
+    let fourth_variant_call_expression =
+        parse_expression(FOURTH_ENUM_EXPRESSION)
+            .into_binary()
+            .unwrap()
+            .destruct()
+            .0
+            .into_postfixable()
+            .unwrap()
+            .into_postfix()
+            .unwrap();
+
+    let first_register_id = binder
+        .bind(
+            &first_variant_call_expression,
+            Config { target: Target::Value },
+            &storage,
+        )
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    let first_assignment = binder
+        .intermediate_representation
+        .registers
+        .get(first_register_id)
+        .unwrap()
+        .assignment
+        .as_variant()
+        .unwrap();
+
+    assert_eq!(first_assignment.variant_id, first_id);
+
+    let associated_value = *first_assignment.associated_value.as_ref().unwrap();
+
+    let numeric_register = binder
+        .intermediate_representation
+        .registers
+        .get(associated_value)
+        .unwrap();
+
+    let numeric_assignment = numeric_register.assignment.as_numeric().unwrap();
+
+    assert_eq!(numeric_assignment.integer_string, "32");
+    assert_eq!(numeric_assignment.decimal_stirng, None);
+
+    let fourth_register_id = binder
+        .bind(
+            &fourth_variant_call_expression,
+            Config { target: Target::Value },
+            &storage,
+        )
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    let fourth_assignment = binder
+        .intermediate_representation
+        .registers
+        .get(fourth_register_id)
+        .unwrap()
+        .assignment
+        .as_variant()
+        .unwrap();
+
+    assert_eq!(fourth_assignment.variant_id, fourth_id);
+    assert!(fourth_assignment.associated_value.is_none());
+}
+
+#[test]
+fn variant_call_mismatched_argument_count_error() {
+    const FIRST_EXPRESSION: &str = "inner::Sample::First(32, 64)";
+    const SECOND_EXPRESSION: &str = "inner::Sample::Second()";
+    const FOURTH_EXPRESSION: &str = "inner::Sample::Fourth(32)";
+
+    let mut test_template = TestTemplate::new();
+    let module_id = test_template
+        .table
+        .insert_module(
+            "inner".to_string(),
+            Accessibility::Public,
+            test_template.test_module_id,
+            None,
+        )
+        .unwrap()
+        .unwrap_no_duplication();
+
+    let (_, first_id, second_id, _, fourth_id) =
+        test_template.crate_enum_template(module_id);
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let first_expression = parse_expression(FIRST_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_postfix()
+        .unwrap();
+
+    // no check
+    let _ = binder
+        .bind(&first_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert_eq!(storage.as_vec().len(), 1);
+
+    assert!(storage.as_vec().iter().any(|x| {
+        let Some(error) = x.as_any().downcast_ref::<MismatchedArgumentCount>()
+        else {
+            return false;
+        };
+
+        error.expected_count == 1
+            && error.found_count == 2
+            && error.called_id == first_id.into()
+    }));
+
+    let second_expression = parse_expression(SECOND_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_postfix()
+        .unwrap();
+
+    // no check
+    storage.clear();
+
+    let _ = binder
+        .bind(&second_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert_eq!(storage.as_vec().len(), 1);
+
+    assert!(storage.as_vec().iter().any(|x| {
+        let Some(error) = x.as_any().downcast_ref::<MismatchedArgumentCount>()
+        else {
+            return false;
+        };
+
+        error.expected_count == 1
+            && error.found_count == 0
+            && error.called_id == second_id.into()
+    }));
+
+    let fourth_expression = parse_expression(FOURTH_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_postfix()
+        .unwrap();
+
+    storage.clear();
+
+    let _ = binder
+        .bind(&fourth_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert_eq!(storage.as_vec().len(), 1);
+
+    assert!(storage.as_vec().iter().any(|x| {
+        let Some(error) = x.as_any().downcast_ref::<MismatchedArgumentCount>()
+        else {
+            return false;
+        };
+
+        error.expected_count == 0
+            && error.found_count == 1
+            && error.called_id == fourth_id.into()
+    }));
+}
+
+#[test]
+fn qualified_identifier_variant() {
+    const FOURTH_EXPRESSION: &str = "inner::Sample::Fourth";
+
+    let mut test_template = TestTemplate::new();
+    let module_id = test_template
+        .table
+        .insert_module(
+            "inner".to_string(),
+            Accessibility::Public,
+            test_template.test_module_id,
+            None,
+        )
+        .unwrap()
+        .unwrap_no_duplication();
+
+    let (_, _, _, _, fourth_id) = test_template.crate_enum_template(module_id);
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let fourth_expression = parse_expression(FOURTH_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_unit()
+        .unwrap()
+        .into_qualified_identifier()
+        .unwrap();
+
+    // no check
+    let fourth_register = binder
+        .bind(&fourth_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    let fourth_assignment = binder
+        .intermediate_representation
+        .registers
+        .get(fourth_register)
+        .unwrap()
+        .assignment
+        .as_variant()
+        .unwrap();
+
+    assert_eq!(fourth_assignment.variant_id, fourth_id);
+    assert!(fourth_assignment.associated_value.is_none());
+}
+
+#[test]
+fn qualified_identifier_variant_expected_associated_value_error() {
+    const FIRST_EXPRESSION: &str = "inner::Sample::First";
+
+    let mut test_template = TestTemplate::new();
+    let module_id = test_template
+        .table
+        .insert_module(
+            "inner".to_string(),
+            Accessibility::Public,
+            test_template.test_module_id,
+            None,
+        )
+        .unwrap()
+        .unwrap_no_duplication();
+
+    let (_, first_id, _, _, _) = test_template.crate_enum_template(module_id);
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let first_expression = parse_expression(FIRST_EXPRESSION)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_unit()
+        .unwrap()
+        .into_qualified_identifier()
+        .unwrap();
+
+    // no check
+    let _ = binder
+        .bind(&first_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    let errors = storage.into_vec();
+
+    assert_eq!(errors.len(), 1);
+
+    assert!(errors.iter().any(|x| {
+        let Some(error) = x.as_any().downcast_ref::<ExpectedAssociatedValue>()
+        else {
+            return false;
+        };
+
+        error.variant_id == first_id
+    }));
+}
+
+impl TestTemplate {
+    /*
+    public function test[T](a: T, b: T, c: int32): T {}
+     */
+    fn create_function_template(
+        &mut self,
+        parent_module_id: ID<Module>,
+    ) -> ID<Function> {
+        let function_id = self
+            .table
+            .insert_member(
+                "test".to_string(),
+                Accessibility::Public,
+                parent_module_id,
+                None,
+                GenericDeclaration::default(),
+                FunctionTemplate::<FunctionDefinition>::default(),
+            )
+            .unwrap()
+            .unwrap_no_duplication();
+
+        let t_ty_param = self
+            .table
+            .get_mut(function_id)
+            .unwrap()
+            .generic_declaration
+            .parameters
+            .add_type_parameter(TypeParameter {
+                name: Some("T".to_string()),
+                span: None,
+            })
+            .unwrap();
+
+        // a
+        self.table.get_mut(function_id).unwrap().insert_parameter(Parameter {
+            r#type: Type::Parameter(TypeParameterID {
+                parent: GenericID::Function(function_id),
+                id: t_ty_param,
+            }),
+            span: None,
+        });
+
+        // b
+        self.table.get_mut(function_id).unwrap().insert_parameter(Parameter {
+            r#type: Type::Parameter(TypeParameterID {
+                parent: GenericID::Function(function_id),
+                id: t_ty_param,
+            }),
+            span: None,
+        });
+
+        // c
+        self.table.get_mut(function_id).unwrap().insert_parameter(Parameter {
+            r#type: Type::Primitive(Primitive::Int32),
+            span: None,
+        });
+
+        function_id
+    }
+}
+
+#[test]
+fn function_call() {
+    const FUNCTION_CALL: &str = "sample::test(true, false, 32)";
+
+    let mut test_template = TestTemplate::new();
+    let module_id = test_template
+        .table
+        .create_root_module("sample".to_string())
+        .unwrap_no_duplication();
+
+    let function_id = test_template.create_function_template(module_id);
+    let (mut binder, storage) = test_template.create_binder();
+
+    let call_expression = parse_expression(FUNCTION_CALL)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_postfix()
+        .unwrap();
+
+    // no check
+    let call_register = binder
+        .bind(&call_expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    let function_call_assignment = binder
+        .intermediate_representation
+        .registers
+        .get(call_register)
+        .unwrap()
+        .assignment
+        .as_function_call()
+        .unwrap();
+
+    let function_t_ty_param = binder
+        .table
+        .get(function_id)
+        .unwrap()
+        .generic_declaration
+        .parameters
+        .type_parameter_ids_by_name()
+        .get("T")
+        .copied()
+        .unwrap();
+
+    assert_eq!(function_call_assignment.callable_id, function_id.into());
+    assert_eq!(function_call_assignment.arguments.len(), 3);
+
+    // check if the generic arguments instantiated correctly
+    {
+        assert!(function_call_assignment
+            .generic_instantiations
+            .lifetimes
+            .is_empty());
+        assert_eq!(
+            function_call_assignment.generic_instantiations.types.len(),
+            1
+        );
+        assert!(function_call_assignment
+            .generic_instantiations
+            .constants
+            .is_empty());
+
+        let ty_param = Type::Parameter(TypeParameterID {
+            parent: function_id.into(),
+            id: function_t_ty_param,
+        });
+        let instantiated = function_call_assignment
+            .generic_instantiations
+            .types
+            .get(&ty_param)
+            .unwrap()
+            .clone();
+
+        let environment = binder.create_environment();
+
+        assert!(Equality::new(instantiated, Type::Primitive(Primitive::Bool))
+            .query(&environment)
+            .unwrap()
+            .is_some());
+    }
+
+    // the first arguments is a boolean true
+    {
+        let first_argument =
+            *function_call_assignment.arguments.get(0).unwrap();
+
+        let first_register = binder
+            .intermediate_representation
+            .registers
+            .get(first_argument)
+            .unwrap();
+
+        let first_assignment = first_register.assignment.as_boolean().unwrap();
+
+        assert_eq!(first_assignment.value, true);
+    }
+
+    // the second arguments is a boolean false
+    {
+        let second_argument =
+            *function_call_assignment.arguments.get(1).unwrap();
+
+        let second_register = binder
+            .intermediate_representation
+            .registers
+            .get(second_argument)
+            .unwrap();
+
+        let second_assignment =
+            second_register.assignment.as_boolean().unwrap();
+
+        assert_eq!(second_assignment.value, false);
+    }
+
+    // the third arguments is an integer 32
+    {
+        let third_argument =
+            *function_call_assignment.arguments.get(2).unwrap();
+
+        let third_register = binder
+            .intermediate_representation
+            .registers
+            .get(third_argument)
+            .unwrap();
+
+        let third_assignment = third_register.assignment.as_numeric().unwrap();
+
+        assert_eq!(third_assignment.integer_string, "32");
+    }
+}
+
+#[test]
+fn function_call_mismatched_argument_count_error() {
+    const TOO_MANY_ARGUMENTS: &str = "sample::test(true, false, 32, 64)";
+    const TOO_FEW_ARGUMENTS: &str = "sample::test(true, false)";
+
+    let mut test_template = TestTemplate::new();
+
+    let module_id = test_template
+        .table
+        .create_root_module("sample".to_string())
+        .unwrap_no_duplication();
+
+    let function_id = test_template.create_function_template(module_id);
+    let (mut binder, storage) = test_template.create_binder();
+
+    let too_many_arguments = parse_expression(TOO_MANY_ARGUMENTS)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_postfix()
+        .unwrap();
+
+    let too_few_arguments = parse_expression(TOO_FEW_ARGUMENTS)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_postfixable()
+        .unwrap()
+        .into_postfix()
+        .unwrap();
+
+    // no check
+    let _ = binder
+        .bind(&too_many_arguments, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert_eq!(storage.as_vec().len(), 1);
+
+    assert!(storage.as_vec().iter().any(|x| {
+        let Some(error) = x.as_any().downcast_ref::<MismatchedArgumentCount>()
+        else {
+            return false;
+        };
+
+        error.expected_count == 3
+            && error.found_count == 4
+            && error.called_id == function_id.into()
+    }));
+
+    storage.clear();
+
+    let _ = binder
+        .bind(&too_few_arguments, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    assert_eq!(storage.as_vec().len(), 1);
+
+    assert!(storage.as_vec().iter().any(|x| {
+        let Some(error) = x.as_any().downcast_ref::<MismatchedArgumentCount>()
+        else {
+            return false;
+        };
+
+        error.expected_count == 3
+            && error.found_count == 2
+            && error.called_id == function_id.into()
     }));
 }

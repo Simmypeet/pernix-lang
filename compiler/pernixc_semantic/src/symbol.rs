@@ -160,6 +160,69 @@ pub trait Generic: Global {
     fn generic_declaration_mut(&mut self) -> &mut GenericDeclaration;
 }
 
+/// An enumeration of all kinds of functions.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum CallableID {
+    Function(ID<Function>),
+    TraitFunction(ID<TraitFunction>),
+    TraitImplementationFunction(ID<TraitImplementationFunction>),
+    AdtImplementationFunction(ID<AdtImplementationFunction>),
+}
+
+from_ids! {
+    CallableID,
+    GlobalID,
+    (Function, Function),
+    (TraitFunction, TraitFunction),
+    (TraitImplementationFunction, TraitImplementationFunction),
+    (AdtImplementationFunction, AdtImplementationFunction)
+}
+
+from_ids! {
+    CallableID,
+    GenericID,
+    (Function, Function),
+    (TraitFunction, TraitFunction),
+    (TraitImplementationFunction, TraitImplementationFunction),
+    (AdtImplementationFunction, AdtImplementationFunction)
+}
+
+/// A trait implemented by all kinds of functions: [`Function`],
+/// [`TraitFunction`], [`TraitImplementationFunction`], and
+/// [`AdtImplementationFunction`].
+pub trait Callable: Generic {
+    /// The parameters defined in the funciton.
+    fn parameters(&self) -> &Arena<Parameter>;
+
+    /// The array of parameter IDs that are stored in order of the declaration.
+    fn parameter_order(&self) -> &[ID<Parameter>];
+
+    /// The return type of the function.
+    fn return_type(&self) -> &r#type::Type<Default>;
+}
+
+impl<ParentID: Copy + Into<GlobalID>, Definition> Callable
+    for GenericTemplate<ParentID, FunctionTemplate<Definition>>
+{
+    fn parameters(&self) -> &Arena<Parameter> { &self.parameters }
+
+    fn parameter_order(&self) -> &[ID<Parameter>] { &self.parameter_order }
+
+    fn return_type(&self) -> &r#type::Type<Default> { &self.return_type }
+}
+
 /// Represents a kind of symbol that defines a algebraic data type.
 ///
 /// This primarily includes [`Struct`] and [`Enum`].

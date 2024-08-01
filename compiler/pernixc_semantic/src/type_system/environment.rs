@@ -8,12 +8,9 @@ use super::{
     equality::Equality,
     model::Model,
     normalizer::Normalizer,
-    predicate::{self, Predicate},
+    predicate::Predicate,
     query::Context,
-    term::{
-        constant::Constant,
-        r#type::{self, Type},
-    },
+    term::r#type::{self, Type},
     Premise,
 };
 use crate::{
@@ -58,13 +55,11 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Clone
 )]
 #[allow(missing_docs)]
 pub enum NewEnvironmentError<M: Model> {
-    AmbiguousTraitPredicates(Vec<predicate::Trait<M>>),
-    AmbiguousConstantTypePredicates(Vec<predicate::ConstantType<M>>),
-    AmbiguousTupleTypePredicates(Vec<predicate::Tuple<Type<M>>>),
-    AmbiguousTupleConstantPredicate(Vec<predicate::Tuple<Constant<M>>>),
-    AmbiguousTraitTypeEqualityPredicates(
-        Vec<Equality<r#type::TraitMember<M>, Type<M>>>,
-    ),
+    /// The prediccates are ambiguous.
+    ///
+    /// The vector contains the set of predicates that are identical except for
+    /// the lifetime arguments.
+    AmbiguousPredicates(Vec<Predicate<M>>),
 
     /// The given predicate premise is definite; meaning that it's trivially
     /// known to be true/false.
@@ -649,33 +644,43 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
             environment.premise.predicates.remove(&predicate_to_remove);
         }
 
+        let ambiguous_predicates_vecs: Vec<Vec<Predicate<M>>> =
+            ambiguous_trait_predicates_set
+                .into_iter()
+                .map(|x| x.into_iter().map(|x| x.into()).collect())
+                .chain(
+                    ambiguous_constant_type_predicates_set
+                        .into_iter()
+                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
+                )
+                .chain(
+                    ambiguous_tuple_type_predicates_set
+                        .into_iter()
+                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
+                )
+                .chain(
+                    ambiguous_tuple_constant_predicates_set
+                        .into_iter()
+                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
+                )
+                .chain(
+                    ambiguous_trait_type_equality_predicates_set
+                        .into_iter()
+                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
+                )
+                .collect();
+
         (
             environment,
             overflow_predicates
                 .into_iter()
                 .map(NewEnvironmentError::OverflowCalculatingRequirement)
                 .chain(
-                    ambiguous_trait_predicates_set
+                    ambiguous_predicates_vecs
                         .into_iter()
-                        .map(NewEnvironmentError::AmbiguousTraitPredicates),
+                        .map(NewEnvironmentError::AmbiguousPredicates),
                 )
                 .chain(
-                    ambiguous_constant_type_predicates_set.into_iter().map(
-                        NewEnvironmentError::AmbiguousConstantTypePredicates,
-                    ),
-                ).chain(
-                    ambiguous_tuple_type_predicates_set.into_iter().map(
-                        NewEnvironmentError::AmbiguousTupleTypePredicates,
-                    ),
-                ).chain(
-                    ambiguous_tuple_constant_predicates_set.into_iter().map(
-                        NewEnvironmentError::AmbiguousTupleConstantPredicate,
-                    ),
-                ).chain(
-                    ambiguous_trait_type_equality_predicates_set.into_iter().map(
-                        NewEnvironmentError::AmbiguousTraitTypeEqualityPredicates,
-                    ),
-                ).chain(
                     recursive_trait_type_equality_predicates.into_iter().map(
                         NewEnvironmentError::RecursiveTraitTypeEqualityPredicate
                     )

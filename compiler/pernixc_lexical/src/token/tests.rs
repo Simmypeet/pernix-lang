@@ -447,7 +447,7 @@ fn tokenize(
 proptest! {
     #[test]
     #[allow(clippy::ignored_unit_patterns)]
-    fn token_test(
+    fn token(
         input in Token::arbitrary()
     ) {
         let source = input.to_string();

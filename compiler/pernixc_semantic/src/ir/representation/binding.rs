@@ -21,7 +21,17 @@ use crate::{
         pattern::NameBindingPoint,
         register::{Assignment, Register},
     },
-    semantic::{
+    symbol::{
+        table::{
+            self,
+            representation::Index,
+            resolution::{self, EliidedTermProvider, Observer, Resolution},
+            Table,
+        },
+        FunctionTemplate, GenericTemplate, GlobalID,
+    },
+    type_system::{
+        environment::Environment,
         instantiation::{self, Instantiation},
         model::Model as _,
         simplify::{self, simplify},
@@ -33,16 +43,7 @@ use crate::{
             GenericArguments, Symbol, Tuple, TupleElement,
         },
         visitor::RecursiveIterator,
-        Environment, Premise,
-    },
-    symbol::{
-        table::{
-            self,
-            representation::Index,
-            resolution::{self, EliidedTermProvider, Observer, Resolution},
-            Table,
-        },
-        FunctionTemplate, GenericTemplate, GlobalID,
+        Premise,
     },
 };
 
@@ -261,11 +262,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     fn create_environment(
         &self,
     ) -> Environment<'_, infer::Model, S, infer::Context> {
-        Environment {
-            premise: &self.premise,
-            table: self.table,
-            normalizer: &self.inference_context,
-        }
+        let (environment, _) = Environment::new(
+            self.premise.clone(),
+            self.table,
+            &self.inference_context,
+        );
+
+        environment
     }
 
     /// Creates a new register and assigns the given `assignment` to it.
@@ -315,7 +318,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     ellided_type_provider: Some(&mut InferenceProvider),
                     ellided_constant_provider: Some(&mut InferenceProvider),
                     observer: Some(&mut self.resolution_observer),
-                    higher_ranked_liftimes: None,
+                    higher_ranked_lifetimes: None,
                 },
                 &handler,
             )
@@ -410,7 +413,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     ellided_type_provider: Some(&mut InferenceProvider),
                     ellided_constant_provider: Some(&mut InferenceProvider),
                     observer: Some(&mut self.resolution_observer),
-                    higher_ranked_liftimes: None,
+                    higher_ranked_lifetimes: None,
                 },
                 &handler,
             )
@@ -517,7 +520,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         .r#type
                         .clone();
 
-                    ty = simplify::simplify(&ty, &self.create_environment());
+                    ty = simplify::simplify(&ty, &self.create_environment())
+                        .result;
 
                     let Type::Reference(reference) = ty else {
                         panic!("expected a reference type")
@@ -533,7 +537,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 struct_address = simplify::simplify(
                     &struct_address,
                     &self.create_environment(),
-                );
+                )
+                .result;
 
                 let Type::Symbol(Symbol {
                     id: r#type::SymbolID::Struct(struct_id),
@@ -569,7 +574,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 
                 // simplfiy the tuple type
                 tuple_ty =
-                    simplify::simplify(&tuple_ty, &self.create_environment());
+                    simplify::simplify(&tuple_ty, &self.create_environment())
+                        .result;
 
                 let Type::Tuple(mut tuple_ty) = tuple_ty else {
                     panic!("expected a tuple type")
@@ -627,26 +633,20 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         type_check_span: Span,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), Error> {
+        let environment = self.create_environment();
+
         // simplify the types
-        let simplified_ty = simplify(&ty, &Environment {
-            premise: &self.premise,
-            table: self.table,
-            normalizer: &self.inference_context,
-        });
+        let simplified_ty = simplify(&ty, &environment).result;
 
         match expected_ty {
             Expected::Known(expected_ty) => {
                 let simplified_expected =
-                    simplify(&expected_ty, &Environment {
-                        premise: &self.premise,
-                        table: self.table,
-                        normalizer: &self.inference_context,
-                    });
+                    simplify(&expected_ty, &environment).result;
 
                 let result = match self.inference_context.unify_type(
                     &simplified_ty,
                     &simplified_expected,
-                    &self.premise,
+                    self.premise.clone(),
                     self.table,
                 ) {
                     Ok(()) => true,

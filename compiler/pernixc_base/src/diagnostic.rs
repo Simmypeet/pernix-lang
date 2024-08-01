@@ -42,6 +42,9 @@ impl<T: Send + Sync> Storage<T> {
             handler.receive(error.into());
         }
     }
+
+    /// Clears all diagnostics.
+    pub fn clear(&self) { self.errors.write().clear(); }
 }
 
 impl<T: Send + Sync> Default for Storage<T> {

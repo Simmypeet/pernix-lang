@@ -24,9 +24,9 @@ use crate::{
     symbol::{
         self, Accessibility, Adt, AdtID, AdtImplementation,
         AdtImplementationConstant, AdtImplementationFunction,
-        AdtImplementationType, Constant, Enum, Function, Generic,
-        GenericDeclaration, GenericID, GenericTemplate, Global, GlobalID,
-        HierarchyRelationship, Implementation, ImplementationID,
+        AdtImplementationType, Callable, CallableID, Constant, Enum, Function,
+        Generic, GenericDeclaration, GenericID, GenericTemplate, Global,
+        GlobalID, HierarchyRelationship, Implementation, ImplementationID,
         ImplementationTemplate, Module, ModuleMemberID,
         NegativeTraitImplementation, PositiveTraitImplementation, Struct,
         Trait, TraitConstant, TraitFunction, TraitImplementationConstant,
@@ -1225,6 +1225,42 @@ impl<T: Container> Representation<T> {
         Ok(current_min)
     }
 
+    /// Gets the active [`Premise`] starting at the given [`GlobalID`] scope
+    /// mapped to their [`Span`]s of their declaration.
+    ///
+    /// # Returns
+    ///
+    /// Returns [`None`] if the given `global_id` is not a valid ID.
+    #[must_use]
+    pub fn get_active_premise_predicates_with_span<M: Model>(
+        &self,
+        global_id: GlobalID,
+    ) -> Option<HashMap<Predicate<M>, Vec<Span>>> {
+        let mut spans_by_predicate: HashMap<Predicate<M>, Vec<Span>> =
+            HashMap::default();
+
+        for global_id in self.scope_walker(global_id)? {
+            let Ok(generic_id) = GenericID::try_from(global_id) else {
+                continue;
+            };
+
+            let generic = self.get_generic(generic_id)?;
+
+            for predicate in &generic.generic_declaration().predicates {
+                let Some(span) = predicate.span.clone() else {
+                    continue;
+                };
+
+                let predicate =
+                    Predicate::from_default_model(predicate.predicate.clone());
+
+                spans_by_predicate.entry(predicate).or_default().push(span);
+            }
+        }
+
+        Some(spans_by_predicate)
+    }
+
     /// Gets the active [`Premise`] starting at the given [`GlobalID`] scope.
     ///
     /// # Returns
@@ -1450,6 +1486,28 @@ impl<T: Container> Representation<T> {
                 self.get(id).map(|x| T::map_read(x, |x| x as _))
             }
             AdtID::Enum(id) => self.get(id).map(|x| T::map_read(x, |x| x as _)),
+        }
+    }
+
+    /// Returns the [`Callable`] symbol from the given [`CallableID`].
+    #[must_use]
+    pub fn get_callable(
+        &self,
+        callable_id: CallableID,
+    ) -> Option<T::MappedRead<'_, dyn Callable>> {
+        match callable_id {
+            CallableID::Function(id) => {
+                self.get(id).map(|x| T::map_read(x, |x| x as _))
+            }
+            CallableID::TraitFunction(id) => {
+                self.get(id).map(|x| T::map_read(x, |x| x as _))
+            }
+            CallableID::TraitImplementationFunction(id) => {
+                self.get(id).map(|x| T::map_read(x, |x| x as _))
+            }
+            CallableID::AdtImplementationFunction(id) => {
+                self.get(id).map(|x| T::map_read(x, |x| x as _))
+            }
         }
     }
 
@@ -1798,6 +1856,15 @@ pub struct Insertion<T, E> {
     /// If there exists a symbol with the same name in the scope, this field
     /// contains the ID of the existing symbol.
     pub duplication: Option<E>,
+}
+
+impl<T, E> Insertion<T, E> {
+    /// Converts the [`Insertion`] to a tuple.
+    #[must_use]
+    pub fn unwrap_no_duplication(self) -> ID<T> {
+        assert!(self.duplication.is_none(), "duplication found");
+        self.id
+    }
 }
 
 /// The symbol with the given name already exists. The error contains the ID of

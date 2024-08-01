@@ -174,7 +174,7 @@ impl Finalize for Struct {
                     table,
                     &NO_OP,
                 );
-                for (field_id, field_syn) in field_syntax_trees_by_id.iter() {
+                for (field_id, field_syn) in &field_syntax_trees_by_id {
                     let mut field_ty = table.get(symbol_id).unwrap().fields
                         [*field_id]
                         .r#type
@@ -288,6 +288,7 @@ impl Finalize for Struct {
 
             CHECK_STATE => {
                 table.check_occurrences(symbol_id.into(), data, handler);
+                table.check_where_clause(symbol_id.into(), handler);
             }
 
             _ => panic!("invalid state flag"),

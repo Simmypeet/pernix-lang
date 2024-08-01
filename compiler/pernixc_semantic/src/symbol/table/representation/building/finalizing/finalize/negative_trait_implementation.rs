@@ -106,6 +106,7 @@ impl Finalize for NegativeTraitImplementation {
 
             CHECK_STATE => {
                 table.check_occurrences(symbol_id.into(), data, handler);
+                table.check_where_clause(symbol_id.into(), handler);
                 table.implementation_signature_check(symbol_id, handler);
             }
 

@@ -1032,7 +1032,7 @@ impl<T: GenericParameter, S: State> Display<S>
 
         if let Some(existing_span) = generic_parameter.span() {
             write!(f, "\n{}", SourceCodeDisplay {
-                span: &existing_span,
+                span: existing_span,
                 help_display: Some("previously defined here"),
             })?;
         }
@@ -1266,7 +1266,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
 
         if let Some(span) = span {
             write!(f, "\n{}", SourceCodeDisplay {
-                span: &span,
+                span,
                 help_display: Some("consider removing it")
             })?;
         }
@@ -2300,9 +2300,38 @@ impl<T: State> Display<T> for MismatchedArgumentCount {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "the symbol `{}` expects {} arguments but found {}",
+                "the symbol `{}` expects {} argument(s) but found {}",
                 called_symbol, self.expected_count, self.found_count
             ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The given symbol cannot be called.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SymbolIsNotCallable {
+    /// The ID of the symbol that cannot be called.
+    pub called_id: GlobalID,
+
+    /// The span of the call.
+    pub span: Span,
+}
+
+impl<T: State> Display<T> for SymbolIsNotCallable {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let called_symbol =
+            table.get_qualified_name(self.called_id).ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!("the symbol `{}` cannot be called", called_symbol),
         })?;
 
         write!(f, "\n{}", SourceCodeDisplay {
@@ -2608,6 +2637,69 @@ where
                 help_display: Some("the implementation is defined here"),
             })?;
         }
+
+        Ok(())
+    }
+}
+
+/// The predicates are ambiguous to each other.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AmbiguousPredicates<M: Model> {
+    /// The list of predicates that are ambiguous to each other.
+    pub predicates: Vec<Predicate<M>>,
+
+    /// The [`GlobalID`] where the ambiguity occurs.
+    pub occurred_at_global_id: GlobalID,
+}
+
+impl<M: Model, T: State> Display<T> for AmbiguousPredicates<M>
+where
+    Predicate<M>: table::Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (Some(qualified_name), Some(spans_by_predicate)) = (
+            table.get_qualified_name(self.occurred_at_global_id),
+            table.get_active_premise_predicates_with_span::<M>(
+                self.occurred_at_global_id,
+            ),
+        ) else {
+            return Err(fmt::Error);
+        };
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the predicates are ambiguous to each other in \
+                 {qualified_name}",
+            ),
+        })?;
+
+        for predicate in &self.predicates {
+            let Some(spans) = spans_by_predicate.get(predicate) else {
+                continue;
+            };
+
+            for span in spans {
+                write!(f, "\n{}", SourceCodeDisplay {
+                    span,
+                    help_display: Option::<i32>::None,
+                })?;
+            }
+        }
+
+        let predicate_names = self
+            .predicates
+            .iter()
+            .map(|predicate| {
+                format!("{}", DisplayObject { table, display: predicate })
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        write!(f, "\n{}", Message {
+            severity: Severity::Info,
+            display: format!("the predicates are: {predicate_names}"),
+        })?;
 
         Ok(())
     }

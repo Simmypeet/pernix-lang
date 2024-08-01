@@ -85,20 +85,25 @@ pub struct MismatchedGenericArgumentCountError {
     pub kind: GenericKind,
 }
 
-/// An error that occurs when converting generic arguments into a substitution.
+/// Returns with [`Instantiation::append_from_arguments`] if the given
+/// parameter ID is already occupied with a value.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
-pub enum FromGenericArgumentsError {
-    #[error("lifetime parameter collision with {0:?}")]
-    LifetimeParameterCollision(ID<LifetimeParameter>),
-    #[error("type parameter collision with {0:?}")]
-    TypeParameterCollision(ID<TypeParameter>),
-    #[error("constant parameter collision with {0:?}")]
-    ConstantParameterCollision(ID<ConstantParameter>),
-    #[error(transparent)]
-    MismatchedGenericParameterCount(MismatchedGenericArgumentCountError),
+pub enum Collision<M: Model> {
+    LifetimeParameterCollision {
+        lifetime_parameter_id: ID<LifetimeParameter>,
+        new_lifetime: Lifetime<M>,
+    },
+    TypeParameterCollision {
+        type_parameter_id: ID<TypeParameter>,
+        new_type: Type<M>,
+    },
+    ConstantParameterCollision {
+        constant_parameter_id: ID<ConstantParameter>,
+        new_constant: Constant<M>,
+    },
 }
 
 impl<M: Model> Instantiation<M> {
@@ -109,108 +114,118 @@ impl<M: Model> Instantiation<M> {
         terms: impl Iterator<Item = T>,
         term_parameter_order: impl Iterator<Item = ID<T::GenericParameter>>,
         generic_id: GenericID,
-        to_error: impl Fn(ID<T::GenericParameter>) -> FromGenericArgumentsError,
-    ) -> Result<(), FromGenericArgumentsError> {
+        to_error: impl Fn(ID<T::GenericParameter>, T) -> Collision<M>,
+        collisions: &mut Vec<Collision<M>>,
+    ) {
         for (term, term_id) in terms.zip(term_parameter_order) {
             let parameter_id = MemberID { parent: generic_id, id: term_id };
 
             match T::get_instantiation_mut(self).entry(parameter_id.into()) {
                 Entry::Occupied(..) => {
-                    return Err(to_error(term_id));
+                    collisions.push(to_error(term_id, term));
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(term);
                 }
             }
         }
-
-        Ok(())
     }
 
     /// Appends the given generic arguments as a substitution.
     ///
+    /// If there's any collision, the prior value will be preserved and the new
+    /// value will be collected in a list of collisions returned by this
+    /// function.
+    ///
     /// # Errors
     ///
-    /// See [`FromGenericArgumentsError`]. If an error occurs, the substitution
-    /// might be partially modified.
+    /// See [`MismatchedGenericArgumentCountError`].
+    ///
+    /// # Returns
+    ///
+    /// A list of collisions that occurred during the substitution.
+    #[must_use]
     pub fn append_from_generic_arguments(
         &mut self,
         generic_arguments: GenericArguments<M>,
         generic_id: GenericID,
         generic_parameters: &GenericParameters,
-    ) -> Result<(), FromGenericArgumentsError> {
+    ) -> Result<Vec<Collision<M>>, MismatchedGenericArgumentCountError> {
         if generic_arguments.types.len()
             != generic_parameters.type_order().len()
         {
-            return Err(
-                FromGenericArgumentsError::MismatchedGenericParameterCount(
-                    MismatchedGenericArgumentCountError {
-                        generic_id,
-                        expected: generic_parameters.type_order().len(),
-                        found: generic_arguments.types.len(),
-                        kind: GenericKind::Type,
-                    },
-                ),
-            );
+            return Err(MismatchedGenericArgumentCountError {
+                generic_id,
+                expected: generic_parameters.type_order().len(),
+                found: generic_arguments.types.len(),
+                kind: GenericKind::Type,
+            });
         }
 
         if generic_arguments.lifetimes.len()
             != generic_parameters.lifetime_order().len()
         {
-            return Err(
-                FromGenericArgumentsError::MismatchedGenericParameterCount(
-                    MismatchedGenericArgumentCountError {
-                        generic_id,
-                        expected: generic_parameters.lifetime_order().len(),
-                        found: generic_arguments.lifetimes.len(),
-                        kind: GenericKind::Lifetime,
-                    },
-                ),
-            );
+            return Err(MismatchedGenericArgumentCountError {
+                generic_id,
+                expected: generic_parameters.lifetime_order().len(),
+                found: generic_arguments.lifetimes.len(),
+                kind: GenericKind::Lifetime,
+            });
         }
 
         if generic_arguments.constants.len()
             != generic_parameters.constant_order().len()
         {
-            return Err(
-                FromGenericArgumentsError::MismatchedGenericParameterCount(
-                    MismatchedGenericArgumentCountError {
-                        generic_id,
-                        expected: generic_parameters.constant_order().len(),
-                        found: generic_arguments.constants.len(),
-                        kind: GenericKind::Constant,
-                    },
-                ),
-            );
+            return Err(MismatchedGenericArgumentCountError {
+                generic_id,
+                expected: generic_parameters.constant_order().len(),
+                found: generic_arguments.constants.len(),
+                kind: GenericKind::Constant,
+            });
         }
 
+        let mut collisions = Vec::new();
         self.append_from_arguments(
             generic_arguments.lifetimes.into_iter(),
             generic_parameters.lifetime_order().iter().copied(),
             generic_id,
-            FromGenericArgumentsError::LifetimeParameterCollision,
-        )?;
+            |id, term| Collision::LifetimeParameterCollision {
+                lifetime_parameter_id: id,
+                new_lifetime: term,
+            },
+            &mut collisions,
+        );
 
         self.append_from_arguments(
             generic_arguments.types.into_iter(),
             generic_parameters.type_order().iter().copied(),
             generic_id,
-            FromGenericArgumentsError::TypeParameterCollision,
-        )?;
+            |id, term| Collision::TypeParameterCollision {
+                type_parameter_id: id,
+                new_type: term,
+            },
+            &mut collisions,
+        );
 
         self.append_from_arguments(
             generic_arguments.constants.into_iter(),
             generic_parameters.constant_order().iter().copied(),
             generic_id,
-            FromGenericArgumentsError::ConstantParameterCollision,
-        )?;
+            |id, term| Collision::ConstantParameterCollision {
+                constant_parameter_id: id,
+                new_constant: term,
+            },
+            &mut collisions,
+        );
 
-        Ok(())
+        Ok(collisions)
     }
 
     /// Converts the given generic arguments into a substitution.
     ///
     /// # Errors
+    ///
+    /// See [`MismatchedGenericArgumentCountError`].
     pub fn from_generic_arguments(
         generic_arguments: GenericArguments<M>,
         generic_id: GenericID,
@@ -218,18 +233,12 @@ impl<M: Model> Instantiation<M> {
     ) -> Result<Self, MismatchedGenericArgumentCountError> {
         let mut substitution = Self::default();
 
-        substitution
-            .append_from_generic_arguments(
-                generic_arguments,
-                generic_id,
-                generic_parameters,
-            )
-            .map_err(|x| match x {
-                FromGenericArgumentsError::MismatchedGenericParameterCount(
-                    x,
-                ) => x,
-                _ => unreachable!(),
-            })?;
+        let collisions = substitution.append_from_generic_arguments(
+            generic_arguments,
+            generic_id,
+            generic_parameters,
+        )?;
+        assert!(collisions.is_empty());
 
         Ok(substitution)
     }

@@ -49,7 +49,16 @@ use crate::{
 /// An enumeration of the symbols that accepts generic parameters and are not a
 /// member of another symbol.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    enum_as_inner::EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum GenericID {
@@ -131,7 +140,16 @@ pub struct Generic<M: Model> {
 /// the symbol and the parent symbol that it is a member of.
 #[allow(missing_docs)]
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    enum_as_inner::EnumAsInner,
 )]
 pub enum MemberGenericID {
     TraitFunction(ID<TraitFunction>),
