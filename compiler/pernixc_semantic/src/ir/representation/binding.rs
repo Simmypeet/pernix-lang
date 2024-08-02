@@ -20,6 +20,7 @@ use crate::{
         instruction::{self, ScopePush},
         pattern::NameBindingPoint,
         register::{Assignment, Register},
+        TypeOfError,
     },
     symbol::{
         table::{
@@ -32,15 +33,14 @@ use crate::{
     },
     type_system::{
         environment::Environment,
-        instantiation::{self, Instantiation},
-        model::Model as _,
-        simplify::{self, simplify},
+        model::Model,
+        simplify::simplify,
         term::{
             self,
             constant::Constant,
             lifetime::Lifetime,
             r#type::{self, Expected, Type},
-            GenericArguments, Symbol, Tuple, TupleElement,
+            GenericArguments,
         },
         visitor::RecursiveIterator,
         Premise,
@@ -201,12 +201,48 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     }
 }
 
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error(
+    "encountered a fatal semantic error that halts the compilation; the error \
+     diagnostics have been reported to the handler"
+)]
+#[allow(missing_docs)]
+pub struct SemanticError(pub Span);
+
+/// An internal compiler error that is not caused by the user but rather by the
+/// incorrect invariant of the compiler.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[allow(missing_docs)]
+pub enum InternalError {
+    #[error(
+        "encountered an internal error while trying to retrieve the type of a \
+         register or address while binding the IR"
+    )]
+    TypeOf(#[from] TypeOfError<infer::Model>),
+}
+
 /// Is an error occurred while binding the syntax tree
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
-#[error("encountered a fatal semantic error")]
-pub struct Error(pub Span);
+#[allow(missing_docs)]
+pub enum Error {
+    #[error(transparent)]
+    Semantic(#[from] SemanticError),
+
+    #[error(transparent)]
+    Internal(#[from] InternalError),
+}
+
+impl From<TypeOfError<infer::Model>> for Error {
+    fn from(error: TypeOfError<infer::Model>) -> Self {
+        Error::Internal(InternalError::TypeOf(error))
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct InferenceProvider;
@@ -275,13 +311,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     fn create_register_assignmnet(
         &mut self,
         assignment: Assignment<infer::Model>,
-        ty: Type<infer::Model>,
         span: Option<Span>,
     ) -> ID<Register<infer::Model>> {
         let register_id = self
             .intermediate_representation
             .registers
-            .insert(Register { assignment, r#type: ty, span });
+            .insert(Register { assignment, span });
 
         self.current_block_mut().insert_basic(
             instruction::Instruction::RegisterAssignment(
@@ -290,6 +325,30 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         );
 
         register_id
+    }
+
+    /// Gets the type of the given `register_id`.
+    fn type_of_register(
+        &self,
+        register_id: ID<Register<infer::Model>>,
+    ) -> Result<Type<infer::Model>, TypeOfError<infer::Model>> {
+        self.intermediate_representation.type_of_register(
+            register_id,
+            self.current_site,
+            &self.create_environment(),
+        )
+    }
+
+    /// Gets the type of the given `address`.
+    fn type_of_address(
+        &self,
+        address: &Address<Memory<infer::Model>>,
+    ) -> Result<Type<infer::Model>, TypeOfError<infer::Model>> {
+        self.intermediate_representation.type_of_address(
+            address,
+            self.current_site,
+            &self.create_environment(),
+        )
     }
 
     /// Creates a handler that triggers the suboptimal flag inside this
@@ -451,159 +510,6 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         Some(ty)
     }
 
-    fn get_address_type(
-        &self,
-        address: &Address<Memory<infer::Model>>,
-    ) -> Type<infer::Model> {
-        match address {
-            Address::Base(base) => match base {
-                Memory::Parameter(parameter_id) => {
-                    infer::Model::from_default_type(match self.current_site {
-                        GlobalID::Function(id) => self
-                            .table
-                            .get(id)
-                            .unwrap()
-                            .parameters()
-                            .get(*parameter_id)
-                            .unwrap()
-                            .r#type
-                            .clone(),
-                        GlobalID::TraitFunction(id) => self
-                            .table
-                            .get(id)
-                            .unwrap()
-                            .parameters()
-                            .get(*parameter_id)
-                            .unwrap()
-                            .r#type
-                            .clone(),
-                        GlobalID::TraitImplementationFunction(id) => self
-                            .table
-                            .get(id)
-                            .unwrap()
-                            .parameters()
-                            .get(*parameter_id)
-                            .unwrap()
-                            .r#type
-                            .clone(),
-                        GlobalID::AdtImplementationFunction(id) => self
-                            .table
-                            .get(id)
-                            .unwrap()
-                            .parameters()
-                            .get(*parameter_id)
-                            .unwrap()
-                            .r#type
-                            .clone(),
-                        _ => {
-                            panic!(
-                                "the parameter id appears in an unexpected \
-                                 site"
-                            )
-                        }
-                    })
-                }
-                Memory::Alloca(alloca_id) => self
-                    .intermediate_representation
-                    .allocas
-                    .get(*alloca_id)
-                    .unwrap()
-                    .r#type
-                    .clone(),
-
-                Memory::ReferenceValue(register) => {
-                    let mut ty = self
-                        .intermediate_representation
-                        .registers
-                        .get(*register)
-                        .unwrap()
-                        .r#type
-                        .clone();
-
-                    ty = simplify::simplify(&ty, &self.create_environment())
-                        .result;
-
-                    let Type::Reference(reference) = ty else {
-                        panic!("expected a reference type")
-                    };
-
-                    *reference.pointee
-                }
-            },
-            Address::Field(field_address) => {
-                let mut struct_address = self.get_address_type(address);
-
-                // simplify the struct type
-                struct_address = simplify::simplify(
-                    &struct_address,
-                    &self.create_environment(),
-                )
-                .result;
-
-                let Type::Symbol(Symbol {
-                    id: r#type::SymbolID::Struct(struct_id),
-                    generic_arguments,
-                }) = struct_address
-                else {
-                    panic!("expected a struct type")
-                };
-
-                let struct_sym = self.table.get(struct_id).unwrap();
-                let instantiation = Instantiation::from_generic_arguments(
-                    generic_arguments,
-                    struct_id.into(),
-                    &struct_sym.generic_declaration.parameters,
-                )
-                .unwrap();
-                let mut field_ty = infer::Model::from_default_type(
-                    struct_sym
-                        .fields()
-                        .get(field_address.id)
-                        .unwrap()
-                        .r#type
-                        .clone(),
-                );
-
-                instantiation::instantiate(&mut field_ty, &instantiation);
-
-                field_ty
-            }
-            Address::Tuple(tuple_address) => {
-                let mut tuple_ty =
-                    self.get_address_type(&tuple_address.tuple_address);
-
-                // simplfiy the tuple type
-                tuple_ty =
-                    simplify::simplify(&tuple_ty, &self.create_environment())
-                        .result;
-
-                let Type::Tuple(mut tuple_ty) = tuple_ty else {
-                    panic!("expected a tuple type")
-                };
-
-                let tuple_elem = match tuple_address.offset {
-                    crate::ir::address::Offset::FromStart(id) => {
-                        tuple_ty.elements.remove(id)
-                    }
-                    crate::ir::address::Offset::FromEnd(id) => tuple_ty
-                        .elements
-                        .remove(tuple_ty.elements.len() - id - 1),
-                };
-
-                if tuple_elem.is_unpacked {
-                    Type::Tuple(Tuple {
-                        elements: vec![TupleElement {
-                            term: tuple_elem.term,
-                            is_unpacked: true,
-                        }],
-                    })
-                } else {
-                    tuple_elem.term
-                }
-            }
-        }
-    }
-
     /// Performs type checking on the given `ty`.
     ///
     /// This function performs type inference as well as type checking. Any
@@ -632,7 +538,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         expected_ty: Expected<infer::Model>,
         type_check_span: Span,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), SemanticError> {
         let environment = self.create_environment();
 
         // simplify the types
@@ -683,7 +589,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         },
                     ));
 
-                    Err(Error(type_check_span))
+                    Err(SemanticError(type_check_span))
                 }
             }
             Expected::Constraint(constraint) => {
@@ -711,7 +617,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         },
                     ));
 
-                    Err(Error(type_check_span))
+                    Err(SemanticError(type_check_span))
                 }
             }
         }

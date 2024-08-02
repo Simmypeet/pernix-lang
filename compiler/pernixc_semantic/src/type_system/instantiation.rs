@@ -64,13 +64,13 @@ pub fn instantiate<T: Term>(
 /// [`Instantiation`], the number of generic arguments supplied does not
 /// match the number of generic parameters.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[error(
     "the number of generic arguments supplied does not match the number of \
      generic parameters"
 )]
-pub struct MismatchedGenericArgumentCountError {
+pub struct MismatchedGenericArgumentCountError<M: Model> {
     /// The generic ID that the generic arguments were supplied for.
     pub generic_id: GenericID,
 
@@ -83,6 +83,9 @@ pub struct MismatchedGenericArgumentCountError {
     /// The kind of the generic parameters that the generic arguments were
     /// supplied for.
     pub kind: GenericKind,
+
+    /// The generic arguments passed into the function.
+    pub generic_arguments: GenericArguments<M>,
 }
 
 /// Returns with [`Instantiation::append_from_arguments`] if the given
@@ -150,7 +153,7 @@ impl<M: Model> Instantiation<M> {
         generic_arguments: GenericArguments<M>,
         generic_id: GenericID,
         generic_parameters: &GenericParameters,
-    ) -> Result<Vec<Collision<M>>, MismatchedGenericArgumentCountError> {
+    ) -> Result<Vec<Collision<M>>, MismatchedGenericArgumentCountError<M>> {
         if generic_arguments.types.len()
             != generic_parameters.type_order().len()
         {
@@ -159,6 +162,7 @@ impl<M: Model> Instantiation<M> {
                 expected: generic_parameters.type_order().len(),
                 found: generic_arguments.types.len(),
                 kind: GenericKind::Type,
+                generic_arguments,
             });
         }
 
@@ -170,6 +174,7 @@ impl<M: Model> Instantiation<M> {
                 expected: generic_parameters.lifetime_order().len(),
                 found: generic_arguments.lifetimes.len(),
                 kind: GenericKind::Lifetime,
+                generic_arguments,
             });
         }
 
@@ -181,6 +186,7 @@ impl<M: Model> Instantiation<M> {
                 expected: generic_parameters.constant_order().len(),
                 found: generic_arguments.constants.len(),
                 kind: GenericKind::Constant,
+                generic_arguments,
             });
         }
 
@@ -230,7 +236,7 @@ impl<M: Model> Instantiation<M> {
         generic_arguments: GenericArguments<M>,
         generic_id: GenericID,
         generic_parameters: &GenericParameters,
-    ) -> Result<Self, MismatchedGenericArgumentCountError> {
+    ) -> Result<Self, MismatchedGenericArgumentCountError<M>> {
         let mut substitution = Self::default();
 
         let collisions = substitution.append_from_generic_arguments(

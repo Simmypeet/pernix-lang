@@ -2331,7 +2331,7 @@ impl<T: State> Display<T> for SymbolIsNotCallable {
 
         write!(f, "{}", Message {
             severity: Severity::Error,
-            display: format!("the symbol `{}` cannot be called", called_symbol),
+            display: format!("the symbol `{called_symbol}` cannot be called"),
         })?;
 
         write!(f, "\n{}", SourceCodeDisplay {
@@ -2775,6 +2775,32 @@ impl<T: State> Display<T> for MismatchedMutability {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!("`{}` is not mutable", self.span.str())
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The given expression is not callable.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpressionIsNotCallable {
+    /// The span of the expression without the call operator.
+    pub span: Span,
+}
+
+impl<T: State> Display<T> for ExpressionIsNotCallable {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the expression `{}` is not callable",
+                self.span.str()
+            )
         })?;
 
         write!(f, "\n{}", SourceCodeDisplay {

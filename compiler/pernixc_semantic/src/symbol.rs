@@ -199,6 +199,24 @@ from_ids! {
     (AdtImplementationFunction, AdtImplementationFunction)
 }
 
+try_from_ids!(
+    GlobalID,
+    CallableID,
+    (Function, Function),
+    (TraitFunction, TraitFunction),
+    (TraitImplementationFunction, TraitImplementationFunction),
+    (AdtImplementationFunction, AdtImplementationFunction)
+);
+
+try_from_ids!(
+    GenericID,
+    CallableID,
+    (Function, Function),
+    (TraitFunction, TraitFunction),
+    (TraitImplementationFunction, TraitImplementationFunction),
+    (AdtImplementationFunction, AdtImplementationFunction)
+);
+
 /// A trait implemented by all kinds of functions: [`Function`],
 /// [`TraitFunction`], [`TraitImplementationFunction`], and
 /// [`AdtImplementationFunction`].

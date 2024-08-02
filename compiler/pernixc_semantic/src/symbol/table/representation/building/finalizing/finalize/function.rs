@@ -228,7 +228,7 @@ impl Finalize for Function {
                     .unwrap();
 
                     for statement in syntax_tree.body().statements() {
-                        binder.bind_statement(statement, handler);
+                        let _ = binder.bind_statement(statement, handler);
                     }
                 }
             }

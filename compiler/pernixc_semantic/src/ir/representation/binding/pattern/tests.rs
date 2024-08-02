@@ -540,7 +540,7 @@ fn reference_bound_struct() {
             };
 
             if load.address == Address::Base(Memory::Alloca(struct_alloca_id))
-                && i.r#type
+                && binder.type_of_register(idx).unwrap()
                     == Type::Reference(Reference {
                         qualifier: Qualifier::Immutable,
                         lifetime: Lifetime::Static,
@@ -793,7 +793,7 @@ fn reference_bound_tuple() {
             };
 
             if load.address == Address::Base(Memory::Alloca(tuple_alloca_id))
-                && i.r#type
+                && binder.type_of_register(idx).unwrap()
                     == Type::Reference(Reference {
                         qualifier: Qualifier::Mutable,
                         lifetime: Lifetime::Static,

@@ -773,7 +773,7 @@ impl Context {
         C: 'static + Constraint<T>,
     >(
         &mut self,
-        premise: Premise<Model>,
+        premise: &Premise<Model>,
         table: &Table<S>,
         mapping: &BTreeMap<T, BTreeSet<T>>,
         inference_context: &impl Fn(&mut Self) -> &mut ContextImpl<T, C>,
@@ -940,14 +940,14 @@ impl Context {
     >(
         &mut self,
         unifier: unification::Unifier<T>,
-        premise: Premise<Model>,
+        premise: &Premise<Model>,
         table: &Table<impl table::State>,
     ) -> Result<(), UnifyError> {
         // turns the unification into mapping pairs
         let mapping: Mapping<Model> = Mapping::from_unifier(unifier);
 
         self.handle_mapping(
-            premise.clone(),
+            &premise,
             table,
             &mapping.types,
             &Self::type_inference_context_mut,
@@ -957,7 +957,7 @@ impl Context {
         )?;
 
         self.handle_mapping(
-            premise,
+            &premise,
             table,
             &mapping.constants,
             &Self::constant_inference_context_mut,
@@ -997,7 +997,7 @@ impl Context {
             });
         };
 
-        self.handle_unifer(unifier, premise, table)
+        self.handle_unifer(unifier, &premise, table)
     }
 
     /// Unifies the two types and updates the inference context.
@@ -1028,7 +1028,7 @@ impl Context {
             });
         };
 
-        self.handle_unifer(unifier, premise, table)
+        self.handle_unifer(unifier, &premise, table)
     }
 }
 

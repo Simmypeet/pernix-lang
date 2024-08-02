@@ -5,7 +5,7 @@ use pernixc_syntax::syntax_tree;
 
 use super::{
     expression::{Bind, Config, Target},
-    infer, Binder,
+    infer, Binder, InternalError,
 };
 use crate::{
     arena::ID,
@@ -29,12 +29,14 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         &mut self,
         syntax_tree: &syntax_tree::statement::Statement,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) {
+    ) -> Result<(), InternalError> {
         match syntax_tree {
             syntax_tree::statement::Statement::VariableDeclaration(
                 syntax_tree,
             ) => {
-                self.bind_variable_declaration(syntax_tree, handler);
+                self.bind_variable_declaration(syntax_tree, handler)?;
+
+                Ok(())
             }
             syntax_tree::statement::Statement::Expressive(expressive) => {
                 match expressive {
@@ -44,11 +46,19 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         syntax_tree::statement::SemiExpression::Binary(
                             syntax_tree,
                         ) => {
-                            let _ = self.bind(
+                            match self.bind(
                                 syntax_tree,
                                 Config { target: Target::Statement },
                                 handler,
-                            );
+                            ) {
+                                Ok(_) | Err(super::Error::Semantic(_)) => {
+                                    Ok(())
+                                }
+
+                                Err(super::Error::Internal(internal_error)) => {
+                                    Err(internal_error)
+                                }
+                            }
                         }
                         syntax_tree::statement::SemiExpression::Terminator(
                             _,
@@ -66,17 +76,11 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         &mut self,
         syntax_tree: &syntax_tree::statement::VariableDeclaration,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> ID<Alloca<infer::Model>> {
+    ) -> Result<ID<Alloca<infer::Model>>, InternalError> {
         let initializer =
-            self.bind_value_or_error(syntax_tree.expression(), handler);
+            self.bind_value_or_error(syntax_tree.expression(), handler)?;
 
-        let initialize_type = self
-            .intermediate_representation
-            .registers
-            .get(initializer)
-            .unwrap()
-            .r#type
-            .clone();
+        let initialize_type = self.type_of_register(initializer)?;
 
         let mut variable_type = match syntax_tree.type_annotation().as_ref() {
             Some(type_syn) => {
@@ -141,7 +145,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             .current_scope_mut()
             .add_named_binding_point(name_binding_point);
 
-        alloca_id
+        Ok(alloca_id)
     }
 }
 

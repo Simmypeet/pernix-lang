@@ -96,7 +96,7 @@ fn numeric_literal_suffix() {
     )
     .unwrap();
 
-    let numeric_value = binder
+    let numeric_register_id = binder
         .bind(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
@@ -107,13 +107,16 @@ fn numeric_literal_suffix() {
     let register = binder
         .intermediate_representation
         .registers
-        .get(numeric_value)
+        .get(numeric_register_id)
         .unwrap();
     let numeric_value = register.assignment.as_numeric().unwrap();
 
     assert!(numeric_value.decimal_stirng.is_none());
     assert_eq!(numeric_value.integer_string, "432");
-    assert_eq!(register.r#type, Type::Primitive(Primitive::Uint64));
+    assert_eq!(
+        binder.type_of_register(numeric_register_id).unwrap(),
+        Type::Primitive(Primitive::Uint64)
+    );
 }
 
 #[test]
@@ -144,7 +147,7 @@ fn numberic_literal_float_infer() {
     )
     .unwrap();
 
-    let numeric_value = binder
+    let numeric_register_id = binder
         .bind(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
@@ -155,7 +158,7 @@ fn numberic_literal_float_infer() {
     let register = binder
         .intermediate_representation
         .registers
-        .get(numeric_value)
+        .get(numeric_register_id)
         .unwrap();
     let numeric_value = register.assignment.as_numeric().unwrap();
 
@@ -164,11 +167,15 @@ fn numberic_literal_float_infer() {
         numeric_value.decimal_stirng.as_ref().map(AsRef::as_ref),
         Some("0")
     );
+    let inference_variable = binder
+        .type_of_register(numeric_register_id)
+        .unwrap()
+        .into_inference()
+        .unwrap();
 
-    let inference_variable = register.r#type.as_inference().unwrap();
     let constraint_id = binder
         .inference_context
-        .get_inference(*inference_variable)
+        .get_inference(inference_variable)
         .cloned()
         .unwrap()
         .into_inferring()
@@ -208,7 +215,7 @@ fn numeric_literal_number_infer() {
     )
     .unwrap();
 
-    let numeric_value = binder
+    let numeric_register_id = binder
         .bind(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
@@ -219,17 +226,22 @@ fn numeric_literal_number_infer() {
     let register = binder
         .intermediate_representation
         .registers
-        .get(numeric_value)
+        .get(numeric_register_id)
         .unwrap();
     let numeric_value = register.assignment.as_numeric().unwrap();
 
     assert_eq!(numeric_value.integer_string, "32");
     assert!(numeric_value.decimal_stirng.is_none());
 
-    let inference_variable = register.r#type.as_inference().unwrap();
+    let inference_variable = binder
+        .type_of_register(numeric_register_id)
+        .unwrap()
+        .into_inference()
+        .unwrap();
+
     let constraint_id = binder
         .inference_context
-        .get_inference(*inference_variable)
+        .get_inference(inference_variable)
         .cloned()
         .unwrap()
         .into_inferring()
@@ -691,8 +703,9 @@ fn named_load() {
         .into_variable_declaration()
         .unwrap();
 
-    let alloca_id =
-        binder.bind_variable_declaration(&variable_declaration, &storage);
+    let alloca_id = binder
+        .bind_variable_declaration(&variable_declaration, &storage)
+        .unwrap();
 
     let named_load = parse_expression(VARIABLE_LOAD)
         .into_binary()
@@ -759,8 +772,9 @@ fn named_load_mutability_error() {
         .into_variable_declaration()
         .unwrap();
 
-    let alloca_id =
-        binder.bind_variable_declaration(&variable_declaration, &storage);
+    let alloca_id = binder
+        .bind_variable_declaration(&variable_declaration, &storage)
+        .unwrap();
 
     let named_load = parse_expression(VARIABLE_LOAD)
         .into_binary()
@@ -814,8 +828,9 @@ fn reference_of() {
         .into_variable_declaration()
         .unwrap();
 
-    let alloca_id =
-        binder.bind_variable_declaration(&variable_declaration, &storage);
+    let alloca_id = binder
+        .bind_variable_declaration(&variable_declaration, &storage)
+        .unwrap();
 
     let reference_of_immutable = parse_expression(REFERENCE_OF_IMMUTABLE)
         .into_binary()
@@ -899,7 +914,7 @@ fn reference_of_local() {
         parse_statement(LOCAL_DECLARATION).into_variable_declaration().unwrap();
 
     let alloca_id =
-        binder.bind_variable_declaration(&local_declaration, &storage);
+        binder.bind_variable_declaration(&local_declaration, &storage).unwrap();
 
     let reference_of_immutable = parse_expression(REFERENCE_OF_IMMUTABLE)
         .into_binary()
@@ -951,7 +966,7 @@ fn reference_of_local() {
                 binder.intermediate_representation.registers.get(id).unwrap();
 
             assert!(Equality::new(
-                register.r#type.clone(),
+                binder.type_of_register(id).unwrap(),
                 Type::Reference(Reference {
                     qualifier,
                     lifetime: Lifetime::Inference(Erased),
@@ -1066,7 +1081,8 @@ fn dereference_as_value() {
             .into_variable_declaration()
             .unwrap();
 
-    binder.bind_variable_declaration(&value_variable_declaration, &storage);
+    let _ =
+        binder.bind_variable_declaration(&value_variable_declaration, &storage);
 
     let reference_variable_declaration =
         parse_statement(REFERENCE_VARIABLE_DECLARATION)
@@ -1074,7 +1090,8 @@ fn dereference_as_value() {
             .unwrap();
 
     let reference_alloca_id = binder
-        .bind_variable_declaration(&reference_variable_declaration, &storage);
+        .bind_variable_declaration(&reference_variable_declaration, &storage)
+        .unwrap();
 
     let dereference = parse_expression(DEREFERENCE)
         .into_binary()
@@ -1134,7 +1151,8 @@ fn dereference_as_address() {
             .into_variable_declaration()
             .unwrap();
 
-    binder.bind_variable_declaration(&value_variable_declaration, &storage);
+    let _ =
+        binder.bind_variable_declaration(&value_variable_declaration, &storage);
 
     let reference_variable_declaration =
         parse_statement(REFERENCE_VARIABLE_DECLARATION)
@@ -1142,7 +1160,8 @@ fn dereference_as_address() {
             .unwrap();
 
     let reference_alloca_id = binder
-        .bind_variable_declaration(&reference_variable_declaration, &storage);
+        .bind_variable_declaration(&reference_variable_declaration, &storage)
+        .unwrap();
 
     let dereference = parse_expression(DEREFERENCE)
         .into_binary()
@@ -1203,13 +1222,15 @@ fn dereference_mismatched_qualifier_error() {
             .into_variable_declaration()
             .unwrap();
 
-    binder.bind_variable_declaration(&value_variable_declaration, &storage);
+    let _ =
+        binder.bind_variable_declaration(&value_variable_declaration, &storage);
     let reference_variable_declaration =
         parse_statement(REFERENCE_VARIABLE_DECLARATION)
             .into_variable_declaration()
             .unwrap();
 
-    binder.bind_variable_declaration(&reference_variable_declaration, &storage);
+    let _ = binder
+        .bind_variable_declaration(&reference_variable_declaration, &storage);
 
     let dereference = parse_expression(DEREFERENCE)
         .into_binary()
@@ -2109,25 +2130,16 @@ fn function_call() {
 
     // check if the generic arguments instantiated correctly
     {
-        assert!(function_call_assignment
-            .generic_instantiations
-            .lifetimes
-            .is_empty());
-        assert_eq!(
-            function_call_assignment.generic_instantiations.types.len(),
-            1
-        );
-        assert!(function_call_assignment
-            .generic_instantiations
-            .constants
-            .is_empty());
+        assert!(function_call_assignment.instantiation.lifetimes.is_empty());
+        assert_eq!(function_call_assignment.instantiation.types.len(), 1);
+        assert!(function_call_assignment.instantiation.constants.is_empty());
 
         let ty_param = Type::Parameter(TypeParameterID {
             parent: function_id.into(),
             id: function_t_ty_param,
         });
         let instantiated = function_call_assignment
-            .generic_instantiations
+            .instantiation
             .types
             .get(&ty_param)
             .unwrap()

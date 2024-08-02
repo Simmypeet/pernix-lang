@@ -12,7 +12,9 @@ fn variable_declaration_with_type_annotation() {
     let statement =
         parse_statement(SOURCE).into_variable_declaration().unwrap();
 
-    let alloca_id = binder.bind_variable_declaration(&statement, &storage);
+    let alloca_id =
+        binder.bind_variable_declaration(&statement, &storage).unwrap();
+
     let found_alloca_id = binder
         .current_block()
         .instructions()

@@ -44,10 +44,10 @@ impl<M: Model> TypeCheck<M> {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
-pub enum Error {
+pub enum Error<M: Model> {
     #[error(transparent)]
     Overflow(#[from] OverflowError),
 
@@ -68,7 +68,9 @@ pub enum Error {
     InvalidVariantID(ID<symbol::Variant>),
 
     #[error(transparent)]
-    MismatchedGenericArgumentCount(#[from] MismatchedGenericArgumentCountError),
+    MismatchedGenericArgumentCount(
+        #[from] MismatchedGenericArgumentCountError<M>,
+    ),
 
     #[error(
         "the variant either expects an associated value or not but got the \
@@ -102,7 +104,7 @@ where
             impl Normalizer<Self::Model>,
         >,
         context: &mut Context<Self::Model>,
-    ) -> Result<Output<Satisfied, T::Model>, Error>;
+    ) -> Result<Output<Satisfied, T::Model>, Error<Self::Model>>;
 }
 
 impl<M: Model> Check<Type<M>> for Constant<M> {
@@ -115,7 +117,7 @@ impl<M: Model> Check<Type<M>> for Constant<M> {
             impl Normalizer<Self::Model>,
         >,
         context: &mut Context<Self::Model>,
-    ) -> Result<Output<Satisfied, M>, Error> {
+    ) -> Result<Output<Satisfied, M>, Error<Self::Model>> {
         TypeCheck::new(self.clone(), another.clone())
             .query_with_context(environment, context)
     }
@@ -126,7 +128,7 @@ fn tuple_type_check_unpacked<T, U>(
     another: &Tuple<U>,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     context: &mut Context<T::Model>,
-) -> Result<Output<Satisfied, T::Model>, Error>
+) -> Result<Output<Satisfied, T::Model>, Error<T::Model>>
 where
     T: Check<U> + Term,
     U: Term<Model = T::Model>,
@@ -227,14 +229,14 @@ impl<M: Model> Check<Constant<M>> for Type<M> {
             impl Normalizer<Self::Model>,
         >,
         context: &mut Context<M>,
-    ) -> Result<Output<Satisfied, M>, Error> {
+    ) -> Result<Output<Satisfied, M>, Error<M>> {
         TypeCheck::new(another.clone(), self.clone())
             .query_with_context(environment, context)
     }
 }
 
 impl<M: Model> Compute for TypeCheck<M> {
-    type Error = Error;
+    type Error = Error<M>;
     type Parameter = ();
 
     #[allow(private_bounds, private_interfaces)]

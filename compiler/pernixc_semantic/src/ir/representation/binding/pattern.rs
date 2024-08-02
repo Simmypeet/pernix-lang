@@ -75,7 +75,7 @@ pub enum CreatePatternError {
          match the generic parameters of the instantiated symbol"
     )]
     MismatchedGenericParameterCount(
-        #[from] MismatchedGenericArgumentCountError,
+        #[from] MismatchedGenericArgumentCountError<infer::Model>,
     ),
 
     /// The type of the pattern binding contains an ill-formed tuple type. This
@@ -177,11 +177,7 @@ impl<'a> SideEffect<'a> {
                 is_local: false,
                 address: address.clone(),
                 qualifier,
-            }),
-            r#type: Type::Reference(Reference {
-                qualifier,
                 lifetime: Lifetime::Inference(Erased),
-                pointee: Box::new(address_type.clone()),
             }),
             span: None,
         });
@@ -248,7 +244,6 @@ impl<'a> SideEffect<'a> {
                             address,
                             kind: LoadKind::Copy,
                         }),
-                        r#type: current_ty.clone(),
                         span: None,
                     });
                     self.new_instructions.push(
@@ -520,7 +515,6 @@ impl<'a> SideEffect<'a> {
                                     address: address.clone(),
                                     kind: LoadKind::Move,
                                 }),
-                                r#type: ty.clone(),
                                 span: None,
                             });
 
