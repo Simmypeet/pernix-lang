@@ -6,7 +6,7 @@ use super::Finalize;
 use crate::{
     arena::ID,
     error::{
-        self, AmbiguousImplementation, UndecidableImplementationSpecialization,
+        self, AmbiguousImplementation, FinalImplementationCannotBeOverriden,
     },
     symbol::{
         table::{
@@ -21,7 +21,9 @@ use crate::{
         },
         GlobalID, Trait, TraitImplementationID,
     },
-    type_system::{environment::Environment, normalizer::NO_OP, order},
+    type_system::{
+        environment::Environment, normalizer::NO_OP, order, Premise,
+    },
 };
 
 /// Generic parameters are built
@@ -129,25 +131,31 @@ impl Finalize for Trait {
                         .collect::<Vec<_>>()
                 };
 
-                let (environment, _) = Environment::new(
-                    table.get_active_premise(symbol_id.into()).unwrap(),
-                    table,
-                    &NO_OP,
-                );
-
                 let trait_sym = table.get(symbol_id).unwrap();
+                let default_environment =
+                    Environment::new(Premise::default(), table, &NO_OP).0;
 
                 for (i, lhs) in implementation_ids.iter().copied().enumerate() {
-                    let lhs_arguments = match lhs {
+                    let (lhs_arguments, lhs_is_final) = match lhs {
                         TraitImplementationID::Positive(id) => {
-                            RwLockReadGuard::map(table.get(id).unwrap(), |x| {
-                                &x.arguments
-                            })
+                            let is_final = table.get(id).unwrap().is_final;
+                            (
+                                RwLockReadGuard::map(
+                                    table.get(id).unwrap(),
+                                    |x| &x.arguments,
+                                ),
+                                is_final,
+                            )
                         }
                         TraitImplementationID::Negative(id) => {
-                            RwLockReadGuard::map(table.get(id).unwrap(), |x| {
-                                &x.arguments
-                            })
+                            let is_final = table.get(id).unwrap().is_final;
+                            (
+                                RwLockReadGuard::map(
+                                    table.get(id).unwrap(),
+                                    |x| &x.arguments,
+                                ),
+                                is_final,
+                            )
                         }
                     };
 
@@ -175,17 +183,25 @@ impl Finalize for Trait {
                     }
 
                     for rhs in implementation_ids.iter().copied().skip(i + 1) {
-                        let rhs_arguments = match rhs {
+                        let (rhs_arguments, rhs_is_final) = match rhs {
                             TraitImplementationID::Positive(id) => {
-                                RwLockReadGuard::map(
-                                    table.get(id).unwrap(),
-                                    |x| &x.arguments,
+                                let is_final = table.get(id).unwrap().is_final;
+                                (
+                                    RwLockReadGuard::map(
+                                        table.get(id).unwrap(),
+                                        |x| &x.arguments,
+                                    ),
+                                    is_final,
                                 )
                             }
                             TraitImplementationID::Negative(id) => {
-                                RwLockReadGuard::map(
-                                    table.get(id).unwrap(),
-                                    |x| &x.arguments,
+                                let is_final = table.get(id).unwrap().is_final;
+                                (
+                                    RwLockReadGuard::map(
+                                        table.get(id).unwrap(),
+                                        |x| &x.arguments,
+                                    ),
+                                    is_final,
                                 )
                             }
                         };
@@ -212,16 +228,10 @@ impl Finalize for Trait {
                             continue;
                         }
 
-                        let Ok(result) =
-                            lhs_arguments.order(&rhs_arguments, &environment)
+                        let Ok(result) = lhs_arguments
+                            .order(&rhs_arguments, &default_environment)
                         else {
-                            handler.receive(Box::new(
-                                UndecidableImplementationSpecialization {
-                                    first_implementation_id: lhs,
-                                    second_implementation_id: rhs,
-                                },
-                            ));
-                            continue;
+                            panic!("shouldn't be overflowing");
                         };
 
                         drop(rhs_arguments);
@@ -234,6 +244,26 @@ impl Finalize for Trait {
                                     second_implementation_id: rhs,
                                 },
                             ));
+                        }
+
+                        // final cannot be more general
+                        if lhs_is_final && result == order::Order::MoreGeneral {
+                            handler.receive(Box::new(
+                                FinalImplementationCannotBeOverriden {
+                                    final_implementation_id: lhs,
+                                    overriden_implementation_id: rhs,
+                                },
+                            ))
+                        }
+
+                        if rhs_is_final && result == order::Order::MoreSpecific
+                        {
+                            handler.receive(Box::new(
+                                FinalImplementationCannotBeOverriden {
+                                    final_implementation_id: rhs,
+                                    overriden_implementation_id: lhs,
+                                },
+                            ))
                         }
                     }
                 }

@@ -130,6 +130,8 @@ pub enum KeywordKind {
     Phantom,
     /// `ref` keyword
     Ref,
+    /// `final` keyword
+    Final,
 }
 
 impl std::fmt::Display for KeywordKind {
@@ -223,6 +225,7 @@ impl KeywordKind {
             Self::Case => "case",
             Self::Phantom => "phantom",
             Self::Ref => "ref",
+            Self::Final => "final",
         }
     }
 }

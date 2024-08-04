@@ -743,7 +743,8 @@ impl SourceElement for ReturnType {
 /// Syntax Synopsis:
 /// ``` txt
 /// FunctionSignature:
-///     'function' Identifier GenericParameters? Parameters ReturnType? WhereClause?
+///     'function' Identifier GenericParameters? Parameters ReturnType?
+///     WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -1102,11 +1103,13 @@ impl SourceElement for Field {
 /// Syntax Synopsis:
 /// ``` txt
 /// ImplementationSignature:
-///     'implements' GenericParameters? const? QualifiedIdentifier WhereClause?
+///     'final'? 'implements' GenericParameters? const? QualifiedIdentifier WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ImplementationSignature {
+    #[get = "pub"]
+    final_keyword: Option<Keyword>,
     #[get = "pub"]
     implements_keyword: Keyword,
     #[get = "pub"]
@@ -1125,6 +1128,7 @@ impl ImplementationSignature {
     pub fn dissolve(
         self,
     ) -> (
+        Option<Keyword>,
         Keyword,
         Option<GenericParameters>,
         Option<Keyword>,
@@ -1132,6 +1136,7 @@ impl ImplementationSignature {
         Option<WhereClause>,
     ) {
         (
+            self.final_keyword,
             self.implements_keyword,
             self.generic_parameters,
             self.const_keyword,
@@ -1143,9 +1148,16 @@ impl ImplementationSignature {
 
 impl SourceElement for ImplementationSignature {
     fn span(&self) -> Span {
-        self.implements_keyword
-            .span
-            .join(&self.qualified_identifier.span())
+        self.final_keyword
+            .as_ref()
+            .map_or_else(
+                || self.implements_keyword.span.clone(),
+                SourceElement::span,
+            )
+            .join(&self.where_clause.as_ref().map_or_else(
+                || self.qualified_identifier.span(),
+                SourceElement::span,
+            ))
             .unwrap()
     }
 }
@@ -1995,6 +2007,18 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<Error>,
     ) -> Option<Implementation> {
+        let final_keyword = if let Reading::Unit(Token::Keyword(
+            final_keyword @ Keyword { kind: KeywordKind::Final, .. },
+        )) = self.stop_at_significant()
+        {
+            // eat final keyword
+            self.forward();
+
+            Some(final_keyword)
+        } else {
+            None
+        };
+
         let implements_keyword =
             self.parse_keyword(KeywordKind::Implements, handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
@@ -2033,6 +2057,7 @@ impl<'a> Parser<'a> {
 
         Some(Implementation {
             signature: ImplementationSignature {
+                final_keyword,
                 implements_keyword,
                 generic_parameters,
                 const_keyword,
@@ -2669,7 +2694,8 @@ impl<'a> Parser<'a> {
 
             // parses an implements
             Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Implements =>
+                if k.kind == KeywordKind::Implements
+                    || k.kind == KeywordKind::Final =>
             {
                 self.parse_implements(handler).map(Item::Implementation)
             }

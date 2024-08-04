@@ -485,7 +485,7 @@ where
                 }
             }
             Self::Inference(inference) => {
-                write!(f, "{}", DisplayObject { display: inference, table })
+                write!(f, "'{}", DisplayObject { display: inference, table })
             }
             Self::Forall(forall_lifetime) => match &forall_lifetime.span {
                 Some(span) => write!(f, "'∀{}", span.str()),

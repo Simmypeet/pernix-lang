@@ -19,14 +19,17 @@ use crate::{
         self, CannotDereference, DuplicatedFieldInitialization, ExpectedLValue,
         ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
         FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
-        MismatchedArgumentCount, MismatchedMutability,
-        MismatchedReferenceQualifier, SymbolIsNotCallable,
+        InvalidRelationalOperation, MismatchedArgumentCount,
+        MismatchedMutability, MismatchedReferenceQualifier,
+        SymbolIsNotCallable,
     },
     ir::{
         address::{self, Address, Memory},
+        instruction::{Instruction, Store},
         register::{
-            Assignment, Boolean, FunctionCall, Load, LoadKind, Numeric, Prefix,
-            PrefixOperator, ReferenceOf, Register, Struct, Variant,
+            ArithmeticOperator, Assignment, Binary, BinaryOperator,
+            BitwiseOperator, Boolean, FunctionCall, Load, LoadKind, Numeric,
+            Prefix, PrefixOperator, ReferenceOf, Register, Struct, Variant,
         },
         representation::binding::infer::{InferenceVariable, NoConstraint},
         TypeOfError,
@@ -1468,6 +1471,566 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
+enum BinaryNode<'a> {
+    Binary(Box<BinaryTree<'a>>),
+    Expression(&'a syntax_tree::expression::Prefixable),
+}
+
+impl SourceElement for BinaryNode<'_> {
+    fn span(&self) -> Span {
+        match self {
+            BinaryNode::Binary(tree) => tree.span(),
+            BinaryNode::Expression(exp) => exp.span(),
+        }
+    }
+}
+
+struct BinaryTree<'a> {
+    left: BinaryNode<'a>,
+    right: BinaryNode<'a>,
+    operator: &'a syntax_tree::expression::BinaryOperator,
+}
+
+impl SourceElement for BinaryTree<'_> {
+    fn span(&self) -> Span {
+        self.left.span().join(&self.right.span()).unwrap()
+    }
+}
+
+const fn operator_precedence(
+    operator: &syntax_tree::expression::BinaryOperator,
+) -> u32 {
+    use syntax_tree::expression::BinaryOperator;
+    match operator {
+        BinaryOperator::Multiply(_)
+        | BinaryOperator::Divide(_)
+        | BinaryOperator::Modulo(_) => 10,
+
+        BinaryOperator::Add(_) | BinaryOperator::Subtract(_) => 9,
+
+        BinaryOperator::BitwiseLeftShift(..)
+        | BinaryOperator::BitwiseRightShift(..) => 8,
+
+        BinaryOperator::LessThan(_)
+        | BinaryOperator::LessThanOrEqual(..)
+        | BinaryOperator::GreaterThan(_)
+        | BinaryOperator::GreaterThanOrEqual(..) => 7,
+
+        BinaryOperator::Equal(..) | BinaryOperator::NotEqual(..) => 6,
+
+        BinaryOperator::BitwiseAnd(_) => 5,
+
+        BinaryOperator::BitwiseXor(_) => 4,
+
+        BinaryOperator::BitwiseOr(_) => 3,
+
+        BinaryOperator::LogicalAnd(_) => 2,
+
+        BinaryOperator::LogicalOr(_) => 1,
+
+        BinaryOperator::Assign(_)
+        | BinaryOperator::CompoundAdd(..)
+        | BinaryOperator::CompoundSubtract(..)
+        | BinaryOperator::CompoundMultiply(..)
+        | BinaryOperator::CompoundDivide(..)
+        | BinaryOperator::CompoundModulo(..)
+        | BinaryOperator::CompoundBitwiseAnd(..)
+        | BinaryOperator::CompoundBitwiseOr(..)
+        | BinaryOperator::CompoundBitwiseXor(..)
+        | BinaryOperator::CompoundBitwiseLeftShift(..)
+        | BinaryOperator::CompoundBitwiseRightShift(..) => 0,
+    }
+}
+
+fn to_binary_tree(syntax_tree: &syntax_tree::expression::Binary) -> BinaryNode {
+    let mut first = BinaryNode::Expression(syntax_tree.first());
+    let mut expressions = syntax_tree
+        .chain()
+        .iter()
+        .map(|(op, exp)| (op, Some(BinaryNode::Expression(exp))))
+        .collect::<Vec<_>>();
+
+    while !expressions.is_empty() {
+        let candidate_operator_precedence = expressions
+            .iter()
+            .map(|(op, _)| operator_precedence(op))
+            .max()
+            .unwrap();
+
+        // every operators except the assignments are left associative
+        let is_left_associative = candidate_operator_precedence != 1;
+
+        let fold_index = if is_left_associative {
+            expressions.iter().position(|(op, _)| {
+                operator_precedence(op) == candidate_operator_precedence
+            })
+        } else {
+            expressions.iter().rposition(|(op, _)| {
+                operator_precedence(op) == candidate_operator_precedence
+            })
+        }
+        .unwrap();
+
+        // replace the first expression with the binary tree
+        if fold_index == 0 {
+            let (operator, right_expression) = expressions.remove(0);
+
+            // replace the first expression with the binary tree
+            first = BinaryNode::Binary(Box::new(BinaryTree {
+                left: first,
+                right: right_expression.unwrap(),
+                operator,
+            }));
+        } else {
+            let (operator, right_expression) = expressions.remove(fold_index);
+
+            // replace the first expression with the binary tree
+            expressions[fold_index - 1].1 =
+                Some(BinaryNode::Binary(Box::new(BinaryTree {
+                    left: expressions[fold_index - 1].1.take().unwrap(),
+                    right: right_expression.unwrap(),
+                    operator,
+                })));
+        }
+    }
+
+    first
+}
+
+const fn into_binary_operator(
+    syntax_tree: &syntax_tree::expression::BinaryOperator,
+) -> Result<(BinaryOperator, bool), &syntax_tree::expression::BinaryOperator> {
+    use syntax_tree::expression::BinaryOperator as BinOpSyn;
+
+    use crate::ir::register::{
+        ArithmeticOperator as ArithOp, BinaryOperator as BinOp,
+        BitwiseOperator as BitOp, RelationalOperator as RelaOp,
+    };
+
+    match syntax_tree {
+        BinOpSyn::Add(_) => Ok((BinOp::Arithmetic(ArithOp::Add), false)),
+        BinOpSyn::Subtract(_) => {
+            Ok((BinOp::Arithmetic(ArithOp::Subtract), false))
+        }
+        BinOpSyn::Multiply(_) => {
+            Ok((BinOp::Arithmetic(ArithOp::Multiply), false))
+        }
+        BinOpSyn::Divide(_) => Ok((BinOp::Arithmetic(ArithOp::Divide), false)),
+        BinOpSyn::Modulo(_) => Ok((BinOp::Arithmetic(ArithOp::Modulo), false)),
+
+        BinOpSyn::Equal(_, _) => Ok((BinOp::Relational(RelaOp::Equal), false)),
+        BinOpSyn::NotEqual(_, _) => {
+            Ok((BinOp::Relational(RelaOp::NotEqual), false))
+        }
+        BinOpSyn::LessThan(_) => {
+            Ok((BinOp::Relational(RelaOp::LessThan), false))
+        }
+        BinOpSyn::LessThanOrEqual(_, _) => {
+            Ok((BinOp::Relational(RelaOp::LessThanOrEqual), false))
+        }
+        BinOpSyn::GreaterThan(_) => {
+            Ok((BinOp::Relational(RelaOp::GreaterThan), false))
+        }
+        BinOpSyn::GreaterThanOrEqual(_, _) => {
+            Ok((BinOp::Relational(RelaOp::GreaterThanOrEqual), false))
+        }
+
+        BinOpSyn::BitwiseAnd(_) => Ok((BinOp::Bitwise(BitOp::And), false)),
+        BinOpSyn::BitwiseOr(_) => Ok((BinOp::Bitwise(BitOp::Or), false)),
+        BinOpSyn::BitwiseXor(_) => Ok((BinOp::Bitwise(BitOp::Xor), false)),
+        BinOpSyn::BitwiseLeftShift(_, _) => {
+            Ok((BinOp::Bitwise(BitOp::LeftShift), false))
+        }
+        BinOpSyn::BitwiseRightShift(_, _) => {
+            Ok((BinOp::Bitwise(BitOp::RightShift), false))
+        }
+
+        BinOpSyn::CompoundAdd(_, _) => {
+            Ok((BinOp::Arithmetic(ArithOp::Add), true))
+        }
+        BinOpSyn::CompoundSubtract(_, _) => {
+            Ok((BinOp::Arithmetic(ArithOp::Subtract), true))
+        }
+        BinOpSyn::CompoundMultiply(_, _) => {
+            Ok((BinOp::Arithmetic(ArithOp::Multiply), true))
+        }
+        BinOpSyn::CompoundDivide(_, _) => {
+            Ok((BinOp::Arithmetic(ArithOp::Divide), true))
+        }
+        BinOpSyn::CompoundModulo(_, _) => {
+            Ok((BinOp::Arithmetic(ArithOp::Modulo), true))
+        }
+
+        BinOpSyn::CompoundBitwiseAnd(_, _) => {
+            Ok((BinOp::Bitwise(BitOp::And), true))
+        }
+        BinOpSyn::CompoundBitwiseOr(_, _) => {
+            Ok((BinOp::Bitwise(BitOp::Or), true))
+        }
+        BinOpSyn::CompoundBitwiseLeftShift(_, _, _) => {
+            Ok((BinOp::Bitwise(BitOp::LeftShift), true))
+        }
+        BinOpSyn::CompoundBitwiseRightShift(_, _, _) => {
+            Ok((BinOp::Bitwise(BitOp::RightShift), true))
+        }
+        BinOpSyn::CompoundBitwiseXor(_, _) => {
+            Ok((BinOp::Bitwise(BitOp::Xor), true))
+        }
+
+        BinOpSyn::Assign(_)
+        | BinOpSyn::LogicalAnd(_)
+        | BinOpSyn::LogicalOr(_) => Err(syntax_tree),
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+    fn bind_assignment(
+        &mut self,
+        tree: &BinaryTree,
+        config: Config,
+        lhs_address: Address<Memory<infer::Model>>,
+        rhs_register_id: ID<Register<infer::Model>>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let lhs_ty = self.type_of_address(&lhs_address)?;
+        let rhs_ty = self.type_of_register(rhs_register_id)?;
+
+        let _ = self.type_check(
+            rhs_ty,
+            Expected::Known(lhs_ty),
+            tree.right.span(),
+            handler,
+        );
+
+        self.current_block_mut().insert_basic(Instruction::Store(Store {
+            address: lhs_address.clone(),
+            value: rhs_register_id,
+            is_initializattion: false,
+        }));
+
+        Ok(match config.target {
+            Target::Value => {
+                let register_id = self.create_register_assignmnet(
+                    Assignment::Load(Load {
+                        address: lhs_address,
+                        kind: LoadKind::Copy,
+                    }),
+                    Some(tree.span()),
+                );
+
+                Expression::Value(register_id)
+            }
+
+            // qualifier is not checked here since the address is already bound
+            // as Qualifier::Unique, which has the highest priority
+            Target::Address { .. } => {
+                Expression::Address { address: lhs_address, span: tree.span() }
+            }
+
+            Target::Statement => Expression::SideEffect,
+        })
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn bind_normal_binary(
+        &mut self,
+        syntax_tree: &BinaryTree,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let (op, is_compound) =
+            into_binary_operator(syntax_tree.operator).unwrap();
+
+        let (lhs_address, lhs_register) = 'out: {
+            if is_compound {
+                let lhs_address = match self.bind(
+                    &syntax_tree.left,
+                    Config {
+                        target: Target::Address {
+                            expected_qualifier: Qualifier::Unique,
+                        },
+                    },
+                    handler,
+                ) {
+                    Ok(address) => address.into_address().unwrap(),
+
+                    // make the lhs errored
+                    Err(Error::Semantic(SemanticError(span))) => {
+                        let inference =
+                            self.create_type_inference(r#type::Constraint::All);
+
+                        let errored_register = self.create_register_assignmnet(
+                            Assignment::Errored(Type::Inference(inference)),
+                            Some(span),
+                        );
+
+                        break 'out (None, errored_register);
+                    }
+
+                    Err(Error::Internal(internal_error)) => {
+                        return Err(Error::Internal(internal_error))
+                    }
+                };
+
+                let lhs_register = self.create_register_assignmnet(
+                    Assignment::Load(Load {
+                        address: lhs_address.0.clone(),
+                        kind: LoadKind::Copy,
+                    }),
+                    Some(syntax_tree.left.span()),
+                );
+
+                (Some(lhs_address), lhs_register)
+            } else {
+                (None, self.bind_value_or_error(&syntax_tree.left, handler)?)
+            }
+        };
+
+        let rhs_register =
+            self.bind_value_or_error(&syntax_tree.right, handler)?;
+
+        let lhs_register_ty = self.type_of_register(lhs_register)?;
+
+        // left shift and right shift doesn't necessarily require the same type
+        // for both operands
+        if !matches!(
+            op,
+            BinaryOperator::Bitwise(
+                BitwiseOperator::LeftShift | BitwiseOperator::RightShift
+            )
+        ) {
+            let rhs_register_ty = self.type_of_register(rhs_register)?;
+
+            let _ = self.type_check(
+                rhs_register_ty,
+                Expected::Known(lhs_register_ty.clone()),
+                syntax_tree.right.span(),
+                handler,
+            );
+        }
+
+        match op {
+            BinaryOperator::Arithmetic(arith_op) => {
+                let expected_constraints = match arith_op {
+                    ArithmeticOperator::Add
+                    | ArithmeticOperator::Subtract
+                    | ArithmeticOperator::Multiply
+                    | ArithmeticOperator::Divide => r#type::Constraint::Number,
+
+                    ArithmeticOperator::Modulo => r#type::Constraint::Integer,
+                };
+
+                let _ = self.type_check(
+                    lhs_register_ty,
+                    Expected::Constraint(expected_constraints),
+                    syntax_tree.span(),
+                    handler,
+                );
+            }
+            BinaryOperator::Relational(_) => {
+                let lhs_register_ty = simplify::simplify(
+                    &lhs_register_ty,
+                    &self.create_environment(),
+                )
+                .result;
+
+                let valid = match lhs_register_ty {
+                    Type::Primitive(_) => true,
+                    Type::Inference(inference) => {
+                        let constraint_id = *self
+                            .inference_context
+                            .get_inference(inference)
+                            .unwrap()
+                            .as_inferring()
+                            .unwrap();
+
+                        let constraint = *self
+                            .inference_context
+                            .get_constraint::<Type<_>>(constraint_id)
+                            .unwrap();
+
+                        match constraint {
+                            Constraint::Number
+                            | Constraint::Integer
+                            | Constraint::SignedInteger
+                            | Constraint::Signed
+                            | Constraint::Floating => true,
+
+                            Constraint::All => false,
+                        }
+                    }
+                    _ => false,
+                };
+
+                if !valid {
+                    self.create_handler_wrapper(handler).receive(Box::new(
+                        InvalidRelationalOperation {
+                            found_type: self
+                                .inference_context
+                                .into_constraint_model(lhs_register_ty)
+                                .unwrap(),
+                            span: syntax_tree.span(),
+                        },
+                    ));
+                }
+            }
+            BinaryOperator::Bitwise(bitwise) => match bitwise {
+                BitwiseOperator::And
+                | BitwiseOperator::Or
+                | BitwiseOperator::Xor => {
+                    let lhs_register_ty = simplify::simplify(
+                        &lhs_register_ty,
+                        &self.create_environment(),
+                    )
+                    .result;
+
+                    let valid = match lhs_register_ty {
+                        Type::Primitive(_) => true,
+                        Type::Inference(inference) => {
+                            let constraint_id = *self
+                                .inference_context
+                                .get_inference(inference)
+                                .unwrap()
+                                .as_inferring()
+                                .unwrap();
+
+                            let constraint = *self
+                                .inference_context
+                                .get_constraint::<Type<_>>(constraint_id)
+                                .unwrap();
+
+                            match constraint {
+                                Constraint::Number
+                                | Constraint::Integer
+                                | Constraint::SignedInteger
+                                | Constraint::Signed => true,
+
+                                Constraint::Floating | Constraint::All => false,
+                            }
+                        }
+                        _ => false,
+                    };
+
+                    if !valid {
+                        self.create_handler_wrapper(handler).receive(Box::new(
+                            InvalidRelationalOperation {
+                                found_type: self
+                                    .inference_context
+                                    .into_constraint_model(lhs_register_ty)
+                                    .unwrap(),
+                                span: syntax_tree.span(),
+                            },
+                        ));
+                    }
+                }
+
+                BitwiseOperator::LeftShift | BitwiseOperator::RightShift => {
+                    let expected_constraints = r#type::Constraint::Integer;
+
+                    let _ = self.type_check(
+                        lhs_register_ty,
+                        Expected::Constraint(expected_constraints),
+                        syntax_tree.left.span(),
+                        handler,
+                    );
+
+                    let rhs_register_ty =
+                        self.type_of_register(rhs_register)?;
+
+                    let _ = self.type_check(
+                        rhs_register_ty,
+                        Expected::Constraint(expected_constraints),
+                        syntax_tree.right.span(),
+                        handler,
+                    );
+                }
+            },
+        }
+
+        let binary_register = self.create_register_assignmnet(
+            Assignment::Binary(Binary {
+                operator: op,
+                lhs: lhs_register,
+                rhs: rhs_register,
+            }),
+            Some(syntax_tree.span()),
+        );
+
+        if let (Some(lhs_address), true) = (lhs_address, is_compound) {
+            self.bind_assignment(
+                syntax_tree,
+                config,
+                lhs_address.0,
+                binary_register,
+                handler,
+            )
+        } else {
+            Ok(config.target.return_rvalue(
+                binary_register,
+                syntax_tree.span(),
+                &self.create_handler_wrapper(handler),
+            )?)
+        }
+    }
+}
+
+impl<'x, 't, S: table::State, O: Observer<S, infer::Model>> Bind<BinaryTree<'x>>
+    for Binder<'t, S, O>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &BinaryTree<'x>,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        match syntax_tree.operator {
+            syntax_tree::expression::BinaryOperator::Assign(_) => {
+                let rhs =
+                    self.bind_value_or_error(&syntax_tree.right, handler)?;
+                let lhs = self
+                    .bind(
+                        &syntax_tree.left,
+                        Config {
+                            target: Target::Address {
+                                expected_qualifier: Qualifier::Unique,
+                            },
+                        },
+                        handler,
+                    )?
+                    .into_address()
+                    .unwrap();
+
+                self.bind_assignment(syntax_tree, config, lhs.0, rhs, handler)
+            }
+
+            syntax_tree::expression::BinaryOperator::LogicalAnd(_)
+            | syntax_tree::expression::BinaryOperator::LogicalOr(_) => {
+                todo!("handle lazy logical")
+            }
+
+            _ => self.bind_normal_binary(syntax_tree, config, handler),
+        }
+    }
+}
+
+impl<'x, 't, S: table::State, O: Observer<S, infer::Model>> Bind<BinaryNode<'x>>
+    for Binder<'t, S, O>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &BinaryNode<'x>,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        match syntax_tree {
+            BinaryNode::Binary(binary) => self.bind(&**binary, config, handler),
+            BinaryNode::Expression(prefixable) => {
+                self.bind(*prefixable, config, handler)
+            }
+        }
+    }
+}
+
 impl<'t, S: table::State, O: Observer<S, infer::Model>>
     Bind<syntax_tree::expression::Binary> for Binder<'t, S, O>
 {
@@ -1477,7 +2040,10 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
         config: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
-        self.bind(&**syntax_tree.first(), config, handler)
+        // transform the syntax tree into a binary tree
+        let binary_node = to_binary_tree(syntax_tree);
+
+        self.bind(&binary_node, config, handler)
     }
 }
 

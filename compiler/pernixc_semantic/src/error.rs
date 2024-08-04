@@ -2763,6 +2763,68 @@ where
     }
 }
 
+/// The trait implementation is final but it is overriden by another
+/// implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FinalImplementationCannotBeOverriden {
+    /// The ID of the final implementation that is overriden.
+    pub final_implementation_id: TraitImplementationID,
+
+    /// The ID of the implementation that overrides the final implementation.
+    pub overriden_implementation_id: TraitImplementationID,
+}
+
+impl Display<Suboptimal> for FinalImplementationCannotBeOverriden {
+    fn fmt(
+        &self,
+        table: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let final_impl_symbol = table
+            .get_implementation(self.final_implementation_id.into())
+            .ok_or(fmt::Error)?;
+
+        let overriden_impl_symbol = table
+            .get_implementation(self.overriden_implementation_id.into())
+            .ok_or(fmt::Error)?;
+
+        let impl_qual_name = table
+            .get_qualified_name(self.final_implementation_id.into())
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the trait implementation `{impl_qual_name}{}` is final but \
+                 it is overriden by implementation `{impl_qual_name}{}`",
+                DisplayObject { table, display: final_impl_symbol.arguments() },
+                DisplayObject {
+                    table,
+                    display: overriden_impl_symbol.arguments()
+                },
+            )
+        })?;
+
+        if let Some(span) = final_impl_symbol.span() {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("the final implementation is defined here"),
+            })?;
+        }
+
+        if let Some(span) = overriden_impl_symbol.span() {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some(
+                    "the overriden implementation is defined here"
+                ),
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
 /// The lvalue found is not mutable.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MismatchedMutability {
@@ -2775,6 +2837,71 @@ impl<T: State> Display<T> for MismatchedMutability {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!("`{}` is not mutable", self.span.str())
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// Can't perform bitwise operation on the given type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InvalidBitwiseOperation<M: Model> {
+    /// The type where the bitwise operation is not allowed.
+    pub found_type: Type<M>,
+
+    /// The span of the bitwise operation.
+    pub span: Span,
+}
+
+impl<T: State, M: Model> Display<T> for InvalidBitwiseOperation<M>
+where
+    Type<M>: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "can't perform bitwise operation on expression with type `{}`",
+                DisplayObject { display: &self.found_type, table }
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// Can't perform relational operation on the given type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InvalidRelationalOperation<M: Model> {
+    /// The type where the relational operation is not allowed.
+    pub found_type: Type<M>,
+
+    /// The span of the relational operation.
+    pub span: Span,
+}
+
+impl<T: State, M: Model> Display<T> for InvalidRelationalOperation<M>
+where
+    Type<M>: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "can't perform relational operation on expression with type \
+                 `{}`",
+                DisplayObject { display: &self.found_type, table }
+            ),
         })?;
 
         write!(f, "\n{}", SourceCodeDisplay {

@@ -13,19 +13,18 @@ use crate::{
         Generic, TraitImplementationID,
     },
     type_system::{
-        self,
         compatible::Compatible,
         deduction::{self, Deduction},
         instantiation::Instantiation,
         model::{Default, Model},
-        normalizer::Normalizer,
+        normalizer::{Normalizer, NO_OP},
         order,
         predicate::Predicate,
         query::Context,
         term::{lifetime::Lifetime, r#type::Type, GenericArguments},
         variance::Variance,
         Compute, Environment, LifetimeConstraint, Output, OverflowError,
-        Succeeded, TraitContext,
+        Premise, Succeeded, TraitContext,
     },
 };
 
@@ -231,8 +230,6 @@ pub struct Implementation<M: Model> {
 pub enum ResolveError {
     #[error("the trait id was invalid")]
     InvalidID,
-    #[error("the passed generic arguments were not definite")]
-    NonDefiniteGenericArguments,
     #[error("the trait was ambiguous")]
     AmbiguousTrait,
     #[error(transparent)]
@@ -299,13 +296,15 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
         ));
     }
 
-    let Some(Succeeded {
-        result: type_system::Satisfied,
-        constraints: mut definite_lifetime_constraints,
-    }) = generic_arguments.definite_with_context(environment, context)?
-    else {
-        return Err(ResolveError::NonDefiniteGenericArguments);
-    };
+    let definite =
+        generic_arguments.definite_with_context(environment, context)?;
+
+    let default_environment = Environment::<M, _, _>::new(
+        Premise::default(),
+        environment.table(),
+        &NO_OP,
+    )
+    .0;
 
     let mut candidate: Option<(
         TraitImplementationID,
@@ -313,7 +312,7 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
         BTreeSet<LifetimeConstraint<M>>,
     )> = None;
 
-    for (key, arguments) in
+    for (key, arguments, is_final) in
         trait_symbol.implementations().iter().copied().map(|k| {
             (
                 k,
@@ -325,6 +324,14 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
                         .arguments()
                         .clone(),
                 ),
+                match k {
+                    TraitImplementationID::Positive(id) => {
+                        environment.table().get(id).unwrap().is_final
+                    }
+                    TraitImplementationID::Negative(id) => {
+                        environment.table().get(id).unwrap().is_final
+                    }
+                },
             )
         })
     {
@@ -347,15 +354,25 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
                 ) => continue,
             };
 
-        // check if satisfies all the predicate
-        let generic_symbol = environment.table.get_generic(key.into()).unwrap();
-        if !predicate_satisfies(
-            &*generic_symbol,
-            &deduction.instantiation,
-            environment,
-            context,
-        )? {
+        // the trait implementation is not final and requires the term to be
+        // definite to check.
+        if !is_final && definite.is_none() {
             continue;
+        }
+
+        // check if satisfies all the predicate
+        if !is_final {
+            let generic_symbol =
+                environment.table.get_generic(key.into()).unwrap();
+
+            if !predicate_satisfies(
+                &*generic_symbol,
+                &deduction.instantiation,
+                environment,
+                context,
+            )? {
+                continue;
+            }
         }
 
         // assign the candidate
@@ -374,7 +391,7 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
                         .arguments()
                         .clone(),
                 )
-                .order_with_context(
+                .order(
                     &GenericArguments::from_default_model(
                         environment
                             .table
@@ -383,8 +400,7 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
                             .arguments()
                             .clone(),
                     ),
-                    environment,
-                    context,
+                    &default_environment,
                 )? {
                     order::Order::Incompatible => {
                         return Err(ResolveError::AmbiguousTerm)
@@ -411,7 +427,7 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
         Some((
             TraitImplementationID::Positive(id),
             deduction,
-            lifetime_constraints,
+            mut lifetime_constraints,
         )) => Ok(Succeeded {
             result: Implementation {
                 instantiation: deduction.instantiation,
@@ -419,8 +435,9 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
                 id,
             },
             constraints: {
-                definite_lifetime_constraints.extend(lifetime_constraints);
-                definite_lifetime_constraints
+                lifetime_constraints
+                    .extend(definite.into_iter().flat_map(|x| x.constraints));
+                lifetime_constraints
             },
         }),
 

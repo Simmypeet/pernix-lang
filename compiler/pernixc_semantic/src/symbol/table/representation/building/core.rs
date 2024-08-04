@@ -291,6 +291,7 @@ impl<C: Container> Representation<C> {
                 },
                 PositiveTraitImplementationDefinition {
                     is_const: true,
+                    is_final: true,
                     member_ids_by_name: HashMap::default(),
                 },
             )
@@ -357,6 +358,7 @@ impl<C: Container> Representation<C> {
                 GenericArguments::default(),
                 PositiveTraitImplementationDefinition {
                     is_const: true,
+                    is_final: true,
                     member_ids_by_name: HashMap::default(),
                 },
             )
@@ -440,6 +442,7 @@ impl<C: Container> Representation<C> {
                     },
                     PositiveTraitImplementationDefinition {
                         is_const: true,
+                        is_final: true,
                         member_ids_by_name: HashMap::default(),
                     },
                 )
@@ -488,6 +491,7 @@ impl<C: Container> Representation<C> {
                     GenericArguments::default(),
                     PositiveTraitImplementationDefinition {
                         is_const: true,
+                        is_final: true,
                         member_ids_by_name: HashMap::default(),
                     },
                 )

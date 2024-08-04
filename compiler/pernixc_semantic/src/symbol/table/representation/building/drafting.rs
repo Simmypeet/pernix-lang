@@ -424,7 +424,15 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 GenericDeclaration::default(),
                 Some(implementation_signature.qualified_identifier().span()),
                 GenericArguments::default(),
-                PositiveTraitImplementationDefinition::default(),
+                PositiveTraitImplementationDefinition {
+                    is_const: implementation_signature
+                        .const_keyword()
+                        .is_none(),
+                    is_final: implementation_signature
+                        .final_keyword()
+                        .is_some(),
+                    member_ids_by_name: HashMap::default(),
+                },
             )
             .unwrap();
 
@@ -704,7 +712,9 @@ impl Table<Building<RwLockContainer, Drafter>> {
                         GenericDeclaration::default(),
                         Some(signature.qualified_identifier().span()),
                         GenericArguments::default(),
-                        NegativeTraitImplementationDefinition,
+                        NegativeTraitImplementationDefinition {
+                            is_final: signature.final_keyword().is_some(),
+                        },
                     )
                     .unwrap();
 

@@ -1103,7 +1103,6 @@ pub enum BinaryOperator {
     LessThanOrEqual(Punctuation, Punctuation),
     GreaterThan(Punctuation),
     GreaterThanOrEqual(Punctuation, Punctuation),
-    UniqueAssign(Punctuation, Punctuation),
     LogicalAnd(Keyword),
     LogicalOr(Keyword),
     BitwiseAnd(Punctuation),
@@ -1116,68 +1115,6 @@ pub enum BinaryOperator {
     CompoundBitwiseLeftShift(Punctuation, Punctuation, Punctuation),
     BitwiseRightShift(Punctuation, Punctuation),
     CompoundBitwiseRightShift(Punctuation, Punctuation, Punctuation),
-}
-
-impl BinaryOperator {
-    #[must_use]
-    pub const fn is_assignment(&self) -> bool {
-        matches!(
-            self,
-            Self::Assign(..)
-                | Self::CompoundBitwiseLeftShift(..)
-                | Self::CompoundBitwiseRightShift(..)
-                | Self::CompoundBitwiseAnd(..)
-                | Self::CompoundBitwiseOr(..)
-                | Self::CompoundBitwiseXor(..)
-                | Self::CompoundAdd(..)
-                | Self::CompoundSubtract(..)
-                | Self::CompoundMultiply(..)
-                | Self::CompoundDivide(..)
-                | Self::CompoundModulo(..)
-                | Self::UniqueAssign(..)
-        )
-    }
-
-    /// Gets the precedence of the operator (the higher the number, the first it
-    /// will be evaluated)
-    ///
-    /// The least operator has precedence 1.
-    #[must_use]
-    pub const fn get_precedence(&self) -> usize {
-        match self {
-            Self::Assign(..)
-            | Self::CompoundBitwiseLeftShift(..)
-            | Self::CompoundBitwiseRightShift(..)
-            | Self::CompoundBitwiseAnd(..)
-            | Self::CompoundBitwiseOr(..)
-            | Self::CompoundBitwiseXor(..)
-            | Self::CompoundAdd(..)
-            | Self::CompoundSubtract(..)
-            | Self::CompoundMultiply(..)
-            | Self::CompoundDivide(..)
-            | Self::CompoundModulo(..)
-            | Self::UniqueAssign(..) => 0,
-
-            Self::LogicalOr(..) => 1,
-            Self::LogicalAnd(..) => 2,
-            Self::BitwiseOr(..) => 3,
-            Self::BitwiseXor(..) => 4,
-            Self::BitwiseAnd(..) => 5,
-
-            Self::Equal(..) | Self::NotEqual(..) => 6,
-
-            Self::GreaterThan(..)
-            | Self::GreaterThanOrEqual(..)
-            | Self::LessThan(..)
-            | Self::LessThanOrEqual(..) => 7,
-
-            Self::BitwiseLeftShift(..) | Self::BitwiseRightShift(..) => 8,
-
-            Self::Add(..) | Self::Subtract(..) => 9,
-
-            Self::Multiply(..) | Self::Divide(..) | Self::Modulo(..) => 10,
-        }
-    }
 }
 
 /// Syntax Synopsis:
@@ -1573,11 +1510,6 @@ impl Parser<'_> {
                     '&' => Some(BinaryOperator::BitwiseAnd(p)),
                     '|' => Some(BinaryOperator::BitwiseOr(p)),
                     '^' => Some(BinaryOperator::BitwiseXor(p)),
-                    ':' => {
-                        let equal =
-                            parser.parse_punctuation('=', false, &Dummy)?;
-                        Some(BinaryOperator::UniqueAssign(p, equal))
-                    }
                     '!' => {
                         let equal =
                             parser.parse_punctuation('=', false, &Dummy)?;

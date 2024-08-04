@@ -400,13 +400,58 @@ pub enum BitwiseOperator {
     /// Supports for all integer and boolean types.
     Xor,
 
-    /// Supports for all integer types. The lhs and rhs operands are required
-    /// to have the same type.
-    ShiftLeft,
+    /// Supports for all integer types. The lhs and rhs operands aren't
+    /// required to have the same type.
+    LeftShift,
 
-    /// Supports for all integer types. The lhs and rhs operands are required
-    /// to have the same type.
-    ShiftRight,
+    /// Supports for all integer types. The lhs and rhs operands aren't
+    /// required to have the same type.
+    RightShift,
+}
+
+/// An enumeration of all binary operators.
+///
+/// The operator doesn't includes `and` and `or` operators as they are
+/// defined in another kind of register.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum BinaryOperator {
+    Arithmetic(ArithmeticOperator),
+    Relational(RelationalOperator),
+    Bitwise(BitwiseOperator),
+}
+
+/// Represents a binary expression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Binary<M: Model> {
+    /// The left-hand side operand.
+    pub lhs: ID<Register<M>>,
+
+    /// The right-hand side operand.
+    pub rhs: ID<Register<M>>,
+
+    /// The operator applied to the operands.
+    pub operator: BinaryOperator,
+}
+
+impl<M: Model> Representation<M> {
+    fn type_of_binary(
+        &self,
+        binary: &Binary<M>,
+        current_site: GlobalID,
+        environment: &Environment<M, impl table::State, impl Normalizer<M>>,
+    ) -> Result<Type<M>, TypeOfError<M>> {
+        match binary.operator {
+            BinaryOperator::Bitwise(_) | BinaryOperator::Arithmetic(_) => {
+                // jsut return the lhs type
+                self.type_of_register(binary.lhs, current_site, environment)
+            }
+            BinaryOperator::Relational(_) => {
+                // always return boolean
+                Ok(Type::Primitive(r#type::Primitive::Bool))
+            }
+        }
+    }
 }
 
 /// An enumeration of the different kinds of values that can be assigned in the
@@ -423,6 +468,7 @@ pub enum Assignment<M: Model> {
     Struct(Struct<M>),
     Variant(Variant<M>),
     FunctionCall(FunctionCall<M>),
+    Binary(Binary<M>),
 
     /// The value is an error.
     Errored(Type<M>),
@@ -492,6 +538,9 @@ impl<M: Model> Representation<M> {
                     function_call,
                     environment.table(),
                 )
+            }
+            Assignment::Binary(binary) => {
+                self.type_of_binary(binary, current_site, environment)
             }
             Assignment::Errored(ty) => Ok(ty.clone()),
         }

@@ -68,17 +68,22 @@ pub struct RegisterAssignment<M: Model> {
     pub id: ID<Register<M>>,
 }
 
-/// An instruction that initializes a memory location with a value.
+/// An instruction that stores a value in memory.
 ///
-/// This is instruction is typically translated from a `let` statement in the
-/// source code.
+/// This is instruction is typically translated from a `let` statement or an
+/// assignment expression.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Initialize<M: Model> {
+pub struct Store<M: Model> {
     /// The address where the value will be stored.
     pub address: Address<Memory<M>>,
 
     /// The value to store.
     pub value: ID<Register<M>>,
+
+    /// If `true`, it means that the instruction is used to initialize a memory
+    /// location with a value; it typically translates from a `let` variable
+    /// declaration statements.
+    pub is_initializattion: bool,
 }
 
 /// An instruction that allocates a new `alloca` memory.
@@ -127,7 +132,7 @@ pub struct ScopePop(pub ID<Scope>);
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Instruction<M: Model> {
-    Initialize(Initialize<M>),
+    Store(Store<M>),
     RegisterAssignment(RegisterAssignment<M>),
     AllocaAllocation(AllocaAllocation<M>),
     TuplePack(TuplePack<M>),

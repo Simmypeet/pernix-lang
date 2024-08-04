@@ -1807,6 +1807,7 @@ impl Display for ImplementationBody {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImplementationSignature {
+    pub is_final: bool,
     pub generic_parameters: Option<GenericParameters>,
     pub is_const: bool,
     pub qualified_identifier: QualifiedIdentifier,
@@ -1815,6 +1816,7 @@ pub struct ImplementationSignature {
 
 impl Input<&super::ImplementationSignature> for &ImplementationSignature {
     fn assert(self, output: &super::ImplementationSignature) -> TestCaseResult {
+        prop_assert_eq!(self.is_final, output.final_keyword.is_some());
         self.generic_parameters
             .as_ref()
             .assert(output.generic_parameters().as_ref())?;
@@ -1830,6 +1832,7 @@ impl Arbitrary for ImplementationSignature {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
+            proptest::bool::ANY,
             proptest::option::of(GenericParameters::arbitrary()),
             QualifiedIdentifier::arbitrary(),
             proptest::bool::ANY,
@@ -1837,12 +1840,14 @@ impl Arbitrary for ImplementationSignature {
         )
             .prop_map(
                 |(
+                    is_final,
                     generic_parameters,
                     qualified_identifier,
                     is_const,
                     where_clause,
                 )| {
                     Self {
+                        is_final,
                         generic_parameters,
                         is_const,
                         qualified_identifier,
@@ -1856,6 +1861,10 @@ impl Arbitrary for ImplementationSignature {
 
 impl Display for ImplementationSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_final {
+            write!(f, "final ")?;
+        }
+
         write!(f, "implements")?;
 
         if let Some(generic_parameters) = &self.generic_parameters {

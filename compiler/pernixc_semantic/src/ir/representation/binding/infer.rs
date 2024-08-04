@@ -53,7 +53,7 @@ impl<T: table::State> table::Display<T> for Erased {
         _: &Table<T>,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        write!(f, "?")
+        write!(f, "_")
     }
 }
 
@@ -844,6 +844,10 @@ impl Context {
                             Inference::Inferring(lhs_inferring_id),
                             Inference::Inferring(rhs_inferring_id),
                         ) => {
+                            if lhs_inferring_id == rhs_inferring_id {
+                                continue;
+                            }
+
                             // will make rhs use lhs's constraint id
                             let rhs_constraint = inference_context(self)
                                 .constraints
@@ -855,14 +859,30 @@ impl Context {
                                 .get_mut(lhs_inferring_id)
                                 .unwrap();
 
-                            *lhs_constraint = lhs_constraint
-                                .combine(&rhs_constraint)
-                                .ok_or(combine_constraint_error(
+                            *lhs_constraint = if let Some(new_constraint) =
+                                lhs_constraint.combine(&rhs_constraint)
+                            {
+                                new_constraint
+                            } else {
+                                let lhs_constraint = lhs_constraint.clone();
+
+                                // restore the rhs's constraint
+                                // back to the context
+                                assert!(inference_context(self)
+                                    .constraints
+                                    .insert_with_id(
+                                        rhs_inferring_id,
+                                        rhs_constraint.clone(),
+                                    )
+                                    .is_ok());
+
+                                return Err(combine_constraint_error(
                                     CombineConstraintError {
-                                        lhs: lhs_constraint.clone(),
-                                        rhs: rhs_constraint.clone(),
+                                        lhs: lhs_constraint,
+                                        rhs: rhs_constraint,
                                     },
-                                ))?;
+                                ));
+                            };
 
                             // replace all the occurrences of rhs's constraint
                             // id with
@@ -1051,7 +1071,7 @@ impl<T: table::State> table::Display<T> for NoConstraint {
         _: &Table<T>,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        write!(f, "?")
+        write!(f, "_")
     }
 }
 

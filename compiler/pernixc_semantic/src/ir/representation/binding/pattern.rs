@@ -25,7 +25,7 @@ use crate::{
         address::{self, Address, Field, Memory, Stack},
         alloca::Alloca,
         instruction::{
-            self, AllocaAllocation, Initialize, Instruction, RegisterAssignment,
+            self, AllocaAllocation, Instruction, RegisterAssignment, Store,
         },
         pattern::{
             self, Irrefutable, Named, RegularTupleBinding, Structural, Wildcard,
@@ -205,12 +205,11 @@ impl<'a> SideEffect<'a> {
                 id: register_id,
             }),
         );
-        self.new_instructions.push(instruction::Instruction::Initialize(
-            Initialize {
-                address: Address::Base(Memory::Alloca(alloca_id)),
-                value: register_id,
-            },
-        ));
+        self.new_instructions.push(instruction::Instruction::Store(Store {
+            address: Address::Base(Memory::Alloca(alloca_id)),
+            value: register_id,
+            is_initializattion: true,
+        }));
 
         Named {
             name: identifier.span.str().to_owned(),
@@ -528,14 +527,15 @@ impl<'a> SideEffect<'a> {
                                     RegisterAssignment { id },
                                 ),
                             );
-                            self.new_instructions.push(
-                                Instruction::Initialize(Initialize {
+                            self.new_instructions.push(Instruction::Store(
+                                Store {
                                     address: Address::Base(Memory::Alloca(
                                         alloca_id,
                                     )),
                                     value: id,
-                                }),
-                            );
+                                    is_initializattion: true,
+                                },
+                            ));
 
                             Irrefutable::Named(Named {
                                 name: named.identifier().span.str().to_owned(),

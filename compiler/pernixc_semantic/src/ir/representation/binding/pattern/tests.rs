@@ -113,7 +113,7 @@ impl Representation<infer::Model> {
             .unwrap();
 
         assert!(block.instructions().iter().any(|instruction| {
-            let Instruction::Initialize(store) = instruction else {
+            let Instruction::Store(store) = instruction else {
                 return false;
             };
 
@@ -392,7 +392,7 @@ fn value_bound_struct() {
             .instructions()
             .iter()
             .find_map(|inst| {
-                let Instruction::Initialize(init) = inst else { return None };
+                let Instruction::Store(init) = inst else { return None };
 
                 (init.address
                     == Address::Base(Memory::Alloca(destructed_variable)))
@@ -689,7 +689,7 @@ fn value_bound_tuple() {
             .instructions()
             .iter()
             .find_map(|inst| {
-                let Instruction::Initialize(init) = inst else { return None };
+                let Instruction::Store(init) = inst else { return None };
 
                 (init.address
                     == Address::Base(Memory::Alloca(destructed_variable)))
@@ -948,7 +948,7 @@ fn packed_tuple() {
             .instructions()
             .iter()
             .find_map(|inst| {
-                let Instruction::Initialize(init) = inst else { return None };
+                let Instruction::Store(init) = inst else { return None };
 
                 (init.address
                     == Address::Base(Memory::Alloca(destructed_variable)))

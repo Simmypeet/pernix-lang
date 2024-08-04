@@ -1333,7 +1333,10 @@ impl ParentSealed for AdtImplementation {
 
 /// Negative trait implementation data tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct NegativeTraitImplementationDefinition;
+pub struct NegativeTraitImplementationDefinition {
+    /// Indicates whether the trait implementation is a final implementation.
+    pub is_final: bool,
+}
 
 /// Represents a negative trait implementation, denoted by
 /// `implements<PARAM> TRAIT<PARAM> = delete;` syntax.
@@ -1468,6 +1471,9 @@ pub struct PositiveTraitImplementationDefinition {
     /// Indicates whether the trait implementation is a constant
     /// implementation.
     pub is_const: bool,
+
+    /// Indicates whether the trait implementation is a final implementation.
+    pub is_final: bool,
 
     /// Maps the name of the trait member to its ID.
     #[get = "pub"]

@@ -13,7 +13,7 @@ use crate::{
     ir::{
         address::{Address, Memory},
         alloca::Alloca,
-        instruction::{AllocaAllocation, Initialize, Instruction},
+        instruction::{AllocaAllocation, Instruction, Store},
         pattern::{Irrefutable, NameBindingPoint, Wildcard},
     },
     symbol::table::{self, resolution::Observer},
@@ -114,12 +114,11 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             AllocaAllocation { id: alloca_id },
         ));
 
-        self.current_block_mut().insert_basic(Instruction::Initialize(
-            Initialize {
-                address: Address::Base(Memory::Alloca(alloca_id)),
-                value: initializer,
-            },
-        ));
+        self.current_block_mut().insert_basic(Instruction::Store(Store {
+            address: Address::Base(Memory::Alloca(alloca_id)),
+            value: initializer,
+            is_initializattion: true,
+        }));
 
         // create the pattern
         variable_type =
