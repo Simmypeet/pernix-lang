@@ -7,7 +7,8 @@ use crate::{
         FieldIsNotAccessible, FieldNotFound,
         FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
         MismatchedArgumentCount, MismatchedMutability,
-        MismatchedReferenceQualifier, MismatchedType, UninitializedFields,
+        MismatchedReferenceQualifier, MismatchedType,
+        NotAllFlowPathsExpressValue, UninitializedFields,
     },
     ir::{
         address::{Address, Memory},
@@ -2600,4 +2601,64 @@ fn binary_operator_precedence() {
 
     assert_eq!(num_three.integer_string, "3");
     assert!(num_three.decimal_stirng.is_none());
+}
+
+#[test]
+fn not_all_flow_path_express_value_error() {
+    const BLOCK: &str = r"
+    'outer: {
+        if (true) {
+            express 'outer 32;
+        }
+    }
+    ";
+
+    let test_template = TestTemplate::new();
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let block =
+        parse_expression(BLOCK).into_brace().unwrap().into_block().unwrap();
+
+    let _ = binder
+        .bind(&block, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    let errors = storage.into_vec();
+
+    assert_eq!(errors.len(), 1);
+
+    assert!(errors.iter().any(|x| {
+        x.as_any().downcast_ref::<NotAllFlowPathsExpressValue>().is_some()
+    }));
+}
+
+#[test]
+fn single_express_block() {
+    const BLOCK: &str = r"{
+        express 32;
+    }
+    ";
+
+    let test_template = TestTemplate::new();
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let block =
+        parse_expression(BLOCK).into_brace().unwrap().into_block().unwrap();
+
+    let numeric_literal = binder
+        .bind(&block, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap()
+        .into_literal()
+        .unwrap()
+        .into_numeric()
+        .unwrap();
+
+    assert_eq!(numeric_literal.integer_string, "32");
+    assert!(numeric_literal.decimal_stirng.is_none());
 }

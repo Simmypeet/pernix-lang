@@ -103,6 +103,9 @@ impl Stack {
         self.scopes.last_mut().unwrap()
     }
 
+    /// List of scopes in the stack.
+    pub fn scopes(&self) -> &[Scope] { &self.scopes }
+
     /// Searches for a named binding point in the stack.
     pub fn search(&self, name: &str) -> Option<&Named<infer::Model>> {
         for scope in self.scopes.iter().rev() {

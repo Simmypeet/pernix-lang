@@ -2937,6 +2937,76 @@ where
     }
 }
 
+/// The `epxress` expression can't be used outside of a block expression.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpressOutsideBlock {
+    /// The span of the expression.
+    pub span: Span,
+}
+
+impl<T: State> Display<T> for ExpressOutsideBlock {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "`express` expression can't be used outside of a block \
+                      expression",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The block with the given label name was not found.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BlockWithGivenLableNameNotFound {
+    /// The span of the label identifier.
+    pub span: Span,
+}
+
+impl<T: State> Display<T> for BlockWithGivenLableNameNotFound {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "block with the given label name was not found",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The `return` expression is not allowed in this context.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReturnIsNotAllowed {
+    /// The span of the return expression.
+    pub span: Span,
+}
+
+impl<T: State> Display<T> for ReturnIsNotAllowed {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "`return` expression is not allowed outside the function",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
 /// The given expression is not callable.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpressionIsNotCallable {

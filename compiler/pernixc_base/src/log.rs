@@ -197,7 +197,9 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                             write!(
                                 f,
                                 "{}",
-                                Style::Bold.with(Color::Red.with(char))
+                                Style::Underline.with(
+                                    Style::Bold.with(Color::Red.with(char))
+                                )
                             )?;
                         }
                     } else {

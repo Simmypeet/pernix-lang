@@ -867,7 +867,7 @@ impl<M: Model> Constant<M> {
                 let mut occurrences =
                     vec![parent_enum_id.into(), val.variant_id.into()];
 
-                for associated_value in &val.associated_value {
+                if let Some(associated_value) = &val.associated_value {
                     occurrences.extend(
                         associated_value.get_global_id_dependencies(table)?,
                     );

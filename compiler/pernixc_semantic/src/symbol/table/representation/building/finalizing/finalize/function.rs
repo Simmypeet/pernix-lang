@@ -229,6 +229,8 @@ impl Finalize for Function {
                     for statement in syntax_tree.body().statements() {
                         let _ = binder.bind_statement(statement, handler);
                     }
+
+                    dbg!(binder.intermediate_representation());
                 }
             }
 

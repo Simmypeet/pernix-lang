@@ -51,8 +51,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                             handler,
                         ),
                         syntax_tree::statement::SemiExpression::Terminator(
-                            _,
-                        ) => todo!(),
+                            syntax_tree,
+                        ) => self.bind(
+                            syntax_tree,
+                            Config { target: Target::Statement },
+                            handler,
+                        ),
                     },
                     syntax_tree::statement::Expressive::Brace(brace) => self
                         .bind(

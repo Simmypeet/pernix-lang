@@ -2,6 +2,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
+use getset::Getters;
 use infer::{
     Constraint, Context, Erased, InferenceVariable, NoConstraint, UnifyError,
 };
@@ -68,7 +69,7 @@ struct BlockState {
 }
 
 /// The binder used for building the IR.
-#[derive(Debug)]
+#[derive(Debug, Getters)]
 pub struct Binder<'t, S: table::State, O: Observer<S, infer::Model>> {
     table: &'t Table<S>,
     resolution_observer: O,
@@ -76,6 +77,8 @@ pub struct Binder<'t, S: table::State, O: Observer<S, infer::Model>> {
     premise: Premise<infer::Model>,
     stack: Stack,
 
+    /// The intermediate representation that is being built.
+    #[get = "pub"]
     intermediate_representation: Representation<infer::Model>,
     current_block_id: ID<Block<infer::Model>>,
 
@@ -228,6 +231,9 @@ pub struct SemanticError(pub Span);
 
 /// An internal compiler error that is not caused by the user but rather by the
 /// incorrect invariant of the compiler.
+///
+/// When an internal error is encountered, the binder state is considered
+/// corrupted and should not be used anymore.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
@@ -306,6 +312,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 
         alloca_id
     }
+
     /// Returns a reference to the current control flow graph.
     fn current_block(&self) -> &Block<infer::Model> {
         &self.intermediate_representation.control_flow_graph

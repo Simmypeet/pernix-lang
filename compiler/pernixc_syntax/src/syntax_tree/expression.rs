@@ -58,7 +58,7 @@ impl SourceElement for Expression {
 ///     | Match
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Brace {
     Block(Block),
     IfElse(IfElse),
