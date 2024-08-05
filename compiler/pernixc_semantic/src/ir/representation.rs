@@ -2,7 +2,9 @@
 
 use getset::Getters;
 
-use super::{control_flow_graph::ControlFlowGraph, register::Register, scope};
+use super::{
+    control_flow_graph::ControlFlowGraph, scope, value::register::Register,
+};
 use crate::{arena::Arena, ir::alloca::Alloca, type_system::model::Model};
 
 pub mod binding;

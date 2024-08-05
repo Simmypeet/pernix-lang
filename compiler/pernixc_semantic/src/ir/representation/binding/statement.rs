@@ -13,7 +13,7 @@ use crate::{
     ir::{
         address::{Address, Memory},
         alloca::Alloca,
-        instruction::{AllocaAllocation, Instruction, Store},
+        instruction::{Instruction, Store},
         pattern::{Irrefutable, NameBindingPoint, Wildcard},
     },
     symbol::table::{self, resolution::Observer},
@@ -39,32 +39,32 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 Ok(())
             }
             syntax_tree::statement::Statement::Expressive(expressive) => {
-                match expressive {
+                let result = match expressive {
                     syntax_tree::statement::Expressive::Semi(semi) => match semi
                         .expression()
                     {
                         syntax_tree::statement::SemiExpression::Binary(
                             syntax_tree,
-                        ) => {
-                            match self.bind(
-                                syntax_tree,
-                                Config { target: Target::Statement },
-                                handler,
-                            ) {
-                                Ok(_) | Err(super::Error::Semantic(_)) => {
-                                    Ok(())
-                                }
-
-                                Err(super::Error::Internal(internal_error)) => {
-                                    Err(internal_error)
-                                }
-                            }
-                        }
+                        ) => self.bind(
+                            syntax_tree,
+                            Config { target: Target::Statement },
+                            handler,
+                        ),
                         syntax_tree::statement::SemiExpression::Terminator(
                             _,
                         ) => todo!(),
                     },
-                    syntax_tree::statement::Expressive::Brace(_) => todo!(),
+                    syntax_tree::statement::Expressive::Brace(brace) => self
+                        .bind(
+                            brace,
+                            Config { target: Target::Statement },
+                            handler,
+                        ),
+                };
+
+                match result {
+                    Ok(_) | Err(super::Error::Semantic(_)) => Ok(()),
+                    Err(super::Error::Internal(err)) => Err(err),
                 }
             }
         }
@@ -80,7 +80,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         let initializer =
             self.bind_value_or_error(syntax_tree.expression(), handler)?;
 
-        let initialize_type = self.type_of_register(initializer)?;
+        let initialize_type = self.type_of_value(&initializer)?;
 
         let mut variable_type = match syntax_tree.type_annotation().as_ref() {
             Some(type_syn) => {
@@ -105,20 +105,15 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         };
 
         let alloca_id =
-            self.intermediate_representation.allocas.insert(Alloca {
-                r#type: variable_type.clone(),
-                span: Some(syntax_tree.span()),
-            });
+            self.create_alloca(variable_type.clone(), Some(syntax_tree.span()));
 
-        self.current_block_mut().insert_basic(Instruction::AllocaAllocation(
-            AllocaAllocation { id: alloca_id },
-        ));
-
-        self.current_block_mut().insert_basic(Instruction::Store(Store {
-            address: Address::Base(Memory::Alloca(alloca_id)),
-            value: initializer,
-            is_initializattion: true,
-        }));
+        let _ = self.current_block_mut().insert_instruction(
+            Instruction::Store(Store {
+                address: Address::Base(Memory::Alloca(alloca_id)),
+                value: initializer,
+                is_initializattion: true,
+            }),
+        );
 
         // create the pattern
         variable_type =
@@ -140,6 +135,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             &self.create_handler_wrapper(handler),
         );
 
+        // add the variable to the stack
         self.stack
             .current_scope_mut()
             .add_named_binding_point(name_binding_point);

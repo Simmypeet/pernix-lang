@@ -38,7 +38,7 @@ use std::{fmt::Debug, hash::Hash};
 
 use address::{Address, Memory};
 use alloca::Alloca;
-use register::Register;
+use value::{register::Register, Value};
 
 use self::representation::Representation;
 use crate::{
@@ -56,9 +56,9 @@ pub mod alloca;
 pub mod control_flow_graph;
 pub mod instruction;
 pub mod pattern;
-pub mod register;
 pub mod representation;
 pub mod scope;
+pub mod value;
 
 /// The model to used to generate the IR.
 pub trait State {
@@ -117,7 +117,7 @@ pub enum TypeOfError<M: Model> {
     )]
     NonReferenceAddressType {
         /// The address that doesn't have the reference type.
-        register_id: ID<Register<M>>,
+        value: Value<M>,
 
         /// The type of the [`NonReferenceAddressType::address`].
         r#type: Type<M>,
@@ -141,8 +141,8 @@ pub enum TypeOfError<M: Model> {
          found the other type"
     )]
     NonLocalAssignmentType {
-        /// The register that doesn't have the local type.
-        register: ID<Register<M>>,
+        /// The value that doesn't have the local type.
+        value: Value<M>,
 
         /// The type of the [`NonLocalAssignmentType::register`].
         r#type: Type<M>,

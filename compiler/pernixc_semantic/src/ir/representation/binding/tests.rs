@@ -64,7 +64,6 @@ impl TestTemplate {
             NoOpObserver,
             self.function_id,
             std::iter::empty(),
-            false,
             &storage,
         )
         .unwrap();

@@ -24,13 +24,15 @@ use crate::{
     ir::{
         address::{self, Address, Field, Memory, Stack},
         alloca::Alloca,
-        instruction::{
-            self, AllocaAllocation, Instruction, RegisterAssignment, Store,
-        },
+        instruction::{self, Instruction, RegisterAssignment, Store},
         pattern::{
             self, Irrefutable, Named, RegularTupleBinding, Structural, Wildcard,
         },
-        register::{Assignment, Load, LoadKind, ReferenceOf, Register},
+        scope,
+        value::{
+            register::{Assignment, Load, LoadKind, ReferenceOf, Register},
+            Value,
+        },
     },
     symbol::{
         table::{
@@ -97,6 +99,11 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<Irrefutable<infer::Model>, CreatePatternError> {
         let storage = Storage::<Box<dyn Error>>::default();
+
+        let in_scope_id = self.stack.current_scope().scope_id();
+        let latest_order =
+            self.stack.current_scope().variable_declarations().len();
+
         let mut side_effect = SideEffect {
             new_instructions: Vec::new(),
             register_reserved: Reserve::new(
@@ -105,6 +112,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             alloca_reserved: Reserve::new(
                 &self.intermediate_representation.allocas,
             ),
+
+            in_scope_id,
+            latest_order,
         };
 
         let pattern = side_effect.create_irrefutable_interanl(
@@ -133,7 +143,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         // insert the new instructions
         let block = self.current_block_mut();
         for instruction in new_instructions {
-            block.insert_basic(instruction);
+            let _ = block.insert_instruction(instruction);
         }
 
         for (id, alloca) in alloca_reserved {
@@ -141,6 +151,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 .allocas
                 .insert_with_id(id, alloca)
                 .unwrap();
+
+            self.stack.current_scope_mut().add_variable_declaration(id);
         }
 
         // insert new registers
@@ -159,6 +171,9 @@ struct SideEffect<'a> {
     new_instructions: Vec<Instruction<infer::Model>>,
     register_reserved: Reserve<'a, Register<infer::Model>>,
     alloca_reserved: Reserve<'a, Alloca<infer::Model>>,
+
+    in_scope_id: ID<scope::Scope>,
+    latest_order: usize,
 }
 
 impl<'a> SideEffect<'a> {
@@ -191,15 +206,13 @@ impl<'a> SideEffect<'a> {
             pointee: Box::new(address_type),
         });
 
-        let alloca_id = self
-            .alloca_reserved
-            .reserve(Alloca { r#type: alloca_ty.clone(), span: Some(span) });
+        let alloca_id = self.alloca_reserved.reserve(Alloca {
+            r#type: alloca_ty.clone(),
+            span: Some(span),
+            declared_in_scope_id: self.in_scope_id,
+            declaration_order: self.latest_order + self.alloca_reserved.len(),
+        });
 
-        // create a register that holds the reference of the
-        // value
-        self.new_instructions.push(instruction::Instruction::AllocaAllocation(
-            AllocaAllocation { id: alloca_id },
-        ));
         self.new_instructions.push(
             instruction::Instruction::RegisterAssignment(RegisterAssignment {
                 id: register_id,
@@ -207,7 +220,7 @@ impl<'a> SideEffect<'a> {
         );
         self.new_instructions.push(instruction::Instruction::Store(Store {
             address: Address::Base(Memory::Alloca(alloca_id)),
-            value: register_id,
+            value: Value::Register(register_id),
             is_initializattion: true,
         }));
 
@@ -253,7 +266,9 @@ impl<'a> SideEffect<'a> {
 
                     // update the address, reference binding
                     // info, and binding ty
-                    address = Address::Base(Memory::ReferenceValue(register));
+                    address = Address::Base(Memory::ReferenceValue(
+                        Value::Register(register),
+                    ));
                     reference_binding_info = Some(reference.qualifier);
                     current_ty = reference.pointee.as_ref();
                 }
@@ -507,6 +522,9 @@ impl<'a> SideEffect<'a> {
                                         ty
                                     },
                                     span: Some(named.identifier().span.clone()),
+                                    declared_in_scope_id: self.in_scope_id,
+                                    declaration_order: self.latest_order
+                                        + self.alloca_reserved.len(),
                                 });
 
                             let id = self.register_reserved.reserve(Register {
@@ -518,11 +536,6 @@ impl<'a> SideEffect<'a> {
                             });
 
                             self.new_instructions.push(
-                                Instruction::AllocaAllocation(
-                                    AllocaAllocation { id: alloca_id },
-                                ),
-                            );
-                            self.new_instructions.push(
                                 Instruction::RegisterAssignment(
                                     RegisterAssignment { id },
                                 ),
@@ -532,7 +545,7 @@ impl<'a> SideEffect<'a> {
                                     address: Address::Base(Memory::Alloca(
                                         alloca_id,
                                     )),
-                                    value: id,
+                                    value: Value::Register(id),
                                     is_initializattion: true,
                                 },
                             ));
@@ -729,14 +742,12 @@ impl<'a> SideEffect<'a> {
                                     .unwrap()
                                     .span(),
                             ),
+                            declared_in_scope_id: self.in_scope_id,
+                            declaration_order: self.latest_order
+                                + self.alloca_reserved.len(),
                         });
 
                         // variable declaration instruction and packing
-                        self.new_instructions.push(
-                            Instruction::AllocaAllocation(AllocaAllocation {
-                                id: alloca_id,
-                            }),
-                        );
                         self.new_instructions.push(Instruction::TuplePack(
                             instruction::TuplePack {
                                 store_address: Address::Base(Memory::Alloca(

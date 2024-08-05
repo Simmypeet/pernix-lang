@@ -12,16 +12,18 @@ use crate::{
     error::Error,
     ir::{
         address::{self, Address, Field, Memory, Stack},
-        alloca::Alloca,
         instruction::Instruction,
         pattern::{self, Irrefutable, Named},
-        register::{Assignment, LoadKind},
         representation::{
             binding::{
                 infer::{self, Erased},
                 Binder,
             },
             Representation,
+        },
+        value::{
+            register::{Assignment, LoadKind},
+            Value,
         },
     },
     symbol::{
@@ -117,18 +119,9 @@ impl Representation<infer::Model> {
                 return false;
             };
 
-            store.value == reference_of_register_id
+            store.value == Value::Register(reference_of_register_id)
                 && store.address
                     == Address::Base(Memory::Alloca(stored_address_alloca_id))
-        }));
-
-        assert!(block.instructions().iter().any(|instruction| {
-            let Instruction::AllocaAllocation(alloca_allocation) = instruction
-            else {
-                return false;
-            };
-
-            alloca_allocation.id == stored_address_alloca_id
         }));
 
         let alloca = self.allocas.get(stored_address_alloca_id).unwrap();
@@ -181,15 +174,11 @@ fn value_bound_named() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
 
-    let alloca_id = binder
-        .intermediate_representation
-        .allocas
-        .insert(Alloca { r#type: Type::default(), span: None });
+    let alloca_id = binder.create_alloca(Type::default(), None);
 
     let pattern = binder
         .create_irrefutable(
@@ -225,15 +214,11 @@ fn reference_bound_named() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
 
-    let alloca_id = binder
-        .intermediate_representation
-        .allocas
-        .insert(Alloca { r#type: Type::default(), span: None });
+    let alloca_id = binder.create_alloca(Type::default(), None);
 
     let pattern = binder
         .create_irrefutable(
@@ -326,15 +311,11 @@ fn value_bound_struct() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
 
-    let struct_alloca_id = binder
-        .intermediate_representation
-        .allocas
-        .insert(Alloca { r#type: struct_ty.clone(), span: None });
+    let struct_alloca_id = binder.create_alloca(struct_ty.clone(), None);
 
     let pattern = binder
         .create_irrefutable(
@@ -396,7 +377,7 @@ fn value_bound_struct() {
 
                 (init.address
                     == Address::Base(Memory::Alloca(destructed_variable)))
-                .then_some(init.value)
+                .then_some(*init.value.as_register().unwrap())
             })
             .unwrap();
 
@@ -487,7 +468,6 @@ fn reference_bound_struct() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &Counter::default(),
     )
     .unwrap();
@@ -509,10 +489,8 @@ fn reference_bound_struct() {
     let b_field_id =
         table.get(struct_id).unwrap().fields().get_id("b").unwrap();
 
-    let struct_alloca_id = binder
-        .intermediate_representation
-        .allocas
-        .insert(Alloca { r#type: reference_struct_ty.clone(), span: None });
+    let struct_alloca_id =
+        binder.create_alloca(reference_struct_ty.clone(), None);
 
     let pattern = binder
         .create_irrefutable(
@@ -567,7 +545,9 @@ fn reference_bound_struct() {
             "a",
             &Address::Field(Field {
                 struct_address: Box::new(Address::Base(
-                    Memory::ReferenceValue(load_address_register),
+                    Memory::ReferenceValue(Value::Register(
+                        load_address_register,
+                    )),
                 )),
                 id: a_field_id,
             }),
@@ -589,7 +569,9 @@ fn reference_bound_struct() {
             "b",
             &Address::Field(Field {
                 struct_address: Box::new(Address::Base(
-                    Memory::ReferenceValue(load_address_register),
+                    Memory::ReferenceValue(Value::Register(
+                        load_address_register,
+                    )),
                 )),
                 id: b_field_id,
             }),
@@ -626,15 +608,11 @@ fn value_bound_tuple() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
 
-    let tuple_alloca_id = binder
-        .intermediate_representation
-        .allocas
-        .insert(Alloca { r#type: tuple_ty.clone(), span: None });
+    let tuple_alloca_id = binder.create_alloca(tuple_ty.clone(), None);
 
     let pattern = binder
         .create_irrefutable(
@@ -693,7 +671,7 @@ fn value_bound_tuple() {
 
                 (init.address
                     == Address::Base(Memory::Alloca(destructed_variable)))
-                .then_some(init.value)
+                .then_some(*init.value.as_register().unwrap())
             })
             .unwrap();
 
@@ -760,15 +738,12 @@ fn reference_bound_tuple() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
 
-    let tuple_alloca_id = binder
-        .intermediate_representation
-        .allocas
-        .insert(Alloca { r#type: reference_tuple_ty.clone(), span: None });
+    let tuple_alloca_id =
+        binder.create_alloca(reference_tuple_ty.clone(), None);
 
     let pattern = binder
         .create_irrefutable(
@@ -818,7 +793,7 @@ fn reference_bound_tuple() {
             "a",
             &Address::Tuple(address::Tuple {
                 tuple_address: Box::new(Address::Base(Memory::ReferenceValue(
-                    load_address_register,
+                    Value::Register(load_address_register),
                 ))),
                 offset: address::Offset::FromStart(0),
             }),
@@ -838,7 +813,7 @@ fn reference_bound_tuple() {
             "b",
             &Address::Tuple(address::Tuple {
                 tuple_address: Box::new(Address::Base(Memory::ReferenceValue(
-                    load_address_register,
+                    Value::Register(load_address_register),
                 ))),
                 offset: address::Offset::FromStart(1),
             }),
@@ -882,15 +857,11 @@ fn packed_tuple() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
 
-    let tuple_alloca_id = binder
-        .intermediate_representation
-        .allocas
-        .insert(Alloca { r#type: tuple_ty.clone(), span: None });
+    let tuple_alloca_id = binder.create_alloca(tuple_ty.clone(), None);
 
     let pattern = binder
         .create_irrefutable(
@@ -952,7 +923,7 @@ fn packed_tuple() {
 
                 (init.address
                     == Address::Base(Memory::Alloca(destructed_variable)))
-                .then_some(init.value)
+                .then_some(*init.value.as_register().unwrap())
             })
             .unwrap();
 
@@ -1007,14 +978,6 @@ fn packed_tuple() {
             store_address.as_base().unwrap().as_alloca().unwrap(),
             pat.load_address.as_alloca().unwrap()
         );
-
-        assert!(block.instructions().iter().any(|inst| {
-            let Instruction::AllocaAllocation(inst) = inst else {
-                return false;
-            };
-
-            inst.id == *pat.load_address.as_alloca().unwrap()
-        }));
 
         assert_eq!(
             binder

@@ -8,13 +8,15 @@ use std::collections::HashMap;
 use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
 
-use super::{
-    address::{Address, Memory},
-    representation::Representation,
-    TypeOfError,
-};
+use super::Value;
 use crate::{
     arena::ID,
+    ir::{
+        address::{Address, Memory},
+        control_flow_graph::Block,
+        representation::Representation,
+        TypeOfError,
+    },
     symbol::{
         self,
         table::{self, representation::Index, Table},
@@ -39,7 +41,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TupleElement<M: Model> {
     /// The value of the tuple element.
-    pub value: ID<Register<M>>,
+    pub value: Value<M>,
 
     /// Whether the tuple element is unpacked.
     pub is_unpacked: bool,
@@ -62,11 +64,8 @@ impl<M: Model> Representation<M> {
         let mut elements = Vec::new();
 
         for element in &tuple.elements {
-            let ty = self.type_of_register(
-                element.value,
-                current_site,
-                environment,
-            )?;
+            let ty =
+                self.type_of_value(&element.value, current_site, environment)?;
 
             if element.is_unpacked {
                 match ty {
@@ -197,7 +196,7 @@ pub enum PrefixOperator {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Prefix<M: Model> {
     /// The operand of the prefix operator.
-    pub operand: ID<Register<M>>,
+    pub operand: Value<M>,
 
     /// The operator applied to the operand.
     pub operator: PrefixOperator,
@@ -211,7 +210,7 @@ impl<M: Model> Representation<M> {
         environment: &Environment<M, impl table::State, impl Normalizer<M>>,
     ) -> Result<Type<M>, TypeOfError<M>> {
         let mut operand_type =
-            self.type_of_register(prefix.operand, current_site, environment)?;
+            self.type_of_value(&prefix.operand, current_site, environment)?;
 
         match prefix.operator {
             PrefixOperator::Negate
@@ -230,7 +229,7 @@ impl<M: Model> Representation<M> {
                     Type::Local(inner) => *inner.0,
                     ty => {
                         return Err(TypeOfError::NonLocalAssignmentType {
-                            register: prefix.operand,
+                            value: prefix.operand.clone(),
                             r#type: ty,
                         })
                     }
@@ -242,26 +241,6 @@ impl<M: Model> Representation<M> {
     }
 }
 
-/// Represents a numeric literal value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Numeric<M: Model> {
-    /// The numeric value for the integer part as a string.
-    pub integer_string: String,
-
-    /// The numeric value for the decimal part as a string.
-    pub decimal_stirng: Option<String>,
-
-    /// The type of the numeric value.
-    pub r#type: Type<M>,
-}
-
-/// Represents a boolean value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Boolean {
-    /// The value of the boolean.
-    pub value: bool,
-}
-
 /// Represents a struct value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct<M: Model> {
@@ -269,7 +248,7 @@ pub struct Struct<M: Model> {
     pub struct_id: ID<symbol::Struct>,
 
     /// The field initializers of the struct.
-    pub initializers_by_field_id: HashMap<ID<Field>, ID<Register<M>>>,
+    pub initializers_by_field_id: HashMap<ID<Field>, Value<M>>,
 
     /// The generic arguments supplied to the struct.
     pub generic_arguments: GenericArguments<M>,
@@ -289,7 +268,7 @@ pub struct Variant<M: Model> {
     pub variant_id: ID<symbol::Variant>,
 
     /// The field initializers of the variant.
-    pub associated_value: Option<ID<Register<M>>>,
+    pub associated_value: Option<Value<M>>,
 
     /// The generic arguments supplied to the enum.
     pub generic_arguments: GenericArguments<M>,
@@ -317,7 +296,7 @@ pub struct FunctionCall<M: Model> {
     pub callable_id: CallableID,
 
     /// The arguments supplied to the function.
-    pub arguments: Vec<ID<Register<M>>>,
+    pub arguments: Vec<Value<M>>,
 
     /// The generic instantiations of the function.
     pub instantiation: Instantiation<M>,
@@ -422,13 +401,13 @@ pub enum BinaryOperator {
 }
 
 /// Represents a binary expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Binary<M: Model> {
     /// The left-hand side operand.
-    pub lhs: ID<Register<M>>,
+    pub lhs: Value<M>,
 
     /// The right-hand side operand.
-    pub rhs: ID<Register<M>>,
+    pub rhs: Value<M>,
 
     /// The operator applied to the operands.
     pub operator: BinaryOperator,
@@ -444,7 +423,7 @@ impl<M: Model> Representation<M> {
         match binary.operator {
             BinaryOperator::Bitwise(_) | BinaryOperator::Arithmetic(_) => {
                 // jsut return the lhs type
-                self.type_of_register(binary.lhs, current_site, environment)
+                self.type_of_value(&binary.lhs, current_site, environment)
             }
             BinaryOperator::Relational(_) => {
                 // always return boolean
@@ -452,6 +431,24 @@ impl<M: Model> Representation<M> {
             }
         }
     }
+}
+
+/// Represents a phi node in the SSA form.
+///
+/// A phi node is used to determine the value based on the flow of the
+/// execution. This is typcially used in the control flow related expressions
+/// such as `if` and `match`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Phi<M: Model> {
+    /// Maps the incoming block to the value.
+    pub incoming_values: HashMap<ID<Block<M>>, Value<M>>,
+
+    /// The type of the phi node.
+    ///
+    /// There type must be declared separately as the incoming values can have
+    /// different lifetime values; thus, the type of the phi node can't be
+    /// solely determined by one of the incoming values.
+    pub r#type: Type<M>,
 }
 
 /// An enumeration of the different kinds of values that can be assigned in the
@@ -463,15 +460,11 @@ pub enum Assignment<M: Model> {
     Load(Load<M>),
     ReferenceOf(ReferenceOf<M>),
     Prefix(Prefix<M>),
-    Numeric(Numeric<M>),
-    Boolean(Boolean),
     Struct(Struct<M>),
     Variant(Variant<M>),
     FunctionCall(FunctionCall<M>),
     Binary(Binary<M>),
-
-    /// The value is an error.
-    Errored(Type<M>),
+    Phi(Phi<M>),
 }
 
 /// Represents a register in the SSA from.
@@ -525,10 +518,6 @@ impl<M: Model> Representation<M> {
                 current_site,
                 environment,
             ),
-            Assignment::Numeric(numeric) => Ok(numeric.r#type.clone()),
-            Assignment::Boolean(_) => {
-                Ok(Type::Primitive(r#type::Primitive::Bool))
-            }
             Assignment::Struct(st) => Ok(type_of_struct_assignment(st)),
             Assignment::Variant(variant) => {
                 type_of_variant_assignment(variant, environment.table())
@@ -542,7 +531,7 @@ impl<M: Model> Representation<M> {
             Assignment::Binary(binary) => {
                 self.type_of_binary(binary, current_site, environment)
             }
-            Assignment::Errored(ty) => Ok(ty.clone()),
+            Assignment::Phi(phi_node) => Ok(phi_node.r#type.clone()),
         }
     }
 }

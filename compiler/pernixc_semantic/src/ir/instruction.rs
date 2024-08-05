@@ -1,12 +1,11 @@
 //! Contains the definition of [`Instruction`] and its variants.
 
-use pernixc_syntax::syntax_tree::expression::Block;
-
 use super::{
     address::{Address, Memory},
     alloca::Alloca,
-    register::Register,
+    control_flow_graph::Block,
     scope::Scope,
+    value::{register::Register, Value},
 };
 use crate::{arena::ID, type_system::model::Model};
 
@@ -28,29 +27,29 @@ pub enum UnconditionalJumpSource {
 
 /// Represents a jump to another block unconditionally.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnconditionalJump {
+pub struct UnconditionalJump<M: Model> {
     /// The target block of the jump.
-    pub target: ID<Block>,
+    pub target: ID<Block<M>>,
 }
 
 /// Represents a jump to another block conditionally.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConditionalJump<M: Model> {
     /// The condition of the jump.
-    pub condition: ID<Register<M>>,
+    pub condition: Value<M>,
 
     /// The block to jump to if the condition is true.
-    pub true_target: ID<Block>,
+    pub true_target: ID<Block<M>>,
 
     /// The block to jump to if the condition is false.
-    pub false_target: ID<Block>,
+    pub false_target: ID<Block<M>>,
 }
 
 /// An enumeration containing all kinds of jump instructions.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Jump<M: Model> {
-    Unconditional(UnconditionalJump),
+    Unconditional(UnconditionalJump<M>),
     Conditional(ConditionalJump<M>),
 }
 
@@ -58,7 +57,7 @@ pub enum Jump<M: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Return<M: Model> {
     /// The value to return.
-    pub value: ID<Register<M>>,
+    pub value: Value<M>,
 }
 
 /// Represents an assignment of a register.
@@ -78,7 +77,7 @@ pub struct Store<M: Model> {
     pub address: Address<Memory<M>>,
 
     /// The value to store.
-    pub value: ID<Register<M>>,
+    pub value: Value<M>,
 
     /// If `true`, it means that the instruction is used to initialize a memory
     /// location with a value; it typically translates from a `let` variable

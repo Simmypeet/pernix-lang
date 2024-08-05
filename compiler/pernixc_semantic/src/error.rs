@@ -2063,7 +2063,7 @@ impl<T: State> Display<T> for MismatchedTuplePatternLength {
             severity: Severity::Error,
             display: format!(
                 "the pattern contains mismatched element length: expected {} \
-                 elements but found {}",
+                 element(s) but found {}",
                 self.type_element_count, self.pattern_element_count
             ),
         })?;
@@ -2758,6 +2758,30 @@ where
                 help_display: Some("the implementation is defined here"),
             })?;
         }
+
+        Ok(())
+    }
+}
+
+/// Not all flow paths in this block expression express a value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NotAllFlowPathsExpressValue {
+    /// The span of the block expression.
+    pub span: Span,
+}
+
+impl<T: State> Display<T> for NotAllFlowPathsExpressValue {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "not all flow paths in this block expression express a \
+                      value",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
 
         Ok(())
     }

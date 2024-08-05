@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use getset::{CopyGetters, Getters};
 
-use super::instruction::{Instruction, Terminator};
+use super::instruction::{Instruction, Jump, Terminator};
 use crate::{
     arena::{Arena, ID},
     type_system::model::Model,
@@ -16,32 +16,34 @@ pub struct Block<M: Model> {
     /// List of instructions that are executed in sequence.
     #[get = "pub"]
     instructions: Vec<Instruction<M>>,
-    /// List of instructions that will never be executed.
-    #[get = "pub"]
-    unreachables: Vec<Instruction<M>>,
     /// The terminator instruction that will be executed last.
     #[get = "pub"]
     terminator: Option<Terminator<M>>,
-    /// List of blocks that are successors of this block.
-    #[get = "pub"]
-    successors: HashSet<ID<Block<M>>>,
     /// List of blocks that are predecessors of this block.
     #[get = "pub"]
     predecessors: HashSet<ID<Block<M>>>,
+    /// Determines if the block is the entry block.
+    #[get_copy = "pub"]
+    is_entry: bool,
 }
 
 impl<M: Model> Block<M> {
     /// Returns `true` if any of the instructions that will be added in the
     /// future will be unreachable (never executed)
     #[must_use]
-    pub const fn is_unreachable(&self) -> bool { self.terminator.is_some() }
+    pub fn is_unreachable(&self) -> bool {
+        self.terminator.is_some()
+            || (!self.is_entry && self.predecessors.is_empty())
+    }
 
     /// Adds a basic instruction to the block.
-    pub fn insert_basic(&mut self, instruction: Instruction<M>) {
-        if self.is_unreachable() {
-            self.unreachables.push(instruction);
-        } else {
+    #[must_use]
+    pub fn insert_instruction(&mut self, instruction: Instruction<M>) -> bool {
+        if !self.is_unreachable() {
             self.instructions.push(instruction);
+            true
+        } else {
+            false
         }
     }
 }
@@ -72,6 +74,22 @@ pub struct ControlFlowGraph<M: Model> {
     entry_block_id: ID<Block<M>>,
 }
 
+/// An error from calling [`ControlFlowGraph::insert_terminator`].
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[allow(missing_docs)]
+pub enum InsertTerminatorError<M: Model> {
+    #[error("the block is already terminated with a terminator instruction")]
+    Unreachable,
+
+    #[error(
+        "found an invalid block ID either from the terminator instruction or \
+         the target block ID parameter"
+    )]
+    InvalidBlockID(ID<Block<M>>),
+}
+
 impl<M: Model> ControlFlowGraph<M> {
     /// Gets the [`Block`] with the given ID.
     #[must_use]
@@ -84,6 +102,86 @@ impl<M: Model> ControlFlowGraph<M> {
     pub fn get_block_mut(&mut self, id: ID<Block<M>>) -> Option<&mut Block<M>> {
         self.blocks.get_mut(id)
     }
+
+    /// Creates a new block and returns its ID.
+    ///
+    /// When the block is created, it is not connected to any other block.
+    /// Therefore, the block is unreachable and any instructions added to it
+    /// will not be executed.
+    #[must_use]
+    pub fn new_block(&mut self) -> ID<Block<M>> {
+        self.blocks.insert(Block {
+            instructions: Vec::new(),
+            predecessors: HashSet::new(),
+            terminator: None,
+            is_entry: false,
+        })
+    }
+
+    /// Inserts a new terminator instruction to the given block ID.
+    pub fn insert_terminator(
+        &mut self,
+        block_id: ID<Block<M>>,
+        terminator: Terminator<M>,
+    ) -> Result<(), InsertTerminatorError<M>> {
+        if self
+            .get_block(block_id)
+            .ok_or(InsertTerminatorError::InvalidBlockID(block_id))?
+            .is_unreachable()
+        {
+            return Err(InsertTerminatorError::Unreachable);
+        }
+
+        match terminator {
+            Terminator::Jump(Jump::Unconditional(jump)) => {
+                let _ = self.get_block(jump.target).ok_or(
+                    InsertTerminatorError::InvalidBlockID(jump.target),
+                )?;
+
+                let this_block = self
+                    .get_block_mut(block_id)
+                    .ok_or(InsertTerminatorError::InvalidBlockID(block_id))?;
+
+                this_block.terminator =
+                    Some(Terminator::Jump(Jump::Unconditional(jump)));
+
+                // add the predecessor for the jump target
+                self.get_block_mut(jump.target)
+                    .unwrap()
+                    .predecessors
+                    .insert(block_id);
+            }
+
+            Terminator::Jump(Jump::Conditional(jump)) => {
+                let _ = self.get_block(jump.true_target).ok_or(
+                    InsertTerminatorError::InvalidBlockID(jump.true_target),
+                )?;
+                let _ = self.get_block(jump.false_target).ok_or(
+                    InsertTerminatorError::InvalidBlockID(jump.false_target),
+                )?;
+
+                // add the predecessors for the jump targets
+                self.get_block_mut(jump.true_target)
+                    .unwrap()
+                    .predecessors
+                    .insert(block_id);
+                self.get_block_mut(jump.false_target)
+                    .unwrap()
+                    .predecessors
+                    .insert(block_id);
+
+                self.get_block_mut(block_id).unwrap().terminator =
+                    Some(Terminator::Jump(Jump::Conditional(jump)));
+            }
+
+            Terminator::Return(ret) => {
+                self.get_block_mut(block_id).unwrap().terminator =
+                    Some(Terminator::Return(ret));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl<M: Model> Default for ControlFlowGraph<M> {
@@ -93,10 +191,9 @@ impl<M: Model> Default for ControlFlowGraph<M> {
         // create an entry block
         let entry_block_id = blocks.insert(Block {
             instructions: Vec::new(),
-            unreachables: Vec::new(),
-            successors: HashSet::new(),
             predecessors: HashSet::new(),
             terminator: None,
+            is_entry: true,
         });
 
         Self { blocks, entry_block_id }

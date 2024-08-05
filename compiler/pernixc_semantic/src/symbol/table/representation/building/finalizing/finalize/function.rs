@@ -222,7 +222,6 @@ impl Finalize for Function {
                         finalizer::Observer::<Complete>::default(),
                         symbol_id,
                         irrefutable_patterns.into_iter(),
-                        syntax_tree.const_keyword().is_some(),
                         handler,
                     )
                     .unwrap();

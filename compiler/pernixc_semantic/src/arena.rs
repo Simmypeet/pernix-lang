@@ -145,6 +145,15 @@ impl<'a, T: 'static, I> Reserve<'a, T, I> {
     /// Returns the map of reserved [`ID`]s and their associated information.
     #[must_use]
     pub fn into_reserved(self) -> HashMap<ID<T>, I> { self.reserved }
+
+    /// Returns the number of reserved [`ID`]s (not the total number of items in
+    /// the [`Arena`]).
+    #[must_use]
+    pub fn len(&self) -> usize { self.reserved.len() }
+
+    /// Returns `true` if there are no reserved [`ID`]s.
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.reserved.is_empty() }
 }
 
 /// Represents a collection of items of type `T` that can be referenced by an

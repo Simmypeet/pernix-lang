@@ -1,6 +1,6 @@
 //! Contains the definition of [`Binder`], the struct used for building the IR.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use infer::{
     Constraint, Context, Erased, InferenceVariable, NoConstraint, UnifyError,
@@ -16,10 +16,15 @@ use crate::{
     error::{self, MismatchedType},
     ir::{
         address::{Address, Memory},
+        alloca::Alloca,
         control_flow_graph::Block,
         instruction::{self, ScopePush},
         pattern::NameBindingPoint,
-        register::{Assignment, Register},
+        scope,
+        value::{
+            register::{Assignment, Register},
+            Value,
+        },
         TypeOfError,
     },
     symbol::{
@@ -49,9 +54,18 @@ use crate::{
 
 pub mod expression;
 pub mod infer;
-mod pattern;
 pub mod stack;
 pub mod statement;
+
+mod pattern;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BlockState {
+    label: Option<String>,
+    incoming_values: HashMap<ID<Block<infer::Model>>, Value<infer::Model>>,
+    successor_block_id: ID<Block<infer::Model>>,
+    express_type: Option<Type<infer::Model>>,
+}
 
 /// The binder used for building the IR.
 #[derive(Debug)]
@@ -61,12 +75,13 @@ pub struct Binder<'t, S: table::State, O: Observer<S, infer::Model>> {
     current_site: GlobalID,
     premise: Premise<infer::Model>,
     stack: Stack,
-    constant: bool,
 
     intermediate_representation: Representation<infer::Model>,
     current_block_id: ID<Block<infer::Model>>,
 
     inference_context: infer::Context,
+
+    block_states_by_scope_id: HashMap<ID<scope::Scope>, BlockState>,
 
     // a boolean flag indicating whether there's already been an error reported
     suboptimal: Arc<RwLock<bool>>,
@@ -114,7 +129,6 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         parameter_pattern_syns: impl ExactSizeIterator<
             Item = &'a syntax_tree::pattern::Irrefutable,
         >,
-        is_const: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Self, CreateFunctionBinderError>
     where
@@ -147,7 +161,6 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             table,
             current_site: function_id.into(),
             premise,
-            constant: is_const,
             intermediate_representation,
             stack,
             current_block_id,
@@ -155,6 +168,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             inference_context: Context::default(),
 
             resolution_observer,
+
+            block_states_by_scope_id: HashMap::new(),
 
             suboptimal: handler.suboptimal.clone(),
         };
@@ -164,7 +179,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         let root_scope_id =
             binder.intermediate_representation.scope_tree.root_scope_id();
 
-        binder.current_block_mut().insert_basic(
+        let _ = binder.current_block_mut().insert_instruction(
             instruction::Instruction::ScopePush(ScopePush(root_scope_id)),
         );
 
@@ -266,6 +281,31 @@ impl EliidedTermProvider<Constant<infer::Model>> for InferenceProvider {
 }
 
 impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+    /// Creates a new alloca and adds it to the current scope.
+    fn create_alloca(
+        &mut self,
+        r#type: Type<infer::Model>,
+        span: Option<Span>,
+    ) -> ID<Alloca<infer::Model>> {
+        // the alloca allocation instructions will all be inserted after the
+        // binding finishes
+
+        let alloca_id =
+            self.intermediate_representation.allocas.insert(Alloca {
+                r#type,
+                declared_in_scope_id: self.stack.current_scope().scope_id(),
+                declaration_order: self
+                    .stack
+                    .current_scope()
+                    .variable_declarations()
+                    .len(),
+                span,
+            });
+
+        self.stack.current_scope_mut().add_variable_declaration(alloca_id);
+
+        alloca_id
+    }
     /// Returns a reference to the current control flow graph.
     fn current_block(&self) -> &Block<infer::Model> {
         &self.intermediate_representation.control_flow_graph
@@ -318,7 +358,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             .registers
             .insert(Register { assignment, span });
 
-        self.current_block_mut().insert_basic(
+        let _ = self.current_block_mut().insert_instruction(
             instruction::Instruction::RegisterAssignment(
                 instruction::RegisterAssignment { id: register_id },
             ),
@@ -337,6 +377,17 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             self.current_site,
             &self.create_environment(),
         )
+    }
+
+    /// Gets the type of the given `value`.
+    fn type_of_value(
+        &self,
+        value: &Value<infer::Model>,
+    ) -> Result<Type<infer::Model>, TypeOfError<infer::Model>> {
+        match value {
+            Value::Register(register_id) => self.type_of_register(*register_id),
+            Value::Literal(literal) => Ok(literal.r#type()),
+        }
     }
 
     /// Gets the type of the given `address`.

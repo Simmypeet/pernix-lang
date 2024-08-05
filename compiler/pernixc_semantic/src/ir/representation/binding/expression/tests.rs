@@ -12,15 +12,18 @@ use crate::{
     ir::{
         address::{Address, Memory},
         instruction::Instruction,
-        register::{
-            ArithmeticOperator, BinaryOperator, BitwiseOperator, Register,
-            RelationalOperator,
-        },
         representation::binding::{
             expression::{Bind, Config, Target},
             infer::{self, ConstraintModel, Erased, NoConstraint},
             tests::{parse_expression, parse_statement, TestTemplate},
             Binder,
+        },
+        value::{
+            register::{
+                ArithmeticOperator, BinaryOperator, BitwiseOperator, Register,
+                RelationalOperator,
+            },
+            Value,
         },
     },
     symbol::{
@@ -96,32 +99,25 @@ fn numeric_literal_suffix() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
 
-    let numeric_register_id = binder
+    let numeric_literal = binder
         .bind(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_literal()
+        .unwrap()
+        .into_numeric()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
 
-    let register = binder
-        .intermediate_representation
-        .registers
-        .get(numeric_register_id)
-        .unwrap();
-    let numeric_value = register.assignment.as_numeric().unwrap();
-
-    assert!(numeric_value.decimal_stirng.is_none());
-    assert_eq!(numeric_value.integer_string, "432");
-    assert_eq!(
-        binder.type_of_register(numeric_register_id).unwrap(),
-        Type::Primitive(Primitive::Uint64)
-    );
+    assert!(numeric_literal.decimal_stirng.is_none());
+    assert_eq!(numeric_literal.integer_string, "432");
+    assert_eq!(numeric_literal.r#type, Type::Primitive(Primitive::Uint64));
 }
 
 #[test]
@@ -147,40 +143,32 @@ fn numberic_literal_float_infer() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
 
-    let numeric_register_id = binder
+    let numeric_literal = binder
         .bind(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_literal()
+        .unwrap()
+        .into_numeric()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
 
-    let register = binder
-        .intermediate_representation
-        .registers
-        .get(numeric_register_id)
-        .unwrap();
-    let numeric_value = register.assignment.as_numeric().unwrap();
-
-    assert_eq!(numeric_value.integer_string, "32");
+    assert_eq!(numeric_literal.integer_string, "32");
     assert_eq!(
-        numeric_value.decimal_stirng.as_ref().map(AsRef::as_ref),
+        numeric_literal.decimal_stirng.as_ref().map(AsRef::as_ref),
         Some("0")
     );
-    let inference_variable = binder
-        .type_of_register(numeric_register_id)
-        .unwrap()
-        .into_inference()
-        .unwrap();
+    let inference_variable = numeric_literal.r#type.as_inference().unwrap();
 
     let constraint_id = binder
         .inference_context
-        .get_inference(inference_variable)
+        .get_inference(*inference_variable)
         .cloned()
         .unwrap()
         .into_inferring()
@@ -215,38 +203,30 @@ fn numeric_literal_number_infer() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
 
-    let numeric_register_id = binder
+    let numeric_literal = binder
         .bind(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_literal()
+        .unwrap()
+        .into_numeric()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
 
-    let register = binder
-        .intermediate_representation
-        .registers
-        .get(numeric_register_id)
-        .unwrap();
-    let numeric_value = register.assignment.as_numeric().unwrap();
+    assert_eq!(numeric_literal.integer_string, "32");
+    assert!(numeric_literal.decimal_stirng.is_none());
 
-    assert_eq!(numeric_value.integer_string, "32");
-    assert!(numeric_value.decimal_stirng.is_none());
-
-    let inference_variable = binder
-        .type_of_register(numeric_register_id)
-        .unwrap()
-        .into_inference()
-        .unwrap();
+    let inference_variable = numeric_literal.r#type.as_inference().unwrap();
 
     let constraint_id = binder
         .inference_context
-        .get_inference(inference_variable)
+        .get_inference(*inference_variable)
         .cloned()
         .unwrap()
         .into_inferring()
@@ -281,7 +261,6 @@ fn invalid_numeric_literal_suffix() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
@@ -321,7 +300,6 @@ fn floating_point_literal_has_integral_suffix() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
@@ -376,7 +354,6 @@ fn bind_boolean_literal() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
@@ -385,38 +362,25 @@ fn bind_boolean_literal() {
         .bind(&true_expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_literal()
+        .unwrap()
+        .into_boolean()
         .unwrap();
     let false_value = binder
         .bind(&false_expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_literal()
+        .unwrap()
+        .into_boolean()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
 
-    assert!(
-        binder
-            .intermediate_representation
-            .registers
-            .get(true_value)
-            .unwrap()
-            .assignment
-            .as_boolean()
-            .unwrap()
-            .value
-    );
-
-    assert!(
-        !binder
-            .intermediate_representation
-            .registers
-            .get(false_value)
-            .unwrap()
-            .assignment
-            .as_boolean()
-            .unwrap()
-            .value
-    );
+    assert!(true_value.value);
+    assert!(!false_value.value);
 }
 
 #[test]
@@ -472,7 +436,6 @@ fn bind_prefix_operator() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
@@ -481,6 +444,8 @@ fn bind_prefix_operator() {
         .bind(&local_expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(binder
@@ -499,6 +464,8 @@ fn bind_prefix_operator() {
         )
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(binder
@@ -513,6 +480,8 @@ fn bind_prefix_operator() {
         .bind(&negate_expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(binder
@@ -531,6 +500,8 @@ fn bind_prefix_operator() {
         )
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(binder
@@ -545,6 +516,8 @@ fn bind_prefix_operator() {
         .bind(&unlocal_expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(binder
@@ -603,7 +576,6 @@ fn prefix_type_mismatched_error() {
         NoOpObserver,
         function_id,
         std::iter::empty(),
-        false,
         &storage,
     )
     .unwrap();
@@ -728,6 +700,8 @@ fn named_load() {
         .bind(&named_load, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     let load_alloca_id = *binder
@@ -867,16 +841,22 @@ fn reference_of() {
         )
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
     let reference_of_mutable_id = binder
         .bind(&reference_of_mutable, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
     let reference_of_unique_id = binder
         .bind(&reference_of_unique, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
@@ -951,16 +931,22 @@ fn reference_of_local() {
         )
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
     let reference_of_mutable_id = binder
         .bind(&reference_of_mutable, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
     let reference_of_unique_id = binder
         .bind(&reference_of_unique, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
@@ -1110,6 +1096,8 @@ fn dereference_as_value() {
         .bind(&dereference, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
@@ -1119,13 +1107,19 @@ fn dereference_as_value() {
 
     let dereference = dereference_register.assignment.as_load().unwrap();
 
-    let reference_value =
-        dereference.address.as_base().unwrap().into_reference_value().unwrap();
+    let reference_value = dereference
+        .address
+        .as_base()
+        .unwrap()
+        .as_reference_value()
+        .unwrap()
+        .as_register()
+        .unwrap();
 
     let name_load_register = binder
         .intermediate_representation
         .registers
-        .get(reference_value)
+        .get(*reference_value)
         .unwrap();
 
     assert_eq!(
@@ -1192,8 +1186,13 @@ fn dereference_as_address() {
 
     assert!(storage.as_vec().is_empty());
 
-    let reference_id =
-        *address.as_base().unwrap().as_reference_value().unwrap();
+    let reference_id = *address
+        .as_base()
+        .unwrap()
+        .as_reference_value()
+        .unwrap()
+        .as_register()
+        .unwrap();
 
     assert_eq!(
         *binder
@@ -1358,6 +1357,8 @@ fn struct_expression() {
         .bind(&struct_expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
@@ -1371,21 +1372,17 @@ fn struct_expression() {
                 .unwrap();
             let struct_initializer = register.assignment.as_struct().unwrap();
 
-            let initializer = *struct_initializer
+            let numeric_literal = struct_initializer
                 .initializers_by_field_id
                 .get(&field_id)
+                .unwrap()
+                .as_literal()
+                .unwrap()
+                .as_numeric()
                 .unwrap();
 
-            let numeric_register = binder
-                .intermediate_representation
-                .registers
-                .get(initializer)
-                .unwrap();
-
-            let numeric_assignment =
-                numeric_register.assignment.as_numeric().unwrap();
-
-            assert_eq!(numeric_assignment.integer_string, expected_string);
+            assert_eq!(numeric_literal.integer_string, expected_string);
+            assert!(numeric_literal.decimal_stirng.is_none());
         };
 
     assert_struct_initializer(x_field_id, "32");
@@ -1740,6 +1737,8 @@ fn variant_call() {
         )
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
@@ -1755,18 +1754,17 @@ fn variant_call() {
 
     assert_eq!(first_assignment.variant_id, first_id);
 
-    let associated_value = *first_assignment.associated_value.as_ref().unwrap();
-
-    let numeric_register = binder
-        .intermediate_representation
-        .registers
-        .get(associated_value)
+    let numeric_literal = first_assignment
+        .associated_value
+        .as_ref()
+        .unwrap()
+        .as_literal()
+        .unwrap()
+        .as_numeric()
         .unwrap();
 
-    let numeric_assignment = numeric_register.assignment.as_numeric().unwrap();
-
-    assert_eq!(numeric_assignment.integer_string, "32");
-    assert_eq!(numeric_assignment.decimal_stirng, None);
+    assert_eq!(numeric_literal.integer_string, "32");
+    assert_eq!(numeric_literal.decimal_stirng, None);
 
     let fourth_register_id = binder
         .bind(
@@ -1776,6 +1774,8 @@ fn variant_call() {
         )
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
@@ -1947,6 +1947,8 @@ fn qualified_identifier_variant() {
         .bind(&fourth_expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
@@ -2106,6 +2108,8 @@ fn function_call() {
         .bind(&call_expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
@@ -2160,51 +2164,45 @@ fn function_call() {
 
     // the first arguments is a boolean true
     {
-        let first_argument =
-            *function_call_assignment.arguments.get(0).unwrap();
-
-        let first_register = binder
-            .intermediate_representation
-            .registers
-            .get(first_argument)
+        let first_value = function_call_assignment
+            .arguments
+            .get(0)
+            .unwrap()
+            .as_literal()
+            .unwrap()
+            .as_boolean()
             .unwrap();
 
-        let first_assignment = first_register.assignment.as_boolean().unwrap();
-
-        assert_eq!(first_assignment.value, true);
+        assert_eq!(first_value.value, true);
     }
 
     // the second arguments is a boolean false
     {
-        let second_argument =
-            *function_call_assignment.arguments.get(1).unwrap();
-
-        let second_register = binder
-            .intermediate_representation
-            .registers
-            .get(second_argument)
+        let second_value = function_call_assignment
+            .arguments
+            .get(1)
+            .unwrap()
+            .as_literal()
+            .unwrap()
+            .as_boolean()
             .unwrap();
 
-        let second_assignment =
-            second_register.assignment.as_boolean().unwrap();
-
-        assert_eq!(second_assignment.value, false);
+        assert_eq!(second_value.value, false);
     }
 
     // the third arguments is an integer 32
     {
-        let third_argument =
-            *function_call_assignment.arguments.get(2).unwrap();
-
-        let third_register = binder
-            .intermediate_representation
-            .registers
-            .get(third_argument)
+        let third_value = function_call_assignment
+            .arguments
+            .get(2)
+            .unwrap()
+            .as_literal()
+            .unwrap()
+            .as_numeric()
             .unwrap();
 
-        let third_assignment = third_register.assignment.as_numeric().unwrap();
-
-        assert_eq!(third_assignment.integer_string, "32");
+        assert_eq!(third_value.integer_string, "32");
+        assert!(third_value.decimal_stirng.is_none());
     }
 }
 
@@ -2333,19 +2331,16 @@ fn assignment() {
         let correct_address = store.address == expected_address;
         let correct_kind = !store.is_initializattion;
 
-        let register = binder
-            .intermediate_representation
-            .registers
-            .get(store.value)
-            .unwrap()
-            .assignment
-            .as_numeric()
-            .unwrap();
+        let Some(numeric_literal) =
+            store.value.as_literal().and_then(|x| x.as_numeric())
+        else {
+            return false;
+        };
 
         correct_address
             && correct_kind
-            && register.integer_string == "64"
-            && register.decimal_stirng.is_none()
+            && numeric_literal.integer_string == "64"
+            && numeric_literal.decimal_stirng.is_none()
     }));
 
     // bind as value
@@ -2353,6 +2348,8 @@ fn assignment() {
         .bind(&assignment, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
@@ -2387,6 +2384,8 @@ fn normal_operator() {
             .bind(&arithmetic, Config { target: Target::Value }, &storage)
             .unwrap()
             .into_value()
+            .unwrap()
+            .into_register()
             .unwrap();
 
         assert!(storage.as_vec().is_empty());
@@ -2402,26 +2401,14 @@ fn normal_operator() {
 
         assert_eq!(register.operator, operator);
 
-        let number_one = binder
-            .intermediate_representation
-            .registers
-            .get(register.lhs)
-            .unwrap()
-            .assignment
-            .as_numeric()
-            .unwrap();
+        let number_one =
+            register.lhs.as_literal().unwrap().as_numeric().unwrap();
 
         assert_eq!(number_one.integer_string, lhs_str);
         assert_eq!(number_one.decimal_stirng, None);
 
-        let number_two = binder
-            .intermediate_representation
-            .registers
-            .get(register.rhs)
-            .unwrap()
-            .assignment
-            .as_numeric()
-            .unwrap();
+        let number_two =
+            register.rhs.as_literal().unwrap().as_numeric().unwrap();
 
         assert_eq!(number_two.integer_string, rhs_str);
         assert_eq!(number_two.decimal_stirng, None);
@@ -2497,6 +2484,10 @@ fn compound_binary_operator() {
             return false;
         };
 
+        let Value::Register(binary_register_id) = &store.value else {
+            return false;
+        };
+
         if store.address != expected_address || store.is_initializattion {
             return false;
         }
@@ -2504,7 +2495,7 @@ fn compound_binary_operator() {
         let Some(binary) = binder
             .intermediate_representation
             .registers
-            .get(store.value)
+            .get(*binary_register_id)
             .unwrap()
             .assignment
             .as_binary()
@@ -2517,10 +2508,14 @@ fn compound_binary_operator() {
             BinaryOperator::Arithmetic(ArithmeticOperator::Add)
         );
 
+        let Value::Register(binary_lhs_register_id) = binary.lhs else {
+            return false;
+        };
+
         let Some(load) = binder
             .intermediate_representation
             .registers
-            .get(binary.lhs)
+            .get(binary_lhs_register_id)
             .unwrap()
             .assignment
             .as_load()
@@ -2532,18 +2527,13 @@ fn compound_binary_operator() {
             return false;
         }
 
-        let Some(numeric) = binder
-            .intermediate_representation
-            .registers
-            .get(binary.rhs)
-            .unwrap()
-            .assignment
-            .as_numeric()
-        else {
-            return false;
-        };
-
-        dbg!(numeric.integer_string == "64" && numeric.decimal_stirng.is_none())
+        binary
+            .rhs
+            .as_literal()
+            .and_then(|x| x.as_numeric())
+            .map_or(false, |x| {
+                x.integer_string == "64" && x.decimal_stirng.is_none()
+            })
     }));
 }
 
@@ -2557,10 +2547,12 @@ fn binary_operator_precedence() {
 
     let expression = parse_expression(EXPRESSION).into_binary().unwrap();
 
-    let mul_op = binder
+    let add_op = binder
         .bind(&expression, Config { target: Target::Value }, &storage)
         .unwrap()
         .into_value()
+        .unwrap()
+        .into_register()
         .unwrap();
 
     assert!(storage.as_vec().is_empty());
@@ -2568,7 +2560,7 @@ fn binary_operator_precedence() {
     let add_register = binder
         .intermediate_representation
         .registers
-        .get(mul_op)
+        .get(add_op)
         .unwrap()
         .assignment
         .as_binary()
@@ -2579,14 +2571,7 @@ fn binary_operator_precedence() {
         BinaryOperator::Arithmetic(ArithmeticOperator::Add)
     );
 
-    let num_one = binder
-        .intermediate_representation
-        .registers
-        .get(add_register.lhs)
-        .unwrap()
-        .assignment
-        .as_numeric()
-        .unwrap();
+    let num_one = add_register.lhs.as_literal().unwrap().as_numeric().unwrap();
 
     assert_eq!(num_one.integer_string, "1");
     assert!(num_one.decimal_stirng.is_none());
@@ -2594,7 +2579,7 @@ fn binary_operator_precedence() {
     let mul_register = binder
         .intermediate_representation
         .registers
-        .get(add_register.rhs)
+        .get(*add_register.rhs.as_register().unwrap())
         .unwrap()
         .assignment
         .as_binary()
@@ -2605,26 +2590,13 @@ fn binary_operator_precedence() {
         BinaryOperator::Arithmetic(ArithmeticOperator::Multiply)
     );
 
-    let num_two = binder
-        .intermediate_representation
-        .registers
-        .get(mul_register.lhs)
-        .unwrap()
-        .assignment
-        .as_numeric()
-        .unwrap();
+    let num_two = mul_register.lhs.as_literal().unwrap().as_numeric().unwrap();
 
     assert_eq!(num_two.integer_string, "2");
     assert!(num_two.decimal_stirng.is_none());
 
-    let num_three = binder
-        .intermediate_representation
-        .registers
-        .get(mul_register.rhs)
-        .unwrap()
-        .assignment
-        .as_numeric()
-        .unwrap();
+    let num_three =
+        mul_register.rhs.as_literal().unwrap().as_numeric().unwrap();
 
     assert_eq!(num_three.integer_string, "3");
     assert!(num_three.decimal_stirng.is_none());

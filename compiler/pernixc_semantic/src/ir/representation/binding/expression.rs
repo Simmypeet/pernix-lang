@@ -1,6 +1,9 @@
 //! Contains the code for binding the expression syntax tree.
 
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::{
+    collections::{hash_map::Entry, HashMap, HashSet},
+    num::NonZero,
+};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_base::{
@@ -21,17 +24,29 @@ use crate::{
         FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
         InvalidRelationalOperation, MismatchedArgumentCount,
         MismatchedMutability, MismatchedReferenceQualifier,
-        SymbolIsNotCallable,
+        NotAllFlowPathsExpressValue, SymbolIsNotCallable,
     },
     ir::{
         address::{self, Address, Memory},
-        instruction::{Instruction, Store},
-        register::{
-            ArithmeticOperator, Assignment, Binary, BinaryOperator,
-            BitwiseOperator, Boolean, FunctionCall, Load, LoadKind, Numeric,
-            Prefix, PrefixOperator, ReferenceOf, Register, Struct, Variant,
+        control_flow_graph::{Block, InsertTerminatorError},
+        instruction::{
+            Instruction, Jump, ScopePop, ScopePush, Store, Terminator,
+            UnconditionalJump,
         },
-        representation::binding::infer::{InferenceVariable, NoConstraint},
+        representation::binding::{
+            infer::{InferenceVariable, NoConstraint},
+            BlockState,
+        },
+        scope,
+        value::{
+            literal::{self, Boolean, Literal, Numeric, Unit, Unreachable},
+            register::{
+                ArithmeticOperator, Assignment, Binary, BinaryOperator,
+                BitwiseOperator, FunctionCall, Load, LoadKind, Phi, Prefix,
+                PrefixOperator, ReferenceOf, Register, Struct, Variant,
+            },
+            Value,
+        },
         TypeOfError,
     },
     symbol::{
@@ -79,12 +94,12 @@ impl Target {
     /// Handles the `register_id` as an r-value.
     fn return_rvalue(
         self,
-        register_id: ID<Register<infer::Model>>,
+        value: Value<infer::Model>,
         rvalue_span: Span,
         handler: &HandlerWrapper,
     ) -> Result<Expression, SemanticError> {
         match self {
-            Self::Value => Ok(Expression::Value(register_id)),
+            Self::Value => Ok(Expression::Value(value)),
             Self::Address { .. } => {
                 handler.receive(Box::new(ExpectedLValue {
                     expression_span: rvalue_span.clone(),
@@ -107,7 +122,7 @@ pub struct Config {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Expression {
     /// The expression is bound as an r-value.
-    Value(ID<Register<infer::Model>>),
+    Value(Value<infer::Model>),
 
     /// The expression is bound as an l-value.
     Address {
@@ -217,20 +232,16 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             }
         };
 
-        let register_id = self.create_register_assignmnet(
-            Assignment::Numeric(Numeric {
+        Ok(config.target.return_rvalue(
+            Value::Literal(Literal::Numeric(Numeric {
                 integer_string: syntax_tree.numeric().span.str().to_string(),
                 decimal_stirng: syntax_tree
                     .decimal()
                     .as_ref()
                     .map(|x| x.numeric().span.str().to_owned()),
                 r#type: numeric_ty,
-            }),
-            Some(syntax_tree.span()),
-        );
-
-        Ok(config.target.return_rvalue(
-            register_id,
+                span: Some(syntax_tree.span()),
+            })),
             syntax_tree.span(),
             &self.create_handler_wrapper(handler),
         )?)
@@ -251,13 +262,11 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             syntax_tree::expression::Boolean::False(_) => false,
         };
 
-        let register_id = self.create_register_assignmnet(
-            Assignment::Boolean(Boolean { value }),
-            Some(syntax_tree.span()),
-        );
-
         Ok(config.target.return_rvalue(
-            register_id,
+            Value::Literal(Literal::Boolean(Boolean {
+                value,
+                span: Some(syntax_tree.span()),
+            })),
             syntax_tree.span(),
             &self.create_handler_wrapper(handler),
         )?)
@@ -321,7 +330,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 // if required, type check the operand
                 if let Some(expected_type) = expected_type {
                     self.type_check(
-                        self.type_of_register(operand)?,
+                        self.type_of_value(&operand)?,
                         expected_type,
                         syntax_tree.span(),
                         handler,
@@ -333,7 +342,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 );
 
                 Ok(config.target.return_rvalue(
-                    register_id,
+                    Value::Register(register_id),
                     syntax_tree.span(),
                     &self.create_handler_wrapper(handler),
                 )?)
@@ -350,7 +359,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     .unwrap();
 
                 // expected a reference type
-                let mut operand_type = self.type_of_register(operand)?;
+                let mut operand_type = self.type_of_value(&operand)?;
 
                 operand_type = simplify::simplify(
                     &operand_type,
@@ -386,7 +395,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                         );
 
                         Ok(config.target.return_rvalue(
-                            register_id,
+                            Value::Register(register_id),
                             syntax_tree.span(),
                             &self.create_handler_wrapper(handler),
                         )?)
@@ -482,7 +491,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 );
 
                 Ok(config.target.return_rvalue(
-                    register_id,
+                    Value::Register(register_id),
                     syntax_tree.span(),
                     &self.create_handler_wrapper(handler),
                 )?)
@@ -514,7 +523,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     fn bind_variant_call(
         &mut self,
-        arguments: Vec<(Span, ID<Register<infer::Model>>)>,
+        arguments: Vec<(Span, Value<infer::Model>)>,
         variant: resolution::Variant<infer::Model>,
         syntax_tree_span: Span,
         handler: &dyn Handler<Box<dyn error::Error>>,
@@ -545,10 +554,10 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         span: syntax_tree_span.clone(),
                     }));
 
-                    self.create_register_assignmnet(
-                        Assignment::Errored(variant_type),
-                        Some(syntax_tree_span.clone()),
-                    )
+                    Value::Literal(Literal::Error(literal::Error {
+                        r#type: variant_type,
+                        span: Some(syntax_tree_span.clone()),
+                    }))
                 }
                 len => {
                     if len != 1 {
@@ -563,7 +572,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     let argument = arguments.into_iter().next().unwrap();
 
                     let _ = self.type_check(
-                        self.type_of_register(argument.1)?,
+                        self.type_of_value(&argument.1)?,
                         Expected::Known(variant_type),
                         argument.0,
                         &self.create_handler_wrapper(handler),
@@ -606,7 +615,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     fn bind_function_call(
         &mut self,
-        arguments: &[(Span, ID<Register<infer::Model>>)],
+        arguments: &[(Span, Value<infer::Model>)],
         callable_id: CallableID,
         instantiation: Instantiation<infer::Model>,
         syntax_tree_span: Span,
@@ -628,7 +637,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         }
 
         // type check the arguments
-        for ((argument_span, argument_register_id), parameter) in
+        for ((argument_span, argument_value), parameter) in
             arguments.iter().zip(
                 callable
                     .parameter_order()
@@ -642,13 +651,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             instantiation::instantiate(&mut parameter_ty, &instantiation);
 
             let _ = self.type_check(
-                self.type_of_register(*argument_register_id)?,
+                self.type_of_value(&argument_value)?,
                 Expected::Known(parameter_ty),
                 argument_span.clone(),
                 handler,
             );
 
-            acutal_arguments.push(*argument_register_id);
+            acutal_arguments.push(argument_value.clone());
         }
 
         // fill the unsupplied arguments with error values
@@ -663,12 +672,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 
             instantiation::instantiate(&mut parameter_ty, &instantiation);
 
-            let error_register_id = self.create_register_assignmnet(
-                Assignment::Errored(parameter_ty),
-                Some(syntax_tree_span.clone()),
-            );
+            let error_value = Value::Literal(Literal::Error(literal::Error {
+                r#type: parameter_ty,
+                span: Some(syntax_tree_span.clone()),
+            }));
 
-            acutal_arguments.push(error_register_id);
+            acutal_arguments.push(error_value);
         }
 
         let mut return_type =
@@ -691,7 +700,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     #[allow(clippy::too_many_lines)]
     fn bind_postfix_call_with_resolution(
         &mut self,
-        arguments: Vec<(Span, ID<Register<infer::Model>>)>,
+        arguments: Vec<(Span, Value<infer::Model>)>,
         resolution_span: Span,
         resolution: resolution::Resolution<infer::Model>,
         syntax_tree_span: Span,
@@ -703,12 +712,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             // bind as variant
             resolution::Resolution::Variant(variant) => {
                 Ok(config.target.return_rvalue(
-                    self.bind_variant_call(
+                    Value::Register(self.bind_variant_call(
                         arguments,
                         variant,
                         syntax_tree_span.clone(),
                         handler,
-                    )?,
+                    )?),
                     syntax_tree_span,
                     &self.create_handler_wrapper(handler),
                 )?)
@@ -831,13 +840,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 };
 
                 Ok(config.target.return_rvalue(
-                    self.bind_function_call(
+                    Value::Register(self.bind_function_call(
                         &arguments,
                         callable_id,
                         instantiation,
                         syntax_tree_span.clone(),
                         handler,
-                    )?,
+                    )?),
                     syntax_tree_span,
                     &self.create_handler_wrapper(handler),
                 )?)
@@ -1018,13 +1027,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 };
 
                 Ok(config.target.return_rvalue(
-                    self.bind_function_call(
+                    Value::Register(self.bind_function_call(
                         &arguments,
                         callable_id,
                         inst,
                         syntax_tree_span.clone(),
                         handler,
-                    )?,
+                    )?),
                     syntax_tree_span,
                     &self.create_handler_wrapper(handler),
                 )?)
@@ -1191,7 +1200,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
                         return Ok(match config.target {
                             Target::Statement => Expression::SideEffect,
-                            Target::Value => Expression::Value(register_id),
+                            Target::Value => {
+                                Expression::Value(Value::Register(register_id))
+                            }
                             Target::Address { .. } => unreachable!(),
                         });
                     }
@@ -1260,10 +1271,11 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                         &instantiation,
                     );
 
-                    let associated_value = self.create_register_assignmnet(
-                        Assignment::Errored(associated_type),
-                        Some(syntax_tree.span()),
-                    );
+                    let associated_value =
+                        Value::Literal(Literal::Error(literal::Error {
+                            r#type: associated_type,
+                            span: Some(syntax_tree.span()),
+                        }));
 
                     Some(associated_value)
                 } else {
@@ -1280,7 +1292,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 );
 
                 Ok(config.target.return_rvalue(
-                    register_id,
+                    Value::Register(register_id),
                     syntax_tree.span(),
                     &self.create_handler_wrapper(handler),
                 )?)
@@ -1325,7 +1337,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
         .unwrap();
 
         let mut initializers_by_field_id =
-            HashMap::<ID<Field>, (ID<Register<infer::Model>>, Span)>::new();
+            HashMap::<ID<Field>, (Value<infer::Model>, Span)>::new();
 
         for field_syn in syntax_tree
             .field_initializers()
@@ -1334,7 +1346,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             .flat_map(ConnectedList::elements)
         {
             // get the field ID by name
-            let register_id =
+            let value =
                 self.bind_value_or_error(&**field_syn.expression(), handler)?;
 
             let (field_id, field_ty, field_accessibility) = {
@@ -1385,7 +1397,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
             // type check the field
             let _ = self.type_check(
-                self.type_of_register(register_id)?,
+                self.type_of_value(&value)?,
                 Expected::Known(field_ty),
                 field_syn.expression().span(),
                 handler,
@@ -1401,7 +1413,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                         duplicate_initialization_span: field_syn.span(),
                     })),
                 Entry::Vacant(entry) => {
-                    entry.insert((register_id, field_syn.span()));
+                    entry.insert((value, field_syn.span()));
                 }
             }
         }
@@ -1425,16 +1437,18 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
         }
 
         Ok(config.target.return_rvalue(
-            self.create_register_assignmnet(
-                Assignment::Struct(Struct {
-                    struct_id,
-                    initializers_by_field_id: initializers_by_field_id
-                        .into_iter()
-                        .map(|(id, (register_id, _))| (id, register_id))
-                        .collect(),
-                    generic_arguments,
-                }),
-                Some(syntax_tree.span()),
+            Value::Register(
+                self.create_register_assignmnet(
+                    Assignment::Struct(Struct {
+                        struct_id,
+                        initializers_by_field_id: initializers_by_field_id
+                            .into_iter()
+                            .map(|(id, (register_id, _))| (id, register_id))
+                            .collect(),
+                        generic_arguments,
+                    }),
+                    Some(syntax_tree.span()),
+                ),
             ),
             syntax_tree.span(),
             &self.create_handler_wrapper(handler),
@@ -1602,7 +1616,7 @@ const fn into_binary_operator(
 ) -> Result<(BinaryOperator, bool), &syntax_tree::expression::BinaryOperator> {
     use syntax_tree::expression::BinaryOperator as BinOpSyn;
 
-    use crate::ir::register::{
+    use crate::ir::value::register::{
         ArithmeticOperator as ArithOp, BinaryOperator as BinOp,
         BitwiseOperator as BitOp, RelationalOperator as RelaOp,
     };
@@ -1689,11 +1703,11 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         tree: &BinaryTree,
         config: Config,
         lhs_address: Address<Memory<infer::Model>>,
-        rhs_register_id: ID<Register<infer::Model>>,
+        rhs_value: Value<infer::Model>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let lhs_ty = self.type_of_address(&lhs_address)?;
-        let rhs_ty = self.type_of_register(rhs_register_id)?;
+        let rhs_ty = self.type_of_value(&rhs_value)?;
 
         let _ = self.type_check(
             rhs_ty,
@@ -1702,11 +1716,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             handler,
         );
 
-        self.current_block_mut().insert_basic(Instruction::Store(Store {
-            address: lhs_address.clone(),
-            value: rhs_register_id,
-            is_initializattion: false,
-        }));
+        let _ = self.current_block_mut().insert_instruction(
+            Instruction::Store(Store {
+                address: lhs_address.clone(),
+                value: rhs_value,
+                is_initializattion: false,
+            }),
+        );
 
         Ok(match config.target {
             Target::Value => {
@@ -1718,7 +1734,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     Some(tree.span()),
                 );
 
-                Expression::Value(register_id)
+                Expression::Value(Value::Register(register_id))
             }
 
             // qualifier is not checked here since the address is already bound
@@ -1741,7 +1757,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         let (op, is_compound) =
             into_binary_operator(syntax_tree.operator).unwrap();
 
-        let (lhs_address, lhs_register) = 'out: {
+        let (lhs_address, lhs_value) = 'out: {
             if is_compound {
                 let lhs_address = match self.bind(
                     &syntax_tree.left,
@@ -1759,12 +1775,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         let inference =
                             self.create_type_inference(r#type::Constraint::All);
 
-                        let errored_register = self.create_register_assignmnet(
-                            Assignment::Errored(Type::Inference(inference)),
-                            Some(span),
+                        break 'out (
+                            None,
+                            Value::Literal(Literal::Error(literal::Error {
+                                r#type: Type::Inference(inference),
+                                span: Some(span),
+                            })),
                         );
-
-                        break 'out (None, errored_register);
                     }
 
                     Err(Error::Internal(internal_error)) => {
@@ -1780,16 +1797,16 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     Some(syntax_tree.left.span()),
                 );
 
-                (Some(lhs_address), lhs_register)
+                (Some(lhs_address), Value::Register(lhs_register))
             } else {
                 (None, self.bind_value_or_error(&syntax_tree.left, handler)?)
             }
         };
 
-        let rhs_register =
+        let rhs_value =
             self.bind_value_or_error(&syntax_tree.right, handler)?;
 
-        let lhs_register_ty = self.type_of_register(lhs_register)?;
+        let lhs_register_ty = self.type_of_value(&lhs_value)?;
 
         // left shift and right shift doesn't necessarily require the same type
         // for both operands
@@ -1799,7 +1816,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 BitwiseOperator::LeftShift | BitwiseOperator::RightShift
             )
         ) {
-            let rhs_register_ty = self.type_of_register(rhs_register)?;
+            let rhs_register_ty = self.type_of_value(&rhs_value)?;
 
             let _ = self.type_check(
                 rhs_register_ty,
@@ -1934,11 +1951,10 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         handler,
                     );
 
-                    let rhs_register_ty =
-                        self.type_of_register(rhs_register)?;
+                    let rhs_value_ty = self.type_of_value(&rhs_value)?;
 
                     let _ = self.type_check(
-                        rhs_register_ty,
+                        rhs_value_ty,
                         Expected::Constraint(expected_constraints),
                         syntax_tree.right.span(),
                         handler,
@@ -1950,8 +1966,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         let binary_register = self.create_register_assignmnet(
             Assignment::Binary(Binary {
                 operator: op,
-                lhs: lhs_register,
-                rhs: rhs_register,
+                lhs: lhs_value,
+                rhs: rhs_value,
             }),
             Some(syntax_tree.span()),
         );
@@ -1961,12 +1977,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 syntax_tree,
                 config,
                 lhs_address.0,
-                binary_register,
+                Value::Register(binary_register),
                 handler,
             )
         } else {
             Ok(config.target.return_rvalue(
-                binary_register,
+                Value::Register(binary_register),
                 syntax_tree.span(),
                 &self.create_handler_wrapper(handler),
             )?)
@@ -2048,6 +2064,26 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 }
 
 impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::expression::Brace> for Binder<'t, S, O>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &syntax_tree::expression::Brace,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        match syntax_tree {
+            syntax_tree::expression::Brace::Block(syn) => {
+                self.bind(syn, config, handler)
+            }
+            syntax_tree::expression::Brace::IfElse(_) => todo!(),
+            syntax_tree::expression::Brace::Loop(_) => todo!(),
+            syntax_tree::expression::Brace::Match(_) => todo!(),
+        }
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
     Bind<syntax_tree::expression::Expression> for Binder<'t, S, O>
 {
     fn bind(
@@ -2061,8 +2097,210 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 self.bind(syn, config, handler)
             }
             syntax_tree::expression::Expression::Terminator(_) => todo!(),
-            syntax_tree::expression::Expression::Brace(_) => todo!(),
+            syntax_tree::expression::Expression::Brace(syn) => {
+                self.bind(syn, config, handler)
+            }
         }
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+    fn bind_block_state(
+        &mut self,
+        mut block_scope: BlockState,
+        syntax_tree_span: Span,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let value = if let Some(express_type) = block_scope.express_type {
+            // the block id that doesn't have incoming values
+            let missing_value_block_ids = self
+                .current_block()
+                .predecessors()
+                .iter()
+                .copied()
+                .filter(|block_id| {
+                    block_scope.incoming_values.contains_key(block_id)
+                })
+                .collect::<Vec<_>>();
+
+            // filter out the incoming values that are unreachable
+            for remove in block_scope
+                .incoming_values
+                .keys()
+                .copied()
+                .filter(|x| !self.current_block().predecessors().contains(x))
+                .collect::<Vec<_>>()
+            {
+                block_scope.incoming_values.remove(&remove);
+            }
+
+            // add the missing values
+            for block_id in missing_value_block_ids.iter().copied() {
+                assert!(block_scope
+                    .incoming_values
+                    .insert(
+                        block_id,
+                        Value::Literal(Literal::Error(literal::Error {
+                            r#type: express_type.clone(),
+                            span: Some(syntax_tree_span.clone()),
+                        })),
+                    )
+                    .is_none());
+            }
+
+            if !missing_value_block_ids.is_empty() {
+                self.create_handler_wrapper(handler).receive(Box::new(
+                    NotAllFlowPathsExpressValue {
+                        span: syntax_tree_span.clone(),
+                    },
+                ));
+            }
+
+            match block_scope.incoming_values.len() {
+                // no incoming values, unreachable
+                0 => Value::Literal(Literal::Unreachable(Unreachable {
+                    r#type: express_type,
+                    span: Some(syntax_tree_span.clone()),
+                })),
+
+                // only one incoming value, just return it
+                1 => block_scope.incoming_values.into_iter().next().unwrap().1,
+
+                // multiple incoming values, create a phi node
+                _ => {
+                    let phi_register_id = self.create_register_assignmnet(
+                        Assignment::Phi(Phi {
+                            r#type: express_type,
+                            incoming_values: block_scope.incoming_values,
+                        }),
+                        Some(syntax_tree_span.clone()),
+                    );
+
+                    Value::Register(phi_register_id)
+                }
+            }
+        } else {
+            // should have had no incoming values
+            assert!(block_scope.incoming_values.is_empty());
+
+            if self.current_block().is_unreachable() {
+                let inference_variable = InferenceVariable::new();
+
+                assert!(self
+                    .inference_context
+                    .register(inference_variable, Constraint::All));
+
+                Value::Literal(Literal::Unreachable(Unreachable {
+                    r#type: Type::Inference(inference_variable),
+                    span: Some(syntax_tree_span.clone()),
+                }))
+            } else {
+                Value::Literal(Literal::Unit(Unit {
+                    span: Some(syntax_tree_span.clone()),
+                }))
+            }
+        };
+
+        Ok(config.target.return_rvalue(
+            value,
+            syntax_tree_span,
+            &self.create_handler_wrapper(handler),
+        )?)
+    }
+
+    /// Binds the basic block of the given syntax tree.
+    ///
+    /// When binding a block, a new scope push instruction will be inserted
+    /// right away in the `current_block`. Then, the list of instructions will
+    /// be bound. Finally, a scope pop instruction will be followed as well
+    /// as a jump instruction to the successor block.
+    ///
+    /// The function returns the [`BlockState`] that can be bound as a value by
+    /// [`Self::bind_block_state`] function.
+    fn bind_block(
+        &mut self,
+        syntax_tree: &syntax_tree::expression::Block,
+        scope_id: ID<scope::Scope>,
+        successor_block_id: ID<Block<infer::Model>>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> BlockState {
+        // add the scope push instruction
+        let _ = self
+            .current_block_mut()
+            .insert_instruction(Instruction::ScopePush(ScopePush(scope_id)));
+
+        self.block_states_by_scope_id.insert(scope_id, BlockState {
+            label: syntax_tree
+                .label_specifier()
+                .as_ref()
+                .map(|x| x.label().identifier().span().str().to_owned()),
+            incoming_values: HashMap::new(),
+            successor_block_id,
+            express_type: None,
+        });
+
+        // push a new scope
+        self.stack.push_scope(scope_id);
+
+        // bind list of statements
+        for statement in syntax_tree.statements().statements() {
+            let _ = self.bind_statement(statement, handler);
+        }
+
+        // ends the scope
+        assert!(self.stack.pop_scope());
+        let _ = self
+            .current_block_mut()
+            .insert_instruction(Instruction::ScopePop(ScopePop(scope_id)));
+
+        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
+            .intermediate_representation
+            .control_flow_graph
+            .insert_terminator(
+                self.current_block_id,
+                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                    target: successor_block_id,
+                })),
+            )
+        {
+            panic!("should've been a valid ID");
+        }
+
+        // set the current block to the successor block
+        self.current_block_id = successor_block_id;
+
+        // return the block state
+        self.block_states_by_scope_id.remove(&scope_id).unwrap()
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<syntax_tree::expression::Block> for Binder<'t, S, O>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &syntax_tree::expression::Block,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let scope_id = self
+            .intermediate_representation
+            .scope_tree
+            .new_child_branch(
+                self.stack.current_scope().scope_id(),
+                NonZero::new(1).unwrap(),
+            )
+            .unwrap()[0];
+
+        let successor_block_id =
+            self.intermediate_representation.control_flow_graph.new_block();
+
+        let block_state =
+            self.bind_block(syntax_tree, scope_id, successor_block_id, handler);
+
+        // bind the block state as value
+        self.bind_block_state(block_state, syntax_tree.span(), config, handler)
     }
 }
 
@@ -2078,7 +2316,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         &mut self,
         syntax_tree: &T,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<ID<Register<infer::Model>>, InternalError>
+    ) -> Result<Value<infer::Model>, InternalError>
     where
         Self: Bind<T>,
     {
@@ -2089,10 +2327,10 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 let inference =
                     self.create_type_inference(r#type::Constraint::All);
 
-                Ok(self.create_register_assignmnet(
-                    Assignment::Errored(Type::Inference(inference)),
-                    Some(semantic_error.0),
-                ))
+                Ok(Value::Literal(Literal::Error(literal::Error {
+                    r#type: Type::Inference(inference),
+                    span: Some(semantic_error.0),
+                })))
             }
             Err(Error::Internal(internal_error)) => Err(internal_error),
         }

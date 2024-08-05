@@ -13,8 +13,7 @@
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    alloca::Alloca, register::Register, representation::Representation,
-    TypeOfError,
+    alloca::Alloca, representation::Representation, value::Value, TypeOfError,
 };
 use crate::{
     arena::ID,
@@ -84,16 +83,14 @@ pub enum Stack<M: Model> {
 ///
 /// This is used to represent the base address of a memory location for the
 /// [`Address`] type.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Memory<M: Model> {
     Parameter(ID<Parameter>),
     Alloca(ID<Alloca<M>>),
 
     /// The memory pointer is stored in a register.
-    ReferenceValue(ID<Register<M>>),
+    ReferenceValue(Value<M>),
 }
 
 /// Represents an address to a particular location in memory.
@@ -171,12 +168,9 @@ impl<M: Model> Representation<M> {
                 Ok(alloca.r#type.clone())
             }
 
-            Address::Base(Memory::ReferenceValue(register_id)) => {
-                let mut ty = self.type_of_register(
-                    *register_id,
-                    current_site,
-                    environment,
-                )?;
+            Address::Base(Memory::ReferenceValue(value)) => {
+                let mut ty =
+                    self.type_of_value(value, current_site, environment)?;
 
                 // the lifetime constraints are ignored
                 ty = simplify::simplify(&ty, environment).result;
@@ -185,7 +179,7 @@ impl<M: Model> Representation<M> {
                     Type::Reference(reference) => *reference.pointee,
                     another_ty => {
                         return Err(TypeOfError::NonReferenceAddressType {
-                            register_id: *register_id,
+                            value: value.clone(),
                             r#type: another_ty,
                         });
                     }
