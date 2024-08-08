@@ -6,8 +6,9 @@ use pernixc_base::source_file::Span;
 use crate::type_system::{
     model::Model,
     term::{
-        self,
-        r#type::{Primitive, Type},
+        self, constant,
+        lifetime::Lifetime,
+        r#type::{Array, Primitive, Qualifier, Reference, Type},
     },
 };
 
@@ -15,12 +16,15 @@ use crate::type_system::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Numeric<M: Model> {
     /// The numeric value for the integer part as a string.
-    pub integer_string: String,
+    pub integer_string: std::string::String,
 
     /// The numeric value for the decimal part as a string.
-    pub decimal_stirng: Option<String>,
+    pub decimal_stirng: Option<std::string::String>,
 
     /// The type of the numeric value.
+    ///
+    /// The type is explicitly annotate here since it can be determined by
+    /// type inference.
     pub r#type: Type<M>,
 
     /// The span location of the numeric value.
@@ -66,6 +70,32 @@ pub struct Unreachable<M: Model> {
     pub span: Option<Span>,
 }
 
+/// Represents a string literal value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct String {
+    /// The value of the string.
+    pub value: Vec<u8>,
+
+    /// The span location of the string.
+    pub span: Option<Span>,
+}
+
+/// Represents a character literal value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Character<M: Model> {
+    /// The value of the character.
+    pub character: char,
+
+    /// The type of the character value.
+    ///
+    /// The type is explicitly annotate here since it can be determined by
+    /// type inference.
+    pub r#type: Type<M>,
+
+    /// The span location of the character.
+    pub span: Option<Span>,
+}
+
 /// Represents a literal value.
 ///
 /// A literal value is a value that is directly represented in the source code
@@ -87,6 +117,8 @@ pub enum Literal<M: Model> {
     Boolean(Boolean),
     Error(Error<M>),
     Unit(Unit),
+    String(String),
+    Character(Character<M>),
     Unreachable(Unreachable<M>),
 }
 
@@ -100,6 +132,18 @@ impl<M: Model> Literal<M> {
             Literal::Unit(_) => {
                 Type::Tuple(term::Tuple { elements: Vec::new() })
             }
+            // &'static [uint8: len]
+            Literal::String(string) => Type::Reference(Reference {
+                qualifier: Qualifier::Immutable,
+                lifetime: Lifetime::Static,
+                pointee: Box::new(Type::Array(Array {
+                    r#type: Box::new(Type::Primitive(Primitive::Uint8)),
+                    length: term::constant::Constant::Primitive(
+                        constant::Primitive::Integer(string.value.len() as i128),
+                    ),
+                })),
+            }),
+            Literal::Character(c) => c.r#type.clone(),
             Literal::Unreachable(u) => u.r#type.clone(),
         }
     }
@@ -111,6 +155,8 @@ impl<M: Model> Literal<M> {
             Literal::Boolean(b) => b.span.as_ref(),
             Literal::Error(e) => e.span.as_ref(),
             Literal::Unit(u) => u.span.as_ref(),
+            Literal::String(s) => s.span.as_ref(),
+            Literal::Character(c) => c.span.as_ref(),
             Literal::Unreachable(u) => u.span.as_ref(),
         }
     }

@@ -655,8 +655,6 @@ impl Token {
                 match character {
                     // end the string
                     '"' => {
-                        iter.next(); // eat the closing quote
-
                         return Ok(Token::String(String {
                             span: Self::create_span(start, iter),
                             value: string,

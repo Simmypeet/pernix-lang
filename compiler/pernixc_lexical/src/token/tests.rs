@@ -22,7 +22,7 @@ use super::{KeywordKind, ESCAPE_SEQUENCE_BY_REPRESENTATION};
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Identifier {
     /// The valid identifier string.
-    pub string: String,
+    pub string: std::string::String,
 }
 
 impl Display for Identifier {
@@ -98,7 +98,7 @@ impl Input<&super::Keyword> for &Keyword {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Numeric {
     /// The valid numeric literal value string.
-    pub value: String,
+    pub value: std::string::String,
 }
 
 impl Display for Numeric {
@@ -134,7 +134,7 @@ impl Numeric {
 )]
 pub struct DelimitedComment {
     /// The content of the delimited comment (without the `/*` and `*/`).
-    pub comment_body: String,
+    pub comment_body: std::string::String,
 }
 
 impl Arbitrary for DelimitedComment {
@@ -167,7 +167,7 @@ impl Display for DelimitedComment {
 pub struct LineComment {
     /// The content of the line comment (without the `//` and new line
     /// terminator).
-    pub comment_body: String,
+    pub comment_body: std::string::String,
 }
 
 impl Arbitrary for LineComment {
@@ -359,12 +359,12 @@ impl WhiteSpaces {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Character {
+pub enum CharacterKind {
     Normal(char),
     Escaped(char),
 }
 
-impl Character {
+impl CharacterKind {
     pub fn get_expected_value(self) -> char {
         match self {
             Self::Normal(x) => x,
@@ -376,7 +376,7 @@ impl Character {
     }
 }
 
-impl std::fmt::Display for Character {
+impl std::fmt::Display for CharacterKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Normal(x) => f.write_char(*x),
@@ -388,7 +388,7 @@ impl std::fmt::Display for Character {
     }
 }
 
-impl Arbitrary for Character {
+impl Arbitrary for CharacterKind {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -404,34 +404,36 @@ impl Arbitrary for Character {
                     "filter out single/double quote(s) and backslash",
                     |x| *x != '\'' && *x != '"' && *x != '\\'
                 )
-                .prop_map(Character::Normal),
+                .prop_map(CharacterKind::Normal),
             proptest::sample::select(escape_characters)
-                .prop_map(Character::Escaped)
+                .prop_map(CharacterKind::Escaped)
         ]
         .boxed()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CharacterLiteral {
-    pub character: Character,
+pub struct Character {
+    pub character: CharacterKind,
 }
 
-impl Arbitrary for CharacterLiteral {
+impl Arbitrary for Character {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Character::arbitrary().prop_map(|character| Self { character }).boxed()
+        CharacterKind::arbitrary()
+            .prop_map(|character| Self { character })
+            .boxed()
     }
 }
 
-impl Display for CharacterLiteral {
+impl Display for Character {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "'{}'", self.character)
     }
 }
 
-impl Input<&super::Character> for &CharacterLiteral {
+impl Input<&super::Character> for &Character {
     fn assert(self, output: &super::Character) -> TestCaseResult {
         if let Some(value) = output.value {
             prop_assert_eq!(self.character.get_expected_value(), value);
@@ -446,11 +448,11 @@ impl Input<&super::Character> for &CharacterLiteral {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StringLiteral {
-    pub characters: Vec<Character>,
+pub struct String {
+    pub characters: Vec<CharacterKind>,
 }
 
-impl Display for StringLiteral {
+impl Display for String {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('"')?;
         for character in &self.characters {
@@ -460,24 +462,24 @@ impl Display for StringLiteral {
     }
 }
 
-impl Arbitrary for StringLiteral {
+impl Arbitrary for String {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        proptest::collection::vec(Character::arbitrary(), 0..=32)
+        proptest::collection::vec(CharacterKind::arbitrary(), 0..=32)
             .prop_map(|characters| Self { characters })
             .boxed()
     }
 }
 
-impl Input<&super::String> for &StringLiteral {
+impl Input<&super::String> for &String {
     fn assert(self, output: &super::String) -> TestCaseResult {
         let expected_value = self
             .characters
             .iter()
             .map(|x| x.get_expected_value())
-            .collect::<String>();
+            .collect::<std::string::String>();
 
         if let Some(value) = &output.value {
             prop_assert_eq!(&expected_value, value);
@@ -501,8 +503,8 @@ pub enum Token {
     NumericLiteral(Numeric),
     WhiteSpaces(WhiteSpaces),
     Punctuation(Punctuation),
-    CharacterLiteral(CharacterLiteral),
-    StringLiteral(StringLiteral),
+    Character(Character),
+    String(String),
 }
 
 impl Arbitrary for Token {
@@ -517,8 +519,8 @@ impl Arbitrary for Token {
             Numeric::arbitrary().prop_map(Self::NumericLiteral),
             WhiteSpaces::arbitrary().prop_map(Self::WhiteSpaces),
             Punctuation::arbitrary().prop_map(Self::Punctuation),
-            CharacterLiteral::arbitrary().prop_map(Self::CharacterLiteral),
-            StringLiteral::arbitrary().prop_map(Self::StringLiteral)
+            Character::arbitrary().prop_map(Self::Character),
+            String::arbitrary().prop_map(Self::String)
         ]
         .boxed()
     }
@@ -533,8 +535,8 @@ impl Display for Token {
             Self::NumericLiteral(x) => Display::fmt(x, f),
             Self::WhiteSpaces(x) => Display::fmt(x, f),
             Self::Punctuation(x) => Display::fmt(x, f),
-            Self::CharacterLiteral(x) => Display::fmt(x, f),
-            Self::StringLiteral(x) => Display::fmt(x, f),
+            Self::Character(x) => Display::fmt(x, f),
+            Self::String(x) => Display::fmt(x, f),
         }
     }
 }
@@ -562,10 +564,10 @@ impl Input<&super::Token> for &Token {
             (Token::Punctuation(i), super::Token::Punctuation(o)) => {
                 i.assert(o)?;
             }
-            (Token::CharacterLiteral(i), super::Token::Character(o)) => {
+            (Token::Character(i), super::Token::Character(o)) => {
                 i.assert(o)?;
             }
-            (Token::StringLiteral(i), super::Token::String(o)) => {
+            (Token::String(i), super::Token::String(o)) => {
                 i.assert(o)?;
             }
             _ => {
@@ -580,7 +582,7 @@ impl Input<&super::Token> for &Token {
 }
 
 fn tokenize(
-    source: String,
+    source: std::string::String,
 ) -> Result<super::Token, proptest::test_runner::TestCaseError> {
     let source_file = Arc::new(SourceFile::temp(source)?);
     let mut iterator = source_file.iter();
@@ -596,6 +598,8 @@ fn tokenize(
             )))
         }
     };
+
+    prop_assert!(iterator.next().is_none());
 
     // no errors
     prop_assert!(

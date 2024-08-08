@@ -66,6 +66,7 @@ struct BlockState {
     incoming_values: HashMap<ID<Block<infer::Model>>, Value<infer::Model>>,
     successor_block_id: ID<Block<infer::Model>>,
     express_type: Option<Type<infer::Model>>,
+    span: Span,
 }
 
 /// The binder used for building the IR.

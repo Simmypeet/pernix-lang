@@ -391,6 +391,16 @@ impl<M: model::Model> Constraint<Type<M>> for r#type::Constraint {
                         | Primitive::Isize
                 )
             ),
+            Self::UnsignedInteger => matches!(
+                term,
+                Type::Primitive(
+                    Primitive::Uint8
+                        | Primitive::Uint16
+                        | Primitive::Uint32
+                        | Primitive::Uint64
+                        | Primitive::Usize
+                )
+            ),
             Self::Floating => matches!(
                 term,
                 Type::Primitive(Primitive::Float32 | Primitive::Float64)
@@ -437,11 +447,24 @@ impl<M: model::Model> Constraint<Type<M>> for r#type::Constraint {
 
                 Self::Signed => Some(Self::SignedInteger),
 
-                another @ (Self::Integer | Self::SignedInteger) => {
-                    Some(another)
-                }
+                another @ (Self::Integer
+                | Self::SignedInteger
+                | Self::UnsignedInteger) => Some(another),
 
                 Self::Floating => None,
+            },
+
+            Self::UnsignedInteger => match *another {
+                r#type::Constraint::All
+                | r#type::Constraint::Number
+                | r#type::Constraint::Integer
+                | r#type::Constraint::UnsignedInteger => {
+                    Some(Self::UnsignedInteger)
+                }
+
+                r#type::Constraint::SignedInteger
+                | r#type::Constraint::Signed
+                | r#type::Constraint::Floating => None,
             },
 
             Self::SignedInteger => match *another {
@@ -451,7 +474,7 @@ impl<M: model::Model> Constraint<Type<M>> for r#type::Constraint {
                 | Self::SignedInteger
                 | Self::Signed => Some(Self::SignedInteger),
 
-                Self::Floating => None,
+                Self::UnsignedInteger | Self::Floating => None,
             },
 
             Self::Signed => match *another {
@@ -462,6 +485,8 @@ impl<M: model::Model> Constraint<Type<M>> for r#type::Constraint {
                 }
 
                 Self::Floating => Some(Self::Floating),
+
+                Self::UnsignedInteger => None,
             },
 
             Self::Floating => match *another {
@@ -469,7 +494,9 @@ impl<M: model::Model> Constraint<Type<M>> for r#type::Constraint {
                     Some(Self::Floating)
                 }
 
-                Self::Integer | Self::SignedInteger => None,
+                Self::UnsignedInteger | Self::Integer | Self::SignedInteger => {
+                    None
+                }
             },
         }
     }
@@ -1090,6 +1117,7 @@ impl<T: table::State> table::Display<T> for r#type::Constraint {
             Floating => write!(f, "{{floating}}"),
             Integer => write!(f, "{{integer}}"),
             SignedInteger => write!(f, "{{signedInteger}}"),
+            UnsignedInteger => write!(f, "{{unsignedInteger}}"),
         }
     }
 }

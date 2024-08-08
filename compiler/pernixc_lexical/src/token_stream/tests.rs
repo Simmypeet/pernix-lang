@@ -189,6 +189,8 @@ enum SignificantToken {
     Keyword(token::tests::Keyword),
     NumericLiteral(token::tests::Numeric),
     Punctuation(token::tests::Punctuation),
+    Character(token::tests::Character),
+    String(token::tests::String),
 }
 
 impl From<SignificantToken> for token::tests::Token {
@@ -198,6 +200,8 @@ impl From<SignificantToken> for token::tests::Token {
             SignificantToken::Keyword(k) => Self::Keyword(k),
             SignificantToken::NumericLiteral(n) => Self::NumericLiteral(n),
             SignificantToken::Punctuation(p) => Self::Punctuation(p),
+            SignificantToken::Character(c) => Self::Character(c),
+            SignificantToken::String(s) => Self::String(s),
         }
     }
 }
@@ -225,6 +229,8 @@ impl Arbitrary for SignificantToken {
                     }
                 }
             ),
+            token::tests::Character::arbitrary().prop_map(Self::Character),
+            token::tests::String::arbitrary().prop_map(Self::String),
         ]
         .boxed()
     }

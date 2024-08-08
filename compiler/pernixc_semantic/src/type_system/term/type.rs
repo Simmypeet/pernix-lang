@@ -927,13 +927,17 @@ pub enum Constraint {
     #[display(fmt = "{{integer}}")]
     Integer,
 
-    /// The type can be unsigned number type. (unsigned integer)
+    /// The type can be signed number type. (signed integer)
     #[display(fmt = "{{signedInteger}}")]
     SignedInteger,
 
     /// The type can be signed number type. (signed integer/floating)
     #[display(fmt = "{{signed}}")]
     Signed,
+
+    /// The type can be unsigned number type. (unsigned integer)
+    #[display(fmt = "{{unsignedInteger}}")]
+    UnsignedInteger,
 
     /// The type can be only floating number type. (float32/float64)
     #[display(fmt = "{{floating}}")]
