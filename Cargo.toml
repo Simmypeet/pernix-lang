@@ -38,6 +38,7 @@ typestate = "0.8.0"
 enum_dispatch = "0.3.12"
 tokio = { version = "1.35.1", features = ["full"] }
 static_assertions = "1.1.0"
+bimap = "0.6.3"
 
 [workspace.package]
 version = "0.1.0"
@@ -55,7 +56,7 @@ missing_debug_implementations = "deny"
 broken_intra_doc_links = "deny"
 
 [workspace.lints.clippy]
-all = "deny"
-pedantic = "deny"
-nursery = "deny"
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
 missing_panics_doc = "allow"
