@@ -20,6 +20,7 @@ use crate::{
             Binder,
         },
         value::{
+            literal::Literal,
             register::{
                 ArithmeticOperator, BinaryOperator, BitwiseOperator, Register,
                 RelationalOperator,
@@ -2661,4 +2662,139 @@ fn single_express_block() {
 
     assert_eq!(numeric_literal.integer_string, "32");
     assert!(numeric_literal.decimal_stirng.is_none());
+}
+
+#[test]
+fn multiple_express_block() {
+    const BLOCK: &str = r"
+    'x: {
+        if (true) {
+            express 'x 2;
+        } else if (false) {
+            express 'x 4;
+        } else {
+            express 'x 8;
+        }
+
+        express 'x 16; // unreachable
+    }
+    ";
+
+    let test_template = TestTemplate::new();
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let block =
+        parse_expression(BLOCK).into_brace().unwrap().into_block().unwrap();
+
+    let register_id = binder
+        .bind(&block, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap()
+        .into_register()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    let phi = binder
+        .intermediate_representation
+        .registers
+        .get(register_id)
+        .unwrap()
+        .assignment
+        .as_phi()
+        .unwrap();
+
+    assert_eq!(phi.incoming_values.len(), 3);
+
+    let check = |integer_string| {
+        phi.incoming_values.iter().any(|(block_id, value)| {
+            let Value::Literal(Literal::Numeric(numeric)) = value else {
+                return false;
+            };
+
+            binder.current_block().predecessors().contains(block_id)
+                && numeric.integer_string == integer_string
+                && numeric.decimal_stirng.is_none()
+        });
+    };
+
+    check("2");
+    check("4");
+    check("8");
+}
+
+#[test]
+fn unrechable_block() {
+    const BLOCK_WITH_EXPRESS: &str = r"
+    {
+        return;
+        express 32i32;
+    }
+    ";
+    const BLOCK_NO_EXPRESS: &str = r"
+    {
+        return;
+    }
+    ";
+
+    let test_template = TestTemplate::new();
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let block = parse_expression(BLOCK_WITH_EXPRESS)
+        .into_brace()
+        .unwrap()
+        .into_block()
+        .unwrap();
+
+    let unreachable = binder
+        .bind(&block, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap()
+        .into_literal()
+        .unwrap()
+        .into_unreachable()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    assert_eq!(unreachable.r#type, Type::Primitive(Primitive::Int32));
+
+    let block = parse_expression(BLOCK_NO_EXPRESS)
+        .into_brace()
+        .unwrap()
+        .into_block()
+        .unwrap();
+
+    let unreachable = binder
+        .bind(&block, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap()
+        .into_literal()
+        .unwrap()
+        .into_unreachable()
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    let inference = unreachable.r#type.into_inference().unwrap();
+    let constraint_id = binder
+        .inference_context
+        .get_inference(inference)
+        .cloned()
+        .unwrap()
+        .into_inferring()
+        .unwrap();
+
+    assert_eq!(
+        *binder
+            .inference_context
+            .get_constraint::<Type<_>>(constraint_id)
+            .unwrap(),
+        Constraint::All
+    );
 }

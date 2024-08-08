@@ -263,39 +263,6 @@ impl<Pattern: Display> Display for Structural<Pattern> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Packed<Pattern> {
-    pub pattern: Box<Pattern>,
-}
-
-impl<I: Debug, O: Debug> Input<&super::Packed<O>> for &Packed<I>
-where
-    for<'i, 'o> &'i I: Input<&'o O>,
-{
-    fn assert(self, output: &super::Packed<O>) -> TestCaseResult {
-        self.pattern.assert(&output.pattern)
-    }
-}
-
-impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
-    for Packed<Pattern>
-{
-    type Parameters = Option<BoxedStrategy<Pattern>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
-        let pattern = arg.unwrap_or_else(Pattern::arbitrary);
-
-        pattern.prop_map(|pattern| Self { pattern: Box::new(pattern) }).boxed()
-    }
-}
-
-impl<Pattern: Display> Display for Packed<Pattern> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "...{}", self.pattern)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tuple<Pattern> {
     pub patterns: Option<ConnectedList<Box<Pattern>, ConstantPunctuation<','>>>,
 }

@@ -16,6 +16,7 @@ use pernixc_syntax::syntax_tree::{
 
 use super::{
     infer::{self, Erased},
+    stack::Scope,
     Binder, Error, HandlerWrapper, InternalError, SemanticError,
 };
 use crate::{
@@ -661,7 +662,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             instantiation::instantiate(&mut parameter_ty, &instantiation);
 
             let _ = self.type_check(
-                self.type_of_value(&argument_value)?,
+                self.type_of_value(argument_value)?,
                 Expected::Known(parameter_ty),
                 argument_span.clone(),
                 handler,
@@ -1491,6 +1492,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             }
             syntax_tree::expression::Unit::Array(_) => todo!(),
             syntax_tree::expression::Unit::Phantom(_) => todo!(),
+            syntax_tree::expression::Unit::String(_) => todo!(),
+            syntax_tree::expression::Unit::Character(_) => todo!(),
         }
     }
 }
@@ -2115,7 +2118,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
         // pop all the needed scopes
         for popping_scope in
-            self.stack.scopes().iter().map(|x| x.scope_id()).rev()
+            self.stack.scopes().iter().map(Scope::scope_id).rev()
         {
             let _ = self
                 .intermediate_representation
@@ -2183,6 +2186,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 impl<'t, S: table::State, O: Observer<S, infer::Model>>
     Bind<syntax_tree::expression::Express> for Binder<'t, S, O>
 {
+    #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Express,
@@ -2260,7 +2264,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             self.block_states_by_scope_id
                 .get_mut(&scope_id)
                 .unwrap()
-                .express_type = Some(value_type.clone());
+                .express_type = Some(value_type);
         };
 
         if let Entry::Vacant(entry) = self
@@ -2285,7 +2289,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
         // pop all the needed scopes
         for popping_scope in
-            self.stack.scopes().iter().map(|x| x.scope_id()).rev()
+            self.stack.scopes().iter().map(Scope::scope_id).rev()
         {
             if self
                 .intermediate_representation
@@ -2346,6 +2350,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 impl<'t, S: table::State, O: Observer<S, infer::Model>>
     Bind<syntax_tree::expression::IfElse> for Binder<'t, S, O>
 {
+    #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::IfElse,
@@ -2406,7 +2411,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     Ok(Expression::Value(value)) => Ok(value),
 
                     Err(Error::Internal(interanl_error)) => {
-                        return Err(Error::Internal(interanl_error))
+                        Err(Error::Internal(interanl_error))
                     }
 
                     Err(Error::Semantic(SemanticError(span)))
@@ -2501,7 +2506,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 (expression, self.current_block_id)
             }
             None => (
-                Value::<infer::Model>::Literal(Literal::Unit(literal::Unit {
+                Value::Literal(Literal::Unit(literal::Unit {
                     span: Some(syntax_tree.span()),
                 })),
                 self.current_block_id,
@@ -2567,12 +2572,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
                 if syntax_tree.else_expression().is_some() {
                     let _ = self.type_check(
-                        else_type.clone(),
+                        else_type,
                         Expected::Known(then_type.clone()),
                         syntax_tree
                             .else_expression()
                             .as_ref()
-                            .map_or(syntax_tree.span(), |x| x.span()),
+                            .map_or(syntax_tree.span(), SourceElement::span),
                         handler,
                     );
                 } else {
@@ -2679,6 +2684,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 .collect::<Vec<_>>();
 
             // filter out the incoming values that are unreachable
+            #[allow(clippy::needless_collect)]
             for remove in block_state
                 .incoming_values
                 .keys()

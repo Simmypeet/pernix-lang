@@ -13,5 +13,21 @@ mod occurrences;
 mod variance;
 mod where_caluse;
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FunctionKind {
+    Normal(syntax_tree::item::Function),
+    Extern(syntax_tree::item::ExternFunction),
+}
+
+impl FunctionKind {
+    pub fn signature(&self) -> &syntax_tree::item::FunctionSignature {
+        match self {
+            Self::Normal(function) => function.signature(),
+            Self::Extern(extern_function) => extern_function.signature(),
+        }
+    }
+}
+
 pub use finalize::Finalize;
 pub use finalizer::{Element, Finalizer};
+use pernixc_syntax::syntax_tree;

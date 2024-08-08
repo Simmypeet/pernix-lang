@@ -26,19 +26,23 @@ use crate::{
         self, InvalidSymbolInImplementation,
         MismatchedTraitMemberAndImplementationMember, RedefinedGlobal,
         SymbolIsMoreAccessibleThanParent, UnimplementedTraitMembers,
-        UnknownTraitImplementationMember,
+        UnknownExternCallingConvention, UnknownTraitImplementationMember,
     },
     symbol::{
         self,
         table::{
-            representation::{self, Index, RwLockContainer},
+            representation::{
+                self, building::finalizing::FunctionKind, Index,
+                RwLockContainer,
+            },
             Building, Table,
         },
         Accessibility, AdtID, AdtImplementationConstant,
         AdtImplementationDefinition, AdtImplementationFunction,
-        AdtImplementationType, Constant, Enum, Function, GenericDeclaration,
-        GenericTemplate, GlobalID, HierarchyRelationship, Module,
-        ModuleMemberID, NegativeTraitImplementationDefinition,
+        AdtImplementationType, Constant, Enum, Extern, Function,
+        FunctionDefinition, GenericDeclaration, GenericTemplate, GlobalID,
+        HierarchyRelationship, Module, ModuleMemberID,
+        NegativeTraitImplementationDefinition,
         PositiveTraitImplementationDefinition, Struct, Trait,
         TraitImplementationMemberID, TraitMemberID, Type, Variant,
     },
@@ -328,7 +332,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                         .unwrap();
 
                     let _: ID<Function> = self.draft_member(
-                        syn,
+                        FunctionKind::Normal(syn),
                         module_id,
                         |syn| syn.signature().identifier(),
                         accessibility,
@@ -396,6 +400,54 @@ impl Table<Building<RwLockContainer, Drafter>> {
                         accessibility,
                         handler,
                     );
+                }
+                syntax_tree::item::Item::Extern(syn) => {
+                    let (_, calling_convention, _, functions, _) =
+                        syn.dissolve();
+
+                    // get the calling convention of this extern
+                    let calling_convention = match calling_convention
+                        .value
+                        .as_ref()
+                        .map(|x| x.as_str())
+                    {
+                        Some("C") => Extern::C,
+
+                        _ => {
+                            handler.receive(Box::new(
+                                UnknownExternCallingConvention {
+                                    span: calling_convention.span.clone(),
+                                },
+                            ));
+
+                            Extern::Unknown
+                        }
+                    };
+
+                    for function in functions {
+                        let accessibility = self
+                            .create_accessibility(
+                                module_id.into(),
+                                function.access_modifier(),
+                            )
+                            .unwrap();
+
+                        let function_id: ID<Function> = self.draft_member(
+                            FunctionKind::Extern(function),
+                            module_id,
+                            |syn| syn.signature().identifier(),
+                            accessibility,
+                            handler,
+                        );
+
+                        self.functions
+                            .get_mut(function_id)
+                            .unwrap()
+                            .get_mut()
+                            .definition
+                            .definition =
+                            FunctionDefinition::Extern(calling_convention);
+                    }
                 }
             };
         }

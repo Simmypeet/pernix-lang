@@ -327,14 +327,6 @@ impl SourceElement for ConstantType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct TupleBound {
-    #[get = "pub"]
-    higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
-    #[get = "pub"]
-    r#type: r#type::Type,
-}
-
 /// Syntax Synopsis:
 /// ``` txt
 /// TupleOperandKind:

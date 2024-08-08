@@ -16,7 +16,7 @@ use proptest::{
 };
 use strum::IntoEnumIterator;
 
-use super::KeywordKind;
+use super::{KeywordKind, ESCAPE_SEQUENCE_BY_REPRESENTATION};
 
 /// Represents an input for the [`super::Identifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -256,7 +256,12 @@ impl Arbitrary for Punctuation {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::char::any()
             .prop_filter_map("allows only ascii punctuation", |x| {
-                if x.is_ascii_punctuation() && x != '_' && x != '@' {
+                if x.is_ascii_punctuation()
+                    && x != '_'
+                    && x != '@'
+                    && x != '\''
+                    && x != '"'
+                {
                     Some(Self { punctuation: x })
                 } else {
                     None
@@ -353,6 +358,139 @@ impl WhiteSpaces {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Character {
+    Normal(char),
+    Escaped(char),
+}
+
+impl Character {
+    pub fn get_expected_value(self) -> char {
+        match self {
+            Self::Normal(x) => x,
+            Self::Escaped(x) => ESCAPE_SEQUENCE_BY_REPRESENTATION
+                .get_by_left(&x)
+                .copied()
+                .unwrap(),
+        }
+    }
+}
+
+impl std::fmt::Display for Character {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Normal(x) => f.write_char(*x),
+            Self::Escaped(x) => {
+                f.write_char('\\')?;
+                f.write_char(*x)
+            }
+        }
+    }
+}
+
+impl Arbitrary for Character {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        let escape_characters = ESCAPE_SEQUENCE_BY_REPRESENTATION
+            .left_values()
+            .copied()
+            .collect::<Vec<_>>();
+
+        prop_oneof![
+            proptest::char::any()
+                .prop_filter(
+                    "filter out single/double quote(s) and backslash",
+                    |x| *x != '\'' && *x != '"' && *x != '\\'
+                )
+                .prop_map(Character::Normal),
+            proptest::sample::select(escape_characters)
+                .prop_map(Character::Escaped)
+        ]
+        .boxed()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CharacterLiteral {
+    pub character: Character,
+}
+
+impl Arbitrary for CharacterLiteral {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        Character::arbitrary().prop_map(|character| Self { character }).boxed()
+    }
+}
+
+impl Display for CharacterLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "'{}'", self.character)
+    }
+}
+
+impl Input<&super::Character> for &CharacterLiteral {
+    fn assert(self, output: &super::Character) -> TestCaseResult {
+        if let Some(value) = output.value {
+            prop_assert_eq!(self.character.get_expected_value(), value);
+        } else {
+            return Err(TestCaseError::fail(format!(
+                "expected {self:?} got {output:?}",
+            )));
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StringLiteral {
+    pub characters: Vec<Character>,
+}
+
+impl Display for StringLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('"')?;
+        for character in &self.characters {
+            character.fmt(f)?;
+        }
+        f.write_char('"')
+    }
+}
+
+impl Arbitrary for StringLiteral {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(Character::arbitrary(), 0..=32)
+            .prop_map(|characters| Self { characters })
+            .boxed()
+    }
+}
+
+impl Input<&super::String> for &StringLiteral {
+    fn assert(self, output: &super::String) -> TestCaseResult {
+        let expected_value = self
+            .characters
+            .iter()
+            .map(|x| x.get_expected_value())
+            .collect::<String>();
+
+        if let Some(value) = &output.value {
+            prop_assert_eq!(&expected_value, value);
+        } else {
+            return Err(TestCaseError::fail(format!(
+                "expected {self:?} got {output:?}",
+            )));
+        }
+
+        Ok(())
+    }
+}
+
 /// Represents an input for the [`super::Identifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
@@ -363,6 +501,8 @@ pub enum Token {
     NumericLiteral(Numeric),
     WhiteSpaces(WhiteSpaces),
     Punctuation(Punctuation),
+    CharacterLiteral(CharacterLiteral),
+    StringLiteral(StringLiteral),
 }
 
 impl Arbitrary for Token {
@@ -376,7 +516,9 @@ impl Arbitrary for Token {
             Keyword::arbitrary().prop_map(Self::Keyword),
             Numeric::arbitrary().prop_map(Self::NumericLiteral),
             WhiteSpaces::arbitrary().prop_map(Self::WhiteSpaces),
-            Punctuation::arbitrary().prop_map(Self::Punctuation)
+            Punctuation::arbitrary().prop_map(Self::Punctuation),
+            CharacterLiteral::arbitrary().prop_map(Self::CharacterLiteral),
+            StringLiteral::arbitrary().prop_map(Self::StringLiteral)
         ]
         .boxed()
     }
@@ -391,6 +533,8 @@ impl Display for Token {
             Self::NumericLiteral(x) => Display::fmt(x, f),
             Self::WhiteSpaces(x) => Display::fmt(x, f),
             Self::Punctuation(x) => Display::fmt(x, f),
+            Self::CharacterLiteral(x) => Display::fmt(x, f),
+            Self::StringLiteral(x) => Display::fmt(x, f),
         }
     }
 }
@@ -418,6 +562,12 @@ impl Input<&super::Token> for &Token {
             (Token::Punctuation(i), super::Token::Punctuation(o)) => {
                 i.assert(o)?;
             }
+            (Token::CharacterLiteral(i), super::Token::Character(o)) => {
+                i.assert(o)?;
+            }
+            (Token::StringLiteral(i), super::Token::String(o)) => {
+                i.assert(o)?;
+            }
             _ => {
                 return Err(TestCaseError::fail(format!(
                     "expected {self:?} got {output:?}",
@@ -436,10 +586,23 @@ fn tokenize(
     let mut iterator = source_file.iter();
 
     let error_storage: Storage<super::error::Error> = Storage::new();
-    let token = super::Token::lex(&mut iterator, &error_storage)?;
+    let token = match super::Token::lex(&mut iterator, &error_storage) {
+        Ok(token) => token,
+        Err(error) => {
+            return Err(TestCaseError::fail(format!(
+                "failed to tokenize the source code: {}, errors: {:?}",
+                error,
+                error_storage.as_vec()
+            )))
+        }
+    };
 
     // no errors
-    prop_assert!(error_storage.as_vec().is_empty());
+    prop_assert!(
+        error_storage.as_vec().is_empty(),
+        "{:?}",
+        error_storage.as_vec()
+    );
 
     Ok(token)
 }

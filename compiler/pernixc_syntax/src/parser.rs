@@ -4,7 +4,9 @@ use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
 use pernixc_base::diagnostic::Handler;
 use pernixc_lexical::{
-    token::{Identifier, Keyword, KeywordKind, Numeric, Punctuation, Token},
+    token::{
+        self, Identifier, Keyword, KeywordKind, Numeric, Punctuation, Token,
+    },
     token_stream::{Delimited, Delimiter, TokenStream, TokenTree},
 };
 
@@ -248,6 +250,28 @@ impl<'a> Frame<'a> {
             found => {
                 handler.receive(Error {
                     expected: SyntaxKind::Identifier,
+                    alternatives: Vec::new(),
+                    found: found.into_token(),
+                });
+                None
+            }
+        }
+    }
+
+    /// Expects the next [`Token`] to be an [`token::String`], and returns it.
+    ///
+    /// # Errors
+    ///
+    /// If the next [`Token`] is not an [`token::String`].
+    pub fn parse_string(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<token::String> {
+        match self.next_significant_token() {
+            Reading::Unit(Token::String(ident)) => Some(ident),
+            found => {
+                handler.receive(Error {
+                    expected: SyntaxKind::String,
                     alternatives: Vec::new(),
                     found: found.into_token(),
                 });

@@ -10,7 +10,7 @@ use pernixc_base::{
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::{
-    token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
+    token::{self, Identifier, Keyword, KeywordKind, Punctuation, Token},
     token_stream::Delimiter,
 };
 
@@ -1535,6 +1535,78 @@ impl SourceElement for Constant {
 }
 
 /// Syntax Synopsis:
+/// ```txt
+/// ExternFunction:
+///     AccessModifier FunctionSignature ';'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct ExternFunction {
+    #[get = "pub"]
+    access_modifier: AccessModifier,
+    #[get = "pub"]
+    signature: FunctionSignature,
+    #[get = "pub"]
+    semicolon: Punctuation,
+}
+
+impl ExternFunction {
+    /// Dissolves the [`ExternFunction`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (AccessModifier, FunctionSignature, Punctuation) {
+        (self.access_modifier, self.signature, self.semicolon)
+    }
+}
+
+impl SourceElement for ExternFunction {
+    fn span(&self) -> Span {
+        self.access_modifier.span().join(&self.semicolon.span()).unwrap()
+    }
+}
+
+/// Syntax Synopsis:
+/// ```txt
+/// Extern:
+///     'extern' String '{' ExternFunction* '}'
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Extern {
+    #[get = "pub"]
+    extern_keyword: Keyword,
+    #[get = "pub"]
+    convention: token::String,
+    #[get = "pub"]
+    left_brace: Punctuation,
+    #[get = "pub"]
+    functions: Vec<ExternFunction>,
+    #[get = "pub"]
+    right_brace: Punctuation,
+}
+
+impl Extern {
+    /// Dissolves the [`Extern`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (Keyword, token::String, Punctuation, Vec<ExternFunction>, Punctuation)
+    {
+        (
+            self.extern_keyword,
+            self.convention,
+            self.left_brace,
+            self.functions,
+            self.right_brace,
+        )
+    }
+}
+
+impl SourceElement for Extern {
+    fn span(&self) -> Span {
+        self.extern_keyword.span.join(&self.right_brace.span).unwrap()
+    }
+}
+
+/// Syntax Synopsis:
 /// ``` txt
 /// Item:
 ///     Trait
@@ -1545,6 +1617,7 @@ impl SourceElement for Constant {
 ///     | Enum
 ///     | Module
 ///     | Const
+///     | Extern
 ///     ;
 /// ```
 #[derive(
@@ -1560,6 +1633,7 @@ pub enum Item {
     Enum(Enum),
     Module(Module),
     Constant(Constant),
+    Extern(Extern),
 }
 
 impl SourceElement for Item {
@@ -1573,6 +1647,7 @@ impl SourceElement for Item {
             Self::Implementation(i) => i.span(),
             Self::Enum(e) => e.span(),
             Self::Constant(c) => c.span(),
+            Self::Extern(e) => e.span(),
         }
     }
 }
@@ -2676,8 +2751,65 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses an [`ExternFunction`]
+    pub fn parse_extern_function(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<ExternFunction> {
+        let access_modifier = self.parse_access_modifier(handler)?;
+        let signature = self.parse_function_signature(handler)?;
+        let semicolon = self.parse_punctuation(';', true, handler)?;
+
+        Some(ExternFunction { access_modifier, signature, semicolon })
+    }
+
+    /// Parses an [`Extern`]
+    pub fn parse_extern(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Extern> {
+        let extern_keyword =
+            self.parse_keyword(KeywordKind::Extern, handler)?;
+        let convention = self.parse_string(handler)?;
+        let delimited_tree = self.step_into(
+            Delimiter::Brace,
+            |parser| {
+                let mut functions = Vec::new();
+
+                while !parser.is_exhausted() {
+                    if let Some(function) = parser.parse_extern_function(handler) {
+                        functions.push(function);
+                        continue;
+                    }
+
+                    // try to stop at the next semicolon
+                    parser.stop_at(|token| {
+                        matches!(
+                            token,
+                            Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';'
+                        )
+                    });
+
+                    // eat semicolon
+                    parser.forward();
+                }
+
+
+                Some(functions)
+            },
+            handler,
+        )?;
+
+        Some(Extern {
+            extern_keyword,
+            convention,
+            left_brace: delimited_tree.open,
+            functions: delimited_tree.tree?,
+            right_brace: delimited_tree.close,
+        })
+    }
+
     /// Parses an [`Item`]
-    #[allow(clippy::missing_errors_doc)]
     pub fn parse_item(&mut self, handler: &dyn Handler<Error>) -> Option<Item> {
         match self.stop_at_significant() {
             // parses an item with an access modifier
@@ -2690,6 +2822,13 @@ impl<'a> Parser<'a> {
                 ) =>
             {
                 self.parse_item_with_access_modifier(handler)
+            }
+
+            // parses an extern
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Extern =>
+            {
+                self.parse_extern(handler).map(Item::Extern)
             }
 
             // parses an implements

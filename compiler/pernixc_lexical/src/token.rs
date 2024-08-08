@@ -2,6 +2,7 @@
 
 use std::{collections::HashMap, hash::Hash, iter::Iterator, str::FromStr};
 
+use bimap::BiHashMap;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use lazy_static::lazy_static;
@@ -13,7 +14,7 @@ use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
 
-use crate::error::{self, UnterminatedDelimitedComment};
+use crate::error::{self, InvalidEscapeSequence, UnterminatedDelimitedComment};
 
 /// Is an enumeration representing keywords in the Pernix programming language.
 ///
@@ -132,6 +133,8 @@ pub enum KeywordKind {
     Ref,
     /// `final` keyword
     Final,
+    /// `extern` keyword
+    Extern,
 }
 
 impl std::fmt::Display for KeywordKind {
@@ -226,8 +229,31 @@ impl KeywordKind {
             Self::Phantom => "phantom",
             Self::Ref => "ref",
             Self::Final => "final",
+            Self::Extern => "extern",
         }
     }
+}
+
+lazy_static! {
+    /// A bidirectional map that maps a escape sequence (on the left) to its
+    /// representation (on the right).
+    pub static ref ESCAPE_SEQUENCE_BY_REPRESENTATION: BiHashMap<char, char> = {
+        let mut map = BiHashMap::new();
+
+        map.insert('\'', '\'');
+        map.insert('"', '"');
+        map.insert('\\', '\\');
+        map.insert('a', '\x07');
+        map.insert('b', '\x08');
+        map.insert('t', '\x09');
+        map.insert('n', '\x0A');
+        map.insert('v', '\x0B');
+        map.insert('f', '\x0C');
+        map.insert('r', '\x0D');
+        map.insert('0', '\0');
+
+        map
+    };
 }
 
 /// Is an enumeration containing all kinds of tokens in the Pernix programming
@@ -243,6 +269,8 @@ pub enum Token {
     Punctuation(Punctuation),
     Numeric(Numeric),
     Comment(Comment),
+    Character(Character),
+    String(String),
 }
 
 impl Token {
@@ -256,6 +284,8 @@ impl Token {
             Self::Punctuation(token) => &token.span,
             Self::Numeric(token) => &token.span,
             Self::Comment(token) => &token.span,
+            Self::Character(token) => &token.span,
+            Self::String(token) => &token.span,
         }
     }
 }
@@ -269,8 +299,42 @@ impl SourceElement for Token {
             Self::Punctuation(token) => token.span(),
             Self::Numeric(token) => token.span(),
             Self::Comment(token) => token.span(),
+            Self::Character(token) => token.span(),
+            Self::String(token) => token.span(),
         }
     }
+}
+
+/// Represents a single ASCII character literal enclosed in single quotes.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Character {
+    /// Is the span that makes up the token.
+    pub span: Span,
+
+    /// The value of the character literal.
+    ///
+    /// The value is `None` if the character literal is invalid (e.g., invalid
+    /// escape sequence).
+    pub value: Option<char>,
+}
+
+impl SourceElement for Character {
+    fn span(&self) -> Span { self.span.clone() }
+}
+
+/// Represents a hardcoded string literal value in the source code.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct String {
+    /// Is the span that makes up the token.
+    pub span: Span,
+
+    /// The value of the string literal. The value is `None` if the string
+    /// literal is invalid (e.g., invalid escape sequence).
+    pub value: Option<std::string::String>,
+}
+
+impl SourceElement for String {
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a contiguous sequence of whitespace characters.
@@ -543,6 +607,164 @@ impl Token {
         Numeric { span: Self::create_span(start, iter) }.into()
     }
 
+    fn handle_string_literal(
+        iter: &mut source_file::Iterator,
+        start: ByteIndex,
+        handler: &dyn Handler<error::Error>,
+    ) -> Result<Self, Error> {
+        let mut string = Some(std::string::String::new());
+        let mut last_backslash = false;
+        let mut last_byte_index = start;
+
+        loop {
+            let Some((byte_index, character)) = iter.next() else {
+                handler.receive(error::Error::UnterminatedStringLiteral(
+                    error::UnterminatedStringLiteral {
+                        span: Span::new(
+                            iter.source_file().clone(),
+                            start,
+                            start + 1,
+                        )
+                        .unwrap(),
+                    },
+                ));
+
+                return Err(Error::FatalLexicalError);
+            };
+
+            if last_backslash {
+                if let Some(value) =
+                    ESCAPE_SEQUENCE_BY_REPRESENTATION.get_by_left(&character)
+                {
+                    string.as_mut().map(|x| x.push(*value));
+                } else {
+                    handler.receive(error::Error::InvalidEscapeSequence(
+                        InvalidEscapeSequence {
+                            span: Span::new(
+                                iter.source_file().clone(),
+                                last_byte_index,
+                                byte_index,
+                            )
+                            .unwrap(),
+                        },
+                    ));
+                }
+
+                last_backslash = false;
+            } else {
+                match character {
+                    // end the string
+                    '"' => {
+                        iter.next(); // eat the closing quote
+
+                        return Ok(Token::String(String {
+                            span: Self::create_span(start, iter),
+                            value: string,
+                        }));
+                    }
+
+                    // escape sequence
+                    '\\' => {
+                        last_backslash = true;
+                    }
+
+                    // normal character
+                    character => {
+                        string.as_mut().map(|x| x.push(character));
+                        last_backslash = false;
+                    }
+                }
+            }
+
+            last_byte_index = byte_index;
+        }
+    }
+
+    fn handle_single_quote(
+        iter: &mut source_file::Iterator,
+        start: ByteIndex,
+        handler: &dyn Handler<error::Error>,
+    ) -> Self {
+        let mut iter_cloned = iter.clone();
+
+        match iter_cloned.next() {
+            // escaped character
+            Some((content_start, mut char)) => {
+                let is_escaped = if char == '\\' {
+                    // eat the next character
+                    let Some((_, new_char)) = iter_cloned.next() else {
+                        return Self::Punctuation(Punctuation {
+                            span: Self::create_span(start, iter),
+                            punctuation: '\'',
+                        });
+                    };
+
+                    char = new_char;
+
+                    true
+                } else {
+                    false
+                };
+
+                if !is_escaped && char == '\'' {
+                    return Self::Punctuation(Punctuation {
+                        span: Self::create_span(start, iter),
+                        punctuation: '\'',
+                    });
+                }
+
+                match iter_cloned.next() {
+                    // a caharceter literal
+                    Some((content_end, '\'')) => {
+                        if is_escaped {
+                            iter.next(); // eat the backslash
+                        }
+
+                        iter.next(); // eat the character
+                        iter.next(); // eat the closing quote
+
+                        Self::Character(Character {
+                            span: Self::create_span(start, iter),
+                            value: if !is_escaped {
+                                Some(char)
+                            } else if let Some(value) =
+                                ESCAPE_SEQUENCE_BY_REPRESENTATION
+                                    .get_by_left(&char)
+                                    .copied()
+                            {
+                                Some(value)
+                            } else {
+                                handler.receive(
+                                    error::Error::InvalidEscapeSequence(
+                                        InvalidEscapeSequence {
+                                            span: Span::new(
+                                                iter.source_file().clone(),
+                                                content_start,
+                                                content_end,
+                                            )
+                                            .unwrap(),
+                                        },
+                                    ),
+                                );
+                                None
+                            },
+                        })
+                    }
+
+                    _ => Self::Punctuation(Punctuation {
+                        span: Self::create_span(start, iter),
+                        punctuation: '\'',
+                    }),
+                }
+            }
+
+            None => Self::Punctuation(Punctuation {
+                span: Self::create_span(start, iter),
+                punctuation: '\'',
+            }),
+        }
+    }
+
     /// Lexes the source code from the given iterator.
     ///
     /// The tokenization starts at the current location of the iterator. The
@@ -577,6 +799,14 @@ impl Token {
         // Found numeric literal
         else if character.is_ascii_digit() {
             Ok(Self::handle_numeric_literal(iter, start))
+        }
+        // Might found a character literal
+        else if character == '\'' {
+            Ok(Self::handle_single_quote(iter, start, handler))
+        }
+        // Found a string literal
+        else if character == '"' {
+            Self::handle_string_literal(iter, start, handler)
         }
         // Found a punctuation
         else if character.is_ascii_punctuation() {

@@ -1867,14 +1867,6 @@ impl<T, E> Insertion<T, E> {
     }
 }
 
-/// The symbol with the given name already exists. The error contains the ID of
-/// the existing symbol.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[error("the symbol with the given name already exists")]
-pub struct DuplicateNameError<T>(ID<T>);
-
 impl<T: Container> Representation<T> {
     /// Creates a new [`Module`] as a root module (target) in the table.
     pub fn create_root_module(

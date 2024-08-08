@@ -1,5 +1,5 @@
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
-use pernixc_syntax::syntax_tree::{self, ConnectedList};
+use pernixc_syntax::syntax_tree::ConnectedList;
 
 use super::Finalize;
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
                         build_preset::{self, Complete},
                     },
                     occurrences::Occurrences,
-                    Finalizer,
+                    Finalizer, FunctionKind,
                 },
                 RwLockContainer,
             },
@@ -44,7 +44,7 @@ pub const SIGNATURE_STATE: usize = 2;
 pub const DEFINITION_AND_CHECK_STATE: usize = 3;
 
 impl Finalize for Function {
-    type SyntaxTree = syntax_tree::item::Function;
+    type SyntaxTree = FunctionKind;
     const FINAL_STATE: usize = DEFINITION_AND_CHECK_STATE;
     type Data = Occurrences;
 
@@ -77,13 +77,18 @@ impl Finalize for Function {
 
             SIGNATURE_STATE => {
                 // determine if the function is const
-                table
-                    .representation
-                    .functions
-                    .get(symbol_id)
-                    .unwrap()
-                    .write()
-                    .const_function = syntax_tree.const_keyword().is_some();
+                if let FunctionKind::Normal(function) = syntax_tree {
+                    *table
+                        .representation
+                        .functions
+                        .get(symbol_id)
+                        .unwrap()
+                        .write()
+                        .definition
+                        .as_regular_mut()
+                        .unwrap()
+                        .0 = function.const_keyword().is_some();
+                }
 
                 let active_premise =
                     table.get_active_premise(symbol_id.into()).unwrap();
@@ -206,7 +211,8 @@ impl Finalize for Function {
                 table.check_where_clause(symbol_id.into(), handler);
 
                 // build the complete definition of the function
-                {
+
+                if let FunctionKind::Normal(syntax_tree) = syntax_tree {
                     let irrefutable_patterns = syntax_tree
                         .signature()
                         .parameters()

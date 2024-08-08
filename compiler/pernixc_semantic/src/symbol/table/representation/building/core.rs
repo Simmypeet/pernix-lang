@@ -12,7 +12,7 @@ use crate::{
             Container, Element, IndexMut, Insertion, Representation,
         },
         Accessibility, ConstantParameter, FunctionIR, FunctionTemplate,
-        GenericDeclaration, GenericID, GenericTemplate, Intrinsics,
+        GenericDeclaration, GenericID, GenericTemplate, Intrinsic,
         LifetimeParameter, MemberID, Module, Parameter, ParentSealed,
         PositiveTraitImplementationDefinition, Trait, TraitDefinition,
         TraitFunctionDefinition, TraitImplementationFunctionDefinition,
@@ -255,7 +255,7 @@ impl<C: Container> Representation<C> {
 
         // set the intrinsics
         let mut copy_function = self.get_mut(copy_function_id).unwrap();
-        copy_function.ir = FunctionIR::Intrinsics(Intrinsics::Memcpy);
+        copy_function.ir = FunctionIR::Intrinsic(Intrinsic::Memcpy);
     }
 
     /// Creates an implementation of the `Copy` trait that uses the `memcpy`
@@ -306,7 +306,7 @@ impl<C: Container> Representation<C> {
 
         // set the intrinsics
         let mut copy_function = self.get_mut(copy_function_id).unwrap();
-        copy_function.ir = FunctionIR::Intrinsics(Intrinsics::Memcpy);
+        copy_function.ir = FunctionIR::Intrinsic(Intrinsic::Memcpy);
     }
 
     /// Creates an implementation of the `Copy` trait for the array types.
@@ -391,7 +391,7 @@ impl<C: Container> Representation<C> {
             );
 
         let mut copy_function = self.get_mut(copy_function_id).unwrap();
-        copy_function.ir = FunctionIR::Intrinsics(Intrinsics::ArrayCopy);
+        copy_function.ir = FunctionIR::Intrinsic(Intrinsic::ArrayCopy);
     }
 
     /// Creates implementations of the `Copy` trait for the tuple types.
@@ -455,7 +455,7 @@ impl<C: Container> Representation<C> {
                 );
 
             let mut copy_function = self.get_mut(copy_function_id).unwrap();
-            copy_function.ir = FunctionIR::Intrinsics(Intrinsics::TupleCopy);
+            copy_function.ir = FunctionIR::Intrinsic(Intrinsic::TupleCopy);
         }
 
         // full tuple copy implementation
@@ -569,7 +569,7 @@ impl<C: Container> Representation<C> {
                 );
 
             let mut copy_function = self.get_mut(copy_function_id).unwrap();
-            copy_function.ir = FunctionIR::Intrinsics(Intrinsics::TupleCopy);
+            copy_function.ir = FunctionIR::Intrinsic(Intrinsic::TupleCopy);
         }
     }
 

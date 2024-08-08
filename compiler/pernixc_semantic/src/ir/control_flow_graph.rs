@@ -39,11 +39,11 @@ impl<M: Model> Block<M> {
     /// Adds a basic instruction to the block.
     #[must_use]
     pub fn insert_instruction(&mut self, instruction: Instruction<M>) -> bool {
-        if !self.is_unreachable() {
+        if self.is_unreachable() {
+            false
+        } else {
             self.instructions.push(instruction);
             true
-        } else {
-            false
         }
     }
 }
@@ -119,6 +119,10 @@ impl<M: Model> ControlFlowGraph<M> {
     }
 
     /// Inserts a new terminator instruction to the given block ID.
+    ///
+    /// # Errors
+    ///
+    /// See [`InsertTerminatorError`] for more information.
     pub fn insert_terminator(
         &mut self,
         block_id: ID<Block<M>>,

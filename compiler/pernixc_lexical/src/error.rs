@@ -58,6 +58,45 @@ impl Display for UndelimitedDelimiter {
     }
 }
 
+/// The source code contains an unterminated string literal.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Getters)]
+pub struct UnterminatedStringLiteral {
+    /// The span of the unclosed double quote that starts the string literal.
+    pub span: Span,
+}
+
+impl Display for UnterminatedStringLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}\n{}",
+            Message::new(
+                Severity::Error,
+                "found an unterminated string literal"
+            ),
+            SourceCodeDisplay::new(&self.span, Option::<i32>::None)
+        )
+    }
+}
+
+/// The source code contains an invalid escape sequence.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Getters)]
+pub struct InvalidEscapeSequence {
+    /// The span of the invalid escape sequence (including the backslash).
+    pub span: Span,
+}
+
+impl Display for InvalidEscapeSequence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}\n{}",
+            Message::new(Severity::Error, "found an invalid escape sequence"),
+            SourceCodeDisplay::new(&self.span, Option::<i32>::None)
+        )
+    }
+}
+
 /// Is an enumeration containing all kinds of lexical errors that can occur
 /// while tokenizing the source code.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, EnumAsInner, From)]
@@ -65,6 +104,8 @@ impl Display for UndelimitedDelimiter {
 pub enum Error {
     UnterminatedDelimitedComment(UnterminatedDelimitedComment),
     UndelimitedDelimiter(UndelimitedDelimiter),
+    UnterminatedStringLiteral(UnterminatedStringLiteral),
+    InvalidEscapeSequence(InvalidEscapeSequence),
 }
 
 impl Display for Error {
@@ -72,6 +113,8 @@ impl Display for Error {
         match self {
             Self::UnterminatedDelimitedComment(err) => write!(f, "{err}"),
             Self::UndelimitedDelimiter(err) => write!(f, "{err}"),
+            Self::UnterminatedStringLiteral(err) => write!(f, "{err}"),
+            Self::InvalidEscapeSequence(err) => write!(f, "{err}"),
         }
     }
 }

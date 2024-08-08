@@ -28,6 +28,7 @@ pub enum SyntaxKind {
     ImplementationMember,
     Numeric,
     Predicate,
+    String,
 }
 
 impl SyntaxKind {
@@ -57,6 +58,7 @@ impl SyntaxKind {
             }
             Self::RefutablePattern => "a refutable pattern syntax".to_string(),
             Self::Numeric => "a numeric token".to_string(),
+            Self::String => "a string literal".to_string(),
         }
     }
 }
@@ -116,6 +118,10 @@ impl Display for Error {
                 format!("a punctuation token `{}`", punctuation.punctuation)
             }
             Some(Token::Numeric(..)) => "a numeric token".to_string(),
+            Some(Token::Character(..)) => {
+                "a character literal token".to_string()
+            }
+            Some(Token::String(..)) => "a string literal token".to_string(),
 
             None => "EOF".to_string(),
         };

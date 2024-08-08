@@ -69,6 +69,12 @@ struct BlockState {
 }
 
 /// The binder used for building the IR.
+///
+/// # Invariants
+///
+/// The binder works as a state machine that builds the IR. When the one of the
+/// methods returns an error of [`Error::Internal`], it's considered that the
+/// binder state is corrupted and should not be used anymore.
 #[derive(Debug, Getters)]
 pub struct Binder<'t, S: table::State, O: Observer<S, infer::Model>> {
     table: &'t Table<S>,

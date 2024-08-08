@@ -9,7 +9,9 @@ use pernixc_base::{
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::{
-    token::{self, Identifier, Keyword, KeywordKind, Punctuation, Token},
+    token::{
+        self, Character, Identifier, Keyword, KeywordKind, Punctuation, Token,
+    },
     token_stream::Delimiter,
 };
 
@@ -706,13 +708,15 @@ impl SourceElement for Phantom {
 ///
 /// ``` txt
 /// Unit:
-///     BooleanLiteral
-///     | NumericLiteral
+///     Boolean
+///     | Numeric
 ///     | QualifiedIdentifier
 ///     | Parenthesized
-///     | StructLiteral
-///     | ArrayLiteral
+///     | Struct
+///     | Array
 ///     | Phantom
+///     | String
+///     | Character
 ///    ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
@@ -724,6 +728,8 @@ pub enum Unit {
     Struct(Struct),
     Array(Array),
     Phantom(Phantom),
+    String(token::String),
+    Character(Character),
 }
 
 impl SourceElement for Unit {
@@ -736,6 +742,8 @@ impl SourceElement for Unit {
             Self::Struct(unit) => unit.span(),
             Self::Array(unit) => unit.span(),
             Self::Phantom(unit) => unit.span(),
+            Self::String(unit) => unit.span(),
+            Self::Character(unit) => unit.span(),
         }
     }
 }
@@ -1988,6 +1996,20 @@ impl Parser<'_> {
                 self.forward();
 
                 Some(Unit::Phantom(Phantom { phantom_keyword: keyword }))
+            }
+
+            Reading::Unit(Token::Character(character)) => {
+                // eat the token
+                self.forward();
+
+                Some(Unit::Character(character))
+            }
+
+            Reading::Unit(Token::String(string)) => {
+                // eat the token
+                self.forward();
+
+                Some(Unit::String(string))
             }
 
             Reading::Unit(Token::Numeric(_)) => {

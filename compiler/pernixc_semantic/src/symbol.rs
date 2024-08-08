@@ -1176,7 +1176,7 @@ impl<Definition> FunctionTemplate<Definition> {
 
 /// An enumeration of all compiler intrinsics functions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Intrinsics {
+pub enum Intrinsic {
     /// `memcpy` from the reference stored im the first parameter and returns
     /// it.
     ///
@@ -1197,6 +1197,17 @@ pub enum Intrinsics {
     TupleCopy,
 }
 
+/// Represents the external linkage of the function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Extern {
+    /// The function is an external function that is implemented in the c call
+    /// convention.
+    C,
+
+    /// Unknown external linkage.
+    Unknown,
+}
+
 /// Represents an intermediate representation of the function.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FunctionIR {
@@ -1209,22 +1220,43 @@ pub enum FunctionIR {
     Suboptimal(ir::IR<Suboptimal>),
 
     /// The funcrion is an intrinsic function.
-    Intrinsics(Intrinsics),
+    Intrinsic(Intrinsic),
 }
 
 impl std::default::Default for FunctionIR {
     fn default() -> Self { Self::Suboptimal(ir::IR::default()) }
 }
 
-/// Contains the data for the regular function declaration i.e. those that are
-/// declared in the module level.
+/// Contains the data for the function declaration in the ADT implements block.
 #[derive(Debug, Clone, PartialEq, Eq, Default, CopyGetters)]
-pub struct FunctionDefinition {
+pub struct AdtFunctionDefinition {
     /// Indicates whether the function is a constant function.
     pub const_function: bool,
 
     /// The intermediate representation of the function.
     pub ir: FunctionIR,
+}
+
+/// Contains the data for the function declaration in the module level.
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
+pub enum FunctionDefinition {
+    /// The function was defined regularly.
+    Regular {
+        /// Indicates whether the function is a constant function.
+        const_function: bool,
+
+        /// The intermediate representation of the function.
+        ir: FunctionIR,
+    },
+
+    /// The function is an external linkage to the foreign function.
+    Extern(Extern),
+}
+
+impl std::default::Default for FunctionDefinition {
+    fn default() -> Self {
+        Self::Regular { const_function: false, ir: FunctionIR::default() }
+    }
 }
 
 /// Represents a regular function declaration i.e. those that are declared in
@@ -1236,7 +1268,7 @@ pub type Function =
 /// {...}` syntax.
 pub type AdtImplementationFunction = GenericTemplate<
     ID<AdtImplementation>,
-    FunctionTemplate<FunctionDefinition>,
+    FunctionTemplate<AdtFunctionDefinition>,
 >;
 
 /// A template struct representing all kinds of implementation declarations.

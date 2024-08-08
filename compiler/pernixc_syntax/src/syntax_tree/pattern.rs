@@ -156,26 +156,6 @@ impl SourceElement for Wildcard {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// Packed:
-///     '...' Pattern
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Packed<Pattern> {
-    #[get = "pub"]
-    ellipsis: (Punctuation, Punctuation, Punctuation),
-    #[get = "pub"]
-    pattern: Box<Pattern>,
-}
-
-impl<Pattern: SourceElement> SourceElement for Packed<Pattern> {
-    fn span(&self) -> Span {
-        self.ellipsis.0.span.join(&self.pattern.span()).unwrap()
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
 /// Tuple:
 ///     '(' (Pattern (',' Pattern)* ','?)? ')'
 ///     ;
