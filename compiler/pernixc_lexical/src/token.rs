@@ -636,7 +636,9 @@ impl Token {
                 if let Some(value) =
                     ESCAPE_SEQUENCE_BY_REPRESENTATION.get_by_left(&character)
                 {
-                    string.as_mut().map(|x| x.push(*value));
+                    if let Some(string) = string.as_mut() {
+                        string.push(*value);
+                    }
                 } else {
                     handler.receive(error::Error::InvalidEscapeSequence(
                         InvalidEscapeSequence {
@@ -655,7 +657,7 @@ impl Token {
                 match character {
                     // end the string
                     '"' => {
-                        return Ok(Token::String(String {
+                        return Ok(Self::String(String {
                             span: Self::create_span(start, iter),
                             value: string,
                         }));
@@ -668,7 +670,9 @@ impl Token {
 
                     // normal character
                     character => {
-                        string.as_mut().map(|x| x.push(character));
+                        if let Some(x) = string.as_mut() {
+                            x.push(character);
+                        }
                         last_backslash = false;
                     }
                 }

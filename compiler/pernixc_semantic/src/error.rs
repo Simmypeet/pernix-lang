@@ -2102,6 +2102,38 @@ impl<T: State> Display<T> for FoundUnpackedElementInReferenceBoundTupleType {
     }
 }
 
+/// The unpack operator can only be used once in a tuple expression.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MoreThanOneUnpackedInTupleExpression {
+    /// The span of the previous unpacked expression.
+    pub prior_unpacked_expression_span: Span,
+
+    /// The span of the unpacked expression.
+    pub unpacked_expression_span: Span,
+}
+
+impl<T: State> Display<T> for MoreThanOneUnpackedInTupleExpression {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the unpack operator can only be used once in a tuple \
+                      expression",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.unpacked_expression_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.prior_unpacked_expression_span,
+            help_display: Some("the previous unpacked expression is here"),
+        })?;
+
+        Ok(())
+    }
+}
+
 /// The numeric suffix is unknown.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InvalidNumericSuffix {
@@ -2937,6 +2969,56 @@ where
     }
 }
 
+/// An enumeration of either a `break` or `continue` control flow.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::Display,
+)]
+#[allow(missing_docs)]
+pub enum LoopControlFlow {
+    #[display(fmt = "break")]
+    Break,
+
+    #[display(fmt = "continue")]
+    Continue,
+}
+
+/// The loop control flow expression can't be used outside of a loop.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LoopControlFlowOutsideLoop {
+    /// The span of the break expression.
+    pub span: Span,
+
+    /// The kind of control flow.
+    pub control_flow: LoopControlFlow,
+}
+
+impl<T: State> Display<T> for LoopControlFlowOutsideLoop {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "`{}` expression can't be used outside of a loop",
+                self.control_flow
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
 /// The `epxress` expression can't be used outside of a block expression.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpressOutsideBlock {
@@ -2961,6 +3043,32 @@ impl<T: State> Display<T> for ExpressOutsideBlock {
     }
 }
 
+/// The loop with the given label name was not found.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LoopWithGivenLabelNameNotFound {
+    /// The span of the label identifier.
+    pub span: Span,
+}
+
+impl<T: State> Display<T> for LoopWithGivenLabelNameNotFound {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "loop with label named `{}` was not found",
+                self.span.str()
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
 /// The block with the given label name was not found.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockWithGivenLableNameNotFound {
@@ -2972,7 +3080,10 @@ impl<T: State> Display<T> for BlockWithGivenLableNameNotFound {
     fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
-            display: "block with the given label name was not found",
+            display: format!(
+                "block with label named `{}` was not found",
+                self.span.str()
+            )
         })?;
 
         write!(f, "\n{}", SourceCodeDisplay {
@@ -3021,6 +3132,37 @@ impl<T: State> Display<T> for ExpressionIsNotCallable {
             display: format!(
                 "the expression `{}` is not callable",
                 self.span.str()
+            )
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The symbol cannot be used as an expression.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SymbolCannotBeUsedAsAnExpression {
+    /// The span of the symbol reference.
+    pub span: Span,
+
+    /// The ID of the symbol that cannot be used as an expression.
+    pub symbol: GlobalID,
+}
+
+impl<T: State> Display<T> for SymbolCannotBeUsedAsAnExpression {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let symbol_name =
+            table.get_qualified_name(self.symbol).ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the symbol `{symbol_name}` cannot be used as an expression",
             )
         })?;
 

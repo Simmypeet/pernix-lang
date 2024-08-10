@@ -8,7 +8,8 @@ use crate::{
         FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
         MismatchedArgumentCount, MismatchedMutability,
         MismatchedReferenceQualifier, MismatchedType,
-        NotAllFlowPathsExpressValue, UninitializedFields,
+        MoreThanOneUnpackedInTupleExpression, NotAllFlowPathsExpressValue,
+        UninitializedFields,
     },
     ir::{
         address::{Address, Memory},
@@ -662,7 +663,9 @@ fn prefix_type_mismatched_error() {
         };
 
         error.expected_type
-            == Type::Local(Local(Box::new(Type::Inference(Constraint::All))))
+            == Type::Local(Local(Box::new(Type::Inference(Constraint::All(
+                false,
+            )))))
             && error
                 .found_type
                 .as_inference()
@@ -1055,7 +1058,9 @@ fn reference_of_local_error() {
         };
 
         error.expected_type
-            == Type::Local(Local(Box::new(Type::Inference(Constraint::All))))
+            == Type::Local(Local(Box::new(Type::Inference(Constraint::All(
+                false,
+            )))))
             && error.found_type == Type::Primitive(Primitive::Int32)
     }));
 }
@@ -2795,6 +2800,414 @@ fn unrechable_block() {
             .inference_context
             .get_constraint::<Type<_>>(constraint_id)
             .unwrap(),
-        Constraint::All
-    );
+        Constraint::All(true)
+    )
+}
+
+fn bind_as_value(
+    source: impl std::fmt::Display,
+    check: impl FnOnce(&Binder<Building, NoOpObserver>, Value<infer::Model>),
+) {
+    let test_template = TestTemplate::new();
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let expression = parse_expression(source);
+
+    let value = binder
+        .bind(&expression, Config { target: Target::Value }, &storage)
+        .unwrap()
+        .into_value()
+        .unwrap();
+
+    check(&binder, value);
+}
+
+fn bind_as_value_expect_error(
+    source: impl std::fmt::Display,
+    check: impl FnOnce(
+        &Binder<Building, NoOpObserver>,
+        Result<super::Expression, super::Error>,
+        Vec<Box<dyn Error>>,
+    ),
+) {
+    let test_template = TestTemplate::new();
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    let expression = parse_expression(source);
+
+    let result =
+        binder.bind(&expression, Config { target: Target::Value }, &storage);
+
+    check(&binder, result, storage.into_vec());
+}
+
+#[test]
+fn parenthesized_propagate() {
+    bind_as_value("(32)", |_, value| {
+        let numeric = value.into_literal().unwrap().into_numeric().unwrap();
+
+        assert_eq!(numeric.integer_string, "32");
+        assert!(numeric.decimal_stirng.is_none());
+    });
+}
+
+#[test]
+fn parenthesized_as_unit() {
+    bind_as_value("()", |_, value| {
+        value.into_literal().unwrap().into_unit().unwrap();
+    });
+}
+
+#[test]
+fn parenthesized_as_single_tuple() {
+    bind_as_value("(32,)", |binder, value| {
+        let register_id = value.into_register().unwrap();
+
+        let tuple_assignment = binder
+            .intermediate_representation
+            .registers
+            .get(register_id)
+            .unwrap()
+            .assignment
+            .as_tuple()
+            .unwrap();
+
+        assert_eq!(tuple_assignment.elements.len(), 1);
+
+        let element = tuple_assignment.elements.get(0).unwrap();
+
+        assert!(!element.is_unpacked);
+
+        let numeric = element.value.as_literal().unwrap().as_numeric().unwrap();
+
+        assert_eq!(numeric.integer_string, "32");
+        assert!(numeric.decimal_stirng.is_none());
+    })
+}
+
+#[test]
+fn parenthesized_as_tuple() {
+    bind_as_value("(32, ...(true,), 64)", |binder, value| {
+        let register_id = value.into_register().unwrap();
+
+        let tuple_assignment = binder
+            .intermediate_representation
+            .registers
+            .get(register_id)
+            .unwrap()
+            .assignment
+            .as_tuple()
+            .unwrap();
+
+        assert_eq!(tuple_assignment.elements.len(), 3);
+
+        // 32
+        {
+            let element = tuple_assignment.elements.get(0).unwrap();
+
+            assert!(!element.is_unpacked);
+
+            let numeric =
+                element.value.as_literal().unwrap().as_numeric().unwrap();
+
+            assert_eq!(numeric.integer_string, "32");
+            assert!(numeric.decimal_stirng.is_none());
+        }
+
+        // ...(true,)
+        {
+            let element = tuple_assignment.elements.get(1).unwrap();
+
+            assert!(element.is_unpacked);
+
+            let register_id = element.value.as_register().unwrap();
+
+            let tuple_assignment = binder
+                .intermediate_representation
+                .registers
+                .get(*register_id)
+                .unwrap()
+                .assignment
+                .as_tuple()
+                .unwrap();
+
+            assert_eq!(tuple_assignment.elements.len(), 1);
+
+            let element = tuple_assignment.elements.get(0).unwrap();
+
+            assert!(!element.is_unpacked);
+
+            let boolean =
+                element.value.as_literal().unwrap().as_boolean().unwrap();
+
+            assert_eq!(boolean.value, true);
+        }
+
+        // 64
+        {
+            let element = tuple_assignment.elements.get(2).unwrap();
+
+            assert!(!element.is_unpacked);
+
+            let numeric =
+                element.value.as_literal().unwrap().as_numeric().unwrap();
+
+            assert_eq!(numeric.integer_string, "64");
+            assert!(numeric.decimal_stirng.is_none());
+        }
+    })
+}
+
+#[test]
+fn more_than_one_unpacked_error() {
+    bind_as_value_expect_error("(...(), ...())", |binder, result, errors| {
+        let regsiter_id =
+            result.unwrap().into_value().unwrap().into_register().unwrap();
+
+        let tuple_assignment = binder
+            .intermediate_representation
+            .registers
+            .get(regsiter_id)
+            .unwrap()
+            .assignment
+            .as_tuple()
+            .unwrap();
+
+        assert_eq!(tuple_assignment.elements.len(), 2);
+
+        // the first one is is_unpacked
+        {
+            let element = tuple_assignment.elements.get(0).unwrap();
+
+            assert!(element.is_unpacked);
+
+            let _ = element.value.as_literal().unwrap().as_unit().unwrap();
+        }
+
+        // the second one is not is_unpacked
+        {
+            let element = tuple_assignment.elements.get(1).unwrap();
+
+            assert!(!element.is_unpacked);
+
+            let _ = element.value.as_literal().unwrap().as_unit().unwrap();
+        }
+
+        assert_eq!(errors.len(), 1);
+
+        assert!(errors.iter().any(|x| {
+            x.as_any()
+                .downcast_ref::<MoreThanOneUnpackedInTupleExpression>()
+                .is_some()
+        }));
+    })
+}
+
+#[test]
+fn zero_element_array() {
+    bind_as_value("[]", |binder, value| {
+        let register_id = value.into_register().unwrap();
+
+        let array_assignment = binder
+            .intermediate_representation
+            .registers
+            .get(register_id)
+            .unwrap()
+            .assignment
+            .as_array()
+            .unwrap();
+
+        assert!(array_assignment.elements.is_empty());
+
+        let inference =
+            array_assignment.element_type.clone().into_inference().unwrap();
+
+        let constraint_id = binder
+            .inference_context
+            .get_inference(inference)
+            .cloned()
+            .unwrap()
+            .into_inferring()
+            .unwrap();
+
+        assert_eq!(
+            *binder
+                .inference_context
+                .get_constraint::<Type<_>>(constraint_id)
+                .unwrap(),
+            Constraint::All(false)
+        );
+    });
+}
+
+#[test]
+fn array() {
+    bind_as_value("[1, 2, 4us]", |binder, value| {
+        let reigster_id = value.into_register().unwrap();
+
+        let array_assignment = binder
+            .intermediate_representation
+            .registers
+            .get(reigster_id)
+            .unwrap()
+            .assignment
+            .as_array()
+            .unwrap();
+
+        assert_eq!(array_assignment.elements.len(), 3);
+
+        let expected_type = Type::Primitive(r#type::Primitive::Usize);
+        let environment = binder.create_environment();
+
+        let check = |value: &Value<infer::Model>, string: &str| {
+            let numeric = value.as_literal().unwrap().as_numeric().unwrap();
+
+            assert_eq!(numeric.integer_string, string);
+            assert!(numeric.decimal_stirng.is_none());
+
+            let result =
+                Equality::new(numeric.r#type.clone(), expected_type.clone())
+                    .query(&environment)
+                    .unwrap()
+                    .unwrap();
+
+            assert!(result.constraints.is_empty());
+        };
+
+        check(&array_assignment.elements.get(0).unwrap(), "1");
+        check(&array_assignment.elements.get(1).unwrap(), "2");
+        check(&array_assignment.elements.get(2).unwrap(), "4");
+
+        let result =
+            Equality::new(array_assignment.element_type.clone(), expected_type)
+                .query(&environment)
+                .unwrap()
+                .unwrap();
+
+        assert!(result.constraints.is_empty());
+    });
+}
+
+#[test]
+fn array_type_mismatched_error() {
+    bind_as_value_expect_error("[1i32, true]", |binder, result, errors| {
+        let register_id =
+            result.unwrap().into_value().unwrap().into_register().unwrap();
+
+        let array_assignment = binder
+            .intermediate_representation
+            .registers
+            .get(register_id)
+            .unwrap()
+            .assignment
+            .as_array()
+            .unwrap();
+
+        assert_eq!(array_assignment.elements.len(), 2);
+
+        let expected_type = Type::Primitive(r#type::Primitive::Int32);
+        let environment = binder.create_environment();
+
+        let result = Equality::new(
+            array_assignment.element_type.clone(),
+            expected_type.clone(),
+        )
+        .query(&environment)
+        .unwrap()
+        .unwrap();
+
+        assert!(result.constraints.is_empty());
+        assert!(errors.iter().any(|x| {
+            let Some(type_mismatched) =
+                x.as_any().downcast_ref::<MismatchedType<ConstraintModel>>()
+            else {
+                return false;
+            };
+
+            type_mismatched.expected_type
+                == Type::Primitive(r#type::Primitive::Int32)
+                && type_mismatched.found_type
+                    == Type::Primitive(r#type::Primitive::Bool)
+        }));
+    });
+}
+
+#[test]
+fn unreachable_loop() {
+    bind_as_value("loop {}", |binder, value| {
+        assert!(value.into_literal().unwrap().is_unreachable());
+        assert!(binder.current_block().is_unreachable())
+    })
+}
+
+#[test]
+fn single_break_loop() {
+    bind_as_value("loop { break 32; }", |binder, value| {
+        let numeric_literal =
+            value.into_literal().unwrap().into_numeric().unwrap();
+
+        assert_eq!(numeric_literal.integer_string, "32");
+        assert!(numeric_literal.decimal_stirng.is_none());
+
+        assert!(!binder.current_block().is_unreachable());
+    });
+
+    bind_as_value("loop { break 64; break 32; }", |binder, value| {
+        let numeric_literal =
+            value.into_literal().unwrap().into_numeric().unwrap();
+
+        assert_eq!(numeric_literal.integer_string, "64");
+        assert!(numeric_literal.decimal_stirng.is_none());
+
+        assert!(!binder.current_block().is_unreachable());
+    });
+}
+
+#[test]
+fn multiple_break_loop() {
+    const BREAK_LOOP: &str = r"
+    loop {
+        if (true) {
+            break 32;
+        } else if (true) {
+            break 64;
+        } else {
+            break 128;
+        }
+
+        break 256; // unreachable
+    }";
+
+    bind_as_value(BREAK_LOOP, |binder, value| {
+        let register_id = value.into_register().unwrap();
+
+        let phi = binder
+            .intermediate_representation
+            .registers
+            .get(register_id)
+            .unwrap()
+            .assignment
+            .as_phi()
+            .unwrap();
+
+        assert_eq!(phi.incoming_values.len(), 3);
+
+        let check = |integer_string| {
+            phi.incoming_values.iter().any(|(block_id, value)| {
+                let Value::Literal(Literal::Numeric(numeric)) = value else {
+                    return false;
+                };
+
+                binder.current_block().predecessors().contains(block_id)
+                    && numeric.integer_string == integer_string
+                    && numeric.decimal_stirng.is_none()
+            });
+        };
+
+        check("32");
+        check("64");
+        check("128");
+    });
 }

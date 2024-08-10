@@ -30,6 +30,7 @@ use crate::{
         simplify,
         term::{
             self,
+            constant::{self, Constant},
             lifetime::Lifetime,
             r#type::{self, Qualifier, SymbolID, Type},
             GenericArguments, Local, Symbol,
@@ -445,10 +446,24 @@ pub struct Phi<M: Model> {
 
     /// The type of the phi node.
     ///
-    /// There type must be declared separately as the incoming values can have
+    /// The type must be declared separately as the incoming values can have
     /// different lifetime values; thus, the type of the phi node can't be
     /// solely determined by one of the incoming values.
     pub r#type: Type<M>,
+}
+
+/// Represents an array of values.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Array<M: Model> {
+    /// The elements of the array.
+    pub elements: Vec<Value<M>>,
+
+    /// The type of the element in the array.
+    ///
+    /// The type must be declared separately as the element values can have
+    /// different lifetime values; thus, the type of the array can't be solely
+    /// determined by one of the element values.
+    pub element_type: Type<M>,
 }
 
 /// An enumeration of the different kinds of values that can be assigned in the
@@ -464,6 +479,7 @@ pub enum Assignment<M: Model> {
     Variant(Variant<M>),
     FunctionCall(FunctionCall<M>),
     Binary(Binary<M>),
+    Array(Array<M>),
     Phi(Phi<M>),
 }
 
@@ -532,6 +548,12 @@ impl<M: Model> Representation<M> {
                 self.type_of_binary(binary, current_site, environment)
             }
             Assignment::Phi(phi_node) => Ok(phi_node.r#type.clone()),
+            Assignment::Array(array) => Ok(Type::Array(r#type::Array {
+                r#type: Box::new(array.element_type.clone()),
+                length: Constant::Primitive(constant::Primitive::Integer(
+                    array.elements.len() as i128,
+                )),
+            })),
         }
     }
 }

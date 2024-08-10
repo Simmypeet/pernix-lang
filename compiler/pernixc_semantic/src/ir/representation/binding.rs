@@ -61,6 +61,16 @@ pub mod statement;
 mod pattern;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct LoopState {
+    label: Option<String>,
+    incoming_values: HashMap<ID<Block<infer::Model>>, Value<infer::Model>>,
+    loop_block_id: ID<Block<infer::Model>>,
+    break_type: Option<Type<infer::Model>>,
+    exit_block_id: ID<Block<infer::Model>>,
+    span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct BlockState {
     label: Option<String>,
     incoming_values: HashMap<ID<Block<infer::Model>>, Value<infer::Model>>,
@@ -92,6 +102,7 @@ pub struct Binder<'t, S: table::State, O: Observer<S, infer::Model>> {
     inference_context: infer::Context,
 
     block_states_by_scope_id: HashMap<ID<scope::Scope>, BlockState>,
+    loop_states_by_scope_id: HashMap<ID<scope::Scope>, LoopState>,
 
     // a boolean flag indicating whether there's already been an error reported
     suboptimal: Arc<RwLock<bool>>,
@@ -180,6 +191,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             resolution_observer,
 
             block_states_by_scope_id: HashMap::new(),
+            loop_states_by_scope_id: HashMap::new(),
 
             suboptimal: handler.suboptimal.clone(),
         };
@@ -505,9 +517,10 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         }
 
         for inference in type_inferences {
-            assert!(self
-                .inference_context
-                .register::<Type<_>>(inference, r#type::Constraint::All));
+            assert!(self.inference_context.register::<Type<_>>(
+                inference,
+                r#type::Constraint::All(false)
+            ));
         }
 
         for inference in constant_inferences {
@@ -561,9 +574,10 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         }
 
         for inference in type_inferences {
-            assert!(self
-                .inference_context
-                .register::<Type<_>>(inference, r#type::Constraint::All));
+            assert!(self.inference_context.register::<Type<_>>(
+                inference,
+                r#type::Constraint::All(false)
+            ));
         }
 
         for inference in constant_inferences {

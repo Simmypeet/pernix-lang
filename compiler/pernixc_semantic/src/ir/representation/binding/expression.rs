@@ -12,7 +12,9 @@ use pernixc_base::{
 };
 use pernixc_lexical::token;
 use pernixc_syntax::syntax_tree::{
-    self, expression::BlockOrIfElse, ConnectedList,
+    self,
+    expression::{BlockOrIfElse, Loop},
+    ConnectedList, Label,
 };
 
 use super::{
@@ -27,8 +29,10 @@ use crate::{
         DuplicatedFieldInitialization, ExpectedLValue, ExpressOutsideBlock,
         ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
         FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
-        InvalidRelationalOperation, MismatchedArgumentCount,
-        MismatchedMutability, MismatchedReferenceQualifier,
+        InvalidRelationalOperation, LoopControlFlow,
+        LoopControlFlowOutsideLoop, LoopWithGivenLabelNameNotFound,
+        MismatchedArgumentCount, MismatchedMutability,
+        MismatchedReferenceQualifier, MoreThanOneUnpackedInTupleExpression,
         NotAllFlowPathsExpressValue, ReturnIsNotAllowed, SymbolIsNotCallable,
     },
     ir::{
@@ -40,15 +44,16 @@ use crate::{
         },
         representation::binding::{
             infer::{InferenceVariable, NoConstraint},
-            BlockState,
+            BlockState, LoopState,
         },
         scope,
         value::{
             literal::{self, Boolean, Literal, Numeric, Unit, Unreachable},
             register::{
-                ArithmeticOperator, Assignment, Binary, BinaryOperator,
-                BitwiseOperator, FunctionCall, Load, LoadKind, Phi, Prefix,
-                PrefixOperator, ReferenceOf, Register, Struct, Variant,
+                self, ArithmeticOperator, Array, Assignment, Binary,
+                BinaryOperator, BitwiseOperator, FunctionCall, Load, LoadKind,
+                Phi, Prefix, PrefixOperator, ReferenceOf, Register, Struct,
+                Variant,
             },
             Value,
         },
@@ -320,7 +325,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     syntax_tree::expression::PrefixOperator::Unlocal(_) => (
                         Some(Expected::Known(Type::Local(Local(Box::new(
                             Type::Inference(self.create_type_inference(
-                                r#type::Constraint::All,
+                                r#type::Constraint::All(false),
                             )),
                         ))))),
                         PrefixOperator::Unlocal,
@@ -477,8 +482,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 // check if the address is mutable
                 let expected = match reference_of.kind() {
                     syntax_tree::expression::ReferenceOfKind::Local(_) => {
-                        let inference_variable =
-                            self.create_type_inference(r#type::Constraint::All);
+                        let inference_variable = self.create_type_inference(
+                            r#type::Constraint::All(false),
+                        );
 
                         Some(Type::Local(Local(Box::new(Type::Inference(
                             inference_variable,
@@ -738,7 +744,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 let value = Value::Register(self.bind_variant_call(
                     arguments,
                     variant,
-                    syntax_tree_span.clone(),
+                    syntax_tree_span,
                     handler,
                 )?);
 
@@ -865,7 +871,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     &arguments,
                     callable_id,
                     instantiation,
-                    syntax_tree_span.clone(),
+                    syntax_tree_span,
                     handler,
                 )?);
 
@@ -984,7 +990,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         for x in type_inferences {
                             assert!(self
                                 .inference_context
-                                .register(x, Constraint::All));
+                                .register(x, Constraint::All(false)));
                         }
                         for x in constant_inferences {
                             assert!(self
@@ -1050,7 +1056,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     &arguments,
                     callable_id,
                     inst,
-                    syntax_tree_span.clone(),
+                    syntax_tree_span,
                     handler,
                 )?);
 
@@ -1252,7 +1258,6 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             .ok_or(Error::Semantic(SemanticError(syntax_tree.span())))?;
 
         match resolution {
-            resolution::Resolution::Module(_) => todo!(),
             resolution::Resolution::Variant(variant_res) => {
                 let variant = self.table.get(variant_res.variant).unwrap();
 
@@ -1315,8 +1320,36 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     handler,
                 )?)
             }
-            resolution::Resolution::Generic(_) => todo!(),
-            resolution::Resolution::MemberGeneric(_) => todo!(),
+
+            resolution::Resolution::Generic(resolution::Generic {
+                id: resolution::GenericID::Constant(_id),
+                generic_arguments: _,
+            }) => todo!("handle constant evaluation"),
+
+            resolution::Resolution::Generic(resolution::Generic {
+                id: resolution::GenericID::TraitImplementationConstant(_id),
+                generic_arguments: _,
+            }) => todo!("handle constant evaluation"),
+
+            resolution::Resolution::MemberGeneric(
+                resolution::MemberGeneric {
+                    id:
+                        resolution::MemberGenericID::AdtImplementationConstant(_id),
+                    generic_arguments: _,
+                    parent_generic_arguments: _,
+                },
+            ) => todo!("handle constant evaluation"),
+
+            resolution => {
+                self.create_handler_wrapper(handler).receive(Box::new(
+                    error::SymbolCannotBeUsedAsAnExpression {
+                        span: syntax_tree.span(),
+                        symbol: resolution.global_id(),
+                    },
+                ));
+
+                Err(Error::Semantic(SemanticError(syntax_tree.span())))
+            }
         }
     }
 }
@@ -1531,18 +1564,211 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<&token::Character>
             Constraint::UnsignedInteger
         ));
 
-        let value = if let Some(value) = &syntax_tree.value {
-            Value::Literal(Literal::Character(literal::Character {
-                character: *value,
-                r#type: Type::Inference(inference_variable),
-                span: Some(syntax_tree.span()),
-            }))
+        let value = syntax_tree.value.map_or_else(
+            || {
+                Value::Literal(Literal::Error(literal::Error {
+                    r#type: Type::Inference(inference_variable),
+                    span: Some(syntax_tree.span()),
+                }))
+            },
+            |character| {
+                Value::Literal(Literal::Character(literal::Character {
+                    character,
+                    r#type: Type::Inference(inference_variable),
+                    span: Some(syntax_tree.span()),
+                }))
+            },
+        );
+
+        Ok(self.return_rvalue(value, config, handler)?)
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<&syntax_tree::expression::Parenthesized> for Binder<'t, S, O>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &syntax_tree::expression::Parenthesized,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let bind_as_tuple =
+            syntax_tree.expression().as_ref().map_or(true, |x| {
+                !x.rest().is_empty()
+                    || x.trailing_separator().is_some()
+                    || x.first().ellipsis().is_some()
+            });
+
+        if bind_as_tuple {
+            let mut elements = Vec::new();
+            let mut has_unpacked: Option<Span> = None;
+
+            for element_syn in syntax_tree
+                .expression()
+                .as_ref()
+                .into_iter()
+                .flat_map(ConnectedList::elements)
+            {
+                let element = self.bind_value_or_error(
+                    &**element_syn.expression(),
+                    handler,
+                )?;
+
+                let is_unpacked = if element_syn.ellipsis().is_some() {
+                    has_unpacked.clone().map_or_else(
+                        || {
+                            has_unpacked = Some(element_syn.span());
+                            true
+                        },
+                        |unpacked_span| {
+                            self.create_handler_wrapper(handler).receive(
+                                Box::new(
+                                    MoreThanOneUnpackedInTupleExpression {
+                                        prior_unpacked_expression_span:
+                                            unpacked_span,
+                                        unpacked_expression_span: element_syn
+                                            .span(),
+                                    },
+                                ),
+                            );
+
+                            false
+                        },
+                    )
+                } else {
+                    false
+                };
+
+                elements.push(register::TupleElement {
+                    value: element,
+                    is_unpacked,
+                });
+            }
+
+            let value = if elements.is_empty() {
+                // return unit Tuple
+                Value::Literal(Literal::Unit(literal::Unit {
+                    span: Some(syntax_tree.span()),
+                }))
+            } else {
+                Value::Register(self.create_register_assignmnet(
+                    Assignment::Tuple(register::Tuple { elements }),
+                    Some(syntax_tree.span()),
+                ))
+            };
+
+            Ok(self.return_rvalue(value, config, handler)?)
         } else {
-            Value::Literal(Literal::Error(literal::Error {
-                r#type: Type::Inference(inference_variable),
+            // propagate the target
+            self.bind(
+                &**syntax_tree
+                    .expression()
+                    .as_ref()
+                    .unwrap()
+                    .first()
+                    .expression(),
+                config,
+                handler,
+            )
+        }
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<&syntax_tree::expression::Phantom> for Binder<'t, S, O>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &syntax_tree::expression::Phantom,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let inference = InferenceVariable::new();
+
+        assert!(self
+            .inference_context
+            .register::<Type<_>>(inference, Constraint::All(false)));
+
+        Ok(self.return_rvalue(
+            Value::Literal(Literal::Phantom(literal::Phantom {
+                r#type: Type::Inference(inference),
                 span: Some(syntax_tree.span()),
-            }))
+            })),
+            config,
+            handler,
+        )?)
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<&syntax_tree::expression::Array> for Binder<'t, S, O>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &syntax_tree::expression::Array,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let Some(arguments) = syntax_tree.arguments() else {
+            let inference = InferenceVariable::new();
+
+            assert!(self
+                .inference_context
+                .register::<Type<_>>(inference, Constraint::All(false)));
+
+            let register_id = self.create_register_assignmnet(
+                Assignment::Array(Array {
+                    elements: Vec::new(),
+                    element_type: Type::Inference(inference),
+                }),
+                Some(syntax_tree.span()),
+            );
+
+            return Ok(self.return_rvalue(
+                Value::Register(register_id),
+                config,
+                handler,
+            )?);
         };
+
+        let mut elements = Vec::new();
+
+        for element_syn in arguments.elements().map(|x| &**x) {
+            elements.push(self.bind_value_or_error(element_syn, handler)?);
+        }
+
+        // do type check against the first elemen
+        let mut iter = elements.iter();
+
+        let first_element = iter.next().unwrap();
+        let first_ty = self.type_of_value(first_element)?;
+
+        for element in iter {
+            let element_ty = self.type_of_value(element)?;
+
+            let _ = self.type_check(
+                element_ty,
+                Expected::Known(first_ty.clone()),
+                match element {
+                    Value::Register(register_id) => self
+                        .intermediate_representation
+                        .registers
+                        .get(*register_id)
+                        .unwrap()
+                        .span
+                        .clone()
+                        .unwrap(),
+                    Value::Literal(literal) => literal.span().cloned().unwrap(),
+                },
+                handler,
+            );
+        }
+
+        let value = Value::Register(self.create_register_assignmnet(
+            Assignment::Array(Array { elements, element_type: first_ty }),
+            Some(syntax_tree.span()),
+        ));
 
         Ok(self.return_rvalue(value, config, handler)?)
     }
@@ -1567,12 +1793,18 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             syntax_tree::expression::Unit::QualifiedIdentifier(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Parenthesized(_) => todo!(),
+            syntax_tree::expression::Unit::Parenthesized(syn) => {
+                self.bind(syn, config, handler)
+            }
             syntax_tree::expression::Unit::Struct(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Array(_) => todo!(),
-            syntax_tree::expression::Unit::Phantom(_) => todo!(),
+            syntax_tree::expression::Unit::Array(syn) => {
+                self.bind(syn, config, handler)
+            }
+            syntax_tree::expression::Unit::Phantom(syn) => {
+                self.bind(syn, config, handler)
+            }
             syntax_tree::expression::Unit::String(syn) => {
                 self.bind(syn, config, handler)
             }
@@ -1870,8 +2102,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 
                     // make the lhs errored
                     Err(Error::Semantic(SemanticError(span))) => {
-                        let inference =
-                            self.create_type_inference(r#type::Constraint::All);
+                        let inference = self.create_type_inference(
+                            r#type::Constraint::All(false),
+                        );
 
                         break 'out (
                             None,
@@ -1969,10 +2202,10 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                             | Constraint::Integer
                             | Constraint::SignedInteger
                             | Constraint::Signed
-                            | Constraint::UnsignedInteger => true,
-                            Constraint::Floating => true,
+                            | Constraint::UnsignedInteger
+                            | Constraint::Floating => true,
 
-                            Constraint::All => false,
+                            Constraint::All(_) => false,
                         }
                     }
                     _ => false,
@@ -2022,7 +2255,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                                 | Constraint::UnsignedInteger
                                 | Constraint::Signed => true,
 
-                                Constraint::Floating | Constraint::All => false,
+                                Constraint::Floating | Constraint::All(_) => {
+                                    false
+                                }
                             }
                         }
                         _ => false,
@@ -2093,6 +2328,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 impl<'x, 't, S: table::State, O: Observer<S, infer::Model>>
     Bind<&BinaryTree<'x>> for Binder<'t, S, O>
 {
+    #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &BinaryTree<'x>,
@@ -2121,10 +2357,253 @@ impl<'x, 't, S: table::State, O: Observer<S, infer::Model>>
 
             syntax_tree::expression::BinaryOperator::LogicalAnd(_)
             | syntax_tree::expression::BinaryOperator::LogicalOr(_) => {
-                todo!("handle lazy logical")
+                let successor_block_id = self
+                    .intermediate_representation
+                    .control_flow_graph
+                    .new_block();
+
+                let lhs =
+                    self.bind_value_or_error(&syntax_tree.left, handler)?;
+
+                // must be a boolean
+                let lhs_ty = self.type_of_value(&lhs)?;
+                let _ = self.type_check(
+                    lhs_ty,
+                    Expected::Known(Type::Primitive(r#type::Primitive::Bool)),
+                    syntax_tree.left.span(),
+                    handler,
+                );
+
+                let true_block_id = self
+                    .intermediate_representation
+                    .control_flow_graph
+                    .new_block();
+                let false_block_id = self
+                    .intermediate_representation
+                    .control_flow_graph
+                    .new_block();
+
+                if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
+                    .intermediate_representation
+                    .control_flow_graph
+                    .insert_terminator(
+                        self.current_block_id,
+                        Terminator::Jump(Jump::Conditional(
+                            instruction::ConditionalJump {
+                                condition: lhs,
+                                true_target: true_block_id,
+                                false_target: false_block_id,
+                            },
+                        )),
+                    )
+                {
+                    panic!("invalid block id");
+                }
+
+                let (true_branch, false_branch) = {
+                    let result = self
+                        .intermediate_representation
+                        .scope_tree
+                        .new_child_branch(
+                            self.stack.current_scope().scope_id(),
+                            NonZeroUsize::new(2).unwrap(),
+                        )
+                        .unwrap();
+
+                    (result[0], result[1])
+                };
+
+                // true branch
+                let (true_branch_value, true_branch_last_block_id) = {
+                    self.current_block_id = true_block_id;
+
+                    // push the scope
+                    self.stack.push_scope(true_branch);
+                    let _ = self.current_block_mut().insert_instruction(
+                        Instruction::ScopePush(ScopePush(true_branch)),
+                    );
+
+                    let value = if matches!(
+                        syntax_tree.operator,
+                        syntax_tree::expression::BinaryOperator::LogicalOr(_)
+                    ) {
+                        Value::Literal(Literal::Boolean(Boolean {
+                            value: true,
+                            span: Some(syntax_tree.left.span()),
+                        }))
+                    } else {
+                        let rhs = self
+                            .bind_value_or_error(&syntax_tree.right, handler)?;
+
+                        let rhs_ty = self.type_of_value(&rhs)?;
+                        let _ = self.type_check(
+                            rhs_ty,
+                            Expected::Known(Type::Primitive(
+                                r#type::Primitive::Bool,
+                            )),
+                            syntax_tree.right.span(),
+                            handler,
+                        );
+
+                        rhs
+                    };
+
+                    // pop the scope
+                    assert!(self.stack.pop_scope());
+                    let _ = self.current_block_mut().insert_instruction(
+                        Instruction::ScopePop(ScopePop(true_branch)),
+                    );
+
+                    // jump to the successor block
+                    if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
+                        .intermediate_representation
+                        .control_flow_graph
+                        .insert_terminator(
+                            self.current_block_id,
+                            Terminator::Jump(Jump::Unconditional(
+                                instruction::UnconditionalJump {
+                                    target: successor_block_id,
+                                },
+                            )),
+                        )
+                    {
+                        panic!("invalid block id");
+                    }
+
+                    (value, self.current_block_id)
+                };
+
+                // false block
+                let (false_branch_value, false_branch_last_block_id) = {
+                    self.current_block_id = false_block_id;
+
+                    // push the scope
+                    self.stack.push_scope(false_branch);
+                    let _ = self.current_block_mut().insert_instruction(
+                        Instruction::ScopePush(ScopePush(false_branch)),
+                    );
+
+                    let value = if matches!(
+                        syntax_tree.operator,
+                        syntax_tree::expression::BinaryOperator::LogicalAnd(_)
+                    ) {
+                        Value::Literal(Literal::Boolean(Boolean {
+                            value: false,
+                            span: Some(syntax_tree.left.span()),
+                        }))
+                    } else {
+                        let rhs = self
+                            .bind_value_or_error(&syntax_tree.right, handler)?;
+
+                        let rhs_ty = self.type_of_value(&rhs)?;
+                        let _ = self.type_check(
+                            rhs_ty,
+                            Expected::Known(Type::Primitive(
+                                r#type::Primitive::Bool,
+                            )),
+                            syntax_tree.right.span(),
+                            handler,
+                        );
+
+                        rhs
+                    };
+
+                    // pop the scope
+                    assert!(self.stack.pop_scope());
+                    let _ = self.current_block_mut().insert_instruction(
+                        Instruction::ScopePop(ScopePop(false_branch)),
+                    );
+
+                    // jump to the successor block
+                    if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
+                        .intermediate_representation
+                        .control_flow_graph
+                        .insert_terminator(
+                            self.current_block_id,
+                            Terminator::Jump(Jump::Unconditional(
+                                instruction::UnconditionalJump {
+                                    target: successor_block_id,
+                                },
+                            )),
+                        )
+                    {
+                        panic!("invalid block id");
+                    }
+
+                    (value, self.current_block_id)
+                };
+
+                // set the current block to the successor block
+                self.current_block_id = successor_block_id;
+
+                // shouldn't have more than 2 predecessors
+                assert!(self.current_block().predecessors().len() <= 2);
+
+                let value = match self.current_block().predecessors().len() {
+                    0 => {
+                        // unreachable
+                        Value::Literal(Literal::Unreachable(
+                            literal::Unreachable {
+                                r#type: Type::Primitive(
+                                    r#type::Primitive::Bool,
+                                ),
+                                span: Some(syntax_tree.span()),
+                            },
+                        ))
+                    }
+
+                    1 => {
+                        // only one predecessor
+                        if self
+                            .current_block()
+                            .predecessors()
+                            .contains(&true_branch_last_block_id)
+                        {
+                            true_branch_value
+                        } else {
+                            assert!(self
+                                .current_block()
+                                .predecessors()
+                                .contains(&false_branch_last_block_id));
+
+                            false_branch_value
+                        }
+                    }
+
+                    2 => {
+                        // both predecessors
+
+                        let register_id = self.create_register_assignmnet(
+                            Assignment::Phi(Phi {
+                                r#type: Type::Primitive(
+                                    r#type::Primitive::Bool,
+                                ),
+                                incoming_values: [
+                                    (
+                                        true_branch_last_block_id,
+                                        true_branch_value,
+                                    ),
+                                    (
+                                        false_branch_last_block_id,
+                                        false_branch_value,
+                                    ),
+                                ]
+                                .into_iter()
+                                .collect(),
+                            }),
+                            Some(syntax_tree.span()),
+                        );
+
+                        Value::Register(register_id)
+                    }
+
+                    _ => unreachable!(),
+                };
+
+                Ok(self.return_rvalue(value, config, handler)?)
             }
 
-            _ => self.bind_normal_binary(&syntax_tree, config, handler),
+            _ => self.bind_normal_binary(syntax_tree, config, handler),
         }
     }
 }
@@ -2236,12 +2715,249 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
                     assert!(self
                         .inference_context
-                        .register(inference, Constraint::All));
+                        .register(inference, Constraint::All(true)));
 
                     Type::Inference(inference)
                 },
                 span: Some(syntax_tree.span()),
             }));
+
+        Ok(self.return_rvalue(value, config, handler)?)
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+    /// Finds a [`ID<scope::Scope>`] to operate a control flow on based on the
+    /// location and label.
+    fn find_loop_scope_id(
+        &self,
+        control_flow: LoopControlFlow,
+        label: Option<&token::Identifier>,
+        syntax_tree_span: Span,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<ID<scope::Scope>, Error> {
+        let mut loop_scope_id = None;
+
+        // find the loop state
+        for scope in self.stack.scopes().iter().rev() {
+            let Some(get_loop_state) =
+                self.loop_states_by_scope_id.get(&scope.scope_id())
+            else {
+                continue;
+            };
+
+            if let Some(label) = label.as_ref() {
+                if get_loop_state.label.as_deref() != Some(label.span.str()) {
+                    continue;
+                }
+            }
+
+            loop_scope_id = Some(scope.scope_id());
+            break;
+        }
+
+        // loop state not found report the error
+        let Some(loop_scope_id) = loop_scope_id else {
+            if let Some(label) = label {
+                self.create_handler_wrapper(handler).receive(Box::new(
+                    LoopWithGivenLabelNameNotFound { span: label.span.clone() },
+                ));
+            } else {
+                self.create_handler_wrapper(handler).receive(Box::new(
+                    LoopControlFlowOutsideLoop {
+                        span: syntax_tree_span.clone(),
+                        control_flow,
+                    },
+                ));
+            };
+
+            return Err(Error::Semantic(SemanticError(syntax_tree_span)));
+        };
+
+        Ok(loop_scope_id)
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<&syntax_tree::expression::Continue> for Binder<'t, S, O>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &syntax_tree::expression::Continue,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let loop_scope_id = self.find_loop_scope_id(
+            LoopControlFlow::Continue,
+            syntax_tree.label().as_ref().map(Label::identifier),
+            syntax_tree.span(),
+            handler,
+        )?;
+
+        // pop all the needed scopes
+        for popping_scope in self
+            .stack
+            .scopes()
+            .iter()
+            .rev()
+            .map(Scope::scope_id)
+            .take_while(|x| *x != loop_scope_id)
+            .chain(std::iter::once(loop_scope_id))
+        {
+            let _ = self
+                .intermediate_representation
+                .control_flow_graph
+                .get_block_mut(self.current_block_id)
+                .unwrap()
+                .insert_instruction(Instruction::ScopePop(ScopePop(
+                    popping_scope,
+                )));
+        }
+
+        // jump to the loop block
+        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
+            .intermediate_representation
+            .control_flow_graph
+            .insert_terminator(
+                self.current_block_id,
+                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                    target: self
+                        .loop_states_by_scope_id
+                        .get(&loop_scope_id)
+                        .unwrap()
+                        .loop_block_id,
+                })),
+            )
+        {
+            panic!("invalid block id");
+        }
+
+        let value = Value::Literal(Literal::Unreachable(Unreachable {
+            r#type: {
+                let inference = InferenceVariable::new();
+
+                assert!(self
+                    .inference_context
+                    .register(inference, Constraint::All(true)));
+
+                Type::Inference(inference)
+            },
+            span: Some(syntax_tree.span()),
+        }));
+
+        Ok(self.return_rvalue(value, config, handler)?)
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<&syntax_tree::expression::Break> for Binder<'t, S, O>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &syntax_tree::expression::Break,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let value = syntax_tree
+            .binary()
+            .as_ref()
+            .map(|x| self.bind_value_or_error(x, handler))
+            .transpose()?;
+
+        let loop_scope_id = self.find_loop_scope_id(
+            LoopControlFlow::Break,
+            syntax_tree.label().as_ref().map(Label::identifier),
+            syntax_tree.span(),
+            handler,
+        )?;
+
+        let value_type = value.as_ref().map_or_else(
+            || Ok(Type::Tuple(term::Tuple { elements: Vec::new() })),
+            |x| self.type_of_value(x),
+        )?;
+
+        if let Some(break_type) = &self
+            .loop_states_by_scope_id
+            .get(&loop_scope_id)
+            .unwrap()
+            .break_type
+        {
+            let _ = self.type_check(
+                value_type,
+                Expected::Known(break_type.clone()),
+                syntax_tree.span(),
+                handler,
+            );
+        } else {
+            // have no break before, gets to decide the type.
+            self.loop_states_by_scope_id
+                .get_mut(&loop_scope_id)
+                .unwrap()
+                .break_type = Some(value_type);
+        };
+
+        if let Entry::Vacant(entry) = self
+            .loop_states_by_scope_id
+            .get_mut(&loop_scope_id)
+            .unwrap()
+            .incoming_values
+            .entry(self.current_block_id)
+        {
+            entry.insert(value.unwrap_or(Value::Literal(Literal::Unit(
+                literal::Unit { span: Some(syntax_tree.span()) },
+            ))));
+        }
+
+        // pop all the needed scopes
+        for popping_scope in self
+            .stack
+            .scopes()
+            .iter()
+            .rev()
+            .map(Scope::scope_id)
+            .take_while(|x| *x != loop_scope_id)
+            .chain(std::iter::once(loop_scope_id))
+        {
+            let _ = self
+                .intermediate_representation
+                .control_flow_graph
+                .get_block_mut(self.current_block_id)
+                .unwrap()
+                .insert_instruction(Instruction::ScopePop(ScopePop(
+                    popping_scope,
+                )));
+        }
+
+        // jump to the exit block
+        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
+            .intermediate_representation
+            .control_flow_graph
+            .insert_terminator(
+                self.current_block_id,
+                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                    target: self
+                        .loop_states_by_scope_id
+                        .get(&loop_scope_id)
+                        .unwrap()
+                        .exit_block_id,
+                })),
+            )
+        {
+            panic!("invalid block id");
+        }
+
+        let value = Value::Literal(Literal::Unreachable(Unreachable {
+            r#type: {
+                let inference = InferenceVariable::new();
+
+                assert!(self
+                    .inference_context
+                    .register(inference, Constraint::All(true)));
+
+                Type::Inference(inference)
+            },
+            span: Some(syntax_tree.span()),
+        }));
 
         Ok(self.return_rvalue(value, config, handler)?)
     }
@@ -2260,11 +2976,15 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             syntax_tree::expression::Terminator::Return(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Terminator::Continue(_) => todo!(),
+            syntax_tree::expression::Terminator::Continue(syn) => {
+                self.bind(syn, config, handler)
+            }
             syntax_tree::expression::Terminator::Express(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Terminator::Break(_) => todo!(),
+            syntax_tree::expression::Terminator::Break(syn) => {
+                self.bind(syn, config, handler)
+            }
         }
     }
 }
@@ -2365,30 +3085,16 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             ))));
         }
 
-        let target_scope_id_depth = self
-            .intermediate_representation
-            .scope_tree
-            .scopes()
-            .get(scope_id)
-            .unwrap()
-            .depth;
-
         // pop all the needed scopes
-        for popping_scope in
-            self.stack.scopes().iter().map(Scope::scope_id).rev()
+        for popping_scope in self
+            .stack
+            .scopes()
+            .iter()
+            .rev()
+            .map(Scope::scope_id)
+            .take_while(|x| *x != scope_id)
+            .chain(std::iter::once(scope_id))
         {
-            if self
-                .intermediate_representation
-                .scope_tree
-                .scopes()
-                .get(popping_scope)
-                .unwrap()
-                .depth
-                < target_scope_id_depth
-            {
-                break;
-            }
-
             let _ = self
                 .intermediate_representation
                 .control_flow_graph
@@ -2420,8 +3126,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
         let value =
             Value::Literal(Literal::Unreachable(literal::Unreachable {
                 r#type: {
-                    let inference =
-                        self.create_type_inference(r#type::Constraint::All);
+                    let inference = self
+                        .create_type_inference(r#type::Constraint::All(true));
 
                     Type::Inference(inference)
                 },
@@ -2501,7 +3207,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 then_scope_id,
                 successor_then_block_id,
                 handler,
-            );
+            )?;
 
             let value = self.bind_value_or_error(block_state, handler)?;
 
@@ -2539,7 +3245,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     else_scope_id,
                     successor_else_block_id,
                     handler,
-                );
+                )?;
 
                 let value = self.bind_value_or_error(block_state, handler)?;
 
@@ -2583,7 +3289,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     let inference = InferenceVariable::new();
                     assert!(self
                         .inference_context
-                        .register(inference, Constraint::All));
+                        .register(inference, Constraint::All(true)));
 
                     Type::Inference(inference)
                 },
@@ -2663,6 +3369,159 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 }
 
 impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<&syntax_tree::expression::Loop> for Binder<'t, S, O>
+{
+    #[allow(clippy::too_many_lines)]
+    fn bind(
+        &mut self,
+        syntax_tree: &Loop,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let label = syntax_tree
+            .block()
+            .label_specifier()
+            .as_ref()
+            .map(|x| x.label().identifier().span.str().to_owned());
+
+        let loop_block_id =
+            self.intermediate_representation.control_flow_graph.new_block();
+        let exit_block_id =
+            self.intermediate_representation.control_flow_graph.new_block();
+        let loop_scope_id = {
+            let result = self
+                .intermediate_representation
+                .scope_tree
+                .new_child_branch(
+                    self.stack.current_scope().scope_id(),
+                    NonZeroUsize::new(1).unwrap(),
+                )
+                .unwrap();
+
+            result[0]
+        };
+
+        // jump to the loop header block
+        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
+            .intermediate_representation
+            .control_flow_graph
+            .insert_terminator(
+                self.current_block_id,
+                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                    target: loop_block_id,
+                })),
+            )
+        {
+            panic!("invalid block id");
+        }
+
+        // set the current block to the loop header block
+        self.current_block_id = loop_block_id;
+        let _ = self.current_block_mut().insert_instruction(
+            Instruction::ScopePush(ScopePush(loop_scope_id)),
+        );
+        self.stack.push_scope(loop_scope_id);
+        self.loop_states_by_scope_id.insert(loop_scope_id, LoopState {
+            label,
+            incoming_values: HashMap::new(),
+            loop_block_id,
+            break_type: None,
+            exit_block_id,
+            span: syntax_tree.span(),
+        });
+
+        // bind the loop block
+        for statement in syntax_tree.block().statements().statements() {
+            self.bind_statement(statement, handler)?;
+        }
+
+        // pop the loop scope
+        assert!(self.stack.pop_scope());
+        let _ = self
+            .current_block_mut()
+            .insert_instruction(Instruction::ScopePop(ScopePop(loop_scope_id)));
+        let mut loop_state =
+            self.loop_states_by_scope_id.remove(&loop_scope_id).unwrap();
+
+        // jump to the loop header block
+        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
+            .intermediate_representation
+            .control_flow_graph
+            .insert_terminator(
+                self.current_block_id,
+                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                    target: loop_block_id,
+                })),
+            )
+        {
+            panic!("invalid block id");
+        }
+
+        // set the current block to the exit block
+        self.current_block_id = loop_state.exit_block_id;
+
+        let value = if let Some(break_type) = loop_state.break_type {
+            assert!(self.current_block().predecessors().iter().copied().all(
+                |block_id| loop_state.incoming_values.contains_key(&block_id)
+            ));
+
+            // filter out the incoming values that are unreachable
+            #[allow(clippy::needless_collect)]
+            for remove in loop_state
+                .incoming_values
+                .keys()
+                .copied()
+                .filter(|x| !self.current_block().predecessors().contains(x))
+                .collect::<Vec<_>>()
+            {
+                loop_state.incoming_values.remove(&remove);
+            }
+
+            match loop_state.incoming_values.len() {
+                0 => Value::Literal(Literal::Unreachable(Unreachable {
+                    r#type: break_type,
+                    span: Some(syntax_tree.span()),
+                })),
+
+                // only one incoming value, just return it
+                1 => loop_state.incoming_values.into_iter().next().unwrap().1,
+
+                // multiple incoming values, create a phi node
+                _ => {
+                    let phi_register_id = self.create_register_assignmnet(
+                        Assignment::Phi(Phi {
+                            r#type: break_type,
+                            incoming_values: loop_state.incoming_values,
+                        }),
+                        Some(syntax_tree.span()),
+                    );
+
+                    Value::Register(phi_register_id)
+                }
+            }
+        } else {
+            assert!(loop_state.incoming_values.is_empty());
+            assert!(self.current_block().is_unreachable());
+
+            Value::Literal(Literal::Unreachable(Unreachable {
+                r#type: {
+                    let inference = InferenceVariable::new();
+
+                    assert!(self
+                        .inference_context
+                        .register(inference, Constraint::All(true)));
+
+                    Type::Inference(inference)
+                },
+                span: Some(syntax_tree.span()),
+            }))
+        };
+
+        Ok(self.return_rvalue(value, config, handler)?)
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
     Bind<&syntax_tree::expression::Brace> for Binder<'t, S, O>
 {
     fn bind(
@@ -2678,7 +3537,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             syntax_tree::expression::Brace::IfElse(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Brace::Loop(_) => todo!(),
+            syntax_tree::expression::Brace::Loop(syn) => {
+                self.bind(syn, config, handler)
+            }
             syntax_tree::expression::Brace::Match(_) => todo!(),
         }
     }
@@ -2794,7 +3655,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<BlockState>
 
                 assert!(self
                     .inference_context
-                    .register(inference_variable, Constraint::All));
+                    .register(inference_variable, Constraint::All(true)));
 
                 Value::Literal(Literal::Unreachable(Unreachable {
                     r#type: Type::Inference(inference_variable),
@@ -2820,14 +3681,14 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     /// as a jump instruction to the successor block.
     ///
     /// The function returns the [`BlockState`] that can be bound as a value by
-    /// [`Self::bind_block_state`] function.
+    /// calling the bind block state function.
     fn bind_block(
         &mut self,
         syntax_tree: &syntax_tree::expression::Block,
         scope_id: ID<scope::Scope>,
         successor_block_id: ID<Block<infer::Model>>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> BlockState {
+    ) -> Result<BlockState, InternalError> {
         // add the scope push instruction
         let _ = self
             .current_block_mut()
@@ -2849,7 +3710,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 
         // bind list of statements
         for statement in syntax_tree.statements().statements() {
-            let _ = self.bind_statement(statement, handler);
+            self.bind_statement(statement, handler)?;
         }
 
         // ends the scope
@@ -2875,7 +3736,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         self.current_block_id = successor_block_id;
 
         // return the block state
-        self.block_states_by_scope_id.remove(&scope_id).unwrap()
+        Ok(self.block_states_by_scope_id.remove(&scope_id).unwrap())
     }
 }
 
@@ -2900,8 +3761,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
         let successor_block_id =
             self.intermediate_representation.control_flow_graph.new_block();
 
-        let block_state =
-            self.bind_block(syntax_tree, scope_id, successor_block_id, handler);
+        let block_state = self.bind_block(
+            syntax_tree,
+            scope_id,
+            successor_block_id,
+            handler,
+        )?;
 
         // bind the block state as value
         self.bind(block_state, config, handler)
@@ -2929,7 +3794,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             Ok(value) => Ok(value.into_value().unwrap()),
             Err(Error::Semantic(semantic_error)) => {
                 let inference =
-                    self.create_type_inference(r#type::Constraint::All);
+                    self.create_type_inference(r#type::Constraint::All(false));
 
                 Ok(Value::Literal(Literal::Error(literal::Error {
                     r#type: Type::Inference(inference),

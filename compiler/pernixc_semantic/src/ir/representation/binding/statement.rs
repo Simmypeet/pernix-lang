@@ -91,9 +91,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 let type_annotation = self
                     .resolve_type_with_inference(type_syn.ty(), handler)
                     .unwrap_or_else(|| {
-                        Type::Inference(
-                            self.create_type_inference(r#type::Constraint::All),
-                        )
+                        Type::Inference(self.create_type_inference(
+                            r#type::Constraint::All(false),
+                        ))
                     });
 
                 let _ = self.type_check(

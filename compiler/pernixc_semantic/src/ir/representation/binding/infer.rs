@@ -179,10 +179,19 @@ pub enum Inference<T, C> {
 }
 
 /// An implementation of the inference context for a specific term
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ContextImpl<T: Term, C: 'static> {
     inference_by_ids: HashMap<T::InferenceVariable, Inference<T, C>>,
     constraints: Arena<C>,
+}
+
+impl<T: Term, C: 'static> std::default::Default for ContextImpl<T, C> {
+    fn default() -> Self {
+        Self {
+            inference_by_ids: HashMap::default(),
+            constraints: Arena::default(),
+        }
+    }
 }
 
 impl<T: Term, C: 'static> ContextImpl<T, C> {
@@ -361,7 +370,7 @@ impl<M: model::Model> Constraint<Type<M>> for r#type::Constraint {
         use crate::type_system::term::r#type::Primitive;
 
         match self {
-            Self::All => true,
+            Self::All(_) => true,
             Self::Number => matches!(
                 term,
                 Type::Primitive(
@@ -435,15 +444,21 @@ impl<M: model::Model> Constraint<Type<M>> for r#type::Constraint {
 
     fn combine(&self, another: &Self) -> Option<Self> {
         match self {
-            Self::All => Some(*another),
+            Self::All(default_as_unit) => Some(match *another {
+                Self::All(other_as_unit) => {
+                    Self::All(*default_as_unit || other_as_unit)
+                }
+
+                another => another,
+            }),
 
             Self::Number => Some(match *another {
-                Self::All => Self::Number,
+                Self::All(_) => Self::Number,
                 another => another,
             }),
 
             Self::Integer => match *another {
-                Self::All | Self::Number => Some(Self::Integer),
+                Self::All(_) | Self::Number => Some(Self::Integer),
 
                 Self::Signed => Some(Self::SignedInteger),
 
@@ -455,20 +470,16 @@ impl<M: model::Model> Constraint<Type<M>> for r#type::Constraint {
             },
 
             Self::UnsignedInteger => match *another {
-                r#type::Constraint::All
-                | r#type::Constraint::Number
-                | r#type::Constraint::Integer
-                | r#type::Constraint::UnsignedInteger => {
-                    Some(Self::UnsignedInteger)
-                }
+                Self::All(_)
+                | Self::Number
+                | Self::Integer
+                | Self::UnsignedInteger => Some(Self::UnsignedInteger),
 
-                r#type::Constraint::SignedInteger
-                | r#type::Constraint::Signed
-                | r#type::Constraint::Floating => None,
+                Self::SignedInteger | Self::Signed | Self::Floating => None,
             },
 
             Self::SignedInteger => match *another {
-                Self::All
+                Self::All(_)
                 | Self::Number
                 | Self::Integer
                 | Self::SignedInteger
@@ -478,7 +489,9 @@ impl<M: model::Model> Constraint<Type<M>> for r#type::Constraint {
             },
 
             Self::Signed => match *another {
-                Self::Signed | Self::All | Self::Number => Some(Self::Signed),
+                Self::Signed | Self::All(_) | Self::Number => {
+                    Some(Self::Signed)
+                }
 
                 Self::SignedInteger | Self::Integer => {
                     Some(Self::SignedInteger)
@@ -490,7 +503,7 @@ impl<M: model::Model> Constraint<Type<M>> for r#type::Constraint {
             },
 
             Self::Floating => match *another {
-                Self::All | Self::Number | Self::Signed | Self::Floating => {
+                Self::All(_) | Self::Number | Self::Signed | Self::Floating => {
                     Some(Self::Floating)
                 }
 
@@ -1111,7 +1124,7 @@ impl<T: table::State> table::Display<T> for r#type::Constraint {
         use r#type::Constraint::*;
 
         match self {
-            All => write!(f, "{{any}}"),
+            All(_) => write!(f, "{{any}}"),
             Number => write!(f, "{{number}}"),
             Signed => write!(f, "{{signed}}"),
             Floating => write!(f, "{{floating}}"),

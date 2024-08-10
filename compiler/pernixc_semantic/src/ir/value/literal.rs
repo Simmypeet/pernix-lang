@@ -96,6 +96,19 @@ pub struct Character<M: Model> {
     pub span: Option<Span>,
 }
 
+/// Represents a phantom value created by the `phantom` keyword.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Phantom<M: Model> {
+    /// The type of the character value.
+    ///
+    /// The type is explicitly annotate here since it can be determined by
+    /// type inference.
+    pub r#type: Type<M>,
+
+    /// The span location of the phantom keyword.
+    pub span: Option<Span>,
+}
+
 /// Represents a literal value.
 ///
 /// A literal value is a value that is directly represented in the source code
@@ -120,6 +133,7 @@ pub enum Literal<M: Model> {
     String(String),
     Character(Character<M>),
     Unreachable(Unreachable<M>),
+    Phantom(Phantom<M>),
 }
 
 impl<M: Model> Literal<M> {
@@ -145,6 +159,7 @@ impl<M: Model> Literal<M> {
             }),
             Literal::Character(c) => c.r#type.clone(),
             Literal::Unreachable(u) => u.r#type.clone(),
+            Literal::Phantom(p) => p.r#type.clone(),
         }
     }
 
@@ -158,6 +173,7 @@ impl<M: Model> Literal<M> {
             Literal::String(s) => s.span.as_ref(),
             Literal::Character(c) => c.span.as_ref(),
             Literal::Unreachable(u) => u.span.as_ref(),
+            Literal::Phantom(p) => p.span.as_ref(),
         }
     }
 }

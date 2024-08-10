@@ -910,14 +910,15 @@ pub enum Type<M: Model> {
     PartialOrd,
     Ord,
     Hash,
-    Default,
     derive_more::Display,
 )]
 pub enum Constraint {
     /// The type can be inferred into any type.
-    #[default]
+    ///
+    /// The boolean valuie indicates whether the type can be inferred as a unit
+    /// type as a default value.
     #[display(fmt = "{{any}}")]
-    All,
+    All(bool),
 
     /// The type can be any number type. (signed/unsigned/floating)
     #[display(fmt = "{{number}}")]
