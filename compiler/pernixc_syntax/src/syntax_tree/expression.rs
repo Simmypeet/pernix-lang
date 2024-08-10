@@ -793,7 +793,6 @@ impl SourceElement for Cast {
 }
 
 /// Syntax Synopsis:
-///
 /// ``` txt
 /// AccessOperator:
 ///     '.'
@@ -816,17 +815,48 @@ impl SourceElement for AccessOperator {
 }
 
 /// Syntax Synopsis:
+/// ```txt
+/// Index:
+///     '[' Expression ']'
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Index {
+    #[get = "pub"]
+    left_bracket: Punctuation,
+    #[get = "pub"]
+    expression: Box<Expression>,
+    #[get = "pub"]
+    right_bracket: Punctuation,
+}
+
+impl SourceElement for Index {
+    fn span(&self) -> Span {
+        self.left_bracket.span().join(&self.right_bracket.span).unwrap()
+    }
+}
+
+impl Index {
+    /// Destructs the index into its components
+    #[must_use]
+    pub fn destruct(self) -> (Punctuation, Box<Expression>, Punctuation) {
+        (self.left_bracket, self.expression, self.right_bracket)
+    }
+}
+
+/// Syntax Synopsis:
 ///
 /// ``` txt
 /// AccessKind:
 ///     Identifier
 ///     | Numeric
+///     | Index
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AccessKind {
     Identifier(Identifier),
     Tuple(token::Numeric),
+    Index(Index),
 }
 
 impl SourceElement for AccessKind {
@@ -834,6 +864,7 @@ impl SourceElement for AccessKind {
         match self {
             Self::Identifier(identifier) => identifier.span(),
             Self::Tuple(numeric) => numeric.span.clone(),
+            Self::Index(index) => index.span(),
         }
     }
 }
@@ -1853,23 +1884,46 @@ impl Parser<'_> {
 
                     let kind = match self.stop_at_significant() {
                         Reading::Unit(Token::Numeric(n)) => {
+                            // eat the access kind
+                            self.forward();
                             AccessKind::Tuple(n)
                         }
                         Reading::Unit(Token::Identifier(i)) => {
+                            // eat the access kind
+                            self.forward();
                             AccessKind::Identifier(i)
                         }
+                        Reading::IntoDelimited(Delimiter::Bracket, _) => {
+                            let delimited_tree = self.step_into(
+                                Delimiter::Bracket,
+                                |parser| {
+                                    parser
+                                        .parse_expression(handler)
+                                        .map(Box::new)
+                                },
+                                handler,
+                            )?;
+
+                            AccessKind::Index(Index {
+                                left_bracket: delimited_tree.open,
+                                expression: delimited_tree.tree?,
+                                right_bracket: delimited_tree.close,
+                            })
+                        }
+
                         found => {
                             handler.receive(Error {
                                 expected: SyntaxKind::Identifier,
-                                alternatives: vec![SyntaxKind::Numeric],
+                                alternatives: vec![
+                                    SyntaxKind::Numeric,
+                                    SyntaxKind::Punctuation('['),
+                                ],
                                 found: found.into_token(),
                             });
                             self.forward();
                             return None;
                         }
                     };
-                    // eat the access kind
-                    self.forward();
 
                     current = Postfixable::Postfix(Postfix {
                         postfixable: Box::new(current),
@@ -1899,11 +1953,33 @@ impl Parser<'_> {
 
                     let kind = match self.stop_at_significant() {
                         Reading::Unit(Token::Numeric(n)) => {
+                            // eat the access kind
+                            self.forward();
                             AccessKind::Tuple(n)
                         }
                         Reading::Unit(Token::Identifier(i)) => {
+                            // eat the access kind
+                            self.forward();
                             AccessKind::Identifier(i)
                         }
+                        Reading::IntoDelimited(Delimiter::Bracket, _) => {
+                            let delimited_tree = self.step_into(
+                                Delimiter::Bracket,
+                                |parser| {
+                                    parser
+                                        .parse_expression(handler)
+                                        .map(Box::new)
+                                },
+                                handler,
+                            )?;
+
+                            AccessKind::Index(Index {
+                                left_bracket: delimited_tree.open,
+                                expression: delimited_tree.tree?,
+                                right_bracket: delimited_tree.close,
+                            })
+                        }
+
                         found => {
                             handler.receive(Error {
                                 expected: SyntaxKind::Identifier,
@@ -1914,8 +1990,6 @@ impl Parser<'_> {
                             return None;
                         }
                     };
-                    // eat the access kind
-                    self.forward();
 
                     current = Postfixable::Postfix(Postfix {
                         postfixable: Box::new(current),

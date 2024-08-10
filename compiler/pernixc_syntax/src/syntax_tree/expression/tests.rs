@@ -1388,6 +1388,7 @@ impl Display for AccessOperator {
 pub enum AccessKind {
     Identifier(Identifier),
     Tuple(syntax_tree::tests::Numeric),
+    Index(Box<Expression>),
 }
 
 impl Input<&super::AccessKind> for &AccessKind {
@@ -1397,8 +1398,13 @@ impl Input<&super::AccessKind> for &AccessKind {
                 AccessKind::Identifier(input),
                 super::AccessKind::Identifier(output),
             ) => input.assert(output),
+
             (AccessKind::Tuple(input), super::AccessKind::Tuple(output)) => {
                 input.assert(output)
+            }
+
+            (AccessKind::Index(input), super::AccessKind::Index(output)) => {
+                input.assert(&output.expression)
             }
 
             (input, output) => Err(TestCaseError::fail(format!(
@@ -1409,14 +1415,16 @@ impl Input<&super::AccessKind> for &AccessKind {
 }
 
 impl Arbitrary for AccessKind {
-    type Parameters = ();
+    type Parameters = Option<BoxedStrategy<Expression>>;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
+        let strat = strat.unwrap_or_else(Expression::arbitrary);
         prop_oneof![
             Identifier::arbitrary().prop_map(AccessKind::Identifier),
             syntax_tree::tests::Numeric::arbitrary()
                 .prop_map(AccessKind::Tuple),
+            strat.prop_map(Box::new).prop_map(AccessKind::Index),
         ]
         .boxed()
     }
@@ -1427,6 +1435,7 @@ impl Display for AccessKind {
         match self {
             Self::Identifier(identifier) => Display::fmt(identifier, f),
             Self::Tuple(numeric) => Display::fmt(numeric, f),
+            Self::Index(expression) => write!(f, "[{expression}]"),
         }
     }
 }
@@ -1445,11 +1454,16 @@ impl Input<&super::Access> for &Access {
 }
 
 impl Arbitrary for Access {
-    type Parameters = ();
+    type Parameters = Option<BoxedStrategy<Expression>>;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (AccessOperator::arbitrary_with(()), AccessKind::arbitrary_with(()))
+    fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
+        let strat = strat.unwrap_or_else(Expression::arbitrary);
+
+        (
+            AccessOperator::arbitrary_with(()),
+            AccessKind::arbitrary_with(Some(strat)),
+        )
             .prop_map(|(operator, kind)| Self { operator, kind })
             .boxed()
     }
@@ -1505,7 +1519,6 @@ impl Arbitrary for PostfixOperator {
         prop_oneof![
             Call::arbitrary_with(args.0.clone()).prop_map(Self::Call),
             Cast::arbitrary_with(args).prop_map(Self::Cast),
-            Access::arbitrary_with(()).prop_map(Self::Access),
         ]
         .boxed()
     }

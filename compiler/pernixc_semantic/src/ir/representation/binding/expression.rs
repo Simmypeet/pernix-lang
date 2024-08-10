@@ -143,46 +143,13 @@ pub trait Bind<T> {
     ) -> Result<Expression, Error>;
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
-    /// Handles the `value` as an r-value.
-    fn return_rvalue(
-        &mut self,
-        value: Value<infer::Model>,
-        config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Expression, SemanticError> {
-        let span = match &value {
-            Value::Register(id) => self
-                .intermediate_representation
-                .registers
-                .get(*id)
-                .unwrap()
-                .span
-                .clone()
-                .unwrap(),
-            Value::Literal(literal) => literal.span().cloned().unwrap(),
-        };
-
-        match config.target {
-            Target::Value => Ok(Expression::Value(value)),
-            Target::Address { .. } => {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    ExpectedLValue { expression_span: span.clone() },
-                ));
-                Err(SemanticError(span))
-            }
-            Target::Statement => Ok(Expression::SideEffect),
-        }
-    }
-}
-
 impl<'t, S: table::State, O: Observer<S, infer::Model>>
     Bind<&syntax_tree::expression::Numeric> for Binder<'t, S, O>
 {
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Numeric,
-        config: Config,
+        _: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let numeric_ty = match syntax_tree.suffix() {
@@ -255,19 +222,15 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             }
         };
 
-        Ok(self.return_rvalue(
-            Value::Literal(Literal::Numeric(Numeric {
-                integer_string: syntax_tree.numeric().span.str().to_string(),
-                decimal_stirng: syntax_tree
-                    .decimal()
-                    .as_ref()
-                    .map(|x| x.numeric().span.str().to_owned()),
-                r#type: numeric_ty,
-                span: Some(syntax_tree.span()),
-            })),
-            config,
-            handler,
-        )?)
+        Ok(Expression::Value(Value::Literal(Literal::Numeric(Numeric {
+            integer_string: syntax_tree.numeric().span.str().to_string(),
+            decimal_stirng: syntax_tree
+                .decimal()
+                .as_ref()
+                .map(|x| x.numeric().span.str().to_owned()),
+            r#type: numeric_ty,
+            span: Some(syntax_tree.span()),
+        }))))
     }
 }
 
@@ -277,22 +240,74 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Boolean,
-        config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        _: Config,
+        _: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let value = match syntax_tree {
             syntax_tree::expression::Boolean::True(_) => true,
             syntax_tree::expression::Boolean::False(_) => false,
         };
 
-        Ok(self.return_rvalue(
-            Value::Literal(Literal::Boolean(Boolean {
-                value,
-                span: Some(syntax_tree.span()),
-            })),
-            config,
+        Ok(Expression::Value(Value::Literal(Literal::Boolean(Boolean {
+            value,
+            span: Some(syntax_tree.span()),
+        }))))
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+    /// Binds the given syntax tree as an address.
+    ///
+    /// If the expression cannot be bound as an address, a variable will be
+    /// created an the value is stored in the variable; the address of the
+    /// variable is returned.
+    fn bind_as_address<'a, T>(
+        &mut self,
+        syntax_tree: &'a T,
+        qualifier: Qualifier,
+        create_temporary: bool,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Address<Memory<infer::Model>>, Error>
+    where
+        T: SourceElement,
+        Self: Bind<&'a T>,
+    {
+        match self.bind(
+            syntax_tree,
+            Config {
+                target: Target::Address { expected_qualifier: qualifier },
+            },
             handler,
-        )?)
+        )? {
+            Expression::Value(value) => {
+                if create_temporary {
+                    let type_of_value = self.type_of_value(&value)?;
+                    let alloca_id = self
+                        .create_alloca(type_of_value, Some(syntax_tree.span()));
+
+                    // initialize
+                    let _ = self.current_block_mut().insert_instruction(
+                        Instruction::Store(Store {
+                            address: Address::Base(Memory::Alloca(alloca_id)),
+                            value,
+                            is_initializattion: true,
+                        }),
+                    );
+
+                    Ok(Address::Base(Memory::Alloca(alloca_id)))
+                } else {
+                    handler.receive(Box::new(ExpectedLValue {
+                        expression_span: syntax_tree.span(),
+                    }));
+
+                    Err(Error::Semantic(SemanticError(syntax_tree.span())))
+                }
+            }
+            Expression::Address { address, .. } => Ok(address),
+            Expression::SideEffect => {
+                unreachable!()
+            }
+        }
     }
 }
 
@@ -364,11 +379,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     Some(syntax_tree.span()),
                 );
 
-                Ok(self.return_rvalue(
-                    Value::Register(register_id),
-                    config,
-                    handler,
-                )?)
+                Ok(Expression::Value(Value::Register(register_id)))
             }
 
             syntax_tree::expression::PrefixOperator::Dereference(_) => {
@@ -417,13 +428,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                             Some(syntax_tree.span()),
                         );
 
-                        Ok(self.return_rvalue(
-                            Value::Register(register_id),
-                            config,
-                            handler,
-                        )?)
+                        Ok(Expression::Value(Value::Register(register_id)))
                     }
-                    Target::Address { expected_qualifier } => {
+                    Target::Address { expected_qualifier, .. } => {
                         // soft error, keep going
                         if reference_type.qualifier < expected_qualifier {
                             self.create_handler_wrapper(handler).receive(
@@ -465,19 +472,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     },
                 );
 
-                // bind the operand
-                let Expression::Address { address, .. } = self.bind(
+                let address = self.bind_as_address(
                     &**syntax_tree.prefixable(),
-                    Config {
-                        target: Target::Address {
-                            expected_qualifier: qualifier,
-                        },
-                    },
+                    qualifier,
+                    true,
                     handler,
-                )?
-                else {
-                    panic!("Expected an address");
-                };
+                )?;
 
                 // check if the address is mutable
                 let expected = match reference_of.kind() {
@@ -514,11 +514,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     Some(syntax_tree.span()),
                 );
 
-                Ok(self.return_rvalue(
-                    Value::Register(register_id),
-                    config,
-                    handler,
-                )?)
+                Ok(Expression::Value(Value::Register(register_id)))
             }
         }
     }
@@ -734,7 +730,6 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         resolution_span: Span,
         resolution: resolution::Resolution<infer::Model>,
         syntax_tree_span: Span,
-        config: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         // can be enum variant and functin call
@@ -748,7 +743,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     handler,
                 )?);
 
-                Ok(self.return_rvalue(value, config, handler)?)
+                Ok(Expression::Value(value))
             }
 
             resolution::Resolution::Generic(resolution::Generic {
@@ -875,7 +870,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     handler,
                 )?);
 
-                Ok(self.return_rvalue(value, config, handler)?)
+                Ok(Expression::Value(value))
             }
 
             resolution::Resolution::MemberGeneric(
@@ -1060,7 +1055,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     handler,
                 )?);
 
-                Ok(self.return_rvalue(value, config, handler)?)
+                Ok(Expression::Value(value))
             }
 
             resolution => {
@@ -1075,6 +1070,19 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 Err(Error::Semantic(SemanticError(syntax_tree_span)))
             }
         }
+    }
+}
+
+impl<'t, S: table::State, O: Observer<S, infer::Model>>
+    Bind<&syntax_tree::expression::Access> for Binder<'t, S, O>
+{
+    fn bind(
+        &mut self,
+        _: &syntax_tree::expression::Access,
+        _: Config,
+        _: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        todo!()
     }
 }
 
@@ -1119,7 +1127,6 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                             qualified_identifier.span(),
                             resolution,
                             syntax_tree.span(),
-                            config,
                             handler,
                         )
                     }
@@ -1141,7 +1148,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
             syntax_tree::expression::PostfixOperator::Cast(_) => todo!(),
 
-            syntax_tree::expression::PostfixOperator::Access(_) => todo!(),
+            syntax_tree::expression::PostfixOperator::Access(syn) => {
+                self.bind(syn, config, handler)
+            }
         }
     }
 }
@@ -1230,7 +1239,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                             Target::Address { .. } => unreachable!(),
                         });
                     }
-                    Target::Address { expected_qualifier } => {
+                    Target::Address { expected_qualifier, .. } => {
                         // report mutability error, soft error, keep going
                         if matches!(
                             expected_qualifier,
@@ -1314,11 +1323,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     Some(syntax_tree.span()),
                 );
 
-                Ok(self.return_rvalue(
-                    Value::Register(register_id),
-                    config,
-                    handler,
-                )?)
+                Ok(Expression::Value(Value::Register(register_id)))
             }
 
             resolution::Resolution::Generic(resolution::Generic {
@@ -1361,7 +1366,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Struct,
-        config: Config,
+        _: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let resolution = self
@@ -1501,7 +1506,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             ),
         );
 
-        Ok(self.return_rvalue(value, config, handler)?)
+        Ok(Expression::Value(value))
     }
 }
 
@@ -1511,8 +1516,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<&token::String>
     fn bind(
         &mut self,
         syntax_tree: &token::String,
-        config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        _: Config,
+        _: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let value = if let Some(value) = &syntax_tree.value {
             let value = value.as_bytes().to_vec();
@@ -1544,7 +1549,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<&token::String>
             }))
         };
 
-        Ok(self.return_rvalue(value, config, handler)?)
+        Ok(Expression::Value(value))
     }
 }
 
@@ -1554,8 +1559,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<&token::Character>
     fn bind(
         &mut self,
         syntax_tree: &token::Character,
-        config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        _: Config,
+        _: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let inference_variable = InferenceVariable::new();
 
@@ -1580,7 +1585,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<&token::Character>
             },
         );
 
-        Ok(self.return_rvalue(value, config, handler)?)
+        Ok(Expression::Value(value))
     }
 }
 
@@ -1658,7 +1663,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 ))
             };
 
-            Ok(self.return_rvalue(value, config, handler)?)
+            Ok(Expression::Value(value))
         } else {
             // propagate the target
             self.bind(
@@ -1681,8 +1686,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Phantom,
-        config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        _: Config,
+        _: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let inference = InferenceVariable::new();
 
@@ -1690,14 +1695,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             .inference_context
             .register::<Type<_>>(inference, Constraint::All(false)));
 
-        Ok(self.return_rvalue(
-            Value::Literal(Literal::Phantom(literal::Phantom {
+        Ok(Expression::Value(Value::Literal(Literal::Phantom(
+            literal::Phantom {
                 r#type: Type::Inference(inference),
                 span: Some(syntax_tree.span()),
-            })),
-            config,
-            handler,
-        )?)
+            },
+        ))))
     }
 }
 
@@ -1707,7 +1710,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Array,
-        config: Config,
+        _: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let Some(arguments) = syntax_tree.arguments() else {
@@ -1725,11 +1728,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 Some(syntax_tree.span()),
             );
 
-            return Ok(self.return_rvalue(
-                Value::Register(register_id),
-                config,
-                handler,
-            )?);
+            return Ok(Expression::Value(Value::Register(register_id)));
         };
 
         let mut elements = Vec::new();
@@ -1770,7 +1769,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             Some(syntax_tree.span()),
         ));
 
-        Ok(self.return_rvalue(value, config, handler)?)
+        Ok(Expression::Value(value))
     }
 }
 
@@ -2089,18 +2088,14 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 
         let (lhs_address, lhs_value) = 'out: {
             if is_compound {
-                let lhs_address = match self.bind(
+                let lhs_address = match self.bind_as_address(
                     &syntax_tree.left,
-                    Config {
-                        target: Target::Address {
-                            expected_qualifier: Qualifier::Unique,
-                        },
-                    },
+                    Qualifier::Unique,
+                    false,
                     handler,
                 ) {
-                    Ok(address) => address.into_address().unwrap(),
+                    Ok(address) => address,
 
-                    // make the lhs errored
                     Err(Error::Semantic(SemanticError(span))) => {
                         let inference = self.create_type_inference(
                             r#type::Constraint::All(false),
@@ -2122,7 +2117,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 
                 let lhs_register = self.create_register_assignmnet(
                     Assignment::Load(Load {
-                        address: lhs_address.0.clone(),
+                        address: lhs_address.clone(),
                         kind: LoadKind::Copy,
                     }),
                     Some(syntax_tree.left.span()),
@@ -2311,16 +2306,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             self.bind_assignment(
                 syntax_tree,
                 config,
-                lhs_address.0,
+                lhs_address,
                 Value::Register(binary_register),
                 handler,
             )
         } else {
-            Ok(self.return_rvalue(
-                Value::Register(binary_register),
-                config,
-                handler,
-            )?)
+            Ok(Expression::Value(Value::Register(binary_register)))
         }
     }
 }
@@ -2339,20 +2330,14 @@ impl<'x, 't, S: table::State, O: Observer<S, infer::Model>>
             syntax_tree::expression::BinaryOperator::Assign(_) => {
                 let rhs =
                     self.bind_value_or_error(&syntax_tree.right, handler)?;
-                let lhs = self
-                    .bind(
-                        &syntax_tree.left,
-                        Config {
-                            target: Target::Address {
-                                expected_qualifier: Qualifier::Unique,
-                            },
-                        },
-                        handler,
-                    )?
-                    .into_address()
-                    .unwrap();
+                let lhs = self.bind_as_address(
+                    &syntax_tree.left,
+                    Qualifier::Unique,
+                    false,
+                    handler,
+                )?;
 
-                self.bind_assignment(syntax_tree, config, lhs.0, rhs, handler)
+                self.bind_assignment(syntax_tree, config, lhs, rhs, handler)
             }
 
             syntax_tree::expression::BinaryOperator::LogicalAnd(_)
@@ -2600,7 +2585,7 @@ impl<'x, 't, S: table::State, O: Observer<S, infer::Model>>
                     _ => unreachable!(),
                 };
 
-                Ok(self.return_rvalue(value, config, handler)?)
+                Ok(Expression::Value(value))
             }
 
             _ => self.bind_normal_binary(syntax_tree, config, handler),
@@ -2648,7 +2633,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Return,
-        config: Config,
+        _: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let Some(callable_id) = CallableID::try_from(self.current_site).ok()
@@ -2722,7 +2707,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 span: Some(syntax_tree.span()),
             }));
 
-        Ok(self.return_rvalue(value, config, handler)?)
+        Ok(Expression::Value(value))
     }
 }
 
@@ -2784,7 +2769,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Continue,
-        config: Config,
+        _: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let loop_scope_id = self.find_loop_scope_id(
@@ -2845,7 +2830,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             span: Some(syntax_tree.span()),
         }));
 
-        Ok(self.return_rvalue(value, config, handler)?)
+        Ok(Expression::Value(value))
     }
 }
 
@@ -2855,7 +2840,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Break,
-        config: Config,
+        _: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let value = syntax_tree
@@ -2959,7 +2944,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             span: Some(syntax_tree.span()),
         }));
 
-        Ok(self.return_rvalue(value, config, handler)?)
+        Ok(Expression::Value(value))
     }
 }
 
@@ -2996,7 +2981,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Express,
-        config: Config,
+        _: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let label = syntax_tree
@@ -3134,7 +3119,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 span: Some(syntax_tree.span()),
             }));
 
-        Ok(self.return_rvalue(value, config, handler)?)
+        Ok(Expression::Value(value))
     }
 }
 
@@ -3145,7 +3130,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::IfElse,
-        config: Config,
+        _: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let condition =
@@ -3364,7 +3349,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             _ => unreachable!(),
         };
 
-        Ok(self.return_rvalue(value, config, handler)?)
+        Ok(Expression::Value(value))
     }
 }
 
@@ -3375,7 +3360,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     fn bind(
         &mut self,
         syntax_tree: &Loop,
-        config: Config,
+        _: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let label = syntax_tree
@@ -3517,7 +3502,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             }))
         };
 
-        Ok(self.return_rvalue(value, config, handler)?)
+        Ok(Expression::Value(value))
     }
 }
 
@@ -3574,7 +3559,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<BlockState>
     fn bind(
         &mut self,
         mut block_state: BlockState,
-        config: Config,
+        _: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let value = if let Some(express_type) = block_state.express_type {
@@ -3668,7 +3653,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<BlockState>
             }
         };
 
-        Ok(self.return_rvalue(value, config, handler)?)
+        Ok(Expression::Value(value))
     }
 }
 
