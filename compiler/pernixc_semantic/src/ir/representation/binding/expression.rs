@@ -985,15 +985,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         for x in type_inferences {
                             assert!(self
                                 .inference_context
-                                .register::<Type<_>>(
-                                    x,
-                                    Constraint::All(false)
-                                ));
+                                .register(x, Constraint::All(false)));
                         }
                         for x in constant_inferences {
                             assert!(self
                                 .inference_context
-                                .register::<Constant<_>>(x, NoConstraint));
+                                .register(x, NoConstraint));
                         }
 
                         let _ = self.type_check(
@@ -2185,7 +2182,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     Type::Inference(inference) => {
                         let constraint_id = *self
                             .inference_context
-                            .get_inference::<Type<_>>(inference)
+                            .get_inference(inference)
                             .unwrap()
                             .as_inferring()
                             .unwrap();
@@ -2236,7 +2233,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                         Type::Inference(inference) => {
                             let constraint_id = *self
                                 .inference_context
-                                .get_inference::<Type<_>>(inference)
+                                .get_inference(inference)
                                 .unwrap()
                                 .as_inferring()
                                 .unwrap();
@@ -2703,7 +2700,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
                     assert!(self
                         .inference_context
-                        .register::<Type<_>>(inference, Constraint::All(true)));
+                        .register(inference, Constraint::All(true)));
 
                     Type::Inference(inference)
                 },
@@ -2826,7 +2823,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
                 assert!(self
                     .inference_context
-                    .register::<Type<_>>(inference, Constraint::All(true)));
+                    .register(inference, Constraint::All(true)));
 
                 Type::Inference(inference)
             },
@@ -2940,7 +2937,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
                 assert!(self
                     .inference_context
-                    .register::<Type<_>>(inference, Constraint::All(true)));
+                    .register(inference, Constraint::All(true)));
 
                 Type::Inference(inference)
             },
@@ -3277,7 +3274,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     let inference = InferenceVariable::new();
                     assert!(self
                         .inference_context
-                        .register::<Type<_>>(inference, Constraint::All(true)));
+                        .register(inference, Constraint::All(true)));
 
                     Type::Inference(inference)
                 },
@@ -3497,7 +3494,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
                     assert!(self
                         .inference_context
-                        .register::<Type<_>>(inference, Constraint::All(true)));
+                        .register(inference, Constraint::All(true)));
 
                     Type::Inference(inference)
                 },
@@ -3641,10 +3638,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<BlockState>
             if self.current_block().is_unreachable() {
                 let inference_variable = InferenceVariable::new();
 
-                assert!(self.inference_context.register::<Type<_>>(
-                    inference_variable,
-                    Constraint::All(true)
-                ));
+                assert!(self
+                    .inference_context
+                    .register(inference_variable, Constraint::All(true)));
 
                 Value::Literal(Literal::Unreachable(Unreachable {
                     r#type: Type::Inference(inference_variable),

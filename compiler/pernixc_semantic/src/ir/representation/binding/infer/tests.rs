@@ -15,7 +15,7 @@ impl Context {
             return;
         };
         let first_inference = *self
-            .get_inference::<Type<_>>(*first.as_inference().unwrap())
+            .get_inference(*first.as_inference().unwrap())
             .unwrap()
             .as_inferring()
             .unwrap();
@@ -31,9 +31,7 @@ impl Context {
 
         for inference_variable in inference_variables {
             let inference = *self
-                .get_inference::<Type<_>>(
-                    *inference_variable.as_inference().unwrap(),
-                )
+                .get_inference(*inference_variable.as_inference().unwrap())
                 .unwrap()
                 .as_inferring()
                 .unwrap();
@@ -59,9 +57,7 @@ impl Context {
 
         for inference_variable in inference_variables {
             let inference = self
-                .get_inference::<Type<_>>(
-                    *inference_variable.as_inference().unwrap(),
-                )
+                .get_inference(*inference_variable.as_inference().unwrap())
                 .unwrap()
                 .as_known()
                 .unwrap();

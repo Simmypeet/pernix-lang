@@ -349,7 +349,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     fn create_type_inference(
         &mut self,
         constraint: r#type::Constraint,
-    ) -> InferenceVariable {
+    ) -> InferenceVariable<Type<infer::Model>> {
         let inference_variable = InferenceVariable::new();
         assert!(self
             .inference_context
@@ -636,9 +636,10 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 ) {
                     Ok(()) => true,
 
-                    Err(UnifyError::UnregisteredInferenceVariable(_)) => {
-                        panic!("unregistered inference variable")
-                    }
+                    Err(
+                        UnifyError::UnregisteredConstantInferenceVariable(_)
+                        | UnifyError::UnregisteredTypeInferenceVariable(_),
+                    ) => panic!("unregistered inference variable"),
 
                     Err(
                         UnifyError::IncompatibleTypes { .. }
@@ -674,10 +675,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                 let result =
                     if let Type::Inference(inference_var) = simplified_ty {
                         self.inference_context
-                            .unify_with_constraint::<Type<_>>(
-                                inference_var,
-                                &constraint,
-                            )
+                            .unify_with_constraint(inference_var, &constraint)
                             .is_ok()
                     } else {
                         constraint.satisfies(&simplified_ty)
