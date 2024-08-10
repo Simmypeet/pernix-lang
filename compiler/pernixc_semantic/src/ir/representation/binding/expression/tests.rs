@@ -171,7 +171,7 @@ fn numberic_literal_float_infer() {
 
     let constraint_id = binder
         .inference_context
-        .get_inference(*inference_variable)
+        .get_inference::<Type<_>>(*inference_variable)
         .cloned()
         .unwrap()
         .into_inferring()
@@ -229,7 +229,7 @@ fn numeric_literal_number_infer() {
 
     let constraint_id = binder
         .inference_context
-        .get_inference(*inference_variable)
+        .get_inference::<Type<_>>(*inference_variable)
         .cloned()
         .unwrap()
         .into_inferring()
@@ -2789,7 +2789,7 @@ fn unrechable_block() {
     let inference = unreachable.r#type.into_inference().unwrap();
     let constraint_id = binder
         .inference_context
-        .get_inference(inference)
+        .get_inference::<Type<_>>(inference)
         .cloned()
         .unwrap()
         .into_inferring()
@@ -3026,7 +3026,7 @@ fn zero_element_array() {
 
         let constraint_id = binder
             .inference_context
-            .get_inference(inference)
+            .get_inference::<Type<_>>(inference)
             .cloned()
             .unwrap()
             .into_inferring()

@@ -39,7 +39,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Model;
 
-impl<T> From<Never> for InferenceVariable<T> {
+impl From<Never> for InferenceVariable {
     fn from(value: Never) -> Self { match value {} }
 }
 
@@ -67,8 +67,8 @@ impl Fresh for Erased {
 
 impl model::Model for Model {
     type LifetimeInference = Erased;
-    type TypeInference = InferenceVariable<Type<Self>>;
-    type ConstantInference = InferenceVariable<Constant<Self>>;
+    type TypeInference = InferenceVariable;
+    type ConstantInference = InferenceVariable;
 
     fn from_default_type(ty: Type<model::Default>) -> Type<Self> {
         Type::from_other_model(ty)
@@ -87,7 +87,7 @@ impl model::Model for Model {
     }
 }
 
-impl<T: table::State, U> table::Display<T> for InferenceVariable<U> {
+impl<T: table::State> table::Display<T> for InferenceVariable {
     fn fmt(
         &self,
         _: &Table<T>,
@@ -98,61 +98,26 @@ impl<T: table::State, U> table::Display<T> for InferenceVariable<U> {
 }
 
 /// A unique identifier for an inference variable.
-pub struct InferenceVariable<T> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InferenceVariable {
     id: usize,
-    _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T> std::fmt::Debug for InferenceVariable<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "InferenceVariable({})", self.id)
-    }
-}
-
-impl<T> Clone for InferenceVariable<T> {
-    fn clone(&self) -> Self { *self }
-}
-
-impl<T> Copy for InferenceVariable<T> {}
-
-impl<T> PartialEq for InferenceVariable<T> {
-    fn eq(&self, other: &Self) -> bool { self.id == other.id }
-}
-
-impl<T> Eq for InferenceVariable<T> {}
-
-impl<T> std::hash::Hash for InferenceVariable<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.id.hash(state); }
-}
-
-impl<T> PartialOrd for InferenceVariable<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T> Ord for InferenceVariable<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.id.cmp(&other.id) }
-}
-
-impl<T> InferenceVariable<T> {
+impl InferenceVariable {
     /// Creates a new inference variable that is unique for all any created
     /// ones.
     pub fn new() -> Self {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-        Self {
-            id: COUNTER.fetch_add(1, Ordering::SeqCst),
-            _phantom: std::marker::PhantomData,
-        }
+        Self { id: COUNTER.fetch_add(1, Ordering::SeqCst) }
     }
 }
 
-impl<T> std::default::Default for InferenceVariable<T> {
+impl std::default::Default for InferenceVariable {
     fn default() -> Self { Self::new() }
 }
 
-impl<T> Fresh for InferenceVariable<T> {
+impl Fresh for InferenceVariable {
     fn fresh() -> Self { Self::new() }
 }
 
@@ -544,15 +509,8 @@ impl<T> Constraint<T> for NoConstraint {
 #[allow(missing_docs)]
 pub enum UnifyError {
     #[error(transparent)]
-    UnregisteredTypeInferenceVariable(
-        #[from]
-        UnregisteredInferenceVariableError<InferenceVariable<Type<Model>>>,
-    ),
-
-    #[error(transparent)]
-    UnregisteredConstantInferenceVariable(
-        #[from]
-        UnregisteredInferenceVariableError<InferenceVariable<Constant<Model>>>,
+    UnregisteredInferenceVariable(
+        #[from] UnregisteredInferenceVariableError<InferenceVariable>,
     ),
 
     #[error(
@@ -584,7 +542,7 @@ pub struct Context {
 }
 
 /// Implemented by types and constants, which can be inferree.
-pub trait Inferable: Term<InferenceVariable = InferenceVariable<Self>> {
+pub trait Inferable: Term<InferenceVariable = InferenceVariable> {
     /// The type of the constraint for the inference.
     type Constraint: Constraint<Self> + 'static;
 }
@@ -640,7 +598,7 @@ impl Context {
     #[allow(private_bounds)]
     pub fn register<T: InferableSealed>(
         &mut self,
-        inference_variable: InferenceVariable<T>,
+        inference_variable: InferenceVariable,
         constraint: T::Constraint,
     ) -> bool {
         T::get_context_mut(self).register(inference_variable, constraint)
@@ -651,7 +609,7 @@ impl Context {
     #[allow(private_bounds)]
     pub fn get_inference<T: InferableSealed>(
         &self,
-        inference_variable: InferenceVariable<T>,
+        inference_variable: InferenceVariable,
     ) -> Option<&Inference<T, T::Constraint>> {
         T::get_context(self).get_inference(inference_variable)
     }
@@ -674,7 +632,7 @@ impl Context {
     #[allow(private_bounds)]
     pub fn unify_with_constraint<T: InferableSealed>(
         &mut self,
-        inference_variable: InferenceVariable<T>,
+        inference_variable: InferenceVariable,
         constraint: &T::Constraint,
     ) -> Result<(), UnifyConstraintError<T, T::Constraint>> {
         T::get_context_mut(self)
@@ -743,7 +701,7 @@ impl unification::Predicate<Constant<Model>> for UnificationConfig {
 
 impl Normalizer<Model> for Context {
     fn normalize_type(
-        ty: &InferenceVariable<Type<Model>>,
+        ty: &InferenceVariable,
         environment: &Environment<Model, impl table::State, Self>,
     ) -> Result<Output<Type<Model>, Model>, OverflowError> {
         Ok(
@@ -760,7 +718,7 @@ impl Normalizer<Model> for Context {
     }
 
     fn normalize_constant(
-        constant: &InferenceVariable<Constant<Model>>,
+        constant: &InferenceVariable,
         environment: &Environment<Model, impl table::State, Self>,
     ) -> Result<Output<Constant<Model>, Model>, OverflowError> {
         Ok(
@@ -808,7 +766,7 @@ impl Context {
 
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     fn handle_mapping<
-        T: Term<Model = Model, InferenceVariable = InferenceVariable<T>>,
+        T: Term<Model = Model, InferenceVariable = InferenceVariable>,
         S: table::State,
         C: 'static + Constraint<T>,
     >(
@@ -828,8 +786,7 @@ impl Context {
         combine_constraint_error: &impl Fn(CombineConstraintError<C>) -> UnifyError,
     ) -> Result<(), UnifyError>
     where
-        UnifyError:
-            From<UnregisteredInferenceVariableError<InferenceVariable<T>>>,
+        UnifyError: From<UnregisteredInferenceVariableError<InferenceVariable>>,
     {
         for (lhs, rhs) in mapping
             .iter()
@@ -996,7 +953,7 @@ impl Context {
     }
 
     fn handle_unifer<
-        T: Term<Model = Model, InferenceVariable = InferenceVariable<T>>,
+        T: Term<Model = Model, InferenceVariable = InferenceVariable>,
     >(
         &mut self,
         unifier: unification::Unifier<T>,
@@ -1163,13 +1120,8 @@ impl model::Model for ConstraintModel {
 #[allow(missing_docs)]
 pub enum IntoConstraintModelError {
     #[error(transparent)]
-    UnregisteredTypeInferenceVariable(
-        UnregisteredInferenceVariableError<InferenceVariable<Type<Model>>>,
-    ),
-
-    #[error(transparent)]
-    UnregisteredConstantInferenceVariable(
-        UnregisteredInferenceVariableError<InferenceVariable<Constant<Model>>>,
+    UnregisteredInferenceVariable(
+        #[from] UnregisteredInferenceVariableError<InferenceVariable>,
     ),
 }
 
@@ -1186,37 +1138,32 @@ impl<ID, C> From<Never> for InferenceOrConstraint<ID, C> {
     fn from(value: Never) -> Self { match value {} }
 }
 
-impl From<InferenceVariable<Lifetime<Model>>> for NoConstraint {
-    fn from(_: InferenceVariable<Lifetime<Model>>) -> Self { NoConstraint }
+impl From<InferenceVariable> for NoConstraint {
+    fn from(_: InferenceVariable) -> Self { NoConstraint }
 }
 
-impl From<InferenceVariable<Type<Model>>>
-    for InferenceOrConstraint<
-        InferenceVariable<Type<Model>>,
-        r#type::Constraint,
-    >
+impl From<InferenceVariable>
+    for InferenceOrConstraint<InferenceVariable, r#type::Constraint>
 {
-    fn from(value: InferenceVariable<Type<Model>>) -> Self {
+    fn from(value: InferenceVariable) -> Self {
         InferenceOrConstraint::InferenceID(value)
     }
 }
 
-impl From<InferenceVariable<Constant<Model>>>
-    for InferenceOrConstraint<InferenceVariable<Constant<Model>>, NoConstraint>
+impl From<InferenceVariable>
+    for InferenceOrConstraint<InferenceVariable, NoConstraint>
 {
-    fn from(value: InferenceVariable<Constant<Model>>) -> Self {
+    fn from(value: InferenceVariable) -> Self {
         InferenceOrConstraint::InferenceID(value)
     }
 }
 
 impl model::Model for IntermediaryModel {
     type LifetimeInference = Erased;
-    type TypeInference = InferenceOrConstraint<
-        InferenceVariable<Type<Model>>,
-        r#type::Constraint,
-    >;
+    type TypeInference =
+        InferenceOrConstraint<InferenceVariable, r#type::Constraint>;
     type ConstantInference =
-        InferenceOrConstraint<InferenceVariable<Constant<Model>>, NoConstraint>;
+        InferenceOrConstraint<InferenceVariable, NoConstraint>;
 
     fn from_default_type(ty: Type<model::Default>) -> Type<Self> {
         Type::from_other_model(ty)
@@ -1250,7 +1197,7 @@ impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
                 match environment
                     .normalizer()
                     .context
-                    .get_inference(*inference_id)
+                    .get_inference::<Type<_>>(*inference_id)
                 {
                     Some(inference) => match inference {
                         Inference::Known(known) => Ok(Some(Succeeded::new(
@@ -1290,7 +1237,7 @@ impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
                 match environment
                     .normalizer()
                     .context
-                    .get_inference(*inference_id)
+                    .get_inference::<Constant<_>>(*inference_id)
                 {
                     Some(inference) => match inference {
                         Inference::Known(known) => Ok(Some(Succeeded::new(
@@ -1325,52 +1272,39 @@ impl TryFrom<Erased> for NoConstraint {
     fn try_from(_: Erased) -> Result<Self, Self::Error> { Ok(NoConstraint) }
 }
 
-impl
-    TryFrom<
-        InferenceOrConstraint<
-            InferenceVariable<Type<Model>>,
-            r#type::Constraint,
-        >,
-    > for r#type::Constraint
+impl TryFrom<InferenceOrConstraint<InferenceVariable, r#type::Constraint>>
+    for r#type::Constraint
 {
     type Error = IntoConstraintModelError;
 
     fn try_from(
-        value: InferenceOrConstraint<
-            InferenceVariable<Type<Model>>,
-            r#type::Constraint,
-        >,
+        value: InferenceOrConstraint<InferenceVariable, r#type::Constraint>,
     ) -> Result<Self, Self::Error> {
         match value {
-            InferenceOrConstraint::InferenceID(inference_id) => Err(
-                IntoConstraintModelError::UnregisteredTypeInferenceVariable(
+            InferenceOrConstraint::InferenceID(inference_id) => {
+                Err(IntoConstraintModelError::UnregisteredInferenceVariable(
                     UnregisteredInferenceVariableError(inference_id),
-                ),
-            ),
+                ))
+            }
             InferenceOrConstraint::Constraint(constraint) => Ok(constraint),
         }
     }
 }
 
-impl
-    TryFrom<
-        InferenceOrConstraint<InferenceVariable<Constant<Model>>, NoConstraint>,
-    > for NoConstraint
+impl TryFrom<InferenceOrConstraint<InferenceVariable, NoConstraint>>
+    for NoConstraint
 {
     type Error = IntoConstraintModelError;
 
     fn try_from(
-        value: InferenceOrConstraint<
-            InferenceVariable<Constant<Model>>,
-            NoConstraint,
-        >,
+        value: InferenceOrConstraint<InferenceVariable, NoConstraint>,
     ) -> Result<Self, Self::Error> {
         match value {
-            InferenceOrConstraint::InferenceID(inference_id) => Err(
-                IntoConstraintModelError::UnregisteredConstantInferenceVariable(
+            InferenceOrConstraint::InferenceID(inference_id) => {
+                Err(IntoConstraintModelError::UnregisteredInferenceVariable(
                     UnregisteredInferenceVariableError(inference_id),
-                ),
-            ),
+                ))
+            }
             InferenceOrConstraint::Constraint(constraint) => Ok(constraint),
         }
     }
