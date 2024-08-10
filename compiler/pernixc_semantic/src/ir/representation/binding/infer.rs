@@ -100,7 +100,7 @@ impl<T: table::State, U> table::Display<T> for InferenceVariable<U> {
 /// A unique identifier for an inference variable.
 pub struct InferenceVariable<T> {
     id: usize,
-    _phantom: std::marker::PhantomData<T>,
+    _phantom: std::marker::PhantomData<Box<T>>,
 }
 
 impl<T> std::fmt::Debug for InferenceVariable<T> {
