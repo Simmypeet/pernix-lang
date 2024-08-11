@@ -216,7 +216,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             let Ok(pattern) = binder.create_irrefutable(
                 syntax_tree,
                 &parameter_type,
-                &Address::Base(Memory::Parameter(parameter_id)),
+                &Address::Memory(Memory::Parameter(parameter_id)),
                 &handler,
             ) else {
                 continue;
@@ -419,7 +419,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     /// Gets the type of the given `address`.
     fn type_of_address(
         &self,
-        address: &Address<Memory<infer::Model>>,
+        address: &Address<infer::Model>,
     ) -> Result<Type<infer::Model>, TypeOfError<infer::Model>> {
         self.intermediate_representation.type_of_address(
             address,

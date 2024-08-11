@@ -283,7 +283,7 @@ impl<'a> Frame<'a> {
     /// Expects the next [`Token`] to be an [`Numeric`], and returns it.
     ///
     /// # Errors
-    /// If the next [`Token`] is not an [`Identifier`].
+    /// If the next [`Token`] is not an [`Numeric`].
     pub fn parse_numeric(
         &mut self,
         handler: &dyn Handler<Error>,

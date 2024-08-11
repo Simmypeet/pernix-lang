@@ -4,7 +4,7 @@
 //!
 //! The `Address<Memory<_>>` variant is used to represent a **real** memory in
 //! the program. This can be used in various instructions such as `Load` and
-//! `Store`.
+//! `Store`.  
 //!
 //! The `Address<ID<Register<_>>>` variant is used to represent a **virtual**
 //! memory in the registers. This is used to address a temporary value that is
@@ -19,9 +19,8 @@ use crate::{
     arena::ID,
     ir::address,
     symbol::{
-        self,
-        table::{self, representation::Index},
-        CallableID, GlobalID, Parameter,
+        self, table, table::representation::Index as _, CallableID, GlobalID,
+        Parameter,
     },
     type_system::{
         environment::Environment,
@@ -39,12 +38,22 @@ use crate::{
 
 /// The address points to a field in a struct.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Field<B> {
+pub struct Field<M: Model> {
     /// The address to the struct.
-    pub struct_address: Box<Address<B>>,
+    pub struct_address: Box<Address<M>>,
 
     /// The field that the address points to.
     pub id: ID<symbol::Field>,
+}
+
+/// The address points to an element in an array.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Index<M: Model> {
+    /// The address to the array.
+    pub array_address: Box<Address<M>>,
+
+    /// The index to access.
+    pub indexing_value: Value<M>,
 }
 
 /// The offset from the start or end of a tuple.
@@ -61,9 +70,9 @@ pub enum Offset {
 
 /// The address points to an element in a tuple.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tuple<B> {
+pub struct Tuple<M: Model> {
     /// The address to the tuple.
-    pub tuple_address: Box<Address<B>>,
+    pub tuple_address: Box<Address<M>>,
 
     /// The offset of the element to access.
     pub offset: Offset,
@@ -99,10 +108,12 @@ pub enum Memory<M: Model> {
 /// rest of projections are based on.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
-pub enum Address<B> {
-    Base(B),
-    Field(Field<B>),
-    Tuple(Tuple<B>),
+pub enum Address<M: Model> {
+    Memory(Memory<M>),
+
+    Field(Field<M>),
+    Tuple(Tuple<M>),
+    Index(Index<M>),
 }
 
 #[derive(
@@ -130,12 +141,12 @@ impl<M: Model> Representation<M> {
     #[allow(clippy::too_many_lines)]
     pub fn type_of_address(
         &self,
-        address: &Address<Memory<M>>,
+        address: &Address<M>,
         current_site: GlobalID,
         environment: &Environment<M, impl table::State, impl Normalizer<M>>,
     ) -> Result<Type<M>, TypeOfError<M>> {
         match address {
-            Address::Base(Memory::Parameter(parameter)) => {
+            Address::Memory(Memory::Parameter(parameter)) => {
                 let callable_id =
                     CallableID::try_from(current_site).ok().ok_or(
                         TypeOfError::CurrentSiteIsNotFunction(current_site),
@@ -159,7 +170,7 @@ impl<M: Model> Representation<M> {
                 Ok(M::from_default_type(ty))
             }
 
-            Address::Base(Memory::Alloca(parameter)) => {
+            Address::Memory(Memory::Alloca(parameter)) => {
                 let alloca = self
                     .allocas()
                     .get(*parameter)
@@ -168,7 +179,7 @@ impl<M: Model> Representation<M> {
                 Ok(alloca.r#type.clone())
             }
 
-            Address::Base(Memory::ReferenceValue(value)) => {
+            Address::Memory(Memory::ReferenceValue(value)) => {
                 let mut ty =
                     self.type_of_value(value, current_site, environment)?;
 
@@ -298,6 +309,28 @@ impl<M: Model> Representation<M> {
                         tuple_type: tuple_ty,
                     }),
                 }
+            }
+            Address::Index(index) => {
+                let array_ty = self.type_of_address(
+                    &index.array_address,
+                    current_site,
+                    environment,
+                )?;
+
+                let array_ty =
+                    simplify::simplify(&array_ty, environment).result;
+
+                let element_ty = match array_ty {
+                    Type::Array(array_ty) => *array_ty.r#type,
+                    another_ty => {
+                        return Err(TypeOfError::NonArrayAddressType {
+                            address: (*index.array_address).clone(),
+                            r#type: another_ty,
+                        });
+                    }
+                };
+
+                Ok(element_ty)
             }
         }
     }

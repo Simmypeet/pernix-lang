@@ -32,7 +32,7 @@ use crate::{
         model::Model,
         predicate::{self, Predicate},
         term::{
-            r#type::{Qualifier, Type},
+            r#type::{self, Qualifier, Type},
             GenericArguments,
         },
     },
@@ -1974,6 +1974,115 @@ where
     }
 }
 
+/// Indexing past the unpacked element in tuple is not allowed.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CannotIndexPastUnpackedTuple<M: Model> {
+    /// The span of the index.
+    pub index_span: Span,
+
+    /// The type of the tuple.
+    pub tuple_type: r#type::Tuple<M>,
+}
+
+impl<T: State, M: Model> Display<T> for CannotIndexPastUnpackedTuple<M>
+where
+    r#type::Tuple<M>: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let unpacked_index = self
+            .tuple_type
+            .elements
+            .iter()
+            .position(|x| x.is_unpacked)
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "indexing past the unpacked element in tuple is not \
+                      allowed",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.index_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        write!(f, "\n{}", Message {
+            severity: Severity::Info,
+            display: format!(
+                "the tuple type is `{}` having {} element(s) and the unpacked \
+                 element is at index {}",
+                DisplayObject { display: &self.tuple_type, table },
+                self.tuple_type.elements.len(),
+                unpacked_index,
+            ),
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The tuple index is too large.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TooLargeTupleIndex {
+    /// The span of the tuple index.
+    pub access_span: Span,
+}
+
+impl<T: State> Display<T> for TooLargeTupleIndex {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the tuple index is too large",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.access_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The tuple index is out of bounds.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TupleIndexOutOfBOunds<M: Model> {
+    /// The span of the tuple index.
+    pub access_span: Span,
+
+    /// The index of the tuple.
+    pub tuple_type: r#type::Tuple<M>,
+}
+
+impl<T: State, M: Model> Display<T> for TupleIndexOutOfBOunds<M>
+where
+    r#type::Tuple<M>: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let count = self.tuple_type.elements.len();
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the tuple index is out of bounds",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.access_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        write!(f, "\n{}", Message {
+            severity: Severity::Info,
+            display: format!(
+                "the tuple type is `{}` having {count} element(s)",
+                DisplayObject { display: &self.tuple_type, table },
+            ),
+        })?;
+
+        Ok(())
+    }
+}
+
 /// Field with given name was not found in the struct.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldNotFound {
@@ -2104,16 +2213,19 @@ impl<T: State> Display<T> for FoundUnpackedElementInReferenceBoundTupleType {
 
 /// The unpack operator can only be used once in a tuple expression.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MoreThanOneUnpackedInTupleExpression {
-    /// The span of the previous unpacked expression.
-    pub prior_unpacked_expression_span: Span,
+pub struct MoreThanOneUnpackedInTupleExpression<M: Model> {
+    /// The span of the tuple expression.
+    pub span: Span,
 
-    /// The span of the unpacked expression.
-    pub unpacked_expression_span: Span,
+    /// The type of the tuple expression.
+    pub r#type: Type<M>,
 }
 
-impl<T: State> Display<T> for MoreThanOneUnpackedInTupleExpression {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<T: State, M: Model> Display<T> for MoreThanOneUnpackedInTupleExpression<M>
+where
+    Type<M>: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "the unpack operator can only be used once in a tuple \
@@ -2121,13 +2233,16 @@ impl<T: State> Display<T> for MoreThanOneUnpackedInTupleExpression {
         })?;
 
         write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.unpacked_expression_span,
+            span: &self.span,
             help_display: Option::<i32>::None,
         })?;
 
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.prior_unpacked_expression_span,
-            help_display: Some("the previous unpacked expression is here"),
+        write!(f, "\n{}", Message {
+            severity: Severity::Info,
+            display: format!(
+                "the type of the tuple expression is `{}`",
+                DisplayObject { display: &self.r#type, table }
+            ),
         })?;
 
         Ok(())
@@ -2523,6 +2638,102 @@ impl<T: State> Display<T> for DuplicatedFieldInitialization {
         write!(f, "\n{}", SourceCodeDisplay {
             span: &self.prior_initialization_span,
             help_display: Some("the field is first initialized here"),
+        })?;
+
+        Ok(())
+    }
+}
+
+/// Expected an arrary type to index into elements but found a different type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ArrayExpected<M: Model> {
+    /// The span of the expression where the elements are indexed.
+    pub span: Span,
+
+    /// The type that is not an array type.
+    pub r#type: Type<M>,
+}
+
+impl<T: State, M: Model> Display<T> for ArrayExpected<M>
+where
+    Type<M>: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "expected an array type to index into elements but found `{}`",
+                DisplayObject { display: &self.r#type, table }
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// Expected a tuple type to access the field but found a different type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TupleExpected<M: Model> {
+    /// The span of the expression where the field is accessed.
+    pub span: Span,
+
+    /// The type that is not a tuple type.
+    pub r#type: Type<M>,
+}
+
+impl<T: State, M: Model> Display<T> for TupleExpected<M>
+where
+    Type<M>: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "expected a tuple type to access the field but found `{}`",
+                DisplayObject { display: &self.r#type, table }
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// Expected a struct type to access the field but found a different type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StructExpected<M: Model> {
+    /// The span of the expression where the field is accessed.
+    pub span: Span,
+
+    /// The type that is not a struct type.
+    pub r#type: Type<M>,
+}
+
+impl<T: State, M: Model> Display<T> for StructExpected<M>
+where
+    Type<M>: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "expected a struct type to access the field but found `{}`",
+                DisplayObject { display: &self.r#type, table }
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
         })?;
 
         Ok(())
@@ -3169,6 +3380,43 @@ impl<T: State> Display<T> for SymbolCannotBeUsedAsAnExpression {
         write!(f, "\n{}", SourceCodeDisplay {
             span: &self.span,
             help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The given type cannot be used in cast expression.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InvalidCastType<M: Model> {
+    /// The span of the type reference.
+    pub span: Span,
+
+    /// The type that cannot be used in cast expression.
+    pub r#type: Type<M>,
+}
+
+impl<T: State, M: Model> Display<T> for InvalidCastType<M>
+where
+    Type<M>: Display<T>,
+{
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the given type cannot be used in cast expression",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        write!(f, "\n{}", Message {
+            severity: Severity::Info,
+            display: format!("the type is `{}`", DisplayObject {
+                display: &self.r#type,
+                table
+            }),
         })?;
 
         Ok(())

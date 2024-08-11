@@ -95,7 +95,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         &mut self,
         syntax_tree: &syntax_tree::pattern::Irrefutable,
         simplified_type: &Type<infer::Model>,
-        address: &Address<Memory<infer::Model>>,
+        address: &Address<infer::Model>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<Irrefutable<infer::Model>, CreatePatternError> {
         let storage = Storage::<Box<dyn Error>>::default();
@@ -182,7 +182,7 @@ impl<'a> SideEffect<'a> {
         mut address_type: Type<infer::Model>,
         qualifier: Qualifier,
         span: Span,
-        address: &Address<Memory<infer::Model>>,
+        address: &Address<infer::Model>,
         identifier: &Identifier,
         mutable: bool,
     ) -> Named<infer::Model> {
@@ -219,9 +219,8 @@ impl<'a> SideEffect<'a> {
             }),
         );
         self.new_instructions.push(instruction::Instruction::Store(Store {
-            address: Address::Base(Memory::Alloca(alloca_id)),
+            address: Address::Memory(Memory::Alloca(alloca_id)),
             value: Value::Register(register_id),
-            is_initializattion: true,
         }));
 
         Named {
@@ -235,12 +234,9 @@ impl<'a> SideEffect<'a> {
     fn reduce_reference<'b>(
         &mut self,
         type_binding: &TypeBinding<'b, infer::Model>,
-        mut address: Address<Memory<infer::Model>>,
-    ) -> (
-        &'b Type<infer::Model>,
-        Address<Memory<infer::Model>>,
-        Option<Qualifier>,
-    ) {
+        mut address: Address<infer::Model>,
+    ) -> (&'b Type<infer::Model>, Address<infer::Model>, Option<Qualifier>)
+    {
         let (mut current_ty, mut reference_binding_info) = match type_binding {
             TypeBinding::Value(ty) => (*ty, None),
             TypeBinding::Reference { qualifier, r#type } => {
@@ -266,7 +262,7 @@ impl<'a> SideEffect<'a> {
 
                     // update the address, reference binding
                     // info, and binding ty
-                    address = Address::Base(Memory::ReferenceValue(
+                    address = Address::Memory(Memory::ReferenceValue(
                         Value::Register(register),
                     ));
                     reference_binding_info = Some(reference.qualifier);
@@ -288,7 +284,7 @@ impl<'a> SideEffect<'a> {
         table: &Table<impl State>,
         syntax_tree: &syntax_tree::pattern::Irrefutable,
         type_binding: TypeBinding<infer::Model>,
-        address: &Address<Memory<infer::Model>>,
+        address: &Address<infer::Model>,
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<Irrefutable<infer::Model>, CreatePatternError> {
@@ -494,10 +490,10 @@ impl<'a> SideEffect<'a> {
                         // the value to the alloca
 
                         let stack = match address {
-                            Address::Base(Memory::Alloca(id)) => {
+                            Address::Memory(Memory::Alloca(id)) => {
                                 Some(Stack::Alloca(*id))
                             }
-                            Address::Base(Memory::Parameter(id)) => {
+                            Address::Memory(Memory::Parameter(id)) => {
                                 Some(Stack::Parameter(*id))
                             }
                             _ => None,
@@ -542,11 +538,10 @@ impl<'a> SideEffect<'a> {
                             );
                             self.new_instructions.push(Instruction::Store(
                                 Store {
-                                    address: Address::Base(Memory::Alloca(
+                                    address: Address::Memory(Memory::Alloca(
                                         alloca_id,
                                     )),
                                     value: Value::Register(id),
-                                    is_initializattion: true,
                                 },
                             ));
 
@@ -750,10 +745,11 @@ impl<'a> SideEffect<'a> {
                         // variable declaration instruction and packing
                         self.new_instructions.push(Instruction::TuplePack(
                             instruction::TuplePack {
-                                store_address: Address::Base(Memory::Alloca(
+                                store_address: Address::Memory(Memory::Alloca(
                                     alloca_id,
                                 )),
                                 tuple_address: address,
+                                starting_offset: 0,
                                 before_packed_element_count:
                                     before_packed_elements.len(),
                                 after_packed_element_count:
@@ -767,7 +763,7 @@ impl<'a> SideEffect<'a> {
                                 .get(unpacked_position)
                                 .unwrap(),
                             TypeBinding::Value(&ty),
-                            &Address::Base(Memory::Alloca(alloca_id)),
+                            &Address::Memory(Memory::Alloca(alloca_id)),
                             referring_site,
                             handler,
                         )?

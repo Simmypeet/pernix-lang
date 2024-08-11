@@ -844,6 +844,37 @@ impl Index {
 }
 
 /// Syntax Synopsis:
+/// ``` txt
+/// TupleIndex:
+///     '-'? Numeric
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct TupleIndex {
+    #[get = "pub"]
+    minus: Option<Punctuation>,
+    #[get = "pub"]
+    index: token::Numeric,
+}
+
+impl SourceElement for TupleIndex {
+    fn span(&self) -> Span {
+        self.minus.as_ref().map_or_else(
+            || self.index.span(),
+            |minus| minus.span.join(&self.index.span).unwrap(),
+        )
+    }
+}
+
+impl TupleIndex {
+    /// Destructs the tuple index into its components
+    #[must_use]
+    pub fn destruct(self) -> (Option<Punctuation>, token::Numeric) {
+        (self.minus, self.index)
+    }
+}
+
+/// Syntax Synopsis:
 ///
 /// ``` txt
 /// AccessKind:
@@ -855,7 +886,7 @@ impl Index {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AccessKind {
     Identifier(Identifier),
-    Tuple(token::Numeric),
+    Tuple(TupleIndex),
     Index(Index),
 }
 
@@ -863,7 +894,7 @@ impl SourceElement for AccessKind {
     fn span(&self) -> Span {
         match self {
             Self::Identifier(identifier) => identifier.span(),
-            Self::Tuple(numeric) => numeric.span.clone(),
+            Self::Tuple(index) => index.span(),
             Self::Index(index) => index.span(),
         }
     }
@@ -1886,13 +1917,29 @@ impl Parser<'_> {
                         Reading::Unit(Token::Numeric(n)) => {
                             // eat the access kind
                             self.forward();
-                            AccessKind::Tuple(n)
+                            AccessKind::Tuple(TupleIndex {
+                                minus: None,
+                                index: n,
+                            })
                         }
                         Reading::Unit(Token::Identifier(i)) => {
                             // eat the access kind
                             self.forward();
                             AccessKind::Identifier(i)
                         }
+
+                        Reading::Unit(Token::Punctuation(
+                            minus @ Punctuation { punctuation: '-', .. },
+                        )) => {
+                            // eat the access kind
+                            self.forward();
+
+                            AccessKind::Tuple(TupleIndex {
+                                minus: Some(minus),
+                                index: self.parse_numeric(handler)?,
+                            })
+                        }
+
                         Reading::IntoDelimited(Delimiter::Bracket, _) => {
                             let delimited_tree = self.step_into(
                                 Delimiter::Bracket,
@@ -1916,6 +1963,7 @@ impl Parser<'_> {
                                 expected: SyntaxKind::Identifier,
                                 alternatives: vec![
                                     SyntaxKind::Numeric,
+                                    SyntaxKind::Punctuation('-'),
                                     SyntaxKind::Punctuation('['),
                                 ],
                                 found: found.into_token(),
@@ -1955,13 +2003,30 @@ impl Parser<'_> {
                         Reading::Unit(Token::Numeric(n)) => {
                             // eat the access kind
                             self.forward();
-                            AccessKind::Tuple(n)
+                            AccessKind::Tuple(TupleIndex {
+                                minus: None,
+                                index: n,
+                            })
                         }
+
                         Reading::Unit(Token::Identifier(i)) => {
                             // eat the access kind
                             self.forward();
                             AccessKind::Identifier(i)
                         }
+
+                        Reading::Unit(Token::Punctuation(
+                            minus @ Punctuation { punctuation: '-', .. },
+                        )) => {
+                            // eat the access kind
+                            self.forward();
+
+                            AccessKind::Tuple(TupleIndex {
+                                minus: Some(minus),
+                                index: self.parse_numeric(handler)?,
+                            })
+                        }
+
                         Reading::IntoDelimited(Delimiter::Bracket, _) => {
                             let delimited_tree = self.step_into(
                                 Delimiter::Bracket,

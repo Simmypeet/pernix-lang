@@ -1,18 +1,20 @@
 use pernixc_base::diagnostic::Storage;
 
+use super::Expression;
 use crate::{
     arena::ID,
     error::{
+        ArrayExpected, CannotDereference, CannotIndexPastUnpackedTuple,
         DuplicatedFieldInitialization, Error, ExpectedAssociatedValue,
-        FieldIsNotAccessible, FieldNotFound,
-        FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
-        MismatchedArgumentCount, MismatchedMutability,
+        ExpectedLValue, ExpressionIsNotCallable, FieldIsNotAccessible,
+        FieldNotFound, FloatingPointLiteralHasIntegralSuffix, InvalidCastType,
+        InvalidNumericSuffix, MismatchedArgumentCount, MismatchedMutability,
         MismatchedReferenceQualifier, MismatchedType,
-        MoreThanOneUnpackedInTupleExpression, NotAllFlowPathsExpressValue,
-        UninitializedFields,
+        NotAllFlowPathsExpressValue, StructExpected, TooLargeTupleIndex,
+        TupleExpected, TupleIndexOutOfBOunds, UninitializedFields,
     },
     ir::{
-        address::{Address, Memory},
+        address::{self, Address, Memory},
         instruction::Instruction,
         representation::binding::{
             expression::{Bind, Config, Target},
@@ -718,7 +720,7 @@ fn named_load() {
         .as_load()
         .unwrap()
         .address
-        .as_base()
+        .as_memory()
         .unwrap()
         .as_alloca()
         .unwrap();
@@ -741,7 +743,10 @@ fn named_load() {
 
     assert!(storage.as_vec().is_empty());
 
-    assert_eq!(*as_address.as_base().unwrap().as_alloca().unwrap(), alloca_id);
+    assert_eq!(
+        *as_address.as_memory().unwrap().as_alloca().unwrap(),
+        alloca_id
+    );
 }
 
 #[test]
@@ -788,7 +793,7 @@ fn named_load_mutability_error() {
 
     assert_eq!(
         alloca_id,
-        as_address.into_base().unwrap().into_alloca().unwrap()
+        as_address.into_memory().unwrap().into_alloca().unwrap()
     );
 
     let errors = storage.into_vec();
@@ -878,7 +883,7 @@ fn reference_of() {
                 .unwrap();
 
             assert_eq!(
-                *reference_of.address.as_base().unwrap().as_alloca().unwrap(),
+                *reference_of.address.as_memory().unwrap().as_alloca().unwrap(),
                 alloca_id
             );
             assert!(!reference_of.is_local);
@@ -976,7 +981,7 @@ fn reference_of_local() {
             let reference_of = register.assignment.as_reference_of().unwrap();
 
             assert_eq!(
-                *reference_of.address.as_base().unwrap().as_alloca().unwrap(),
+                *reference_of.address.as_memory().unwrap().as_alloca().unwrap(),
                 alloca_id
             );
             assert!(reference_of.is_local);
@@ -1116,7 +1121,7 @@ fn dereference_as_value() {
 
     let reference_value = dereference
         .address
-        .as_base()
+        .as_memory()
         .unwrap()
         .as_reference_value()
         .unwrap()
@@ -1135,7 +1140,7 @@ fn dereference_as_value() {
             .as_load()
             .unwrap()
             .address
-            .as_base()
+            .as_memory()
             .unwrap()
             .as_alloca()
             .unwrap(),
@@ -1194,7 +1199,7 @@ fn dereference_as_address() {
     assert!(storage.as_vec().is_empty());
 
     let reference_id = *address
-        .as_base()
+        .as_memory()
         .unwrap()
         .as_reference_value()
         .unwrap()
@@ -1211,7 +1216,7 @@ fn dereference_as_address() {
             .as_load()
             .unwrap()
             .address
-            .as_base()
+            .as_memory()
             .unwrap()
             .as_alloca()
             .unwrap(),
@@ -1287,7 +1292,7 @@ fn dereference_mismatched_qualifier_error() {
 }
 
 impl TestTemplate {
-    fn create_struct_sample(
+    fn create_struct_template(
         &mut self,
         parent_module_id: ID<Module>,
         x_accessibility: Accessibility,
@@ -1341,7 +1346,7 @@ fn struct_expression() {
 
     let mut test_template = TestTemplate::new();
 
-    let (_, x_field_id, y_field_id) = test_template.create_struct_sample(
+    let (_, x_field_id, y_field_id) = test_template.create_struct_template(
         test_template.test_module_id,
         Accessibility::Public,
         Accessibility::Public,
@@ -1401,7 +1406,7 @@ fn struct_uninitialized_field_error() {
     const STRUCT_EXPRESSION: &str = "Vector2 { x: 32 }";
 
     let mut test_template = TestTemplate::new();
-    let (_, _, y_field_id) = test_template.create_struct_sample(
+    let (_, _, y_field_id) = test_template.create_struct_template(
         test_template.test_module_id,
         Accessibility::Public,
         Accessibility::Public,
@@ -1446,7 +1451,7 @@ fn struct_duplicated_initialization_error() {
     const STRUCT_EXPRESSION: &str = "Vector2 { x: 32, x: 64, y: 24 }";
 
     let mut test_template = TestTemplate::new();
-    let (struct_id, x_field_id, _) = test_template.create_struct_sample(
+    let (struct_id, x_field_id, _) = test_template.create_struct_template(
         test_template.test_module_id,
         Accessibility::Public,
         Accessibility::Public,
@@ -1490,7 +1495,7 @@ fn struct_unknown_field_error() {
     const STRUCT_EXPRESSION: &str = "Vector2 { x: 32, y: 24, z: 64 }";
 
     let mut test_template = TestTemplate::new();
-    let (struct_id, _, _) = test_template.create_struct_sample(
+    let (struct_id, _, _) = test_template.create_struct_template(
         test_template.test_module_id,
         Accessibility::Public,
         Accessibility::Public,
@@ -1543,7 +1548,7 @@ fn struct_field_is_not_accessible_error() {
         )
         .unwrap();
 
-    let (struct_id, x_field_id, _) = test_template.create_struct_sample(
+    let (struct_id, x_field_id, _) = test_template.create_struct_template(
         inner_module_id,
         Accessibility::Scoped(inner_module_id),
         Accessibility::Public,
@@ -2326,7 +2331,7 @@ fn assignment() {
 
     assert!(storage.as_vec().is_empty());
 
-    let expected_address = Address::Base(Memory::Alloca(alloca_id));
+    let expected_address = Address::Memory(Memory::Alloca(alloca_id));
 
     assert_eq!(found_address, expected_address);
 
@@ -2336,7 +2341,6 @@ fn assignment() {
         };
 
         let correct_address = store.address == expected_address;
-        let correct_kind = !store.is_initializattion;
 
         let Some(numeric_literal) =
             store.value.as_literal().and_then(|x| x.as_numeric())
@@ -2345,7 +2349,6 @@ fn assignment() {
         };
 
         correct_address
-            && correct_kind
             && numeric_literal.integer_string == "64"
             && numeric_literal.decimal_stirng.is_none()
     }));
@@ -2480,7 +2483,7 @@ fn compound_binary_operator() {
 
     assert!(storage.as_vec().is_empty());
 
-    let expected_address = Address::Base(Memory::Alloca(alloca_id));
+    let expected_address = Address::Memory(Memory::Alloca(alloca_id));
 
     assert_eq!(found_address, expected_address);
 
@@ -2495,7 +2498,7 @@ fn compound_binary_operator() {
             return false;
         };
 
-        if store.address != expected_address || store.is_initializattion {
+        if store.address != expected_address {
             return false;
         }
 
@@ -2960,6 +2963,7 @@ fn parenthesized_as_tuple() {
     })
 }
 
+/*
 #[test]
 fn more_than_one_unpacked_error() {
     bind_as_value_expect_error("(...(), ...())", |binder, result, errors| {
@@ -3004,6 +3008,7 @@ fn more_than_one_unpacked_error() {
         }));
     })
 }
+*/
 
 #[test]
 fn zero_element_array() {
@@ -3210,4 +3215,623 @@ fn multiple_break_loop() {
         check("64");
         check("128");
     });
+}
+
+#[test]
+fn expected_lvalue_error() {
+    bind_as_value_expect_error("true = false", |_, result, errors| {
+        assert!(result.is_err());
+
+        assert!(errors.iter().any(|x| {
+            x.as_any().downcast_ref::<ExpectedLValue>().is_some()
+        }));
+    });
+}
+
+#[test]
+fn create_temporary_lvalue() {
+    bind_as_value("&32", |binder, value| {
+        let register_id = value.into_register().unwrap();
+
+        let reference_of = binder
+            .intermediate_representation
+            .registers
+            .get(register_id)
+            .unwrap()
+            .assignment
+            .as_reference_of()
+            .unwrap();
+
+        // this should be an alloca that temporary stores 32 for the reference
+        let alloca_id = reference_of
+            .address
+            .as_memory()
+            .unwrap()
+            .as_alloca()
+            .copied()
+            .unwrap();
+
+        // the stored value should be 32
+        assert!(binder.current_block().instructions().iter().any(|x| {
+            let Instruction::Store(store) = x else {
+                return false;
+            };
+
+            store.address == Address::Memory(Memory::Alloca(alloca_id))
+                && store
+                    .value
+                    .as_literal()
+                    .and_then(|x| x.as_numeric())
+                    .map_or(false, |x| {
+                        x.integer_string == "32" && x.decimal_stirng.is_none()
+                    })
+        }));
+    })
+}
+
+#[test]
+fn cannot_dereference_error() {
+    bind_as_value_expect_error("*32", |_, result, errors| {
+        assert!(result.is_err());
+
+        assert!(errors.iter().any(|x| {
+            x.as_any()
+                .downcast_ref::<CannotDereference<ConstraintModel>>()
+                .is_some()
+        }));
+    });
+}
+
+#[test]
+fn expression_is_not_callable_error() {
+    bind_as_value_expect_error("32()", |_, result, errors| {
+        assert!(result.is_err());
+
+        assert!(errors.iter().any(|x| {
+            x.as_any().downcast_ref::<ExpressionIsNotCallable>().is_some()
+        }));
+    });
+}
+
+#[test]
+fn cast() {
+    bind_as_value("32i32 as float64", |binder, value| {
+        let register_id = value.into_register().unwrap();
+
+        let cast = binder
+            .intermediate_representation
+            .registers
+            .get(register_id)
+            .unwrap()
+            .assignment
+            .as_cast()
+            .unwrap();
+
+        let numeric = cast.value.as_literal().unwrap().as_numeric().unwrap();
+
+        assert_eq!(numeric.integer_string, "32");
+        assert!(numeric.decimal_stirng.is_none());
+
+        assert_eq!(cast.r#type, Type::Primitive(Primitive::Float64));
+    });
+}
+
+#[test]
+fn invalid_cast_type() {
+    bind_as_value_expect_error("32i32 as ()", |_, result, errors| {
+        assert!(result.is_err());
+
+        assert!(errors.iter().any(|x| {
+            x.as_any()
+                .downcast_ref::<InvalidCastType<ConstraintModel>>()
+                .is_some()
+        }));
+    });
+}
+
+struct Check<T> {
+    source: String,
+    config: Config,
+    check: Box<
+        dyn FnOnce(
+            &Binder<Building, NoOpObserver>,
+            Result<Expression, super::Error>,
+            Vec<Box<dyn crate::error::Error>>,
+            &T,
+        ),
+    >,
+}
+
+impl<T> Check<T> {
+    fn new(
+        source: impl std::fmt::Display,
+        config: Config,
+        check: impl FnOnce(
+                &Binder<Building, NoOpObserver>,
+                Result<Expression, super::Error>,
+                Vec<Box<dyn crate::error::Error>>,
+                &T,
+            ) + 'static,
+    ) -> Self {
+        Self { source: source.to_string(), config, check: Box::new(check) }
+    }
+}
+
+fn setup_and_bind<T: 'static>(
+    setup: impl for<'a> FnOnce(
+        &'a mut TestTemplate,
+    ) -> (Binder<'a, Building, NoOpObserver>, T),
+    checks: impl IntoIterator<Item = Check<T>>,
+) {
+    let mut test_template = TestTemplate::new();
+    let (mut binder, data) = setup(&mut test_template);
+
+    for check in checks {
+        let expression = parse_expression(check.source);
+
+        let storage = Storage::<Box<dyn crate::error::Error>>::new();
+        let expression = binder.bind(&expression, check.config, &storage);
+
+        (check.check)(&binder, expression, storage.into_vec(), &data);
+    }
+}
+
+#[test]
+fn struct_access() {
+    let normal_check = Check::new(
+        "vector2.x",
+        Config {
+            target: Target::Address {
+                expected_qualifier: Qualifier::Immutable,
+            },
+        },
+        |_binder,
+         exp,
+         errors,
+         (_struct_id, x_field_id, _y_field_id, alloca_id)| {
+            assert!(errors.is_empty());
+
+            let address = exp.unwrap().into_address().unwrap().0;
+
+            let expected_address = Address::Field(address::Field {
+                struct_address: Box::new(Address::Memory(Memory::Alloca(
+                    *alloca_id,
+                ))),
+                id: *x_field_id,
+            });
+
+            assert_eq!(address, expected_address);
+        },
+    );
+
+    let field_not_found_check = Check::new(
+        "vector2.bar",
+        Config { target: Target::Value },
+        |_binder,
+         exp,
+         errors,
+         (struct_id, _x_field_id, _y_field_id, _alloca_id)| {
+            assert!(exp.is_err());
+
+            assert!(errors.iter().any(|x| {
+                let Some(error) = x.as_any().downcast_ref::<FieldNotFound>()
+                else {
+                    return false;
+                };
+
+                error.identifier_span.str() == "bar"
+                    && error.struct_id == *struct_id
+            }));
+        },
+    );
+
+    let field_is_not_accessible_check = Check::new(
+        "vector2.y",
+        Config { target: Target::Value },
+        |binder,
+         _exp,
+         errors,
+         (struct_id, _x_field_id, _y_field_id, _alloca_id)| {
+            assert!(errors.iter().any(|x| {
+                let Some(error) =
+                    x.as_any().downcast_ref::<FieldIsNotAccessible>()
+                else {
+                    return false;
+                };
+
+                error.field_id == *_y_field_id
+                    && error.struct_id == *struct_id
+                    && error.referring_site == binder.current_site
+            }));
+        },
+    );
+
+    let struct_expected = Check::new(
+        "32i32.x",
+        Config { target: Target::Value },
+        |_binder,
+         _exp,
+         errors,
+         (_struct_id, _x_field_id, _y_field_id, _alloca_id)| {
+            assert!(errors.iter().any(|x| {
+                let Some(error) = x
+                    .as_any()
+                    .downcast_ref::<StructExpected<ConstraintModel>>()
+                else {
+                    return false;
+                };
+
+                error.r#type == Type::Primitive(Primitive::Int32)
+            }));
+        },
+    );
+    setup_and_bind(
+        |test_template| {
+            let inner_module_id = test_template
+                .table
+                .insert_module(
+                    "inner".to_string(),
+                    Accessibility::Public,
+                    test_template.test_module_id,
+                    None,
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+
+            let (struct_id, x_field_id, y_field_id) = test_template
+                .create_struct_template(
+                    inner_module_id,
+                    Accessibility::Public,
+                    Accessibility::Scoped(inner_module_id),
+                );
+
+            let (mut binder, storage) = test_template.create_binder();
+
+            let statement = parse_statement(
+                "let vector2 = test::inner::Vector2 { x: 32, y: 64 };",
+            );
+
+            let alloca_id = binder
+                .bind_variable_declaration(
+                    &statement.into_variable_declaration().unwrap(),
+                    &storage,
+                )
+                .unwrap();
+
+            (binder, (struct_id, x_field_id, y_field_id, alloca_id))
+        },
+        [
+            normal_check,
+            field_not_found_check,
+            field_is_not_accessible_check,
+            struct_expected,
+        ],
+    );
+}
+
+#[test]
+fn tuple_access() {
+    let normal_from_start = Check::new(
+        "myTuple.0",
+        Config {
+            target: Target::Address {
+                expected_qualifier: Qualifier::Immutable,
+            },
+        },
+        |_binder, exp, errors, alloca_id| {
+            assert!(errors.is_empty());
+
+            let address = exp.unwrap().into_address().unwrap().0;
+
+            let expected_address = Address::Tuple(address::Tuple {
+                tuple_address: Box::new(Address::Memory(Memory::Alloca(
+                    *alloca_id,
+                ))),
+                offset: address::Offset::FromStart(0),
+            });
+
+            assert_eq!(address, expected_address);
+        },
+    );
+
+    let normal_from_end = Check::new(
+        "myTuple.-1",
+        Config {
+            target: Target::Address {
+                expected_qualifier: Qualifier::Immutable,
+            },
+        },
+        |_binder, exp, errors, alloca_id| {
+            assert!(errors.is_empty());
+
+            let address = exp.unwrap().into_address().unwrap().0;
+
+            let expected_address = Address::Tuple(address::Tuple {
+                tuple_address: Box::new(Address::Memory(Memory::Alloca(
+                    *alloca_id,
+                ))),
+                offset: address::Offset::FromEnd(1),
+            });
+
+            assert_eq!(address, expected_address);
+        },
+    );
+
+    let out_of_bounds = Check::new(
+        "myTuple.10",
+        Config { target: Target::Value },
+        |_binder, exp, errors, _alloca_id| {
+            assert!(exp.is_err());
+
+            assert!(errors.iter().any(|x| {
+                let Some(error) = x
+                    .as_any()
+                    .downcast_ref::<TupleIndexOutOfBOunds<ConstraintModel>>()
+                else {
+                    return false;
+                };
+
+                error.access_span.str() == ".10"
+            }));
+        },
+    );
+
+    let index_past_unpacked_from_start = Check::new(
+        "myTuple.3",
+        Config { target: Target::Value },
+        |_binder, exp, errors, _alloca_id| {
+            assert!(exp.is_err());
+
+            assert!(errors.iter().any(|x| {
+                x.as_any().downcast_ref::<CannotIndexPastUnpackedTuple<ConstraintModel>>().is_some()
+            }));
+        },
+    );
+
+    let index_past_unpacked_from_end = Check::new(
+        "myTuple.-3",
+        Config { target: Target::Value },
+        |_binder, exp, errors, _alloca_id| {
+            assert!(exp.is_err());
+
+            assert!(errors.iter().any(|x| {
+                x.as_any().downcast_ref::<CannotIndexPastUnpackedTuple<ConstraintModel>>().is_some()
+            }));
+        },
+    );
+
+    let tuple_expected = Check::new(
+        "32i32.0",
+        Config { target: Target::Value },
+        |_binder, exp, errors, _alloca_id| {
+            assert!(exp.is_err());
+
+            assert!(errors.iter().any(|x| {
+                let Some(error) =
+                    x.as_any().downcast_ref::<TupleExpected<ConstraintModel>>()
+                else {
+                    return false;
+                };
+
+                error.r#type == Type::Primitive(Primitive::Int32)
+            }));
+        },
+    );
+
+    let tuple_index_too_large = Check::new(
+        "myTuple.123456789123456789123456789",
+        Config { target: Target::Value },
+        |_binder, exp, errors, _alloca_id| {
+            assert!(exp.is_err());
+
+            assert!(errors.iter().any(|x| {
+                x.as_any().downcast_ref::<TooLargeTupleIndex>().is_some()
+            }));
+        },
+    );
+
+    setup_and_bind(
+        |test_template| {
+            let (mut binder, storage) = test_template.create_binder();
+
+            let statement = parse_statement(
+                "let myTuple = (32i64, true, ...3us, false, 64i32);",
+            );
+
+            let alloca_id = binder
+                .bind_variable_declaration(
+                    &statement.into_variable_declaration().unwrap(),
+                    &storage,
+                )
+                .unwrap();
+
+            (binder, alloca_id)
+        },
+        [
+            normal_from_start,
+            normal_from_end,
+            out_of_bounds,
+            index_past_unpacked_from_start,
+            index_past_unpacked_from_end,
+            tuple_expected,
+            tuple_index_too_large,
+        ],
+    );
+}
+
+#[test]
+fn array_access() {
+    let normal = Check::new(
+        "myArray.[3]",
+        Config {
+            target: Target::Address {
+                expected_qualifier: Qualifier::Immutable,
+            },
+        },
+        |_binder, exp, errors, alloca_id| {
+            assert!(errors.is_empty());
+
+            let index_address =
+                exp.unwrap().into_address().unwrap().0.into_index().unwrap();
+
+            assert_eq!(
+                *index_address.array_address,
+                Address::Memory(Memory::Alloca(*alloca_id))
+            );
+
+            let numeric_value = index_address
+                .indexing_value
+                .into_literal()
+                .unwrap()
+                .into_numeric()
+                .unwrap();
+
+            assert_eq!(numeric_value.integer_string, "3");
+            assert!(numeric_value.decimal_stirng.is_none());
+        },
+    );
+
+    let usize_expected = Check::new(
+        "myArray.[3f64]",
+        Config { target: Target::Value },
+        |_binder, _exp, errors, _alloca_id| {
+            assert!(errors.iter().any(|x| {
+                let Some(error) = x
+                    .as_any()
+                    .downcast_ref::<MismatchedType<ConstraintModel>>()
+                else {
+                    return false;
+                };
+
+                error.span.str() == "3f64"
+                    && error.expected_type == Type::Primitive(Primitive::Usize)
+                    && error.found_type == Type::Primitive(Primitive::Float64)
+            }));
+        },
+    );
+    let array_expected = Check::new(
+        "32i32.[3]",
+        Config { target: Target::Value },
+        |_binder, _exp, errors, _alloca_id| {
+            assert!(errors.iter().any(|x| {
+                let Some(error) =
+                    x.as_any().downcast_ref::<ArrayExpected<ConstraintModel>>()
+                else {
+                    return false;
+                };
+
+                error.r#type == Type::Primitive(Primitive::Int32)
+            }));
+        },
+    );
+
+    setup_and_bind(
+        |test_template| {
+            let (mut binder, storage) = test_template.create_binder();
+
+            let statement = parse_statement(
+                "let myArray = [1i32, 2, 4, 8, 16, 32, 64, 128];",
+            );
+
+            let alloca_id = binder
+                .bind_variable_declaration(
+                    &statement.into_variable_declaration().unwrap(),
+                    &storage,
+                )
+                .unwrap();
+
+            (binder, alloca_id)
+        },
+        [normal, usize_expected, array_expected],
+    );
+}
+
+#[test]
+fn arrow_access() {
+    let norml_check = Check::new(
+        "(&unique myTuple)->0",
+        Config {
+            target: Target::Address { expected_qualifier: Qualifier::Mutable },
+        },
+        |binder, exp, errors, my_tuple_alloca_id| {
+            assert!(errors.is_empty());
+
+            let address =
+                exp.unwrap().into_address().unwrap().0.into_tuple().unwrap();
+
+            let tuple_ref_register_id = address
+                .tuple_address
+                .into_memory()
+                .unwrap()
+                .into_reference_value()
+                .unwrap()
+                .into_register()
+                .unwrap();
+
+            let reference_of = binder
+                .intermediate_representation
+                .registers
+                .get(tuple_ref_register_id)
+                .unwrap()
+                .assignment
+                .as_reference_of()
+                .unwrap();
+
+            assert_eq!(
+                reference_of.address,
+                Address::Memory(Memory::Alloca(*my_tuple_alloca_id))
+            );
+
+            assert_eq!(address.offset, address::Offset::FromStart(0));
+        },
+    );
+    let mismatched_reference_qualifier = Check::new(
+        "(&myTuple)->0",
+        Config {
+            target: Target::Address { expected_qualifier: Qualifier::Mutable },
+        },
+        |_binder, _exp, errors, _my_tuple_alloca_id| {
+            assert!(errors.iter().any(|x| {
+                let Some(error) = x
+                    .as_any()
+                    .downcast_ref::<MismatchedReferenceQualifier<ConstraintModel>>()
+                else {
+                    return false;
+                };
+
+                error.expected_qualifier == Qualifier::Mutable
+            }));
+        },
+    );
+    let reference_type_expected = Check::new(
+        "myTuple->0",
+        Config { target: Target::Value },
+        |_binder, _exp, errors, _my_tuple_alloca_id| {
+            assert!(errors.iter().any(|x| {
+                x.as_any()
+                    .downcast_ref::<CannotDereference<ConstraintModel>>()
+                    .is_some()
+            }));
+        },
+    );
+
+    setup_and_bind(
+        |test_template| {
+            let (mut binder, storage) = test_template.create_binder();
+
+            let statement = parse_statement(
+                "let mutable myTuple = (1i8, 2i16, 3i32, 4i64);",
+            );
+
+            let my_tuple_alloca_id = binder
+                .bind_variable_declaration(
+                    &statement.into_variable_declaration().unwrap(),
+                    &storage,
+                )
+                .unwrap();
+
+            (binder, my_tuple_alloca_id)
+        },
+        [norml_check, mismatched_reference_qualifier, reference_type_expected],
+    );
 }

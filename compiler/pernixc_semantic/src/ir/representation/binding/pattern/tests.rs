@@ -68,7 +68,7 @@ impl Representation<infer::Model> {
         &self,
         named_pattern: &Named<infer::Model>,
         expected_name: &str,
-        expected_stored_adress: &Address<Memory<infer::Model>>,
+        expected_stored_adress: &Address<infer::Model>,
         qualifier: Qualifier,
         ty: &Type<infer::Model>,
     ) {
@@ -121,7 +121,7 @@ impl Representation<infer::Model> {
 
             store.value == Value::Register(reference_of_register_id)
                 && store.address
-                    == Address::Base(Memory::Alloca(stored_address_alloca_id))
+                    == Address::Memory(Memory::Alloca(stored_address_alloca_id))
         }));
 
         let alloca = self.allocas.get(stored_address_alloca_id).unwrap();
@@ -184,7 +184,7 @@ fn value_bound_named() {
         .create_irrefutable(
             &pattern,
             &Type::default(),
-            &Address::Base(Memory::Alloca(alloca_id)),
+            &Address::Memory(Memory::Alloca(alloca_id)),
             &storage,
         )
         .unwrap();
@@ -224,7 +224,7 @@ fn reference_bound_named() {
         .create_irrefutable(
             &pattern,
             &Type::default(),
-            &Address::Base(Memory::Alloca(alloca_id)),
+            &Address::Memory(Memory::Alloca(alloca_id)),
             &storage,
         )
         .unwrap();
@@ -239,7 +239,7 @@ fn reference_bound_named() {
     binder.intermediate_representation.check_reference_bound_named_pattern(
         &pattern,
         "helloWorld",
-        &Address::Base(Memory::Alloca(alloca_id)),
+        &Address::Memory(Memory::Alloca(alloca_id)),
         Qualifier::Unique,
         &Type::default(),
     );
@@ -321,7 +321,7 @@ fn value_bound_struct() {
         .create_irrefutable(
             &pattern,
             &struct_ty,
-            &Address::Base(Memory::Alloca(struct_alloca_id)),
+            &Address::Memory(Memory::Alloca(struct_alloca_id)),
             &storage,
         )
         .unwrap();
@@ -345,7 +345,7 @@ fn value_bound_struct() {
             pattern,
             "a",
             &Address::Field(Field {
-                struct_address: Box::new(Address::Base(Memory::Alloca(
+                struct_address: Box::new(Address::Memory(Memory::Alloca(
                     struct_alloca_id,
                 ))),
                 id: a_field_id,
@@ -376,7 +376,7 @@ fn value_bound_struct() {
                 let Instruction::Store(init) = inst else { return None };
 
                 (init.address
-                    == Address::Base(Memory::Alloca(destructed_variable)))
+                    == Address::Memory(Memory::Alloca(destructed_variable)))
                 .then_some(*init.value.as_register().unwrap())
             })
             .unwrap();
@@ -393,7 +393,7 @@ fn value_bound_struct() {
         assert_eq!(
             load.address,
             Address::Field(Field {
-                struct_address: Box::new(Address::Base(Memory::Alloca(
+                struct_address: Box::new(Address::Memory(Memory::Alloca(
                     struct_alloca_id,
                 ))),
                 id: b_field_id,
@@ -496,7 +496,7 @@ fn reference_bound_struct() {
         .create_irrefutable(
             &pattern,
             &reference_struct_ty,
-            &Address::Base(Memory::Alloca(struct_alloca_id)),
+            &Address::Memory(Memory::Alloca(struct_alloca_id)),
             &storage,
         )
         .unwrap();
@@ -517,7 +517,7 @@ fn reference_bound_struct() {
                 return None;
             };
 
-            if load.address == Address::Base(Memory::Alloca(struct_alloca_id))
+            if load.address == Address::Memory(Memory::Alloca(struct_alloca_id))
                 && binder.type_of_register(idx).unwrap()
                     == Type::Reference(Reference {
                         qualifier: Qualifier::Immutable,
@@ -544,7 +544,7 @@ fn reference_bound_struct() {
             pattern,
             "a",
             &Address::Field(Field {
-                struct_address: Box::new(Address::Base(
+                struct_address: Box::new(Address::Memory(
                     Memory::ReferenceValue(Value::Register(
                         load_address_register,
                     )),
@@ -568,7 +568,7 @@ fn reference_bound_struct() {
             pattern,
             "b",
             &Address::Field(Field {
-                struct_address: Box::new(Address::Base(
+                struct_address: Box::new(Address::Memory(
                     Memory::ReferenceValue(Value::Register(
                         load_address_register,
                     )),
@@ -618,7 +618,7 @@ fn value_bound_tuple() {
         .create_irrefutable(
             &pattern,
             &tuple_ty,
-            &Address::Base(Memory::Alloca(tuple_alloca_id)),
+            &Address::Memory(Memory::Alloca(tuple_alloca_id)),
             &storage,
         )
         .unwrap();
@@ -640,7 +640,7 @@ fn value_bound_tuple() {
             pattern,
             "a",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Base(Memory::Alloca(
+                tuple_address: Box::new(Address::Memory(Memory::Alloca(
                     tuple_alloca_id,
                 ))),
                 offset: address::Offset::FromStart(0),
@@ -670,7 +670,7 @@ fn value_bound_tuple() {
                 let Instruction::Store(init) = inst else { return None };
 
                 (init.address
-                    == Address::Base(Memory::Alloca(destructed_variable)))
+                    == Address::Memory(Memory::Alloca(destructed_variable)))
                 .then_some(*init.value.as_register().unwrap())
             })
             .unwrap();
@@ -687,7 +687,7 @@ fn value_bound_tuple() {
         assert_eq!(
             load.address,
             Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Base(Memory::Alloca(
+                tuple_address: Box::new(Address::Memory(Memory::Alloca(
                     tuple_alloca_id
                 ))),
                 offset: address::Offset::FromStart(1),
@@ -749,7 +749,7 @@ fn reference_bound_tuple() {
         .create_irrefutable(
             &pattern,
             &reference_tuple_ty,
-            &Address::Base(Memory::Alloca(tuple_alloca_id)),
+            &Address::Memory(Memory::Alloca(tuple_alloca_id)),
             &storage,
         )
         .unwrap();
@@ -767,7 +767,7 @@ fn reference_bound_tuple() {
                 return None;
             };
 
-            if load.address == Address::Base(Memory::Alloca(tuple_alloca_id))
+            if load.address == Address::Memory(Memory::Alloca(tuple_alloca_id))
                 && binder.type_of_register(idx).unwrap()
                     == Type::Reference(Reference {
                         qualifier: Qualifier::Mutable,
@@ -792,9 +792,11 @@ fn reference_bound_tuple() {
             pattern,
             "a",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Base(Memory::ReferenceValue(
-                    Value::Register(load_address_register),
-                ))),
+                tuple_address: Box::new(Address::Memory(
+                    Memory::ReferenceValue(Value::Register(
+                        load_address_register,
+                    )),
+                )),
                 offset: address::Offset::FromStart(0),
             }),
             Qualifier::Mutable,
@@ -812,9 +814,11 @@ fn reference_bound_tuple() {
             pattern,
             "b",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Base(Memory::ReferenceValue(
-                    Value::Register(load_address_register),
-                ))),
+                tuple_address: Box::new(Address::Memory(
+                    Memory::ReferenceValue(Value::Register(
+                        load_address_register,
+                    )),
+                )),
                 offset: address::Offset::FromStart(1),
             }),
             Qualifier::Mutable,
@@ -867,7 +871,7 @@ fn packed_tuple() {
         .create_irrefutable(
             &pattern,
             &tuple_ty,
-            &Address::Base(Memory::Alloca(tuple_alloca_id)),
+            &Address::Memory(Memory::Alloca(tuple_alloca_id)),
             &storage,
         )
         .unwrap();
@@ -891,7 +895,7 @@ fn packed_tuple() {
             pattern,
             "a",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Base(Memory::Alloca(
+                tuple_address: Box::new(Address::Memory(Memory::Alloca(
                     tuple_alloca_id,
                 ))),
                 offset: address::Offset::FromStart(0),
@@ -922,7 +926,7 @@ fn packed_tuple() {
                 let Instruction::Store(init) = inst else { return None };
 
                 (init.address
-                    == Address::Base(Memory::Alloca(destructed_variable)))
+                    == Address::Memory(Memory::Alloca(destructed_variable)))
                 .then_some(*init.value.as_register().unwrap())
             })
             .unwrap();
@@ -939,7 +943,7 @@ fn packed_tuple() {
         assert_eq!(
             load.address,
             Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Base(Memory::Alloca(
+                tuple_address: Box::new(Address::Memory(Memory::Alloca(
                     tuple_alloca_id
                 ))),
                 offset: address::Offset::FromEnd(0),
@@ -965,7 +969,7 @@ fn packed_tuple() {
                 if pack.before_packed_element_count == 1
                     && pack.after_packed_element_count == 1
                     && pack.tuple_address
-                        == Address::Base(Memory::Alloca(tuple_alloca_id))
+                        == Address::Memory(Memory::Alloca(tuple_alloca_id))
                 {
                     Some(&pack.store_address)
                 } else {
@@ -975,7 +979,7 @@ fn packed_tuple() {
             .unwrap();
 
         assert_eq!(
-            store_address.as_base().unwrap().as_alloca().unwrap(),
+            store_address.as_memory().unwrap().as_alloca().unwrap(),
             pat.load_address.as_alloca().unwrap()
         );
 

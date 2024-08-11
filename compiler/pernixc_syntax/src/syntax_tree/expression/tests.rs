@@ -1387,7 +1387,7 @@ impl Display for AccessOperator {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AccessKind {
     Identifier(Identifier),
-    Tuple(syntax_tree::tests::Numeric),
+    Tuple(bool, syntax_tree::tests::Numeric),
     Index(Box<Expression>),
 }
 
@@ -1399,8 +1399,12 @@ impl Input<&super::AccessKind> for &AccessKind {
                 super::AccessKind::Identifier(output),
             ) => input.assert(output),
 
-            (AccessKind::Tuple(input), super::AccessKind::Tuple(output)) => {
-                input.assert(output)
+            (
+                AccessKind::Tuple(is_neg, input),
+                super::AccessKind::Tuple(output),
+            ) => {
+                assert_eq!(*is_neg, output.minus.is_some());
+                input.assert(&output.index)
             }
 
             (AccessKind::Index(input), super::AccessKind::Index(output)) => {
@@ -1422,8 +1426,8 @@ impl Arbitrary for AccessKind {
         let strat = strat.unwrap_or_else(Expression::arbitrary);
         prop_oneof![
             Identifier::arbitrary().prop_map(AccessKind::Identifier),
-            syntax_tree::tests::Numeric::arbitrary()
-                .prop_map(AccessKind::Tuple),
+            (proptest::bool::ANY, syntax_tree::tests::Numeric::arbitrary())
+                .prop_map(|(is_neg, index)| AccessKind::Tuple(is_neg, index)),
             strat.prop_map(Box::new).prop_map(AccessKind::Index),
         ]
         .boxed()
@@ -1434,7 +1438,13 @@ impl Display for AccessKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Identifier(identifier) => Display::fmt(identifier, f),
-            Self::Tuple(numeric) => Display::fmt(numeric, f),
+            Self::Tuple(is_neg, numeric) => {
+                if *is_neg {
+                    f.write_char('-')?;
+                }
+
+                Display::fmt(numeric, f)
+            }
             Self::Index(expression) => write!(f, "[{expression}]"),
         }
     }

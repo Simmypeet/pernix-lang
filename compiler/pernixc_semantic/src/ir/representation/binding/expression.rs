@@ -20,20 +20,23 @@ use pernixc_syntax::syntax_tree::{
 use super::{
     infer::{self, Erased},
     stack::Scope,
-    Binder, Error, InternalError, SemanticError,
+    Binder, Error, InferenceProvider, InternalError, SemanticError,
 };
 use crate::{
     arena::ID,
     error::{
-        self, BlockWithGivenLableNameNotFound, CannotDereference,
+        self, ArrayExpected, BlockWithGivenLableNameNotFound,
+        CannotDereference, CannotIndexPastUnpackedTuple,
         DuplicatedFieldInitialization, ExpectedLValue, ExpressOutsideBlock,
         ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
-        FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
-        InvalidRelationalOperation, LoopControlFlow,
+        FloatingPointLiteralHasIntegralSuffix, InvalidCastType,
+        InvalidNumericSuffix, InvalidRelationalOperation, LoopControlFlow,
         LoopControlFlowOutsideLoop, LoopWithGivenLabelNameNotFound,
         MismatchedArgumentCount, MismatchedMutability,
         MismatchedReferenceQualifier, MoreThanOneUnpackedInTupleExpression,
-        NotAllFlowPathsExpressValue, ReturnIsNotAllowed, SymbolIsNotCallable,
+        NotAllFlowPathsExpressValue, ReturnIsNotAllowed, StructExpected,
+        SymbolIsNotCallable, TooLargeTupleIndex, TupleExpected,
+        TupleIndexOutOfBOunds,
     },
     ir::{
         address::{self, Address, Memory},
@@ -51,9 +54,9 @@ use crate::{
             literal::{self, Boolean, Literal, Numeric, Unit, Unreachable},
             register::{
                 self, ArithmeticOperator, Array, Assignment, Binary,
-                BinaryOperator, BitwiseOperator, FunctionCall, Load, LoadKind,
-                Phi, Prefix, PrefixOperator, ReferenceOf, Register, Struct,
-                Variant,
+                BinaryOperator, BitwiseOperator, Cast, FunctionCall, Load,
+                LoadKind, Phi, Prefix, PrefixOperator, ReferenceOf, Register,
+                Struct, Variant,
             },
             Value,
         },
@@ -76,7 +79,10 @@ use crate::{
             self,
             constant::Constant,
             lifetime::Lifetime,
-            r#type::{self, Constraint, Expected, Qualifier, SymbolID, Type},
+            r#type::{
+                self, Constraint, Expected, Primitive, Qualifier, SymbolID,
+                Type,
+            },
             GenericArguments, Local, Symbol,
         },
     },
@@ -117,7 +123,7 @@ pub enum Expression {
     /// The expression is bound as an l-value.
     Address {
         /// The address of the l-value.
-        address: Address<Memory<infer::Model>>,
+        address: Address<infer::Model>,
 
         /// The span of the expression.
         span: Span,
@@ -267,7 +273,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         qualifier: Qualifier,
         create_temporary: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Address<Memory<infer::Model>>, Error>
+    ) -> Result<Address<infer::Model>, Error>
     where
         T: SourceElement,
         Self: Bind<&'a T>,
@@ -288,13 +294,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     // initialize
                     let _ = self.current_block_mut().insert_instruction(
                         Instruction::Store(Store {
-                            address: Address::Base(Memory::Alloca(alloca_id)),
+                            address: Address::Memory(Memory::Alloca(alloca_id)),
                             value,
-                            is_initializattion: true,
                         }),
                     );
 
-                    Ok(Address::Base(Memory::Alloca(alloca_id)))
+                    Ok(Address::Memory(Memory::Alloca(alloca_id)))
                 } else {
                     handler.receive(Box::new(ExpectedLValue {
                         expression_span: syntax_tree.span(),
@@ -406,7 +411,10 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     found_type => {
                         self.create_handler_wrapper(handler).receive(Box::new(
                             CannotDereference {
-                                found_type,
+                                found_type: self
+                                    .inference_context
+                                    .into_constraint_model(found_type)
+                                    .unwrap(),
                                 span: syntax_tree.span(),
                             },
                         ));
@@ -420,7 +428,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     Target::Value | Target::Statement => {
                         let register_id = self.create_register_assignmnet(
                             Assignment::Load(Load {
-                                address: Address::Base(
+                                address: Address::Memory(
                                     address::Memory::ReferenceValue(operand),
                                 ),
                                 kind: LoadKind::Copy,
@@ -448,7 +456,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                         }
 
                         Ok(Expression::Address {
-                            address: Address::Base(
+                            address: Address::Memory(
                                 address::Memory::ReferenceValue(operand),
                             ),
                             span: syntax_tree.span(),
@@ -1074,19 +1082,6 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 }
 
 impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Access> for Binder<'t, S, O>
-{
-    fn bind(
-        &mut self,
-        _: &syntax_tree::expression::Access,
-        _: Config,
-        _: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Expression, Error> {
-        todo!()
-    }
-}
-
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
     Bind<&syntax_tree::expression::Postfix> for Binder<'t, S, O>
 {
     fn bind(
@@ -1146,10 +1141,450 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 }
             }
 
-            syntax_tree::expression::PostfixOperator::Cast(_) => todo!(),
+            syntax_tree::expression::PostfixOperator::Cast(cast_syn) => {
+                // resolve the type
+                let mut cast_type = self
+                    .table
+                    .resolve_type(
+                        cast_syn.r#type(),
+                        self.current_site,
+                        resolution::Config {
+                            ellided_lifetime_provider: Some(
+                                &mut InferenceProvider,
+                            ),
+                            ellided_type_provider: None,
+                            ellided_constant_provider: None,
+                            observer: Some(&mut self.resolution_observer),
+                            higher_ranked_lifetimes: None,
+                        },
+                        handler,
+                    )
+                    .map_err(|_| {
+                        Error::Semantic(SemanticError(syntax_tree.span()))
+                    })?;
 
-            syntax_tree::expression::PostfixOperator::Access(syn) => {
-                self.bind(syn, config, handler)
+                cast_type =
+                    simplify::simplify(&cast_type, &self.create_environment())
+                        .result;
+
+                // can only cast between numeric types
+                if !matches!(
+                    cast_type,
+                    Type::Primitive(
+                        Primitive::Float32
+                            | Primitive::Float64
+                            | Primitive::Int8
+                            | Primitive::Int16
+                            | Primitive::Int32
+                            | Primitive::Int64
+                            | Primitive::Uint8
+                            | Primitive::Uint16
+                            | Primitive::Uint32
+                            | Primitive::Uint64
+                            | Primitive::Usize
+                            | Primitive::Isize
+                    )
+                ) {
+                    self.create_handler_wrapper(handler).receive(Box::new(
+                        InvalidCastType {
+                            r#type: self
+                                .inference_context
+                                .into_constraint_model(cast_type)
+                                .unwrap(),
+                            span: cast_syn.r#type().span(),
+                        },
+                    ));
+
+                    return Err(Error::Semantic(SemanticError(
+                        cast_syn.r#type().span(),
+                    )));
+                }
+
+                // the value to be casted
+                let value = self.bind_value_or_error(
+                    &**syntax_tree.postfixable(),
+                    handler,
+                )?;
+
+                // type check the value
+                let type_of_value = self.type_of_value(&value)?;
+                let _ = self.type_check(
+                    type_of_value,
+                    Expected::Constraint(Constraint::Number),
+                    syntax_tree.postfixable().span(),
+                    handler,
+                );
+
+                Ok(Expression::Value(Value::Register(
+                    self.create_register_assignmnet(
+                        Assignment::Cast(Cast { value, r#type: cast_type }),
+                        Some(syntax_tree.span()),
+                    ),
+                )))
+            }
+
+            syntax_tree::expression::PostfixOperator::Access(access_syn) => {
+                let required_qualifier = match config.target {
+                    Target::Statement | Target::Value => Qualifier::Immutable,
+                    Target::Address { expected_qualifier } => {
+                        expected_qualifier
+                    }
+                };
+
+                let (address, mut access_type) = match access_syn.operator() {
+                    // expect the lvalue address
+                    syntax_tree::expression::AccessOperator::Dot(_) => {
+                        let address = self.bind_as_address(
+                            &**syntax_tree.postfixable(),
+                            required_qualifier,
+                            true,
+                            handler,
+                        )?;
+
+                        let address_type = self.type_of_address(&address)?;
+
+                        (address, address_type)
+                    }
+
+                    // expect the rvalue reference value
+                    syntax_tree::expression::AccessOperator::Arrow(_, _) => {
+                        let value = self.bind_value_or_error(
+                            &**syntax_tree.postfixable(),
+                            handler,
+                        )?;
+
+                        let mut type_of_value = self.type_of_value(&value)?;
+                        type_of_value = simplify::simplify(
+                            &type_of_value,
+                            &self.create_environment(),
+                        )
+                        .result;
+
+                        let type_of_value = match type_of_value {
+                            Type::Reference(reference) => reference,
+                            found_type => {
+                                self.create_handler_wrapper(handler).receive(
+                                    Box::new(CannotDereference {
+                                        found_type: self
+                                            .inference_context
+                                            .into_constraint_model(found_type)
+                                            .unwrap(),
+                                        span: syntax_tree.span(),
+                                    }),
+                                );
+                                return Err(Error::Semantic(SemanticError(
+                                    syntax_tree.span(),
+                                )));
+                            }
+                        };
+
+                        // soft error, keep going
+                        if type_of_value.qualifier < required_qualifier {
+                            self.create_handler_wrapper(handler).receive(
+                                Box::new(MismatchedReferenceQualifier {
+                                    found_reference_type: self
+                                        .inference_context
+                                        .into_constraint_model(Type::Reference(
+                                            type_of_value.clone(),
+                                        ))
+                                        .unwrap(),
+                                    expected_qualifier: required_qualifier,
+                                    span: syntax_tree.span(),
+                                }),
+                            );
+                        }
+
+                        (
+                            Address::Memory(address::Memory::ReferenceValue(
+                                value,
+                            )),
+                            *type_of_value.pointee,
+                        )
+                    }
+                };
+
+                access_type = simplify::simplify(
+                    &access_type,
+                    &self.create_environment(),
+                )
+                .result;
+
+                let address = match access_syn.kind() {
+                    // struct field access
+                    syntax_tree::expression::AccessKind::Identifier(ident) => {
+                        let struct_id = match access_type {
+                            Type::Symbol(Symbol {
+                                id: SymbolID::Struct(struct_id),
+                                ..
+                            }) => struct_id,
+
+                            found_type => {
+                                self.create_handler_wrapper(handler).receive(
+                                    Box::new(StructExpected {
+                                        span: syntax_tree.postfixable().span(),
+                                        r#type: self
+                                            .inference_context
+                                            .into_constraint_model(found_type)
+                                            .unwrap(),
+                                    }),
+                                );
+
+                                return Err(Error::Semantic(SemanticError(
+                                    syntax_tree.postfixable().span(),
+                                )));
+                            }
+                        };
+
+                        // find field id
+                        let Some(field_id) = self
+                            .table
+                            .get(struct_id)
+                            .unwrap()
+                            .fields()
+                            .get_id(ident.span.str())
+                        else {
+                            self.create_handler_wrapper(handler).receive(
+                                Box::new(FieldNotFound {
+                                    struct_id,
+                                    identifier_span: ident.span.clone(),
+                                }),
+                            );
+
+                            return Err(Error::Semantic(SemanticError(
+                                ident.span.clone(),
+                            )));
+                        };
+
+                        let field_accessibility = self
+                            .table
+                            .get(struct_id)
+                            .unwrap()
+                            .fields()
+                            .get(field_id)
+                            .unwrap()
+                            .accessibility;
+
+                        // field is not accessible, soft error, keep going
+                        if !self
+                            .table
+                            .is_accessible_from(
+                                self.current_site,
+                                field_accessibility,
+                            )
+                            .unwrap()
+                        {
+                            self.create_handler_wrapper(handler).receive(
+                                Box::new(FieldIsNotAccessible {
+                                    field_id,
+                                    struct_id,
+                                    referring_site: self.current_site,
+                                    referring_identifier_span: ident
+                                        .span
+                                        .clone(),
+                                }),
+                            );
+                        }
+
+                        Address::Field(address::Field {
+                            struct_address: Box::new(address),
+                            id: field_id,
+                        })
+                    }
+
+                    syntax_tree::expression::AccessKind::Tuple(syn) => {
+                        let tuple_ty = match access_type {
+                            Type::Tuple(tuple_ty) => tuple_ty,
+                            found_type => {
+                                self.create_handler_wrapper(handler).receive(
+                                    Box::new(TupleExpected {
+                                        span: syntax_tree.postfixable().span(),
+                                        r#type: self
+                                            .inference_context
+                                            .into_constraint_model(found_type)
+                                            .unwrap(),
+                                    }),
+                                );
+
+                                return Err(Error::Semantic(SemanticError(
+                                    syntax_tree.postfixable().span(),
+                                )));
+                            }
+                        };
+
+                        // sanity check
+                        if tuple_ty
+                            .elements
+                            .iter()
+                            .filter(|x| x.is_unpacked)
+                            .count()
+                            > 1
+                        {
+                            return Err(Error::Semantic(SemanticError(
+                                syntax_tree.span(),
+                            )));
+                        }
+
+                        // used to chec if the index is past the unpacked index
+                        let unpacked_index = tuple_ty
+                            .elements
+                            .iter()
+                            .position(|x| x.is_unpacked);
+
+                        let index =
+                            match syn.index().span.str().parse::<usize>() {
+                                Ok(number) => number,
+                                Err(err) => match err.kind() {
+                                    std::num::IntErrorKind::NegOverflow
+                                    | std::num::IntErrorKind::PosOverflow => {
+                                        self.create_handler_wrapper(handler)
+                                            .receive(Box::new(
+                                                TooLargeTupleIndex {
+                                                    access_span: access_syn
+                                                        .span(),
+                                                },
+                                            ));
+
+                                        return Err(Error::Semantic(
+                                            SemanticError(
+                                                syn.index().span.clone(),
+                                            ),
+                                        ));
+                                    }
+
+                                    std::num::IntErrorKind::InvalidDigit
+                                    | std::num::IntErrorKind::Empty
+                                    | std::num::IntErrorKind::Zero
+                                    | _ => {
+                                        unreachable!()
+                                    }
+                                },
+                            };
+
+                        if index >= tuple_ty.elements.len() {
+                            self.create_handler_wrapper(handler).receive(
+                                Box::new(TupleIndexOutOfBOunds {
+                                    access_span: access_syn.span(),
+                                    tuple_type: self
+                                        .inference_context
+                                        .into_constraint_model(Type::Tuple(
+                                            tuple_ty,
+                                        ))
+                                        .unwrap()
+                                        .into_tuple()
+                                        .unwrap(),
+                                }),
+                            );
+
+                            return Err(Error::Semantic(SemanticError(
+                                syn.index().span.clone(),
+                            )));
+                        }
+
+                        if let Some(unpacked_index) = unpacked_index {
+                            // can't access past the unpacked index
+                            let pass_unpacked = if syn.minus().is_some() {
+                                index
+                                    >= (tuple_ty.elements.len()
+                                        - unpacked_index
+                                        - 1)
+                            } else {
+                                index >= unpacked_index
+                            };
+
+                            // report error
+                            if pass_unpacked {
+                                self.create_handler_wrapper(handler).receive(
+                                    Box::new(CannotIndexPastUnpackedTuple {
+                                        index_span: syn.span(),
+                                        tuple_type: self
+                                            .inference_context
+                                            .into_constraint_model(Type::Tuple(
+                                                tuple_ty,
+                                            ))
+                                            .unwrap()
+                                            .into_tuple()
+                                            .unwrap(),
+                                    }),
+                                );
+
+                                return Err(Error::Semantic(SemanticError(
+                                    syn.index().span.clone(),
+                                )));
+                            }
+                        }
+
+                        Address::Tuple(address::Tuple {
+                            tuple_address: Box::new(address),
+                            offset: if syn.minus().is_some() {
+                                address::Offset::FromEnd(index)
+                            } else {
+                                address::Offset::FromStart(index)
+                            },
+                        })
+                    }
+
+                    syntax_tree::expression::AccessKind::Index(index) => {
+                        let value = self.bind_value_or_error(
+                            &**index.expression(),
+                            handler,
+                        )?;
+
+                        if !matches!(access_type, Type::Array(_)) {
+                            self.create_handler_wrapper(handler).receive(
+                                Box::new(ArrayExpected {
+                                    span: syntax_tree.postfixable().span(),
+                                    r#type: self
+                                        .inference_context
+                                        .into_constraint_model(access_type)
+                                        .unwrap(),
+                                }),
+                            );
+
+                            return Err(Error::Semantic(SemanticError(
+                                syntax_tree.postfixable().span(),
+                            )));
+                        }
+
+                        // expected a `usize` type
+                        let index_ty = self.type_of_value(&value)?;
+                        let _ = self.type_check(
+                            index_ty,
+                            Expected::Known(Type::Primitive(
+                                r#type::Primitive::Usize,
+                            )),
+                            index.expression().span(),
+                            handler,
+                        );
+
+                        Address::Index(address::Index {
+                            array_address: Box::new(address),
+                            indexing_value: value,
+                        })
+                    }
+                };
+
+                match config.target {
+                    Target::Value => {
+                        // will be optimized to move later
+                        let register_id = self.create_register_assignmnet(
+                            Assignment::Load(Load {
+                                address,
+                                kind: LoadKind::Copy,
+                            }),
+                            Some(syntax_tree.span()),
+                        );
+
+                        Ok(Expression::Value(Value::Register(register_id)))
+                    }
+
+                    // qualifier should've been checked earlier
+                    Target::Address { .. } => Ok(Expression::Address {
+                        address,
+                        span: syntax_tree.span(),
+                    }),
+
+                    Target::Statement => Ok(Expression::SideEffect),
+                }
             }
         }
     }
@@ -1201,7 +1636,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     break 'out;
                 };
 
-                let address = Address::Base(match name.load_address {
+                let address = Address::Memory(match name.load_address {
                     address::Stack::Alloca(alloca_id) => {
                         address::Memory::Alloca(alloca_id)
                     }
@@ -1214,7 +1649,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     Target::Statement | Target::Value => {
                         let register_id = self.create_register_assignmnet(
                             Assignment::Load(Load {
-                                address: Address::Base(
+                                address: Address::Memory(
                                     match name.load_address {
                                         address::Stack::Alloca(alloca_id) => {
                                             address::Memory::Alloca(alloca_id)
@@ -1607,7 +2042,6 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
 
         if bind_as_tuple {
             let mut elements = Vec::new();
-            let mut has_unpacked: Option<Span> = None;
 
             for element_syn in syntax_tree
                 .expression()
@@ -1620,50 +2054,61 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     handler,
                 )?;
 
-                let is_unpacked = if element_syn.ellipsis().is_some() {
-                    has_unpacked.clone().map_or_else(
-                        || {
-                            has_unpacked = Some(element_syn.span());
-                            true
-                        },
-                        |unpacked_span| {
-                            self.create_handler_wrapper(handler).receive(
-                                Box::new(
-                                    MoreThanOneUnpackedInTupleExpression {
-                                        prior_unpacked_expression_span:
-                                            unpacked_span,
-                                        unpacked_expression_span: element_syn
-                                            .span(),
-                                    },
-                                ),
-                            );
-
-                            false
-                        },
-                    )
-                } else {
-                    false
-                };
-
                 elements.push(register::TupleElement {
                     value: element,
-                    is_unpacked,
+                    is_unpacked: element_syn.ellipsis().is_some(),
                 });
             }
 
-            let value = if elements.is_empty() {
-                // return unit Tuple
-                Value::Literal(Literal::Unit(literal::Unit {
-                    span: Some(syntax_tree.span()),
-                }))
-            } else {
-                Value::Register(self.create_register_assignmnet(
-                    Assignment::Tuple(register::Tuple { elements }),
-                    Some(syntax_tree.span()),
-                ))
-            };
+            let tuple_type = simplify::simplify(
+                &Type::<infer::Model>::Tuple(r#type::Tuple {
+                    elements: elements
+                        .iter()
+                        .map(|x| {
+                            self.type_of_value(&x.value).map(|ty| {
+                                term::TupleElement {
+                                    term: ty,
+                                    is_unpacked: x.is_unpacked,
+                                }
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                }),
+                &self.create_environment(),
+            )
+            .result
+            .into_tuple()
+            .unwrap();
 
-            Ok(Expression::Value(value))
+            // more than one unpacked elements
+            if tuple_type.elements.iter().filter(|x| x.is_unpacked).count() > 1
+            {
+                self.create_handler_wrapper(handler).receive(Box::new(
+                    MoreThanOneUnpackedInTupleExpression {
+                        span: syntax_tree.span(),
+                        r#type: self
+                            .inference_context
+                            .into_constraint_model(Type::Tuple(tuple_type))
+                            .unwrap(),
+                    },
+                ));
+
+                Err(Error::Semantic(SemanticError(syntax_tree.span())))
+            } else {
+                let value = if elements.is_empty() {
+                    // return unit Tuple
+                    Value::Literal(Literal::Unit(literal::Unit {
+                        span: Some(syntax_tree.span()),
+                    }))
+                } else {
+                    Value::Register(self.create_register_assignmnet(
+                        Assignment::Tuple(register::Tuple { elements }),
+                        Some(syntax_tree.span()),
+                    ))
+                };
+
+                Ok(Expression::Value(value))
+            }
         } else {
             // propagate the target
             self.bind(
@@ -2031,7 +2476,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         &mut self,
         tree: &BinaryTree,
         config: Config,
-        lhs_address: Address<Memory<infer::Model>>,
+        lhs_address: Address<infer::Model>,
         rhs_value: Value<infer::Model>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
@@ -2045,13 +2490,10 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             handler,
         );
 
-        let _ = self.current_block_mut().insert_instruction(
-            Instruction::Store(Store {
-                address: lhs_address.clone(),
-                value: rhs_value,
-                is_initializattion: false,
-            }),
-        );
+        let _ =
+            self.current_block_mut().insert_instruction(Instruction::Store(
+                Store { address: lhs_address.clone(), value: rhs_value },
+            ));
 
         Ok(match config.target {
             Target::Value => {

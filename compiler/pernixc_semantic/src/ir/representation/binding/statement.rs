@@ -113,9 +113,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 
         let _ = self.current_block_mut().insert_instruction(
             Instruction::Store(Store {
-                address: Address::Base(Memory::Alloca(alloca_id)),
+                address: Address::Memory(Memory::Alloca(alloca_id)),
                 value: initializer,
-                is_initializattion: true,
             }),
         );
 
@@ -128,7 +127,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             .create_irrefutable(
                 syntax_tree.irrefutable_pattern(),
                 &variable_type,
-                &Address::Base(Memory::Alloca(alloca_id)),
+                &Address::Memory(Memory::Alloca(alloca_id)),
                 &self.create_handler_wrapper(handler),
             )
             .unwrap_or(Irrefutable::Wildcard(Wildcard));

@@ -12,10 +12,8 @@ use super::Value;
 use crate::{
     arena::ID,
     ir::{
-        address::{Address, Memory},
-        control_flow_graph::Block,
-        representation::Representation,
-        TypeOfError,
+        address::Address, control_flow_graph::Block,
+        representation::Representation, TypeOfError,
     },
     symbol::{
         self,
@@ -82,7 +80,10 @@ impl<M: Model> Representation<M> {
             }
         }
 
-        Ok(Type::Tuple(term::Tuple { elements }))
+        let mut ty = Type::Tuple(term::Tuple { elements });
+        ty = simplify::simplify(&ty, environment).result;
+
+        Ok(ty)
     }
 }
 
@@ -101,7 +102,7 @@ pub enum LoadKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Load<M: Model> {
     /// The address where the value is stored and will be read from.
-    pub address: Address<Memory<M>>,
+    pub address: Address<M>,
 
     /// The kind of load.
     pub kind: LoadKind,
@@ -122,7 +123,7 @@ impl<M: Model> Representation<M> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReferenceOf<M: Model> {
     /// The address to the value.
-    pub address: Address<Memory<M>>,
+    pub address: Address<M>,
 
     /// The qualfier of the reference.
     pub qualifier: Qualifier,
@@ -466,6 +467,16 @@ pub struct Array<M: Model> {
     pub element_type: Type<M>,
 }
 
+/// Represents a cast operation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Cast<M: Model> {
+    /// The value to be casted.
+    pub value: Value<M>,
+
+    /// The type to cast the value to.
+    pub r#type: Type<M>,
+}
+
 /// An enumeration of the different kinds of values that can be assigned in the
 /// register.
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
@@ -481,6 +492,7 @@ pub enum Assignment<M: Model> {
     Binary(Binary<M>),
     Array(Array<M>),
     Phi(Phi<M>),
+    Cast(Cast<M>),
 }
 
 /// Represents a register in the SSA from.
@@ -554,6 +566,7 @@ impl<M: Model> Representation<M> {
                     array.elements.len() as i128,
                 )),
             })),
+            Assignment::Cast(cast) => Ok(cast.r#type.clone()),
         }
     }
 }

@@ -1,7 +1,7 @@
 //! Contains the definition of [`Instruction`] and its variants.
 
 use super::{
-    address::{Address, Memory},
+    address::Address,
     alloca::Alloca,
     control_flow_graph::Block,
     scope::Scope,
@@ -74,15 +74,10 @@ pub struct RegisterAssignment<M: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Store<M: Model> {
     /// The address where the value will be stored.
-    pub address: Address<Memory<M>>,
+    pub address: Address<M>,
 
     /// The value to store.
     pub value: Value<M>,
-
-    /// If `true`, it means that the instruction is used to initialize a memory
-    /// location with a value; it typically translates from a `let` variable
-    /// declaration statements.
-    pub is_initializattion: bool,
 }
 
 /// An instruction that allocates a new `alloca` memory.
@@ -97,10 +92,17 @@ pub struct AllocaAllocation<M: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TuplePack<M: Model> {
     /// The address where the unpacked tuple elements will be stored.
-    pub store_address: Address<Memory<M>>,
+    ///
+    /// The address should have a type of tuple.
+    pub store_address: Address<M>,
 
     /// The address to the tuple where the unpacked elements are stored.
-    pub tuple_address: Address<Memory<M>>,
+    ///
+    /// The address should have a type of tuple.
+    pub tuple_address: Address<M>,
+
+    /// The offset in the `store_address` to start storing the packed element.
+    pub starting_offset: usize,
 
     /// The number of elements in the tuple before the packed element.
     ///

@@ -53,9 +53,9 @@ impl TestTemplate {
         Self { table, function_id, test_module_id }
     }
 
-    pub fn create_binder(
-        &self,
-    ) -> (Binder<'_, Building, NoOpObserver>, Storage<Box<dyn error::Error>>)
+    pub fn create_binder<'a>(
+        &'a self,
+    ) -> (Binder<'a, Building, NoOpObserver>, Storage<Box<dyn error::Error>>)
     {
         let storage: Storage<Box<dyn error::Error>> = Storage::new();
 

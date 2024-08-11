@@ -36,7 +36,7 @@
 
 use std::{fmt::Debug, hash::Hash};
 
-use address::{Address, Memory};
+use address::Address;
 use alloca::Alloca;
 use value::{register::Register, Value};
 
@@ -104,7 +104,7 @@ pub enum TypeOfError<M: Model> {
     )]
     NonStructAddressType {
         /// The address that doesn't have the struct type.
-        address: Address<Memory<M>>,
+        address: Address<M>,
 
         /// The type of the [`NonStructAddressType::address`].
         r#type: Type<M>,
@@ -129,7 +129,7 @@ pub enum TypeOfError<M: Model> {
     )]
     NonTupleAddressType {
         /// The address that doesn't have the tuple type.
-        address: Address<Memory<M>>,
+        address: Address<M>,
 
         /// The type of the [`NonTupleAddressType::address`].
         r#type: Type<M>,
@@ -155,9 +155,21 @@ pub enum TypeOfError<M: Model> {
     )]
     NonLocalAddressType {
         /// The address that doesn't have the local type.
-        address: Address<Memory<M>>,
+        address: Address<M>,
 
         /// The type of the [`NonLocalAddressType::address`].
+        r#type: Type<M>,
+    },
+
+    #[error(
+        "the `Index` address requires the field `array_address` to have an \
+         address of type `array` but found the other type"
+    )]
+    NonArrayAddressType {
+        /// The address that doesn't have the array type.
+        address: Address<M>,
+
+        /// The type of the [`NonArrayAddressType::address`].
         r#type: Type<M>,
     },
 
