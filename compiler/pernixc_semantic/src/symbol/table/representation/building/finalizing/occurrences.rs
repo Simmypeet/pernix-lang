@@ -4,13 +4,7 @@ use getset::Getters;
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree::{self, GenericIdentifier};
 
-use super::{
-    finalize::positive_trait_implementation,
-    finalizer::{
-        build_preset::{self, BuildPreset},
-        BuildSymbolError,
-    },
-};
+use super::finalizer::builder;
 use crate::{
     error,
     symbol::{
@@ -23,7 +17,9 @@ use crate::{
         },
         GlobalID,
     },
-    type_system::{model::Default, term},
+    type_system::{
+        environment::Environment, model::Default, normalizer::NO_OP, term,
+    },
 };
 
 /// A structure containing the list of all resolution resolved so far in the
@@ -61,26 +57,28 @@ pub struct Occurrences {
 }
 
 impl Occurrences {
-    /// Builds all the occurrences (dependencies) to completion.
-    pub fn build_all_occurrences_to<B: BuildPreset>(
+    pub fn build_occurrences_to_definition(
         &self,
-        table: &Table<Building<RwLockContainer, Finalizer>>,
-        dependant: GlobalID,
-        cyclic_dependency_as_error: bool,
+        table: &Table<impl State>,
+        referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        for id in
-            self.get_all_global_id_occurrences(table).into_iter().flatten()
-        {
-            let _ = table.build_preset::<B>(
-                id,
-                Some(dependant),
-                cyclic_dependency_as_error,
+        let environment = Environment::new(
+            table.get_active_premise(referring_site).unwrap(),
+            table,
+            &NO_OP,
+        );
+
+        for (resolution, _) in &self.resolutions {
+            let _ = builder::build_for_definition_internal(
+                &environment,
+                resolution,
+                Some(referring_site),
+                false,
                 handler,
             );
         }
     }
-
     /// Get all the global IDs that has occurred so far.
     pub fn get_all_global_id_occurrences(
         &self,
@@ -131,81 +129,13 @@ impl Occurrences {
 impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
     fn on_global_id_resolved(
         &mut self,
-        table: &Table<Building<RwLockContainer, Finalizer>>,
-        referring_site: GlobalID,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-        global_id: GlobalID,
+        _: &Table<Building<RwLockContainer, Finalizer>>,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+        _: GlobalID,
         _: &pernixc_lexical::token::Identifier,
     ) -> bool {
-        let first_result = match table
-            .build_preset::<build_preset::GenericParameter>(
-                global_id,
-                Some(referring_site),
-                true,
-                handler,
-            ) {
-            Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => true,
-
-            Err(BuildSymbolError::CyclicDependency) => false,
-
-            Err(BuildSymbolError::InvalidStateFlag { .. }) => {
-                panic!("invalid state flag")
-            }
-        };
-
-        // this variable will either be AdtImplementation or
-        // PositiveTraitImplementation
-        let implementaion_member_parent_id = match global_id {
-            id @ (GlobalID::TraitImplementationFunction(_)
-            | GlobalID::TraitImplementationType(_)
-            | GlobalID::TraitImplementationConstant(_)
-            | GlobalID::AdtImplementationFunction(_)
-            | GlobalID::AdtImplementationType(_)
-            | GlobalID::AdtImplementationConstant(_)) => {
-                Some(table.get_global(id).unwrap().parent_global_id().unwrap())
-            }
-
-            _ => None,
-        };
-
-        match implementaion_member_parent_id {
-            Some(GlobalID::PositiveTraitImplementation(id)) => {
-                match table.build_to(
-                    id,
-                    Some(referring_site),
-                    positive_trait_implementation::GENERIC_ARGUMENTS_STATE,
-                    true,
-                    handler,
-                ) {
-                    Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => true,
-
-                    Err(BuildSymbolError::CyclicDependency) => false,
-
-                    Err(BuildSymbolError::InvalidStateFlag { .. }) => {
-                        panic!("invalid state flag")
-                    }
-                }
-            }
-            Some(GlobalID::AdtImplementation(id)) => {
-                match table.build_to(
-                    id,
-                    Some(referring_site),
-                    positive_trait_implementation::GENERIC_ARGUMENTS_STATE,
-                    true,
-                    handler,
-                ) {
-                    Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => true,
-
-                    Err(BuildSymbolError::CyclicDependency) => false,
-
-                    Err(BuildSymbolError::InvalidStateFlag { .. }) => {
-                        panic!("invalid state flag")
-                    }
-                }
-            }
-
-            _ => first_result,
-        }
+        true
     }
 
     fn on_resolution_resolved(
@@ -215,8 +145,9 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
         _: &dyn Handler<Box<dyn error::Error>>,
         resolution: &Resolution<Default>,
         generic_identifier: &GenericIdentifier,
-    ) {
+    ) -> bool {
         self.resolutions.push((resolution.clone(), generic_identifier.clone()));
+        true
     }
 
     fn on_type_resolved(

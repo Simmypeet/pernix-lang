@@ -3,7 +3,7 @@ use core::panic;
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{r#trait, Finalize};
+use super::{r#trait, trait_implementation_type, Finalize};
 use crate::{
     arena::ID,
     error::Error,
@@ -11,7 +11,7 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::build_preset, occurrences::Occurrences,
+                    finalizer::builder, occurrences::Occurrences,
                     Finalizer,
                 },
                 Index, RwLockContainer,
@@ -27,8 +27,9 @@ pub const GENERIC_PARAMETER_STATE: usize = 0;
 /// Where cluase predicates are built
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
-/// The trait type alias signature is built.
-pub const SIGNATURE_STATE: usize = 2;
+/// The information required to check the bounds is built. (the definition of
+/// where caluses are built)
+pub const WELL_FORMED_STATE: usize = 2;
 
 /// Bounds check are performed
 pub const CHECK_STATE: usize = 3;
@@ -54,7 +55,6 @@ impl Finalize for TraitType {
                     parent_trait_id,
                     Some(symbol_id.into()),
                     r#trait::GENERIC_PARAMETER_STATE,
-                    true,
                     handler,
                 );
 
@@ -75,14 +75,7 @@ impl Finalize for TraitType {
                 );
             }
 
-            SIGNATURE_STATE => {
-                data.build_all_occurrences_to::<build_preset::Complete>(
-                    table,
-                    symbol_id.into(),
-                    false,
-                    handler,
-                );
-            }
+            WELL_FORMED_STATE => {}
 
             CHECK_STATE => {
                 // make sure the trait where clause predicates are built
@@ -91,7 +84,6 @@ impl Finalize for TraitType {
                     parent_trait_id,
                     Some(symbol_id.into()),
                     r#trait::WHERE_CLAUSE_STATE,
-                    true,
                     handler,
                 );
 

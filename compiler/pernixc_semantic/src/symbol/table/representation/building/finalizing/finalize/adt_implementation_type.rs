@@ -9,7 +9,7 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::build_preset, occurrences::Occurrences,
+                    finalizer::builder, occurrences::Occurrences,
                     Finalizer,
                 },
                 RwLockContainer, Table,
@@ -27,10 +27,14 @@ pub const GENERIC_PARAMETER_STATE: usize = 0;
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The complete information of the ADT implementation type is built.
-pub const COMPLETE_STATE: usize = 2;
+pub const DEFINITION_STATE: usize = 2;
+
+/// The information required to check the bounds is built. (the definition of
+/// where caluses are built)
+pub const WELL_FORMED_STATE: usize = 3;
 
 /// Bounds check are performed
-pub const CHECK_STATE: usize = 3;
+pub const CHECK_STATE: usize = 4;
 
 impl Finalize for AdtImplementationType {
     type SyntaxTree = syntax_tree::item::Type;
@@ -64,7 +68,7 @@ impl Finalize for AdtImplementationType {
                 );
             }
 
-            COMPLETE_STATE => {
+            DEFINITION_STATE => {
                 let parent_implementation_id = table
                     .adt_implementation_types()
                     .get(symbol_id)
@@ -74,8 +78,7 @@ impl Finalize for AdtImplementationType {
                 let _ = table.build_to(
                     parent_implementation_id,
                     Some(symbol_id.into()),
-                    adt_implementation::GENERIC_ARGUMENTS_STATE,
-                    true,
+                    adt_implementation::DEFINITION_STATE,
                     handler,
                 );
 
@@ -116,10 +119,9 @@ impl Finalize for AdtImplementationType {
                     .unwrap()
                     .write()
                     .r#type = ty;
-                data.build_all_occurrences_to::<build_preset::Complete>(
+                data.build_all_occurrences_to::<builder::Complete>(
                     table,
                     symbol_id.into(),
-                    false,
                     handler,
                 );
             }

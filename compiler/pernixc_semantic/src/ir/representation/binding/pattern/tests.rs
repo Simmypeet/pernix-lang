@@ -400,7 +400,7 @@ fn value_bound_struct() {
             })
         );
 
-        assert_eq!(load.kind, LoadKind::Move);
+        assert_eq!(load.kind, LoadKind::Copy);
         assert_eq!(
             binder
                 .intermediate_representation
@@ -694,7 +694,7 @@ fn value_bound_tuple() {
             })
         );
 
-        assert_eq!(load.kind, LoadKind::Move);
+        assert_eq!(load.kind, LoadKind::Copy);
         assert_eq!(
             binder
                 .intermediate_representation

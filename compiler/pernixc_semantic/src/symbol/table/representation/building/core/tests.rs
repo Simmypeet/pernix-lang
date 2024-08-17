@@ -72,7 +72,7 @@ fn check_primitives_tuple_copyable_impl(
 
     let active_premise =
         table.get_active_premise(core_module_id.into()).unwrap();
-    let (environment, _) = Environment::new(active_premise, &table, &NO_OP);
+    let environment = Environment::new(active_premise, &table, &NO_OP);
 
     let trait_predicate = predicate::Trait {
         id: copy_trait_id,

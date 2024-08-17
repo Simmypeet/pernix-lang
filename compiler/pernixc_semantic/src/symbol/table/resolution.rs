@@ -27,15 +27,15 @@ use crate::{
         ResolutionAmbiguity, SymbolNotFound,
     },
     symbol::{
-        self, AdtImplementationConstant, AdtImplementationFunction,
-        AdtImplementationType, Constant, ConstantParameter, Enum, Function,
-        GenericKind, GlobalID, LifetimeParameter, LifetimeParameterID,
-        MemberID, Module, Struct, Trait, TraitConstant, TraitFunction,
-        TraitImplementationConstant, TraitImplementationFunction,
-        TraitImplementationType, TraitType, Type, TypeParameter,
-        TypeParameterID,
+        self, AdtImplementationFunction, Constant, ConstantParameter, Enum,
+        Function, GenericKind, GlobalID, LifetimeParameter,
+        LifetimeParameterID, MemberID, Module, Struct, Trait, TraitConstant,
+        TraitFunction, TraitImplementationConstant,
+        TraitImplementationFunction, TraitImplementationType, TraitType, Type,
+        TypeParameter, TypeParameterID,
     },
     type_system::{
+        instantiation::{self, Instantiation},
         model::{Default, Model},
         term::{
             self, constant,
@@ -156,8 +156,6 @@ pub enum MemberGenericID {
     TraitType(ID<TraitType>),
     TraitConstant(ID<TraitConstant>),
     AdtImplementationFunction(ID<AdtImplementationFunction>),
-    AdtImplementationType(ID<AdtImplementationType>),
-    AdtImplementationConstant(ID<AdtImplementationConstant>),
 }
 
 impl From<MemberGenericID> for symbol::GenericID {
@@ -168,12 +166,6 @@ impl From<MemberGenericID> for symbol::GenericID {
             MemberGenericID::TraitConstant(id) => Self::TraitConstant(id),
             MemberGenericID::AdtImplementationFunction(id) => {
                 Self::AdtImplementationFunction(id)
-            }
-            MemberGenericID::AdtImplementationType(id) => {
-                Self::AdtImplementationType(id)
-            }
-            MemberGenericID::AdtImplementationConstant(id) => {
-                Self::AdtImplementationConstant(id)
             }
         }
     }
@@ -187,12 +179,6 @@ impl From<MemberGenericID> for GlobalID {
             MemberGenericID::TraitConstant(id) => Self::TraitConstant(id),
             MemberGenericID::AdtImplementationFunction(id) => {
                 Self::AdtImplementationFunction(id)
-            }
-            MemberGenericID::AdtImplementationType(id) => {
-                Self::AdtImplementationType(id)
-            }
-            MemberGenericID::AdtImplementationConstant(id) => {
-                Self::AdtImplementationConstant(id)
             }
         }
     }
@@ -461,6 +447,183 @@ pub trait EliidedTermProvider<T>: Debug {
     fn create(&mut self) -> T;
 }
 
+/// A struct for chaining two resolution observer together.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Chain<'f, 's, F, S> {
+    first: &'f mut F,
+    second: &'s mut S,
+}
+
+impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
+    Observer<T, M> for Chain<'f, 's, F, S>
+{
+    fn on_global_id_resolved(
+        &mut self,
+        table: &Table<T>,
+        referring_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+        global_id: GlobalID,
+        identifier: &Identifier,
+    ) -> bool {
+        self.first.on_global_id_resolved(
+            table,
+            referring_site,
+            handler,
+            global_id,
+            identifier,
+        ) && self.second.on_global_id_resolved(
+            table,
+            referring_site,
+            handler,
+            global_id,
+            identifier,
+        )
+    }
+
+    fn on_resolution_resolved(
+        &mut self,
+        table: &Table<T>,
+        referring_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+        resolution: &Resolution<M>,
+        generic_identifier: &GenericIdentifier,
+    ) -> bool {
+        self.first.on_resolution_resolved(
+            table,
+            referring_site,
+            handler,
+            resolution,
+            generic_identifier,
+        ) && self.second.on_resolution_resolved(
+            table,
+            referring_site,
+            handler,
+            resolution,
+            generic_identifier,
+        )
+    }
+
+    fn on_type_resolved(
+        &mut self,
+        table: &Table<T>,
+        referring_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+        ty: &r#type::Type<M>,
+        syntax_tree: &syntax_tree::r#type::Type,
+    ) {
+        self.first.on_type_resolved(
+            table,
+            referring_site,
+            handler,
+            ty,
+            syntax_tree,
+        );
+        self.second.on_type_resolved(
+            table,
+            referring_site,
+            handler,
+            ty,
+            syntax_tree,
+        );
+    }
+
+    fn on_lifetime_resolved(
+        &mut self,
+        table: &Table<T>,
+        referring_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+        lifetime: &Lifetime<M>,
+        syntax_tree: &syntax_tree::Lifetime,
+    ) {
+        self.first.on_lifetime_resolved(
+            table,
+            referring_site,
+            handler,
+            lifetime,
+            syntax_tree,
+        );
+        self.second.on_lifetime_resolved(
+            table,
+            referring_site,
+            handler,
+            lifetime,
+            syntax_tree,
+        );
+    }
+
+    fn on_constant_arguments_resolved(
+        &mut self,
+        table: &Table<T>,
+        referring_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+        constant: &constant::Constant<M>,
+        syntax_tree: &syntax_tree::expression::Expression,
+    ) {
+        self.first.on_constant_arguments_resolved(
+            table,
+            referring_site,
+            handler,
+            constant,
+            syntax_tree,
+        );
+        self.second.on_constant_arguments_resolved(
+            table,
+            referring_site,
+            handler,
+            constant,
+            syntax_tree,
+        );
+    }
+
+    fn on_unpacked_type_resolved(
+        &mut self,
+        table: &Table<T>,
+        referring_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+        ty: &r#type::Type<M>,
+        syntax_tree: &syntax_tree::r#type::Type,
+    ) {
+        self.first.on_unpacked_type_resolved(
+            table,
+            referring_site,
+            handler,
+            ty,
+            syntax_tree,
+        );
+        self.second.on_unpacked_type_resolved(
+            table,
+            referring_site,
+            handler,
+            ty,
+            syntax_tree,
+        );
+    }
+
+    fn on_unpacked_constant_resolved(
+        &mut self,
+        table: &Table<T>,
+        referring_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+        constant: &constant::Constant<M>,
+        syntax_tree: &syntax_tree::expression::Expression,
+    ) {
+        self.first.on_unpacked_constant_resolved(
+            table,
+            referring_site,
+            handler,
+            constant,
+            syntax_tree,
+        );
+        self.second.on_unpacked_constant_resolved(
+            table,
+            referring_site,
+            handler,
+            constant,
+            syntax_tree,
+        );
+    }
+}
+
 /// A trait for observing the resolution process.
 ///
 /// The trait will be notified when a type, lifetime, or constant is resolved
@@ -482,6 +645,11 @@ pub trait Observer<T: State, M: Model>: Debug {
     ) -> bool;
 
     /// Notifies the observer when a resolution is resolved.
+    ///
+    /// Returns `true` if the resolution should continue, otherwise `false`.
+    ///
+    /// When the resolution process is stopped, the term resolution will be
+    /// replaced with the `*::Error` variant.
     fn on_resolution_resolved(
         &mut self,
         table: &Table<T>,
@@ -489,7 +657,7 @@ pub trait Observer<T: State, M: Model>: Debug {
         handler: &dyn Handler<Box<dyn error::Error>>,
         resolution: &Resolution<M>,
         generic_identifier: &GenericIdentifier,
-    );
+    ) -> bool;
 
     /// Notifies the observer when a type is resolved.
     fn on_type_resolved(
@@ -542,6 +710,17 @@ pub trait Observer<T: State, M: Model>: Debug {
         constant: &constant::Constant<M>,
         syntax_tree: &syntax_tree::expression::Expression,
     );
+
+    /// Chains the observer operation together
+    fn chain<'f, 's, U: Observer<T, M>>(
+        &'f mut self,
+        another: &'s mut U,
+    ) -> Chain<'f, 's, Self, U>
+    where
+        Self: Sized,
+    {
+        Chain { first: self, second: another }
+    }
 }
 
 /// The struct implementing the [`Observer`] trait that does nothing.
@@ -567,7 +746,8 @@ impl<T: State, M: Model> Observer<T, M> for NoOpObserver {
         _: &dyn Handler<Box<dyn error::Error>>,
         _: &Resolution<M>,
         _: &GenericIdentifier,
-    ) {
+    ) -> bool {
+        true
     }
 
     fn on_type_resolved(
@@ -1163,7 +1343,6 @@ impl<S: State> Table<S> {
 
     fn resolution_to_type<M: Model>(
         &self,
-        referring_site: symbol::GlobalID,
         resolution: Resolution<M>,
     ) -> Result<r#type::Type<M>, Resolution<M>> {
         match resolution {
@@ -1174,7 +1353,28 @@ impl<S: State> Table<S> {
                     let id = match symbol.id {
                         GenericID::Struct(id) => SymbolID::Struct(id),
                         GenericID::Enum(id) => SymbolID::Enum(id),
-                        GenericID::Type(id) => SymbolID::Type(id),
+                        GenericID::Type(id) => {
+                            let type_symbol = self.get(id).unwrap();
+
+                            let instantiation =
+                                Instantiation::from_generic_arguments(
+                                    symbol.generic_arguments,
+                                    id.into(),
+                                    &type_symbol.generic_declaration.parameters,
+                                )
+                                .unwrap();
+
+                            let mut result_ty = M::from_default_type(
+                                type_symbol.r#type.clone(),
+                            );
+
+                            instantiation::instantiate(
+                                &mut result_ty,
+                                &instantiation,
+                            );
+
+                            return Ok(result_ty);
+                        }
 
                         _ => unreachable!(),
                     };
@@ -1186,21 +1386,25 @@ impl<S: State> Table<S> {
                 }
 
                 GenericID::TraitImplementationType(id) => {
-                    let trait_implementation = referring_site
-                        .into_positive_trait_implementation()
-                        .unwrap();
+                    let trait_implementation_type_symbol =
+                        self.get(id).unwrap();
 
-                    Ok(r#type::Type::MemberSymbol(term::MemberSymbol {
-                        id: r#type::MemberSymbolID::TraitImplementation(id),
-                        member_generic_arguments:
-                            GenericArguments::from_default_model(
-                                self.get(trait_implementation)
-                                    .unwrap()
-                                    .arguments
-                                    .clone(),
-                            ),
-                        parent_generic_arguments: symbol.generic_arguments,
-                    }))
+                    let instantiation = Instantiation::from_generic_arguments(
+                        symbol.generic_arguments,
+                        id.into(),
+                        &trait_implementation_type_symbol
+                            .generic_declaration
+                            .parameters,
+                    )
+                    .unwrap();
+
+                    let mut result_ty = M::from_default_type(
+                        trait_implementation_type_symbol.r#type.clone(),
+                    );
+
+                    instantiation::instantiate(&mut result_ty, &instantiation);
+
+                    Ok(result_ty)
                 }
 
                 _ => Err(Resolution::Generic(symbol)),
@@ -1210,14 +1414,6 @@ impl<S: State> Table<S> {
                 MemberGenericID::TraitType(id) => {
                     Ok(r#type::Type::TraitMember(r#type::TraitMember {
                         id,
-                        member_generic_arguments: symbol.generic_arguments,
-                        parent_generic_arguments: symbol
-                            .parent_generic_arguments,
-                    }))
-                }
-                MemberGenericID::AdtImplementationType(id) => {
-                    Ok(r#type::Type::MemberSymbol(term::MemberSymbol {
-                        id: r#type::MemberSymbolID::AdtImplementation(id),
                         member_generic_arguments: symbol.generic_arguments,
                         parent_generic_arguments: symbol
                             .parent_generic_arguments,
@@ -1541,7 +1737,7 @@ impl<S: State> Table<S> {
                 }
             };
 
-        match self.resolution_to_type(referring_site, resolution) {
+        match self.resolution_to_type(resolution) {
             Ok(ty) => Ok(ty),
             Err(resolution) => {
                 handler.receive(Box::new(ExpectType {
@@ -1796,46 +1992,6 @@ impl<S: State> Table<S> {
                     generic_arguments: generic_arguments.unwrap(),
                 })
             }
-            GlobalID::AdtImplementationType(id) => {
-                Resolution::MemberGeneric(MemberGeneric {
-                    id: id.into(),
-                    parent_generic_arguments: latest_resolution.map_or_else(
-                        || {
-                            let adt_impl_id = self.get(id).unwrap().parent_id;
-                            GenericArguments::from_default_model(
-                                self.get(adt_impl_id)
-                                    .unwrap()
-                                    .arguments
-                                    .clone(),
-                            )
-                        },
-                        |resolution| {
-                            resolution.into_generic().unwrap().generic_arguments
-                        },
-                    ),
-                    generic_arguments: generic_arguments.unwrap(),
-                })
-            }
-            GlobalID::AdtImplementationConstant(id) => {
-                Resolution::MemberGeneric(MemberGeneric {
-                    id: id.into(),
-                    parent_generic_arguments: latest_resolution.map_or_else(
-                        || {
-                            let adt_impl_id = self.get(id).unwrap().parent_id;
-                            GenericArguments::from_default_model(
-                                self.get(adt_impl_id)
-                                    .unwrap()
-                                    .arguments
-                                    .clone(),
-                            )
-                        },
-                        |resolution| {
-                            resolution.into_generic().unwrap().generic_arguments
-                        },
-                    ),
-                    generic_arguments: generic_arguments.unwrap(),
-                })
-            }
 
             GlobalID::TraitImplementationFunction(id) => {
                 assert!(latest_resolution.is_none());
@@ -1936,13 +2092,15 @@ impl<S: State> Table<S> {
             );
 
             if let Some(observer) = config.observer.as_mut() {
-                observer.on_resolution_resolved(
+                if !observer.on_resolution_resolved(
                     self,
                     referring_site,
                     handler,
                     &next_resolution,
                     generic_identifier,
-                );
+                ) {
+                    return Err(Error::Abort);
+                }
             }
 
             latest_resolution = Some(next_resolution);

@@ -1084,6 +1084,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
 impl<'t, S: table::State, O: Observer<S, infer::Model>>
     Bind<&syntax_tree::expression::Postfix> for Binder<'t, S, O>
 {
+    #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Postfix,
@@ -1451,10 +1452,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                                         ));
                                     }
 
-                                    std::num::IntErrorKind::InvalidDigit
-                                    | std::num::IntErrorKind::Empty
-                                    | std::num::IntErrorKind::Zero
-                                    | _ => {
+                                    _ => {
                                         unreachable!()
                                     }
                                 },
@@ -1771,15 +1769,6 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                 generic_arguments: _,
             }) => todo!("handle constant evaluation"),
 
-            resolution::Resolution::MemberGeneric(
-                resolution::MemberGeneric {
-                    id:
-                        resolution::MemberGenericID::AdtImplementationConstant(_id),
-                    generic_arguments: _,
-                    parent_generic_arguments: _,
-                },
-            ) => todo!("handle constant evaluation"),
-
             resolution => {
                 self.create_handler_wrapper(handler).receive(Box::new(
                     error::SymbolCannotBeUsedAsAnExpression {
@@ -2059,6 +2048,9 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     is_unpacked: element_syn.ellipsis().is_some(),
                 });
             }
+
+            let mut another = Some(32);
+            another.take();
 
             let tuple_type = simplify::simplify(
                 &Type::<infer::Model>::Tuple(r#type::Tuple {
@@ -3928,7 +3920,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
             }
         } else {
             assert!(loop_state.incoming_values.is_empty());
-            assert!(self.current_block().is_unreachable());
+            assert!(self.current_block().is_unreachable_or_terminated());
 
             Value::Literal(Literal::Unreachable(Unreachable {
                 r#type: {
@@ -4077,7 +4069,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<BlockState>
             // should have had no incoming values
             assert!(block_state.incoming_values.is_empty());
 
-            if self.current_block().is_unreachable() {
+            if self.current_block().is_unreachable_or_terminated() {
                 let inference_variable = InferenceVariable::new();
 
                 assert!(self

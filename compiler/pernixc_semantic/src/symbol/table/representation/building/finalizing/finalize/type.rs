@@ -8,10 +8,7 @@ use crate::{
     symbol::{
         table::{
             representation::{
-                building::finalizing::{
-                    finalizer::build_preset, occurrences::Occurrences,
-                    Finalizer,
-                },
+                building::finalizing::{occurrences::Occurrences, Finalizer},
                 RwLockContainer,
             },
             resolution, Building, Table,
@@ -27,29 +24,37 @@ pub const GENERIC_PARAMETER_STATE: usize = 0;
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The complete information of the type alias is built.
-pub const COMPLETE_STATE: usize = 2;
+pub const DEFINITION_STATE: usize = 2;
+
+/// The information required to check the bounds is built. (the definition of
+/// where caluses are built)
+pub const WELL_FORMED_STATE: usize = 3;
 
 /// All the bounds are checked.
-pub const CHECK_STATE: usize = 3;
+pub const CHECK_STATE: usize = 4;
 
 impl Finalize for Type {
     type SyntaxTree = syntax_tree::item::Type;
     const FINAL_STATE: usize = CHECK_STATE;
-    type Data = Occurrences;
+    type Data = (Occurrences, Occurrences, Occurrences);
 
     fn finalize(
         table: &Table<Building<RwLockContainer, Finalizer>>,
         symbol_id: ID<Self>,
         state_flag: usize,
         syntax_tree: &Self::SyntaxTree,
-        data: &mut Self::Data,
+        (
+            generic_parameter_occurrences,
+            where_clause_occurrences,
+            definition_occurrences,
+        ): &mut Self::Data,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match state_flag {
             GENERIC_PARAMETER_STATE => table.create_generic_parameters(
                 symbol_id,
                 syntax_tree.signature().generic_parameters().as_ref(),
-                data,
+                generic_parameter_occurrences,
                 handler,
             ),
 
@@ -57,12 +62,12 @@ impl Finalize for Type {
                 table.create_where_clause_predicates(
                     symbol_id,
                     syntax_tree.definition().where_clause().as_ref(),
-                    data,
+                    where_clause_occurrences,
                     handler,
                 );
             }
 
-            COMPLETE_STATE => {
+            DEFINITION_STATE => {
                 let ty = table
                     .resolve_type(
                         syntax_tree.definition().ty(),
@@ -71,7 +76,7 @@ impl Finalize for Type {
                             ellided_lifetime_provider: None,
                             ellided_type_provider: None,
                             ellided_constant_provider: None,
-                            observer: Some(data),
+                            observer: Some(definition_occurrences),
                             higher_ranked_lifetimes: None,
                         },
                         handler,
@@ -94,13 +99,13 @@ impl Finalize for Type {
                     ));
                 }
 
-                table.types.get(symbol_id).unwrap().write().r#type = ty;
-                data.build_all_occurrences_to::<build_preset::Complete>(
+                definition_occurrences.build_occurrences_to_definition(
                     table,
                     symbol_id.into(),
-                    false,
                     handler,
                 );
+
+                table.types.get(symbol_id).unwrap().write().r#type = ty;
             }
             CHECK_STATE => {
                 table.check_occurrences(symbol_id.into(), data, handler);

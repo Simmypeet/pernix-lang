@@ -1136,6 +1136,13 @@ impl<M: Model> GenericArguments<M> {
     /// # Errors
     ///
     /// See [`OverflowError`] for more information.
+    pub fn definite(
+        &self,
+        environment: &Environment<M, impl State, impl Normalizer<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        self.definite_with_context(environment, &mut Context::new())
+    }
+
     pub(super) fn definite_with_context(
         &self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,

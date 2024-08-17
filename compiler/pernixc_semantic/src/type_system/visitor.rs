@@ -91,27 +91,23 @@ struct RecursiveVisitorAdapter<'a, V> {
 
 macro_rules! implements_visit_recursive {
     ($self:ident, $visit_fn:ident, $term:ident, $location:ident) => {{
-        let current_locations = $self.current_locations.clone();
-        let next_locations = $self
-            .current_locations
-            .iter()
-            .copied()
-            .chain(std::iter::once($location.into()))
-            .collect::<Vec<_>>();
+        $self.current_locations.push($location.into());
 
-        if !$self.visitor.visit($term, next_locations.iter().copied()) {
-            return false;
+        let locations =
+            $self.current_locations.iter().copied().collect::<Vec<_>>();
+
+        match $term.$visit_fn($self) {
+            Ok(result) => {
+                if !result {
+                    return false;
+                }
+            }
+            Err(VisitNonApplicationTermError) => {}
         }
 
-        $self.current_locations = next_locations;
+        $self.current_locations.pop();
 
-        if !$term.$visit_fn($self).unwrap_or(true) {
-            return false;
-        }
-
-        $self.current_locations = current_locations;
-
-        true
+        $self.visitor.visit($term, locations.into_iter())
     }};
 }
 
@@ -258,16 +254,6 @@ pub trait Element: Sized + SubTerm {
 }
 
 /// Invokes the visitor on the term itself and all of its sub-terms recursively.
-///
-/// # Example
-///
-/// When a term `Type[int32, Vec[float32]]` got called, the visitor will be
-/// visiting `Type[int32, Vec[float32]]`, `int32`, `Vec[float32]`, and
-/// `float32`.
-///
-/// # Returns
-///
-/// Returns `true` if the visitor has visited all of the sub-terms of the term.
 pub fn accept_recursive<
     'a,
     M: Model,
@@ -279,17 +265,19 @@ pub fn accept_recursive<
     element: &'a E,
     visitor: &mut V,
 ) -> bool {
-    if !element.accept_single_recursive(visitor, std::iter::empty()) {
-        return false;
-    }
-
     let mut adapter =
         RecursiveVisitorAdapter { visitor, current_locations: Vec::new() };
 
     match element.accept_one_level(&mut adapter) {
-        Ok(result) => result,
-        Err(VisitNonApplicationTermError) => true,
+        Ok(result) => {
+            if !result {
+                return false;
+            }
+        }
+        Err(VisitNonApplicationTermError) => {}
     }
+
+    !element.accept_single_recursive(visitor, std::iter::empty())
 }
 
 /// Similar to [`accept_recursive()`], but for mutable references.
@@ -541,24 +529,6 @@ macro_rules! implements_type {
                             })
                         ),
             ),
-            Self::MemberSymbol(implementation) => Ok(implementation
-                .member_generic_arguments
-                .$accept_one_level::<Self, _, _>(
-                    $visitor,
-                    |id| SubMemberSymbolLocation {
-                        index: id,
-                        from_parent: false,
-                    }
-                )
-                && implementation
-                    .parent_generic_arguments
-                    .$accept_one_level::<Self, _, _>(
-                        $visitor,
-                        |id| SubMemberSymbolLocation {
-                            index: id,
-                            from_parent: true,
-                        }
-                    )),
         }
     };
 }

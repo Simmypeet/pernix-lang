@@ -96,7 +96,6 @@ pub enum Satisfiability {
 
 pub use constant_type::{ConstantType, QuerySource as ConstantTypeQuerySource};
 pub use outlives::Outlives;
-pub(super) use r#trait::resolve_implementation_with_context;
 pub use r#trait::{
     resolve_implementation, Implementation, ResolveError as TraitResolveError,
     Satisfied as TraitSatisfied, Trait,

@@ -12,7 +12,7 @@ use crate::{
                 building::finalizing::{
                     finalizer::{
                         self,
-                        build_preset::{self, Complete},
+                        builder::{self, Complete},
                     },
                     occurrences::Occurrences,
                     Finalizer, FunctionKind,
@@ -38,14 +38,18 @@ pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The function signature information is built, including parameters and return
 /// type.
-pub const SIGNATURE_STATE: usize = 2;
+pub const DEFINITION_STATE: usize = 2;
+
+/// The information required to check the bounds is built. (the definition of
+/// where caluses are built)
+pub const WELL_FORMED_STATE: usize = 3;
 
 /// The intermediate representation of the function is built.
-pub const DEFINITION_AND_CHECK_STATE: usize = 3;
+pub const INTERMEDIATE_REPRESENTATION_AND_CHECK_STATE: usize = 4;
 
 impl Finalize for Function {
     type SyntaxTree = FunctionKind;
-    const FINAL_STATE: usize = DEFINITION_AND_CHECK_STATE;
+    const FINAL_STATE: usize = INTERMEDIATE_REPRESENTATION_AND_CHECK_STATE;
     type Data = Occurrences;
 
     #[allow(clippy::too_many_lines, clippy::significant_drop_in_scrutinee)]
@@ -75,7 +79,7 @@ impl Finalize for Function {
                 handler,
             ),
 
-            SIGNATURE_STATE => {
+            DEFINITION_STATE => {
                 // determine if the function is const
                 if let FunctionKind::Normal(function) = syntax_tree {
                     *table
@@ -119,10 +123,9 @@ impl Finalize for Function {
                         .unwrap_or(Type::Error(term::Error));
 
                     // build the occurrences
-                    data.build_all_occurrences_to::<build_preset::Complete>(
+                    data.build_all_occurrences_to::<builder::Complete>(
                         table,
                         symbol_id.into(),
-                        false,
                         handler,
                     );
 
@@ -166,10 +169,9 @@ impl Finalize for Function {
                             )
                             .unwrap();
 
-                        data.build_all_occurrences_to::<build_preset::Complete>(
+                        data.build_all_occurrences_to::<builder::Complete>(
                             table,
                             symbol_id.into(),
-                            false,
                             handler,
                         );
 
@@ -197,15 +199,14 @@ impl Finalize for Function {
                 }
 
                 // build the occurrences
-                data.build_all_occurrences_to::<build_preset::Complete>(
+                data.build_all_occurrences_to::<builder::Complete>(
                     table,
                     symbol_id.into(),
-                    false,
                     handler,
                 );
             }
 
-            DEFINITION_AND_CHECK_STATE => {
+            INTERMEDIATE_REPRESENTATION_AND_CHECK_STATE => {
                 // check all the occurrences
                 table.check_occurrences(symbol_id.into(), data, handler);
                 table.check_where_clause(symbol_id.into(), handler);

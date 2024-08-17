@@ -303,8 +303,7 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
         Premise::default(),
         environment.table(),
         &NO_OP,
-    )
-    .0;
+    );
 
     let mut candidate: Option<(
         TraitImplementationID,
@@ -518,29 +517,26 @@ fn is_in_active_trait_implementation<M: Model>(
                 return Ok(None);
             }
 
-            match generic_arguments.deduce(
-                &GenericArguments::from_default_model(
-                    implementation.arguments.clone(),
-                ),
-                environment,
-            ) {
-                Ok(Succeeded {
-                    result: Deduction { instantiation, is_not_general_enough },
-                    constraints,
-                }) => Ok(Some(Succeeded::with_constraints(
-                    Satisfied::ByImplementation(Implementation {
-                        instantiation,
-                        id: trait_implementation,
-                        is_not_general_enough,
-                    }),
-                    constraints,
-                ))),
+            let Some(compatiblity) = generic_arguments
+                .compatible_with_context(
+                    &GenericArguments::from_default_model(
+                        implementation.arguments.clone(),
+                    ),
+                    Variance::Invariant,
+                    environment,
+                    context,
+                )?
+            else {
+                return Ok(None);
+            };
 
-                Err(deduction::Error::Overflow(OverflowError)) => {
-                    Err(OverflowError)
-                }
-
-                Err(_) => Ok(None),
+            if !compatiblity.result.forall_lifetime_errors.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(Succeeded::with_constraints(
+                    Satisfied::ByTraitContext,
+                    compatiblity.constraints,
+                )))
             }
         }
 

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use pernixc_base::{
-    diagnostic::{Handler, Storage},
+    diagnostic::Handler,
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::token::Identifier;
@@ -14,7 +14,7 @@ use super::{
     Binder,
 };
 use crate::{
-    arena::{Reserve, ID},
+    arena::ID,
     error::{
         AlreadyBoundFieldPattern, Error, FieldIsNotAccessible, FieldNotFound,
         FoundUnpackedElementInReferenceBoundTupleType,
@@ -23,14 +23,12 @@ use crate::{
     },
     ir::{
         address::{self, Address, Field, Memory, Stack},
-        alloca::Alloca,
-        instruction::{self, Instruction, RegisterAssignment, Store},
+        instruction::{self, Instruction, Store},
         pattern::{
             self, Irrefutable, Named, RegularTupleBinding, Structural, Wildcard,
         },
-        scope,
         value::{
-            register::{Assignment, Load, LoadKind, ReferenceOf, Register},
+            register::{Assignment, Load, LoadKind, ReferenceOf},
             Value,
         },
     },
@@ -41,7 +39,6 @@ use crate::{
         GlobalID, Struct,
     },
     type_system::{
-        fresh,
         instantiation::{
             self, Instantiation, MismatchedGenericArgumentCountError,
         },
@@ -98,88 +95,21 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
         address: &Address<infer::Model>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<Irrefutable<infer::Model>, CreatePatternError> {
-        let storage = Storage::<Box<dyn Error>>::default();
-
-        let in_scope_id = self.stack.current_scope().scope_id();
-        let latest_order =
-            self.stack.current_scope().variable_declarations().len();
-
-        let mut side_effect = SideEffect {
-            new_instructions: Vec::new(),
-            register_reserved: Reserve::new(
-                &self.intermediate_representation.registers,
-            ),
-            alloca_reserved: Reserve::new(
-                &self.intermediate_representation.allocas,
-            ),
-
-            in_scope_id,
-            latest_order,
-        };
-
-        let pattern = side_effect.create_irrefutable_interanl(
+        let pattern = self.create_irrefutable_interanl(
             self.table,
             syntax_tree,
             TypeBinding::Value(simplified_type),
             address,
             self.current_site,
-            &storage,
+            handler,
         )?;
-
-        // have no ICEs, propagate the diagnostic
-        storage.propagate(handler);
-
-        // insert new allocas
-        let SideEffect {
-            new_instructions,
-            register_reserved,
-            alloca_reserved,
-            ..
-        } = side_effect;
-
-        let register_reserved = register_reserved.into_reserved();
-        let alloca_reserved = alloca_reserved.into_reserved();
-
-        // insert the new instructions
-        let block = self.current_block_mut();
-        for instruction in new_instructions {
-            let _ = block.insert_instruction(instruction);
-        }
-
-        for (id, alloca) in alloca_reserved {
-            self.intermediate_representation
-                .allocas
-                .insert_with_id(id, alloca)
-                .unwrap();
-
-            self.stack.current_scope_mut().add_variable_declaration(id);
-        }
-
-        // insert new registers
-        for (id, register) in register_reserved {
-            self.intermediate_representation
-                .registers
-                .insert_with_id(id, register)
-                .unwrap();
-        }
 
         Ok(pattern)
     }
-}
 
-struct SideEffect<'a> {
-    new_instructions: Vec<Instruction<infer::Model>>,
-    register_reserved: Reserve<'a, Register<infer::Model>>,
-    alloca_reserved: Reserve<'a, Alloca<infer::Model>>,
-
-    in_scope_id: ID<scope::Scope>,
-    latest_order: usize,
-}
-
-impl<'a> SideEffect<'a> {
     fn create_reference_bound_named_pattern(
         &mut self,
-        mut address_type: Type<infer::Model>,
+        address_type: Type<infer::Model>,
         qualifier: Qualifier,
         span: Span,
         address: &Address<infer::Model>,
@@ -187,18 +117,15 @@ impl<'a> SideEffect<'a> {
         mutable: bool,
     ) -> Named<infer::Model> {
         // address_type <= alloca_type <= named_type
-        let register_id = self.register_reserved.reserve(Register {
-            assignment: Assignment::ReferenceOf(ReferenceOf {
+        let register_id = self.create_register_assignmnet(
+            Assignment::ReferenceOf(ReferenceOf {
                 is_local: false,
                 address: address.clone(),
                 qualifier,
                 lifetime: Lifetime::Inference(Erased),
             }),
-            span: None,
-        });
-
-        // freshen the lifetime of the address type
-        fresh::replace_with_fresh_lifeteime_inference(&mut address_type);
+            Some(span.clone()),
+        );
 
         let alloca_ty = Type::Reference(Reference {
             qualifier,
@@ -206,22 +133,15 @@ impl<'a> SideEffect<'a> {
             pointee: Box::new(address_type),
         });
 
-        let alloca_id = self.alloca_reserved.reserve(Alloca {
-            r#type: alloca_ty.clone(),
-            span: Some(span),
-            declared_in_scope_id: self.in_scope_id,
-            declaration_order: self.latest_order + self.alloca_reserved.len(),
-        });
+        let alloca_id =
+            self.create_alloca(alloca_ty.clone(), Some(span.clone()));
 
-        self.new_instructions.push(
-            instruction::Instruction::RegisterAssignment(RegisterAssignment {
-                id: register_id,
+        let _ = self.current_block_mut().insert_instruction(
+            instruction::Instruction::Store(Store {
+                address: Address::Memory(Memory::Alloca(alloca_id)),
+                value: Value::Register(register_id),
             }),
         );
-        self.new_instructions.push(instruction::Instruction::Store(Store {
-            address: Address::Memory(Memory::Alloca(alloca_id)),
-            value: Value::Register(register_id),
-        }));
 
         Named {
             name: identifier.span.str().to_owned(),
@@ -233,6 +153,7 @@ impl<'a> SideEffect<'a> {
 
     fn reduce_reference<'b>(
         &mut self,
+        span: Span,
         type_binding: &TypeBinding<'b, infer::Model>,
         mut address: Address<infer::Model>,
     ) -> (&'b Type<infer::Model>, Address<infer::Model>, Option<Qualifier>)
@@ -247,17 +168,12 @@ impl<'a> SideEffect<'a> {
         loop {
             match current_ty {
                 Type::Reference(reference) => {
-                    let register = self.register_reserved.reserve(Register {
-                        assignment: Assignment::Load(Load {
+                    let register = self.create_register_assignmnet(
+                        Assignment::Load(Load {
                             address,
                             kind: LoadKind::Copy,
                         }),
-                        span: None,
-                    });
-                    self.new_instructions.push(
-                        Instruction::RegisterAssignment(RegisterAssignment {
-                            id: register,
-                        }),
+                        Some(span.clone()),
                     );
 
                     // update the address, reference binding
@@ -290,8 +206,12 @@ impl<'a> SideEffect<'a> {
     ) -> Result<Irrefutable<infer::Model>, CreatePatternError> {
         Ok(match syntax_tree {
             syntax_tree::pattern::Irrefutable::Structural(structrual) => {
-                let (ty, address, reference_binding_info) =
-                    self.reduce_reference(&type_binding, address.clone());
+                let (ty, address, reference_binding_info) = self
+                    .reduce_reference(
+                        structrual.span(),
+                        &type_binding,
+                        address.clone(),
+                    );
 
                 // must be a struct type
                 let Type::Symbol(Symbol {
@@ -507,43 +427,28 @@ impl<'a> SideEffect<'a> {
                                 span: Some(named.identifier().span.clone()),
                             })
                         } else {
-                            let alloca_id =
-                                self.alloca_reserved.reserve(Alloca {
-                                    r#type: {
-                                        let mut ty = ty.clone();
-                                        fresh::replace_with_fresh_lifeteime_inference(
-                                            &mut ty,
-                                        );
-
-                                        ty
-                                    },
-                                    span: Some(named.identifier().span.clone()),
-                                    declared_in_scope_id: self.in_scope_id,
-                                    declaration_order: self.latest_order
-                                        + self.alloca_reserved.len(),
-                                });
-
-                            let id = self.register_reserved.reserve(Register {
-                                assignment: Assignment::Load(Load {
-                                    address: address.clone(),
-                                    kind: LoadKind::Move,
-                                }),
-                                span: None,
-                            });
-
-                            self.new_instructions.push(
-                                Instruction::RegisterAssignment(
-                                    RegisterAssignment { id },
-                                ),
+                            let alloca_id = self.create_alloca(
+                                ty.clone(),
+                                Some(named.identifier().span.clone()),
                             );
-                            self.new_instructions.push(Instruction::Store(
-                                Store {
-                                    address: Address::Memory(Memory::Alloca(
-                                        alloca_id,
-                                    )),
-                                    value: Value::Register(id),
-                                },
-                            ));
+
+                            let id = self.create_register_assignmnet(
+                                Assignment::Load(Load {
+                                    address: address.clone(),
+                                    kind: LoadKind::Copy,
+                                }),
+                                Some(named.identifier().span.clone()),
+                            );
+
+                            let _ =
+                                self.current_block_mut().insert_instruction(
+                                    Instruction::Store(Store {
+                                        address: Address::Memory(
+                                            Memory::Alloca(alloca_id),
+                                        ),
+                                        value: Value::Register(id),
+                                    }),
+                                );
 
                             Irrefutable::Named(Named {
                                 name: named.identifier().span.str().to_owned(),
@@ -577,8 +482,12 @@ impl<'a> SideEffect<'a> {
             }
 
             syntax_tree::pattern::Irrefutable::Tuple(tuple_pat) => {
-                let (ty, address, reference_binding_info) =
-                    self.reduce_reference(&type_binding, address.clone());
+                let (ty, address, reference_binding_info) = self
+                    .reduce_reference(
+                        tuple_pat.span(),
+                        &type_binding,
+                        address.clone(),
+                    );
 
                 let Type::Tuple(tuple_ty) = ty else {
                     handler.receive(Box::new(MismatchedPatternBindingType {
@@ -719,32 +628,28 @@ impl<'a> SideEffect<'a> {
                     }?;
 
                     let packed_element = {
-                        let mut ty = tuple_ty
+                        let ty = tuple_ty
                             .elements
                             .get(unpacked_position)
                             .unwrap()
                             .term
                             .clone();
-                        fresh::replace_with_fresh_lifeteime_inference(&mut ty);
 
                         // create a new alloca where all the unpacked elements
                         // will be stoered.
-                        let alloca_id = self.alloca_reserved.reserve(Alloca {
-                            r#type: ty.clone(),
-                            span: Some(
+                        let alloca_id = self.create_alloca(
+                            ty.clone(),
+                            Some(
                                 tuple_element_patterns
                                     .get(unpacked_position)
                                     .unwrap()
                                     .span(),
                             ),
-                            declared_in_scope_id: self.in_scope_id,
-                            declaration_order: self.latest_order
-                                + self.alloca_reserved.len(),
-                        });
+                        );
 
                         // variable declaration instruction and packing
-                        self.new_instructions.push(Instruction::TuplePack(
-                            instruction::TuplePack {
+                        let _ = self.current_block_mut().insert_instruction(
+                            Instruction::TuplePack(instruction::TuplePack {
                                 store_address: Address::Memory(Memory::Alloca(
                                     alloca_id,
                                 )),
@@ -754,8 +659,8 @@ impl<'a> SideEffect<'a> {
                                     before_packed_elements.len(),
                                 after_packed_element_count:
                                     after_packed_elements.len(),
-                            },
-                        ));
+                            }),
+                        );
 
                         self.create_irrefutable_interanl(
                             table,

@@ -100,10 +100,6 @@ impl<M: Model> LifetimeConstraint<M> {
                 outlives.query_with_context(environment, context)
             }
 
-            LifetimeConstraint::TypeOutlives(outlives) => {
-                outlives.query_with_context(environment, context)
-            }
-
             LifetimeConstraint::LifetimeMatching(pair) => {
                 let lhs = pair.first();
                 let rhs = pair.second();

@@ -31,7 +31,7 @@ impl<M: Model> Block<M> {
     /// Returns `true` if any of the instructions that will be added in the
     /// future will be unreachable (never executed)
     #[must_use]
-    pub fn is_unreachable(&self) -> bool {
+    pub fn is_unreachable_or_terminated(&self) -> bool {
         self.terminator.is_some()
             || (!self.is_entry && self.predecessors.is_empty())
     }
@@ -39,7 +39,7 @@ impl<M: Model> Block<M> {
     /// Adds a basic instruction to the block.
     #[must_use]
     pub fn insert_instruction(&mut self, instruction: Instruction<M>) -> bool {
-        if self.is_unreachable() {
+        if self.is_unreachable_or_terminated() {
             false
         } else {
             self.instructions.push(instruction);
@@ -80,8 +80,8 @@ pub struct ControlFlowGraph<M: Model> {
 )]
 #[allow(missing_docs)]
 pub enum InsertTerminatorError<M: Model> {
-    #[error("the block is already terminated with a terminator instruction")]
-    Unreachable,
+    #[error("the block is unreachable or already terminated")]
+    UnreachableOrTerminated,
 
     #[error(
         "found an invalid block ID either from the terminator instruction or \
@@ -131,9 +131,9 @@ impl<M: Model> ControlFlowGraph<M> {
         if self
             .get_block(block_id)
             .ok_or(InsertTerminatorError::InvalidBlockID(block_id))?
-            .is_unreachable()
+            .is_unreachable_or_terminated()
         {
-            return Err(InsertTerminatorError::Unreachable);
+            return Err(InsertTerminatorError::UnreachableOrTerminated);
         }
 
         match terminator {

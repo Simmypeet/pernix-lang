@@ -63,8 +63,6 @@ impl Arbitrary for GenericID {
             ID::arbitrary().prop_map(Self::TraitImplementationConstant),
             ID::arbitrary().prop_map(Self::AdtImplementation),
             ID::arbitrary().prop_map(Self::AdtImplementationFunction),
-            ID::arbitrary().prop_map(Self::AdtImplementationType),
-            ID::arbitrary().prop_map(Self::AdtImplementationConstant),
         ]
         .boxed()
     }

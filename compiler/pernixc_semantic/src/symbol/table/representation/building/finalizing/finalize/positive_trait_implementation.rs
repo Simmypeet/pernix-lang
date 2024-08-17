@@ -9,14 +9,14 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::build_preset, occurrences::Occurrences,
+                    finalizer::builder, occurrences::Occurrences,
                     Finalizer,
                 },
                 Index, RwLockContainer,
             },
             Building, Table,
         },
-        GlobalID, PositiveTraitImplementation,
+        PositiveTraitImplementation,
     },
 };
 
@@ -27,10 +27,11 @@ pub const GENERIC_PARAMETER_STATE: usize = 0;
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The generic arguments of the implementation are built.
-pub const GENERIC_ARGUMENTS_STATE: usize = 2;
+pub const DEFINITION_STATE: usize = 2;
 
-/// The complete information of the constant is built.
-pub const COMPLETE_STATE: usize = 3;
+/// The information required to check the bounds is built. (the definition of
+/// where caluses are built)
+pub const WELL_FORMED_STATE: usize = 3;
 
 /// Bounds check are performed
 pub const CHECK_STATE: usize = 4;
@@ -66,7 +67,7 @@ impl Finalize for PositiveTraitImplementation {
                 handler,
             ),
 
-            GENERIC_ARGUMENTS_STATE => {
+            DEFINITION_STATE => {
                 let parent_trait_id =
                     table.get(symbol_id).unwrap().implemented_id;
 
@@ -92,35 +93,15 @@ impl Finalize for PositiveTraitImplementation {
                     data,
                     handler,
                 );
-            }
 
-            COMPLETE_STATE => {
-                // build all the trait member
-                let member_ids = table
-                    .get(symbol_id)
-                    .unwrap()
-                    .member_ids_by_name
-                    .values()
-                    .copied()
-                    .map(GlobalID::from)
-                    .collect::<Vec<_>>();
-
-                for member_id in member_ids {
-                    let _ = table.build_preset::<build_preset::Complete>(
-                        member_id,
-                        Some(symbol_id.into()),
-                        false,
-                        handler,
-                    );
-                }
-
-                data.build_all_occurrences_to::<build_preset::Complete>(
+                data.build_all_occurrences_to::<builder::Complete>(
                     table,
                     symbol_id.into(),
-                    false,
                     handler,
                 );
             }
+
+            NON_FINAL_IMPLEMENTATION_STATE => {}
 
             CHECK_STATE => {
                 // make sure the implemented trait has the where clause
@@ -130,7 +111,6 @@ impl Finalize for PositiveTraitImplementation {
                     parent_trait_id,
                     Some(symbol_id.into()),
                     r#trait::WHERE_CLAUSE_STATE,
-                    true,
                     handler,
                 );
 

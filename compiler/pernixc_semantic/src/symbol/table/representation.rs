@@ -6,28 +6,22 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use building::drafting::Drafter;
 use getset::Getters;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use paste::paste;
-use pernixc_base::{
-    diagnostic::Handler,
-    source_file::{SourceElement, Span},
-};
+use pernixc_base::{diagnostic::Handler, source_file::Span};
 use pernixc_syntax::syntax_tree::{target::Target, AccessModifier};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use super::{Building, State, Suboptimal, Success, Table};
+use super::{State, Suboptimal, Success, Table};
 use crate::{
     arena::{Arena, ID},
-    error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
+    error,
     symbol::{
         self, Accessibility, Adt, AdtID, AdtImplementation,
-        AdtImplementationConstant, AdtImplementationFunction,
-        AdtImplementationType, Callable, CallableID, Constant, Enum, Function,
-        Generic, GenericDeclaration, GenericID, GenericTemplate, Global,
-        GlobalID, HierarchyRelationship, Implementation, ImplementationID,
-        ImplementationTemplate, Module, ModuleMemberID,
+        AdtImplementationFunction, Callable, CallableID, Constant, Enum,
+        Function, Generic, GenericDeclaration, GenericID, GenericTemplate,
+        Global, GlobalID, HierarchyRelationship, Implementation,
+        ImplementationID, ImplementationTemplate, Module, ModuleMemberID,
         NegativeTraitImplementation, PositiveTraitImplementation, Struct,
         Trait, TraitConstant, TraitFunction, TraitImplementationConstant,
         TraitImplementationFunction, TraitImplementationType, TraitType, Type,
@@ -311,23 +305,12 @@ pub struct Representation<T: Container> {
     adt_implementations:
         Arena<T::Wrap<AdtImplementation>, ID<AdtImplementation>>,
 
-    /// The ADT implementation types defined in the table.
-    #[get = "pub"]
-    adt_implementation_types:
-        Arena<T::Wrap<AdtImplementationType>, ID<AdtImplementationType>>,
     /// The ADT implementation functions defined in the table.
     #[get = "pub"]
     adt_implementation_functions: Arena<
         T::Wrap<AdtImplementationFunction>,
         ID<AdtImplementationFunction>,
     >,
-    /// The ADT implementation constants defined in the table.
-    #[get = "pub"]
-    adt_implementation_constants: Arena<
-        T::Wrap<AdtImplementationConstant>,
-        ID<AdtImplementationConstant>,
-    >,
-
     /// Maps the root module (target) names to their IDs.
     #[get = "pub"]
     root_module_ids_by_name: HashMap<String, ID<Module>>,
@@ -353,9 +336,7 @@ impl<T: Container> std::default::Default for Representation<T> {
             trait_implementation_functions: Arena::default(),
             trait_implementation_constants: Arena::default(),
             adt_implementations: Arena::default(),
-            adt_implementation_types: Arena::default(),
             adt_implementation_functions: Arena::default(),
-            adt_implementation_constants: Arena::default(),
             root_module_ids_by_name: HashMap::default(),
         }
     }
@@ -403,8 +384,6 @@ implements_element!(TraitImplementationType);
 implements_element!(TraitImplementationConstant);
 implements_element!(TraitImplementationFunction);
 implements_element!(AdtImplementation);
-implements_element!(AdtImplementationType);
-implements_element!(AdtImplementationConstant);
 implements_element!(AdtImplementationFunction);
 
 macro_rules! get {
@@ -724,6 +703,7 @@ impl<T: Container> Representation<T> {
                 .member_ids_by_name
                 .get(member_name)
                 .map(|x| (*x).into()),
+
             GlobalID::NegativeTraitImplementation(_)
             | GlobalID::TraitImplementationFunction(_)
             | GlobalID::TraitImplementationType(_)
@@ -735,9 +715,7 @@ impl<T: Container> Representation<T> {
             | GlobalID::TraitType(_)
             | GlobalID::TraitFunction(_)
             | GlobalID::TraitConstant(_)
-            | GlobalID::AdtImplementationFunction(_)
-            | GlobalID::AdtImplementationType(_)
-            | GlobalID::AdtImplementationConstant(_) => None,
+            | GlobalID::AdtImplementationFunction(_) => None,
         }
         .ok_or(GetMemberError::MemberNotFound)
     }
@@ -812,31 +790,7 @@ impl<T: Container> Representation<T> {
                 self.get_qualified_name(self.get(id)?.implemented_id.into())
             }
 
-            GlobalID::AdtImplementationType(id) => {
-                let mut qualified_name = self.get_qualified_name(
-                    self.get(self.get(id)?.parent_id)
-                        .unwrap()
-                        .implemented_id
-                        .into(),
-                )?;
-                qualified_name.push_str("::");
-                qualified_name.push_str(self.get(id)?.name.as_str());
-                Some(qualified_name)
-            }
-
             GlobalID::AdtImplementationFunction(id) => {
-                let mut qualified_name = self.get_qualified_name(
-                    self.get(self.get(id)?.parent_id)
-                        .unwrap()
-                        .implemented_id
-                        .into(),
-                )?;
-                qualified_name.push_str("::");
-                qualified_name.push_str(self.get(id)?.name.as_str());
-                Some(qualified_name)
-            }
-
-            GlobalID::AdtImplementationConstant(id) => {
                 let mut qualified_name = self.get_qualified_name(
                     self.get(self.get(id)?.parent_id)
                         .unwrap()
@@ -1025,31 +979,6 @@ impl<T: Container> Representation<T> {
                 }
 
                 Ok(current_min)
-            }
-
-            r#type::Type::MemberSymbol(member_symbol) => {
-                let symbol_accessibility = self
-                    .get_accessibility(member_symbol.id.into())
-                    .ok_or(GetTermAccessibilityError::InvalidID)?;
-                let member_generic_accessibility = self
-                    .get_generic_arguments_accessibility(
-                        &member_symbol.member_generic_arguments,
-                    )?;
-                let parent_generic_accessibility = self
-                    .get_generic_arguments_accessibility(
-                        &member_symbol.parent_generic_arguments,
-                    )?;
-
-                let generic_arguments_accessibility = self
-                    .merge_accessibility_down(
-                        member_generic_accessibility,
-                        parent_generic_accessibility,
-                    )?;
-
-                Ok(self.merge_accessibility_down(
-                    symbol_accessibility,
-                    generic_arguments_accessibility,
-                )?)
             }
 
             r#type::Type::TraitMember(member_symbol) => {
@@ -1394,9 +1323,7 @@ impl<T: Container> Representation<T> {
             (Type),
             (Constant),
             (Function),
-            (AdtImplementationType),
             (AdtImplementationFunction),
-            (AdtImplementationConstant),
             (
                 Variant,
                 self.get_accessibility(
@@ -1472,8 +1399,6 @@ impl<T: Container> Representation<T> {
             TraitImplementationFunction,
             NegativeTraitImplementation,
             AdtImplementation,
-            AdtImplementationType,
-            AdtImplementationConstant,
             AdtImplementationFunction
         )
     }
@@ -1538,9 +1463,7 @@ impl<T: Container> Representation<T> {
             TraitImplementationConstant,
             NegativeTraitImplementation,
             AdtImplementation,
-            AdtImplementationType,
-            AdtImplementationFunction,
-            AdtImplementationConstant
+            AdtImplementationFunction
         )
     }
 }
@@ -1586,6 +1509,7 @@ pub enum BuildTableError {
     Suboptimal(Table<Suboptimal>),
 }
 
+/*
 fn convert_rw_locked_arena<T: 'static>(
     arena: Arena<RwLock<T>, ID<T>>,
 ) -> Arena<T, ID<T>> {
@@ -1735,6 +1659,7 @@ fn draft_table(
 
     Ok(drafting_table)
 }
+*/
 
 /// Builds a symbol table from the given targets.
 ///
@@ -1743,9 +1668,11 @@ fn draft_table(
 /// See [`BuildTableError`] for more information.
 #[allow(clippy::result_large_err)]
 pub fn build(
-    targets: impl Iterator<Item = Target>,
-    handler: &dyn Handler<Box<dyn error::Error>>,
+    _targets: impl Iterator<Item = Target>,
+    _handler: &dyn Handler<Box<dyn error::Error>>,
 ) -> Result<Table<Success>, BuildTableError> {
+    todo!()
+    /*
     let handler = HandlerAdaptor { handler, received: RwLock::new(false) };
 
     let building_table =
@@ -1818,6 +1745,7 @@ pub fn build(
     } else {
         Ok(Table { representation, state: Success(()) })
     }
+    */
 }
 
 #[derive(

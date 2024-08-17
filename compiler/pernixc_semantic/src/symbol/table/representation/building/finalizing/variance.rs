@@ -121,7 +121,7 @@ impl<T: State> Table<T> {
         partial_variance: bool,
         _: &dyn Handler<Box<dyn Error>>,
     ) {
-        let (environment, _) = Environment::new(active_premise, self, &NO_OP);
+        let environment = Environment::new(active_premise, self, &NO_OP);
 
         for (id, _) in generic_parameters.lifetime_parameters_as_order() {
             let lifetime_term = Lifetime::Parameter(LifetimeParameterID {

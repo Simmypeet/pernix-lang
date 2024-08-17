@@ -364,7 +364,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     fn create_environment(
         &self,
     ) -> Environment<'_, infer::Model, S, infer::Context> {
-        let (environment, _) = Environment::new(
+        let environment = Environment::new(
             self.premise.clone(),
             self.table,
             &self.inference_context,

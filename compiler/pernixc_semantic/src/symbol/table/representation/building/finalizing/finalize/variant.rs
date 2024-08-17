@@ -21,7 +21,7 @@ use crate::{
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
 /// The complete information of the variant is built.
-pub const COMPLETE_STATE: usize = 1;
+pub const DEFINITION_STATE: usize = 1;
 
 /// Bounds check are performed
 pub const CHECK_STATE: usize = 2;
@@ -48,7 +48,6 @@ impl Finalize for Variant {
                     parent_enum_id,
                     Some(symbol_id.into()),
                     r#enum::GENERIC_PARAMETER_STATE,
-                    true,
                     handler,
                 );
             }
@@ -106,7 +105,6 @@ impl Finalize for Variant {
                     parent_enum_id,
                     Some(symbol_id.into()),
                     r#enum::WHERE_CLAUSE_STATE,
-                    true,
                     handler,
                 );
 

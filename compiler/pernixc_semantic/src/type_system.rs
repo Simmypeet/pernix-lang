@@ -111,7 +111,6 @@ pub struct Satisfied;
 #[allow(missing_docs)]
 pub enum LifetimeConstraint<M: Model> {
     LifetimeOutlives(Outlives<Lifetime<M>>),
-    TypeOutlives(Outlives<Type<M>>),
     LifetimeMatching(UnorderedPair<Lifetime<M>>),
 }
 

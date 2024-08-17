@@ -4,7 +4,7 @@ use proptest::{
     strategy::{BoxedStrategy, Strategy},
 };
 
-use super::{Array, Constant, Enum, MemberSymbolID, Primitive, Struct};
+use super::{Array, Constant, Enum, Primitive, Struct};
 use crate::{
     arena::ID,
     symbol::ConstantParameterID,
@@ -22,19 +22,6 @@ impl Arbitrary for Primitive {
         prop_oneof![
             proptest::num::i128::ANY.prop_map(Self::Integer),
             proptest::bool::ANY.prop_map(Self::Bool),
-        ]
-        .boxed()
-    }
-}
-
-impl Arbitrary for MemberSymbolID {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            ID::arbitrary().prop_map(Self::TraitImplementation),
-            ID::arbitrary().prop_map(Self::AdtImplementation),
         ]
         .boxed()
     }

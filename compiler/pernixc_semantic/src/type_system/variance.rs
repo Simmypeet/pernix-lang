@@ -125,9 +125,6 @@ impl<M: Model> Type<M> {
                         let adt_id = match symbol.id {
                             r#type::SymbolID::Struct(id) => AdtID::Struct(id),
                             r#type::SymbolID::Enum(id) => AdtID::Enum(id),
-                            r#type::SymbolID::Type(_) => {
-                                return Err(GetVarianceError::Undeterminable)
-                            }
                         };
 
                         let adt = table
@@ -210,9 +207,6 @@ impl<M: Model> Type<M> {
                         let adt_id = match symbol.id {
                             r#type::SymbolID::Struct(id) => AdtID::Struct(id),
                             r#type::SymbolID::Enum(id) => AdtID::Enum(id),
-                            r#type::SymbolID::Type(_) => {
-                                return Err(GetVarianceError::Undeterminable)
-                            }
                         };
 
                         let adt = table
@@ -349,11 +343,6 @@ impl<M: Model> Type<M> {
                             locations,
                         )
                     }
-
-                    (
-                        r#type::SubTypeLocation::MemberSymbol(_),
-                        Self::MemberSymbol(_),
-                    ) => Err(GetVarianceError::Undeterminable),
 
                     (
                         r#type::SubTypeLocation::TraitMember(location),

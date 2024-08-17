@@ -9,7 +9,7 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::build_preset, occurrences::Occurrences,
+                    finalizer::builder, occurrences::Occurrences,
                     Finalizer,
                 },
                 Index, RwLockContainer,
@@ -28,10 +28,14 @@ pub const GENERIC_PARAMETER_STATE: usize = 0;
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The complete information of the trait implementation type is built.
-pub const COMPLETE_STATE: usize = 2;
+pub const DEFINITION_STATE: usize = 2;
+
+/// The information required to check the bounds is built. (the definition of
+/// where caluses are built)
+pub const WELL_FORMED_STATE: usize = 3;
 
 /// Bounds check are performed
-pub const CHECK_STATE: usize = 3;
+pub const CHECK_STATE: usize = 4;
 
 impl Finalize for TraitImplementationType {
     type SyntaxTree = syntax_tree::item::Type;
@@ -60,7 +64,6 @@ impl Finalize for TraitImplementationType {
                     parent_implementation_id,
                     Some(symbol_id.into()),
                     positive_trait_implementation::GENERIC_PARAMETER_STATE,
-                    true,
                     handler,
                 );
 
@@ -81,7 +84,7 @@ impl Finalize for TraitImplementationType {
                 );
             }
 
-            COMPLETE_STATE => {
+            DEFINITION_STATE => {
                 let parent_implementation_id = table
                     .trait_implementation_types
                     .get(symbol_id)
@@ -91,8 +94,7 @@ impl Finalize for TraitImplementationType {
                 let _ = table.build_to(
                     parent_implementation_id,
                     Some(symbol_id.into()),
-                    positive_trait_implementation::GENERIC_ARGUMENTS_STATE,
-                    true,
+                    positive_trait_implementation::DEFINITION_STATE,
                     handler,
                 );
 
@@ -116,10 +118,9 @@ impl Finalize for TraitImplementationType {
                     )
                     .unwrap_or_default();
 
-                data.build_all_occurrences_to::<build_preset::Complete>(
+                data.build_all_occurrences_to::<builder::Complete>(
                     table,
                     symbol_id.into(),
-                    false,
                     handler,
                 );
             }
@@ -144,7 +145,6 @@ impl Finalize for TraitImplementationType {
                     trait_implementation_id,
                     Some(symbol_id.into()),
                     positive_trait_implementation::WHERE_CLAUSE_STATE,
-                    true,
                     handler,
                 );
 
@@ -177,7 +177,6 @@ impl Finalize for TraitImplementationType {
                     trait_type_id,
                     Some(symbol_id.into()),
                     trait_type::WHERE_CLAUSE_STATE,
-                    true,
                     handler,
                 );
 

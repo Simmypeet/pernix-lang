@@ -6,10 +6,7 @@ use proptest::{
     strategy::{BoxedStrategy, Just, Strategy},
 };
 
-use super::{
-    Array, MemberSymbolID, Pointer, Primitive, Qualifier, Reference, SymbolID,
-    Type,
-};
+use super::{Array, Pointer, Primitive, Qualifier, Reference, SymbolID, Type};
 use crate::{
     arena::ID,
     symbol::TypeParameterID,
@@ -106,20 +103,6 @@ impl Arbitrary for SymbolID {
         prop_oneof![
             proptest::num::usize::ANY.prop_map(|x| Self::Struct(ID::new(x))),
             proptest::num::usize::ANY.prop_map(|x| Self::Enum(ID::new(x))),
-            proptest::num::usize::ANY.prop_map(|x| Self::Type(ID::new(x))),
-        ]
-        .boxed()
-    }
-}
-
-impl Arbitrary for MemberSymbolID {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            ID::arbitrary().prop_map(Self::TraitImplementation),
-            ID::arbitrary().prop_map(Self::AdtImplementation),
         ]
         .boxed()
     }
@@ -164,12 +147,6 @@ impl Arbitrary for Type<Default> {
             let const_strat = param.1.clone().unwrap_or_else(Constant::arbitrary);
 
             prop_oneof![
-                6 => MemberSymbol::arbitrary_with((
-                    Some(lt_strat.clone()),
-                    Some(inner.clone()),
-                    Some(const_strat.clone())
-                ))
-                .prop_map(Self::MemberSymbol),
                 6 => MemberSymbol::arbitrary_with((
                     Some(lt_strat.clone()),
                     Some(inner.clone()),

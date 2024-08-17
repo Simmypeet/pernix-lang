@@ -12,14 +12,14 @@ pub trait Normalizer<M: Model>: Sized {
     /// Normalizes the type inference variable into the concrete type
     /// term.
     fn normalize_type(
-        ty: &M::TypeInference,
+        ty: &Type<M>,
         environment: &Environment<M, impl State, Self>,
     ) -> Result<Output<Type<M>, M>, OverflowError>;
 
     /// Normalizes the constant inference variable into the concrete constant
     /// term.
     fn normalize_constant(
-        constant: &M::ConstantInference,
+        constant: &Constant<M>,
         environment: &Environment<M, impl State, Self>,
     ) -> Result<Output<Constant<M>, M>, OverflowError>;
 }
@@ -33,14 +33,14 @@ pub const NO_OP: NoOp = NoOp;
 
 impl<M: Model> Normalizer<M> for NoOp {
     fn normalize_type(
-        _: &<M as Model>::TypeInference,
+        _: &Type<M>,
         _: &Environment<M, impl State, Self>,
     ) -> Result<Output<Type<M>, M>, OverflowError> {
         Ok(None)
     }
 
     fn normalize_constant(
-        _: &<M as Model>::ConstantInference,
+        _: &Constant<M>,
         _: &Environment<M, impl State, Self>,
     ) -> Result<Output<Constant<M>, M>, OverflowError> {
         Ok(None)

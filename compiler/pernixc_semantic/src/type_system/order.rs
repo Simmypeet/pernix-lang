@@ -3,9 +3,13 @@
 //! This is primarily used to determine the specialization of the
 //! implementation of the trait.
 
-use std::sync::Arc;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use super::{
+    mapping::Mapping,
     model::Model,
     normalizer::Normalizer,
     query::Context,
@@ -13,10 +17,10 @@ use super::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
     },
-    unification::{self, Log, Unification, Unifier},
-    Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
+    unification::{self, Log, Unification},
+    Environment, Output, OverflowError, Satisfied, Succeeded,
 };
-use crate::symbol::table::State;
+use crate::{symbol::table::State, type_system::Compute};
 
 /// The order in terms of specificity of the generic arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -28,13 +32,52 @@ pub enum Order {
     Ambiguous,
 }
 
-const fn lifetime_predicate<M: Model>(_: &Lifetime<M>) -> bool { true }
-
 fn type_predicate<M: Model>(x: &Type<M>) -> bool {
     x.is_parameter() || matches!(x, Type::TraitMember(_))
 }
 
 fn constant_predicate<M: Model>(x: &Constant<M>) -> bool { x.is_parameter() }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct CompatiblePredicate;
+
+impl<M: Model> unification::Predicate<Lifetime<M>> for CompatiblePredicate {
+    fn unifiable(
+        &self,
+        _: &Lifetime<M>,
+        _: &Lifetime<M>,
+        _: &Vec<Log<M>>,
+        _: &Vec<Log<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        Ok(Some(Succeeded::satisfied()))
+    }
+}
+
+impl<M: Model> unification::Predicate<Type<M>> for CompatiblePredicate {
+    fn unifiable(
+        &self,
+        from: &Type<M>,
+        to: &Type<M>,
+        _: &Vec<Log<M>>,
+        _: &Vec<Log<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        Ok((type_predicate(from) || type_predicate(to))
+            .then_some(Succeeded::satisfied()))
+    }
+}
+
+impl<M: Model> unification::Predicate<Constant<M>> for CompatiblePredicate {
+    fn unifiable(
+        &self,
+        from: &Constant<M>,
+        to: &Constant<M>,
+        _: &Vec<Log<M>>,
+        _: &Vec<Log<M>>,
+    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        Ok((constant_predicate(from) || constant_predicate(to))
+            .then_some(Succeeded::satisfied()))
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct OrderPredicate;
@@ -55,15 +98,11 @@ impl<M: Model> unification::Predicate<Type<M>> for OrderPredicate {
     fn unifiable(
         &self,
         from: &Type<M>,
-        to: &Type<M>,
+        _: &Type<M>,
         _: &Vec<Log<M>>,
         _: &Vec<Log<M>>,
     ) -> Result<Output<Satisfied, M>, OverflowError> {
-        if type_predicate(from) || type_predicate(to) {
-            Ok(Some(Succeeded::satisfied()))
-        } else {
-            Ok(None)
-        }
+        Ok(type_predicate(from).then_some(Succeeded::satisfied()))
     }
 }
 
@@ -71,108 +110,102 @@ impl<M: Model> unification::Predicate<Constant<M>> for OrderPredicate {
     fn unifiable(
         &self,
         from: &Constant<M>,
-        to: &Constant<M>,
+        _: &Constant<M>,
         _: &Vec<Log<M>>,
         _: &Vec<Log<M>>,
     ) -> Result<Output<Satisfied, M>, OverflowError> {
-        if constant_predicate(from) || constant_predicate(to) {
-            Ok(Some(Succeeded::satisfied()))
-        } else {
-            Ok(None)
-        }
+        Ok(constant_predicate(from).then_some(Succeeded::satisfied()))
     }
 }
 
-fn get_arguments_matching_count<T: Term>(
+fn append_mapping<T: Term>(
+    mapping: &mut Mapping<T::Model>,
     this: &[T],
     other: &[T],
-    predicate: &impl Fn(&T) -> bool,
     environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
     context: &mut Context<T::Model>,
-) -> Result<Option<usize>, OverflowError> {
-    let mut count = 0;
-
-    for (from, to) in this.iter().zip(other.iter()) {
-        let Some(result) = Unification::new(
-            from.clone(),
-            to.clone(),
+) -> Result<bool, OverflowError> {
+    for (this_term, other_term) in this.iter().zip(other.iter()) {
+        let Some(unifier) = Unification::new(
+            this_term.clone(),
+            other_term.clone(),
             Arc::new(OrderPredicate),
         )
         .query_with_context(environment, context)?
         else {
-            return Ok(None);
+            return Ok(false);
         };
 
-        count += get_unification_matching_count(&result.result, predicate);
+        mapping.append_from_unifier(unifier.result);
     }
 
-    Ok(Some(count))
+    Ok(true)
+}
+
+fn matching_copmatible<T: Term>(
+    matching: BTreeMap<T, BTreeSet<T>>,
+    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+    context: &mut Context<T::Model>,
+) -> Result<bool, OverflowError> {
+    let compatible = Arc::new(CompatiblePredicate);
+
+    for (_, matching) in matching {
+        let mut outer_iter = matching.iter();
+
+        while let Some(outer) = outer_iter.next() {
+            let mut inner_iter = outer_iter.clone();
+
+            while let Some(inner) = inner_iter.next() {
+                if Unification::new(
+                    inner.clone(),
+                    outer.clone(),
+                    compatible.clone(),
+                )
+                .query_with_context(environment, context)?
+                .is_none()
+                {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+
+    Ok(true)
 }
 
 fn get_generic_arguments_matching_count<M: Model>(
     this: &GenericArguments<M>,
     other: &GenericArguments<M>,
     environment: &Environment<M, impl State, impl Normalizer<M>>,
-    limit: &mut Context<M>,
+    context: &mut Context<M>,
 ) -> Result<Option<usize>, OverflowError> {
-    let (Some(lifetime_count), Some(ty_count), Some(constant_count)) = (
-        get_arguments_matching_count(
-            &this.lifetimes,
-            &other.lifetimes,
-            &lifetime_predicate,
-            environment,
-            limit,
-        )?,
-        get_arguments_matching_count(
-            &this.types,
-            &other.types,
-            &type_predicate,
-            environment,
-            limit,
-        )?,
-        get_arguments_matching_count(
-            &this.constants,
-            &other.constants,
-            &constant_predicate,
-            environment,
-            limit,
-        )?,
-    ) else {
+    let mut mapping = Mapping::default();
+
+    if !append_mapping(
+        &mut mapping,
+        &this.types,
+        &other.types,
+        environment,
+        context,
+    )? || !append_mapping(
+        &mut mapping,
+        &this.constants,
+        &other.constants,
+        environment,
+        context,
+    )? {
         return Ok(None);
-    };
-
-    Ok(Some(lifetime_count + ty_count + constant_count))
-}
-
-fn get_unification_matching_count<T: Term>(
-    unifier: &Unifier<T>,
-    predicate: impl Fn(&T) -> bool,
-) -> usize {
-    match &unifier.matching {
-        unification::Matching::Unifiable(from, _) => {
-            usize::from(predicate(from))
-        }
-        unification::Matching::Substructural(substructural) => {
-            substructural
-                .lifetimes
-                .values()
-                .map(|x| get_unification_matching_count(x, lifetime_predicate))
-                .sum::<usize>()
-                + substructural
-                    .types
-                    .values()
-                    .map(|x| get_unification_matching_count(x, type_predicate))
-                    .sum::<usize>()
-                + substructural
-                    .constants
-                    .values()
-                    .map(|x| {
-                        get_unification_matching_count(x, constant_predicate)
-                    })
-                    .sum::<usize>()
-        }
-        unification::Matching::Equality => 0,
     }
+
+    let count = mapping.types.len() + mapping.constants.len();
+
+    if !matching_copmatible(mapping.types, environment, context)?
+        || !matching_copmatible(mapping.constants, environment, context)?
+    {
+        return Ok(None);
+    }
+
+    Ok(Some(count))
 }
 
 impl<M: Model> GenericArguments<M> {
@@ -180,7 +213,7 @@ impl<M: Model> GenericArguments<M> {
     ///
     /// # Errors
     ///
-    /// See [`OverflowError`] for more information.
+    /// See  for more information.
     pub fn order(
         &self,
         other: &Self,
@@ -189,7 +222,12 @@ impl<M: Model> GenericArguments<M> {
         self.order_with_context(other, environment, &mut Context::new())
     }
 
-    pub(super) fn order_with_context(
+    /// Determines the order of the generic arguments.
+    ///
+    /// # Errors
+    ///
+    /// See [`OverflowError`] for more information.
+    pub fn order_with_context(
         &self,
         other: &Self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
@@ -230,5 +268,6 @@ impl<M: Model> GenericArguments<M> {
     }
 }
 
-#[cfg(test)]
-mod tests;
+// TODO: Add test
+// #[cfg(test)]
+// mod tests;

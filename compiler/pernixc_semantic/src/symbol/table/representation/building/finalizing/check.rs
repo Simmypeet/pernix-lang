@@ -35,7 +35,7 @@ use crate::{
     type_system::{
         compatible::{Compatibility, Compatible},
         deduction,
-        environment::{Environment, NewEnvironmentError},
+        environment::{self, Environment},
         instantiation::{self, Instantiation},
         model::{Default, Model},
         normalizer::{Normalizer, NO_OP},
@@ -972,27 +972,28 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             return;
         };
 
-        let (_, errors) = Environment::new(
+        let environment = Environment::new(
             self.get_active_premise::<Default>(id).unwrap(),
             self,
             &NO_OP,
         );
+        let environment_errors = environment.diagnose();
 
-        for error in errors {
+        for error in environment_errors {
             match error {
-                NewEnvironmentError::AmbiguousPredicates(predicates) => handler
+                environment::Error::AmbiguousPredicates(predicates) => handler
                     .receive(Box::new(AmbiguousPredicates {
                         predicates,
                         occurred_at_global_id: id,
                     })),
 
-                NewEnvironmentError::DefinintePremise(_) => todo!(),
+                environment::Error::DefinintePremise(_) => todo!(),
 
-                NewEnvironmentError::RecursiveTraitTypeEqualityPredicate(_) => {
+                environment::Error::RecursiveTraitTypeEqualityPredicate(_) => {
                     todo!()
                 }
 
-                NewEnvironmentError::OverflowCalculatingRequirement(_) => {
+                environment::Error::OverflowCalculatingRequirement(_) => {
                     todo!()
                 }
             }
@@ -1008,7 +1009,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         let active_premise = self.get_active_premise(id).unwrap();
-        let (environment, _) = Environment::new(active_premise, self, &NO_OP);
+        let environment = Environment::new(active_premise, self, &NO_OP);
 
         // check resolution occurrences
         for (resolution, generic_identifier) in occurrences.resolutions() {
@@ -1387,7 +1388,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let implementation_member_active_premise =
             self.get_active_premise(implementation_member_id.into()).unwrap();
 
-        let (environment, _) = Environment::new(
+        let environment = Environment::new(
             implementation_member_active_premise.clone(),
             self,
             &NO_OP,
@@ -1469,7 +1470,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             }
         };
 
-        let (environment, _) =
+        let environment =
             Environment::new(trait_member_active_premise, self, &NO_OP);
 
         // check for any extraneous predicates defined in the implementation
@@ -1642,7 +1643,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let premise =
             self.get_active_premise(implementation_id.into()).unwrap();
 
-        let (environment, _) = Environment::new(premise, self, &NO_OP);
+        let environment = Environment::new(premise, self, &NO_OP);
 
         environment.check_instantiation_predicates_by_generic_arguments(
             implementation_sym.implemented_id.into(),

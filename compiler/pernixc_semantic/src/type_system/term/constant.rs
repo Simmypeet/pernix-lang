@@ -18,7 +18,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index, DisplayObject, State, Table},
-        ConstantParameter, ConstantParameterID, GenericID, GlobalID, Variant,
+        ConstantParameter, ConstantParameterID, GlobalID, Variant,
     },
     type_system::{
         equality::Equality,
@@ -37,35 +37,6 @@ use crate::{
         Environment, Output, OverflowError,
     },
 };
-
-/// Enumeration of either a trait implementation constant or an ADT
-/// implementation constant.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
-)]
-#[allow(missing_docs)]
-pub enum MemberSymbolID {
-    TraitImplementation(ID<symbol::TraitImplementationConstant>),
-    AdtImplementation(ID<symbol::AdtImplementationConstant>),
-}
-
-impl From<MemberSymbolID> for GlobalID {
-    fn from(value: MemberSymbolID) -> Self {
-        match value {
-            MemberSymbolID::TraitImplementation(id) => id.into(),
-            MemberSymbolID::AdtImplementation(id) => id.into(),
-        }
-    }
-}
-
-impl From<MemberSymbolID> for GenericID {
-    fn from(value: MemberSymbolID) -> Self {
-        match value {
-            MemberSymbolID::TraitImplementation(id) => id.into(),
-            MemberSymbolID::AdtImplementation(id) => id.into(),
-        }
-    }
-}
 
 /// Represents a primitive constant.
 #[derive(
@@ -630,8 +601,9 @@ where
         environment: &Environment<M, impl State, impl Normalizer<M>>,
         _: &mut Context<M>,
     ) -> Result<Output<Self, M>, OverflowError> {
-        if let Constant::Inference(inference) = self {
-            Normalizer::normalize_constant(inference, environment)
+        if let Some(result) = Normalizer::normalize_constant(self, environment)?
+        {
+            Ok(Some(result))
         } else {
             Ok(None)
         }

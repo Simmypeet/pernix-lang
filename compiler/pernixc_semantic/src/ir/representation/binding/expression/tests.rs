@@ -33,10 +33,7 @@ use crate::{
     },
     symbol::{
         table::{
-            representation::{
-                building::finalizing::Finalizer, Index, IndexMut, Insertion,
-                RwLockContainer,
-            },
+            representation::{Index, IndexMut, Insertion, RwLockContainer},
             resolution::NoOpObserver,
             Building, Table,
         },
@@ -57,7 +54,7 @@ use crate::{
 };
 
 fn create_dummy_function(
-) -> (Table<Building<RwLockContainer, Finalizer>>, ID<Function>) {
+) -> (Table<Building<RwLockContainer, ()>>, ID<Function>) {
     let mut table = Table::default();
 
     let Insertion { id: test_module_id, duplication } =
@@ -3143,7 +3140,7 @@ fn array_type_mismatched_error() {
 fn unreachable_loop() {
     bind_as_value("loop {}", |binder, value| {
         assert!(value.into_literal().unwrap().is_unreachable());
-        assert!(binder.current_block().is_unreachable())
+        assert!(binder.current_block().is_unreachable_or_terminated())
     })
 }
 
@@ -3156,7 +3153,7 @@ fn single_break_loop() {
         assert_eq!(numeric_literal.integer_string, "32");
         assert!(numeric_literal.decimal_stirng.is_none());
 
-        assert!(!binder.current_block().is_unreachable());
+        assert!(!binder.current_block().is_unreachable_or_terminated());
     });
 
     bind_as_value("loop { break 64; break 32; }", |binder, value| {
@@ -3166,7 +3163,7 @@ fn single_break_loop() {
         assert_eq!(numeric_literal.integer_string, "64");
         assert!(numeric_literal.decimal_stirng.is_none());
 
-        assert!(!binder.current_block().is_unreachable());
+        assert!(!binder.current_block().is_unreachable_or_terminated());
     });
 }
 

@@ -9,7 +9,7 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::build_preset, occurrences::Occurrences,
+                    finalizer::builder, occurrences::Occurrences,
                     Finalizer,
                 },
                 Index, RwLockContainer,
@@ -29,13 +29,17 @@ pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The variants of the enum are built and some of the variance information is
 /// built
-pub const STRUCTURAL_AND_PARTIAL_VARIANCE_STATE: usize = 2;
+pub const PRE_DEFINITION_STATE: usize = 2;
 
 /// The complete information of the struct is built.
-pub const COMPLETE_STATE: usize = 3;
+pub const DEFINITION_STATE: usize = 3;
+
+/// The information required to check the bounds is built. (the definition of
+/// where caluses are built)
+pub const WELL_FORMED_STATE: usize = 4;
 
 /// Bounds check are performed
-pub const CHECK_STATE: usize = 4;
+pub const CHECK_STATE: usize = 5;
 
 impl Finalize for Enum {
     type SyntaxTree = syntax_tree::item::EnumSignature;
@@ -72,7 +76,7 @@ impl Finalize for Enum {
                 );
             }
 
-            STRUCTURAL_AND_PARTIAL_VARIANCE_STATE => {
+            PRE_DEFINITION_STATE => {
                 for variant in table
                     .get(symbol_id)
                     .unwrap()
@@ -84,16 +88,14 @@ impl Finalize for Enum {
                         variant,
                         Some(symbol_id.into()),
                         variant::COMPLETE_STATE,
-                        false,
                         handler,
                     );
                 }
 
                 // build all the occurrences to partial complete
-                data.build_all_occurrences_to::<build_preset::PartialComplete>(
+                data.build_all_occurrences_to::<builder::PartialComplete>(
                     table,
                     symbol_id.into(),
-                    false,
                     handler,
                 );
 
@@ -184,12 +186,11 @@ impl Finalize for Enum {
                     .generic_parameter_variances = generic_parameter_variances;
             }
 
-            COMPLETE_STATE => {
+            DEFINITION_STATE => {
                 // build all the occurrences to partial complete
-                data.build_all_occurrences_to::<build_preset::Complete>(
+                data.build_all_occurrences_to::<builder::Complete>(
                     table,
                     symbol_id.into(),
-                    false,
                     handler,
                 );
 

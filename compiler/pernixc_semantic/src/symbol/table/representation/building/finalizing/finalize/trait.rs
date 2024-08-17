@@ -12,7 +12,7 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::build_preset, occurrences::Occurrences,
+                    finalizer::builder, occurrences::Occurrences,
                     Finalizer,
                 },
                 Index, RwLockContainer,
@@ -32,14 +32,18 @@ pub const GENERIC_PARAMETER_STATE: usize = 0;
 /// Where cluase predicates are built
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
-/// All the trait members are built to completion.
-pub const MEMBERS_STATE: usize = 2;
+/// All the non-final trait implementation are built to completion
+pub const FINAL_IMPLEMENTATION_STATE: usize = 2;
 
-/// All the trait implementations are built to completion.
-pub const IMPLEMENTATIONS_STATE: usize = 3;
+/// All the final trait implementation are built to completion
+pub const NON_FINAL_IMPLEMENTATION_STATE: usize = 3;
+
+/// The information required to check the bounds is built. (the definition of
+/// where caluses are built)
+pub const WELL_FORMED_STATE: usize = 4;
 
 /// Bounds check are performed
-pub const CHECK_STATE: usize = 4;
+pub const CHECK_STATE: usize = 5;
 
 impl Finalize for Trait {
     type SyntaxTree = syntax_tree::item::TraitSignature;
@@ -64,6 +68,7 @@ impl Finalize for Trait {
                     handler,
                 );
             }
+
             WHERE_CLAUSE_STATE => {
                 table.create_where_clause_predicates(
                     symbol_id,
@@ -72,25 +77,10 @@ impl Finalize for Trait {
                     handler,
                 );
             }
-            MEMBERS_STATE => {
-                let trait_members = table
-                    .get(symbol_id)
-                    .unwrap()
-                    .member_ids_by_name
-                    .values()
-                    .copied()
-                    .collect::<Vec<_>>();
 
-                for member_id in trait_members {
-                    let _ = table.build_preset::<build_preset::Complete>(
-                        member_id.into(),
-                        Some(symbol_id.into()),
-                        false,
-                        handler,
-                    );
-                }
-            }
-            IMPLEMENTATIONS_STATE => {
+            FINAL_IMPLEMENTATION_STATE => {}
+
+            NON_FINAL_IMPLEMENTATION_STATE => {
                 let implementations = table
                     .get(symbol_id)
                     .unwrap()
@@ -101,21 +91,20 @@ impl Finalize for Trait {
                     .collect::<Vec<_>>();
 
                 for implementation_id in implementations {
-                    let _ = table.build_preset::<build_preset::Complete>(
+                    let _ = table.build_preset::<builder::Complete>(
                         implementation_id,
                         Some(symbol_id.into()),
-                        false,
                         handler,
                     );
                 }
 
-                data.build_all_occurrences_to::<build_preset::Complete>(
+                data.build_all_occurrences_to::<builder::Complete>(
                     table,
                     symbol_id.into(),
-                    false,
                     handler,
                 );
             }
+
             CHECK_STATE => {
                 table.check_occurrences(symbol_id.into(), data, handler);
                 table.check_where_clause(symbol_id.into(), handler);

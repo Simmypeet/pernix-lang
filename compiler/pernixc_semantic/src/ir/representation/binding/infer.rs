@@ -743,9 +743,13 @@ impl unification::Predicate<Constant<Model>> for UnificationConfig {
 
 impl Normalizer<Model> for Context {
     fn normalize_type(
-        ty: &InferenceVariable<Type<Model>>,
+        ty: &Type<Model>,
         environment: &Environment<Model, impl table::State, Self>,
     ) -> Result<Output<Type<Model>, Model>, OverflowError> {
+        let Type::Inference(ty) = ty else {
+            return Ok(None);
+        };
+
         Ok(
             if let Some(Inference::Known(normalized)) = environment
                 .normalizer()
@@ -760,9 +764,13 @@ impl Normalizer<Model> for Context {
     }
 
     fn normalize_constant(
-        constant: &InferenceVariable<Constant<Model>>,
+        constant: &Constant<Model>,
         environment: &Environment<Model, impl table::State, Self>,
     ) -> Result<Output<Constant<Model>, Model>, OverflowError> {
+        let Constant::Inference(constant) = constant else {
+            return Ok(None);
+        };
+
         Ok(
             if let Some(Inference::Known(normalized)) = environment
                 .normalizer()
@@ -1041,7 +1049,7 @@ impl Context {
         premise: Premise<Model>,
         table: &Table<impl table::State>,
     ) -> Result<(), UnifyError> {
-        let (environment, _) = Environment::new(premise.clone(), table, self);
+        let environment = Environment::new(premise.clone(), table, self);
 
         // obtains the unification result
         let Some(Succeeded { result: unifier, .. }) = Unification::new(
@@ -1072,7 +1080,7 @@ impl Context {
         premise: Premise<Model>,
         table: &Table<impl table::State>,
     ) -> Result<(), UnifyError> {
-        let (environment, _) = Environment::new(premise.clone(), table, self);
+        let environment = Environment::new(premise.clone(), table, self);
 
         // obtains the unification result
         let Some(Succeeded { result: unifier, .. }) = Unification::new(
@@ -1241,10 +1249,14 @@ struct ConstraintNormalizer<'a> {
 
 impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
     fn normalize_type(
-        ty: &<IntermediaryModel as model::Model>::TypeInference,
+        ty: &Type<IntermediaryModel>,
         environment: &Environment<IntermediaryModel, impl table::State, Self>,
     ) -> Result<Output<Type<IntermediaryModel>, IntermediaryModel>, OverflowError>
     {
+        let Type::Inference(ty) = ty else {
+            return Ok(None);
+        };
+
         match ty {
             InferenceOrConstraint::InferenceID(inference_id) => {
                 match environment
@@ -1279,12 +1291,16 @@ impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
     }
 
     fn normalize_constant(
-        constant: &<IntermediaryModel as model::Model>::ConstantInference,
+        constant: &Constant<IntermediaryModel>,
         environment: &Environment<IntermediaryModel, impl table::State, Self>,
     ) -> Result<
         Output<Constant<IntermediaryModel>, IntermediaryModel>,
         OverflowError,
     > {
+        let Constant::Inference(constant) = constant else {
+            return Ok(None);
+        };
+
         match constant {
             InferenceOrConstraint::InferenceID(inference_id) => {
                 match environment
@@ -1402,7 +1418,7 @@ impl Context {
         // normalze all the inference variables
         let constraint_normalizer = ConstraintNormalizer { context: self };
 
-        let (environment, _) = Environment::new(
+        let environment = Environment::new(
             DUMMY_PREMISE.clone(),
             &DUMMY_TABLE,
             &constraint_normalizer,

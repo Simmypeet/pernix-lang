@@ -5,7 +5,7 @@ use crate::{
         GenericID, LifetimeParameterID, TypeParameterID,
     },
     type_system::{
-        environment::{Environment, NewEnvironmentError},
+        environment::{Environment, Error},
         equality::Equality,
         model::Default,
         normalizer::NoOp,
@@ -157,7 +157,7 @@ fn check_ambiguous_without_equality() {
     assert_eq!(errors.len(), 3);
 
     assert!(errors.iter().any(|error| {
-        let NewEnvironmentError::AmbiguousPredicates(error) = error else {
+        let Error::AmbiguousPredicates(error) = error else {
             return false;
         };
 
@@ -168,7 +168,7 @@ fn check_ambiguous_without_equality() {
     }));
 
     assert!(errors.iter().any(|error| {
-        let NewEnvironmentError::AmbiguousPredicates(error) = error else {
+        let Error::AmbiguousPredicates(error) = error else {
             return false;
         };
 
@@ -178,7 +178,7 @@ fn check_ambiguous_without_equality() {
     }));
 
     assert!(errors.iter().any(|error| {
-        let NewEnvironmentError::AmbiguousPredicates(error) = error else {
+        let Error::AmbiguousPredicates(error) = error else {
             return false;
         };
 
@@ -336,7 +336,7 @@ fn check_ambiguous_equality() {
 
     assert_eq!(errors.len(), 1);
     assert!(errors.iter().any(|error| {
-        let NewEnvironmentError::AmbiguousPredicates(error) = error else {
+        let Error::AmbiguousPredicates(error) = error else {
             return false;
         };
 
@@ -415,9 +415,7 @@ fn check_recursive_equality() {
         .contains(&first_trait_type_equality));
 
     assert!(errors.iter().any(|error| {
-        let NewEnvironmentError::RecursiveTraitTypeEqualityPredicate(error) =
-            error
-        else {
+        let Error::RecursiveTraitTypeEqualityPredicate(error) = error else {
             return false;
         };
 

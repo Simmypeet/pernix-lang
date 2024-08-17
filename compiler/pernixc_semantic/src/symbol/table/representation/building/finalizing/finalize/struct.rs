@@ -11,7 +11,7 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::build_preset, occurrences::Occurrences,
+                    finalizer::builder, occurrences::Occurrences,
                     Finalizer,
                 },
                 Index, RwLockContainer, Table,
@@ -31,13 +31,17 @@ pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The fields of the struct are built and some of the variance information is
 /// built
-pub const STRUCTURAL_AND_PARTIAL_VARIANCE_STATE: usize = 2;
+pub const PRE_DEFINITION_STATE: usize = 2;
 
 /// The complete information of the struct is built.
-pub const COMPLETE_STATE: usize = 3;
+pub const DEFINITION_STATE: usize = 3;
+
+/// The information required to check the bounds is built. (the definition of
+/// where caluses are built)
+pub const WELL_FORMED_STATE: usize = 4;
 
 /// Bounds check are performed
-pub const CHECK_STATE: usize = 4;
+pub const CHECK_STATE: usize = 5;
 
 impl Finalize for Struct {
     type SyntaxTree = syntax_tree::item::Struct;
@@ -74,7 +78,7 @@ impl Finalize for Struct {
                 );
             }
 
-            STRUCTURAL_AND_PARTIAL_VARIANCE_STATE => {
+            PRE_DEFINITION_STATE => {
                 let mut field_syntax_trees_by_id = HashMap::new();
 
                 for field_syn in syntax_tree
@@ -161,10 +165,9 @@ impl Finalize for Struct {
                 }
 
                 // build all the occurrences to partial
-                data.build_all_occurrences_to::<build_preset::PartialComplete>(
+                data.build_all_occurrences_to::<builder::PartialComplete>(
                     table,
                     symbol_id.into(),
-                    false,
                     handler,
                 );
 
@@ -236,12 +239,11 @@ impl Finalize for Struct {
                 }
             }
 
-            COMPLETE_STATE => {
+            DEFINITION_STATE => {
                 // build all the occurrences to complete
-                data.build_all_occurrences_to::<build_preset::Complete>(
+                data.build_all_occurrences_to::<builder::Complete>(
                     table,
                     symbol_id.into(),
-                    false,
                     handler,
                 );
 

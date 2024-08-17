@@ -69,8 +69,6 @@ pub enum GenericID {
     TraitImplementationConstant(ID<TraitImplementationConstant>),
     AdtImplementation(ID<AdtImplementation>),
     AdtImplementationFunction(ID<AdtImplementationFunction>),
-    AdtImplementationType(ID<AdtImplementationType>),
-    AdtImplementationConstant(ID<AdtImplementationConstant>),
 }
 
 macro_rules! from_ids {
@@ -105,9 +103,7 @@ from_ids!(
     (TraitImplementationType, TraitImplementationType),
     (TraitImplementationConstant, TraitImplementationConstant),
     (AdtImplementation, AdtImplementation),
-    (AdtImplementationFunction, AdtImplementationFunction),
-    (AdtImplementationType, AdtImplementationType),
-    (AdtImplementationConstant, AdtImplementationConstant)
+    (AdtImplementationFunction, AdtImplementationFunction)
 );
 
 macro_rules! try_from_ids {
@@ -146,9 +142,7 @@ try_from_ids!(
     (TraitImplementationFunction, TraitImplementationFunction),
     (TraitImplementationConstant, TraitImplementationConstant),
     (AdtImplementation, AdtImplementation),
-    (AdtImplementationType, AdtImplementationType),
-    (AdtImplementationFunction, AdtImplementationFunction),
-    (AdtImplementationConstant, AdtImplementationConstant)
+    (AdtImplementationFunction, AdtImplementationFunction)
 );
 
 /// Represents a kind of symbol that accepts generic arguments.
@@ -285,8 +279,6 @@ pub enum GlobalID {
     TraitImplementationConstant(ID<TraitImplementationConstant>),
     AdtImplementation(ID<AdtImplementation>),
     AdtImplementationFunction(ID<AdtImplementationFunction>),
-    AdtImplementationType(ID<AdtImplementationType>),
-    AdtImplementationConstant(ID<AdtImplementationConstant>),
 }
 
 /// The private trait that is implemented by all symbols that can be implemented
@@ -1079,10 +1071,6 @@ pub struct TypeDefinition {
 /// module level. `type NAME = TYPE` syntax.
 pub type Type = GenericTemplate<ID<Module>, TypeDefinition>;
 
-/// Represents an adt implementation type, denoted by `type NAME = TYPE` syntax.
-pub type AdtImplementationType =
-    GenericTemplate<ID<AdtImplementation>, TypeDefinition>;
-
 /// A template struct representing all kinds of constant declarations.
 #[derive(
     Debug, Clone, PartialEq, Eq, Default, Deref, DerefMut, Getters, CopyGetters,
@@ -1108,13 +1096,6 @@ pub struct ConstantDefinition {
 /// syntax.
 pub type Constant =
     GenericTemplate<ID<Module>, ConstantTemplate<ConstantDefinition>>;
-
-/// Represents an adt implementation constant, denoted by `const NAME: TYPE =
-/// VALUE` syntax.
-pub type AdtImplementationConstant = GenericTemplate<
-    ID<AdtImplementation>,
-    ConstantTemplate<ConstantDefinition>,
->;
 
 /// A template struct representing all kinds of function declarations.
 #[derive(
@@ -1315,7 +1296,7 @@ impl<ParentID: Copy + Into<GlobalID>, ImplementedID: Copy, Definition>
 pub struct AdtImplementationDefinition {
     /// Maps the name of the adt implementation member to its ID.
     #[get = "pub"]
-    member_ids_by_name: HashMap<String, AdtImplementationMemberID>,
+    member_ids_by_name: HashMap<String, ID<AdtImplementationFunction>>,
 }
 
 /// Enumeration of either struct or enum.
@@ -1348,7 +1329,7 @@ pub type AdtImplementation = GenericTemplate<
 >;
 
 impl Parent for AdtImplementation {
-    type MemberID = AdtImplementationMemberID;
+    type MemberID = ID<AdtImplementationFunction>;
 }
 
 impl ParentSealed for AdtImplementation {
@@ -1410,33 +1391,6 @@ pub type TraitImplementationConstant = GenericTemplate<
     ID<PositiveTraitImplementation>,
     ConstantTemplate<TraitImplementationConstantDefinition>,
 >;
-
-/// An ID to all kinds of symbols that can be defined in a adt implementation.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
-)]
-#[allow(missing_docs)]
-pub enum AdtImplementationMemberID {
-    Function(ID<AdtImplementationFunction>),
-    Type(ID<AdtImplementationType>),
-    Constant(ID<AdtImplementationConstant>),
-}
-
-from_ids!(
-    AdtImplementationMemberID,
-    GlobalID,
-    (Function, AdtImplementationFunction),
-    (Type, AdtImplementationType),
-    (Constant, AdtImplementationConstant)
-);
-
-from_ids!(
-    AdtImplementationMemberID,
-    GenericID,
-    (Function, AdtImplementationFunction),
-    (Type, AdtImplementationType),
-    (Constant, AdtImplementationConstant)
-);
 
 /// An ID to all kinds of symbols that can be defined in a trait implementation.
 #[derive(

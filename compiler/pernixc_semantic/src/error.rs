@@ -3,7 +3,7 @@
 
 use std::{
     any::Any,
-    collections::HashSet,
+    collections::{BTreeSet, HashSet},
     fmt::{self, Debug},
 };
 
@@ -265,9 +265,7 @@ impl GlobalID {
             Self::Variant(_) => "enum variant",
             Self::NegativeTraitImplementation(_) => "negative implementation",
             Self::AdtImplementation(_) => "implementation",
-            Self::AdtImplementationType(_) => "implementation type",
             Self::AdtImplementationFunction(_) => "implementation function",
-            Self::AdtImplementationConstant(_) => "implementation constant",
         }
     }
 }
@@ -601,7 +599,7 @@ impl<T: State> Display<T> for ExpectTrait {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CyclicDependency {
     /// List of symbols that are involved in the cycle.
-    pub participants: Vec<GlobalID>,
+    pub participants: BTreeSet<GlobalID>,
 }
 
 impl<T: State> Display<T> for CyclicDependency {
@@ -621,8 +619,8 @@ impl<T: State> Display<T> for CyclicDependency {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "the cyclic dependency was found in the given set of symbols: \
-                 {symbol_list}"
+                "the cyclic dependency was found in the given set of \
+                 symbol(s): {symbol_list}"
             ),
         })?;
 

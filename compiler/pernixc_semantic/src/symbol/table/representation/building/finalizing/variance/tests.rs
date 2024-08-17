@@ -238,7 +238,7 @@ public struct A[T] {
 
 #[test]
 #[allow(clippy::similar_names)]
-fn single_struct_recursive_bivariant() {
+fn single_struct_recursive_covariant() {
     for _ in 0..1000 {
         let table = build_table_from_source(SINGLE_STRUCT_RECURSIVE_BIVARIANT);
 

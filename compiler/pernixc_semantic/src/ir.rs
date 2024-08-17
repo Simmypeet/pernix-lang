@@ -111,6 +111,27 @@ pub enum TypeOfError<M: Model> {
     },
 
     #[error(
+        "the `Variant` address requires the field `variant_id` to have an \
+         variant that has an associated value"
+    )]
+    VariantHasNoAssociatedValue {
+        /// The variant ID that doesn't have an associated value.
+        variant_id: ID<symbol::Variant>,
+    },
+
+    #[error(
+        "the `Variant` address contains a variant ID that has mismatched \
+         parent enum ID according to the `enum_address` field"
+    )]
+    InvalidVariantID {
+        /// The variant ID that is invalid.
+        variant_id: ID<symbol::Variant>,
+
+        /// The expected parent enum ID.
+        enum_id: ID<symbol::Enum>,
+    },
+
+    #[error(
         "the variant `Address::Base(Memory::ReferenceValue(register_id))` \
          requires the register to have a type of `Type::Reference` but found \
          the other type"
@@ -120,6 +141,18 @@ pub enum TypeOfError<M: Model> {
         value: Value<M>,
 
         /// The type of the [`NonReferenceAddressType::address`].
+        r#type: Type<M>,
+    },
+
+    #[error(
+        "the `Variant` address requires the field `enum_address` to have an \
+         address of type enum but found the other type"
+    )]
+    NonEnumAddressType {
+        /// The address that doesn't have the enum type.
+        address: Address<M>,
+
+        /// The type of the [`NonEnumAddressType::address`].
         r#type: Type<M>,
     },
 
@@ -193,6 +226,16 @@ pub enum TypeOfError<M: Model> {
 
         /// The struct where the field is expected to be.
         in_struct: ID<symbol::Struct>,
+    },
+
+    #[error("the `Variant::variant_address` contains an invalid enum type")]
+    InvalidEnumAddressInstantiation {
+        /// The enum id
+        enum_id: ID<symbol::Enum>,
+
+        /// The error occurred when calculating the instantiation.
+        mismatched_generic_argument_error:
+            MismatchedGenericArgumentCountError<M>,
     },
 
     #[error("the `Field::struct_address` contains an invalid struct type")]

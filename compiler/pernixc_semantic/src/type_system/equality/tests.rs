@@ -8,10 +8,10 @@ use proptest::{
 };
 
 use crate::{
-    arena::{self, Key, ID},
+    arena::{self, ID},
     symbol::{
-        table::{representation::Insertion, Building, Table},
-        Accessibility, GenericDeclaration, Module, TypeDefinition,
+        table::{Building, Table},
+        Module,
     },
     type_system::{
         equality::Equality,
@@ -271,7 +271,6 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
                 ))
                 .prop_map(|x| Box::new(x) as _),
                 1 => LocalCongruence::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
-                1 => TypeAlias::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
             ]
         })
         .boxed()
@@ -582,101 +581,6 @@ where
                 .map(|x| x.node_count())
                 .sum::<usize>()
     }
-}
-
-#[derive(Debug)]
-pub struct TypeAlias {
-    property: Box<dyn Property<Type<Default>>>,
-    aliased_at_lhs: bool,
-}
-
-impl Arbitrary for TypeAlias {
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let strategy =
-            args.unwrap_or_else(Box::<dyn Property<Type<_>>>::arbitrary);
-
-        (strategy, proptest::bool::ANY)
-            .prop_map(|(property, aliased_at_lhs)| TypeAlias {
-                property,
-                aliased_at_lhs,
-            })
-            .boxed()
-    }
-}
-
-impl Property<Type<Default>> for TypeAlias {
-    fn generate(
-        &self,
-        table: &mut Table<Building>,
-        premise: &mut Premise<Default>,
-        root_module_id: ID<Module>,
-    ) -> Result<(Type<Default>, Type<Default>), OverflowError> where {
-        let (inner_lhs, inner_rhs) =
-            self.property.generate(table, premise, root_module_id)?;
-
-        let expected_id = table.types().get_available_id();
-        let ty_alias = Type::Symbol(Symbol {
-            id: SymbolID::Type(expected_id),
-            generic_arguments: GenericArguments::default(),
-        });
-
-        let should_add_symbol = if self.aliased_at_lhs {
-            Equality::new(ty_alias.clone(), inner_rhs.clone())
-                .query(&Environment {
-                    premise: premise.clone(),
-                    table,
-                    normalizer: &NoOp,
-                })?
-                .is_none()
-        } else {
-            Equality::new(inner_lhs.clone(), ty_alias.clone())
-                .query(&Environment {
-                    premise: premise.clone(),
-                    table,
-                    normalizer: &NoOp,
-                })?
-                .is_none()
-        };
-
-        if should_add_symbol {
-            let module_id = table
-                .get_by_qualified_name(std::iter::once("test"))
-                .unwrap()
-                .into_module()
-                .unwrap();
-
-            let Insertion { id, duplication } = table
-                .insert_member(
-                    format!("T{}", expected_id.into_index()),
-                    Accessibility::Public,
-                    module_id,
-                    None,
-                    GenericDeclaration::default(),
-                    TypeDefinition {
-                        r#type: if self.aliased_at_lhs {
-                            inner_lhs.clone()
-                        } else {
-                            inner_rhs.clone()
-                        },
-                    },
-                )
-                .unwrap();
-
-            assert!(duplication.is_none());
-            assert_eq!(id, expected_id);
-        }
-
-        Ok(if self.aliased_at_lhs {
-            (ty_alias, inner_rhs)
-        } else {
-            (inner_lhs, ty_alias)
-        })
-    }
-
-    fn node_count(&self) -> usize { 1 + self.property.node_count() }
 }
 
 fn remove_equality_recursive(

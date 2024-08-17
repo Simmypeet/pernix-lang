@@ -9,7 +9,6 @@ use crate::{
         },
         Accessibility, AdtTemplate, GenericDeclaration, GenericID,
         LifetimeParameter, LifetimeParameterID, StructDefinition,
-        TypeDefinition,
     },
     type_system::{
         compatible::Compatible,
@@ -18,7 +17,7 @@ use crate::{
         predicate::Outlives,
         term::{
             lifetime::Lifetime,
-            r#type::{Primitive, Qualifier, Reference, SymbolID, Type},
+            r#type::{Primitive, Qualifier, Reference, Type},
             GenericArguments, Symbol,
         },
         variance::Variance,
@@ -300,162 +299,4 @@ fn compatible_with_mutable_reference() {
 
     assert!(result.constraints.contains(&a_and_c));
     assert!(result.constraints.contains(&b_and_d));
-}
-
-#[test]
-fn compatible_with_normalization() {
-    // struct A['a] { ... }
-    // type Eq['a] = A['a]
-    //
-    // Eq['a] == Eq['b]
-
-    let mut table = Table::<Building>::default();
-    let Insertion { id: root_module_id, duplication } =
-        table.create_root_module("test".to_string());
-
-    assert!(duplication.is_none());
-
-    // create a struct
-    let (struct_id, lt_parameter_id) = {
-        let Insertion { id: struct_id, duplication } = table
-            .insert_member(
-                "A".to_string(),
-                Accessibility::Public,
-                root_module_id,
-                None,
-                GenericDeclaration::default(),
-                AdtTemplate::<StructDefinition>::default(),
-            )
-            .unwrap();
-
-        assert!(duplication.is_none());
-
-        let struct_sym = table.get_mut(struct_id).unwrap();
-
-        let lifetime_parameter_id = struct_sym
-            .generic_declaration
-            .parameters
-            .add_lifetime_parameter(LifetimeParameter {
-                name: None,
-                span: None,
-            })
-            .unwrap();
-
-        (struct_id, lifetime_parameter_id)
-    };
-
-    // create a type alias
-    let ty_alias_id = {
-        let Insertion { id: ty_alias_id, duplication } = table
-            .insert_member(
-                "Eq".to_string(),
-                Accessibility::Public,
-                root_module_id,
-                None,
-                GenericDeclaration::default(),
-                TypeDefinition::default(),
-            )
-            .unwrap();
-
-        assert!(duplication.is_none());
-
-        let ty_alias_sym = table.get_mut(ty_alias_id).unwrap();
-
-        let lt_parameter_id = ty_alias_sym
-            .generic_declaration
-            .parameters
-            .add_lifetime_parameter(LifetimeParameter {
-                name: None,
-                span: None,
-            })
-            .unwrap();
-
-        ty_alias_sym.r#type = Type::Symbol(Symbol {
-            id: SymbolID::Struct(struct_id),
-            generic_arguments: GenericArguments {
-                lifetimes: vec![Lifetime::Parameter(LifetimeParameterID {
-                    parent: GenericID::Type(ty_alias_id),
-                    id: lt_parameter_id,
-                })],
-                types: Vec::new(),
-                constants: Vec::new(),
-            },
-        });
-
-        ty_alias_id
-    };
-
-    let a_lt = Lifetime::Parameter(LifetimeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(0),
-    });
-    let b_lt = Lifetime::Parameter(LifetimeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(1),
-    });
-
-    let eq_lhs = Type::<Default>::Symbol(Symbol {
-        id: ty_alias_id.into(),
-        generic_arguments: GenericArguments {
-            lifetimes: vec![a_lt.clone()],
-            types: Vec::new(),
-            constants: Vec::new(),
-        },
-    });
-    let eq_rhs = Type::<Default>::Symbol(Symbol {
-        id: ty_alias_id.into(),
-        generic_arguments: GenericArguments {
-            lifetimes: vec![b_lt.clone()],
-            types: Vec::new(),
-            constants: Vec::new(),
-        },
-    });
-
-    let mut check = |variance: Variance| {
-        // update the variance of lifetime
-        {
-            let struct_sym = table.get_mut(struct_id).unwrap();
-
-            *struct_sym
-                .generic_parameter_variances
-                .variances_by_lifetime_ids
-                .entry(lt_parameter_id)
-                .or_default() = variance;
-        }
-
-        let result = eq_lhs
-            .compatible(&eq_rhs, Variance::Covariant, &Environment {
-                premise: Premise::default(),
-                table: &table,
-                normalizer: &NoOp,
-            })
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(result.constraints.len(), 1);
-
-        let expected_constraint = match variance {
-            Variance::Covariant => {
-                LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: a_lt.clone(),
-                    bound: b_lt.clone(),
-                })
-            }
-            Variance::Contravariant => {
-                LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: b_lt.clone(),
-                    bound: a_lt.clone(),
-                })
-            }
-            Variance::Invariant => LifetimeConstraint::LifetimeMatching(
-                UnorderedPair::new(a_lt.clone(), b_lt.clone()),
-            ),
-        };
-
-        assert!(result.constraints.contains(&expected_constraint));
-    };
-
-    check(Variance::Covariant);
-    check(Variance::Contravariant);
-    check(Variance::Invariant);
 }

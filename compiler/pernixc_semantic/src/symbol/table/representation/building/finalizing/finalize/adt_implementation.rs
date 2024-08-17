@@ -9,7 +9,7 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::build_preset, occurrences::Occurrences,
+                    finalizer::builder, occurrences::Occurrences,
                     Finalizer,
                 },
                 Index, RwLockContainer, Table,
@@ -27,18 +27,18 @@ pub const GENERIC_PARAMETER_STATE: usize = 0;
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The generic arguments of the implementation are built.
-pub const GENERIC_ARGUMENTS_STATE: usize = 2;
+pub const DEFINITION_STATE: usize = 2;
 
-/// The complete information of the ADT implementation is built, including the
-/// implementation members.
-pub const COMPLETE_STATE: usize = 3;
+/// The information required to check the bounds is built. (the definition of
+/// where caluses are built)
+pub const WELL_FORMED_STATE: usize = 3;
 
 /// Bounds check are performed
 pub const CHECK_STATE: usize = 4;
 
 impl Finalize for AdtImplementation {
     type SyntaxTree = syntax_tree::item::ImplementationSignature;
-    const FINAL_STATE: usize = COMPLETE_STATE;
+    const FINAL_STATE: usize = CHECK_STATE;
     type Data = Occurrences;
 
     fn finalize(
@@ -68,7 +68,7 @@ impl Finalize for AdtImplementation {
                 );
             }
 
-            GENERIC_ARGUMENTS_STATE => {
+            DEFINITION_STATE => {
                 let parent_adt_id =
                     table.get(symbol_id).unwrap().implemented_id;
 
@@ -127,18 +127,16 @@ impl Finalize for AdtImplementation {
                     .collect::<Vec<_>>();
 
                 for member_id in member_ids {
-                    let _ = table.build_preset::<build_preset::Complete>(
+                    let _ = table.build_preset::<builder::Complete>(
                         member_id,
                         Some(symbol_id.into()),
-                        false,
                         handler,
                     );
                 }
 
-                data.build_all_occurrences_to::<build_preset::Complete>(
+                data.build_all_occurrences_to::<builder::Complete>(
                     table,
                     symbol_id.into(),
-                    false,
                     handler,
                 );
             }

@@ -154,7 +154,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         trait_id,
                         Some(generic_id.into()),
                         r#trait::WHERE_CLAUSE_STATE,
-                        true,
                         handler,
                     );
 

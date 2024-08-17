@@ -144,15 +144,12 @@ impl<M: Model> Compute for ConstantType<M> {
             Type::Error(_)
             | Type::TraitMember(_)
             | Type::Parameter(_)
-            | Type::Inference(_)
-            | Type::MemberSymbol(_) => Satisfiability::Unsatisfied,
+            | Type::Inference(_) => Satisfiability::Unsatisfied,
 
             Type::Symbol(Symbol { id, .. }) => match id {
                 SymbolID::Struct(_) | SymbolID::Enum(_) => {
                     Satisfiability::Congruent
                 }
-
-                SymbolID::Type(_) => Satisfiability::Unsatisfied,
             },
 
             Type::Pointer(_)

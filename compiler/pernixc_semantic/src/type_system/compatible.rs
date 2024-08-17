@@ -15,8 +15,8 @@ use super::{
     term::{
         constant::Constant,
         lifetime::{Forall, Lifetime},
-        r#type::{self, Type},
-        GenericArguments, MemberSymbol, ModelOf, Symbol, Term,
+        r#type::Type,
+        GenericArguments, ModelOf, Term,
     },
     unification::{self, Matching, Unification},
     variance::Variance,
@@ -162,48 +162,12 @@ impl<M: Model> unification::Predicate<Lifetime<M>>
         for (idx, log) in from_logs.iter().enumerate() {
             match log {
                 unification::Log::Substructural(location) => match location {
-                    TermLocation::Lifetime(lifetime) => {
-                        let SubLifetimeLocation::FromType(location) = lifetime;
-
-                        // shouldn't be from the type alias
-                        if matches!(
-                            (&current_from, location),
-                            (
-                                Type::Symbol(Symbol {
-                                    id: r#type::SymbolID::Type(_),
-                                    ..
-                                }),
-                                r#type::SubLifetimeLocation::Symbol(_)
-                            ) | (
-                                Type::MemberSymbol(MemberSymbol { .. }),
-                                r#type::SubLifetimeLocation::MemberSymbol(_)
-                            )
-                        ) {
-                            return Ok(None);
-                        }
-
+                    TermLocation::Lifetime(_) => {
                         // should be the last location
                         assert_eq!(idx, from_logs.len() - 1);
                     }
                     TermLocation::Type(location) => {
                         let SubTypeLocation::FromType(location) = location;
-
-                        // shouldn't be from the type alias
-                        if matches!(
-                            (&current_from, location),
-                            (
-                                Type::Symbol(Symbol {
-                                    id: r#type::SymbolID::Type(_),
-                                    ..
-                                }),
-                                r#type::SubTypeLocation::Symbol(_)
-                            ) | (
-                                Type::MemberSymbol(MemberSymbol { .. }),
-                                r#type::SubTypeLocation::MemberSymbol(_)
-                            )
-                        ) {
-                            return Ok(None);
-                        }
 
                         current_from =
                             location.get_sub_term(&current_from).unwrap();

@@ -24,10 +24,14 @@ pub const GENERIC_PARAMETER_STATE: usize = 0;
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The complete information of the constant is built.
-pub const COMPLETE_STATE: usize = 2;
+pub const DEFINITION_STATE: usize = 2;
+
+/// The information required to check the bounds is built. (the definition of
+/// where caluses are built)
+pub const WELL_FORMED_STATE: usize = 3;
 
 /// Bounds check are performed
-pub const CHECK_STATE: usize = 3;
+pub const CHECK_STATE: usize = 4;
 
 impl Finalize for AdtImplementationConstant {
     type SyntaxTree = syntax_tree::item::Constant;

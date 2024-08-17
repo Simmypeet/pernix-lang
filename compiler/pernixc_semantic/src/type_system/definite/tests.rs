@@ -9,11 +9,10 @@ use proptest::{
 
 use super::Definite;
 use crate::{
-    arena::{self, Key, ID},
+    arena::{self, ID},
     symbol::{
         table::{representation::Insertion, Building, Table},
-        Accessibility, GenericDeclaration, MemberID, Module, TypeDefinition,
-        TypeParameter,
+        Module,
     },
     type_system::{
         model::Default,
@@ -166,16 +165,15 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
                 .prop_map(|x| Box::new(x) as _),];
 
         leaf.prop_recursive(16, 32, 2, move |inner| {
-            let const_strat = args.clone().unwrap_or_else(
-                Box::<dyn Property<Constant<_>>>::arbitrary
-            );
+            let const_strat = args
+                .clone()
+                .unwrap_or_else(Box::<dyn Property<Constant<_>>>::arbitrary);
 
             prop_oneof![
                 4 => SymbolCongruence::<SymbolID>::arbitrary_with((
                     Some(inner.clone()),
                     Some(const_strat.clone())
                 )).prop_map(|x| Box::new(x) as _),
-                1 => TypeAlias::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _),
             ]
         })
         .boxed()
@@ -191,81 +189,6 @@ impl Arbitrary for Box<dyn Property<Constant<Default>>> {
             .prop_map(|x| Box::new(x) as _),]
         .boxed()
     }
-}
-
-#[derive(Debug)]
-pub struct TypeAlias {
-    property: Box<dyn Property<Type<Default>>>,
-}
-
-impl Arbitrary for TypeAlias {
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        args.unwrap_or_else(Box::<dyn Property<Type<_>>>::arbitrary)
-            .prop_map(|property| Self { property })
-            .boxed()
-    }
-}
-
-impl Property<Type<Default>> for TypeAlias {
-    fn generate(
-        &self,
-        module_id: ID<Module>,
-        table: &mut Table<Building>,
-        premise: &mut Premise<Default>,
-    ) -> Result<Type<Default>, ApplyPropertyError> {
-        let inner_term = self.property.generate(module_id, table, premise)?;
-
-        let mut generic_declaration = GenericDeclaration::default();
-        let type_parameter_id = generic_declaration
-            .parameters
-            .add_type_parameter(TypeParameter { name: None, span: None })
-            .unwrap();
-
-        let expected_type_id = table.types().get_available_id();
-
-        let generated_term = Type::Symbol(Symbol {
-            id: SymbolID::Type(expected_type_id),
-            generic_arguments: GenericArguments {
-                lifetimes: Vec::new(),
-                types: vec![Type::Parameter(MemberID {
-                    parent: expected_type_id.into(),
-                    id: type_parameter_id,
-                })],
-                constants: Vec::new(),
-            },
-        });
-
-        let should_add = Definite(generated_term.clone())
-            .query(&Environment {
-                premise: premise.clone(),
-                table,
-                normalizer: &NoOp,
-            })?
-            .is_none();
-
-        if should_add {
-            let Insertion { id, duplication } = table
-                .insert_member(
-                    format!("T{}", expected_type_id.into_index()),
-                    Accessibility::Public,
-                    module_id,
-                    None,
-                    generic_declaration,
-                    TypeDefinition { r#type: inner_term },
-                )
-                .unwrap();
-
-            assert_eq!(id, expected_type_id);
-            assert!(duplication.is_none());
-        }
-
-        Ok(generated_term)
-    }
-
-    fn node_count(&self) -> usize { 1 + self.property.node_count() }
 }
 
 fn property_based_testing<T: Term<Model = Default> + 'static>(

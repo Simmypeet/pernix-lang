@@ -3,14 +3,20 @@
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::{finalizer, occurrences::Occurrences, Finalize, Finalizer};
+use super::{
+    finalizer::{self, builder},
+    occurrences::Occurrences,
+    Finalize, Finalizer,
+};
 use crate::{
     arena::ID,
     error::Error,
     symbol::{
         table::{
-            self, representation::RwLockContainer, resolution, Building, State,
-            Table,
+            self,
+            representation::RwLockContainer,
+            resolution::{self, Observer},
+            Building, State, Table,
         },
         GenericID, GlobalID,
     },
@@ -88,7 +94,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         implemented_id: ID<T>,
         implemented_id_generic_parameter_state: usize,
         generic_identifier: &syntax_tree::GenericIdentifier,
-        ocurrences: &mut Occurrences,
+        occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> term::GenericArguments<model::Default>
     where
@@ -99,9 +105,15 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             implemented_id,
             Some(implementation_id.into()),
             implemented_id_generic_parameter_state,
-            true,
             handler,
         );
+
+        let active_premise = self
+            .get_active_premise(implementation_id.into())
+            .expect("should be a valid id");
+
+        let environment = Environment::new(active_premise, self, &NO_OP);
+        let mut builder = builder::Definition::new(&environment);
 
         let mut generic_arguments = self
             .resolve_generic_arguments(
@@ -112,7 +124,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     ellided_lifetime_provider: None,
                     ellided_type_provider: None,
                     ellided_constant_provider: None,
-                    observer: Some(ocurrences),
+                    observer: Some(&mut occurrences.chain(&mut builder)),
                     higher_ranked_lifetimes: None,
                 },
                 handler,
@@ -124,12 +136,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             .generic_arguments()
             .as_ref()
             .map_or_else(Default::default, |x| extract_syntax_tree(x));
-
-        let active_premise = self
-            .get_active_premise(implementation_id.into())
-            .expect("should be a valid id");
-
-        let (environment, _) = Environment::new(active_premise, self, &NO_OP);
 
         simplify_generic_arguments(
             &mut generic_arguments.types,

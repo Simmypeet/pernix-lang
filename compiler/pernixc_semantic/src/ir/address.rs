@@ -68,6 +68,16 @@ pub enum Offset {
     FromEnd(usize),
 }
 
+/// Interprets the enum addresss as an associated value of a particular variant.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Variant<M: Model> {
+    /// The address to the variant.
+    pub enum_address: Box<Address<M>>,
+
+    /// The variant of to interpret the enum address as.
+    pub variant_id: ID<symbol::Variant>,
+}
+
 /// The address points to an element in a tuple.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tuple<M: Model> {
@@ -114,6 +124,7 @@ pub enum Address<M: Model> {
     Field(Field<M>),
     Tuple(Tuple<M>),
     Index(Index<M>),
+    Variant(Variant<M>),
 }
 
 #[derive(
@@ -331,6 +342,76 @@ impl<M: Model> Representation<M> {
                 };
 
                 Ok(element_ty)
+            }
+            Address::Variant(variant) => {
+                let enum_ty = self.type_of_address(
+                    &variant.enum_address,
+                    current_site,
+                    environment,
+                )?;
+
+                let enum_ty = simplify::simplify(&enum_ty, environment).result;
+
+                let (enum_id, generic_arguments) = match enum_ty {
+                    Type::Symbol(Symbol {
+                        id: SymbolID::Enum(enum_id),
+                        generic_arguments,
+                    }) => (enum_id, generic_arguments),
+
+                    another_ty => {
+                        return Err(TypeOfError::NonEnumAddressType {
+                            address: (*variant.enum_address).clone(),
+                            r#type: another_ty,
+                        });
+                    }
+                };
+
+                let variant_sym =
+                    environment.table().get(variant.variant_id).ok_or(
+                        TypeOfError::InvalidGlobalID(variant.variant_id.into()),
+                    )?;
+
+                // mismatched enum id
+                if variant_sym.parent_enum_id() != enum_id {
+                    return Err(TypeOfError::InvalidVariantID {
+                        variant_id: variant.variant_id,
+                        enum_id,
+                    });
+                }
+
+                let enum_sym = environment
+                    .table()
+                    .get(enum_id)
+                    .ok_or(TypeOfError::InvalidGlobalID(enum_id.into()))?;
+
+                let instantiation = match Instantiation::from_generic_arguments(
+                    generic_arguments,
+                    enum_id.into(),
+                    &enum_sym.generic_declaration.parameters,
+                ) {
+                    Ok(instantiation) => instantiation,
+
+                    Err(error) => {
+                        return Err(
+                            TypeOfError::InvalidEnumAddressInstantiation {
+                                enum_id,
+                                mismatched_generic_argument_error: error,
+                            },
+                        )
+                    }
+                };
+
+                let mut variant_ty = M::from_default_type(
+                    variant_sym.associated_type.clone().ok_or(
+                        TypeOfError::VariantHasNoAssociatedValue {
+                            variant_id: variant.variant_id,
+                        },
+                    )?,
+                );
+
+                instantiation::instantiate(&mut variant_ty, &instantiation);
+
+                Ok(variant_ty)
             }
         }
     }
