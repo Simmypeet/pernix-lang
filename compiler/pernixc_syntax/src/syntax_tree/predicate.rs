@@ -4,7 +4,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_base::{
-    diagnostic::{Dummy, Handler},
+    diagnostic::Handler,
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::{
@@ -14,12 +14,14 @@ use pernixc_lexical::{
 
 use super::{
     r#type, ConnectedList, ConstantArgument, DelimitedList, Lifetime,
-    LifetimeParameter, QualifiedIdentifier,
+    LifetimeParameter, QualifiedIdentifier, UnionList,
 };
 use crate::{
     error::Error,
     parser::{DelimitedTree, Parser, Reading},
 };
+
+pub mod strategy;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -144,41 +146,6 @@ impl TraitBound {
     }
 }
 
-/// Similar to [`ConnectedList`] but specifically for list of constraints
-/// separated by plus sings and has no trailing separator.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct BoundList<T> {
-    /// The first element of the list.
-    #[get = "pub"]
-    first: T,
-
-    /// The rest of the elements of the list.
-    #[get = "pub"]
-    rest: Vec<(Punctuation, T)>,
-}
-
-impl<T> BoundList<T> {
-    /// Returns an iterator containing references to the elements of the list.
-    pub fn elements(&self) -> impl Iterator<Item = &T> {
-        std::iter::once(&self.first).chain(self.rest.iter().map(|(_, t)| t))
-    }
-
-    /// Returns an iterator containing the elements of the list.
-    pub fn into_elements(self) -> impl Iterator<Item = T> {
-        std::iter::once(self.first).chain(self.rest.into_iter().map(|(_, t)| t))
-    }
-}
-
-impl<T: SourceElement> SourceElement for BoundList<T> {
-    fn span(&self) -> Span {
-        let first = self.first.span();
-        match self.rest.last() {
-            Some(last) => first.join(&last.1.span()).unwrap(),
-            None => first,
-        }
-    }
-}
-
 /// Syntax Synopsis:
 /// ``` txt
 /// TraitBound:
@@ -190,13 +157,13 @@ pub struct Trait {
     #[get = "pub"]
     trait_keyword: Keyword,
     #[get = "pub"]
-    bounds: BoundList<TraitBound>,
+    bounds: UnionList<TraitBound>,
 }
 
 impl Trait {
     /// Dissolves the [`Trait`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Keyword, BoundList<TraitBound>) {
+    pub fn dissolve(self) -> (Keyword, UnionList<TraitBound>) {
         (self.trait_keyword, self.bounds)
     }
 }
@@ -220,7 +187,7 @@ pub struct Outlives {
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
-    bounds: BoundList<Lifetime>,
+    bounds: UnionList<Lifetime>,
 }
 
 impl Outlives {
@@ -228,7 +195,7 @@ impl Outlives {
     #[must_use]
     pub fn dissolve(
         self,
-    ) -> (OutlivesOperand, Punctuation, BoundList<Lifetime>) {
+    ) -> (OutlivesOperand, Punctuation, UnionList<Lifetime>) {
         (self.operand, self.colon, self.bounds)
     }
 }
@@ -318,7 +285,7 @@ pub struct ConstantType {
     #[get = "pub"]
     const_keyword: Keyword,
     #[get = "pub"]
-    bounds: BoundList<ConstantTypeBound>,
+    bounds: UnionList<ConstantTypeBound>,
 }
 
 impl SourceElement for ConstantType {
@@ -391,7 +358,7 @@ pub struct Tuple {
     #[get = "pub"]
     pub(super) tuple_keyword: Keyword,
     #[get = "pub"]
-    pub(super) operands: BoundList<TupleOperand>,
+    pub(super) operands: UnionList<TupleOperand>,
 }
 
 impl SourceElement for Tuple {
@@ -403,7 +370,7 @@ impl SourceElement for Tuple {
 impl Tuple {
     /// Dissolves the [`Tuple`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Keyword, BoundList<TupleOperand>) {
+    pub fn dissolve(self) -> (Keyword, UnionList<TupleOperand>) {
         (self.tuple_keyword, self.operands)
     }
 }
@@ -421,22 +388,6 @@ impl SourceElement for Predicate {
 }
 
 impl<'a> Parser<'a> {
-    fn parse_bound_list<T>(
-        &mut self,
-        mut parser: impl FnMut(&mut Self) -> Option<T>,
-    ) -> Option<BoundList<T>> {
-        let first = parser(self)?;
-        let mut rest = Vec::new();
-
-        while let Some(plus) =
-            self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
-        {
-            rest.push((plus, parser(self)?));
-        }
-
-        Some(BoundList { first, rest })
-    }
-
     #[allow(clippy::option_option)]
     fn try_parse_higher_ranked_lifetimes(
         &mut self,
@@ -491,7 +442,7 @@ impl<'a> Parser<'a> {
                 // eat const keyword
                 self.forward();
 
-                let bounds = self.parse_bound_list(|parser| {
+                let bounds = self.parse_union_list(|parser| {
                     let higher_ranked_lifetimes =
                         parser.try_parse_higher_ranked_lifetimes(handler)?;
                     let r#type = parser.parse_type(handler)?;
@@ -512,7 +463,7 @@ impl<'a> Parser<'a> {
                 // eat tuple keyword
                 self.forward();
 
-                let operands = self.parse_bound_list(|parser| {
+                let operands = self.parse_union_list(|parser| {
                     let higher_ranked_lifetimes =
                         parser.try_parse_higher_ranked_lifetimes(handler)?;
 
@@ -557,7 +508,7 @@ impl<'a> Parser<'a> {
                 // eat trait keyword
                 self.forward();
 
-                let bounds = self.parse_bound_list(|parser| {
+                let bounds = self.parse_union_list(|parser| {
                     let higher_rankded_lifetimes =
                         parser.try_parse_higher_ranked_lifetimes(handler)?;
 
@@ -598,7 +549,7 @@ impl<'a> Parser<'a> {
                 let lifetime = self.parse_lifetime_parameter(handler)?;
 
                 let colon = self.parse_punctuation(':', true, handler)?;
-                let bounds = self.parse_bound_list(|parser| {
+                let bounds = self.parse_union_list(|parser| {
                     parser.parse_lifetime(handler)
                 })?;
 
@@ -655,7 +606,7 @@ impl<'a> Parser<'a> {
                     (first_ty, _) => {
                         let colon =
                             self.parse_punctuation(':', true, handler)?;
-                        let bounds = self.parse_bound_list(|parser| {
+                        let bounds = self.parse_union_list(|parser| {
                             parser.parse_lifetime(handler)
                         })?;
 
@@ -672,4 +623,4 @@ impl<'a> Parser<'a> {
 }
 
 #[cfg(test)]
-pub(super) mod tests;
+mod test;

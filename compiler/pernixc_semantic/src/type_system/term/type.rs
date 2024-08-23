@@ -962,7 +962,7 @@ where
     fn normalize(
         &self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-        _context: &mut Context<M>,
+        context: &mut Context<M>,
     ) -> Result<Output<Self, M>, OverflowError> {
         match self {
             // transform the trait-member into trait-implementation-type
@@ -1000,7 +1000,7 @@ where
                 let new_type = Self::Tuple(Tuple { elements: result });
 
                 if let Some(result) =
-                    Normalizer::normalize_type(&new_type, environment)?
+                    Normalizer::normalize_type(&new_type, environment, context)?
                 {
                     Ok(Some(result))
                 } else {
@@ -1010,7 +1010,7 @@ where
 
             _ => {
                 if let Some(result) =
-                    Normalizer::normalize_type(self, environment)?
+                    Normalizer::normalize_type(self, environment, context)?
                 {
                     Ok(Some(result))
                 } else {

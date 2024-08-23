@@ -1,18 +1,15 @@
-use std::{
-    fmt::{Debug, Display, Write},
-    sync::Arc,
-};
+#![allow(missing_docs)]
 
-use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
+use std::fmt::{Display, Write};
+
 use pernixc_tests::input::Input;
 use proptest::{
-    prelude::Arbitrary,
-    prop_assert_eq, prop_oneof, proptest,
-    strategy::{BoxedStrategy, Just, Strategy},
-    test_runner::{TestCaseError, TestCaseResult},
+    prelude::{Arbitrary, BoxedStrategy, Just, Strategy, TestCaseError},
+    prop_assert_eq, prop_oneof,
+    test_runner::TestCaseResult,
 };
 
-use crate::{error::Error, token};
+use crate::token;
 
 /// Represents an input for the [`super::Delimiter`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -103,7 +100,7 @@ impl Input<&super::Delimited> for &Delimited {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum TokenTree {
-    Token(token::tests::Token),
+    Token(token::strategy::Token),
     Delimited(Delimited),
 }
 
@@ -113,7 +110,7 @@ impl Arbitrary for TokenTree {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            token::tests::Token::arbitrary().prop_map(Self::Token),
+            token::strategy::Token::arbitrary().prop_map(Self::Token),
             Delimited::arbitrary_with(args).prop_map(Self::Delimited)
         ]
         .boxed()
@@ -148,11 +145,11 @@ impl Input<&super::TokenTree> for &TokenTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 enum InsignificantToken {
-    Comment(token::tests::Comment),
-    WhiteSpaces(token::tests::WhiteSpaces),
+    Comment(token::strategy::Comment),
+    WhiteSpaces(token::strategy::WhiteSpaces),
 }
 
-impl From<InsignificantToken> for token::tests::Token {
+impl From<InsignificantToken> for token::strategy::Token {
     fn from(val: InsignificantToken) -> Self {
         match val {
             InsignificantToken::Comment(c) => Self::Comment(c),
@@ -167,8 +164,9 @@ impl Arbitrary for InsignificantToken {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            token::tests::Comment::arbitrary().prop_map(Self::Comment),
-            token::tests::WhiteSpaces::arbitrary().prop_map(Self::WhiteSpaces),
+            token::strategy::Comment::arbitrary().prop_map(Self::Comment),
+            token::strategy::WhiteSpaces::arbitrary()
+                .prop_map(Self::WhiteSpaces),
         ]
         .boxed()
     }
@@ -185,15 +183,15 @@ impl Display for InsignificantToken {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum SignificantToken {
-    Identifier(token::tests::Identifier),
-    Keyword(token::tests::Keyword),
-    NumericLiteral(token::tests::Numeric),
-    Punctuation(token::tests::Punctuation),
-    Character(token::tests::Character),
-    String(token::tests::String),
+    Identifier(token::strategy::Identifier),
+    Keyword(token::strategy::Keyword),
+    NumericLiteral(token::strategy::Numeric),
+    Punctuation(token::strategy::Punctuation),
+    Character(token::strategy::Character),
+    String(token::strategy::String),
 }
 
-impl From<SignificantToken> for token::tests::Token {
+impl From<SignificantToken> for token::strategy::Token {
     fn from(val: SignificantToken) -> Self {
         match val {
             SignificantToken::Identifier(i) => Self::Identifier(i),
@@ -212,10 +210,11 @@ impl Arbitrary for SignificantToken {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            token::tests::Identifier::arbitrary().prop_map(Self::Identifier),
-            token::tests::Keyword::arbitrary().prop_map(Self::Keyword),
-            token::tests::Numeric::arbitrary().prop_map(Self::NumericLiteral),
-            token::tests::Punctuation::arbitrary().prop_filter_map(
+            token::strategy::Identifier::arbitrary().prop_map(Self::Identifier),
+            token::strategy::Keyword::arbitrary().prop_map(Self::Keyword),
+            token::strategy::Numeric::arbitrary()
+                .prop_map(Self::NumericLiteral),
+            token::strategy::Punctuation::arbitrary().prop_filter_map(
                 "filters out the punctuation that might collide with the \
                  delimiters",
                 |p| {
@@ -229,8 +228,8 @@ impl Arbitrary for SignificantToken {
                     }
                 }
             ),
-            token::tests::Character::arbitrary().prop_map(Self::Character),
-            token::tests::String::arbitrary().prop_map(Self::String),
+            token::strategy::Character::arbitrary().prop_map(Self::Character),
+            token::strategy::String::arbitrary().prop_map(Self::String),
         ]
         .boxed()
     }
@@ -313,22 +312,5 @@ impl Display for TokenStream {
 impl Input<&super::TokenStream> for &TokenStream {
     fn assert(self, output: &super::TokenStream) -> TestCaseResult {
         self.token_trees.assert(&output.token_trees)
-    }
-}
-
-proptest! {
-    #[test]
-    #[allow(clippy::ignored_unit_patterns)]
-    fn token_stream_test(
-        input in TokenStream::arbitrary()
-    ) {
-        let source = input.to_string();
-        let source_file = Arc::new(SourceFile::temp(source)?);
-
-        let storage: Storage<Error> = Storage::new();
-        let token_stream =
-            super::TokenStream::tokenize(&source_file, &storage);
-
-        input.assert(&token_stream)?;
     }
 }

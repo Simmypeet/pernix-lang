@@ -22,6 +22,8 @@ use crate::{
     parser::{Parser, Reading},
 };
 
+pub mod strategy;
+
 /// Syntax Synopsis:
 /// ``` txt
 /// Primitive:
@@ -596,4 +598,4 @@ impl<'a> Parser<'a> {
 }
 
 #[cfg(test)]
-pub(super) mod tests;
+mod test;

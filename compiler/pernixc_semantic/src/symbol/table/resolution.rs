@@ -1243,6 +1243,7 @@ impl<S: State> Table<S> {
                     !constant_argument_syns.is_empty()
                         || !type_argument_syns.is_empty()
                 }
+                syntax_tree::GenericArgument::Elided(_) => todo!(),
             };
 
             if misordered {
@@ -1257,6 +1258,7 @@ impl<S: State> Table<S> {
                         syntax_tree::GenericArgument::Lifetime(_) => {
                             GenericKind::Lifetime
                         }
+                        syntax_tree::GenericArgument::Elided(_) => todo!(),
                     },
                     generic_argument: generic_argument.span(),
                 }));

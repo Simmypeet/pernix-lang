@@ -11,6 +11,8 @@ use crate::{
     token::{self, Punctuation, Token},
 };
 
+pub mod strategy;
+
 /// Is an enumeration of the different types of delimiters in the [`Delimited`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
@@ -207,4 +209,4 @@ impl Index<usize> for TokenStream {
 }
 
 #[cfg(test)]
-pub(crate) mod tests;
+pub(crate) mod test;

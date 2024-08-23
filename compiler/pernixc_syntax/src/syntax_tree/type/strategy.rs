@@ -4,15 +4,14 @@ use enum_as_inner::EnumAsInner;
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
-    prop_assert_eq, prop_oneof, proptest,
+    prop_assert_eq, prop_oneof,
     strategy::{BoxedStrategy, Just, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
 
 use crate::syntax_tree::{
-    self,
-    expression::tests::Expression,
-    tests::{
+    expression::strategy::Expression,
+    strategy::{
         ConnectedList, ConstantPunctuation, Lifetime, QualifiedIdentifier,
         Qualifier,
     },
@@ -470,21 +469,5 @@ impl Display for Type {
             Self::Local(i) => Display::fmt(i, f),
             Self::Phantom(i) => Display::fmt(i, f),
         }
-    }
-}
-
-proptest! {
-    #[test]
-    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
-    fn r#type(
-        type_specifier_input in Type::arbitrary(),
-    ) {
-        let source = type_specifier_input.to_string();
-        let type_specifier = syntax_tree::tests::parse(
-            &source,
-            |parser, handler| parser.parse_type(handler)
-        )?;
-
-        type_specifier_input.assert(&type_specifier)?;
     }
 }

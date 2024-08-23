@@ -530,7 +530,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     .patterns()
                     .iter()
                     .flat_map(ConnectedList::elements)
-                    .map(|x| &**x)
+                    .map(|x| &**x.pattern())
                     .collect::<Vec<_>>();
 
                 if tuple_element_patterns.len() != tuple_ty.elements.len() {

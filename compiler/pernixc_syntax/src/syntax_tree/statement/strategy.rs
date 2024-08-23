@@ -3,16 +3,15 @@ use std::fmt::{Display, Write};
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
-    prop_oneof, proptest,
+    prop_oneof,
     strategy::{BoxedStrategy, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
 
 use crate::syntax_tree::{
-    self,
-    expression::tests::{Binary, Brace, Expression, Terminator},
-    pattern::tests::Irrefutable,
-    r#type::tests::Type,
+    expression::strategy::{Binary, Brace, Expression, Terminator},
+    pattern::strategy::Irrefutable,
+    r#type::strategy::Type,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -222,22 +221,5 @@ impl Display for Semi {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.expression, f)?;
         f.write_str(";")
-    }
-}
-
-proptest! {
-    #[test]
-    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
-    fn statement(
-        statement_input in Statement::arbitrary()
-    ) {
-        let source = statement_input.to_string();
-
-        let statement = syntax_tree::tests::parse(
-            &source,
-            |parser, handler| parser.parse_statement(handler)
-        )?;
-
-        statement_input.assert(&statement)?;
     }
 }

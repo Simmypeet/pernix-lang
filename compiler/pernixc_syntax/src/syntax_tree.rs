@@ -25,6 +25,7 @@ pub mod item;
 pub mod pattern;
 pub mod predicate;
 pub mod statement;
+pub mod strategy;
 pub mod target;
 pub mod r#type;
 
@@ -322,10 +323,32 @@ impl SourceElement for ConstantArgument {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// Elided:
+///     '..'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Elided {
+    #[get = "pub"]
+    first_dot: Punctuation,
+    #[get = "pub"]
+    second_dot: Punctuation,
+}
+
+impl SourceElement for Elided {
+    fn span(&self) -> Span {
+        self.first_dot.span.join(&self.second_dot.span).unwrap()
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// GenericArgument:
 ///     Type
 ///     | ConstantArgument
 ///     | Lifetime
+///     | Elided
+///     | EffectArgument
 ///     ;
 /// ```
 #[derive(
@@ -336,6 +359,7 @@ pub enum GenericArgument {
     Type(Box<Type>),
     Constant(ConstantArgument),
     Lifetime(Lifetime),
+    Elided(Elided),
 }
 
 impl SourceElement for GenericArgument {
@@ -344,6 +368,7 @@ impl SourceElement for GenericArgument {
             Self::Type(type_specifier) => type_specifier.span(),
             Self::Lifetime(lifetime_argument) => lifetime_argument.span(),
             Self::Constant(const_argument) => const_argument.span(),
+            Self::Elided(elided) => elided.span(),
         }
     }
 }
@@ -526,6 +551,41 @@ impl SourceElement for Qualifier {
     }
 }
 
+/// Similar to [`ConnectedList`] but specifically for list of arguments
+/// separated by plus sings and has no trailing separator.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct UnionList<T> {
+    /// The first element of the list.
+    #[get = "pub"]
+    first: T,
+
+    /// The rest of the elements of the list.
+    #[get = "pub"]
+    rest: Vec<(Punctuation, T)>,
+}
+
+impl<T> UnionList<T> {
+    /// Returns an iterator containing references to the elements of the list.
+    pub fn elements(&self) -> impl Iterator<Item = &T> {
+        std::iter::once(&self.first).chain(self.rest.iter().map(|(_, t)| t))
+    }
+
+    /// Returns an iterator containing the elements of the list.
+    pub fn into_elements(self) -> impl Iterator<Item = T> {
+        std::iter::once(self.first).chain(self.rest.into_iter().map(|(_, t)| t))
+    }
+}
+
+impl<T: SourceElement> SourceElement for UnionList<T> {
+    fn span(&self) -> Span {
+        let first = self.first.span();
+        match self.rest.last() {
+            Some(last) => first.join(&last.1.span()).unwrap(),
+            None => first,
+        }
+    }
+}
+
 impl<'a> Parser<'a> {
     /// Parses a [`GenericIdentifier`]
     #[allow(clippy::missing_errors_doc)]
@@ -697,11 +757,39 @@ impl<'a> Parser<'a> {
                 }))
             }
 
+            // parse elided argument
+            Reading::Unit(Token::Punctuation(first_dot))
+                if first_dot.punctuation == '.' =>
+            {
+                // eat first dot
+                self.forward();
+
+                let second_dot = self.parse_punctuation('.', false, handler)?;
+
+                Some(GenericArgument::Elided(Elided { first_dot, second_dot }))
+            }
+
             // parse type argument
             _ => {
                 Some(GenericArgument::Type(Box::new(self.parse_type(handler)?)))
             }
         }
+    }
+
+    fn parse_union_list<T>(
+        &mut self,
+        mut parser: impl FnMut(&mut Self) -> Option<T>,
+    ) -> Option<UnionList<T>> {
+        let first = parser(self)?;
+        let mut rest = Vec::new();
+
+        while let Some(plus) =
+            self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
+        {
+            rest.push((plus, parser(self)?));
+        }
+
+        Some(UnionList { first, rest })
     }
 
     /// Parses a [`GenericArguments`]
@@ -726,4 +814,4 @@ impl<'a> Parser<'a> {
 }
 
 #[cfg(test)]
-pub(crate) mod tests;
+mod test;

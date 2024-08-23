@@ -1,24 +1,20 @@
-use std::{
-    collections::HashMap, fmt::Display, path::Path, str::FromStr, sync::Arc,
-};
+use std::{collections::HashMap, fmt::Display, path::Path, str::FromStr};
 
 use derive_more::From;
-use enum_as_inner::EnumAsInner;
-use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
 use pernixc_lexical::token::KeywordKind;
 use pernixc_tests::input::Input;
 use proptest::{
-    prelude::Arbitrary, prop_assert_eq, proptest, strategy::Strategy,
+    prelude::Arbitrary, prop_assert_eq, strategy::Strategy,
     test_runner::TestCaseError,
 };
 
-use crate::syntax_tree::{self, item, target::Target, tests::AccessModifier};
+use crate::syntax_tree::{self, item, strategy::AccessModifier};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleTree {
-    signature: Option<AccessModifier>,
-    module_content: item::tests::ModuleContent,
-    submodules_by_name: HashMap<String, ModuleTree>,
+    pub signature: Option<AccessModifier>,
+    pub module_content: item::strategy::ModuleContent,
+    pub submodules_by_name: HashMap<String, ModuleTree>,
 }
 
 impl Input<&super::ModuleTree> for &ModuleTree {
@@ -66,9 +62,9 @@ impl Arbitrary for ModuleTree {
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        let module_content = item::tests::ModuleContent::arbitrary_with(Some(
-            item::tests::Item::arbitrary_with(true),
-        ));
+        let module_content = item::strategy::ModuleContent::arbitrary_with(
+            Some(item::strategy::Item::arbitrary_with(true)),
+        );
         let submodule_name = proptest::string::string_regex("[a-z]+")
             .unwrap()
             .prop_filter("filter out keyword", |x| {
@@ -77,7 +73,7 @@ impl Arbitrary for ModuleTree {
             .boxed();
 
         let leaf = (
-            syntax_tree::tests::AccessModifier::arbitrary(),
+            syntax_tree::strategy::AccessModifier::arbitrary(),
             module_content.clone(),
         )
             .prop_map(|(access_modifier, module_content)| Self {
@@ -88,7 +84,7 @@ impl Arbitrary for ModuleTree {
 
         leaf.prop_recursive(3, 6, 2, move |inner| {
             (
-                syntax_tree::tests::AccessModifier::arbitrary(),
+                syntax_tree::strategy::AccessModifier::arbitrary(),
                 module_content.clone(),
                 proptest::collection::hash_map(
                     submodule_name.clone(),
@@ -112,7 +108,7 @@ impl Arbitrary for ModuleTree {
 
 impl Display for ModuleTree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use syntax_tree::tests::AccessModifier::*;
+        use syntax_tree::strategy::AccessModifier::*;
 
         write!(f, "{}", self.module_content)?;
 
@@ -184,37 +180,4 @@ impl ModuleTree {
 
         Ok(tempdir)
     }
-}
-
-proptest! {
-    #[test]
-    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
-    fn target(
-        mut target_module_tree in ModuleTree::arbitrary()
-    ) {
-        target_module_tree.signature = None;
-
-        let target_dir = target_module_tree.create_target()?;
-        let file = std::fs::File::open(target_dir.path().join("main.pnx"))?;
-
-        let root_source_file = Arc::new(
-            SourceFile::load(file, target_dir.path().join("main.pnx"))?
-        );
-        let storage = Storage::<Error>::new();
-        let target = Target::parse(&root_source_file, "test".to_string(), &storage);
-
-        if !storage.as_vec().is_empty() {
-            return Err(TestCaseError::fail(format!("parsing error: {:#?}",storage.as_vec())));
-        }
-
-        target_module_tree.assert(target.module_tree())?;
-    }
-}
-
-#[derive(Debug, EnumAsInner, From)]
-#[allow(dead_code)]
-enum Error {
-    Lexical(pernixc_lexical::error::Error),
-    Syntax(crate::error::Error),
-    Target(syntax_tree::target::Error),
 }

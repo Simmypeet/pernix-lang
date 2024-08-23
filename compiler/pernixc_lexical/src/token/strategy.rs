@@ -1,16 +1,16 @@
+#![allow(missing_docs)]
+
 use std::{
     fmt::{Display, Write},
     str::FromStr,
-    sync::Arc,
 };
 
 use derive_more::{Deref, DerefMut};
 use lazy_static::lazy_static;
-use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
-    prop_assert, prop_assert_eq, prop_oneof, proptest,
+    prop_assert, prop_assert_eq, prop_oneof,
     strategy::{BoxedStrategy, Just, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
@@ -18,10 +18,8 @@ use strum::IntoEnumIterator;
 
 use super::{KeywordKind, ESCAPE_SEQUENCE_BY_REPRESENTATION};
 
-/// Represents an input for the [`super::Identifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Identifier {
-    /// The valid identifier string.
     pub string: std::string::String,
 }
 
@@ -58,10 +56,8 @@ impl Input<&super::Identifier> for &Identifier {
     }
 }
 
-/// Represents a valid keyword input for the [`super::Keyword`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Keyword {
-    /// The kind of keyword.
     pub keyword: KeywordKind,
 }
 
@@ -94,10 +90,8 @@ impl Input<&super::Keyword> for &Keyword {
     }
 }
 
-/// Represents an input for the [`super::Numeric`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Numeric {
-    /// The valid numeric literal value string.
     pub value: std::string::String,
 }
 
@@ -128,12 +122,10 @@ impl Numeric {
     }
 }
 
-/// Represents an input for the delimited [`super::Comment`].
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut,
 )]
 pub struct DelimitedComment {
-    /// The content of the delimited comment (without the `/*` and `*/`).
     pub comment_body: std::string::String,
 }
 
@@ -578,48 +570,5 @@ impl Input<&super::Token> for &Token {
         }
 
         Ok(())
-    }
-}
-
-fn tokenize(
-    source: std::string::String,
-) -> Result<super::Token, proptest::test_runner::TestCaseError> {
-    let source_file = Arc::new(SourceFile::temp(source)?);
-    let mut iterator = source_file.iter();
-
-    let error_storage: Storage<super::error::Error> = Storage::new();
-    let token = match super::Token::lex(&mut iterator, &error_storage) {
-        Ok(token) => token,
-        Err(error) => {
-            return Err(TestCaseError::fail(format!(
-                "failed to tokenize the source code: {}, errors: {:?}",
-                error,
-                error_storage.as_vec()
-            )))
-        }
-    };
-
-    prop_assert!(iterator.next().is_none());
-
-    // no errors
-    prop_assert!(
-        error_storage.as_vec().is_empty(),
-        "{:?}",
-        error_storage.as_vec()
-    );
-
-    Ok(token)
-}
-
-proptest! {
-    #[test]
-    #[allow(clippy::ignored_unit_patterns)]
-    fn token(
-        input in Token::arbitrary()
-    ) {
-        let source = input.to_string();
-        let token = tokenize(source)?;
-
-        input.assert(&token)?;
     }
 }

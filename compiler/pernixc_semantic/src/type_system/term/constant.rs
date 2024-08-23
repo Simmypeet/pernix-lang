@@ -599,9 +599,10 @@ where
     fn normalize(
         &self,
         environment: &Environment<M, impl State, impl Normalizer<M>>,
-        _: &mut Context<M>,
+        context: &mut Context<M>,
     ) -> Result<Output<Self, M>, OverflowError> {
-        if let Some(result) = Normalizer::normalize_constant(self, environment)?
+        if let Some(result) =
+            Normalizer::normalize_constant(self, environment, context)?
         {
             Ok(Some(result))
         } else {

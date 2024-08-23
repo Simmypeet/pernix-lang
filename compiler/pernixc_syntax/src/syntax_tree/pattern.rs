@@ -22,6 +22,8 @@ use crate::{
     parser::{Parser, Reading},
 };
 
+pub mod strategy;
+
 /// Syntax Synopsis:
 /// ``` txt
 /// FieldAssociation:
@@ -156,8 +158,40 @@ impl SourceElement for Wildcard {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// TupleElement:
+///     '...'? Pattern
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct TupleElement<Pattern> {
+    #[get = "pub"]
+    ellipsis: Option<(Punctuation, Punctuation, Punctuation)>,
+    #[get = "pub"]
+    pattern: Box<Pattern>,
+}
+
+impl<Pattern: SourceElement> SourceElement for TupleElement<Pattern> {
+    fn span(&self) -> Span {
+        self.ellipsis.as_ref().map_or_else(
+            || self.pattern.span(),
+            |(dots, _, _)| dots.span().join(&self.pattern.span()).unwrap(),
+        )
+    }
+}
+
+impl<Pattern> TupleElement<Pattern> {
+    /// Dissolves the tuple element into its components.
+    pub fn dissolve(
+        self,
+    ) -> (Option<(Punctuation, Punctuation, Punctuation)>, Box<Pattern>) {
+        (self.ellipsis, self.pattern)
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// Tuple:
-///     '(' (Pattern (',' Pattern)* ','?)? ')'
+///     '(' (TupleElement (',' TupleElement)* ','?)? ')'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -165,7 +199,7 @@ pub struct Tuple<Pattern> {
     #[get = "pub"]
     left_paren: Punctuation,
     #[get = "pub"]
-    patterns: Option<ConnectedList<Box<Pattern>, Punctuation>>,
+    patterns: Option<ConnectedList<TupleElement<Pattern>, Punctuation>>,
     #[get = "pub"]
     right_paren: Punctuation,
 }
@@ -332,7 +366,7 @@ impl Irrefutable {
                 .patterns
                 .iter()
                 .flat_map(ConnectedList::elements)
-                .any(|x| x.contains_named()),
+                .any(|x| x.pattern.contains_named()),
             Self::Wildcard(_) => false,
         }
     }
@@ -489,7 +523,39 @@ impl<'a> Parser<'a> {
         let enclosed_tree = self.parse_delimited_list(
             Delimiter::Parenthesis,
             ',',
-            |parser| T::parse(parser, handler).map(Box::new),
+            |parser| {
+                let ellipsis = if parser
+                    .stop_at_significant()
+                    .into_token()
+                    .and_then(|x| x.into_punctuation().ok())
+                    .map_or(false, |x| x.punctuation == '.')
+                    && parser
+                        .peek_offset(1)
+                        .and_then(|x| x.into_token())
+                        .and_then(|x| x.into_punctuation().ok())
+                        .map_or(false, |x| x.punctuation == '.')
+                    && parser
+                        .peek_offset(2)
+                        .and_then(|x| x.into_token())
+                        .and_then(|x| x.into_punctuation().ok())
+                        .map_or(false, |x| x.punctuation == '.')
+                {
+                    let first_punc =
+                        parser.parse_punctuation('.', false, handler)?;
+                    let second_punc =
+                        parser.parse_punctuation('.', false, handler)?;
+                    let third_punc =
+                        parser.parse_punctuation('.', false, handler)?;
+
+                    Some((first_punc, second_punc, third_punc))
+                } else {
+                    None
+                };
+
+                let pattern = Box::new(T::parse(parser, handler)?);
+
+                Some(TupleElement { ellipsis, pattern })
+            },
             handler,
         )?;
 
@@ -674,4 +740,4 @@ impl<'a> Parser<'a> {
 }
 
 #[cfg(test)]
-pub(super) mod tests;
+mod test;

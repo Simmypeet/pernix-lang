@@ -16,6 +16,8 @@ use thiserror::Error;
 
 use crate::error::{self, InvalidEscapeSequence, UnterminatedDelimitedComment};
 
+pub mod strategy;
+
 /// Is an enumeration representing keywords in the Pernix programming language.
 ///
 /// Most enum variants names are the same as the keyword they represent, except
@@ -135,6 +137,14 @@ pub enum KeywordKind {
     Final,
     /// `extern` keyword
     Extern,
+    /// `effect` keyword
+    Effect,
+    /// `do` keyword
+    Do,
+    /// `try` keywrod
+    Try,
+    /// `with` keyword
+    With,
 }
 
 impl std::fmt::Display for KeywordKind {
@@ -230,6 +240,10 @@ impl KeywordKind {
             Self::Ref => "ref",
             Self::Final => "final",
             Self::Extern => "extern",
+            Self::Effect => "effect",
+            Self::Do => "do",
+            Self::Try => "try",
+            Self::With => "with",
         }
     }
 }
@@ -824,4 +838,4 @@ impl Token {
 }
 
 #[cfg(test)]
-pub(crate) mod tests;
+pub(crate) mod test;

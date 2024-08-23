@@ -4,15 +4,14 @@ use enum_as_inner::EnumAsInner;
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
-    prop_assert_eq, prop_oneof, proptest,
+    prop_assert_eq, prop_oneof,
     strategy::{BoxedStrategy, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
 
 use crate::syntax_tree::{
-    self,
-    expression::tests::{Boolean, Numeric},
-    tests::{ConnectedList, ConstantPunctuation, Identifier, Qualifier},
+    expression::strategy::{Boolean, Numeric},
+    strategy::{ConnectedList, ConstantPunctuation, Identifier, Qualifier},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -263,8 +262,51 @@ impl<Pattern: Display> Display for Structural<Pattern> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TupleElement<Pattern> {
+    pub ellipsis: bool,
+    pub pattern: Box<Pattern>,
+}
+
+impl<I: Debug, O: Debug> Input<&super::TupleElement<O>> for &TupleElement<I>
+where
+    for<'i, 'o> &'i I: Input<&'o O>,
+{
+    fn assert(self, output: &super::TupleElement<O>) -> TestCaseResult {
+        prop_assert_eq!(self.ellipsis, output.ellipsis.is_some());
+        self.pattern.assert(&output.pattern)
+    }
+}
+
+impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
+    for TupleElement<Pattern>
+{
+    type Parameters = Option<BoxedStrategy<Pattern>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (proptest::bool::ANY, args.unwrap_or_else(Pattern::arbitrary))
+            .prop_map(|(ellipsis, pattern)| Self {
+                ellipsis,
+                pattern: Box::new(pattern),
+            })
+            .boxed()
+    }
+}
+
+impl<Pattern: Display> Display for TupleElement<Pattern> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.ellipsis {
+            write!(f, "...")?;
+        }
+
+        write!(f, "{}", self.pattern)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tuple<Pattern> {
-    pub patterns: Option<ConnectedList<Box<Pattern>, ConstantPunctuation<','>>>,
+    pub patterns:
+        Option<ConnectedList<TupleElement<Pattern>, ConstantPunctuation<','>>>,
 }
 
 impl<I: Debug, O: Debug> Input<&super::Tuple<O>> for &Tuple<I>
@@ -283,9 +325,11 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let pattern = args.unwrap_or_else(Pattern::arbitrary);
+        let pattern = TupleElement::arbitrary_with(Some(
+            args.unwrap_or_else(Pattern::arbitrary),
+        ));
         proptest::option::of(ConnectedList::arbitrary_with(
-            pattern.prop_map(Box::new),
+            pattern,
             ConstantPunctuation::<','>::arbitrary(),
         ))
         .prop_map(|patterns| Self { patterns })
@@ -502,38 +546,5 @@ impl Display for Refutable {
             Self::Named(named) => write!(f, "{named}"),
             Self::Wildcard(wildcard) => write!(f, "{wildcard}"),
         }
-    }
-}
-
-proptest! {
-    #[test]
-    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
-    fn irrefutable_test(
-        irrefutable_input in Irrefutable::arbitrary()
-    ) {
-        let source = irrefutable_input.to_string();
-
-        let irrefutable = syntax_tree::tests::parse(
-            &source,
-            |parser, handler| parser.parse_irrefutable_pattern(handler)
-        )?;
-
-        irrefutable_input.assert(&irrefutable)?;
-    }
-
-
-    #[test]
-    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
-    fn refutable_test(
-        refutable_input in Refutable::arbitrary()
-    ) {
-        let source = refutable_input.to_string();
-
-        let irrefutable = syntax_tree::tests::parse(
-            &source,
-            |parser, handler| parser.parse_refutable_pattern(handler)
-        )?;
-
-        refutable_input.assert(&irrefutable)?;
     }
 }

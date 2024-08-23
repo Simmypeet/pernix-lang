@@ -24,6 +24,8 @@ use crate::{
     parser::{Parser, Reading},
 };
 
+pub mod strategy;
+
 /// Syntax Synopsis:
 ///
 /// ``` txt
@@ -2207,4 +2209,4 @@ impl Parser<'_> {
 }
 
 #[cfg(test)]
-pub(super) mod tests;
+mod test;

@@ -2,6 +2,7 @@
 
 use super::{
     model::Model,
+    query::Context,
     term::{constant::Constant, r#type::Type},
     Environment, Output, OverflowError,
 };
@@ -14,6 +15,7 @@ pub trait Normalizer<M: Model>: Sized {
     fn normalize_type(
         ty: &Type<M>,
         environment: &Environment<M, impl State, Self>,
+        context: &mut Context<M>,
     ) -> Result<Output<Type<M>, M>, OverflowError>;
 
     /// Normalizes the constant inference variable into the concrete constant
@@ -21,6 +23,7 @@ pub trait Normalizer<M: Model>: Sized {
     fn normalize_constant(
         constant: &Constant<M>,
         environment: &Environment<M, impl State, Self>,
+        context: &mut Context<M>,
     ) -> Result<Output<Constant<M>, M>, OverflowError>;
 }
 
@@ -35,6 +38,7 @@ impl<M: Model> Normalizer<M> for NoOp {
     fn normalize_type(
         _: &Type<M>,
         _: &Environment<M, impl State, Self>,
+        _: &mut Context<M>,
     ) -> Result<Output<Type<M>, M>, OverflowError> {
         Ok(None)
     }
@@ -42,6 +46,7 @@ impl<M: Model> Normalizer<M> for NoOp {
     fn normalize_constant(
         _: &Constant<M>,
         _: &Environment<M, impl State, Self>,
+        _: &mut Context<M>,
     ) -> Result<Output<Constant<M>, M>, OverflowError> {
         Ok(None)
     }

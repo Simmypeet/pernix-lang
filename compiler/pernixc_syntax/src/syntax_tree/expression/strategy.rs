@@ -4,18 +4,18 @@ use pernixc_tests::input::Input;
 use proptest::{
     arbitrary::Arbitrary,
     prelude::prop::test_runner::TestCaseResult,
-    prop_assert_eq, prop_oneof, proptest,
+    prop_assert_eq, prop_oneof,
     strategy::{BoxedStrategy, Just, Strategy},
     test_runner::TestCaseError,
 };
 
 use crate::syntax_tree::{
     self,
-    pattern::tests::Refutable,
-    r#type::tests::Type,
-    statement::tests::Statement,
-    tests::{
-        parse, ConnectedList, ConstantPunctuation, Identifier, Label,
+    pattern::strategy::Refutable,
+    r#type::strategy::Type,
+    statement::strategy::Statement,
+    strategy::{
+        ConnectedList, ConstantPunctuation, Identifier, Label,
         QualifiedIdentifier, Qualifier,
     },
 };
@@ -862,7 +862,7 @@ impl Input<&super::Boolean> for &Boolean {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Decimal {
-    pub numeric: syntax_tree::tests::Numeric,
+    pub numeric: syntax_tree::strategy::Numeric,
 }
 
 impl Input<&super::Decimal> for &Decimal {
@@ -876,7 +876,7 @@ impl Arbitrary for Decimal {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        syntax_tree::tests::Numeric::arbitrary_with(())
+        syntax_tree::strategy::Numeric::arbitrary_with(())
             .prop_map(|numeric| Self { numeric })
             .boxed()
     }
@@ -891,7 +891,7 @@ impl Display for Decimal {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(clippy::struct_field_names)]
 pub struct Numeric {
-    pub numeric: syntax_tree::tests::Numeric,
+    pub numeric: syntax_tree::strategy::Numeric,
     pub decimal: Option<Decimal>,
     pub suffix: Option<Identifier>,
 }
@@ -910,7 +910,7 @@ impl Arbitrary for Numeric {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            syntax_tree::tests::Numeric::arbitrary_with(()),
+            syntax_tree::strategy::Numeric::arbitrary_with(()),
             proptest::option::of(Decimal::arbitrary_with(())),
             proptest::option::of(Identifier::arbitrary_with(())),
         )
@@ -1387,7 +1387,7 @@ impl Display for AccessOperator {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AccessKind {
     Identifier(Identifier),
-    Tuple(bool, syntax_tree::tests::Numeric),
+    Tuple(bool, syntax_tree::strategy::Numeric),
     Index(Box<Expression>),
 }
 
@@ -1426,7 +1426,7 @@ impl Arbitrary for AccessKind {
         let strat = strat.unwrap_or_else(Expression::arbitrary);
         prop_oneof![
             Identifier::arbitrary().prop_map(AccessKind::Identifier),
-            (proptest::bool::ANY, syntax_tree::tests::Numeric::arbitrary())
+            (proptest::bool::ANY, syntax_tree::strategy::Numeric::arbitrary())
                 .prop_map(|(is_neg, index)| AccessKind::Tuple(is_neg, index)),
             strat.prop_map(Box::new).prop_map(AccessKind::Index),
         ]
@@ -2179,26 +2179,5 @@ impl Display for Binary {
         }
 
         Ok(())
-    }
-}
-
-proptest! {
-    #![proptest_config(proptest::test_runner::Config {
-        max_shrink_iters: 4096,
-        ..proptest::test_runner::Config::default()
-    })]
-    #[allow(clippy::ignored_unit_patterns)]
-    #[test]
-    fn expression(
-        expression_input in Expression::arbitrary(),
-    ) {
-        let source = expression_input.to_string();
-        println!("{source}");
-        let expression = parse(
-            &source,
-            |parser, handler| parser.parse_expression(handler)
-        )?;
-
-        expression_input.assert(&expression)?;
     }
 }

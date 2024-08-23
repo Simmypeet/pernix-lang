@@ -21,8 +21,6 @@ rayon = { workspace = true }
 parking_lot = { workspace = true }
 drain_filter_polyfill = { workspace = true }
 take_mut = { workspace = true }
-
-[dev-dependencies]
 pernixc_tests = { path = "../pernixc_tests" }
 proptest = { workspace = true }
 

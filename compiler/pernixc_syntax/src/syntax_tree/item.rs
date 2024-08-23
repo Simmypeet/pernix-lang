@@ -24,6 +24,8 @@ use crate::{
     parser::{Parser, Reading},
 };
 
+pub mod strategy;
+
 /// Syntax Synopsis:
 /// ``` txt
 /// ModulePath:
@@ -2853,4 +2855,4 @@ impl<'a> Parser<'a> {
 }
 
 #[cfg(test)]
-pub(super) mod tests;
+mod test;

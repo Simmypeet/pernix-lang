@@ -21,6 +21,7 @@ use crate::{
         mapping::Mapping,
         model,
         normalizer::Normalizer,
+        query,
         simplify::simplify,
         term::{
             constant::Constant,
@@ -745,6 +746,7 @@ impl Normalizer<Model> for Context {
     fn normalize_type(
         ty: &Type<Model>,
         environment: &Environment<Model, impl table::State, Self>,
+        _: &mut query::Context<Model>,
     ) -> Result<Output<Type<Model>, Model>, OverflowError> {
         let Type::Inference(ty) = ty else {
             return Ok(None);
@@ -766,6 +768,7 @@ impl Normalizer<Model> for Context {
     fn normalize_constant(
         constant: &Constant<Model>,
         environment: &Environment<Model, impl table::State, Self>,
+        _: &mut query::Context<Model>,
     ) -> Result<Output<Constant<Model>, Model>, OverflowError> {
         let Constant::Inference(constant) = constant else {
             return Ok(None);
@@ -1251,6 +1254,7 @@ impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
     fn normalize_type(
         ty: &Type<IntermediaryModel>,
         environment: &Environment<IntermediaryModel, impl table::State, Self>,
+        _: &mut query::Context<IntermediaryModel>,
     ) -> Result<Output<Type<IntermediaryModel>, IntermediaryModel>, OverflowError>
     {
         let Type::Inference(ty) = ty else {
@@ -1293,6 +1297,7 @@ impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
     fn normalize_constant(
         constant: &Constant<IntermediaryModel>,
         environment: &Environment<IntermediaryModel, impl table::State, Self>,
+        _: &mut query::Context<IntermediaryModel>,
     ) -> Result<
         Output<Constant<IntermediaryModel>, IntermediaryModel>,
         OverflowError,

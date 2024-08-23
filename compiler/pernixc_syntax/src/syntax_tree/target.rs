@@ -28,6 +28,8 @@ use super::{
 };
 use crate::{error, parser::Parser, syntax_tree::item::ModuleKind};
 
+pub mod strategy;
+
 /// Contains both the access modifier and the module signature.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ModuleSignatureWithAccessModifier {
@@ -417,4 +419,4 @@ impl Target {
 }
 
 #[cfg(test)]
-mod tests;
+mod test;
