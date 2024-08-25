@@ -17,7 +17,7 @@ use pernixc_lexical::{
 use self::{expression::Expression, r#type::Type};
 use crate::{
     error::{self, Error, SyntaxKind},
-    parser::{Frame, Parser, Reading},
+    parser::{Parser, Reading},
 };
 
 pub mod expression;
@@ -258,6 +258,7 @@ impl SourceElement for ScopeSeparator {
 /// LifetimeIdentifier:
 ///     Identifier
 ///     | 'static'
+///     | '..'
 ///     ;
 /// ```
 #[derive(
@@ -267,6 +268,7 @@ impl SourceElement for ScopeSeparator {
 pub enum LifetimeIdentifier {
     Identifier(Identifier),
     Static(Keyword),
+    Elided(Elided),
 }
 
 impl SourceElement for LifetimeIdentifier {
@@ -274,6 +276,7 @@ impl SourceElement for LifetimeIdentifier {
         match self {
             Self::Identifier(ident) => ident.span.clone(),
             Self::Static(keyword) => keyword.span.clone(),
+            Self::Elided(elided) => elided.span(),
         }
     }
 }
@@ -301,8 +304,30 @@ impl SourceElement for Lifetime {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// Constant:
+///     Expression
+///     | Elided
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum Constant {
+    Expression(Box<Expression>),
+    Elided(Elided),
+}
+
+impl SourceElement for Constant {
+    fn span(&self) -> Span {
+        match self {
+            Self::Expression(expr) => expr.span(),
+            Self::Elided(elided) => elided.span(),
+        }
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// ConstantArgument:
-///     '{' Expression '}'
+///     '{' Constant '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -310,7 +335,7 @@ pub struct ConstantArgument {
     #[get = "pub"]
     left_brace: Punctuation,
     #[get = "pub"]
-    expression: Box<Expression>,
+    constant: Constant,
     #[get = "pub"]
     right_brace: Punctuation,
 }
@@ -347,8 +372,6 @@ impl SourceElement for Elided {
 ///     Type
 ///     | ConstantArgument
 ///     | Lifetime
-///     | Elided
-///     | EffectArgument
 ///     ;
 /// ```
 #[derive(
@@ -359,7 +382,6 @@ pub enum GenericArgument {
     Type(Box<Type>),
     Constant(ConstantArgument),
     Lifetime(Lifetime),
-    Elided(Elided),
 }
 
 impl SourceElement for GenericArgument {
@@ -368,7 +390,6 @@ impl SourceElement for GenericArgument {
             Self::Type(type_specifier) => type_specifier.span(),
             Self::Lifetime(lifetime_argument) => lifetime_argument.span(),
             Self::Constant(const_argument) => const_argument.span(),
-            Self::Elided(elided) => elided.span(),
         }
     }
 }
@@ -515,20 +536,6 @@ impl SourceElement for Label {
     }
 }
 
-impl<'a> Frame<'a> {
-    /// Parses a [`ScopeSeparator`]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_scope_separator(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<ScopeSeparator> {
-        let first = self.parse_punctuation(':', true, handler)?;
-        let second = self.parse_punctuation(':', false, handler)?;
-
-        Some(ScopeSeparator { first, second })
-    }
-}
-
 /// Syntax Synopsis:
 /// ``` txt
 /// Qualifier:
@@ -611,6 +618,18 @@ impl<'a> Parser<'a> {
         Some(GenericIdentifier { identifier, generic_arguments })
     }
 
+    /// Parses a [`ScopeSeparator`]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn parse_scope_separator(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<ScopeSeparator> {
+        let first = self.parse_punctuation(':', true, handler)?;
+        let second = self.parse_punctuation(':', false, handler)?;
+
+        Some(ScopeSeparator { first, second })
+    }
+
     /// Parses a [`QualifiedIdentifier`]
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_qualified_identifier(
@@ -685,19 +704,65 @@ impl<'a> Parser<'a> {
                 LifetimeIdentifier::Static(keyword)
             }
 
+            Reading::Unit(Token::Punctuation(
+                first_dot @ Punctuation { punctuation: '.', .. },
+            )) => {
+                // eat first dot
+                self.forward();
+
+                let second_dot = self.parse_punctuation('.', false, handler)?;
+
+                LifetimeIdentifier::Elided(Elided { first_dot, second_dot })
+            }
+
             found => {
                 handler.receive(Error {
                     expected: SyntaxKind::Identifier,
                     alternatives: vec![SyntaxKind::Keyword(
                         KeywordKind::Static,
                     )],
-                    found: found.into_token(),
+                    found: self.reading_to_found(found),
                 });
                 return None;
             }
         };
 
         Some(Lifetime { apostrophe, identifier })
+    }
+
+    /// Parses a [`ConstantArgument`]
+    pub fn parse_constant_argument(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<ConstantArgument> {
+        let delimited_tree = self.step_into(
+            Delimiter::Brace,
+            |parser| match parser.stop_at_significant() {
+                Reading::Unit(Token::Punctuation(pun))
+                    if pun.punctuation == '.' =>
+                {
+                    // eat the first dot
+                    parser.forward();
+
+                    Some(Constant::Elided(Elided {
+                        first_dot: pun,
+                        second_dot: parser
+                            .parse_punctuation('.', false, handler)?,
+                    }))
+                }
+
+                _ => Some(Constant::Expression(Box::new(
+                    parser.parse_expression(handler)?,
+                ))),
+            },
+            handler,
+        )?;
+
+        Some(ConstantArgument {
+            left_brace: delimited_tree.open,
+            constant: delimited_tree.tree?,
+            right_brace: delimited_tree.close,
+        })
     }
 
     /// Parses a [`GenericArgument`]
@@ -711,62 +776,14 @@ impl<'a> Parser<'a> {
             Reading::Unit(Token::Punctuation(apostrophe))
                 if apostrophe.punctuation == '\'' =>
             {
-                // eat apostrophe
-                self.forward();
-
-                let lifetime_identifier = match self.next_token() {
-                    Reading::Unit(Token::Identifier(identifier)) => {
-                        LifetimeIdentifier::Identifier(identifier)
-                    }
-                    Reading::Unit(Token::Keyword(keyword))
-                        if keyword.kind == KeywordKind::Static =>
-                    {
-                        LifetimeIdentifier::Static(keyword)
-                    }
-
-                    found => {
-                        handler.receive(Error {
-                            expected: SyntaxKind::Identifier,
-                            alternatives: vec![SyntaxKind::Keyword(
-                                KeywordKind::Static,
-                            )],
-                            found: found.into_token(),
-                        });
-                        return None;
-                    }
-                };
-
-                Some(GenericArgument::Lifetime(Lifetime {
-                    apostrophe,
-                    identifier: lifetime_identifier,
-                }))
+                Some(GenericArgument::Lifetime(self.parse_lifetime(handler)?))
             }
 
             // parse const argument
             Reading::IntoDelimited(Delimiter::Brace, _) => {
-                let delimited_tree = self.step_into(
-                    Delimiter::Brace,
-                    |parser| parser.parse_expression(handler).map(Box::new),
-                    handler,
-                )?;
-
-                Some(GenericArgument::Constant(ConstantArgument {
-                    left_brace: delimited_tree.open,
-                    expression: delimited_tree.tree?,
-                    right_brace: delimited_tree.close,
-                }))
-            }
-
-            // parse elided argument
-            Reading::Unit(Token::Punctuation(first_dot))
-                if first_dot.punctuation == '.' =>
-            {
-                // eat first dot
-                self.forward();
-
-                let second_dot = self.parse_punctuation('.', false, handler)?;
-
-                Some(GenericArgument::Elided(Elided { first_dot, second_dot }))
+                Some(GenericArgument::Constant(
+                    self.parse_constant_argument(handler)?,
+                ))
             }
 
             // parse type argument

@@ -14,8 +14,7 @@ use pernixc_lexical::{
 };
 
 use super::{
-    expression::Expression, ConnectedList, Lifetime, LifetimeIdentifier,
-    QualifiedIdentifier, Qualifier,
+    ConnectedList, Constant, Elided, Lifetime, QualifiedIdentifier, Qualifier,
 };
 use crate::{
     error::{Error, SyntaxKind},
@@ -136,7 +135,7 @@ impl SourceElement for Tuple {
 /// Syntax Synopsis:
 /// ``` txt
 /// Array:
-///     '[' Type ':' Expression ']'
+///     '[' Type ':' Constant ']'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -148,7 +147,7 @@ pub struct Array {
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
-    expression: Box<Expression>,
+    constant: Constant,
     #[get = "pub"]
     right_bracket: Punctuation,
 }
@@ -234,6 +233,7 @@ impl SourceElement for Local {
 ///     | Local
 ///     | Array
 ///     | Phantom
+///     | Elided
 ///     ;
 /// ```
 #[derive(
@@ -257,6 +257,7 @@ pub enum Type {
     Local(Local),
     Array(Array),
     Phantom(Phantom),
+    Elided(Elided),
 }
 
 impl SourceElement for Type {
@@ -270,6 +271,7 @@ impl SourceElement for Type {
             Self::Tuple(tuple) => tuple.span(),
             Self::Array(array) => array.span(),
             Self::Phantom(phantom) => phantom.span(),
+            Self::Elided(elided) => elided.span(),
         }
     }
 }
@@ -307,33 +309,7 @@ impl<'a> Parser<'a> {
             Reading::Unit(Token::Punctuation(apostrophe))
                 if apostrophe.punctuation == '\'' =>
             {
-                // eat apostrophe
-                self.forward();
-
-                let lifetime_identifier = match self.next_token() {
-                    Reading::Unit(Token::Identifier(identifier)) => {
-                        LifetimeIdentifier::Identifier(identifier)
-                    }
-                    Reading::Unit(Token::Keyword(keyword))
-                        if keyword.kind == KeywordKind::Static =>
-                    {
-                        LifetimeIdentifier::Static(keyword)
-                    }
-
-                    found => {
-                        handler.receive(Error {
-                            expected: SyntaxKind::Identifier,
-                            alternatives: vec![SyntaxKind::Keyword(
-                                KeywordKind::Static,
-                            )],
-                            found: found.into_token(),
-                        });
-
-                        return None;
-                    }
-                };
-
-                Some(Lifetime { apostrophe, identifier: lifetime_identifier })
+                Some(self.parse_lifetime(handler)?)
             }
 
             _ => None,
@@ -403,7 +379,23 @@ impl<'a> Parser<'a> {
             |parser| {
                 let ty = parser.parse_type(handler)?;
                 let colon = parser.parse_punctuation(':', true, handler)?;
-                let expression = parser.parse_expression(handler)?;
+                let expression = match parser.stop_at_significant() {
+                    Reading::Unit(Token::Punctuation(
+                        first_dot @ Punctuation { punctuation: '.', .. },
+                    )) => {
+                        // eat the first dot
+                        parser.forward();
+
+                        let second_dot =
+                            parser.parse_punctuation('.', false, handler)?;
+
+                        Constant::Elided(Elided { first_dot, second_dot })
+                    }
+
+                    _ => parser
+                        .parse_expression(handler)
+                        .map(|x| Constant::Expression(Box::new(x)))?,
+                };
                 Some((ty, colon, expression))
             },
             handler,
@@ -415,7 +407,7 @@ impl<'a> Parser<'a> {
             left_bracket: delimited_tree.open,
             operand: Box::new(tree.0),
             colon: tree.1,
-            expression: Box::new(tree.2),
+            constant: tree.2,
             right_bracket: delimited_tree.close,
         })
     }
@@ -470,7 +462,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a [`Type`]
-    #[allow(clippy::missing_errors_doc)]
+    #[allow(clippy::missing_errors_doc, clippy::too_many_lines)]
     pub fn parse_type(&mut self, handler: &dyn Handler<Error>) -> Option<Type> {
         match self.stop_at_significant() {
             // parse qualified identifier
@@ -488,8 +480,23 @@ impl<'a> Parser<'a> {
                 ))
             }
 
+            // parse elided type
+            Reading::Unit(Token::Punctuation(
+                first_dot @ Punctuation {
+                    punctuation: '.', ..
+                }
+            )) => {
+                // eat the first dot
+                self.forward();
+
+                let second_dot = self.parse_punctuation('.', false, handler)?;
+
+                Some(Type::Elided(Elided { first_dot, second_dot }))
+            }
+
             // parse local type
-            Reading::Unit(Token::Keyword(keyword)) if keyword.kind == KeywordKind::Local => {
+            Reading::Unit(Token::Keyword(keyword))
+                if keyword.kind == KeywordKind::Local => {
                 // eat local keyword
                 self.forward();
 
@@ -588,7 +595,7 @@ impl<'a> Parser<'a> {
                 handler.receive(Error {
                     expected: SyntaxKind::TypeSpecifier,
                     alternatives: Vec::new(),
-                    found: found.into_token(),
+                    found: self.reading_to_found(found),
                 });
 
                 None

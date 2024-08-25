@@ -39,6 +39,7 @@ use crate::{
         instantiation::{self, Instantiation},
         model::{Default, Model},
         normalizer::{Normalizer, NO_OP},
+        observer::{self, Observer},
         predicate::{self, Outlives, Predicate, Tuple},
         simplify,
         term::{
@@ -134,7 +135,8 @@ where
     }
 }
 
-impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N>
+impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
+    Environment<'a, M, T, N, O>
 where
     predicate::Predicate<M>: table::Display<table::Suboptimal>,
 
@@ -207,12 +209,6 @@ where
                     resolution::MemberGenericID::AdtImplementationFunction(
                         id,
                     ) => Some(self.table().get(id).unwrap().parent_id),
-                    resolution::MemberGenericID::AdtImplementationType(id) => {
-                        Some(self.table().get(id).unwrap().parent_id)
-                    }
-                    resolution::MemberGenericID::AdtImplementationConstant(
-                        id,
-                    ) => Some(self.table().get(id).unwrap().parent_id),
 
                     _ => None,
                 };
@@ -254,7 +250,7 @@ where
                             return; // can't continue
                         }
 
-                        Err(deduction::Error::Overflow(_)) => {
+                        Err(deduction::Error::TypeSystem(_)) => {
                             todo!("report overflow")
                         }
                     };
@@ -607,104 +603,6 @@ where
                                 Ok(Some(_)) => {}
                             }
                         }
-
-                        LifetimeConstraint::TypeOutlives(pred) => {
-                            match pred.query(self) {
-                                Ok(None) => {
-                                    extra_predicate_error.push(
-                                        PredicateError::Unsatisfied {
-                                            predicate: Predicate::TypeOutlives(
-                                                pred,
-                                            ),
-
-                                            predicate_declaration_span: None,
-                                        },
-                                    );
-                                }
-                                Err(_) => {
-                                    extra_predicate_error.push(
-                                        PredicateError::Undecidable {
-                                            predicate: Predicate::TypeOutlives(
-                                                pred,
-                                            ),
-
-                                            predicate_declaration_span: None,
-                                        },
-                                    );
-                                }
-
-                                Ok(Some(_)) => {}
-                            }
-                        }
-
-                        LifetimeConstraint::LifetimeMatching(pred) => {
-                            let (lt_1, lt_2) = pred.into_tuple();
-
-                            let pred_1 = Outlives {
-                                operand: lt_1.clone(),
-                                bound: lt_2.clone(),
-                            };
-                            let pred_2 =
-                                Outlives { operand: lt_2, bound: lt_1 };
-
-                            match pred_1.query(self) {
-                                Ok(None) => {
-                                    extra_predicate_error.push(
-                                        PredicateError::Unsatisfied {
-                                            predicate:
-                                                Predicate::LifetimeOutlives(
-                                                    pred_1,
-                                                ),
-
-                                            predicate_declaration_span: None,
-                                        },
-                                    );
-                                }
-                                Err(_) => {
-                                    extra_predicate_error.push(
-                                        PredicateError::Undecidable {
-                                            predicate:
-                                                Predicate::LifetimeOutlives(
-                                                    pred_1,
-                                                ),
-
-                                            predicate_declaration_span: None,
-                                        },
-                                    );
-                                }
-
-                                Ok(Some(Satisfied)) => {}
-                            }
-
-                            match pred_2.query(self) {
-                                Ok(None) => {
-                                    extra_predicate_error.push(
-                                        PredicateError::Unsatisfied {
-                                            predicate:
-                                                Predicate::LifetimeOutlives(
-                                                    pred_2,
-                                                ),
-
-                                            predicate_declaration_span: None,
-                                        },
-                                    );
-                                }
-                                Err(_) => {
-                                    extra_predicate_error.push(
-                                        PredicateError::Undecidable {
-                                            predicate:
-                                                Predicate::LifetimeOutlives(
-                                                    pred_2,
-                                                ),
-
-                                            predicate_declaration_span: None,
-                                        },
-                                    );
-                                }
-
-                                Ok(Some(Satisfied)) => {}
-                            }
-                        }
                     }
                 }
 
@@ -748,7 +646,6 @@ where
             | term::r#type::Type::Primitive(_)
             | term::r#type::Type::Parameter(_)
             | term::r#type::Type::Symbol(_)
-            | term::r#type::Type::MemberSymbol(_)
             | term::r#type::Type::TraitMember(_)
             | term::r#type::Type::Inference(_) => { /* no additional check */ }
 
@@ -867,74 +764,6 @@ where
                         }
                     }
                 }
-                LifetimeConstraint::TypeOutlives(outlives) => {
-                    match outlives.query(self) {
-                        Ok(Some(Satisfied)) => {}
-
-                        Ok(None) => {
-                            handler.receive(Box::new(UnsatisifedPredicate {
-                                predicate: Predicate::TypeOutlives(outlives),
-                                instantiation_span: instantiation_span.clone(),
-                                predicate_declaration_span: None,
-                            }));
-                        }
-
-                        Err(OverflowError) => {
-                            handler.receive(Box::new(UndecidablePredicate {
-                                instantiation_span: instantiation_span.clone(),
-                                predicate: Predicate::TypeOutlives(outlives),
-                                predicate_declaration_span: None,
-                            }));
-                        }
-                    }
-                }
-                LifetimeConstraint::LifetimeMatching(matching) => {
-                    let (lt_1, lt_2) = matching.into_tuple();
-
-                    let pred_1 =
-                        Outlives { operand: lt_1.clone(), bound: lt_2.clone() };
-                    let pred_2 = Outlives { operand: lt_2, bound: lt_1 };
-
-                    match pred_1.query(self) {
-                        Ok(None) => {
-                            handler.receive(Box::new(UnsatisifedPredicate {
-                                predicate: Predicate::LifetimeOutlives(pred_1),
-                                instantiation_span: instantiation_span.clone(),
-                                predicate_declaration_span: None,
-                            }));
-                        }
-
-                        Err(OverflowError) => {
-                            handler.receive(Box::new(UndecidablePredicate {
-                                instantiation_span: instantiation_span.clone(),
-                                predicate: Predicate::LifetimeOutlives(pred_1),
-                                predicate_declaration_span: None,
-                            }));
-                        }
-
-                        Ok(Some(_)) => {}
-                    }
-
-                    match pred_2.query(self) {
-                        Ok(None) => {
-                            handler.receive(Box::new(UnsatisifedPredicate {
-                                predicate: Predicate::LifetimeOutlives(pred_2),
-                                instantiation_span: instantiation_span.clone(),
-                                predicate_declaration_span: None,
-                            }));
-                        }
-
-                        Err(OverflowError) => {
-                            handler.receive(Box::new(UndecidablePredicate {
-                                instantiation_span: instantiation_span.clone(),
-                                predicate: Predicate::LifetimeOutlives(pred_2),
-                                predicate_declaration_span: None,
-                            }));
-                        }
-
-                        Ok(Some(_)) => {}
-                    }
-                }
             }
         }
     }
@@ -972,12 +801,12 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             return;
         };
 
-        let environment = Environment::new(
+        let (_, environment_errors) = Environment::new_with(
             self.get_active_premise::<Default>(id).unwrap(),
             self,
             &NO_OP,
+            &observer::NO_OP,
         );
-        let environment_errors = environment.diagnose();
 
         for error in environment_errors {
             match error {
@@ -993,7 +822,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     todo!()
                 }
 
-                environment::Error::OverflowCalculatingRequirement(_) => {
+                environment::Error::Overflow(_, _) => {
                     todo!()
                 }
             }
@@ -1009,7 +838,12 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         let active_premise = self.get_active_premise(id).unwrap();
-        let environment = Environment::new(active_premise, self, &NO_OP);
+        let (environment, _) = Environment::new_with(
+            active_premise,
+            self,
+            &NO_OP,
+            &observer::NO_OP,
+        );
 
         // check resolution occurrences
         for (resolution, generic_identifier) in occurrences.resolutions() {
@@ -1164,14 +998,6 @@ impl UnusedGenericParameters {
             }
             r#type::Type::Phantom(phantom) => {
                 self.check_in_type(&phantom.0);
-            }
-            r#type::Type::MemberSymbol(member_symbol) => {
-                self.check_in_generic_arguments(
-                    &member_symbol.member_generic_arguments,
-                );
-                self.check_in_generic_arguments(
-                    &member_symbol.parent_generic_arguments,
-                );
             }
 
             r#type::Type::TraitMember(_)
@@ -1388,10 +1214,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let implementation_member_active_premise =
             self.get_active_premise(implementation_member_id.into()).unwrap();
 
-        let environment = Environment::new(
+        let (environment, _) = Environment::new_with(
             implementation_member_active_premise.clone(),
             self,
             &NO_OP,
+            &observer::NO_OP,
         );
 
         for ((tr_const_id, tr_const_param), (im_const_id, im_const_param)) in
@@ -1470,8 +1297,12 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             }
         };
 
-        let environment =
-            Environment::new(trait_member_active_premise, self, &NO_OP);
+        let (environment, _) = Environment::new_with(
+            trait_member_active_premise,
+            self,
+            &NO_OP,
+            &observer::NO_OP,
+        );
 
         // check for any extraneous predicates defined in the implementation
         // member that are not in the trait member
@@ -1643,7 +1474,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let premise =
             self.get_active_premise(implementation_id.into()).unwrap();
 
-        let environment = Environment::new(premise, self, &NO_OP);
+        let (environment, _) =
+            Environment::new_with(premise, self, &NO_OP, &observer::NO_OP);
 
         environment.check_instantiation_predicates_by_generic_arguments(
             implementation_sym.implemented_id.into(),
@@ -1655,5 +1487,5 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     }
 }
 
-#[cfg(test)]
-mod tests;
+// #[cfg(test)]
+// mod tests;

@@ -12,13 +12,11 @@ use crate::{
     arena::ID,
     error,
     symbol::{
-        table::{
-            representation::Insertion, resolution::NoOpObserver, Building,
-            Table,
-        },
+        table::{representation::Insertion, resolution, Building, Table},
         Accessibility, Function, FunctionDefinition, FunctionTemplate,
         GenericDeclaration, Module,
     },
+    type_system::observer,
 };
 
 #[derive(Debug)]
@@ -55,13 +53,16 @@ impl TestTemplate {
 
     pub fn create_binder<'a>(
         &'a self,
-    ) -> (Binder<'a, Building, NoOpObserver>, Storage<Box<dyn error::Error>>)
-    {
+    ) -> (
+        Binder<'a, Building, resolution::NoOp, observer::NoOp>,
+        Storage<Box<dyn error::Error>>,
+    ) {
         let storage: Storage<Box<dyn error::Error>> = Storage::new();
 
         let binder = Binder::new_function(
             &self.table,
-            NoOpObserver,
+            resolution::NoOp,
+            observer::NoOp,
             self.function_id,
             std::iter::empty(),
             &storage,
@@ -85,7 +86,7 @@ pub fn parse_expression(
     // no error
     assert_eq!(counter.count(), 0);
 
-    let mut parser = Parser::new(&token_stream);
+    let mut parser = Parser::new(&token_stream, source_file);
     let expression = parser.parse_expression(&counter).unwrap();
 
     // no error
@@ -105,7 +106,7 @@ pub fn parse_statement(
     // no error
     assert_eq!(counter.count(), 0);
 
-    let mut parser = Parser::new(&token_stream);
+    let mut parser = Parser::new(&token_stream, source_file);
     let statement = parser.parse_statement(&counter).unwrap();
 
     // no error

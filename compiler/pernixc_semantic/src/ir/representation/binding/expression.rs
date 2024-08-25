@@ -66,12 +66,13 @@ use crate::{
         table::{
             self,
             representation::Index,
-            resolution::{self, MemberGenericID, Observer},
+            resolution::{self, MemberGenericID},
         },
         AdtID, CallableID, ConstantParameterID, Field, LifetimeParameterID,
         TypeParameterID,
     },
     type_system::{
+        self,
         instantiation::{self, Instantiation},
         model::Model,
         simplify,
@@ -149,8 +150,12 @@ pub trait Bind<T> {
     ) -> Result<Expression, Error>;
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Numeric> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Numeric> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -240,8 +245,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Boolean> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Boolean> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -261,7 +270,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
     /// Binds the given syntax tree as an address.
     ///
     /// If the expression cannot be bound as an address, a variable will be
@@ -316,8 +331,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Prefix> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Prefix> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
     fn bind(
@@ -528,8 +547,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Prefixable> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Prefixable> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -548,7 +571,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
     fn bind_variant_call(
         &mut self,
         arguments: Vec<(Span, Value<infer::Model>)>,
@@ -646,7 +675,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
     fn bind_function_call(
         &mut self,
         arguments: &[(Span, Value<infer::Model>)],
@@ -730,7 +765,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
     #[allow(clippy::too_many_lines)]
     fn bind_postfix_call_with_resolution(
         &mut self,
@@ -1081,8 +1122,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Postfix> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Postfix> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
     fn bind(
@@ -1588,8 +1633,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Postfixable> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Postfixable> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -1608,8 +1657,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::QualifiedIdentifier> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::QualifiedIdentifier> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
     fn bind(
@@ -1783,8 +1836,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Struct> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Struct> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
     fn bind(
@@ -1934,8 +1991,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<&token::String>
-    for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&token::String> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -1977,8 +2038,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<&token::String>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<&token::Character>
-    for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&token::Character> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -2013,8 +2078,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<&token::Character>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Parenthesized> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Parenthesized> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -2048,9 +2117,6 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
                     is_unpacked: element_syn.ellipsis().is_some(),
                 });
             }
-
-            let mut another = Some(32);
-            another.take();
 
             let tuple_type = simplify::simplify(
                 &Type::<infer::Model>::Tuple(r#type::Tuple {
@@ -2117,8 +2183,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Phantom> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Phantom> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -2141,8 +2211,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Array> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Array> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -2210,8 +2284,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Unit> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Unit> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -2463,7 +2541,13 @@ const fn into_binary_operator(
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
     fn bind_assignment(
         &mut self,
         tree: &BinaryTree,
@@ -2750,8 +2834,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     }
 }
 
-impl<'x, 't, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&BinaryTree<'x>> for Binder<'t, S, O>
+impl<
+        'x,
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&BinaryTree<'x>> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
     fn bind(
@@ -3027,8 +3116,13 @@ impl<'x, 't, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'x, 't, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&BinaryNode<'x>> for Binder<'t, S, O>
+impl<
+        'x,
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&BinaryNode<'x>> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -3045,8 +3139,12 @@ impl<'x, 't, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Binary> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Binary> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -3061,8 +3159,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Return> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Return> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -3145,7 +3247,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
     /// Finds a [`ID<scope::Scope>`] to operate a control flow on based on the
     /// location and label.
     fn find_loop_scope_id(
@@ -3197,8 +3305,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Continue> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Continue> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -3268,8 +3380,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Break> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Break> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -3382,8 +3498,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Terminator> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Terminator> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -3408,8 +3528,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Express> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Express> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
     fn bind(
@@ -3557,8 +3681,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::IfElse> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::IfElse> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
     fn bind(
@@ -3787,8 +3915,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Loop> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Loop> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
     fn bind(
@@ -3940,8 +4072,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Brace> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Brace> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -3964,8 +4100,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Expression> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Expression> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -3987,8 +4127,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<BlockState>
-    for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<BlockState> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -4091,7 +4235,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Bind<BlockState>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
     /// Binds the basic block of the given syntax tree.
     ///
     /// When binding a block, a new scope push instruction will be inserted
@@ -4159,8 +4309,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>>
-    Bind<&syntax_tree::expression::Block> for Binder<'t, S, O>
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Block> for Binder<'t, S, RO, TO>
 {
     fn bind(
         &mut self,
@@ -4192,7 +4346,13 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>>
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
     /// Binds the given syntax tree as a value. In case of an error, an error
     /// register is returned.
     ///

@@ -16,14 +16,20 @@ use crate::{
         instruction::{Instruction, Store},
         pattern::{Irrefutable, NameBindingPoint, Wildcard},
     },
-    symbol::table::{self, resolution::Observer},
+    symbol::table::{self, resolution},
     type_system::{
-        simplify,
+        self, simplify,
         term::r#type::{self, Type},
     },
 };
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
     /// Binds the given [`syntax_tree::statement::Statement`] to the IR.
     pub fn bind_statement(
         &mut self,

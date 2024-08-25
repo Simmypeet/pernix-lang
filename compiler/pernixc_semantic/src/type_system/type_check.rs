@@ -8,9 +8,10 @@ use super::{
     instantiation::MismatchedGenericArgumentCountError,
     model::Model,
     normalizer::Normalizer,
+    observer::Observer,
     query::Context,
     term::{constant::Constant, r#type::Type, ModelOf, Symbol, Term},
-    Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
+    Compute, Environment, Output, Satisfied, Succeeded,
 };
 use crate::{
     arena::ID,
@@ -49,7 +50,7 @@ impl<M: Model> TypeCheck<M> {
 #[allow(missing_docs)]
 pub enum Error<M: Model> {
     #[error(transparent)]
-    Overflow(#[from] OverflowError),
+    TypeSystem(#[from] super::OverflowError),
 
     #[error(
         "the struct value contains {actual} fields, but the struct expects \
@@ -95,26 +96,28 @@ trait Check<T>: ModelOf
 where
     T: Term<Model = Self::Model>,
 {
-    fn type_check(
+    fn type_check<S: State>(
         &self,
         another: &T,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
     ) -> Result<Output<Satisfied, T::Model>, Error<Self::Model>>;
 }
 
 impl<M: Model> Check<Type<M>> for Constant<M> {
-    fn type_check(
+    fn type_check<S: State>(
         &self,
         another: &Type<M>,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
     ) -> Result<Output<Satisfied, M>, Error<Self::Model>> {
@@ -123,10 +126,15 @@ impl<M: Model> Check<Type<M>> for Constant<M> {
     }
 }
 
-fn tuple_type_check_unpacked<T, U>(
+fn tuple_type_check_unpacked<T, U, S: State>(
     this: &Tuple<T>,
     another: &Tuple<U>,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+    environment: &Environment<
+        T::Model,
+        S,
+        impl Normalizer<T::Model, S>,
+        impl Observer<T::Model, S>,
+    >,
     context: &mut Context<T::Model>,
 ) -> Result<Output<Satisfied, T::Model>, Error<T::Model>>
 where
@@ -220,13 +228,14 @@ where
 }
 
 impl<M: Model> Check<Constant<M>> for Type<M> {
-    fn type_check(
+    fn type_check<S: State>(
         &self,
         another: &Constant<M>,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<M>,
     ) -> Result<Output<Satisfied, M>, Error<M>> {
@@ -240,12 +249,13 @@ impl<M: Model> Compute for TypeCheck<M> {
     type Parameter = ();
 
     #[allow(private_bounds, private_interfaces)]
-    fn implementation(
+    fn implementation<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
         (): Self::Parameter,

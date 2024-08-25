@@ -4,3 +4,5 @@ proptest-regressions/
 .DS_Store
 .idea/
 Cargo.lock
+node_modules/
+out/

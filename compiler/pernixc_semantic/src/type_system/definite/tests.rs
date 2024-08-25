@@ -16,7 +16,7 @@ use crate::{
     },
     type_system::{
         model::Default,
-        normalizer::NoOp,
+        normalizer, observer,
         term::{
             constant::{self, Constant},
             r#type::{self, SymbolID, Type},
@@ -204,8 +204,12 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
 
     let term = property.generate(module_id, &mut table, &mut premise)?;
 
-    let environment =
-        &Environment { table: &table, premise, normalizer: &NoOp };
+    let environment = &Environment {
+        table: &table,
+        premise,
+        normalizer: &normalizer::NO_OP,
+        observer: &observer::NO_OP,
+    };
 
     prop_assert!(Definite(term)
         .query(environment)

@@ -7,8 +7,8 @@ use crate::{
     type_system::{
         equality::Equality,
         model::Default,
-        normalizer::{NoOp, NO_OP},
-        predicate::Predicate,
+        normalizer, observer,
+        predicate::{Outlives, Predicate},
         simplify::simplify,
         term::{
             lifetime::Lifetime,
@@ -17,7 +17,6 @@ use crate::{
         },
         Environment, LifetimeConstraint, Premise, Succeeded, TraitContext,
     },
-    unordered_pair::UnorderedPair,
 };
 
 #[test]
@@ -42,7 +41,8 @@ fn basic() {
         simplify(&Type::TraitMember(trait_member), &Environment {
             premise,
             table: &table,
-            normalizer: &NoOp,
+            normalizer: &normalizer::NO_OP,
+            observer: &observer::NO_OP,
         });
 
     assert_eq!(simplified, equivalent);
@@ -82,7 +82,12 @@ fn sub_term() {
                 constants: Vec::new(),
             },
         }),
-        &Environment { premise, table: &table, normalizer: &NoOp },
+        &Environment {
+            premise,
+            table: &table,
+            normalizer: &normalizer::NO_OP,
+            observer: &observer::NO_OP,
+        },
     );
 
     assert_eq!(
@@ -128,7 +133,8 @@ fn already_simplified() {
         simplify(&equivalent, &Environment {
             premise,
             table: &table,
-            normalizer: &NoOp,
+            normalizer: &normalizer::NO_OP,
+            observer: &observer::NO_OP,
         });
 
     assert_eq!(simplified, equivalent);
@@ -179,13 +185,18 @@ fn with_lifetime_matching() {
         simplify(&Type::TraitMember(to_be_simplified), &Environment {
             premise,
             table: &table,
-            normalizer: &NoOp,
+            normalizer: &normalizer::NO_OP,
+            observer: &observer::NO_OP,
         });
 
     assert_eq!(simplified, equivalent);
     assert_eq!(constraints.len(), 1);
-    assert!(constraints.contains(&LifetimeConstraint::LifetimeMatching(
-        UnorderedPair::new(first_lifetime, second_lifetime)
+
+    assert!(constraints.contains(&LifetimeConstraint::LifetimeOutlives(
+        Outlives::new(second_lifetime.clone(), first_lifetime.clone())
+    )));
+    assert!(constraints.contains(&LifetimeConstraint::LifetimeOutlives(
+        Outlives::new(first_lifetime, second_lifetime)
     )));
 }
 
@@ -215,7 +226,12 @@ fn multiple_equivalences() {
             rhs: equivalent.clone(),
         }),
     ]);
-    let environment = Environment { premise, table: &table, normalizer: &NoOp };
+    let environment = Environment {
+        premise,
+        table: &table,
+        normalizer: &normalizer::NO_OP,
+        observer: &observer::NO_OP,
+    };
 
     let Succeeded { result: result1, constraints: constraints1 } =
         simplify(&Type::TraitMember(first_trait_member), &environment);
@@ -284,8 +300,12 @@ fn transitive() {
         trait_context: TraitContext::Normal,
     };
 
-    let environment =
-        Environment { premise, table: &table, normalizer: &NO_OP };
+    let environment = Environment {
+        premise,
+        table: &table,
+        normalizer: &normalizer::NO_OP,
+        observer: &observer::NO_OP,
+    };
 
     let Succeeded { result: simplified, constraints } =
         simplify(&Type::TraitMember(trait_a), &environment);
@@ -293,7 +313,10 @@ fn transitive() {
     assert_eq!(simplified, equivalent);
     assert_eq!(constraints.len(), 1);
 
-    assert!(constraints.contains(&LifetimeConstraint::LifetimeMatching(
-        UnorderedPair::new(b_lt, c_lt)
+    assert!(constraints.contains(&LifetimeConstraint::LifetimeOutlives(
+        Outlives::new(b_lt.clone(), c_lt.clone())
+    )));
+    assert!(constraints.contains(&LifetimeConstraint::LifetimeOutlives(
+        Outlives::new(c_lt, b_lt)
     )));
 }

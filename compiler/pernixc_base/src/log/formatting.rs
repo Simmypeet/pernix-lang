@@ -40,6 +40,24 @@ impl<T: Display> Display for WithStyle<T> {
     }
 }
 
+/// Removes the VT100 codes applied by the styling.
+pub fn remove_vt100_codes(s: &str) -> String {
+    let mut result = String::new();
+    let mut in_escape = false;
+    for c in s.chars() {
+        if in_escape {
+            if c == 'm' {
+                in_escape = false;
+            }
+        } else if c == '\x1B' {
+            in_escape = true;
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 /// Represents a color that can be applied to the text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]

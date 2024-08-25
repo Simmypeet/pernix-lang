@@ -8,30 +8,33 @@ use crate::{
     symbol::{
         table::{
             representation::{
-                building::finalizing::{occurrences::Occurrences, Finalizer},
+                building::finalizing::{
+                    finalizer::builder::{Definition, DefinitionA},
+                    occurrences::Occurrences,
+                    Finalizer,
+                },
                 RwLockContainer,
             },
-            resolution, Building, Table,
+            resolution::{self, Observer},
+            Building, Table,
         },
         Type,
     },
+    type_system::{environment::Environment, normalizer},
 };
 
 /// Generic parameters are built
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
-/// Where cluase predicates are built
-pub const WHERE_CLAUSE_STATE: usize = 1;
-
 /// The complete information of the type alias is built.
-pub const DEFINITION_STATE: usize = 2;
+pub const DEFINITION_STATE: usize = 1;
 
 /// The information required to check the bounds is built. (the definition of
 /// where caluses are built)
-pub const WELL_FORMED_STATE: usize = 3;
+pub const WELL_FORMED_STATE: usize = 2;
 
 /// All the bounds are checked.
-pub const CHECK_STATE: usize = 4;
+pub const CHECK_STATE: usize = 3;
 
 impl Finalize for Type {
     type SyntaxTree = syntax_tree::item::Type;
@@ -58,16 +61,98 @@ impl Finalize for Type {
                 handler,
             ),
 
-            WHERE_CLAUSE_STATE => {
+            DEFINITION_STATE => {
+                // build the where clause predicates
+                table.create_where_clause_predicates_for_definition(
+                    symbol_id,
+                    syntax_tree.definition().where_clause().as_ref(),
+                    where_clause_occurrences,
+                    handler,
+                );
+
+                // resolve the type
+                let mut definition_builder = Definition::new();
+                let mut observer =
+                    definition_builder.chain(definition_occurrences);
+
+                let mut ty = table
+                    .resolve_type(
+                        syntax_tree.definition().ty(),
+                        symbol_id.into(),
+                        resolution::Config {
+                            ellided_lifetime_provider: None,
+                            ellided_type_provider: None,
+                            ellided_constant_provider: None,
+                            observer: Some(&mut observer),
+                            higher_ranked_lifetimes: None,
+                        },
+                        handler,
+                    )
+                    .unwrap_or_default();
+
+                let observer = DefinitionA::new(symbol_id.into(), handler);
+
+                let (environment, _) = Environment::new_with(
+                    table.get_active_premise(symbol_id.into()).unwrap(),
+                    table,
+                    &normalizer::NO_OP,
+                    &observer,
+                );
+
+                ty = environment.simplify_and_check_lifetime_constraints(
+                    &ty,
+                    &syntax_tree.definition().ty().span(),
+                    handler,
+                );
+
+                let ty_accessible = table.get_type_accessibility(&ty).unwrap();
+
+                // private entity leaked to public interface
+                if ty_accessible
+                    < table.get_accessibility(symbol_id.into()).unwrap()
+                {
+                    handler.receive(Box::new(
+                        PrivateEntityLeakedToPublicInterface {
+                            entity: ty.clone(),
+                            entity_overall_accessibility: ty_accessible,
+                            leaked_span: syntax_tree.definition().ty().span(),
+                            public_interface_id: symbol_id.into(),
+                        },
+                    ));
+                }
+
+                table.types().get(symbol_id).unwrap().write().r#type = ty;
+            }
+
+            WELL_FORMED_STATE => table
+                .create_where_clause_predicates_for_well_formed(
+                    symbol_id,
+                    syntax_tree.definition().where_clause().as_ref(),
+                    where_clause_occurrences,
+                    handler,
+                ),
+
+            CHECK_STATE => {}
+
+            _ => panic!("invalid state flag"),
+        }
+        /*
+        match state_flag {
+            GENERIC_PARAMETER_STATE => table.create_generic_parameters(
+                symbol_id,
+                syntax_tree.signature().generic_parameters().as_ref(),
+                generic_parameter_occurrences,
+                handler,
+            ),
+
+            DEFINITION_STATE => {
                 table.create_where_clause_predicates(
                     symbol_id,
                     syntax_tree.definition().where_clause().as_ref(),
                     where_clause_occurrences,
                     handler,
                 );
-            }
 
-            DEFINITION_STATE => {
                 let ty = table
                     .resolve_type(
                         syntax_tree.definition().ty(),
@@ -108,10 +193,16 @@ impl Finalize for Type {
                 table.types.get(symbol_id).unwrap().write().r#type = ty;
             }
             CHECK_STATE => {
-                table.check_occurrences(symbol_id.into(), data, handler);
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &generic_parameter_occurrences,
+                    handler,
+                );
+
                 table.check_where_clause(symbol_id.into(), handler);
             }
             _ => panic!("invalid state flag"),
         }
+        */
     }
 }

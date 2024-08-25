@@ -9,6 +9,7 @@ use super::{
     equality::Equality,
     model::Model,
     normalizer::Normalizer,
+    observer::Observer,
     predicate::Outlives,
     query::Context,
     sub_term::{SubTypeLocation, TermLocation},
@@ -24,9 +25,8 @@ use super::{
     Satisfied, Succeeded,
 };
 use crate::{
-    symbol::table::{State, Table},
+    symbol::table::State,
     type_system::sub_term::{Location, SubLifetimeLocation},
-    unordered_pair::UnorderedPair,
 };
 
 /// The result of matching the lifetime with the forall lifetimes.
@@ -224,11 +224,11 @@ impl<M: Model> unification::Predicate<Constant<M>>
 }
 
 #[must_use]
-fn append_matchings_from_unification<M: Model>(
+fn append_matchings_from_unification<M: Model, T: State>(
     mut current_from: Type<M>,
     unifier: unification::Unifier<Type<M>>,
     parent_variance: Variance,
-    table: &Table<impl State>,
+    environment: &Environment<M, T, impl Normalizer<M, T>, impl Observer<M, T>>,
     matching: &mut BTreeMap<Lifetime<M>, Vec<(Lifetime<M>, Variance)>>,
 ) -> bool {
     if let Some(rewritten_from) = unifier.rewritten_from {
@@ -243,8 +243,8 @@ fn append_matchings_from_unification<M: Model>(
         Matching::Substructural(substructural) => {
             // look for matched lifetimes
             for (location, unification) in substructural.lifetimes {
-                match current_from.get_variance_of(
-                    table,
+                match environment.get_variance_of(
+                    &current_from,
                     parent_variance,
                     std::iter::once(TermLocation::Lifetime(
                         SubLifetimeLocation::FromType(location),
@@ -270,8 +270,8 @@ fn append_matchings_from_unification<M: Model>(
 
             // look for matched types
             for (location, unification) in substructural.types {
-                let current_variance = match current_from.get_variance_of(
-                    table,
+                let current_variance = match environment.get_variance_of(
+                    &current_from,
                     parent_variance,
                     std::iter::once(TermLocation::Type(
                         SubTypeLocation::FromType(location),
@@ -287,7 +287,7 @@ fn append_matchings_from_unification<M: Model>(
                     new_from,
                     unification,
                     current_variance,
-                    table,
+                    environment,
                     matching,
                 ) {
                     return false;
@@ -312,28 +312,31 @@ pub trait Compatible: ModelOf {
     /// - `variance`: The variance to used for determining the constraint of the
     ///   lifetimes. For the most cases, the default should be
     ///   [`Variance::Covariant`]
-    fn compatible_with_context(
+    fn compatible_with_context<S: State>(
         &self,
         target: &Self,
         variance: Variance,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
+
         context: &mut Context<Self::Model>,
     ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>;
 
     /// A delegate method for [`Compatible::compatible_with_context()`] with the
     /// default context.
-    fn compatible(
+    fn compatible<S: State>(
         &self,
         target: &Self,
         variance: Variance,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
     ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>
     {
@@ -347,11 +350,16 @@ pub trait Compatible: ModelOf {
 }
 
 impl<M: Model> Compatible for Lifetime<M> {
-    fn compatible_with_context(
+    fn compatible_with_context<S: State>(
         &self,
         target: &Self,
         variance: Variance,
-        _: &Environment<Self::Model, impl State, impl Normalizer<Self::Model>>,
+        _: &Environment<
+            Self::Model,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
+        >,
         _: &mut Context<Self::Model>,
     ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>
     {
@@ -391,27 +399,36 @@ impl<M: Model> Compatible for Lifetime<M> {
             _ => {}
         }
 
-        let constraint = match variance {
+        let constraints: BTreeSet<_> = match variance {
             Variance::Covariant => {
-                LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: self.clone(),
-                    bound: target.clone(),
-                })
+                std::iter::once(LifetimeConstraint::LifetimeOutlives(
+                    Outlives { operand: self.clone(), bound: target.clone() },
+                ))
+                .collect()
             }
             Variance::Contravariant => {
-                LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: target.clone(),
-                    bound: self.clone(),
-                })
+                std::iter::once(LifetimeConstraint::LifetimeOutlives(
+                    Outlives { operand: target.clone(), bound: self.clone() },
+                ))
+                .collect()
             }
-            Variance::Invariant => LifetimeConstraint::LifetimeMatching(
-                UnorderedPair::new(self.clone(), target.clone()),
-            ),
+            Variance::Invariant => [
+                LifetimeConstraint::LifetimeOutlives(Outlives::new(
+                    self.clone(),
+                    target.clone(),
+                )),
+                LifetimeConstraint::LifetimeOutlives(Outlives::new(
+                    target.clone(),
+                    self.clone(),
+                )),
+            ]
+            .into_iter()
+            .collect(),
         };
 
         Ok(Some(Succeeded::with_constraints(
             Compatibility::default(),
-            std::iter::once(constraint).collect(),
+            constraints,
         )))
     }
 }
@@ -476,10 +493,18 @@ fn matching_to_compatiblity<M: Model>(
                                 // neither is forall lifetime, add to the
                                 // constraints
                                 constraints.insert(
-                                    LifetimeConstraint::LifetimeMatching(
-                                        UnorderedPair::new(
-                                            self_lt,
+                                    LifetimeConstraint::LifetimeOutlives(
+                                        Outlives::new(
+                                            self_lt.clone(),
                                             entry.get().clone(),
+                                        ),
+                                    ),
+                                );
+                                constraints.insert(
+                                    LifetimeConstraint::LifetimeOutlives(
+                                        Outlives::new(
+                                            entry.get().clone(),
+                                            self_lt,
                                         ),
                                     ),
                                 );
@@ -526,8 +551,19 @@ fn matching_to_compatiblity<M: Model>(
                     }
                     Variance::Invariant => {
                         constraints.insert(
-                            LifetimeConstraint::LifetimeMatching(
-                                UnorderedPair::new(self_lt, target_lt),
+                            LifetimeConstraint::LifetimeOutlives(
+                                Outlives::new(
+                                    self_lt.clone(),
+                                    target_lt.clone(),
+                                ),
+                            ),
+                        );
+                        constraints.insert(
+                            LifetimeConstraint::LifetimeOutlives(
+                                Outlives::new(
+                                    target_lt.clone(),
+                                    self_lt.clone(),
+                                ),
                             ),
                         );
                     }
@@ -540,14 +576,15 @@ fn matching_to_compatiblity<M: Model>(
 }
 
 impl<M: Model> Compatible for Type<M> {
-    fn compatible_with_context(
+    fn compatible_with_context<S: State>(
         &self,
         target: &Self,
         variance: Variance,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
     ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>
@@ -569,7 +606,7 @@ impl<M: Model> Compatible for Type<M> {
             self.clone(),
             unification,
             variance,
-            environment.table,
+            environment,
             &mut matching,
         ) {
             return Ok(None);
@@ -585,14 +622,15 @@ impl<M: Model> Compatible for Type<M> {
 }
 
 impl<M: Model> Compatible for Constant<M> {
-    fn compatible_with_context(
+    fn compatible_with_context<S: State>(
         &self,
         target: &Self,
         _: Variance,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
     ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>
@@ -612,11 +650,16 @@ impl<M: Model> Compatible for Constant<M> {
 }
 
 impl<M: Model> GenericArguments<M> {
-    pub(super) fn compatible_with_context(
+    pub(super) fn compatible_with_context<S: State>(
         &self,
         target: &Self,
         variance: Variance,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
         context: &mut Context<M>,
     ) -> Result<Output<Compatibility<M>, M>, OverflowError> {
         let mut constraints = BTreeSet::new();
@@ -662,7 +705,7 @@ impl<M: Model> GenericArguments<M> {
                 self_type.clone(),
                 unification,
                 variance,
-                environment.table,
+                environment,
                 &mut matching,
             ) {
                 return Ok(None);

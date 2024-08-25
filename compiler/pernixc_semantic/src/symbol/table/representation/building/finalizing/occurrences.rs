@@ -4,7 +4,6 @@ use getset::Getters;
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree::{self, GenericIdentifier};
 
-use super::finalizer::builder;
 use crate::{
     error,
     symbol::{
@@ -17,9 +16,7 @@ use crate::{
         },
         GlobalID,
     },
-    type_system::{
-        environment::Environment, model::Default, normalizer::NO_OP, term,
-    },
+    type_system::{model::Default, term},
 };
 
 /// A structure containing the list of all resolution resolved so far in the
@@ -34,10 +31,7 @@ pub struct Occurrences {
     #[get = "pub"]
     lifetimes: Vec<(term::lifetime::Lifetime<Default>, syntax_tree::Lifetime)>,
     #[get = "pub"]
-    constants: Vec<(
-        term::constant::Constant<Default>,
-        syntax_tree::expression::Expression,
-    )>,
+    constants: Vec<(term::constant::Constant<Default>, syntax_tree::Constant)>,
 
     #[get = "pub"]
     resolutions: Vec<(Resolution<Default>, GenericIdentifier)>,
@@ -57,28 +51,29 @@ pub struct Occurrences {
 }
 
 impl Occurrences {
-    pub fn build_occurrences_to_definition(
-        &self,
-        table: &Table<impl State>,
-        referring_site: GlobalID,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) {
-        let environment = Environment::new(
-            table.get_active_premise(referring_site).unwrap(),
-            table,
-            &NO_OP,
-        );
+    // pub fn build_occurrences_to_definition(
+    //     &self,
+    //     table: &Table<impl State>,
+    //     referring_site: GlobalID,
+    //     handler: &dyn Handler<Box<dyn error::Error>>,
+    // ) {
+    //     let environment = Environment::new(
+    //         table.get_active_premise(referring_site).unwrap(),
+    //         table,
+    //         &NO_OP,
+    //     );
 
-        for (resolution, _) in &self.resolutions {
-            let _ = builder::build_for_definition_internal(
-                &environment,
-                resolution,
-                Some(referring_site),
-                false,
-                handler,
-            );
-        }
-    }
+    //     for (resolution, _) in &self.resolutions {
+    //         let _ = builder::build_for_definition_internal(
+    //             &environment,
+    //             resolution,
+    //             Some(referring_site),
+    //             false,
+    //             handler,
+    //         );
+    //     }
+    // }
+
     /// Get all the global IDs that has occurred so far.
     pub fn get_all_global_id_occurrences(
         &self,
@@ -155,10 +150,12 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
         _: &Table<Building<RwLockContainer, Finalizer>>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        ty: &term::r#type::Type<Default>,
+        ty: term::r#type::Type<Default>,
         syntax_tree: &syntax_tree::r#type::Type,
-    ) {
+    ) -> Option<term::r#type::Type<Default>> {
         self.types.push((ty.clone(), syntax_tree.clone()));
+
+        Some(ty)
     }
 
     fn on_lifetime_resolved(
@@ -166,10 +163,12 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
         _: &Table<Building<RwLockContainer, Finalizer>>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        lifetime: &term::lifetime::Lifetime<Default>,
+        lifetime: term::lifetime::Lifetime<Default>,
         syntax_tree: &syntax_tree::Lifetime,
-    ) {
+    ) -> Option<term::lifetime::Lifetime<Default>> {
         self.lifetimes.push((lifetime.clone(), syntax_tree.clone()));
+
+        Some(lifetime)
     }
 
     fn on_constant_arguments_resolved(
@@ -178,7 +177,7 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
         constant: &term::constant::Constant<Default>,
-        syntax_tree: &syntax_tree::expression::Expression,
+        syntax_tree: &syntax_tree::Constant,
     ) {
         self.constants.push((constant.clone(), syntax_tree.clone()));
     }

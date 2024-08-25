@@ -5,6 +5,7 @@ use std::{collections::BTreeSet, sync::Arc};
 use super::{
     model::Model,
     normalizer::Normalizer,
+    observer::Observer,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, ModelOf, Term,
     },
@@ -14,10 +15,9 @@ use super::{
 use crate::{
     symbol::table::State,
     type_system::{
-        mapping::Mapping, query::Context, unification::Unification, Compute,
-        LifetimeUnifyingPredicate,
+        mapping::Mapping, predicate::Outlives, query::Context,
+        unification::Unification, Compute, LifetimeUnifyingPredicate,
     },
-    unordered_pair::UnorderedPair,
 };
 
 pub(super) trait Simplify: ModelOf + Sized {
@@ -55,14 +55,27 @@ struct Simplified<M: Model> {
     simplified_constants: BTreeSet<Constant<M>>,
 }
 
-struct Visitor<'e, 's, T: State, N: Normalizer<M>, M: Model> {
-    environment: &'e Environment<'e, M, T, N>,
+struct Visitor<
+    'e,
+    's,
+    T: State,
+    N: Normalizer<M, T>,
+    O: Observer<M, T>,
+    M: Model,
+> {
+    environment: &'e Environment<'e, M, T, N, O>,
     simplified: &'s mut Simplified<M>,
     lifetime_constraints: BTreeSet<LifetimeConstraint<M>>,
 }
 
-impl<'e, 's, U: Term, T: State, N: Normalizer<U::Model>> Mutable<U>
-    for Visitor<'e, 's, T, N, U::Model>
+impl<
+        'e,
+        's,
+        U: Term,
+        T: State,
+        N: Normalizer<U::Model, T>,
+        O: Observer<U::Model, T>,
+    > Mutable<U> for Visitor<'e, 's, T, N, O, U::Model>
 {
     fn visit(&mut self, term: &mut U, _: U::Location) -> bool {
         let Some(Succeeded { result, constraints }) =
@@ -78,9 +91,14 @@ impl<'e, 's, U: Term, T: State, N: Normalizer<U::Model>> Mutable<U>
     }
 }
 
-fn simplify_internal<T: Term>(
+fn simplify_internal<T: Term, S: State>(
     term: &T,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+    environment: &Environment<
+        T::Model,
+        S,
+        impl Normalizer<T::Model, S>,
+        impl Observer<T::Model, S>,
+    >,
     simplified: &mut Simplified<T::Model>,
 ) -> Option<Succeeded<T, T::Model>> {
     if !T::simplified_mut(simplified).insert(term.clone()) {
@@ -206,8 +224,13 @@ fn simplify_internal<T: Term>(
                         }
 
                         constraints.insert(
-                            LifetimeConstraint::LifetimeMatching(
-                                UnorderedPair::new(lhs.clone(), rhs),
+                            LifetimeConstraint::LifetimeOutlives(
+                                Outlives::new(lhs.clone(), rhs.clone()),
+                            ),
+                        );
+                        constraints.insert(
+                            LifetimeConstraint::LifetimeOutlives(
+                                Outlives::new(rhs.clone(), lhs.clone()),
                             ),
                         );
                     }
@@ -284,9 +307,14 @@ fn simplify_internal<T: Term>(
 
 /// Simplifies a term by recursively applying the normalization and trait member
 /// equality.
-pub fn simplify<T: Term>(
+pub fn simplify<T: Term, S: State>(
     term: &T,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+    environment: &Environment<
+        T::Model,
+        S,
+        impl Normalizer<T::Model, S>,
+        impl Observer<T::Model, S>,
+    >,
 ) -> Succeeded<T, T::Model> {
     simplify_internal(term, environment, &mut Simplified::default())
         .unwrap_or_else(|| Succeeded::new(term.clone()))

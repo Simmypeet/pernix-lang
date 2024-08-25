@@ -21,13 +21,11 @@ use crate::{
     error::{self, CyclicDependency},
     symbol::{
         table::{representation::RwLockContainer, Building, Table},
-        AdtImplementation, AdtImplementationConstant,
-        AdtImplementationFunction, AdtImplementationType, Constant, Enum,
-        Function, GlobalID, NegativeTraitImplementation,
-        PositiveTraitImplementation, Struct, Trait, TraitConstant,
-        TraitFunction, TraitImplementationConstant,
-        TraitImplementationFunction, TraitImplementationType, TraitType, Type,
-        Variant,
+        AdtImplementation, AdtImplementationFunction, Constant, Enum, Function,
+        GlobalID, NegativeTraitImplementation, PositiveTraitImplementation,
+        Struct, Trait, TraitConstant, TraitFunction,
+        TraitImplementationConstant, TraitImplementationFunction,
+        TraitImplementationType, TraitType, Type, Variant,
     },
 };
 
@@ -64,16 +62,10 @@ pub struct Finalizer(RwLock<Representation>);
 
 #[derive(Debug, Default)]
 pub struct Representation {
-    adt_implementation_constants: HashMap<
-        ID<AdtImplementationConstant>,
-        State<AdtImplementationConstant>,
-    >,
     adt_implementation_functions: HashMap<
         ID<AdtImplementationFunction>,
         State<AdtImplementationFunction>,
     >,
-    adt_implementation_types:
-        HashMap<ID<AdtImplementationType>, State<AdtImplementationType>>,
     adt_implementations:
         HashMap<ID<AdtImplementation>, State<AdtImplementation>>,
 
@@ -189,16 +181,8 @@ impl Representation {
             GlobalID::AdtImplementation(id) => {
                 self.adt_implementations.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::AdtImplementationConstant(id) => self
-                .adt_implementation_constants
-                .get(&id)
-                .map(|x| &x.dependants_by_flag),
             GlobalID::AdtImplementationFunction(id) => self
                 .adt_implementation_functions
-                .get(&id)
-                .map(|x| &x.dependants_by_flag),
-            GlobalID::AdtImplementationType(id) => self
-                .adt_implementation_types
                 .get(&id)
                 .map(|x| &x.dependants_by_flag),
             GlobalID::Trait(id) => {
@@ -271,22 +255,8 @@ impl Representation {
                         .any(|x| x.contains(&dependent))
                 })
             }
-            GlobalID::AdtImplementationConstant(id) => {
-                self.adt_implementation_constants.get(&id).map(|x| {
-                    x.dependants_by_flag
-                        .values()
-                        .any(|x| x.contains(&dependent))
-                })
-            }
             GlobalID::AdtImplementationFunction(id) => {
                 self.adt_implementation_functions.get(&id).map(|x| {
-                    x.dependants_by_flag
-                        .values()
-                        .any(|x| x.contains(&dependent))
-                })
-            }
-            GlobalID::AdtImplementationType(id) => {
-                self.adt_implementation_types.get(&id).map(|x| {
                     x.dependants_by_flag
                         .values()
                         .any(|x| x.contains(&dependent))
@@ -385,9 +355,7 @@ macro_rules! implements_element {
     };
 }
 
-implements_element!(AdtImplementationConstant);
 implements_element!(AdtImplementationFunction);
-implements_element!(AdtImplementationType);
 implements_element!(AdtImplementation);
 implements_element!(Constant);
 implements_element!(Enum);
@@ -782,11 +750,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             make_ids!(TraitImplementationConstant);
         let trait_implementation_type_ids = make_ids!(TraitImplementationType);
         let adt_implementation_ids = make_ids!(AdtImplementation);
-        let adt_implementation_constant_ids =
-            make_ids!(AdtImplementationConstant);
         let adt_implementation_function_ids =
             make_ids!(AdtImplementationFunction);
-        let adt_implementation_type_ids = make_ids!(AdtImplementationType);
 
         macro_rules! build_id {
             ($field_name:ident) => {
@@ -829,9 +794,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             TraitImplementationConstant,
             TraitImplementationType,
             AdtImplementation,
-            AdtImplementationConstant,
-            AdtImplementationFunction,
-            AdtImplementationType
+            AdtImplementationFunction
         );
     }
 }

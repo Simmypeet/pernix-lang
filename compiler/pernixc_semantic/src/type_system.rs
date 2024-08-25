@@ -4,8 +4,9 @@ use std::collections::BTreeSet;
 
 use enum_as_inner::EnumAsInner;
 use environment::Environment;
+use observer::Observer;
 use predicate::Outlives;
-use query::{Cached, Context, QueryCall, Sealed};
+use query::{Cached, Context, Record, Sealed};
 use term::constant::Constant;
 use unification::Log;
 
@@ -18,7 +19,6 @@ use self::{
 use crate::{
     arena::ID,
     symbol::{table::State, PositiveTraitImplementation, Trait},
-    unordered_pair::UnorderedPair,
 };
 
 pub mod compatible;
@@ -33,6 +33,7 @@ pub mod mapping;
 pub mod matching;
 pub mod model;
 pub mod normalizer;
+pub mod observer;
 pub mod order;
 pub mod predicate;
 pub mod query;
@@ -93,8 +94,8 @@ impl<M: Model> unification::Predicate<Constant<M>>
 ///
 /// Due to the fact that the semantic system is partially-decidable, it is
 /// possible that the number of queries can be infinite. To prevent this, a
-/// limit is set to the number of queries that can be made. However, in most
-/// cases, the number of queries should not exceed the limit.
+/// limit is set to the number of queries that can be made. However, in
+/// most cases, the number of queries should not exceed the limit.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
@@ -111,7 +112,6 @@ pub struct Satisfied;
 #[allow(missing_docs)]
 pub enum LifetimeConstraint<M: Model> {
     LifetimeOutlives(Outlives<Lifetime<M>>),
-    LifetimeMatching(UnorderedPair<Lifetime<M>>),
 }
 
 /// The result of the semantic logic in the success case.
@@ -226,12 +226,13 @@ pub trait Compute: Sealed {
     /// (mark_as_done, clear_query).
     #[doc(hidden)]
     #[allow(private_interfaces, private_bounds)]
-    fn implementation(
+    fn implementation<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
         parameter: Self::Parameter,
@@ -246,19 +247,20 @@ pub trait Compute: Sealed {
         _: Self::Parameter,
         _: Self::InProgress,
         _: Self::InProgress,
-        _: &[QueryCall<Self::Model>],
+        _: &[Record<Self::Model>],
     ) -> Result<Option<Self::Result>, Self::Error> {
         Ok(None) /* the default implementation is to make the query fails */
     }
 
     /// Queries the result.
     #[allow(private_interfaces, private_bounds)]
-    fn query(
+    fn query<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
     ) -> Result<Option<Self::Result>, Self::Error> {
         let mut context = Context::default();
@@ -268,12 +270,13 @@ pub trait Compute: Sealed {
     /// Queries the result with the explicitly specified context.
     #[doc(hidden)]
     #[allow(private_interfaces, private_bounds)]
-    fn query_with_context(
+    fn query_with_context<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
     ) -> Result<Option<Self::Result>, Self::Error> {
@@ -289,18 +292,23 @@ pub trait Compute: Sealed {
     /// state, and additional parameters.
     #[doc(hidden)]
     #[allow(private_interfaces, private_bounds)]
-    fn query_with_context_full(
+    fn query_with_context_full<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
         parameter: Self::Parameter,
         in_progress: Self::InProgress,
     ) -> Result<Option<Self::Result>, Self::Error> {
-        match context.mark_as_in_progress(self.clone(), in_progress.clone())? {
+        match context.mark_as_in_progress(
+            self.clone(),
+            in_progress.clone(),
+            environment,
+        )? {
             Some(Cached::Done(result)) => return Ok(Some(result)),
             Some(Cached::InProgress(new_in_progress)) => {
                 let position = context

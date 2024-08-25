@@ -357,6 +357,7 @@ pub enum CharacterKind {
 }
 
 impl CharacterKind {
+    #[must_use]
     pub fn get_expected_value(self) -> char {
         match self {
             Self::Normal(x) => x,

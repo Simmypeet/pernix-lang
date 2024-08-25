@@ -21,6 +21,7 @@ use crate::{
         mapping::Mapping,
         model,
         normalizer::Normalizer,
+        observer::{self, Observer},
         query,
         simplify::simplify,
         term::{
@@ -742,10 +743,10 @@ impl unification::Predicate<Constant<Model>> for UnificationConfig {
     }
 }
 
-impl Normalizer<Model> for Context {
+impl<S: table::State> Normalizer<Model, S> for Context {
     fn normalize_type(
         ty: &Type<Model>,
-        environment: &Environment<Model, impl table::State, Self>,
+        environment: &Environment<Model, S, Self, impl Observer<Model, S>>,
         _: &mut query::Context<Model>,
     ) -> Result<Output<Type<Model>, Model>, OverflowError> {
         let Type::Inference(ty) = ty else {
@@ -767,7 +768,7 @@ impl Normalizer<Model> for Context {
 
     fn normalize_constant(
         constant: &Constant<Model>,
-        environment: &Environment<Model, impl table::State, Self>,
+        environment: &Environment<Model, S, Self, impl Observer<Model, S>>,
         _: &mut query::Context<Model>,
     ) -> Result<Output<Constant<Model>, Model>, OverflowError> {
         let Constant::Inference(constant) = constant else {
@@ -822,10 +823,12 @@ impl Context {
         T: Term<Model = Model, InferenceVariable = InferenceVariable<T>>,
         S: table::State,
         C: 'static + Constraint<T>,
+        O: Observer<Model, S>,
     >(
         &mut self,
         premise: &Premise<Model>,
         table: &Table<S>,
+        observer: &O,
         mapping: &BTreeMap<T, BTreeSet<T>>,
         inference_context: &impl Fn(&mut Self) -> &mut ContextImpl<T, C>,
         unify: &impl Fn(
@@ -834,6 +837,7 @@ impl Context {
             &T,
             Premise<Model>,
             &Table<S>,
+            &O,
         ) -> Result<(), UnifyError>,
         constraint_error: &impl Fn(UnsatisfiedConstraintError<T, C>) -> UnifyError,
         combine_constraint_error: &impl Fn(CombineConstraintError<C>) -> UnifyError,
@@ -870,6 +874,7 @@ impl Context {
                                 &known_rhs,
                                 premise.clone(),
                                 table,
+                                observer,
                             )?;
                         }
 
@@ -974,6 +979,7 @@ impl Context {
                                 another_known,
                                 premise.clone(),
                                 table,
+                                observer,
                             )?;
                         }
                         Inference::Inferring(inferring) => {
@@ -1008,11 +1014,14 @@ impl Context {
 
     fn handle_unifer<
         T: Term<Model = Model, InferenceVariable = InferenceVariable<T>>,
+        S: table::State,
+        O: Observer<Model, S>,
     >(
         &mut self,
         unifier: unification::Unifier<T>,
         premise: &Premise<Model>,
-        table: &Table<impl table::State>,
+        table: &Table<S>,
+        observer: &O,
     ) -> Result<(), UnifyError> {
         // turns the unification into mapping pairs
         let mapping: Mapping<Model> = Mapping::from_unifier(unifier);
@@ -1020,6 +1029,7 @@ impl Context {
         self.handle_mapping(
             &premise,
             table,
+            observer,
             &mapping.types,
             &Self::type_inference_context_mut,
             &Self::unify_type,
@@ -1030,6 +1040,7 @@ impl Context {
         self.handle_mapping(
             &premise,
             table,
+            observer,
             &mapping.constants,
             &Self::constant_inference_context_mut,
             &Self::unify_constant,
@@ -1045,14 +1056,16 @@ impl Context {
     /// # Errors
     ///
     /// See [`UnifyError`] for the possible errors.
-    pub fn unify_constant(
+    pub fn unify_constant<S: table::State, O: Observer<Model, S>>(
         &mut self,
         lhs: &Constant<Model>,
         rhs: &Constant<Model>,
         premise: Premise<Model>,
-        table: &Table<impl table::State>,
+        table: &Table<S>,
+        observer: &O,
     ) -> Result<(), UnifyError> {
-        let environment = Environment::new(premise.clone(), table, self);
+        let (environment, _) =
+            Environment::new_with(premise.clone(), table, self, observer);
 
         // obtains the unification result
         let Some(Succeeded { result: unifier, .. }) = Unification::new(
@@ -1068,7 +1081,7 @@ impl Context {
             });
         };
 
-        self.handle_unifer(unifier, &premise, table)
+        self.handle_unifer(unifier, &premise, table, observer)
     }
 
     /// Unifies the two types and updates the inference context.
@@ -1076,14 +1089,16 @@ impl Context {
     /// # Errors
     ///
     /// See [`UnifyError`] for the possible errors.
-    pub fn unify_type(
+    pub fn unify_type<S: table::State, O: Observer<Model, S>>(
         &mut self,
         lhs: &Type<Model>,
         rhs: &Type<Model>,
         premise: Premise<Model>,
-        table: &Table<impl table::State>,
+        table: &Table<S>,
+        observer: &O,
     ) -> Result<(), UnifyError> {
-        let environment = Environment::new(premise.clone(), table, self);
+        let (environment, _) =
+            Environment::new_with(premise.clone(), table, self, observer);
 
         // obtains the unification result
         let Some(Succeeded { result: unifier, .. }) = Unification::new(
@@ -1099,7 +1114,7 @@ impl Context {
             });
         };
 
-        self.handle_unifer(unifier, &premise, table)
+        self.handle_unifer(unifier, &premise, table, observer)
     }
 }
 
@@ -1250,10 +1265,17 @@ struct ConstraintNormalizer<'a> {
     context: &'a Context,
 }
 
-impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
+impl<'a, S: table::State> Normalizer<IntermediaryModel, S>
+    for ConstraintNormalizer<'a>
+{
     fn normalize_type(
         ty: &Type<IntermediaryModel>,
-        environment: &Environment<IntermediaryModel, impl table::State, Self>,
+        environment: &Environment<
+            IntermediaryModel,
+            S,
+            Self,
+            impl Observer<IntermediaryModel, S>,
+        >,
         _: &mut query::Context<IntermediaryModel>,
     ) -> Result<Output<Type<IntermediaryModel>, IntermediaryModel>, OverflowError>
     {
@@ -1296,7 +1318,12 @@ impl<'a> Normalizer<IntermediaryModel> for ConstraintNormalizer<'a> {
 
     fn normalize_constant(
         constant: &Constant<IntermediaryModel>,
-        environment: &Environment<IntermediaryModel, impl table::State, Self>,
+        environment: &Environment<
+            IntermediaryModel,
+            S,
+            Self,
+            impl Observer<IntermediaryModel, S>,
+        >,
         _: &mut query::Context<IntermediaryModel>,
     ) -> Result<
         Output<Constant<IntermediaryModel>, IntermediaryModel>,
@@ -1423,10 +1450,11 @@ impl Context {
         // normalze all the inference variables
         let constraint_normalizer = ConstraintNormalizer { context: self };
 
-        let environment = Environment::new(
+        let (environment, _) = Environment::new_with(
             DUMMY_PREMISE.clone(),
             &DUMMY_TABLE,
             &constraint_normalizer,
+            &observer::NO_OP,
         );
 
         intermediary_type = simplify(&intermediary_type, &environment).result;

@@ -1968,7 +1968,7 @@ impl Parser<'_> {
                                     SyntaxKind::Punctuation('-'),
                                     SyntaxKind::Punctuation('['),
                                 ],
-                                found: found.into_token(),
+                                found: self.reading_to_found(found),
                             });
                             self.forward();
                             return None;
@@ -2051,7 +2051,7 @@ impl Parser<'_> {
                             handler.receive(Error {
                                 expected: SyntaxKind::Identifier,
                                 alternatives: vec![SyntaxKind::Numeric],
-                                found: found.into_token(),
+                                found: self.reading_to_found(found),
                             });
                             self.forward();
                             return None;
@@ -2199,7 +2199,7 @@ impl Parser<'_> {
                 handler.receive(Error {
                     expected: SyntaxKind::Expression,
                     alternatives: Vec::new(),
-                    found: found.into_token(),
+                    found: self.reading_to_found(found),
                 });
                 self.forward();
                 None

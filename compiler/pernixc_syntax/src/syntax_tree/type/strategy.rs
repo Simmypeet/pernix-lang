@@ -12,8 +12,8 @@ use proptest::{
 use crate::syntax_tree::{
     expression::strategy::Expression,
     strategy::{
-        ConnectedList, ConstantPunctuation, Lifetime, QualifiedIdentifier,
-        Qualifier,
+        ConnectedList, Constant, ConstantPunctuation, Lifetime,
+        QualifiedIdentifier, Qualifier,
     },
 };
 
@@ -158,7 +158,7 @@ impl Display for Primitive {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Array {
     pub operand: Box<Type>,
-    pub expression: Box<Expression>,
+    pub constant: Constant,
 }
 
 impl Arbitrary for Array {
@@ -169,11 +169,11 @@ impl Arbitrary for Array {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             args.0.unwrap_or_else(Type::arbitrary),
-            args.1.unwrap_or_else(Expression::arbitrary),
+            Constant::arbitrary_with(args.1),
         )
-            .prop_map(|(type_specifier, expression)| Self {
+            .prop_map(|(type_specifier, constant)| Self {
                 operand: Box::new(type_specifier),
-                expression: Box::new(expression),
+                constant,
             })
             .boxed()
     }
@@ -182,7 +182,7 @@ impl Arbitrary for Array {
 impl Input<&super::Array> for &Array {
     fn assert(self, output: &super::Array) -> TestCaseResult {
         self.operand.assert(output.operand())?;
-        self.expression.assert(output.expression())
+        self.constant.assert(output.constant())
     }
 }
 
@@ -191,7 +191,7 @@ impl Display for Array {
         f.write_char('[')?;
         Display::fmt(&self.operand, f)?;
         f.write_str(": ")?;
-        Display::fmt(&self.expression, f)?;
+        Display::fmt(&self.constant, f)?;
         f.write_char(']')?;
 
         Ok(())
@@ -395,6 +395,7 @@ pub enum Type {
     Tuple(Tuple),
     Local(Local),
     Phantom(Phantom),
+    Elided,
 }
 
 impl Input<&super::Type> for &Type {
@@ -411,6 +412,7 @@ impl Input<&super::Type> for &Type {
             (Type::Pointer(i), super::Type::Pointer(o)) => i.assert(o),
             (Type::Tuple(i), super::Type::Tuple(o)) => i.assert(o),
             (Type::Phantom(i), super::Type::Phantom(o)) => i.assert(o),
+            (Type::Elided, super::Type::Elided(_)) => Ok(()),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
             ))),
@@ -450,7 +452,8 @@ impl Arbitrary for Type {
                             args.0.clone(),
                         ))
                     })
-                    .prop_map(Self::QualifiedIdentifier)
+                    .prop_map(Self::QualifiedIdentifier),
+                Just(Self::Elided),
             ]
         })
         .boxed()
@@ -468,6 +471,7 @@ impl Display for Type {
             Self::Tuple(i) => Display::fmt(i, f),
             Self::Local(i) => Display::fmt(i, f),
             Self::Phantom(i) => Display::fmt(i, f),
+            Self::Elided => f.write_str(".."),
         }
     }
 }

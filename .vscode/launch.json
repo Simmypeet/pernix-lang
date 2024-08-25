@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "args": [
+                "--extensionDevelopmentPath=${workspaceFolder}/lsp/client/code"
+            ],
+            // "runtimeExecutable": "${execPath}",
+            "name": "Launch Extension",
+            "outFiles": [
+                "${workspaceFolder}/lsp/client/code/out/**/*.js"
+            ],
+            "preLaunchTask": "Build Extension",
+            "request": "launch",
+            "type": "extensionHost"
+        },
+    ]
+}

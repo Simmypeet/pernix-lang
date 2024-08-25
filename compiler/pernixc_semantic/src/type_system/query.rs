@@ -7,8 +7,11 @@ use getset::Getters;
 
 use super::{
     definite::Definite,
+    environment::Environment,
     equality::Equality,
     model::Model,
+    normalizer::Normalizer,
+    observer::Observer,
     predicate::{self, ConstantTypeQuerySource, TraitSatisfied},
     sub_term::SubTerm,
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
@@ -16,6 +19,7 @@ use super::{
     unification::{Unification, Unifier},
     OverflowError, Satisfied, Succeeded,
 };
+use crate::symbol::table::State;
 
 /// The result of a query.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -44,7 +48,7 @@ impl<Q, I> Call<Q, I> {
 /// An enumeration of all kinds of queries in the type system.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, EnumAsInner)]
 #[allow(missing_docs)]
-pub enum QueryCall<M: Model> {
+pub enum Record<M: Model> {
     LifetimeEquality(Call<Equality<Lifetime<M>>, ()>),
     TypeEquality(Call<Equality<Type<M>>, ()>),
     ConstantEquality(Call<Equality<Constant<M>>, ()>),
@@ -138,7 +142,7 @@ pub struct Context<M: Model> {
 
     /// The call stack of the queries.
     #[get = "pub"]
-    call_stack: Vec<QueryCall<M>>,
+    call_stack: Vec<Record<M>>,
 
     limit: usize,
     current_count: usize,
@@ -190,24 +194,29 @@ impl<M: Model> Context<M> {
     /// Returns `None` if this query hasn't been stored before, otherwise
     /// returns the [`Cached`] value of the query.
     #[allow(private_bounds, private_interfaces)]
-    pub fn mark_as_in_progress<Q: Sealed<Model = M>>(
+    pub fn mark_as_in_progress<Q: Sealed<Model = M>, T: State>(
         &mut self,
         query: Q,
         in_progress: Q::InProgress,
+        environment: &Environment<
+            M,
+            T,
+            impl Normalizer<M, T>,
+            impl Observer<M, T>,
+        >,
     ) -> Result<Option<Cached<Q::InProgress, Q::Result>>, OverflowError> {
+        let record = Q::into_query_call(query.clone(), in_progress.clone());
+        Observer::on_query(&record, environment, self)?;
+
         if self.current_count >= self.limit {
-            dbg!(&self.call_stack);
             return Err(OverflowError);
         }
         self.current_count += 1;
 
-        match Q::get_map_mut(self).entry(query.clone()) {
+        match Q::get_map_mut(self).entry(query) {
             Entry::Vacant(entry) => {
-                entry.insert(Cached::InProgress(in_progress.clone()));
-                self.call_stack.push(Q::into_query_call(
-                    query.clone(),
-                    in_progress.clone(),
-                ));
+                entry.insert(Cached::InProgress(in_progress));
+                self.call_stack.push(record);
                 Ok(None)
             }
             Entry::Occupied(entry) => Ok(Some(entry.get().clone())),
@@ -298,14 +307,14 @@ pub(super) trait Sealed: Clone + Ord + Query {
 
     /// Converts the [`QueryCall`] to the [`Call`] type of this query.
     fn from_call(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Self, Self::InProgress>>;
 
     /// Converts this query and its in progress state to a [`QueryCall`].
     fn into_query_call(
         query: Self,
         in_progress: Self::InProgress,
-    ) -> QueryCall<Self::Model>;
+    ) -> Record<Self::Model>;
 }
 
 /// A trait implemented by all kinds of terms which is used for retrieving the
@@ -321,9 +330,9 @@ pub(super) trait Element: SubTerm {
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     >;
     fn from_call_to_equality(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Equality<Self>, ()>>;
-    fn equality_into_call(equality: Equality<Self>) -> QueryCall<Self::Model>;
+    fn equality_into_call(equality: Equality<Self>) -> Record<Self::Model>;
 
     fn get_definite_map(
         context: &Context<Self::Model>,
@@ -335,9 +344,9 @@ pub(super) trait Element: SubTerm {
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     >;
     fn from_call_to_definite(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Definite<Self>, ()>>;
-    fn definite_into_call(definite: Definite<Self>) -> QueryCall<Self::Model>;
+    fn definite_into_call(definite: Definite<Self>) -> Record<Self::Model>;
 
     fn get_unification_map(
         context: &Context<Self::Model>,
@@ -352,11 +361,11 @@ pub(super) trait Element: SubTerm {
         Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
     >;
     fn from_call_to_unification(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Unification<Self>, ()>>;
     fn unification_into_call(
         unification: Unification<Self>,
-    ) -> QueryCall<Self::Model>;
+    ) -> Record<Self::Model>;
 
     fn get_tuple_map(
         context: &Context<Self::Model>,
@@ -371,10 +380,9 @@ pub(super) trait Element: SubTerm {
         Cached<(), Succeeded<Satisfied, Self::Model>>,
     >;
     fn from_call_to_tuple(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<predicate::Tuple<Self>, ()>>;
-    fn tuple_into_call(tuple: predicate::Tuple<Self>)
-        -> QueryCall<Self::Model>;
+    fn tuple_into_call(tuple: predicate::Tuple<Self>) -> Record<Self::Model>;
 
     fn get_outlives_map(
         context: &Context<Self::Model>,
@@ -383,11 +391,11 @@ pub(super) trait Element: SubTerm {
         context: &mut Context<Self::Model>,
     ) -> &mut BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>>;
     fn from_call_to_outlives(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<predicate::Outlives<Self>, ()>>;
     fn outlives_into_call(
         outlives: predicate::Outlives<Self>,
-    ) -> QueryCall<Self::Model>;
+    ) -> Record<Self::Model>;
 }
 
 impl<M: Model> Element for Lifetime<M> {
@@ -408,13 +416,13 @@ impl<M: Model> Element for Lifetime<M> {
     }
 
     fn from_call_to_equality(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Equality<Self>, ()>> {
         call.as_lifetime_equality()
     }
 
-    fn equality_into_call(equality: Equality<Self>) -> QueryCall<Self::Model> {
-        QueryCall::LifetimeEquality(Call::new(equality, ()))
+    fn equality_into_call(equality: Equality<Self>) -> Record<Self::Model> {
+        Record::LifetimeEquality(Call::new(equality, ()))
     }
 
     fn get_definite_map(
@@ -434,13 +442,13 @@ impl<M: Model> Element for Lifetime<M> {
     }
 
     fn from_call_to_definite(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Definite<Self>, ()>> {
         call.as_lifetime_definite()
     }
 
-    fn definite_into_call(definite: Definite<Self>) -> QueryCall<Self::Model> {
-        QueryCall::LifetimeDefinite(Call::new(definite, ()))
+    fn definite_into_call(definite: Definite<Self>) -> Record<Self::Model> {
+        Record::LifetimeDefinite(Call::new(definite, ()))
     }
 
     fn get_unification_map(
@@ -462,15 +470,15 @@ impl<M: Model> Element for Lifetime<M> {
     }
 
     fn from_call_to_unification(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Unification<Self>, ()>> {
         call.as_lifetime_unification()
     }
 
     fn unification_into_call(
         unification: Unification<Self>,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::LifetimeUnification(Call::new(unification, ()))
+    ) -> Record<Self::Model> {
+        Record::LifetimeUnification(Call::new(unification, ()))
     }
 
     fn get_tuple_map(
@@ -492,15 +500,13 @@ impl<M: Model> Element for Lifetime<M> {
     }
 
     fn from_call_to_tuple(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<predicate::Tuple<Self>, ()>> {
         call.as_lifetime_tuple()
     }
 
-    fn tuple_into_call(
-        tuple: predicate::Tuple<Self>,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::LifetimeTuple(Call::new(tuple, ()))
+    fn tuple_into_call(tuple: predicate::Tuple<Self>) -> Record<Self::Model> {
+        Record::LifetimeTuple(Call::new(tuple, ()))
     }
 
     fn get_outlives_map(
@@ -516,15 +522,15 @@ impl<M: Model> Element for Lifetime<M> {
     }
 
     fn from_call_to_outlives(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<predicate::Outlives<Self>, ()>> {
         call.as_lifetime_outlives()
     }
 
     fn outlives_into_call(
         outlives: predicate::Outlives<Self>,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::LifetimeOutlives(Call::new(outlives, ()))
+    ) -> Record<Self::Model> {
+        Record::LifetimeOutlives(Call::new(outlives, ()))
     }
 }
 
@@ -546,13 +552,13 @@ impl<M: Model> Element for Type<M> {
     }
 
     fn from_call_to_equality(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Equality<Self>, ()>> {
         call.as_type_equality()
     }
 
-    fn equality_into_call(equality: Equality<Self>) -> QueryCall<Self::Model> {
-        QueryCall::TypeEquality(Call::new(equality, ()))
+    fn equality_into_call(equality: Equality<Self>) -> Record<Self::Model> {
+        Record::TypeEquality(Call::new(equality, ()))
     }
 
     fn get_definite_map(
@@ -572,13 +578,13 @@ impl<M: Model> Element for Type<M> {
     }
 
     fn from_call_to_definite(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Definite<Self>, ()>> {
         call.as_type_definite()
     }
 
-    fn definite_into_call(definite: Definite<Self>) -> QueryCall<Self::Model> {
-        QueryCall::TypeDefinite(Call::new(definite, ()))
+    fn definite_into_call(definite: Definite<Self>) -> Record<Self::Model> {
+        Record::TypeDefinite(Call::new(definite, ()))
     }
 
     fn get_unification_map(
@@ -600,15 +606,15 @@ impl<M: Model> Element for Type<M> {
     }
 
     fn from_call_to_unification(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Unification<Self>, ()>> {
         call.as_type_unification()
     }
 
     fn unification_into_call(
         unification: Unification<Self>,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::TypeUnification(Call::new(unification, ()))
+    ) -> Record<Self::Model> {
+        Record::TypeUnification(Call::new(unification, ()))
     }
 
     fn get_tuple_map(
@@ -630,15 +636,13 @@ impl<M: Model> Element for Type<M> {
     }
 
     fn from_call_to_tuple(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<predicate::Tuple<Self>, ()>> {
         call.as_type_tuple()
     }
 
-    fn tuple_into_call(
-        tuple: predicate::Tuple<Self>,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::TypeTuple(Call::new(tuple, ()))
+    fn tuple_into_call(tuple: predicate::Tuple<Self>) -> Record<Self::Model> {
+        Record::TypeTuple(Call::new(tuple, ()))
     }
 
     fn get_outlives_map(
@@ -654,15 +658,15 @@ impl<M: Model> Element for Type<M> {
     }
 
     fn from_call_to_outlives(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<predicate::Outlives<Self>, ()>> {
         call.as_type_outlives()
     }
 
     fn outlives_into_call(
         outlives: predicate::Outlives<Self>,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::TypeOutlives(Call::new(outlives, ()))
+    ) -> Record<Self::Model> {
+        Record::TypeOutlives(Call::new(outlives, ()))
     }
 }
 
@@ -684,13 +688,13 @@ impl<M: Model> Element for Constant<M> {
     }
 
     fn from_call_to_equality(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Equality<Self>, ()>> {
         call.as_constant_equality()
     }
 
-    fn equality_into_call(equality: Equality<Self>) -> QueryCall<Self::Model> {
-        QueryCall::ConstantEquality(Call::new(equality, ()))
+    fn equality_into_call(equality: Equality<Self>) -> Record<Self::Model> {
+        Record::ConstantEquality(Call::new(equality, ()))
     }
 
     fn get_definite_map(
@@ -710,13 +714,13 @@ impl<M: Model> Element for Constant<M> {
     }
 
     fn from_call_to_definite(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Definite<Self>, ()>> {
         call.as_constant_definite()
     }
 
-    fn definite_into_call(definite: Definite<Self>) -> QueryCall<Self::Model> {
-        QueryCall::ConstantDefinite(Call::new(definite, ()))
+    fn definite_into_call(definite: Definite<Self>) -> Record<Self::Model> {
+        Record::ConstantDefinite(Call::new(definite, ()))
     }
 
     fn get_unification_map(
@@ -738,15 +742,15 @@ impl<M: Model> Element for Constant<M> {
     }
 
     fn from_call_to_unification(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Unification<Self>, ()>> {
         call.as_constant_unification()
     }
 
     fn unification_into_call(
         unification: Unification<Self>,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::ConstantUnification(Call::new(unification, ()))
+    ) -> Record<Self::Model> {
+        Record::ConstantUnification(Call::new(unification, ()))
     }
 
     fn get_tuple_map(
@@ -768,15 +772,13 @@ impl<M: Model> Element for Constant<M> {
     }
 
     fn from_call_to_tuple(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<predicate::Tuple<Self>, ()>> {
         call.as_constant_tuple()
     }
 
-    fn tuple_into_call(
-        tuple: predicate::Tuple<Self>,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::ConstantTuple(Call::new(tuple, ()))
+    fn tuple_into_call(tuple: predicate::Tuple<Self>) -> Record<Self::Model> {
+        Record::ConstantTuple(Call::new(tuple, ()))
     }
 
     fn get_outlives_map(
@@ -792,15 +794,15 @@ impl<M: Model> Element for Constant<M> {
     }
 
     fn from_call_to_outlives(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<predicate::Outlives<Self>, ()>> {
         call.as_constant_outlives()
     }
 
     fn outlives_into_call(
         outlives: predicate::Outlives<Self>,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::ConstantOutlives(Call::new(outlives, ()))
+    ) -> Record<Self::Model> {
+        Record::ConstantOutlives(Call::new(outlives, ()))
     }
 }
 
@@ -824,7 +826,7 @@ impl<T: Term> Sealed for Equality<T> {
     }
 
     fn from_call(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Self, Self::InProgress>> {
         T::from_call_to_equality(call)
     }
@@ -832,7 +834,7 @@ impl<T: Term> Sealed for Equality<T> {
     fn into_query_call(
         query: Self,
         (): Self::InProgress,
-    ) -> QueryCall<Self::Model> {
+    ) -> Record<Self::Model> {
         T::equality_into_call(query)
     }
 }
@@ -857,7 +859,7 @@ impl<T: Term> Sealed for Definite<T> {
     }
 
     fn from_call(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Self, Self::InProgress>> {
         T::from_call_to_definite(call)
     }
@@ -865,7 +867,7 @@ impl<T: Term> Sealed for Definite<T> {
     fn into_query_call(
         query: Self,
         (): Self::InProgress,
-    ) -> QueryCall<Self::Model> {
+    ) -> Record<Self::Model> {
         T::definite_into_call(query)
     }
 }
@@ -890,7 +892,7 @@ impl<T: Term> Sealed for Unification<T> {
     }
 
     fn from_call(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Self, Self::InProgress>> {
         T::from_call_to_unification(call)
     }
@@ -898,7 +900,7 @@ impl<T: Term> Sealed for Unification<T> {
     fn into_query_call(
         query: Self,
         (): Self::InProgress,
-    ) -> QueryCall<Self::Model> {
+    ) -> Record<Self::Model> {
         T::unification_into_call(query)
     }
 }
@@ -923,7 +925,7 @@ impl<T: Term> Sealed for predicate::Tuple<T> {
     }
 
     fn from_call(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Self, Self::InProgress>> {
         T::from_call_to_tuple(call)
     }
@@ -931,7 +933,7 @@ impl<T: Term> Sealed for predicate::Tuple<T> {
     fn into_query_call(
         query: Self,
         (): Self::InProgress,
-    ) -> QueryCall<Self::Model> {
+    ) -> Record<Self::Model> {
         T::tuple_into_call(query)
     }
 }
@@ -956,7 +958,7 @@ impl<T: Term> Sealed for predicate::Outlives<T> {
     }
 
     fn from_call(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Self, Self::InProgress>> {
         T::from_call_to_outlives(call)
     }
@@ -964,7 +966,7 @@ impl<T: Term> Sealed for predicate::Outlives<T> {
     fn into_query_call(
         query: Self,
         (): Self::InProgress,
-    ) -> QueryCall<Self::Model> {
+    ) -> Record<Self::Model> {
         T::outlives_into_call(query)
     }
 }
@@ -989,7 +991,7 @@ impl<M: Model> Sealed for predicate::ConstantType<M> {
     }
 
     fn from_call(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Self, Self::InProgress>> {
         call.as_constant_type()
     }
@@ -997,8 +999,8 @@ impl<M: Model> Sealed for predicate::ConstantType<M> {
     fn into_query_call(
         query: Self,
         in_progress: Self::InProgress,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::ConstantType(Call::new(query, in_progress))
+    ) -> Record<Self::Model> {
+        Record::ConstantType(Call::new(query, in_progress))
     }
 }
 
@@ -1022,7 +1024,7 @@ impl<M: Model> Sealed for predicate::Trait<M> {
     }
 
     fn from_call(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Self, Self::InProgress>> {
         call.as_trait_satisfiability()
     }
@@ -1030,8 +1032,8 @@ impl<M: Model> Sealed for predicate::Trait<M> {
     fn into_query_call(
         query: Self,
         (): Self::InProgress,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::TraitSatisfiability(Call::new(query, ()))
+    ) -> Record<Self::Model> {
+        Record::TraitSatisfiability(Call::new(query, ()))
     }
 }
 
@@ -1055,7 +1057,7 @@ impl<M: Model> Sealed for TypeCheck<M> {
     }
 
     fn from_call(
-        call: &QueryCall<Self::Model>,
+        call: &Record<Self::Model>,
     ) -> Option<&Call<Self, Self::InProgress>> {
         call.as_type_check()
     }
@@ -1063,7 +1065,7 @@ impl<M: Model> Sealed for TypeCheck<M> {
     fn into_query_call(
         query: Self,
         (): Self::InProgress,
-    ) -> QueryCall<Self::Model> {
-        QueryCall::TypeCheck(Call::new(query, ()))
+    ) -> Record<Self::Model> {
+        Record::TypeCheck(Call::new(query, ()))
     }
 }

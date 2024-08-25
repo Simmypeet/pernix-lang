@@ -1680,7 +1680,7 @@ impl<'a> Parser<'a> {
             found => {
                 handler.receive(Error {
                     expected: SyntaxKind::AccessModifier,
-                    found: found.into_token(),
+                    found: self.reading_to_found(found),
                     alternatives: Vec::new(),
                 });
                 None
@@ -1767,7 +1767,7 @@ impl<'a> Parser<'a> {
                         handler.receive(Error {
                             expected: SyntaxKind::GenericParameter,
                             alternatives: Vec::new(),
-                            found: found.into_token(),
+                            found: parser.reading_to_found(found),
                         });
                         None
                     }
@@ -2023,7 +2023,7 @@ impl<'a> Parser<'a> {
                         handler.receive(Error {
                             expected: SyntaxKind::Keyword(KeywordKind::Const),
                             alternatives: vec![SyntaxKind::Identifier],
-                            found: found.into_token(),
+                            found: self.reading_to_found(found),
                         });
                         None
                     }
@@ -2034,7 +2034,7 @@ impl<'a> Parser<'a> {
                 handler.receive(Error {
                     expected: SyntaxKind::ImplementationMember,
                     alternatives: vec![],
-                    found: found.into_token(),
+                    found: self.reading_to_found(found),
                 });
                 None
             }
@@ -2229,7 +2229,7 @@ impl<'a> Parser<'a> {
                 handler.receive(Error {
                     expected: SyntaxKind::TraitMember,
                     alternatives: Vec::new(),
-                    found: found.into_token(),
+                    found: self.reading_to_found(found),
                 });
                 None
             }
@@ -2656,7 +2656,7 @@ impl<'a> Parser<'a> {
                                 KeywordKind::Function,
                             ),
                             alternatives: vec![SyntaxKind::Identifier],
-                            found: found.into_token(),
+                            found: self.reading_to_found(found),
                         });
                         None
                     }
@@ -2746,7 +2746,7 @@ impl<'a> Parser<'a> {
                 handler.receive(Error {
                     expected: SyntaxKind::Item,
                     alternatives: Vec::new(),
-                    found: found.into_token(),
+                    found: self.reading_to_found(found),
                 });
                 None
             }
@@ -2845,7 +2845,7 @@ impl<'a> Parser<'a> {
                 self.forward();
                 handler.receive(Error {
                     expected: SyntaxKind::Item,
-                    found: found.into_token(),
+                    found: self.reading_to_found(found),
                     alternatives: Vec::new(),
                 });
                 None

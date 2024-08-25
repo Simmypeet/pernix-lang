@@ -14,6 +14,7 @@ use super::{
     matching,
     model::Model,
     normalizer::Normalizer,
+    observer::Observer,
     query::{self, Context},
     sub_term::{SubTerm, TermLocation},
     term::{
@@ -307,12 +308,13 @@ impl<T: Term> Compute for Unification<T> {
     );
 
     #[allow(private_bounds, private_interfaces)]
-    fn implementation(
+    fn implementation<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut query::Context<Self::Model>,
         (from_logs, to_logs): Self::Parameter,
@@ -330,13 +332,18 @@ impl<T: Term> Compute for Unification<T> {
     }
 }
 
-fn substructural_unify<T: Term>(
+fn substructural_unify<T: Term, S: State>(
     from: &T,
     to: &T,
     from_logs: Vec<Log<T::Model>>,
     to_logs: Vec<Log<T::Model>>,
     predicate: Arc<dyn PredicateA<T::Model>>,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+    environment: &Environment<
+        T::Model,
+        S,
+        impl Normalizer<T::Model, S>,
+        impl Observer<T::Model, S>,
+    >,
     context: &mut Context<T::Model>,
 ) -> Result<Output<Unifier<T>, T::Model>, OverflowError> {
     let Some(substructural) = from.substructural_match(to) else {
@@ -443,13 +450,18 @@ fn substructural_unify<T: Term>(
     )))
 }
 
-pub(super) fn unify<T: Term>(
+pub(super) fn unify<T: Term, S: State>(
     from: &T,
     to: &T,
     from_logs: Vec<Log<T::Model>>,
     to_logs: Vec<Log<T::Model>>,
     predicate: Arc<dyn PredicateA<T::Model>>,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+    environment: &Environment<
+        T::Model,
+        S,
+        impl Normalizer<T::Model, S>,
+        impl Observer<T::Model, S>,
+    >,
     context: &mut Context<T::Model>,
 ) -> Result<Output<Unifier<T>, T::Model>, OverflowError> {
     if let Some(result) = equality::Equality::new(from.clone(), to.clone())

@@ -11,8 +11,7 @@ use crate::{
     type_system::{
         environment::Environment,
         model::{Default, Model},
-        normalizer::NO_OP,
-        predicate,
+        normalizer, observer, predicate,
         term::{
             r#type::{Primitive, Type},
             GenericArguments, Tuple, TupleElement,
@@ -72,7 +71,12 @@ fn check_primitives_tuple_copyable_impl(
 
     let active_premise =
         table.get_active_premise(core_module_id.into()).unwrap();
-    let environment = Environment::new(active_premise, &table, &NO_OP);
+    let (environment, _) = Environment::new_with(
+        active_premise,
+        &table,
+        &normalizer::NO_OP,
+        &observer::NO_OP,
+    );
 
     let trait_predicate = predicate::Trait {
         id: copy_trait_id,

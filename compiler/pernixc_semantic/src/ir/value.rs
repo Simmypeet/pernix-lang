@@ -9,7 +9,7 @@ use crate::{
     symbol::{table, GlobalID},
     type_system::{
         environment::Environment, model::Model, normalizer::Normalizer,
-        term::r#type::Type,
+        observer::Observer, term::r#type::Type,
     },
 };
 
@@ -48,11 +48,16 @@ impl<M: Model> Representation<M> {
     /// # Errors
     ///
     /// See [`TypeOfError`] for the possible errors that can occur.
-    pub fn type_of_value(
+    pub fn type_of_value<S: table::State>(
         &self,
         value: &Value<M>,
         current_site: GlobalID,
-        environment: &Environment<M, impl table::State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
     ) -> Result<Type<M>, TypeOfError<M>> {
         match value {
             Value::Register(register) => {

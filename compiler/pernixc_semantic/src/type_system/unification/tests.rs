@@ -16,7 +16,7 @@ use crate::{
     type_system::{
         equality::Equality,
         model::Default,
-        normalizer::NoOp,
+        normalizer, observer,
         predicate::Predicate,
         sub_term::Location,
         term::{
@@ -492,7 +492,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     let environment = Environment {
         premise: premise.clone(),
         table: &table,
-        normalizer: &NoOp,
+        normalizer: &normalizer::NO_OP,
+        observer: &observer::NO_OP,
     };
 
     if Equality::new(lhs.clone(), rhs.clone())
@@ -515,8 +516,12 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     {
         rewrite_term(&mut lhs, unifier)?;
 
-        let environment =
-            Environment { premise, table: &table, normalizer: &NoOp };
+        let environment = Environment {
+            premise,
+            table: &table,
+            normalizer: &normalizer::NO_OP,
+            observer: &observer::NO_OP,
+        };
 
         let Some(satisfied) = Equality::new(lhs, rhs)
             .query(&environment)

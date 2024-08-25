@@ -3,14 +3,15 @@
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::{occurrences::Occurrences, Finalizer};
+use super::{finalizer::builder::Basic, occurrences::Occurrences, Finalizer};
 use crate::{
     arena::ID,
     error::{self, DuplicatedGenericParameter, MisOrderedGenericParameter},
     symbol::{
         table::{
             representation::{Element, RwLockContainer},
-            resolution, Building, Table,
+            resolution::{self, Observer},
+            Building, Table,
         },
         ConstantParameter, Generic, GenericID, GenericKind, GlobalID,
         LifetimeParameter, MemberID, TypeParameter,
@@ -178,7 +179,9 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             ellided_lifetime_provider: None,
                             ellided_type_provider: None,
                             ellided_constant_provider: None,
-                            observer: Some(occurrences),
+                            observer: Some(
+                                &mut (&mut Basic).chain(occurrences),
+                            ),
                             higher_ranked_lifetimes: None,
                         },
                         handler,

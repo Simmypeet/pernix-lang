@@ -30,17 +30,19 @@ use crate::{
         self,
         table::{
             representation::{Index, IndexMut, Insertion},
-            resolution::NoOpObserver,
-            Building, Table,
+            resolution, Building, Table,
         },
         Accessibility, AdtTemplate, Function, FunctionDefinition,
         FunctionTemplate, GenericDeclaration, GenericID, MemberID,
         StructDefinition,
     },
-    type_system::term::{
-        lifetime::Lifetime,
-        r#type::{Primitive, Qualifier, Reference, SymbolID, Type},
-        GenericArguments, Symbol, Tuple, TupleElement,
+    type_system::{
+        self,
+        term::{
+            lifetime::Lifetime,
+            r#type::{Primitive, Qualifier, Reference, SymbolID, Type},
+            GenericArguments, Symbol, Tuple, TupleElement,
+        },
     },
 };
 
@@ -53,7 +55,7 @@ fn create_pattern(source: impl Display) -> syntax_tree::pattern::Irrefutable {
     // no error
     assert_eq!(counter.count(), 0);
 
-    let mut parser = Parser::new(&token_stream);
+    let mut parser = Parser::new(&token_stream, source_file);
     let pattern = parser.parse_irrefutable_pattern(&counter).unwrap();
 
     // no error
@@ -171,7 +173,8 @@ fn value_bound_named() {
     let storage: Storage<Box<dyn Error>> = Storage::default();
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -211,7 +214,8 @@ fn reference_bound_named() {
     let storage: Storage<Box<dyn Error>> = Storage::default();
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -308,7 +312,8 @@ fn value_bound_struct() {
     let storage: Storage<Box<dyn Error>> = Storage::default();
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -465,7 +470,8 @@ fn reference_bound_struct() {
 
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &Counter::default(),
@@ -605,7 +611,8 @@ fn value_bound_tuple() {
     let storage: Storage<Box<dyn Error>> = Storage::default();
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -735,7 +742,8 @@ fn reference_bound_tuple() {
     let storage: Storage<Box<dyn Error>> = Storage::default();
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -858,7 +866,8 @@ fn packed_tuple() {
     let storage: Storage<Box<dyn Error>> = Storage::default();
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,

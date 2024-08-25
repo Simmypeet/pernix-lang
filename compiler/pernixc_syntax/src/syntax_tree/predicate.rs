@@ -18,7 +18,7 @@ use super::{
 };
 use crate::{
     error::Error,
-    parser::{DelimitedTree, Parser, Reading},
+    parser::{Parser, Reading},
 };
 
 pub mod strategy;
@@ -468,27 +468,9 @@ impl<'a> Parser<'a> {
                         parser.try_parse_higher_ranked_lifetimes(handler)?;
 
                     let kind = match parser.stop_at_significant() {
-                        Reading::IntoDelimited(Delimiter::Brace, _) => {
-                            let DelimitedTree {
-                                open: left_brace,
-                                tree,
-                                close: right_brace,
-                            } = parser.step_into(
-                                Delimiter::Brace,
-                                |parser| {
-                                    parser
-                                        .parse_expression(handler)
-                                        .map(Box::new)
-                                },
-                                handler,
-                            )?;
-
-                            TupleOperandKind::Constant(ConstantArgument {
-                                left_brace,
-                                expression: tree?,
-                                right_brace,
-                            })
-                        }
+                        Reading::IntoDelimited(Delimiter::Brace, _) => parser
+                            .parse_constant_argument(handler)
+                            .map(TupleOperandKind::Constant)?,
 
                         _ => parser
                             .parse_type(handler)

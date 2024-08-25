@@ -21,10 +21,10 @@ use super::{
 use crate::{
     arena::ID,
     error::{
-        self, ExpectLifetime, ExpectType, LifetimeParameterNotFound,
+        self, ExpectType, LifetimeParameterNotFound,
         MismatchedGenericArgumentCount, MisorderedGenericArgument,
         MoreThanOneUnpackedInTupleType, NoGenericArgumentsRequired,
-        ResolutionAmbiguity, SymbolNotFound,
+        ResolutionAmbiguity, SymbolNotFound, UnexpectedInference,
     },
     symbol::{
         self, AdtImplementationFunction, Constant, ConstantParameter, Enum,
@@ -218,7 +218,7 @@ trait GenericParameter<M: Model>: Sized + 'static {
         referring_site: GlobalID,
         config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Self::Argument, ResolveTermError>;
+    ) -> Result<Self::Argument, Error>;
 
     fn generic_kind() -> GenericKind;
 
@@ -246,7 +246,7 @@ impl<M: Model> GenericParameter<M> for LifetimeParameter {
         referring_site: GlobalID,
         config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Self::Argument, ResolveTermError> {
+    ) -> Result<Self::Argument, Error> {
         table.resolve_lifetime(syntax_tree, referring_site, config, handler)
     }
 
@@ -283,7 +283,7 @@ impl<M: Model> GenericParameter<M> for TypeParameter {
         referring_site: GlobalID,
         config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Self::Argument, ResolveTermError> {
+    ) -> Result<Self::Argument, Error> {
         table.resolve_type(syntax_tree, referring_site, config, handler)
     }
 
@@ -311,25 +311,41 @@ impl<M: Model> GenericParameter<M> for TypeParameter {
 }
 
 impl<M: Model> GenericParameter<M> for ConstantParameter {
-    type SyntaxTree = syntax_tree::expression::Expression;
+    type SyntaxTree = syntax_tree::Constant;
     type Argument = term::constant::Constant<M>;
 
     fn resolve<S: State>(
         table: &Table<S>,
         syntax_tree: &Self::SyntaxTree,
         referring_site: GlobalID,
-        _: Config<S, M>,
+        config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Self::Argument, ResolveTermError> {
-        match table.evaluate(syntax_tree, referring_site, handler) {
-            Ok(constant) => Ok(M::from_default_constant(constant)),
-            Err(evaluate::Error::InvalidReferringSiteID) => {
-                Err(ResolveTermError::InvalidReferringSiteID)
-            }
+    ) -> Result<Self::Argument, Error> {
+        match syntax_tree {
+            syntax_tree::Constant::Expression(expression) => {
+                match table.evaluate(&expression, referring_site, handler) {
+                    Ok(constant) => Ok(M::from_default_constant(constant)),
+                    Err(evaluate::Error::InvalidReferringSiteID) => {
+                        Err(Error::InvalidReferringSiteID)
+                    }
 
-            Err(
-                evaluate::Error::SemanticError | evaluate::Error::Suboptimal,
-            ) => Ok(constant::Constant::Error(term::Error)),
+                    Err(
+                        evaluate::Error::SemanticError
+                        | evaluate::Error::Suboptimal,
+                    ) => Ok(constant::Constant::Error(term::Error)),
+                }
+            }
+            syntax_tree::Constant::Elided(elided) => {
+                if let Some(provider) = config.ellided_constant_provider {
+                    Ok(provider.create())
+                } else {
+                    handler.receive(Box::new(UnexpectedInference {
+                        unexpected_span: elided.span(),
+                        generic_kind: GenericKind::Constant,
+                    }));
+                    Ok(term::constant::Constant::Error(term::Error))
+                }
+            }
         }
     }
 
@@ -407,15 +423,6 @@ pub enum Error {
     )]
     Abort,
 }
-impl From<ResolveTermError> for Error {
-    fn from(value: ResolveTermError) -> Self {
-        match value {
-            ResolveTermError::InvalidReferringSiteID => {
-                Self::InvalidReferringSiteID
-            }
-        }
-    }
-}
 
 /// An error returned by [`Table::resolve_simple_path`].
 #[derive(
@@ -428,17 +435,6 @@ pub enum ResolveSimplePathError {
 
     #[error(transparent)]
     ResolutionError(#[from] Error),
-}
-
-/// An error returned by [`Table::resolve_type()`] and
-/// [`Table::resolve_lifetime()`].
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[allow(missing_docs)]
-pub enum ResolveTermError {
-    #[error("the given `referring_site` id does not exist in the table")]
-    InvalidReferringSiteID,
 }
 
 /// A trait for providing elided terms.
@@ -508,23 +504,23 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
         table: &Table<T>,
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
-        ty: &r#type::Type<M>,
+        mut ty: r#type::Type<M>,
         syntax_tree: &syntax_tree::r#type::Type,
-    ) {
-        self.first.on_type_resolved(
+    ) -> Option<r#type::Type<M>> {
+        ty = self.first.on_type_resolved(
             table,
             referring_site,
             handler,
             ty,
             syntax_tree,
-        );
+        )?;
         self.second.on_type_resolved(
             table,
             referring_site,
             handler,
             ty,
             syntax_tree,
-        );
+        )
     }
 
     fn on_lifetime_resolved(
@@ -532,23 +528,23 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
         table: &Table<T>,
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
-        lifetime: &Lifetime<M>,
+        mut lifetime: Lifetime<M>,
         syntax_tree: &syntax_tree::Lifetime,
-    ) {
-        self.first.on_lifetime_resolved(
+    ) -> Option<Lifetime<M>> {
+        lifetime = self.first.on_lifetime_resolved(
             table,
             referring_site,
             handler,
             lifetime,
             syntax_tree,
-        );
+        )?;
         self.second.on_lifetime_resolved(
             table,
             referring_site,
             handler,
             lifetime,
             syntax_tree,
-        );
+        )
     }
 
     fn on_constant_arguments_resolved(
@@ -557,7 +553,7 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         constant: &constant::Constant<M>,
-        syntax_tree: &syntax_tree::expression::Expression,
+        syntax_tree: &syntax_tree::Constant,
     ) {
         self.first.on_constant_arguments_resolved(
             table,
@@ -628,6 +624,8 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
 ///
 /// The trait will be notified when a type, lifetime, or constant is resolved
 /// during the resolution process.
+///
+/// This is primarily used for dependency injection.
 pub trait Observer<T: State, M: Model>: Debug {
     /// Notifies the observer when a global ID is resolved.
     ///
@@ -665,9 +663,9 @@ pub trait Observer<T: State, M: Model>: Debug {
         table: &Table<T>,
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
-        ty: &r#type::Type<M>,
+        ty: r#type::Type<M>,
         syntax_tree: &syntax_tree::r#type::Type,
-    );
+    ) -> Option<r#type::Type<M>>;
 
     /// Notifies the observer when a lifetime is resolved.
     fn on_lifetime_resolved(
@@ -675,9 +673,9 @@ pub trait Observer<T: State, M: Model>: Debug {
         table: &Table<T>,
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
-        lifetime: &Lifetime<M>,
+        lifetime: Lifetime<M>,
         syntax_tree: &syntax_tree::Lifetime,
-    );
+    ) -> Option<Lifetime<M>>;
 
     /// Notifies the observer when a constant is resolved.
     fn on_constant_arguments_resolved(
@@ -686,7 +684,7 @@ pub trait Observer<T: State, M: Model>: Debug {
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         constant: &constant::Constant<M>,
-        syntax_tree: &syntax_tree::expression::Expression,
+        syntax_tree: &syntax_tree::Constant,
     );
 
     /// Notifies the observer when a type is resolved as an unpacked element
@@ -725,9 +723,9 @@ pub trait Observer<T: State, M: Model>: Debug {
 
 /// The struct implementing the [`Observer`] trait that does nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct NoOpObserver;
+pub struct NoOp;
 
-impl<T: State, M: Model> Observer<T, M> for NoOpObserver {
+impl<T: State, M: Model> Observer<T, M> for NoOp {
     fn on_global_id_resolved(
         &mut self,
         _: &Table<T>,
@@ -755,9 +753,10 @@ impl<T: State, M: Model> Observer<T, M> for NoOpObserver {
         _: &Table<T>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        _: &r#type::Type<M>,
+        ty: r#type::Type<M>,
         _: &syntax_tree::r#type::Type,
-    ) {
+    ) -> Option<r#type::Type<M>> {
+        Some(ty)
     }
 
     fn on_lifetime_resolved(
@@ -765,9 +764,10 @@ impl<T: State, M: Model> Observer<T, M> for NoOpObserver {
         _: &Table<T>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        _: &Lifetime<M>,
+        lt: Lifetime<M>,
         _: &syntax_tree::Lifetime,
-    ) {
+    ) -> Option<Lifetime<M>> {
+        Some(lt)
     }
 
     fn on_constant_arguments_resolved(
@@ -776,7 +776,7 @@ impl<T: State, M: Model> Observer<T, M> for NoOpObserver {
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
         _: &constant::Constant<M>,
-        _: &syntax_tree::expression::Expression,
+        _: &syntax_tree::Constant,
     ) {
     }
 
@@ -1110,10 +1110,10 @@ impl<S: State> Table<S> {
         identifier: &Identifier,
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Option<LifetimeParameterID>, ResolveTermError> {
+    ) -> Result<Option<LifetimeParameterID>, Error> {
         for scope in self
             .scope_walker(referring_site)
-            .ok_or(ResolveTermError::InvalidReferringSiteID)?
+            .ok_or(Error::InvalidReferringSiteID)?
         {
             let Ok(generic_id) = symbol::GenericID::try_from(scope) else {
                 continue;
@@ -1154,8 +1154,8 @@ impl<S: State> Table<S> {
         referring_site: GlobalID,
         config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Lifetime<M>, ResolveTermError> {
-        let lifetime = match lifetime_argument.identifier() {
+    ) -> Result<Lifetime<M>, Error> {
+        let mut lifetime = match lifetime_argument.identifier() {
             LifetimeIdentifier::Static(..) => Lifetime::Static,
             LifetimeIdentifier::Identifier(ident) => {
                 if let Some(higher_ranked_lifetimes) =
@@ -1171,16 +1171,29 @@ impl<S: State> Table<S> {
                 self.resolve_lifetime_parameter(ident, referring_site, handler)?
                     .map_or(Lifetime::Error(term::Error), Lifetime::Parameter)
             }
+            LifetimeIdentifier::Elided(elided) => {
+                if let Some(provider) = config.ellided_lifetime_provider {
+                    provider.create()
+                } else {
+                    handler.receive(Box::new(UnexpectedInference {
+                        unexpected_span: elided.span(),
+                        generic_kind: GenericKind::Lifetime,
+                    }));
+                    Lifetime::Error(term::Error)
+                }
+            }
         };
 
         if let Some(observer) = config.observer {
-            observer.on_lifetime_resolved(
-                self,
-                referring_site,
-                handler,
-                &lifetime,
-                lifetime_argument,
-            );
+            lifetime = observer
+                .on_lifetime_resolved(
+                    self,
+                    referring_site,
+                    handler,
+                    lifetime,
+                    lifetime_argument,
+                )
+                .ok_or(Error::Abort)?;
         }
 
         Ok(lifetime)
@@ -1200,7 +1213,7 @@ impl<S: State> Table<S> {
         resolved_id: GlobalID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Option<GenericArguments<M>>, ResolveTermError> {
+    ) -> Result<Option<GenericArguments<M>>, Error> {
         let Ok(generic_id) = symbol::GenericID::try_from(resolved_id) else {
             if let Some(generic_arguments) =
                 generic_identifier.generic_arguments()
@@ -1228,7 +1241,7 @@ impl<S: State> Table<S> {
         {
             let misordered = match generic_argument {
                 syntax_tree::GenericArgument::Constant(arg) => {
-                    constant_argument_syns.push(&**arg.expression());
+                    constant_argument_syns.push(arg.constant());
 
                     false
                 }
@@ -1243,7 +1256,6 @@ impl<S: State> Table<S> {
                     !constant_argument_syns.is_empty()
                         || !type_argument_syns.is_empty()
                 }
-                syntax_tree::GenericArgument::Elided(_) => todo!(),
             };
 
             if misordered {
@@ -1258,7 +1270,6 @@ impl<S: State> Table<S> {
                         syntax_tree::GenericArgument::Lifetime(_) => {
                             GenericKind::Lifetime
                         }
-                        syntax_tree::GenericArgument::Elided(_) => todo!(),
                     },
                     generic_argument: generic_argument.span(),
                 }));
@@ -1440,8 +1451,8 @@ impl<S: State> Table<S> {
         referring_site: GlobalID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<r#type::Type<M>, ResolveTermError> {
-        let ty = match syntax_tree {
+    ) -> Result<r#type::Type<M>, Error> {
+        let mut ty = match syntax_tree {
             syntax_tree::r#type::Type::Primitive(primitive) => {
                 r#type::Type::Primitive(match primitive {
                     syntax_tree::r#type::Primitive::Bool(_) => {
@@ -1522,8 +1533,9 @@ impl<S: State> Table<S> {
                 {
                     provider.create()
                 } else {
-                    handler.receive(Box::new(ExpectLifetime {
-                        expected_span: reference.span(),
+                    handler.receive(Box::new(UnexpectedInference {
+                        unexpected_span: reference.ampersand().span.clone(),
+                        generic_kind: GenericKind::Lifetime,
                     }));
                     Lifetime::Error(term::Error)
                 };
@@ -1629,18 +1641,14 @@ impl<S: State> Table<S> {
             }
 
             syntax_tree::r#type::Type::Array(array) => {
-                let length = M::from_default_constant(
-                    match self.evaluate(
-                        array.expression(),
-                        referring_site,
-                        handler,
-                    ) {
-                        Ok(value) => value,
+                let length = match array.constant() {
+                    syntax_tree::Constant::Expression(expression) => match self
+                        .evaluate(&expression, referring_site, handler)
+                    {
+                        Ok(value) => M::from_default_constant(value),
 
                         Err(evaluate::Error::InvalidReferringSiteID) => {
-                            return Err(
-                                ResolveTermError::InvalidReferringSiteID,
-                            );
+                            return Err(Error::InvalidReferringSiteID);
                         }
 
                         Err(
@@ -1648,7 +1656,20 @@ impl<S: State> Table<S> {
                             | evaluate::Error::Suboptimal,
                         ) => constant::Constant::Error(term::Error),
                     },
-                );
+                    syntax_tree::Constant::Elided(elided) => {
+                        if let Some(provider) =
+                            config.ellided_constant_provider.as_mut()
+                        {
+                            provider.create()
+                        } else {
+                            handler.receive(Box::new(UnexpectedInference {
+                                unexpected_span: elided.span(),
+                                generic_kind: GenericKind::Constant,
+                            }));
+                            constant::Constant::Error(term::Error)
+                        }
+                    }
+                };
                 let element_ty = self.resolve_type(
                     array.operand(),
                     referring_site,
@@ -1672,16 +1693,29 @@ impl<S: State> Table<S> {
 
                 r#type::Type::Phantom(r#type::Phantom(Box::new(ty)))
             }
+            syntax_tree::r#type::Type::Elided(elided) => {
+                if let Some(provider) = config.ellided_type_provider {
+                    provider.create()
+                } else {
+                    handler.receive(Box::new(UnexpectedInference {
+                        unexpected_span: elided.span(),
+                        generic_kind: GenericKind::Type,
+                    }));
+                    r#type::Type::Error(term::Error)
+                }
+            }
         };
 
         if let Some(observer) = config.observer.as_mut() {
-            observer.on_type_resolved(
-                self,
-                referring_site,
-                handler,
-                &ty,
-                syntax_tree,
-            );
+            ty = observer
+                .on_type_resolved(
+                    self,
+                    referring_site,
+                    handler,
+                    ty,
+                    syntax_tree,
+                )
+                .ok_or(Error::Abort)?;
         }
 
         Ok(ty)
@@ -1693,7 +1727,7 @@ impl<S: State> Table<S> {
         referring_site: GlobalID,
         config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<r#type::Type<M>, ResolveTermError> {
+    ) -> Result<r#type::Type<M>, Error> {
         let is_simple_identifier = syntax_tree.rest().is_empty()
             && syntax_tree.leading_scope_separator().is_none()
             && syntax_tree.first().generic_arguments().is_none();
@@ -1702,7 +1736,7 @@ impl<S: State> Table<S> {
         if is_simple_identifier {
             for global_id in self
                 .scope_walker(referring_site)
-                .ok_or(ResolveTermError::InvalidReferringSiteID)?
+                .ok_or(Error::InvalidReferringSiteID)?
             {
                 let Ok(generic_id) = symbol::GenericID::try_from(global_id)
                 else {
@@ -1731,7 +1765,7 @@ impl<S: State> Table<S> {
                 Ok(resolution) => resolution,
 
                 Err(Error::InvalidReferringSiteID) => {
-                    return Err(ResolveTermError::InvalidReferringSiteID);
+                    return Err(Error::InvalidReferringSiteID);
                 }
 
                 Err(Error::Abort | Error::SemanticError) => {
@@ -1770,7 +1804,7 @@ impl<S: State> Table<S> {
         referring_site: GlobalID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Vec<G::Argument>, ResolveTermError>
+    ) -> Result<Vec<G::Argument>, Error>
     where
         G::Argument: Clone,
     {

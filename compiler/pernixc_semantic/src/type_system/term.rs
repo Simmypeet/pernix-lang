@@ -24,12 +24,13 @@ use super::{
     matching,
     model::Model,
     normalizer::Normalizer,
+    observer::Observer,
     predicate::{self, Outlives, Predicate, Satisfiability},
     query::{self, Context},
     simplify,
     sub_term::{self, AssignSubTermError, SubTupleLocation},
     unification::{self, PredicateA, Unification, Unifier},
-    visitor, Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
+    visitor, Compute, Environment, Output, Satisfied, Succeeded,
 };
 use crate::{
     arena::ID,
@@ -574,15 +575,16 @@ pub trait Term:
     ///
     /// The type `A` is normalized into `int32`.
     #[doc(hidden)]
-    fn normalize(
+    fn normalize<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
-    ) -> Result<Output<Self, Self::Model>, OverflowError>;
+    ) -> Result<Output<Self, Self::Model>, super::OverflowError>;
 
     #[doc(hidden)]
     fn as_kind(&self) -> Kind<Self::Model>;
@@ -958,21 +960,31 @@ impl<M: Model> GenericArguments<M> {
     ///
     /// # Errors
     ///
-    /// See [`OverflowError`] for more information.
-    pub fn equals(
+    /// See [`super::Error`] for more information.
+    pub fn equals<S: State>(
         &self,
         other: &Self,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
+    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         self.equals_with_context(other, environment, &mut Context::new())
     }
 
-    pub(super) fn equals_with_context(
+    pub(super) fn equals_with_context<S: State>(
         &self,
         other: &Self,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
         context: &mut Context<M>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         let mut constraints = BTreeSet::new();
 
         if self.lifetimes.len() != other.lifetimes.len()
@@ -1042,13 +1054,18 @@ impl<M: Model> GenericArguments<M> {
     ///
     /// # Errors
     ///
-    /// See [`OverflowError`] for more information.
-    pub fn unify_as_mapping(
+    /// See [`super::Error`] for more information.
+    pub fn unify_as_mapping<S: State>(
         &self,
         other: &Self,
         config: Arc<dyn PredicateA<M>>,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
-    ) -> Result<Output<Mapping<M>, M>, OverflowError> {
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
+    ) -> Result<Output<Mapping<M>, M>, super::OverflowError> {
         self.unify_as_mapping_with_context(
             other,
             config,
@@ -1057,13 +1074,18 @@ impl<M: Model> GenericArguments<M> {
         )
     }
 
-    pub(super) fn unify_as_mapping_with_context(
+    pub(super) fn unify_as_mapping_with_context<S: State>(
         &self,
         other: &Self,
         config: Arc<dyn PredicateA<M>>,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
         context: &mut Context<M>,
-    ) -> Result<Output<Mapping<M>, M>, OverflowError> {
+    ) -> Result<Output<Mapping<M>, M>, super::OverflowError> {
         let mut constraints = BTreeSet::new();
 
         let mut mapping = Mapping::default();
@@ -1135,19 +1157,36 @@ impl<M: Model> GenericArguments<M> {
     ///
     /// # Errors
     ///
-    /// See [`OverflowError`] for more information.
-    pub fn definite(
+    /// See [`super::Error`] for more information.
+    pub fn definite<S: State>(
         &self,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
+    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         self.definite_with_context(environment, &mut Context::new())
     }
 
-    pub(super) fn definite_with_context(
+    /// Checks if all the generic arguments are definite.
+    ///
+    /// See [`Definite`] for more information.
+    ///
+    /// # Errors
+    ///
+    /// See [`super::Error`] for more information.
+    pub fn definite_with_context<S: State>(
         &self,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
         context: &mut Context<M>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         let mut constraints = BTreeSet::new();
 
         for lifetime in &self.lifetimes {

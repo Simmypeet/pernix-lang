@@ -8,7 +8,10 @@ use proptest::{
     test_runner::TestCaseError,
 };
 
-use crate::syntax_tree::{self, item, strategy::AccessModifier};
+use crate::syntax_tree::{
+    self, item,
+    strategy::{self, AccessModifier},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleTree {
@@ -108,8 +111,6 @@ impl Arbitrary for ModuleTree {
 
 impl Display for ModuleTree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use syntax_tree::strategy::AccessModifier::*;
-
         write!(f, "{}", self.module_content)?;
 
         for (name, content) in &self.submodules_by_name {
@@ -117,9 +118,9 @@ impl Display for ModuleTree {
                 f,
                 "{} module {};",
                 match content.signature {
-                    Some(Public) | None => "public",
-                    Some(Private) => "private",
-                    Some(Internal) => "internal",
+                    Some(strategy::AccessModifier::Public) | None => "public",
+                    Some(strategy::AccessModifier::Private) => "private",
+                    Some(strategy::AccessModifier::Internal) => "internal",
                 },
                 name
             )?;
@@ -171,6 +172,7 @@ impl ModuleTree {
         Ok(())
     }
 
+    #[allow(clippy::missing_errors_doc)]
     pub fn create_target(
         &self,
     ) -> Result<tempfile::TempDir, TargetCreateError> {

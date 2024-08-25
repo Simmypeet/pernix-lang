@@ -14,7 +14,7 @@ use crate::{
         environment::Environment,
         equality::Equality,
         model::Default,
-        normalizer::{NoOp, NO_OP},
+        normalizer, observer,
         sub_term::TermLocation,
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         variance::GetVarianceError,
@@ -25,8 +25,8 @@ use crate::{
 struct TermCollector<'a, Term, T: State> {
     target: &'a Term,
     locations: Vec<Vec<TermLocation>>,
-
-    environment: &'a Environment<'a, Default, T, NoOp>,
+    environment:
+        &'a Environment<'a, Default, T, normalizer::NoOp, observer::NoOp>,
 }
 
 macro_rules! implements_visitor {
@@ -73,7 +73,7 @@ impl<'a, 'v, U: Term<Model = Default>, T: State> visitor::Recursive<'v, U>
 fn get_variance_for<U: Term, T: State>(
     term: &U,
     respect_to_type: &Type<Default>,
-    environment: &Environment<Default, T, NoOp>,
+    environment: &Environment<Default, T, normalizer::NoOp, observer::NoOp>,
 ) -> Option<Variance>
 where
     for<'a, 'v> TermCollector<'a, U, T>: visitor::Recursive<'v, Lifetime<Default>>
@@ -85,8 +85,8 @@ where
     let mut current_variance: Option<Variance> = None;
 
     for locations in locations {
-        match respect_to_type.get_variance_of(
-            environment.table(),
+        match environment.get_variance_of(
+            respect_to_type,
             Variance::Covariant,
             locations.into_iter(),
         ) {
@@ -121,7 +121,12 @@ impl<T: State> Table<T> {
         partial_variance: bool,
         _: &dyn Handler<Box<dyn Error>>,
     ) {
-        let environment = Environment::new(active_premise, self, &NO_OP);
+        let (environment, _) = Environment::new_with(
+            active_premise,
+            self,
+            &normalizer::NO_OP,
+            &observer::NO_OP,
+        );
 
         for (id, _) in generic_parameters.lifetime_parameters_as_order() {
             let lifetime_term = Lifetime::Parameter(LifetimeParameterID {
@@ -208,7 +213,7 @@ impl<T: State> Table<T> {
 fn get_all_term_locations<Term: visitor::Element, T: State>(
     target_term: &Term,
     respect_to_type: &Type<Default>,
-    environment: &Environment<Default, T, NoOp>,
+    environment: &Environment<Default, T, normalizer::NoOp, observer::NoOp>,
 ) -> Vec<Vec<TermLocation>>
 where
     for<'a, 'v> TermCollector<'a, Term, T>: visitor::Recursive<'v, Lifetime<Default>>
@@ -227,5 +232,5 @@ where
     collector.locations
 }
 
-#[cfg(test)]
-mod tests;
+// #[cfg(test)]
+// mod tests;

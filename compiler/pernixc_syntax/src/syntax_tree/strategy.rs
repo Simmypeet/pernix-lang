@@ -59,6 +59,7 @@ impl Display for Identifier {
 pub enum LifetimeIdentifier {
     Static,
     Identifier(Identifier),
+    Elided,
 }
 
 impl Arbitrary for LifetimeIdentifier {
@@ -68,7 +69,8 @@ impl Arbitrary for LifetimeIdentifier {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Just(Self::Static),
-            Identifier::arbitrary().prop_map(Self::Identifier)
+            Identifier::arbitrary().prop_map(Self::Identifier),
+            Just(Self::Elided)
         ]
         .boxed()
     }
@@ -78,6 +80,7 @@ impl Display for LifetimeIdentifier {
         match self {
             Self::Static => f.write_str("static"),
             Self::Identifier(ident) => Display::fmt(ident, f),
+            Self::Elided => f.write_str(".."),
         }
     }
 }
@@ -88,11 +91,17 @@ impl Input<&super::LifetimeIdentifier> for &LifetimeIdentifier {
             (
                 LifetimeIdentifier::Static,
                 super::LifetimeIdentifier::Static(..),
+            )
+            | (
+                LifetimeIdentifier::Elided,
+                super::LifetimeIdentifier::Elided(..),
             ) => Ok(()),
+
             (
                 LifetimeIdentifier::Identifier(i),
                 super::LifetimeIdentifier::Identifier(o),
             ) => i.assert(o),
+
             (i, o) => Err(TestCaseError::fail(format!(
                 "Expected {i:?} but got {o:?}",
             ))),
@@ -216,9 +225,53 @@ impl<T: Debug, U: Debug> ConnectedList<T, U> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum Constant {
+    Expression(Box<Expression>),
+    Elided,
+}
+
+impl Arbitrary for Constant {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
+        let strat = strat.unwrap_or_else(Expression::arbitrary);
+
+        prop_oneof![
+            strat.prop_map(|x| Self::Expression(Box::new(x))),
+            Just(Self::Elided),
+        ]
+        .boxed()
+    }
+}
+
+impl Input<&super::Constant> for &Constant {
+    fn assert(self, output: &super::Constant) -> TestCaseResult {
+        match (self, output) {
+            (Constant::Expression(i), super::Constant::Expression(o)) => {
+                i.assert(o)
+            }
+            (Constant::Elided, super::Constant::Elided(..)) => Ok(()),
+            _ => Err(TestCaseError::fail(format!(
+                "Expected {self:?} but got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Display for Constant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Expression(i) => Display::fmt(i, f),
+            Self::Elided => f.write_str(".."),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstantArgument {
-    pub expression: Box<Expression>,
+    pub constant: Constant,
 }
 
 impl Arbitrary for ConstantArgument {
@@ -226,22 +279,22 @@ impl Arbitrary for ConstantArgument {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        args.unwrap_or_else(|| Expression::arbitrary().boxed())
-            .prop_map(|expression| Self { expression: Box::new(expression) })
+        Constant::arbitrary_with(args)
+            .prop_map(|constant| Self { constant })
             .boxed()
     }
 }
 
 impl Input<&super::ConstantArgument> for &ConstantArgument {
     fn assert(self, output: &super::ConstantArgument) -> TestCaseResult {
-        self.expression.assert(output.expression())?;
+        self.constant.assert(output.constant())?;
         Ok(())
     }
 }
 
 impl Display for ConstantArgument {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{{}}}", self.expression)
+        write!(f, "{{{}}}", self.constant)
     }
 }
 
@@ -264,18 +317,11 @@ impl Arbitrary for GenericArgument {
         prop_oneof![
             Lifetime::arbitrary().prop_map(Self::Lifetime),
             type_arg
-                .clone()
                 .unwrap_or_else(|| {
                     Type::arbitrary_with((expr_arg.clone(), None))
                 })
                 .prop_map(|x| Self::Type(Box::new(x))),
-            expr_arg
-                .unwrap_or_else(|| {
-                    Expression::arbitrary_with((type_arg, None, None))
-                })
-                .prop_map(|x| {
-                    Self::Constant(ConstantArgument { expression: Box::new(x) })
-                }),
+            ConstantArgument::arbitrary_with(expr_arg).prop_map(Self::Constant)
         ]
         .boxed()
     }

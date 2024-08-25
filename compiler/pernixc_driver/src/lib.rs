@@ -126,6 +126,8 @@ pub fn run(argument: Arguments) -> ExitCode {
     let table = match result {
         Ok(table) => table,
         Err(BuildTableError::Suboptimal(table)) => {
+            dbg!(&table);
+
             for error in storage.into_vec() {
                 let msg = DisplayObject {
                     table: &table,

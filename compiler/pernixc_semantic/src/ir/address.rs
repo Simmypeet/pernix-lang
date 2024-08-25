@@ -19,14 +19,16 @@ use crate::{
     arena::ID,
     ir::address,
     symbol::{
-        self, table, table::representation::Index as _, CallableID, GlobalID,
-        Parameter,
+        self,
+        table::{self, representation::Index as _},
+        CallableID, GlobalID, Parameter,
     },
     type_system::{
         environment::Environment,
         instantiation::{self, Instantiation},
         model::Model,
         normalizer::Normalizer,
+        observer::Observer,
         simplify,
         term::{
             self,
@@ -150,11 +152,16 @@ impl<M: Model> Representation<M> {
     ///
     /// See [`TypeOfError`] for the possible errors that can occur.
     #[allow(clippy::too_many_lines)]
-    pub fn type_of_address(
+    pub fn type_of_address<S: table::State>(
         &self,
         address: &Address<M>,
         current_site: GlobalID,
-        environment: &Environment<M, impl table::State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
     ) -> Result<Type<M>, TypeOfError<M>> {
         match address {
             Address::Memory(Memory::Parameter(parameter)) => {

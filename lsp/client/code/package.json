@@ -1,0 +1,50 @@
+{
+    "name": "pernix-lang",
+    "displayName": "pernix-lang",
+    "description": "Pernix Programming Language Syntax Highlightning",
+    "version": "0.0.1",
+    "publisher": "vscode",
+    "main": "./out/extension.js",
+    "categories": [
+        "Programming Languages"
+    ],
+    "contributes": {
+        "languages": [
+            {
+                "id": "pernix",
+                "aliases": [
+                    "Pernix",
+                    "pernix"
+                ],
+                "extensions": [
+                    ".pnx"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "pernix",
+                "scopeName": "source.pernix",
+                "path": "./syntaxes/pernix.tmLanguage.json"
+            }
+        ]
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run build",
+        "build": "tsc -p ./",
+        "watch": "tsc -watch -p ./"
+    },
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^7.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.5.0",
+        "@types/vscode": "^1.63.0",
+        "@vscode/test-electron": "^2.1.2",
+        "typescript": "^4.6.3"
+    }
+}

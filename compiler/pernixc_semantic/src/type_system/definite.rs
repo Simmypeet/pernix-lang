@@ -1,8 +1,8 @@
 //! Contains the definition of [`Definite`].
 
 use super::{
-    equivalence::get_equivalences_with_context, predicate::Satisfiability,
-    query::Context, Compute,
+    equivalence::get_equivalences_with_context, observer::Observer,
+    predicate::Satisfiability, query::Context, Compute,
 };
 use crate::{
     symbol::table::State,
@@ -13,15 +13,29 @@ use crate::{
 };
 
 #[derive(Debug)]
-struct Visitor<'a, 'c, T: State, N: Normalizer<M>, M: Model> {
+struct Visitor<
+    'a,
+    'c,
+    T: State,
+    N: Normalizer<M, T>,
+    O: Observer<M, T>,
+    M: Model,
+> {
     definite: Result<Output<Satisfied, M>, OverflowError>,
 
-    environment: &'a Environment<'a, M, T, N>,
+    environment: &'a Environment<'a, M, T, N, O>,
     context: &'c mut Context<M>,
 }
 
-impl<'a, 'c, 'v, U: Term, T: State, N: Normalizer<U::Model>>
-    visitor::Visitor<'v, U> for Visitor<'a, 'c, T, N, U::Model>
+impl<
+        'a,
+        'c,
+        'v,
+        U: Term,
+        T: State,
+        N: Normalizer<U::Model, T>,
+        O: Observer<U::Model, T>,
+    > visitor::Visitor<'v, U> for Visitor<'a, 'c, T, N, O, U::Model>
 {
     fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
         // early return
@@ -66,12 +80,13 @@ impl<T: Term> Compute for Definite<T> {
     type Parameter = ();
 
     #[allow(private_bounds, private_interfaces)]
-    fn implementation(
+    fn implementation<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
         (): Self::Parameter,

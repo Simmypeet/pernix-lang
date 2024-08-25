@@ -1,8 +1,9 @@
 //! Implements the logic for equality checking.
 
 use super::{
-    matching::Matching, normalizer::Normalizer, query::Context, term::Term,
-    Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
+    matching::Matching, normalizer::Normalizer, observer::Observer,
+    query::Context, term::Term, Compute, Environment, Output, OverflowError,
+    Satisfied, Succeeded,
 };
 use crate::symbol::table::{self, DisplayObject, State};
 
@@ -42,12 +43,13 @@ impl<T: Term> Compute for Equality<T, T> {
     type Parameter = ();
 
     #[allow(private_bounds, private_interfaces)]
-    fn implementation(
+    fn implementation<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
         (): Self::Parameter,
@@ -114,10 +116,15 @@ impl<T: Term> Compute for Equality<T, T> {
     }
 }
 
-fn equals_by_unification<T: Term>(
+fn equals_by_unification<T: Term, S: State>(
     lhs: &T,
     rhs: &T,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+    environment: &Environment<
+        T::Model,
+        S,
+        impl Normalizer<T::Model, S>,
+        impl Observer<T::Model, S>,
+    >,
     context: &mut Context<T::Model>,
 ) -> Result<Output<Satisfied, T::Model>, OverflowError> {
     let Some(matching) = lhs.substructural_match(rhs) else {
@@ -159,10 +166,15 @@ fn equals_by_unification<T: Term>(
     Ok(Some(satisfied))
 }
 
-fn equals_by_normalization<T: Term>(
+fn equals_by_normalization<T: Term, S: State>(
     lhs: &T,
     rhs: &T,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+    environment: &Environment<
+        T::Model,
+        S,
+        impl Normalizer<T::Model, S>,
+        impl Observer<T::Model, S>,
+    >,
     context: &mut Context<T::Model>,
 ) -> Result<Output<Satisfied, T::Model>, OverflowError> {
     if let Some(lhs) = lhs.normalize(environment, context)? {
@@ -186,10 +198,15 @@ fn equals_by_normalization<T: Term>(
     Ok(None)
 }
 
-fn equals_without_mapping<T: Term>(
+fn equals_without_mapping<T: Term, S: State>(
     lhs: &T,
     rhs: &T,
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+    environment: &Environment<
+        T::Model,
+        S,
+        impl Normalizer<T::Model, S>,
+        impl Observer<T::Model, S>,
+    >,
     context: &mut Context<T::Model>,
 ) -> Result<Output<Satisfied, T::Model>, OverflowError> {
     if lhs == rhs {

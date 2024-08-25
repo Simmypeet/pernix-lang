@@ -32,12 +32,13 @@ use crate::{
         table::{
             self,
             representation::Index,
-            resolution::{self, EliidedTermProvider, Observer, Resolution},
+            resolution::{self, EliidedTermProvider, Resolution},
             Table,
         },
         FunctionTemplate, GenericTemplate, GlobalID,
     },
     type_system::{
+        self,
         environment::Environment,
         model::Model,
         simplify::simplify,
@@ -87,9 +88,17 @@ struct BlockState {
 /// methods returns an error of [`Error::Internal`], it's considered that the
 /// binder state is corrupted and should not be used anymore.
 #[derive(Debug, Getters)]
-pub struct Binder<'t, S: table::State, O: Observer<S, infer::Model>> {
+pub struct Binder<
+    't,
+    S: table::State,
+    RO: resolution::Observer<S, infer::Model>,
+    TO: type_system::observer::Observer<infer::Model, S>,
+> {
     table: &'t Table<S>,
-    resolution_observer: O,
+
+    resolution_observer: RO,
+    type_system_observer: TO,
+
     current_site: GlobalID,
     premise: Premise<infer::Model>,
     stack: Stack,
@@ -137,7 +146,13 @@ impl<'h> Handler<Box<dyn error::Error>> for HandlerWrapper<'h> {
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
     /// Creates the binder for building the IR.
     ///
     /// # Errors
@@ -145,7 +160,8 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     /// See [`CreateFunctionBinderError`] for the possible errors.
     pub fn new_function<'a, P: Copy, D>(
         table: &'t Table<S>,
-        resolution_observer: O,
+        resolution_observer: RO,
+        type_system_observer: TO,
         function_id: ID<GenericTemplate<P, FunctionTemplate<D>>>,
         parameter_pattern_syns: impl ExactSizeIterator<
             Item = &'a syntax_tree::pattern::Irrefutable,
@@ -189,6 +205,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
             inference_context: Context::default(),
 
             resolution_observer,
+            type_system_observer,
 
             block_states_by_scope_id: HashMap::new(),
             loop_states_by_scope_id: HashMap::new(),
@@ -305,7 +322,13 @@ impl EliidedTermProvider<Constant<infer::Model>> for InferenceProvider {
     }
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
     /// Creates a new alloca and adds it to the current scope.
     fn create_alloca(
         &mut self,
@@ -363,11 +386,12 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
     /// `table`, and `inference_context` normalizer.
     fn create_environment(
         &self,
-    ) -> Environment<'_, infer::Model, S, infer::Context> {
-        let environment = Environment::new(
+    ) -> Environment<'_, infer::Model, S, infer::Context, TO> {
+        let (environment, _) = Environment::new_with(
             self.premise.clone(),
             self.table,
             &self.inference_context,
+            &self.type_system_observer,
         );
 
         environment
@@ -633,6 +657,7 @@ impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
                     &simplified_expected,
                     self.premise.clone(),
                     self.table,
+                    &self.type_system_observer,
                 ) {
                     Ok(()) => true,
 

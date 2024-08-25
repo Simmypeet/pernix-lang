@@ -29,7 +29,7 @@ where
         )));
     }
 
-    let mut parser = Parser::new(&token_stream);
+    let mut parser = Parser::new(&token_stream, source_file.clone());
 
     let storage: Storage<error::Error> = Storage::new();
     let output = f(&mut parser, &storage);

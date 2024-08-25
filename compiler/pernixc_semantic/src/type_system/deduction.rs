@@ -13,6 +13,7 @@ use super::{
     mapping::Mapping,
     model::Model,
     normalizer::Normalizer,
+    observer::Observer,
     query::Context,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
@@ -20,12 +21,13 @@ use super::{
     },
     unification::{self, Log, Unification},
     variance::Variance,
-    Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
+    Compute, Environment, Output, Satisfied, Succeeded,
 };
 use crate::{
     symbol::{table::State, GenericKind},
-    type_system::{LifetimeConstraint, LifetimeUnifyingPredicate},
-    unordered_pair::UnorderedPair,
+    type_system::{
+        predicate::Outlives, LifetimeConstraint, LifetimeUnifyingPredicate,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -38,7 +40,7 @@ impl<M: Model> unification::Predicate<Lifetime<M>> for DuductionPredicate {
         _: &Lifetime<M>,
         _: &Vec<Log<M>>,
         _: &Vec<Log<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         Ok(Some(Succeeded::satisfied()))
     }
 }
@@ -50,7 +52,7 @@ impl<M: Model> unification::Predicate<Type<M>> for DuductionPredicate {
         _: &Type<M>,
         _: &Vec<Log<M>>,
         _: &Vec<Log<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         Ok(matches!(from, Type::Parameter(_) | Type::TraitMember(_))
             .then_some(Succeeded::satisfied()))
     }
@@ -63,19 +65,24 @@ impl<M: Model> unification::Predicate<Constant<M>> for DuductionPredicate {
         _: &Constant<M>,
         _: &Vec<Log<M>>,
         _: &Vec<Log<M>>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         Ok(matches!(from, Constant::Parameter(_))
             .then_some(Succeeded::satisfied()))
     }
 }
 
-fn unify<T: Term>(
+fn unify<T: Term, S: State>(
     lhs: &[T],
     rhs: &[T],
-    environment: &Environment<T::Model, impl State, impl Normalizer<T::Model>>,
+    environment: &Environment<
+        T::Model,
+        S,
+        impl Normalizer<T::Model, S>,
+        impl Observer<T::Model, S>,
+    >,
     context: &mut Context<T::Model>,
     mut existing: Succeeded<Mapping<T::Model>, T::Model>,
-) -> Result<Output<Mapping<T::Model>, T::Model>, OverflowError> {
+) -> Result<Output<Mapping<T::Model>, T::Model>, Error> {
     for (lhs, rhs) in lhs.iter().zip(rhs.iter()) {
         let Some(new) = Unification::new(
             lhs.clone(),
@@ -112,19 +119,23 @@ fn extract<K: Ord, V>(
     (positive, negative)
 }
 
-fn mapping_equals<T: Term, S: State, N: Normalizer<T::Model>>(
+fn mapping_equals<
+    T: Term,
+    S: State,
+    N: Normalizer<T::Model, S>,
+    O: Observer<T::Model, S>,
+>(
     unification: BTreeMap<T, BTreeSet<T>>,
     substitution: &Instantiation<T::Model>,
-    environment: &Environment<T::Model, S, N>,
+    environment: &Environment<T::Model, S, N, O>,
     context: &mut Context<T::Model>,
     mut compatible: impl FnMut(
         &T,
         &T,
-        &Environment<T::Model, S, N>,
+        &Environment<T::Model, S, N, O>,
         &mut Context<T::Model>,
-    )
-        -> Result<Output<Satisfied, T::Model>, OverflowError>,
-) -> Result<Output<Satisfied, T::Model>, OverflowError> {
+    ) -> Result<Output<Satisfied, T::Model>, Error>,
+) -> Result<Output<Satisfied, T::Model>, Error> {
     let mut constraints = BTreeSet::new();
 
     for (mut key, values) in unification {
@@ -150,19 +161,22 @@ fn mapping_equals<T: Term, S: State, N: Normalizer<T::Model>>(
 fn from_unification_to_substitution<
     T: Term,
     S: State,
-    N: Normalizer<T::Model>,
+    N: Normalizer<T::Model, S>,
+    O: Observer<T::Model, S>,
 >(
     unification: BTreeMap<T, BTreeSet<T>>,
-    environment: &Environment<T::Model, S, N>,
+    environment: &Environment<T::Model, S, N, O>,
     context: &mut Context<T::Model>,
     mut compatible: impl FnMut(
         &T,
         &T,
-        &Environment<T::Model, S, N>,
+        &Environment<T::Model, S, N, O>,
         &mut Context<T::Model>,
-    )
-        -> Result<Output<Satisfied, T::Model>, OverflowError>,
-) -> Result<Output<BTreeMap<T, T>, T::Model>, OverflowError> {
+    ) -> Result<
+        Output<Satisfied, T::Model>,
+        super::OverflowError,
+    >,
+) -> Result<Output<BTreeMap<T, T>, T::Model>, super::OverflowError> {
     let mut result = BTreeMap::new();
 
     let mut constraints = BTreeSet::new();
@@ -215,7 +229,7 @@ pub struct UnificationFailureError;
 #[allow(missing_docs)]
 pub enum Error {
     #[error(transparent)]
-    Overflow(#[from] OverflowError),
+    TypeSystem(#[from] super::OverflowError),
 
     #[error(transparent)]
     MismatchedGenericArgumentCount(#[from] MismatchedGenericArgumentCountError),
@@ -241,19 +255,29 @@ impl<M: Model> GenericArguments<M> {
     /// # Errors
     ///
     /// See [`OverflowError`] for more information.
-    pub fn deduce(
+    pub fn deduce<S: State>(
         &self,
         target: &Self,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
     ) -> Result<Succeeded<Deduction<M>, M>, Error> {
         self.deduce_with_context(target, environment, &mut Context::new())
     }
 
     #[allow(clippy::too_many_lines)]
-    pub(super) fn deduce_with_context(
+    pub(super) fn deduce_with_context<S: State>(
         &self,
         target: &Self,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
         context: &mut Context<M>,
     ) -> Result<Succeeded<Deduction<M>, M>, Error> {
         // arity check
@@ -340,8 +364,13 @@ impl<M: Model> GenericArguments<M> {
                         is_not_general_enough = true;
                     } else {
                         constraints.insert(
-                            LifetimeConstraint::LifetimeMatching(
-                                UnorderedPair::new(key.clone(), value),
+                            LifetimeConstraint::LifetimeOutlives(
+                                Outlives::new(key.clone(), value.clone()),
+                            ),
+                        );
+                        constraints.insert(
+                            LifetimeConstraint::LifetimeOutlives(
+                                Outlives::new(value, key.clone()),
                             ),
                         );
                     }
@@ -364,14 +393,15 @@ impl<M: Model> GenericArguments<M> {
                         Ok(Some(Succeeded::satisfied()))
                     } else {
                         Ok(Some(Succeeded::satisfied_with(
-                            std::iter::once(
-                                LifetimeConstraint::LifetimeMatching(
-                                    UnorderedPair::new(
-                                        lhs.clone(),
-                                        rhs.clone(),
-                                    ),
+                            [
+                                LifetimeConstraint::LifetimeOutlives(
+                                    Outlives::new(lhs.clone(), rhs.clone()),
                                 ),
-                            )
+                                LifetimeConstraint::LifetimeOutlives(
+                                    Outlives::new(rhs.clone(), lhs.clone()),
+                                ),
+                            ]
+                            .into_iter()
                             .collect(),
                         )))
                     }
@@ -419,11 +449,16 @@ impl<M: Model> GenericArguments<M> {
                                     is_not_general_enough = true;
                                 } else {
                                     constraints.insert(
-                                        LifetimeConstraint::LifetimeMatching(
-                                            UnorderedPair::new(
+                                        LifetimeConstraint::LifetimeOutlives(
+                                            Outlives::new(
                                                 lhs.clone(),
-                                                rhs,
+                                                rhs.clone(),
                                             ),
+                                        ),
+                                    );
+                                    constraints.insert(
+                                        LifetimeConstraint::LifetimeOutlives(
+                                            Outlives::new(rhs, lhs.clone()),
                                         ),
                                     );
                                 }

@@ -25,6 +25,7 @@ use crate::{
         instantiation::{self, Instantiation},
         model::Model,
         normalizer::Normalizer,
+        observer::Observer,
         simplify,
         term::{
             self,
@@ -54,11 +55,16 @@ pub struct Tuple<M: Model> {
 }
 
 impl<M: Model> Representation<M> {
-    fn type_of_tuple_assignment(
+    fn type_of_tuple_assignment<S: table::State>(
         &self,
         tuple: &Tuple<M>,
         current_site: GlobalID,
-        environment: &Environment<M, impl table::State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
     ) -> Result<Type<M>, TypeOfError<M>> {
         let mut elements = Vec::new();
 
@@ -109,11 +115,16 @@ pub struct Load<M: Model> {
 }
 
 impl<M: Model> Representation<M> {
-    fn type_of_load_assignment(
+    fn type_of_load_assignment<S: table::State>(
         &self,
         load: &Load<M>,
         current_site: GlobalID,
-        environment: &Environment<M, impl table::State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
     ) -> Result<Type<M>, TypeOfError<M>> {
         self.type_of_address(&load.address, current_site, environment)
     }
@@ -136,11 +147,16 @@ pub struct ReferenceOf<M: Model> {
 }
 
 impl<M: Model> Representation<M> {
-    fn type_of_reference_of_assignment(
+    fn type_of_reference_of_assignment<S: table::State>(
         &self,
         reference_of: &ReferenceOf<M>,
         current_site: GlobalID,
-        environment: &Environment<M, impl table::State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
     ) -> Result<Type<M>, TypeOfError<M>> {
         let mut ty = self.type_of_address(
             &reference_of.address,
@@ -205,11 +221,16 @@ pub struct Prefix<M: Model> {
 }
 
 impl<M: Model> Representation<M> {
-    fn type_of_prefix_assignment(
+    fn type_of_prefix_assignment<S: table::State>(
         &self,
         prefix: &Prefix<M>,
         current_site: GlobalID,
-        environment: &Environment<M, impl table::State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
     ) -> Result<Type<M>, TypeOfError<M>> {
         let mut operand_type =
             self.type_of_value(&prefix.operand, current_site, environment)?;
@@ -416,11 +437,16 @@ pub struct Binary<M: Model> {
 }
 
 impl<M: Model> Representation<M> {
-    fn type_of_binary(
+    fn type_of_binary<S: table::State>(
         &self,
         binary: &Binary<M>,
         current_site: GlobalID,
-        environment: &Environment<M, impl table::State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
     ) -> Result<Type<M>, TypeOfError<M>> {
         match binary.operator {
             BinaryOperator::Bitwise(_) | BinaryOperator::Arithmetic(_) => {
@@ -517,11 +543,16 @@ impl<M: Model> Representation<M> {
     /// # Errors
     ///
     /// See [`TypeOfError`] for the possible errors that can occur.
-    pub fn type_of_register(
+    pub fn type_of_register<S: table::State>(
         &self,
         id: ID<Register<M>>,
         current_site: GlobalID,
-        environment: &Environment<M, impl table::State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
     ) -> Result<Type<M>, TypeOfError<M>> {
         let register = self
             .registers()

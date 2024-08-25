@@ -16,7 +16,7 @@ use crate::{
     type_system::{
         equality::Equality,
         model::Default,
-        normalizer::NoOp,
+        normalizer, observer,
         predicate::Predicate,
         term::{
             constant::Constant,
@@ -38,7 +38,8 @@ fn reflexive() {
         .query(&Environment {
             premise: Premise::<Default>::default(),
             table: &table,
-            normalizer: &NoOp,
+            normalizer: &normalizer::NO_OP,
+            observer: &observer::NO_OP,
         })
         .unwrap()
         .unwrap();
@@ -64,7 +65,8 @@ fn symmetric() {
     let environment = Environment {
         premise,
         table: &Table::<Building>::default(),
-        normalizer: &NoOp,
+        normalizer: &normalizer::NO_OP,
+        observer: &observer::NO_OP,
     };
 
     assert!(Equality::new(
@@ -103,7 +105,8 @@ fn not_equal() {
     let environment = Environment {
         premise,
         table: &Table::<Building>::default(),
-        normalizer: &NoOp,
+        normalizer: &normalizer::NO_OP,
+        observer: &observer::NO_OP,
     };
 
     assert!(Equality::new(
@@ -152,7 +155,8 @@ fn transitivity() {
     let environment = Environment {
         premise,
         table: &Table::<Building>::default(),
-        normalizer: &NoOp,
+        normalizer: &normalizer::NO_OP,
+        observer: &observer::NO_OP,
     };
 
     assert!(Equality::new(
@@ -221,7 +225,12 @@ fn congruence() {
         },
     });
 
-    let environment = Environment { premise, table: &table, normalizer: &NoOp };
+    let environment = Environment {
+        premise,
+        table: &table,
+        normalizer: &normalizer::NO_OP,
+        observer: &observer::NO_OP,
+    };
 
     assert!(Equality::new(lhs.clone(), rhs.clone())
         .query(&environment)
@@ -383,7 +392,8 @@ where
             .query(&Environment {
                 premise: premise.clone(),
                 table,
-                normalizer: &NoOp,
+                normalizer: &normalizer::NO_OP,
+                observer: &observer::NO_OP,
             })?
             .is_none()
         } else {
@@ -394,7 +404,8 @@ where
             .query(&Environment {
                 premise: premise.clone(),
                 table,
-                normalizer: &NoOp,
+                normalizer: &normalizer::NO_OP,
+                observer: &observer::NO_OP,
             })?
             .is_none()
         };
@@ -629,7 +640,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     let environment = &Environment {
         premise: premise.clone(),
         table: &table,
-        normalizer: &NoOp,
+        normalizer: &normalizer::NO_OP,
+        observer: &observer::NO_OP,
     };
     prop_assert!(Equality::new(term1.clone(), term2.clone())
         .query(&environment)
@@ -662,7 +674,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
         let modified_environment = &Environment {
             premise: modified_premise,
             table: &table,
-            normalizer: &NoOp,
+            normalizer: &normalizer::NO_OP,
+            observer: &observer::NO_OP,
         };
 
         prop_assert!(Equality::new(term1.clone(), term2.clone())
@@ -684,7 +697,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
             let environment = &Environment {
                 premise: &premise,
                 table: &table,
-                normalizer: &NoOp,
+                normalizer: &normalizer::NO_OP,
             };
 
             prop_assert!(!equals(
@@ -711,8 +724,12 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
         .predicates
         .extend(decoy.types.into_iter().map(Predicate::TraitTypeEquality));
 
-    let environment =
-        &Environment { premise, table: &table, normalizer: &NoOp };
+    let environment = &Environment {
+        premise,
+        table: &table,
+        normalizer: &normalizer::NO_OP,
+        observer: &observer::NO_OP,
+    };
     prop_assert!(Equality::new(term1.clone(), term2.clone())
         .query(&environment)
         .map_err(|_| TestCaseError::reject("too complex property"))?

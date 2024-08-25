@@ -7,6 +7,7 @@ use crate::{
         instantiation::{self, Instantiation},
         model::Model,
         normalizer::Normalizer,
+        observer::Observer,
         query::Context,
         term::{lifetime::Lifetime, ModelOf, Term},
         variance::Variance,
@@ -66,15 +67,29 @@ impl<T: Term> Outlives<T> {
     }
 }
 
-struct Visitor<'a, 'c, T: State, N: Normalizer<M>, M: Model> {
+struct Visitor<
+    'a,
+    'c,
+    T: State,
+    N: Normalizer<M, T>,
+    O: Observer<M, T>,
+    M: Model,
+> {
     outlives: Result<Option<Satisfied>, OverflowError>,
     bound: &'a Lifetime<M>,
-    environment: &'a Environment<'a, M, T, N>,
+    environment: &'a Environment<'a, M, T, N, O>,
     context: &'c mut Context<M>,
 }
 
-impl<'a, 'l, 'v, U: Term, T: State, N: Normalizer<U::Model>>
-    visitor::Visitor<'v, U> for Visitor<'a, 'l, T, N, U::Model>
+impl<
+        'a,
+        'l,
+        'v,
+        U: Term,
+        T: State,
+        N: Normalizer<U::Model, T>,
+        O: Observer<U::Model, T>,
+    > visitor::Visitor<'v, U> for Visitor<'a, 'l, T, N, O, U::Model>
 {
     fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
         match Outlives::new(term.clone(), self.bound.clone())
@@ -90,33 +105,19 @@ impl<'a, 'l, 'v, U: Term, T: State, N: Normalizer<U::Model>>
 }
 
 impl<M: Model> LifetimeConstraint<M> {
-    pub(super) fn satisifies_with_context(
+    pub(super) fn satisifies_with_context<S: State>(
         &self,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
         context: &mut Context<M>,
     ) -> Result<Option<Satisfied>, OverflowError> {
         match self {
             LifetimeConstraint::LifetimeOutlives(outlives) => {
                 outlives.query_with_context(environment, context)
-            }
-
-            LifetimeConstraint::LifetimeMatching(pair) => {
-                let lhs = pair.first();
-                let rhs = pair.second();
-
-                if lhs == rhs {
-                    return Ok(Some(Satisfied));
-                }
-
-                let lhs_outlives_rhs = Outlives::new(lhs.clone(), rhs.clone())
-                    .query_with_context(environment, context)?;
-                let rhs_outlives_lhs = Outlives::new(rhs.clone(), lhs.clone())
-                    .query_with_context(environment, context)?;
-
-                Ok(match (lhs_outlives_rhs, rhs_outlives_lhs) {
-                    (Some(Satisfied), Some(Satisfied)) => Some(Satisfied),
-                    _ => None,
-                })
             }
         }
     }
@@ -127,12 +128,13 @@ impl<T: Term> Compute for Outlives<T> {
     type Parameter = ();
 
     #[allow(private_bounds, private_interfaces)]
-    fn implementation(
+    fn implementation<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
         (): Self::Parameter,

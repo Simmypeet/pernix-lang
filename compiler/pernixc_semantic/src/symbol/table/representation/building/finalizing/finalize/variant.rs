@@ -1,17 +1,17 @@
-use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
+use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{r#enum, Finalize};
+use super::Finalize;
 use crate::{
     arena::ID,
-    error::{self, PrivateEntityLeakedToPublicInterface},
+    error,
     symbol::{
         table::{
             representation::{
                 building::finalizing::{occurrences::Occurrences, Finalizer},
-                Index, RwLockContainer,
+                RwLockContainer,
             },
-            resolution, Building, Table,
+            Building, Table,
         },
         Variant,
     },
@@ -32,13 +32,14 @@ impl Finalize for Variant {
     type Data = Occurrences;
 
     fn finalize(
-        table: &Table<Building<RwLockContainer, Finalizer>>,
-        symbol_id: ID<Self>,
-        state_flag: usize,
-        syntax_tree: &Self::SyntaxTree,
-        data: &mut Self::Data,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        _table: &Table<Building<RwLockContainer, Finalizer>>,
+        _symbol_id: ID<Self>,
+        _state_flag: usize,
+        _syntax_tree: &Self::SyntaxTree,
+        _data: &mut Self::Data,
+        _handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
+        /*
         match state_flag {
             GENERIC_PARAMETER_STATE => {
                 // make sure the enum generic parameters are built
@@ -113,5 +114,6 @@ impl Finalize for Variant {
 
             _ => panic!("invalid state flag"),
         }
+        */
     }
 }

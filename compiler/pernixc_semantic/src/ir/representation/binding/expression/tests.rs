@@ -34,8 +34,7 @@ use crate::{
     symbol::{
         table::{
             representation::{Index, IndexMut, Insertion, RwLockContainer},
-            resolution::NoOpObserver,
-            Building, Table,
+            resolution, Building, Table,
         },
         Accessibility, AdtTemplate, Enum, EnumDefinition, Field, Function,
         FunctionDefinition, FunctionTemplate, GenericDeclaration, GenericID,
@@ -43,6 +42,7 @@ use crate::{
         TypeParameterID, Variant,
     },
     type_system::{
+        self,
         equality::Equality,
         term::{
             lifetime::Lifetime,
@@ -98,7 +98,8 @@ fn numeric_literal_suffix() {
 
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -142,7 +143,8 @@ fn numberic_literal_float_infer() {
 
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -202,7 +204,8 @@ fn numeric_literal_number_infer() {
 
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -260,7 +263,8 @@ fn invalid_numeric_literal_suffix() {
 
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -299,7 +303,8 @@ fn floating_point_literal_has_integral_suffix() {
 
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -353,7 +358,8 @@ fn bind_boolean_literal() {
 
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -435,7 +441,8 @@ fn bind_prefix_operator() {
 
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -575,7 +582,8 @@ fn prefix_type_mismatched_error() {
 
     let mut binder = Binder::new_function(
         &table,
-        NoOpObserver,
+        resolution::NoOp,
+        type_system::observer::NoOp,
         function_id,
         std::iter::empty(),
         &storage,
@@ -2806,7 +2814,10 @@ fn unrechable_block() {
 
 fn bind_as_value(
     source: impl std::fmt::Display,
-    check: impl FnOnce(&Binder<Building, NoOpObserver>, Value<infer::Model>),
+    check: impl FnOnce(
+        &Binder<Building, resolution::NoOp, type_system::observer::NoOp>,
+        Value<infer::Model>,
+    ),
 ) {
     let test_template = TestTemplate::new();
 
@@ -2826,7 +2837,7 @@ fn bind_as_value(
 fn bind_as_value_expect_error(
     source: impl std::fmt::Display,
     check: impl FnOnce(
-        &Binder<Building, NoOpObserver>,
+        &Binder<Building, resolution::NoOp, type_system::observer::NoOp>,
         Result<super::Expression, super::Error>,
         Vec<Box<dyn Error>>,
     ),
@@ -3331,7 +3342,7 @@ struct Check<T> {
     config: Config,
     check: Box<
         dyn FnOnce(
-            &Binder<Building, NoOpObserver>,
+            &Binder<Building, resolution::NoOp, type_system::observer::NoOp>,
             Result<Expression, super::Error>,
             Vec<Box<dyn crate::error::Error>>,
             &T,
@@ -3344,7 +3355,7 @@ impl<T> Check<T> {
         source: impl std::fmt::Display,
         config: Config,
         check: impl FnOnce(
-                &Binder<Building, NoOpObserver>,
+                &Binder<Building, resolution::NoOp, type_system::observer::NoOp>,
                 Result<Expression, super::Error>,
                 Vec<Box<dyn crate::error::Error>>,
                 &T,
@@ -3357,7 +3368,10 @@ impl<T> Check<T> {
 fn setup_and_bind<T: 'static>(
     setup: impl for<'a> FnOnce(
         &'a mut TestTemplate,
-    ) -> (Binder<'a, Building, NoOpObserver>, T),
+    ) -> (
+        Binder<'a, Building, resolution::NoOp, type_system::observer::NoOp>,
+        T,
+    ),
     checks: impl IntoIterator<Item = Check<T>>,
 ) {
     let mut test_template = TestTemplate::new();

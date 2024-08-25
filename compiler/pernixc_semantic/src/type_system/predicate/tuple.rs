@@ -6,6 +6,7 @@ use crate::{
         equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
         normalizer::Normalizer,
+        observer::Observer,
         term::Term,
         variance::Variance,
         Compute, Environment, OverflowError, Succeeded,
@@ -42,12 +43,13 @@ impl<T: Term> Compute for Tuple<T> {
     type Parameter = ();
 
     #[allow(private_bounds, private_interfaces)]
-    fn implementation(
+    fn implementation<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut crate::type_system::query::Context<Self::Model>,
         (): Self::Parameter,

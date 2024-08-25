@@ -17,7 +17,8 @@ use crate::{
         deduction::{self, Deduction},
         instantiation::Instantiation,
         model::{Default, Model},
-        normalizer::{Normalizer, NO_OP},
+        normalizer::Normalizer,
+        observer::Observer,
         order,
         predicate::Predicate,
         query::Context,
@@ -110,12 +111,13 @@ impl<M: Model> Compute for Trait<M> {
     type Parameter = ();
 
     #[allow(private_bounds, private_interfaces)]
-    fn implementation(
+    fn implementation<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
         (): Self::Parameter,
@@ -195,7 +197,7 @@ impl<M: Model> Compute for Trait<M> {
         _: Self::Parameter,
         _: Self::InProgress,
         _: Self::InProgress,
-        _: &[crate::type_system::query::QueryCall<Self::Model>],
+        _: &[crate::type_system::query::Record<Self::Model>],
     ) -> Result<Option<Self::Result>, Self::Error> {
         Ok(Some(Succeeded::new(
             Satisfied::ByTraitContext, /* doesn't matter */
@@ -257,10 +259,10 @@ pub enum ResolveError {
 /// - [`ResolveError::Overflow`]: If the session limit was exceeded; see
 ///   [`OverflowError`] for more information.
 #[allow(clippy::too_many_lines)]
-pub fn resolve_implementation<M: Model>(
+pub fn resolve_implementation<M: Model, S: State>(
     trait_id: ID<symbol::Trait>,
     generic_arguments: &GenericArguments<M>,
-    environment: &Environment<M, impl State, impl Normalizer<M>>,
+    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
 ) -> Result<Succeeded<Implementation<M>, M>, ResolveError> {
     resolve_implementation_with_context(
         trait_id,
@@ -270,10 +272,23 @@ pub fn resolve_implementation<M: Model>(
     )
 }
 
-pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
+/// Resolves for the trait implementation for the given trait and generic
+/// arguments.
+///
+/// # Errors
+///
+/// - [`ResolveError::InvalidID`]: If the `trait_id` is invalid.
+/// - [`ResolveError::NonDefiniteGenericArguments`]: If the `generic_arguments`
+///   are not definite.
+/// - [`ResolveError::AmbiguousTrait`]: If the trait defined in the table is
+///   ambiguous (multiple trait implementation matches).
+/// - [`ResolveError::NotFound`]: If the trait implementation was not found.
+/// - [`ResolveError::Overflow`]: If the session limit was exceeded; see
+///   [`OverflowError`] for more information.
+pub fn resolve_implementation_with_context<M: Model, S: State>(
     trait_id: ID<symbol::Trait>,
     generic_arguments: &GenericArguments<M>,
-    environment: &Environment<M, impl State, impl Normalizer<M>>,
+    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
     context: &mut Context<M>,
 ) -> Result<Succeeded<Implementation<M>, M>, ResolveError> {
     let trait_symbol =
@@ -299,11 +314,8 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
     let definite =
         generic_arguments.definite_with_context(environment, context)?;
 
-    let default_environment = Environment::<M, _, _>::new(
-        Premise::default(),
-        environment.table(),
-        &NO_OP,
-    );
+    let (default_environment, _) =
+        Environment::<M, _, _, _>::new(Premise::default(), environment.table());
 
     let mut candidate: Option<(
         TraitImplementationID,
@@ -343,7 +355,7 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
             ) {
                 Ok(unification) => unification,
 
-                Err(deduction::Error::Overflow(overflow)) => {
+                Err(deduction::Error::TypeSystem(overflow)) => {
                     return Err(overflow.into())
                 }
 
@@ -446,10 +458,10 @@ pub(in crate::type_system) fn resolve_implementation_with_context<M: Model>(
     }
 }
 
-fn predicate_satisfies<M: Model>(
+fn predicate_satisfies<M: Model, S: State>(
     generic_symbol: &dyn Generic,
     substitution: &Instantiation<M>,
-    environment: &Environment<M, impl State, impl Normalizer<M>>,
+    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
     context: &mut Context<M>,
 ) -> Result<bool, OverflowError> {
     // check if satisfies all the predicate
@@ -497,11 +509,11 @@ fn predicate_satisfies<M: Model>(
     Ok(true)
 }
 
-fn is_in_active_trait_implementation<M: Model>(
+fn is_in_active_trait_implementation<M: Model, S: State>(
     trait_id: ID<symbol::Trait>,
     need_implementation: bool,
     generic_arguments: &GenericArguments<M>,
-    environment: &Environment<M, impl State, impl Normalizer<M>>,
+    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
     context: &mut Context<M>,
 ) -> Result<Output<Satisfied<M>, M>, OverflowError> {
     match environment.premise.trait_context {
@@ -517,26 +529,37 @@ fn is_in_active_trait_implementation<M: Model>(
                 return Ok(None);
             }
 
-            let Some(compatiblity) = generic_arguments
-                .compatible_with_context(
-                    &GenericArguments::from_default_model(
-                        implementation.arguments.clone(),
-                    ),
-                    Variance::Invariant,
-                    environment,
-                    context,
-                )?
+            let Some(_) = generic_arguments.compatible_with_context(
+                &GenericArguments::from_default_model(
+                    implementation.arguments.clone(),
+                ),
+                Variance::Invariant,
+                environment,
+                context,
+            )?
             else {
                 return Ok(None);
             };
 
-            if !compatiblity.result.forall_lifetime_errors.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(Succeeded::with_constraints(
-                    Satisfied::ByTraitContext,
-                    compatiblity.constraints,
-                )))
+            match generic_arguments.deduce_with_context(
+                &GenericArguments::from_default_model(
+                    implementation.arguments.clone(),
+                ),
+                environment,
+                context,
+            ) {
+                Ok(result) => Ok(Some(Succeeded {
+                    result: Satisfied::ByImplementation(Implementation {
+                        instantiation: result.result.instantiation,
+                        id: trait_implementation,
+                        is_not_general_enough: result
+                            .result
+                            .is_not_general_enough,
+                    }),
+                    constraints: result.constraints,
+                })),
+                Err(deduction::Error::TypeSystem(err)) => return Err(err),
+                _ => return Ok(None),
             }
         }
 

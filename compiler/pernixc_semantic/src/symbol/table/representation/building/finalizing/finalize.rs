@@ -12,9 +12,7 @@ use crate::{
 };
 
 pub(in crate::symbol::table::representation::building) mod adt_implementation;
-pub(in crate::symbol::table::representation::building) mod adt_implementation_constant;
 pub(in crate::symbol::table::representation::building) mod adt_implementation_function;
-pub(in crate::symbol::table::representation::building) mod adt_implementation_type;
 pub(in crate::symbol::table::representation::building) mod constant;
 pub(in crate::symbol::table::representation::building) mod r#enum;
 pub(in crate::symbol::table::representation::building) mod function;

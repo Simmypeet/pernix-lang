@@ -18,16 +18,22 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index, DisplayObject, State, Table},
-        Enum, GenericID, GlobalID, Struct, TypeParameter, TypeParameterID,
+        Enum, GenericID, GlobalID, Struct, TraitImplementationMemberID,
+        TypeParameter, TypeParameterID,
     },
     type_system::{
+        self,
         equality::Equality,
         instantiation::{self, Instantiation},
         mapping::Mapping,
         matching::{self, Match, Matching},
         model::{Default, Model},
         normalizer::Normalizer,
-        predicate::{self, Outlives, Predicate, Satisfiability},
+        observer::Observer,
+        predicate::{
+            self, resolve_implementation_with_context, Outlives, Predicate,
+            Satisfiability, TraitResolveError,
+        },
         query::Context,
         sub_term::{
             self, AssignSubTermError, Location, SubMemberSymbolLocation,
@@ -35,7 +41,7 @@ use crate::{
             SubTupleLocation, TermLocation,
         },
         unification::{self, Unifier},
-        Environment, Output, OverflowError, Succeeded,
+        Environment, Output, Succeeded,
     },
 };
 
@@ -959,14 +965,112 @@ where
     }
 
     #[allow(clippy::too_many_lines, private_bounds, private_interfaces)]
-    fn normalize(
+    fn normalize<S: State>(
         &self,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
         context: &mut Context<M>,
-    ) -> Result<Output<Self, M>, OverflowError> {
+    ) -> Result<Output<Self, M>, type_system::OverflowError> {
         match self {
             // transform the trait-member into trait-implementation-type
             // equivalent
+            Self::TraitMember(trait_member) => {
+                let Some(trait_id) = environment
+                    .table()
+                    .get(trait_member.id)
+                    .map(|x| x.parent_id())
+                else {
+                    return Ok(None);
+                };
+
+                // resolve the trait implementation
+                let mut resoltion = match resolve_implementation_with_context(
+                    trait_id,
+                    &trait_member.parent_generic_arguments,
+                    environment,
+                    context,
+                ) {
+                    Ok(resolution) => resolution,
+
+                    Err(TraitResolveError::Overflow(error)) => {
+                        return Err(error);
+                    }
+
+                    Err(_) => return Ok(None),
+                };
+
+                let trait_member_name = environment
+                    .table()
+                    .get(trait_member.id)
+                    .unwrap()
+                    .name()
+                    .clone();
+
+                let Some(implementation_sym) =
+                    environment.table().get(resoltion.result.id)
+                else {
+                    return Ok(None);
+                };
+
+                let Some(TraitImplementationMemberID::Type(id)) =
+                    implementation_sym
+                        .member_ids_by_name()
+                        .get(&trait_member_name)
+                        .copied()
+                else {
+                    return Ok(None);
+                };
+
+                drop(implementation_sym);
+
+                Observer::on_trait_implementation_type_resolved(
+                    id,
+                    environment,
+                    context,
+                )?;
+
+                let Some(implementation_type_id) = environment.table().get(id)
+                else {
+                    return Ok(None);
+                };
+
+                // should have no collision and no mismatched generic arguments
+                // count
+                if resoltion
+                    .result
+                    .instantiation
+                    .append_from_generic_arguments(
+                        trait_member.member_generic_arguments.clone(),
+                        id.into(),
+                        &implementation_type_id.generic_declaration.parameters,
+                    )
+                    .map_or(true, |x| !x.is_empty())
+                {
+                    return Ok(None);
+                }
+
+                let Some(mut new_term) = environment
+                    .table()
+                    .get(id)
+                    .map(|x| M::from_default_type(x.r#type.clone()))
+                else {
+                    return Ok(None);
+                };
+
+                instantiation::instantiate(
+                    &mut new_term,
+                    &resoltion.result.instantiation,
+                );
+
+                Ok(Some(Succeeded::with_constraints(
+                    new_term,
+                    resoltion.constraints,
+                )))
+            }
 
             // unpack the tuple
             Self::Tuple(tuple) => {

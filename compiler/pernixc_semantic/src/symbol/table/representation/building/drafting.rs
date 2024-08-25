@@ -25,8 +25,9 @@ use crate::{
     error::{
         self, InvalidSymbolInImplementation,
         MismatchedTraitMemberAndImplementationMember, RedefinedGlobal,
-        SymbolIsMoreAccessibleThanParent, UnimplementedTraitMembers,
-        UnknownExternCallingConvention, UnknownTraitImplementationMember,
+        SymbolIsMoreAccessibleThanParent, UnexpectedAdtImplementationMember,
+        UnimplementedTraitMembers, UnknownExternCallingConvention,
+        UnknownTraitImplementationMember,
     },
     symbol::{
         self,
@@ -37,9 +38,8 @@ use crate::{
             },
             Building, Table,
         },
-        Accessibility, AdtID, AdtImplementationConstant,
-        AdtImplementationDefinition, AdtImplementationFunction,
-        AdtImplementationType, Constant, Enum, Extern, Function,
+        Accessibility, AdtID, AdtImplementationDefinition,
+        AdtImplementationFunction, Constant, Enum, Extern, Function,
         FunctionDefinition, GenericDeclaration, GenericTemplate, GlobalID,
         HierarchyRelationship, Module, ModuleMemberID,
         NegativeTraitImplementationDefinition,
@@ -694,21 +694,19 @@ impl Table<Building<RwLockContainer, Drafter>> {
 
         for member in members {
             match member {
+                ImplementationMember::Constant(syn) => {
+                    handler.receive(Box::new(
+                        UnexpectedAdtImplementationMember {
+                            unexpected_member_span: syn.signature().span(),
+                        },
+                    ));
+                }
                 ImplementationMember::Type(syn) => {
-                    let accessibility = self
-                        .create_accessibility(
-                            adt_implementation_id.into(),
-                            syn.access_modifier(),
-                        )
-                        .unwrap();
-
-                    let _: ID<AdtImplementationType> = self.draft_member(
-                        syn,
-                        adt_implementation_id,
-                        |syn| syn.signature().identifier(),
-                        accessibility,
-                        handler,
-                    );
+                    handler.receive(Box::new(
+                        UnexpectedAdtImplementationMember {
+                            unexpected_member_span: syn.signature().span(),
+                        },
+                    ));
                 }
                 ImplementationMember::Function(syn) => {
                     let accessibility = self
@@ -719,22 +717,6 @@ impl Table<Building<RwLockContainer, Drafter>> {
                         .unwrap();
 
                     let _: ID<AdtImplementationFunction> = self.draft_member(
-                        syn,
-                        adt_implementation_id,
-                        |syn| syn.signature().identifier(),
-                        accessibility,
-                        handler,
-                    );
-                }
-                ImplementationMember::Constant(syn) => {
-                    let accessibility = self
-                        .create_accessibility(
-                            adt_implementation_id.into(),
-                            syn.access_modifier(),
-                        )
-                        .unwrap();
-
-                    let _: ID<AdtImplementationConstant> = self.draft_member(
                         syn,
                         adt_implementation_id,
                         |syn| syn.signature().identifier(),
@@ -847,4 +829,4 @@ impl Table<Building<RwLockContainer, Drafter>> {
 }
 
 #[cfg(test)]
-mod tests;
+mod test;

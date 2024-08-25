@@ -21,12 +21,14 @@ use crate::{
         ConstantParameter, ConstantParameterID, GlobalID, Variant,
     },
     type_system::{
+        self,
         equality::Equality,
         instantiation::Instantiation,
         mapping::Mapping,
         matching::{self, Match},
         model::{Default, Model},
         normalizer::Normalizer,
+        observer::Observer,
         predicate::{self, Outlives, Predicate, Satisfiability},
         query::Context,
         sub_term::{
@@ -34,7 +36,7 @@ use crate::{
             TermLocation,
         },
         unification::{self, Unifier},
-        Environment, Output, OverflowError,
+        Environment, Output,
     },
 };
 
@@ -596,11 +598,16 @@ where
     }
 
     #[allow(private_bounds, private_interfaces)]
-    fn normalize(
+    fn normalize<S: State>(
         &self,
-        environment: &Environment<M, impl State, impl Normalizer<M>>,
+        environment: &Environment<
+            M,
+            S,
+            impl Normalizer<M, S>,
+            impl Observer<M, S>,
+        >,
         context: &mut Context<M>,
-    ) -> Result<Output<Self, M>, OverflowError> {
+    ) -> Result<Output<Self, M>, type_system::OverflowError> {
         if let Some(result) =
             Normalizer::normalize_constant(self, environment, context)?
         {

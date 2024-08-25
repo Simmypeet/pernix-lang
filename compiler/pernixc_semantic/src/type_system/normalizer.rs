@@ -2,6 +2,7 @@
 
 use super::{
     model::Model,
+    observer::Observer,
     query::Context,
     term::{constant::Constant, r#type::Type},
     Environment, Output, OverflowError,
@@ -9,12 +10,12 @@ use super::{
 use crate::symbol::table::State;
 
 /// The object used to normalize the inference variables into the concrete term.
-pub trait Normalizer<M: Model>: Sized {
+pub trait Normalizer<M: Model, T: State>: Sized {
     /// Normalizes the type inference variable into the concrete type
     /// term.
     fn normalize_type(
         ty: &Type<M>,
-        environment: &Environment<M, impl State, Self>,
+        environment: &Environment<M, T, Self, impl Observer<M, T>>,
         context: &mut Context<M>,
     ) -> Result<Output<Type<M>, M>, OverflowError>;
 
@@ -22,7 +23,7 @@ pub trait Normalizer<M: Model>: Sized {
     /// term.
     fn normalize_constant(
         constant: &Constant<M>,
-        environment: &Environment<M, impl State, Self>,
+        environment: &Environment<M, T, Self, impl Observer<M, T>>,
         context: &mut Context<M>,
     ) -> Result<Output<Constant<M>, M>, OverflowError>;
 }
@@ -34,10 +35,10 @@ pub struct NoOp;
 /// The instance of [`NoOp`] normalizer.
 pub const NO_OP: NoOp = NoOp;
 
-impl<M: Model> Normalizer<M> for NoOp {
+impl<M: Model, T: State> Normalizer<M, T> for NoOp {
     fn normalize_type(
         _: &Type<M>,
-        _: &Environment<M, impl State, Self>,
+        _: &Environment<M, T, Self, impl Observer<M, T>>,
         _: &mut Context<M>,
     ) -> Result<Output<Type<M>, M>, OverflowError> {
         Ok(None)
@@ -45,7 +46,7 @@ impl<M: Model> Normalizer<M> for NoOp {
 
     fn normalize_constant(
         _: &Constant<M>,
-        _: &Environment<M, impl State, Self>,
+        _: &Environment<M, T, Self, impl Observer<M, T>>,
         _: &mut Context<M>,
     ) -> Result<Output<Constant<M>, M>, OverflowError> {
         Ok(None)

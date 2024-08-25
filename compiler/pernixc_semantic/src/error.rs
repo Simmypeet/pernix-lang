@@ -870,22 +870,31 @@ impl<T: State> Display<T> for LifetimeParameterNotFound {
     }
 }
 
-/// A lifetime wasn't supplied in the reference.
+/// The inference term isn't allowed in the given context.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExpectLifetime {
-    /// The span where the lifetime was expected.
-    pub expected_span: Span,
+pub struct UnexpectedInference {
+    /// Span where the inference term was found.
+    pub unexpected_span: Span,
+
+    /// The kind of the inference term.
+    pub generic_kind: GenericKind,
 }
 
-impl<T: State> Display<T> for ExpectLifetime {
+impl<T: State> Display<T> for UnexpectedInference {
     fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
-            display: "a lifetime was expected",
+            display: format!("{} inference is not allowed here", match self
+                .generic_kind
+            {
+                GenericKind::Type => "type",
+                GenericKind::Lifetime => "lifetime",
+                GenericKind::Constant => "constant",
+            })
         })?;
 
         write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.expected_span,
+            span: &self.unexpected_span,
             help_display: Option::<i32>::None,
         })?;
 
@@ -932,6 +941,30 @@ where
                 help_display: Some("predicate defined here"),
             })?;
         }
+
+        Ok(())
+    }
+}
+
+/// Adt implementation member can only be a function.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnexpectedAdtImplementationMember {
+    /// The span where the unexpected member was found.
+    pub unexpected_member_span: Span,
+}
+
+impl<T: State> Display<T> for UnexpectedAdtImplementationMember {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "adt (struct and enum) implementation can only contain \
+                      functions",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.unexpected_member_span,
+            help_display: Option::<i32>::None,
+        })?;
 
         Ok(())
     }

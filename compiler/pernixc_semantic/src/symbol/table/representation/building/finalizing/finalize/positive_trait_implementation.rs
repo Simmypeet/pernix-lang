@@ -8,10 +8,7 @@ use crate::{
     symbol::{
         table::{
             representation::{
-                building::finalizing::{
-                    finalizer::builder, occurrences::Occurrences,
-                    Finalizer,
-                },
+                building::finalizing::{occurrences::Occurrences, Finalizer},
                 Index, RwLockContainer,
             },
             Building, Table,
@@ -23,10 +20,10 @@ use crate::{
 /// Generic parameters are built
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
-/// Where cluase predicates are built
-pub const WHERE_CLAUSE_STATE: usize = 1;
-
 /// The generic arguments of the implementation are built.
+pub const ARGUMENTS_STATE: usize = 1;
+
+/// The definition of the implementation is built.
 pub const DEFINITION_STATE: usize = 2;
 
 /// The information required to check the bounds is built. (the definition of
@@ -39,7 +36,7 @@ pub const CHECK_STATE: usize = 4;
 impl Finalize for PositiveTraitImplementation {
     type SyntaxTree = syntax_tree::item::ImplementationSignature;
     const FINAL_STATE: usize = CHECK_STATE;
-    type Data = Occurrences;
+    type Data = (Occurrences, Occurrences, Occurrences);
 
     #[allow(clippy::too_many_lines)]
     fn finalize(
@@ -47,7 +44,11 @@ impl Finalize for PositiveTraitImplementation {
         symbol_id: ID<Self>,
         state_flag: usize,
         syntax_tree: &Self::SyntaxTree,
-        data: &mut Self::Data,
+        (
+            generic_parameter_occurrences,
+            arguments_occurrences,
+            where_clause_occurrences,
+        ): &mut Self::Data,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match state_flag {
@@ -55,19 +56,12 @@ impl Finalize for PositiveTraitImplementation {
                 table.create_generic_parameters(
                     symbol_id,
                     syntax_tree.generic_parameters().as_ref(),
-                    data,
+                    generic_parameter_occurrences,
                     handler,
                 );
             }
 
-            WHERE_CLAUSE_STATE => table.create_where_clause_predicates(
-                symbol_id,
-                syntax_tree.where_clause().as_ref(),
-                data,
-                handler,
-            ),
-
-            DEFINITION_STATE => {
+            ARGUMENTS_STATE => {
                 let parent_trait_id =
                     table.get(symbol_id).unwrap().implemented_id;
 
@@ -90,33 +84,41 @@ impl Finalize for PositiveTraitImplementation {
                     parent_trait_id,
                     r#trait::GENERIC_PARAMETER_STATE,
                     generic_identifier,
-                    data,
-                    handler,
-                );
-
-                data.build_all_occurrences_to::<builder::Complete>(
-                    table,
-                    symbol_id.into(),
+                    arguments_occurrences,
                     handler,
                 );
             }
 
-            NON_FINAL_IMPLEMENTATION_STATE => {}
+            DEFINITION_STATE => table
+                .create_where_clause_predicates_for_definition(
+                    symbol_id,
+                    syntax_tree.where_clause().as_ref(),
+                    where_clause_occurrences,
+                    handler,
+                ),
+
+            WELL_FORMED_STATE => table
+                .create_where_clause_predicates_for_well_formed(
+                    symbol_id,
+                    syntax_tree.where_clause().as_ref(),
+                    where_clause_occurrences,
+                    handler,
+                ),
 
             CHECK_STATE => {
-                // make sure the implemented trait has the where clause
-                let parent_trait_id =
-                    table.get(symbol_id).unwrap().implemented_id;
-                let _ = table.build_to(
-                    parent_trait_id,
-                    Some(symbol_id.into()),
-                    r#trait::WHERE_CLAUSE_STATE,
-                    handler,
-                );
+                // // make sure the implemented trait has the where clause
+                // let parent_trait_id =
+                //     table.get(symbol_id).unwrap().implemented_id;
+                // let _ = table.build_to(
+                //     parent_trait_id,
+                //     Some(symbol_id.into()),
+                //     r#trait::WHERE_CLAUSE_STATE,
+                //     handler,
+                // );
 
-                table.check_occurrences(symbol_id.into(), data, handler);
-                table.check_where_clause(symbol_id.into(), handler);
-                table.implementation_signature_check(symbol_id, handler);
+                // table.check_occurrences(symbol_id.into(), data, handler);
+                // table.check_where_clause(symbol_id.into(), handler);
+                // table.implementation_signature_check(symbol_id, handler);
             }
 
             _ => panic!("invalid state flag"),

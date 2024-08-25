@@ -2,5 +2,5 @@
 //! from the syntax tree.
 
 pub mod core;
-// pub mod drafting;
-// pub mod finalizing;
+pub mod drafting;
+pub mod finalizing;

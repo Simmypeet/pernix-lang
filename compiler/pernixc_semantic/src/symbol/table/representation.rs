@@ -1,4 +1,5 @@
 //! Contains the definition of [`Representation`] and methods.
+
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     fmt::Debug,
@@ -6,16 +7,21 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use building::drafting::Drafter;
 use getset::Getters;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use paste::paste;
-use pernixc_base::{diagnostic::Handler, source_file::Span};
+use pernixc_base::{
+    diagnostic::Handler,
+    source_file::{SourceElement, Span},
+};
 use pernixc_syntax::syntax_tree::{target::Target, AccessModifier};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use super::{State, Suboptimal, Success, Table};
+use super::{Building, State, Suboptimal, Success, Table};
 use crate::{
     arena::{Arena, ID},
-    error,
+    error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
     symbol::{
         self, Accessibility, Adt, AdtID, AdtImplementation,
         AdtImplementationFunction, Callable, CallableID, Constant, Enum,
@@ -1509,7 +1515,6 @@ pub enum BuildTableError {
     Suboptimal(Table<Suboptimal>),
 }
 
-/*
 fn convert_rw_locked_arena<T: 'static>(
     arena: Arena<RwLock<T>, ID<T>>,
 ) -> Arena<T, ID<T>> {
@@ -1659,7 +1664,6 @@ fn draft_table(
 
     Ok(drafting_table)
 }
-*/
 
 /// Builds a symbol table from the given targets.
 ///
@@ -1668,11 +1672,9 @@ fn draft_table(
 /// See [`BuildTableError`] for more information.
 #[allow(clippy::result_large_err)]
 pub fn build(
-    _targets: impl Iterator<Item = Target>,
-    _handler: &dyn Handler<Box<dyn error::Error>>,
+    targets: impl Iterator<Item = Target>,
+    handler: &dyn Handler<Box<dyn error::Error>>,
 ) -> Result<Table<Success>, BuildTableError> {
-    todo!()
-    /*
     let handler = HandlerAdaptor { handler, received: RwLock::new(false) };
 
     let building_table =
@@ -1723,14 +1725,8 @@ pub fn build(
         adt_implementations: convert_rw_locked_arena(
             building_table.representation.adt_implementations,
         ),
-        adt_implementation_types: convert_rw_locked_arena(
-            building_table.representation.adt_implementation_types,
-        ),
         adt_implementation_functions: convert_rw_locked_arena(
             building_table.representation.adt_implementation_functions,
-        ),
-        adt_implementation_constants: convert_rw_locked_arena(
-            building_table.representation.adt_implementation_constants,
         ),
         root_module_ids_by_name: building_table
             .representation
@@ -1745,7 +1741,6 @@ pub fn build(
     } else {
         Ok(Table { representation, state: Success(()) })
     }
-    */
 }
 
 #[derive(

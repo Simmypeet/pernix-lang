@@ -97,7 +97,8 @@ pub enum Satisfiability {
 pub use constant_type::{ConstantType, QuerySource as ConstantTypeQuerySource};
 pub use outlives::Outlives;
 pub use r#trait::{
-    resolve_implementation, Implementation, ResolveError as TraitResolveError,
+    resolve_implementation, resolve_implementation_with_context,
+    Implementation, ResolveError as TraitResolveError,
     Satisfied as TraitSatisfied, Trait,
 };
 pub use tuple::Tuple;

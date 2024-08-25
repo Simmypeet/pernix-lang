@@ -1,8 +1,10 @@
 //! Contains the [`Parser`] logic.
 
+use std::sync::Arc;
+
 use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::{diagnostic::Handler, source_file::SourceFile};
 use pernixc_lexical::{
     token::{
         self, Identifier, Keyword, KeywordKind, Numeric, Punctuation, Token,
@@ -10,7 +12,7 @@ use pernixc_lexical::{
     token_stream::{Delimited, Delimiter, TokenStream, TokenTree},
 };
 
-use crate::error::{Error, SyntaxKind};
+use crate::error::{Error, Found, SyntaxKind};
 
 /// Provides a way to iterate over a token stream.
 #[derive(
@@ -236,155 +238,18 @@ impl<'a> Frame<'a> {
             ),
         }
     }
-
-    /// Expects the next [`Token`] to be an [`Identifier`], and returns it.
-    ///
-    /// # Errors
-    /// If the next [`Token`] is not an [`Identifier`].
-    pub fn parse_identifier(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Identifier> {
-        match self.next_significant_token() {
-            Reading::Unit(Token::Identifier(ident)) => Some(ident),
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::Identifier,
-                    alternatives: Vec::new(),
-                    found: found.into_token(),
-                });
-                None
-            }
-        }
-    }
-
-    /// Expects the next [`Token`] to be an [`token::String`], and returns it.
-    ///
-    /// # Errors
-    ///
-    /// If the next [`Token`] is not an [`token::String`].
-    pub fn parse_string(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<token::String> {
-        match self.next_significant_token() {
-            Reading::Unit(Token::String(ident)) => Some(ident),
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::String,
-                    alternatives: Vec::new(),
-                    found: found.into_token(),
-                });
-                None
-            }
-        }
-    }
-
-    /// Expects the next [`Token`] to be an [`Numeric`], and returns it.
-    ///
-    /// # Errors
-    /// If the next [`Token`] is not an [`Numeric`].
-    pub fn parse_numeric(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Numeric> {
-        match self.next_significant_token() {
-            Reading::Unit(Token::Numeric(ident)) => Some(ident),
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::Numeric,
-                    alternatives: Vec::new(),
-                    found: found.into_token(),
-                });
-                None
-            }
-        }
-    }
-
-    /// Expects the next [`Token`] to be a [`Keyword`] of specific kind, and
-    /// returns it.
-    ///
-    /// # Errors
-    /// If the next [`Token`] is not a [`Keyword`] of specific kind.
-    pub fn parse_keyword(
-        &mut self,
-        expected: KeywordKind,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Keyword> {
-        match self.next_significant_token() {
-            Reading::Unit(Token::Keyword(keyword_token))
-                if keyword_token.kind == expected =>
-            {
-                Some(keyword_token)
-            }
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::Keyword(expected),
-                    alternatives: Vec::new(),
-                    found: found.into_token(),
-                });
-                None
-            }
-        }
-    }
-
-    /// Expects the next [`Token`] to be a [`Punctuation`] of specific kind, and
-    /// returns it.
-    ///
-    /// # Errors
-    /// If the next [`Token`] is not a [`Punctuation`] of specific kind.
-    pub fn parse_punctuation(
-        &mut self,
-        expected: char,
-        skip_insignificant: bool,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Punctuation> {
-        match if skip_insignificant {
-            self.next_significant_token()
-        } else {
-            self.next_token()
-        } {
-            Reading::Unit(Token::Punctuation(punctuation_token))
-                if punctuation_token.punctuation == expected =>
-            {
-                Some(punctuation_token)
-            }
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::Punctuation(expected),
-                    alternatives: Vec::new(),
-                    found: found.into_token(),
-                });
-                None
-            }
-        }
-    }
-
-    /// Tries to parse the given function, and if it fails, resets the current
-    /// index to the `current_index` before the function call.
-    pub fn try_parse<T>(
-        &mut self,
-        f: impl FnOnce(&mut Self) -> Option<T>,
-    ) -> Option<T> {
-        let current_index = self.current_index;
-
-        let result = f(self);
-
-        if result.is_none() {
-            self.current_index = current_index;
-        }
-
-        result
-    }
 }
 
 /// The parser of the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deref, DerefMut)]
+#[derive(Debug, Clone, Deref, DerefMut)]
 pub struct Parser<'a> {
     #[deref]
     #[deref_mut]
     current_frame: Frame<'a>,
     stack: Vec<Frame<'a>>,
+
+    /// The source file being parsed.
+    source_file: Arc<SourceFile>,
 }
 
 /// Represents a result of [`Parser::step_into()`] function.
@@ -402,14 +267,22 @@ pub struct DelimitedTree<T> {
 
 impl<'a> Parser<'a> {
     /// Creates a new parser from the given token stream.
+    ///
+    /// The source file argument should be the source file that the token stream
+    /// is from. The source file doesn't influence the parsing process, but it
+    /// is used to provide better error messages.
     #[must_use]
-    pub const fn new(token_stream: &'a TokenStream) -> Self {
+    pub const fn new(
+        token_stream: &'a TokenStream,
+        source_file: Arc<SourceFile>,
+    ) -> Self {
         Self {
             current_frame: Frame {
                 token_provider: TokenProvider::TokenStream(token_stream),
                 current_index: 0,
             },
             stack: Vec::new(),
+            source_file,
         }
     }
 
@@ -450,12 +323,16 @@ impl<'a> Parser<'a> {
                     handler.receive(Error {
                         expected: SyntaxKind::Punctuation(expected),
                         alternatives: Vec::new(),
-                        found: Some(match found {
-                            TokenTree::Token(token) => token.clone(),
-                            TokenTree::Delimited(delimited_tree) => {
-                                Token::Punctuation(delimited_tree.open.clone())
+                        found: match found {
+                            TokenTree::Token(token) => {
+                                Found::Token(token.clone())
                             }
-                        }),
+                            TokenTree::Delimited(delimited_tree) => {
+                                Found::Token(Token::Punctuation(
+                                    delimited_tree.open.clone(),
+                                ))
+                            }
+                        },
                     });
 
                     return None;
@@ -465,7 +342,7 @@ impl<'a> Parser<'a> {
             handler.receive(Error {
                 expected: SyntaxKind::Punctuation(expected),
                 alternatives: Vec::new(),
-                found: self.get_reading(None).into_token(),
+                found: self.reading_to_found(self.get_reading(None)),
             });
 
             return None;
@@ -505,7 +382,7 @@ impl<'a> Parser<'a> {
             handler.receive(Error {
                 expected: SyntaxKind::Punctuation(expected),
                 alternatives: Vec::new(),
-                found: self.peek().into_token(),
+                found: self.reading_to_found(self.peek()),
             });
         }
 
@@ -521,6 +398,137 @@ impl<'a> Parser<'a> {
         self.current_frame = new_frame;
 
         Some(DelimitedTree { open, tree, close: close_punctuation })
+    }
+
+    /// Converts the reading to [`Found`] for error reporting.
+    pub fn reading_to_found(&self, reading: Reading) -> Found {
+        reading.into_token().map_or_else(
+            || Found::EndOfFile(self.source_file.clone()),
+            Found::Token,
+        )
+    }
+
+    /// Expects the next [`Token`] to be an [`Identifier`], and returns it.
+    ///
+    /// # Errors
+    /// If the next [`Token`] is not an [`Identifier`].
+    pub fn parse_identifier(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Identifier> {
+        match self.next_significant_token() {
+            Reading::Unit(Token::Identifier(ident)) => Some(ident),
+            found => {
+                handler.receive(Error {
+                    expected: SyntaxKind::Identifier,
+                    alternatives: Vec::new(),
+                    found: self.reading_to_found(found),
+                });
+                None
+            }
+        }
+    }
+
+    /// Expects the next [`Token`] to be an [`token::String`], and returns it.
+    ///
+    /// # Errors
+    ///
+    /// If the next [`Token`] is not an [`token::String`].
+    pub fn parse_string(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<token::String> {
+        match self.next_significant_token() {
+            Reading::Unit(Token::String(ident)) => Some(ident),
+            found => {
+                handler.receive(Error {
+                    expected: SyntaxKind::String,
+                    alternatives: Vec::new(),
+                    found: self.reading_to_found(found),
+                });
+                None
+            }
+        }
+    }
+
+    /// Expects the next [`Token`] to be an [`Numeric`], and returns it.
+    ///
+    /// # Errors
+    /// If the next [`Token`] is not an [`Numeric`].
+    pub fn parse_numeric(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Numeric> {
+        match self.next_significant_token() {
+            Reading::Unit(Token::Numeric(ident)) => Some(ident),
+            found => {
+                handler.receive(Error {
+                    expected: SyntaxKind::Numeric,
+                    alternatives: Vec::new(),
+                    found: self.reading_to_found(found),
+                });
+                None
+            }
+        }
+    }
+
+    /// Expects the next [`Token`] to be a [`Keyword`] of specific kind, and
+    /// returns it.
+    ///
+    /// # Errors
+    /// If the next [`Token`] is not a [`Keyword`] of specific kind.
+    pub fn parse_keyword(
+        &mut self,
+        expected: KeywordKind,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Keyword> {
+        match self.next_significant_token() {
+            Reading::Unit(Token::Keyword(keyword_token))
+                if keyword_token.kind == expected =>
+            {
+                Some(keyword_token)
+            }
+            found => {
+                handler.receive(Error {
+                    expected: SyntaxKind::Keyword(expected),
+                    alternatives: Vec::new(),
+                    found: self.reading_to_found(found),
+                });
+                None
+            }
+        }
+    }
+
+    /// Expects the next [`Token`] to be a [`Punctuation`] of specific kind, and
+    /// returns it.
+    ///
+    /// # Errors
+    /// If the next [`Token`] is not a [`Punctuation`] of specific kind.
+    pub fn parse_punctuation(
+        &mut self,
+        expected: char,
+        skip_insignificant: bool,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Punctuation> {
+        match if skip_insignificant {
+            self.next_significant_token()
+        } else {
+            self.next_token()
+        } {
+            Reading::Unit(Token::Punctuation(punctuation_token))
+                if punctuation_token.punctuation == expected =>
+            {
+                Some(punctuation_token)
+            }
+            found => {
+                handler.receive(Error {
+                    expected: SyntaxKind::Punctuation(expected),
+                    alternatives: Vec::new(),
+                    found: self.reading_to_found(found),
+                });
+                None
+            }
+        }
     }
 
     /// Tries to parse the given function, and if it fails, resets the current

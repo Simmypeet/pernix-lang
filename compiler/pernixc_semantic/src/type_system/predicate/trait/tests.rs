@@ -28,7 +28,7 @@ use crate::{
         definite::Definite,
         instantiation::{self, Instantiation},
         model::Default,
-        normalizer::NoOp,
+        normalizer, observer,
         order::Order,
         predicate,
         term::{
@@ -50,7 +50,8 @@ fn definite_lifetime() -> impl Strategy<Value = Lifetime<Default>> {
             Definite(term.clone()).query(&Environment {
                 premise: Premise::default(),
                 table: &*TABLE,
-                normalizer: &NoOp,
+                normalizer: &normalizer::NO_OP,
+                observer: &observer::NO_OP
             }),
             Ok(Some(_))
         ) && !RecursiveIterator::new(term)
@@ -64,7 +65,8 @@ fn definite_type() -> impl Strategy<Value = Type<Default>> {
             Definite(term.clone()).query(&Environment {
                 premise: Premise::default(),
                 table: &*TABLE,
-                normalizer: &NoOp,
+                normalizer: &normalizer::NO_OP,
+                observer: &observer::NO_OP
             }),
             Ok(Some(_))
         ) && !RecursiveIterator::new(term)
@@ -78,7 +80,8 @@ fn definite_constant() -> impl Strategy<Value = Constant<Default>> {
             Definite(term.clone()).query(&Environment {
                 premise: Premise::default(),
                 table: &*TABLE,
-                normalizer: &NoOp,
+                normalizer: &normalizer::NO_OP,
+                observer: &observer::NO_OP
             }),
             Ok(Some(_))
         ) && !RecursiveIterator::new(term)
@@ -117,7 +120,12 @@ impl SingleImplementation {
         let Succeeded { result, constraints } = super::resolve_implementation(
             self.trait_id,
             &self.generic_arguments,
-            &Environment { premise, table: &self.table, normalizer: &NoOp },
+            &Environment {
+                premise,
+                table: &self.table,
+                normalizer: &normalizer::NO_OP,
+                observer: &observer::NO_OP,
+            },
         )?;
 
         prop_assert!(constraints.is_empty());
@@ -490,7 +498,8 @@ impl SpecializedImplementation {
             &Environment {
                 premise: Premise::default(),
                 table: &self.table,
-                normalizer: &NoOp,
+                normalizer: &normalizer::NO_OP,
+                observer: &observer::NO_OP,
             },
         )?;
 
@@ -709,7 +718,8 @@ impl SpecializedImplementation {
             &Environment {
                 premise: Premise::default(),
                 table,
-                normalizer: &NoOp,
+                normalizer: &normalizer::NO_OP,
+                observer: &observer::NO_OP,
             },
         ) != Ok(Order::MoreGeneral)
         {
@@ -846,7 +856,8 @@ impl FallbackToGeneralImplementation {
             &Environment {
                 premise: Premise::default(),
                 table: &self.0.table,
-                normalizer: &NoOp,
+                normalizer: &normalizer::NO_OP,
+                observer: &observer::NO_OP,
             },
         )?;
 
@@ -927,7 +938,7 @@ impl NegativeImplementation {
             &Environment {
                 premise: &premise,
                 table: &self.table,
-                normalizer: &NoOp,
+                normalizer: &normalizer::NO_OP,
             },
             &mut Limit::new(&mut session),
         );

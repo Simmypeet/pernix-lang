@@ -21,17 +21,19 @@ use crate::{
         GenericID, LifetimeParameter, LifetimeParameterID, MemberID,
     },
     type_system::{
+        self,
         equality::Equality,
         instantiation::Instantiation,
         mapping::Mapping,
         matching::{self, Match, Matching},
         model::{Default, Model},
         normalizer::Normalizer,
+        observer::Observer,
         predicate::{self, Outlives, Predicate, Satisfiability},
         query::Context,
         sub_term::{Location, SubTerm, TermLocation},
         unification::{Substructural, Unifier},
-        Environment, Output, OverflowError,
+        Environment, Output,
     },
 };
 
@@ -271,11 +273,11 @@ where
         }
     }
 
-    fn normalize(
+    fn normalize<S: State>(
         &self,
-        _: &Environment<M, impl State, impl Normalizer<M>>,
+        _: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
         _: &mut Context<M>,
-    ) -> Result<Output<Self, M>, OverflowError> {
+    ) -> Result<Output<Self, M>, type_system::OverflowError> {
         Ok(None)
     }
 

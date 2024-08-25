@@ -13,7 +13,7 @@ use crate::{
     type_system::{
         compatible::Compatible,
         model::Default,
-        normalizer::NoOp,
+        normalizer, observer,
         predicate::Outlives,
         term::{
             lifetime::Lifetime,
@@ -23,7 +23,6 @@ use crate::{
         variance::Variance,
         Environment, LifetimeConstraint, Premise,
     },
-    unordered_pair::UnorderedPair,
 };
 
 proptest! {
@@ -34,7 +33,8 @@ proptest! {
         let environment = Environment {
             premise: Premise::default(),
             table: &Table::<Building>::default(),
-            normalizer: &NoOp
+            normalizer: &normalizer::NO_OP,
+            observer: &observer::NO_OP,
         };
 
          assert!(term
@@ -85,7 +85,8 @@ fn basic_compatible() {
     let environment = Environment {
         premise: Premise::default(),
         table: &Table::<Building>::default(),
-        normalizer: &NoOp,
+        normalizer: &normalizer::NO_OP,
+        observer: &observer::NO_OP,
     };
 
     let check = |variance: Variance| {
@@ -94,25 +95,36 @@ fn basic_compatible() {
 
         assert_eq!(result.constraints.len(), 1);
 
-        let expected_constraint = match variance {
+        let expected_constraints = match variance {
             Variance::Covariant => {
-                LifetimeConstraint::LifetimeOutlives(Outlives {
+                vec![LifetimeConstraint::LifetimeOutlives(Outlives {
                     operand: a_lt.clone(),
                     bound: static_lt.clone(),
-                })
+                })]
             }
             Variance::Contravariant => {
-                LifetimeConstraint::LifetimeOutlives(Outlives {
+                vec![LifetimeConstraint::LifetimeOutlives(Outlives {
                     operand: static_lt.clone(),
                     bound: a_lt.clone(),
-                })
+                })]
             }
-            Variance::Invariant => LifetimeConstraint::LifetimeMatching(
-                UnorderedPair::new(static_lt.clone(), a_lt.clone()),
-            ),
+            Variance::Invariant => {
+                vec![
+                    LifetimeConstraint::LifetimeOutlives(Outlives::new(
+                        static_lt.clone(),
+                        a_lt.clone(),
+                    )),
+                    LifetimeConstraint::LifetimeOutlives(Outlives::new(
+                        a_lt.clone(),
+                        static_lt.clone(),
+                    )),
+                ]
+            }
         };
 
-        assert!(result.constraints.contains(&expected_constraint));
+        assert!(expected_constraints
+            .iter()
+            .all(|x| result.constraints.contains(x)));
     };
 
     check(Variance::Covariant);
@@ -202,7 +214,8 @@ fn compatible_with_adt() {
             .compatible(&b_t, Variance::Covariant, &Environment {
                 premise: Premise::default(),
                 table: &table,
-                normalizer: &NoOp,
+                normalizer: &normalizer::NO_OP,
+                observer: &observer::NO_OP,
             })
             .unwrap()
             .unwrap();
@@ -211,23 +224,32 @@ fn compatible_with_adt() {
 
         let expected_constraint = match variance {
             Variance::Covariant => {
-                LifetimeConstraint::LifetimeOutlives(Outlives {
+                vec![LifetimeConstraint::LifetimeOutlives(Outlives {
                     operand: a_lt.clone(),
                     bound: b_lt.clone(),
-                })
+                })]
             }
             Variance::Contravariant => {
-                LifetimeConstraint::LifetimeOutlives(Outlives {
+                vec![LifetimeConstraint::LifetimeOutlives(Outlives {
                     operand: b_lt.clone(),
                     bound: a_lt.clone(),
-                })
+                })]
             }
-            Variance::Invariant => LifetimeConstraint::LifetimeMatching(
-                UnorderedPair::new(a_lt.clone(), b_lt.clone()),
-            ),
+            Variance::Invariant => vec![
+                LifetimeConstraint::LifetimeOutlives(Outlives::new(
+                    a_lt.clone(),
+                    b_lt.clone(),
+                )),
+                LifetimeConstraint::LifetimeOutlives(Outlives::new(
+                    b_lt.clone(),
+                    a_lt.clone(),
+                )),
+            ],
         };
 
-        assert!(result.constraints.contains(&expected_constraint));
+        assert!(expected_constraint
+            .iter()
+            .all(|x| result.constraints.contains(x)));
     };
 
     check(Variance::Covariant);
@@ -278,7 +300,8 @@ fn compatible_with_mutable_reference() {
     let environment = Environment {
         premise: Premise::default(),
         table: &Table::<Building>::default(),
-        normalizer: &NoOp,
+        normalizer: &normalizer::NO_OP,
+        observer: &observer::NO_OP,
     };
 
     let result = lhs
@@ -292,11 +315,16 @@ fn compatible_with_mutable_reference() {
         operand: a_lt.clone(),
         bound: c_lt.clone(),
     });
-    let b_and_d = LifetimeConstraint::LifetimeMatching(UnorderedPair::new(
+    let b_and_d = LifetimeConstraint::LifetimeOutlives(Outlives::new(
         b_lt.clone(),
         d_lt.clone(),
+    ));
+    let d_and_b = LifetimeConstraint::LifetimeOutlives(Outlives::new(
+        d_lt.clone(),
+        b_lt.clone(),
     ));
 
     assert!(result.constraints.contains(&a_and_c));
     assert!(result.constraints.contains(&b_and_d));
+    assert!(result.constraints.contains(&d_and_b));
 }

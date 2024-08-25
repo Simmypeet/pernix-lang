@@ -1,0 +1,1161 @@
+{
+	"information_for_contributors": [
+		"This file is directly copied from the https://github.com/microsoft/vscode/blob/main/extensions/rust/syntaxes/rust.tmLanguage.json .",
+		"With some modifications to make it works with Pernix."
+	],
+	"name": "Pernix",
+	"scopeName": "source.pernix",
+	"patterns": [
+		{
+			"comment": "boxed slice literal",
+			"begin": "(<)(\\[)",
+			"beginCaptures": {
+				"1": {
+					"name": "punctuation.brackets.angle.pernix"
+				},
+				"2": {
+					"name": "punctuation.brackets.square.pernix"
+				}
+			},
+			"end": ">",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.brackets.angle.pernix"
+				}
+			},
+			"patterns": [
+				{
+					"include": "#block-comments"
+				},
+				{
+					"include": "#comments"
+				},
+				{
+					"include": "#gtypes"
+				},
+				{
+					"include": "#lvariables"
+				},
+				{
+					"include": "#lifetimes"
+				},
+				{
+					"include": "#punctuation"
+				},
+				{
+					"include": "#types"
+				}
+			]
+		},
+		{
+			"comment": "macro type metavariables",
+			"name": "meta.macro.metavariable.type.pernix",
+			"match": "(\\$)((crate)|([A-Z][A-Za-z0-9_]*))((:)(block|expr|ident|item|lifetime|literal|meta|path?|stmt|tt|ty|vis))?",
+			"captures": {
+				"1": {
+					"name": "keyword.operator.macro.dollar.pernix"
+				},
+				"3": {
+					"name": "keyword.other.crate.pernix"
+				},
+				"4": {
+					"name": "entity.name.type.metavariable.pernix"
+				},
+				"6": {
+					"name": "keyword.operator.key-value.pernix"
+				},
+				"7": {
+					"name": "variable.other.metavariable.specifier.pernix"
+				}
+			},
+			"patterns": [
+				{
+					"include": "#keywords"
+				}
+			]
+		},
+		{
+			"comment": "macro metavariables",
+			"name": "meta.macro.metavariable.pernix",
+			"match": "(\\$)([a-z][A-Za-z0-9_]*)((:)(block|expr|ident|item|lifetime|literal|meta|path?|stmt|tt|ty|vis))?",
+			"captures": {
+				"1": {
+					"name": "keyword.operator.macro.dollar.pernix"
+				},
+				"2": {
+					"name": "variable.other.metavariable.name.pernix"
+				},
+				"4": {
+					"name": "keyword.operator.key-value.pernix"
+				},
+				"5": {
+					"name": "variable.other.metavariable.specifier.pernix"
+				}
+			},
+			"patterns": [
+				{
+					"include": "#keywords"
+				}
+			]
+		},
+		{
+			"comment": "macro rules",
+			"name": "meta.macro.rules.pernix",
+			"match": "\\b(macro_rules!)\\s+(([a-z0-9_]+)|([A-Z][a-z0-9_]*))\\s+(\\{)",
+			"captures": {
+				"1": {
+					"name": "entity.name.function.macro.rules.pernix"
+				},
+				"3": {
+					"name": "entity.name.function.macro.pernix"
+				},
+				"4": {
+					"name": "entity.name.type.macro.pernix"
+				},
+				"5": {
+					"name": "punctuation.brackets.curly.pernix"
+				}
+			}
+		},
+		{
+			"comment": "modules",
+			"match": "(modue)\\s+((?:r#(?!crate|[Ss]elf|super))?[a-z][A-Za-z0-9_]*)",
+			"captures": {
+				"1": {
+					"name": "storage.type.pernix"
+				},
+				"2": {
+					"name": "entity.name.module.pernix"
+				}
+			}
+		},
+		{
+			"comment": "external crate imports",
+			"name": "meta.import.pernix",
+			"begin": "\\b(extern)\\s+(crate)",
+			"beginCaptures": {
+				"1": {
+					"name": "storage.type.pernix"
+				},
+				"2": {
+					"name": "keyword.other.crate.pernix"
+				}
+			},
+			"end": ";",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.semi.pernix"
+				}
+			},
+			"patterns": [
+				{
+					"include": "#block-comments"
+				},
+				{
+					"include": "#comments"
+				},
+				{
+					"include": "#keywords"
+				},
+				{
+					"include": "#punctuation"
+				}
+			]
+		},
+		{
+			"comment": "using statements",
+			"name": "meta.using.pernix",
+			"begin": "\\b(using)\\s",
+			"beginCaptures": {
+				"1": {
+					"name": "keyword.other.pernix"
+				}
+			},
+			"end": ";",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.semi.pernix"
+				}
+			},
+			"patterns": [
+				{
+					"include": "#block-comments"
+				},
+				{
+					"include": "#comments"
+				},
+				{
+					"include": "#keywords"
+				},
+				{
+					"include": "#namespaces"
+				},
+				{
+					"include": "#punctuation"
+				},
+				{
+					"include": "#types"
+				},
+				{
+					"include": "#lvariables"
+				}
+			]
+		},
+		{
+			"include": "#block-comments"
+		},
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#attributes"
+		},
+		{
+			"include": "#lvariables"
+		},
+		{
+			"include": "#constants"
+		},
+		{
+			"include": "#gtypes"
+		},
+		{
+			"include": "#functions"
+		},
+		{
+			"include": "#types"
+		},
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#lifetimes"
+		},
+		{
+			"include": "#macros"
+		},
+		{
+			"include": "#namespaces"
+		},
+		{
+			"include": "#punctuation"
+		},
+		{
+			"include": "#strings"
+		},
+		{
+			"include": "#variables"
+		}
+	],
+	"repository": {
+		"comments": {
+			"patterns": [
+				{
+					"comment": "documentation comments",
+					"name": "comment.line.documentation.pernix",
+					"match": "^\\s*///.*"
+				},
+				{
+					"comment": "line comments",
+					"name": "comment.line.double-slash.pernix",
+					"match": "\\s*//.*"
+				}
+			]
+		},
+		"block-comments": {
+			"patterns": [
+				{
+					"comment": "empty block comments",
+					"name": "comment.block.pernix",
+					"match": "/\\*\\*/"
+				},
+				{
+					"comment": "block documentation comments",
+					"name": "comment.block.documentation.pernix",
+					"begin": "/\\*\\*",
+					"end": "\\*/",
+					"patterns": [
+						{
+							"include": "#block-comments"
+						}
+					]
+				},
+				{
+					"comment": "block comments",
+					"name": "comment.block.pernix",
+					"begin": "/\\*(?!\\*)",
+					"end": "\\*/",
+					"patterns": [
+						{
+							"include": "#block-comments"
+						}
+					]
+				}
+			]
+		},
+		"constants": {
+			"patterns": [
+				{
+					"comment": "ALL CAPS constants",
+					"name": "entity.name.type.constant.pernix",
+					"match": "\\b[A-Z]{2}[A-Za-z0-9_]*\\b"
+				},
+				{
+					"comment": "constant declarations",
+					"match": "\\b(const)\\s+([A-Z][A-Za-z0-9_]*)\\b",
+					"captures": {
+						"1": {
+							"name": "storage.modifier.pernix"
+						},
+						"2": {
+							"name": "entity.name.type.constant.pernix"
+						}
+					}
+				},
+				{
+					"comment": "decimal integers and floats",
+					"name": "constant.numeric.decimal.pernix",
+					"match": "\\b\\d[\\d_]*(\\.?)[\\d_]*(?:(E|e)([+-]?)([\\d_]+))?(f32|f64|i128|i16|i32|i64|i8|isize|u128|u16|u32|u64|u8|usize)?\\b",
+					"captures": {
+						"1": {
+							"name": "punctuation.separator.dot.decimal.pernix"
+						},
+						"2": {
+							"name": "keyword.operator.exponent.pernix"
+						},
+						"3": {
+							"name": "keyword.operator.exponent.sign.pernix"
+						},
+						"4": {
+							"name": "constant.numeric.decimal.exponent.mantissa.pernix"
+						},
+						"5": {
+							"name": "entity.name.type.numeric.pernix"
+						}
+					}
+				},
+				{
+					"comment": "hexadecimal integers",
+					"name": "constant.numeric.hex.pernix",
+					"match": "\\b0x[\\da-fA-F_]+(i128|i16|i32|i64|i8|isize|u128|u16|u32|u64|u8|usize)?\\b",
+					"captures": {
+						"1": {
+							"name": "entity.name.type.numeric.pernix"
+						}
+					}
+				},
+				{
+					"comment": "octal integers",
+					"name": "constant.numeric.oct.pernix",
+					"match": "\\b0o[0-7_]+(i128|i16|i32|i64|i8|isize|u128|u16|u32|u64|u8|usize)?\\b",
+					"captures": {
+						"1": {
+							"name": "entity.name.type.numeric.pernix"
+						}
+					}
+				},
+				{
+					"comment": "binary integers",
+					"name": "constant.numeric.bin.pernix",
+					"match": "\\b0b[01_]+(i128|i16|i32|i64|i8|isize|u128|u16|u32|u64|u8|usize)?\\b",
+					"captures": {
+						"1": {
+							"name": "entity.name.type.numeric.pernix"
+						}
+					}
+				},
+				{
+					"comment": "booleans",
+					"name": "constant.language.bool.pernix",
+					"match": "\\b(true|false)\\b"
+				}
+			]
+		},
+		"escapes": {
+			"comment": "escapes: ASCII, byte, Unicode, quote, regex",
+			"name": "constant.character.escape.pernix",
+			"match": "(\\\\)(?:(?:(x[0-7][\\da-fA-F])|(u(\\{)[\\da-fA-F]{4,6}(\\}))|.))",
+			"captures": {
+				"1": {
+					"name": "constant.character.escape.backslash.pernix"
+				},
+				"2": {
+					"name": "constant.character.escape.bit.pernix"
+				},
+				"3": {
+					"name": "constant.character.escape.unicode.pernix"
+				},
+				"4": {
+					"name": "constant.character.escape.unicode.punctuation.pernix"
+				},
+				"5": {
+					"name": "constant.character.escape.unicode.punctuation.pernix"
+				}
+			}
+		},
+		"attributes": {
+			"comment": "attributes",
+			"name": "meta.attribute.pernix",
+			"begin": "(#)(\\!?)(\\[)",
+			"beginCaptures": {
+				"1": {
+					"name": "punctuation.definition.attribute.pernix"
+				},
+				"3": {
+					"name": "punctuation.brackets.attribute.pernix"
+				}
+			},
+			"end": "\\]",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.brackets.attribute.pernix"
+				}
+			},
+			"patterns": [
+				{
+					"include": "#block-comments"
+				},
+				{
+					"include": "#comments"
+				},
+				{
+					"include": "#keywords"
+				},
+				{
+					"include": "#lifetimes"
+				},
+				{
+					"include": "#punctuation"
+				},
+				{
+					"include": "#strings"
+				},
+				{
+					"include": "#gtypes"
+				},
+				{
+					"include": "#types"
+				}
+			]
+		},
+		"functions": {
+			"patterns": [
+				{
+					"comment": "pub as a function",
+					"match": "\\b(pub)(\\()",
+					"captures": {
+						"1": {
+							"name": "keyword.other.pernix"
+						},
+						"2": {
+							"name": "punctuation.brackets.round.pernix"
+						}
+					}
+				},
+				{
+					"comment": "function definition",
+					"name": "meta.function.definition.pernix",
+					"begin": "\\b(function)\\s+((?:r#(?!crate|[Ss]elf|super))?[A-Za-z0-9_]+)((\\()|(\\[))",
+					"beginCaptures": {
+						"1": {
+							"name": "keyword.other.function.pernix"
+						},
+						"2": {
+							"name": "entity.name.function.pernix"
+						},
+						"4": {
+							"name": "punctuation.brackets.round.pernix"
+						},
+						"5": {
+							"name": "punctuation.brackets.bracket.pernix"
+						}
+					},
+					"end": "\\{|;",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.brackets.curly.pernix"
+						}
+					},
+					"patterns": [
+						{
+							"include": "#block-comments"
+						},
+						{
+							"include": "#comments"
+						},
+						{
+							"include": "#keywords"
+						},
+						{
+							"include": "#lvariables"
+						},
+						{
+							"include": "#constants"
+						},
+						{
+							"include": "#gtypes"
+						},
+						{
+							"include": "#functions"
+						},
+						{
+							"include": "#lifetimes"
+						},
+						{
+							"include": "#macros"
+						},
+						{
+							"include": "#namespaces"
+						},
+						{
+							"include": "#punctuation"
+						},
+						{
+							"include": "#strings"
+						},
+						{
+							"include": "#types"
+						},
+						{
+							"include": "#variables"
+						}
+					]
+				},
+				{
+					"comment": "function/method calls, chaining",
+					"name": "meta.function.call.pernix",
+					"begin": "((?:r#(?!crate|[Ss]elf|super))?[A-Za-z0-9_]+)(\\()",
+					"beginCaptures": {
+						"1": {
+							"name": "entity.name.function.pernix"
+						},
+						"2": {
+							"name": "punctuation.brackets.round.pernix"
+						}
+					},
+					"end": "\\)",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.brackets.round.pernix"
+						}
+					},
+					"patterns": [
+						{
+							"include": "#block-comments"
+						},
+						{
+							"include": "#comments"
+						},
+						{
+							"include": "#attributes"
+						},
+						{
+							"include": "#keywords"
+						},
+						{
+							"include": "#lvariables"
+						},
+						{
+							"include": "#constants"
+						},
+						{
+							"include": "#gtypes"
+						},
+						{
+							"include": "#functions"
+						},
+						{
+							"include": "#lifetimes"
+						},
+						{
+							"include": "#macros"
+						},
+						{
+							"include": "#namespaces"
+						},
+						{
+							"include": "#punctuation"
+						},
+						{
+							"include": "#strings"
+						},
+						{
+							"include": "#types"
+						},
+						{
+							"include": "#variables"
+						}
+					]
+				},
+				{
+					"comment": "function/method calls with generic arguments",
+					"name": "meta.function.call.pernix",
+					"begin": "((?:r#(?!crate|[Ss]elf|super))?[A-Za-z0-9_]+)(?=\\[.*\\]\\()",
+					"beginCaptures": {
+						"1": {
+							"name": "entity.name.function.pernix"
+						}
+					},
+					"end": "\\)",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.brackets.round.pernix"
+						}
+					},
+					"patterns": [
+						{
+							"include": "#block-comments"
+						},
+						{
+							"include": "#comments"
+						},
+						{
+							"include": "#attributes"
+						},
+						{
+							"include": "#keywords"
+						},
+						{
+							"include": "#lvariables"
+						},
+						{
+							"include": "#constants"
+						},
+						{
+							"include": "#gtypes"
+						},
+						{
+							"include": "#functions"
+						},
+						{
+							"include": "#lifetimes"
+						},
+						{
+							"include": "#macros"
+						},
+						{
+							"include": "#namespaces"
+						},
+						{
+							"include": "#punctuation"
+						},
+						{
+							"include": "#strings"
+						},
+						{
+							"include": "#types"
+						},
+						{
+							"include": "#variables"
+						}
+					]
+				}
+			]
+		},
+		"keywords": {
+			"patterns": [
+				{
+					"comment": "control flow keywords",
+					"name": "keyword.control.pernix",
+					"match": "\\b(await|break|continue|do|resume|with|else|for|if|loop|match|return|try|while|yield|case|express)\\b"
+				},
+				{
+					"comment": "storage keywords",
+					"name": "keyword.other.pernix storage.type.pernix",
+					"match": "\\b(extern|let|macro|module)\\b"
+				},
+				{
+					"comment": "const keyword",
+					"name": "storage.modifier.pernix",
+					"match": "\\b(const)\\b"
+				},
+				{
+					"comment": "type keyword",
+					"name": "keyword.declaration.type.pernix storage.type.pernix",
+					"match": "\\b(type)\\b"
+				},
+				{
+					"comment": "enum keyword",
+					"name": "keyword.declaration.enum.pernix storage.type.pernix",
+					"match": "\\b(enum)\\b"
+				},
+				{
+					"comment": "trait keyword",
+					"name": "keyword.declaration.trait.pernix storage.type.pernix",
+					"match": "\\b(trait)\\b"
+				},
+				{
+					"comment": "struct keyword",
+					"name": "keyword.declaration.struct.pernix storage.type.pernix",
+					"match": "\\b(struct)\\b"
+				},
+				{
+					"comment": "function keyword",
+					"name": "keyword.declaration.function.pernix storage.type.pernix",
+					"match": "\\b(function)\\b"
+				},
+				{
+					"comment": "effect keyword",
+					"name": "keyword.declaration.effect.pernix storage.type.pernix",
+					"match": "\\b(effect)\\b"
+				},
+				{
+					"comment": "clause keyword",
+					"name": "keyword.declaration.clause.pernix storage.type.pernix",
+					"match": "\\b(clause)\\b"
+				},
+				{
+					"comment": "storage modifiers",
+					"name": "storage.modifier.pernix",
+					"match": "\\b(abstract|static)\\b"
+				},
+				{
+					"comment": "other keywords",
+					"name": "keyword.other.pernix",
+					"match": "\\b(public|private|interanl|where|implements|as|unsafe|null|property|mark|at|tuple|delete|final|and|or|inherits)\\b"
+				},
+				{
+					"comment": "crate",
+					"name": "keyword.other.crate.pernix",
+					"match": "\\bcrate\\b"
+				},
+				{
+					"comment": "mutable",
+					"name": "storage.modifier.mutable.pernix",
+					"match": "\\bmutable\\b"
+				},
+				{
+					"comment": "phantom",
+					"name": "storage.modifier.phantom.pernix",
+					"match": "\\bphantom\\b"
+				},
+				{
+					"comment": "mutable",
+					"name": "storage.modifier.local.pernix",
+					"match": "\\blocal\\b"
+				},
+				{
+					"comment": "mutable",
+					"name": "storage.modifier.unlocal.pernix",
+					"match": "\\bunlocal\\b"
+				},
+				{
+					"comment": "unique",
+					"name": "storage.modifier.unique.pernix",
+					"match": "\\bunique\\b"
+				},
+				{
+					"comment": "logical operators",
+					"name": "keyword.operator.logical.pernix",
+					"match": "(\\^|\\||\\|\\||&&|<<|>>|!)(?!=)"
+				},
+				{
+					"comment": "logical AND, borrow references",
+					"name": "keyword.operator.borrow.and.pernix",
+					"match": "&(?![&=])"
+				},
+				{
+					"comment": "assignment operators",
+					"name": "keyword.operator.assignment.pernix",
+					"match": "(\\+=|-=|\\*=|/=|%=|\\^=|&=|\\|=|<<=|>>=)"
+				},
+				{
+					"comment": "single equal",
+					"name": "keyword.operator.assignment.equal.pernix",
+					"match": "(?<![<>])=(?!=|>)"
+				},
+				{
+					"comment": "comparison operators",
+					"name": "keyword.operator.comparison.pernix",
+					"match": "(=(=)?(?!>)|!=|<=|(?<!=)>=)"
+				},
+				{
+					"comment": "math operators",
+					"name": "keyword.operator.math.pernix",
+					"match": "(([+%]|(\\*(?!\\w)))(?!=))|(-(?!>))|(/(?!/))"
+				},
+				{
+					"comment": "less than, greater than (special case)",
+					"match": "(?:\\b|(?:(\\))|(\\])|(\\})))[ \\t]+([<>])[ \\t]+(?:\\b|(?:(\\()|(\\[)|(\\{)))",
+					"captures": {
+						"1": {
+							"name": "punctuation.brackets.round.pernix"
+						},
+						"2": {
+							"name": "punctuation.brackets.square.pernix"
+						},
+						"3": {
+							"name": "punctuation.brackets.curly.pernix"
+						},
+						"4": {
+							"name": "keyword.operator.comparison.pernix"
+						},
+						"5": {
+							"name": "punctuation.brackets.round.pernix"
+						},
+						"6": {
+							"name": "punctuation.brackets.square.pernix"
+						},
+						"7": {
+							"name": "punctuation.brackets.curly.pernix"
+						}
+					}
+				},
+				{
+					"comment": "namespace operator",
+					"name": "keyword.operator.namespace.pernix",
+					"match": "::"
+				},
+				{
+					"comment": "dereference asterisk",
+					"match": "(\\*)(?=\\w+)",
+					"captures": {
+						"1": {
+							"name": "keyword.operator.dereference.pernix"
+						}
+					}
+				},
+				{
+					"comment": "subpattern binding",
+					"name": "keyword.operator.subpattern.pernix",
+					"match": "@"
+				},
+				{
+					"comment": "dot access",
+					"name": "keyword.operator.access.dot.pernix",
+					"match": "\\.(?!\\.)"
+				},
+				{
+					"comment": "ranges, range patterns",
+					"name": "keyword.operator.range.pernix",
+					"match": "\\.{2}(=|\\.)?"
+				},
+				{
+					"comment": "colon",
+					"name": "keyword.operator.key-value.pernix",
+					"match": ":(?!:)"
+				},
+				{
+					"comment": "dashrocket, skinny arrow",
+					"name": "keyword.operator.arrow.skinny.pernix",
+					"match": "->"
+				},
+				{
+					"comment": "hashrocket, fat arrow",
+					"name": "keyword.operator.arrow.fat.pernix",
+					"match": "=>"
+				},
+				{
+					"comment": "dollar macros",
+					"name": "keyword.operator.macro.dollar.pernix",
+					"match": "\\$"
+				},
+				{
+					"comment": "question mark operator, questionably sized, macro kleene matcher",
+					"name": "keyword.operator.question.pernix",
+					"match": "\\?"
+				}
+			]
+		},
+		"interpolations": {
+			"comment": "curly brace interpolations",
+			"name": "meta.interpolation.pernix",
+			"match": "({)[^\"{}]*(})",
+			"captures": {
+				"1": {
+					"name": "punctuation.definition.interpolation.pernix"
+				},
+				"2": {
+					"name": "punctuation.definition.interpolation.pernix"
+				}
+			}
+		},
+		"lifetimes": {
+			"patterns": [
+				{
+					"comment": "named lifetime parameters",
+					"match": "(['])([a-zA-Z_][0-9a-zA-Z_]*)(?!['])\\b",
+					"captures": {
+						"1": {
+							"name": "punctuation.definition.lifetime.pernix"
+						},
+						"2": {
+							"name": "entity.name.type.lifetime.pernix"
+						}
+					}
+				},
+				{
+					"comment": "borrowing references to named lifetimes",
+					"match": "(\\&)(['])([a-zA-Z_][0-9a-zA-Z_]*)(?!['])\\b",
+					"captures": {
+						"1": {
+							"name": "keyword.operator.borrow.pernix"
+						},
+						"2": {
+							"name": "punctuation.definition.lifetime.pernix"
+						},
+						"3": {
+							"name": "entity.name.type.lifetime.pernix"
+						}
+					}
+				}
+			]
+		},
+		"macros": {
+			"patterns": [
+				{
+					"comment": "macros",
+					"name": "meta.macro.pernix",
+					"match": "(([a-z_][A-Za-z0-9_]*!)|([A-Z_][A-Za-z0-9_]*!))",
+					"captures": {
+						"2": {
+							"name": "entity.name.function.macro.pernix"
+						},
+						"3": {
+							"name": "entity.name.type.macro.pernix"
+						}
+					}
+				}
+			]
+		},
+		"namespaces": {
+			"patterns": [
+				{
+					"comment": "namespace (non-type, non-function path segment)",
+					"match": "(?<![A-Za-z0-9_])([A-Za-z0-9_]+)((?<!super|self)::)",
+					"captures": {
+						"1": {
+							"name": "entity.name.namespace.pernix"
+						},
+						"2": {
+							"name": "keyword.operator.namespace.pernix"
+						}
+					}
+				}
+			]
+		},
+		"types": {
+			"patterns": [
+				{
+					"comment": "primitve types",
+					"match": "(?<![A-Za-z])(float32|float64|int16|int32|int64|int8|isize|uint16|uint32|uint64|uint8|usize|bool)\\b",
+					"captures": {
+						"1": {
+							"name": "keyword.other.primitive.pernix"
+						}
+					}
+				},
+				{
+					"comment": "parameterized types",
+					"begin": "\\b(_?[A-Z][A-Za-z0-9_]*)(\\[)",
+					"beginCaptures": {
+						"1": {
+							"name": "entity.name.type.pernix"
+						},
+						"2": {
+							"name": "punctuation.brackets.bracket.pernix"
+						}
+					},
+					"end": "\\]",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.brackets.bracket.pernix"
+						}
+					},
+					"patterns": [
+						{
+							"include": "#block-comments"
+						},
+						{
+							"include": "#comments"
+						},
+						{
+							"include": "#keywords"
+						},
+						{
+							"include": "#lvariables"
+						},
+						{
+							"include": "#lifetimes"
+						},
+						{
+							"include": "#punctuation"
+						},
+						{
+							"include": "#types"
+						},
+						{
+							"include": "#variables"
+						}
+					]
+				},
+				{
+					"comment": "trait declarations",
+					"match": "\\b(trait)\\s+(_?[A-Z][A-Za-z0-9_]*)\\b",
+					"captures": {
+						"1": {
+							"name": "keyword.declaration.trait.pernix storage.type.pernix"
+						},
+						"2": {
+							"name": "entity.name.type.trait.pernix"
+						}
+					}
+				},
+				{
+					"comment": "struct declarations",
+					"match": "\\b(struct)\\s+(_?[A-Z][A-Za-z0-9_]*)\\b",
+					"captures": {
+						"1": {
+							"name": "keyword.declaration.struct.pernix storage.type.pernix"
+						},
+						"2": {
+							"name": "entity.name.type.struct.pernix"
+						}
+					}
+				},
+				{
+					"comment": "enum declarations",
+					"match": "\\b(enum)\\s+(_?[A-Z][A-Za-z0-9_]*)\\b",
+					"captures": {
+						"1": {
+							"name": "keyword.declaration.enum.pernix storage.type.pernix"
+						},
+						"2": {
+							"name": "entity.name.type.enum.pernix"
+						}
+					}
+				},
+				{
+					"comment": "type declarations",
+					"match": "\\b(type)\\s+(_?[A-Z][A-Za-z0-9_]*)\\b",
+					"captures": {
+						"1": {
+							"name": "keyword.declaration.type.pernix storage.type.pernix"
+						},
+						"2": {
+							"name": "entity.name.type.declaration.pernix"
+						}
+					}
+				},
+				{
+					"comment": "types",
+					"name": "entity.name.type.pernix",
+					"match": "\\b_?[A-Z][A-Za-z0-9_]*\\b(?!!)"
+				}
+			]
+		},
+		"punctuation": {
+			"patterns": [
+				{
+					"comment": "comma",
+					"name": "punctuation.comma.pernix",
+					"match": ","
+				},
+				{
+					"comment": "curly braces",
+					"name": "punctuation.brackets.curly.pernix",
+					"match": "[{}]"
+				},
+				{
+					"comment": "parentheses, round brackets",
+					"name": "punctuation.brackets.round.pernix",
+					"match": "[()]"
+				},
+				{
+					"comment": "semicolon",
+					"name": "punctuation.semi.pernix",
+					"match": ";"
+				},
+				{
+					"comment": "square brackets",
+					"name": "punctuation.brackets.square.pernix",
+					"match": "[\\[\\]]"
+				},
+				{
+					"comment": "angle brackets",
+					"name": "punctuation.brackets.angle.pernix",
+					"match": "(?<!=)[<>]"
+				}
+			]
+		},
+		"strings": {
+			"patterns": [
+				{
+					"comment": "double-quoted strings and byte strings",
+					"name": "string.quoted.double.pernix",
+					"begin": "(b?)(\")",
+					"beginCaptures": {
+						"1": {
+							"name": "string.quoted.byte.raw.pernix"
+						},
+						"2": {
+							"name": "punctuation.definition.string.pernix"
+						}
+					},
+					"end": "\"",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.pernix"
+						}
+					},
+					"patterns": [
+						{
+							"include": "#escapes"
+						},
+						{
+							"include": "#interpolations"
+						}
+					]
+				},
+				{
+					"comment": "double-quoted raw strings and raw byte strings",
+					"name": "string.quoted.double.pernix",
+					"begin": "(b?r)(#*)(\")",
+					"beginCaptures": {
+						"1": {
+							"name": "string.quoted.byte.raw.pernix"
+						},
+						"2": {
+							"name": "punctuation.definition.string.raw.pernix"
+						},
+						"3": {
+							"name": "punctuation.definition.string.pernix"
+						}
+					},
+					"end": "(\")(\\2)",
+					"endCaptures": {
+						"1": {
+							"name": "punctuation.definition.string.pernix"
+						},
+						"2": {
+							"name": "punctuation.definition.string.raw.pernix"
+						}
+					}
+				}
+			]
+		},
+		"lvariables": {
+			"patterns": [
+				{
+					"comment": "this",
+					"name": "variable.language.this.pernix",
+					"match": "\\bthis\\b"
+				},
+				{
+					"comment": "super",
+					"name": "variable.language.super.pernix",
+					"match": "\\bsuper\\b"
+				}
+			]
+		},
+		"variables": {
+			"patterns": [
+				{
+					"comment": "variables",
+					"name": "variable.other.pernix",
+					"match": "\\b(?<!(?<!\\.)\\.)(?:r#(?!(crate|[Ss]elf|super)))?[a-z0-9][A-Za-z0-9]*\\b"
+				}
+			]
+		}
+	}
+}

@@ -1425,10 +1425,10 @@ impl Arbitrary for AccessKind {
     fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
         let strat = strat.unwrap_or_else(Expression::arbitrary);
         prop_oneof![
-            Identifier::arbitrary().prop_map(AccessKind::Identifier),
+            Identifier::arbitrary().prop_map(Self::Identifier),
             (proptest::bool::ANY, syntax_tree::strategy::Numeric::arbitrary())
-                .prop_map(|(is_neg, index)| AccessKind::Tuple(is_neg, index)),
-            strat.prop_map(Box::new).prop_map(AccessKind::Index),
+                .prop_map(|(is_neg, index)| Self::Tuple(is_neg, index)),
+            strat.prop_map(Box::new).prop_map(Self::Index),
         ]
         .boxed()
     }

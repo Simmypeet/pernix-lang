@@ -33,12 +33,11 @@ use crate::{
         },
     },
     symbol::{
-        table::{
-            self, representation::Index, resolution::Observer, State, Table,
-        },
+        table::{self, representation::Index, resolution, State, Table},
         GlobalID, Struct,
     },
     type_system::{
+        self,
         instantiation::{
             self, Instantiation, MismatchedGenericArgumentCountError,
         },
@@ -85,7 +84,13 @@ pub enum CreatePatternError {
     MoreThanOneUnpackedInTupleType(term::Tuple<r#type::Type<infer::Model>>),
 }
 
-impl<'t, S: table::State, O: Observer<S, infer::Model>> Binder<'t, S, O> {
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
     /// Bind the given irrefutable pattern syntax tree to the IR and return the
     /// [`Irrefutable`] pattern.
     pub fn create_irrefutable(

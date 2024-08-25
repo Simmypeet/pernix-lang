@@ -6,6 +6,7 @@ use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
     fs::File,
+    io::Read,
     iter::Peekable,
     ops::Range,
     path::PathBuf,
@@ -29,10 +30,24 @@ pub enum Error {
     Utf8Error(#[from] std::str::Utf8Error),
 }
 
+enum Source {
+    MaappedSource(MappedSource),
+    Inline(String),
+}
+
+impl Source {
+    fn content(&self) -> &str {
+        match self {
+            Source::MaappedSource(a) => a.content(),
+            Source::Inline(a) => &a,
+        }
+    }
+}
+
 /// Represents an source file input for the compiler.
 #[derive(Getters)]
 pub struct SourceFile {
-    source: MappedSource,
+    source: Source,
 
     /// Gets the full path to the source file.
     #[get = "pub"]
@@ -89,9 +104,17 @@ impl MappedSource {
 }
 
 impl SourceFile {
-    fn new(full_path: PathBuf, source: MappedSource) -> Self {
+    #[allow(unused)]
+    fn new_mapped(full_path: PathBuf, source: MappedSource) -> Self {
         let lines = get_line_byte_positions(source.content());
-        Self { source, full_path, lines }
+        Self { source: Source::MaappedSource(source), full_path, lines }
+    }
+
+    /// Creates a new inline source file
+    #[must_use]
+    pub fn new_inline(full_path: PathBuf, content: String) -> Self {
+        let lines = get_line_byte_positions(&content);
+        Self { source: Source::Inline(content), full_path, lines }
     }
 
     /// Gets the content of the source file.
@@ -130,9 +153,13 @@ impl SourceFile {
     /// - [`Error::IoError`]: Error occurred when mapping the file to memory.
     /// - [`Error::Utf8Error`]: Error occurred when converting the mapped bytes
     ///   to a string.
-    pub fn load(file: File, path: PathBuf) -> Result<Self, Error> {
-        let source = MappedSource::create(file)?;
-        Ok(Self::new(path, source))
+    pub fn load(mut file: File, path: PathBuf) -> Result<Self, Error> {
+        let mut string = Vec::new();
+        file.read_to_end(&mut string)?;
+
+        let string = String::from_utf8(string).map_err(|x| x.utf8_error())?;
+
+        Ok(Self::new_inline(path, string))
     }
 
     /// Creates a temporary source file on the disk and writes the given

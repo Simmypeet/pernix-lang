@@ -1,9 +1,12 @@
 //! Contains the definition of [`Error`]
 
-use std::fmt::Display;
+use std::{fmt::Display, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_base::log::{Message, Severity, SourceCodeDisplay};
+use pernixc_base::{
+    log::{Message, Severity, SourceCodeDisplay},
+    source_file::{SourceElement, SourceFile, Span},
+};
 use pernixc_lexical::token::{KeywordKind, Token};
 
 /// Enumeration of all possible syntax kinds.
@@ -63,8 +66,35 @@ impl SyntaxKind {
     }
 }
 
+/// What was found in place of the expected syntax kind.
+#[derive(Debug, Clone)]
+#[allow(missing_docs)]
+pub enum Found {
+    Token(Token),
+    EndOfFile(Arc<SourceFile>),
+}
+
+impl SourceElement for Found {
+    fn span(&self) -> Span {
+        match self {
+            Found::Token(token) => token.span().clone(),
+            Found::EndOfFile(source_file) => {
+                let last_byte = source_file.content().len();
+                let mut char_boundary = last_byte - 1;
+
+                while !source_file.content().is_char_boundary(char_boundary) {
+                    char_boundary -= 1;
+                }
+
+                Span::new(source_file.clone(), char_boundary, last_byte)
+                    .unwrap()
+            }
+        }
+    }
+}
+
 /// A syntax/token is expected but found an other invalid token.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone)]
 pub struct Error {
     /// The kind of syntax that was expected.
     pub expected: SyntaxKind,
@@ -73,7 +103,7 @@ pub struct Error {
     pub alternatives: Vec<SyntaxKind>,
 
     /// The invalid token that was found.
-    pub found: Option<Token>,
+    pub found: Found,
 }
 
 impl Error {
@@ -107,23 +137,29 @@ impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let expected_string = self.get_expected_string();
 
-        let found_string = match self.found.clone() {
-            Some(Token::Comment(..)) => "a comment token".to_string(),
-            Some(Token::Identifier(..)) => "an identifier token".to_string(),
-            Some(Token::Keyword(keyword)) => {
+        let found_string = match &self.found {
+            Found::Token(Token::Comment(..)) => "a comment token".to_string(),
+            Found::Token(Token::Identifier(..)) => {
+                "an identifier token".to_string()
+            }
+            Found::Token(Token::Keyword(keyword)) => {
                 format!("a keyword token `{}`", keyword.kind.as_str())
             }
-            Some(Token::WhiteSpaces(..)) => "a white spaces token".to_string(),
-            Some(Token::Punctuation(punctuation)) => {
+            Found::Token(Token::WhiteSpaces(..)) => {
+                "a white spaces token".to_string()
+            }
+            Found::Token(Token::Punctuation(punctuation)) => {
                 format!("a punctuation token `{}`", punctuation.punctuation)
             }
-            Some(Token::Numeric(..)) => "a numeric token".to_string(),
-            Some(Token::Character(..)) => {
+            Found::Token(Token::Numeric(..)) => "a numeric token".to_string(),
+            Found::Token(Token::Character(..)) => {
                 "a character literal token".to_string()
             }
-            Some(Token::String(..)) => "a string literal token".to_string(),
+            Found::Token(Token::String(..)) => {
+                "a string literal token".to_string()
+            }
 
-            None => "EOF".to_string(),
+            Found::EndOfFile(_) => "EOF".to_string(),
         };
 
         let message =
@@ -131,12 +167,7 @@ impl Display for Error {
 
         write!(f, "{}", Message::new(Severity::Error, message))?;
 
-        self.found.as_ref().map_or(Ok(()), |span| {
-            write!(
-                f,
-                "\n{}",
-                SourceCodeDisplay::new(span.span(), Option::<i32>::None)
-            )
-        })
+        let span = self.found.span();
+        write!(f, "\n{}", SourceCodeDisplay::new(&span, None::<i32>))
     }
 }

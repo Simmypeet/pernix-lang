@@ -7,7 +7,8 @@ use super::{
     definite,
     equality::Equality,
     model::Model,
-    normalizer::Normalizer,
+    normalizer::{self, Normalizer},
+    observer::{self, Observer},
     predicate::Predicate,
     query::Context,
     term::r#type::{self, Type},
@@ -17,13 +18,13 @@ use crate::{
     symbol::table::{State, Table},
     type_system::{
         term::Kind, unification::Unification, visitor::RecursiveIterator,
-        Compute, LifetimeUnifyingPredicate, OverflowError,
+        Compute, LifetimeUnifyingPredicate,
     },
 };
 
 /// A structure that contains the environment of the semantic logic.
 #[derive(Debug, Getters, CopyGetters)]
-pub struct Environment<'a, M: Model, T: State, N: Normalizer<M>> {
+pub struct Environment<'a, M: Model, T: State, N: Normalizer<M, T>, O> {
     /// The premise of the semantic logic.
     #[get = "pub"]
     pub(super) premise: Premise<M>,
@@ -35,16 +36,22 @@ pub struct Environment<'a, M: Model, T: State, N: Normalizer<M>> {
     /// The normalizer used to normalize the inference variables.
     #[get_copy = "pub"]
     pub(super) normalizer: &'a N,
+
+    /// The observer used to observe all the query records made throughout the
+    /// computation.
+    #[get_copy = "pub"]
+    pub(super) observer: &'a O,
 }
 
-impl<'a, M: Model, T: State, N: Normalizer<M>> Clone
-    for Environment<'a, M, T, N>
+impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>> Clone
+    for Environment<'a, M, T, N, O>
 {
     fn clone(&self) -> Self {
         Self {
             premise: self.premise.clone(),
             table: self.table,
             normalizer: self.normalizer,
+            observer: self.observer,
         }
     }
 }
@@ -70,26 +77,28 @@ pub enum Error<M: Model> {
         Equality<r#type::TraitMember<M>, Type<M>>,
     ),
 
-    /// Encounters the [`OverflowError`] while calculating the requirements for
+    /// Encounters the [`super::Error`] while calculating the requirements for
     /// the given [`Predicate`].
-    OverflowCalculatingRequirement(Predicate<M>),
+    Overflow(Predicate<M>, super::OverflowError),
 }
+
 fn check_definite_predicate<
     'a,
     T: Clone + Into<Predicate<M>> + Debug,
     M: Model,
     S: State,
-    N: Normalizer<M>,
+    N: Normalizer<M, S>,
+    O: Observer<M, S>,
 >(
-    environment: &mut Environment<M, S, N>,
+    environment: &mut Environment<M, S, N, O>,
     remove_on_check: bool,
     predicates: &[T],
-    overflow_predicates: &mut Vec<Predicate<M>>,
+    overflow_predicates: &mut Vec<(Predicate<M>, super::OverflowError)>,
     definite_predicates: &mut Vec<Predicate<M>>,
     definite_check: impl Fn(
         &T,
-        &Environment<M, S, N>,
-    ) -> Result<bool, OverflowError>,
+        &Environment<M, S, N, O>,
+    ) -> Result<bool, super::OverflowError>,
 ) {
     // pick a predicate
     'outer: for i in 0..predicates.len() {
@@ -122,9 +131,9 @@ fn check_definite_predicate<
                 // nothing to worry about
             }
 
-            Err(_) => {
+            Err(error) => {
                 // add to the overflow set
-                overflow_predicates.push(predicate_i.clone().into());
+                overflow_predicates.push((predicate_i.clone().into(), error));
 
                 if remove_on_check {
                     assert!(environment
@@ -151,18 +160,19 @@ fn check_ambiguous_predicates<
     T: Clone + Into<Predicate<M>> + Debug,
     M: Model,
     S: State,
-    N: Normalizer<M>,
+    N: Normalizer<M, S>,
+    O: Observer<M, S>,
 >(
-    environment: &mut Environment<M, S, N>,
+    environment: &mut Environment<M, S, N, O>,
     remove_on_check: bool,
     predicates: &[T],
-    overflow_predicates: &mut Vec<Predicate<M>>,
+    overflow_predicates: &mut Vec<(Predicate<M>, super::OverflowError)>,
     ambiguous_predicates: &mut Vec<Vec<T>>,
     ambiguity_check: impl Fn(
         &T,
         &T,
-        &Environment<M, S, N>,
-    ) -> Result<bool, OverflowError>,
+        &Environment<M, S, N, O>,
+    ) -> Result<bool, super::OverflowError>,
 ) {
     // pick a predicate
     'outer: for i in 0..predicates.len() {
@@ -200,9 +210,10 @@ fn check_ambiguous_predicates<
                     // nothing to worry about
                 }
 
-                Err(_) => {
+                Err(error) => {
                     // add to the overflow set
-                    overflow_predicates.push(predicate_i.clone().into());
+                    overflow_predicates
+                        .push((predicate_i.clone().into(), error));
 
                     if remove_on_check {
                         assert!(environment
@@ -250,9 +261,10 @@ fn check_ambiguous_predicates<
                     // nothing to worry about
                 }
 
-                Err(_) => {
+                Err(error) => {
                     // add to the overflow set
-                    overflow_predicates.push(predicate_i.clone().into());
+                    overflow_predicates
+                        .push((predicate_i.clone().into(), error));
 
                     if remove_on_check {
                         assert!(environment
@@ -286,7 +298,9 @@ fn check_ambiguous_predicates<
     }
 }
 
-impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
+impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
+    Environment<'a, M, T, N, O>
+{
     /// Looks for the errors in the environment and returns a vector of errors.
     pub fn diagnose(mut self) -> Vec<Error<M>> {
         let mut ambiguous_trait_predicates_set = Vec::new();
@@ -566,10 +580,13 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
                         break;
                     }
 
-                    Err(OverflowError) => {
-                        if !overflow_predicates.contains(&equality) {
-                            overflow_predicates.push(equality.clone());
+                    Err(error) => {
+                        let result = (equality.clone(), error);
+
+                        if !overflow_predicates.contains(&result) {
+                            overflow_predicates.push(result);
                         }
+
                         break;
                     }
 
@@ -587,6 +604,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
         // remove the ambiguous and ill-formed predicates
         for predicate_to_remove in overflow_predicates
             .iter()
+            .map(|(x, _)| x)
             .cloned()
             .chain(
                 ambiguous_trait_predicates_set
@@ -662,7 +680,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
 
         overflow_predicates
             .into_iter()
-            .map(Error::OverflowCalculatingRequirement)
+            .map(|(predicate, error)| Error::Overflow(predicate, error))
             .chain(
                 ambiguous_predicates_vecs
                     .into_iter()
@@ -676,17 +694,426 @@ impl<'a, M: Model, T: State, N: Normalizer<M>> Environment<'a, M, T, N> {
             .chain(definite_predicate.into_iter().map(Error::DefinintePremise))
             .collect()
     }
+
     /// Creates a new [`Environment`].
     ///
     /// The ambiguous predicates will be removed from the environment and is
-    /// extracted out to the vector of [`NewEnvironmentError`].
-    #[must_use]
-    pub fn new(
+    /// extracted out to the vector of [`Error``].
+    pub fn new_with(
         premise: Premise<M>,
         table: &'a Table<T>,
         normalizer: &'a N,
-    ) -> Self {
-        Self { premise, table, normalizer }
+        observer: &'a O,
+    ) -> (Self, Vec<Error<M>>) {
+        let mut environment = Self { premise, table, normalizer, observer };
+
+        let mut ambiguous_trait_predicates_set = Vec::new();
+        let mut ambiguous_constant_type_predicates_set = Vec::new();
+        let mut ambiguous_tuple_type_predicates_set = Vec::new();
+        let mut ambiguous_tuple_constant_predicates_set = Vec::new();
+        let mut ambiguous_trait_type_equality_predicates_set = Vec::new();
+        let mut recursive_trait_type_equality_predicates = Vec::new();
+        let mut overflow_predicates = Vec::new();
+        let mut definite_predicate = Vec::new();
+
+        let all_trait_predicates = environment
+            .premise
+            .predicates
+            .iter()
+            .filter_map(Predicate::as_trait)
+            .cloned()
+            .collect::<Vec<_>>();
+        let all_constant_type_predicates = environment
+            .premise
+            .predicates
+            .iter()
+            .filter_map(Predicate::as_constant_type)
+            .cloned()
+            .collect::<Vec<_>>();
+        let all_tuple_type_predicates = environment
+            .premise
+            .predicates
+            .iter()
+            .filter_map(Predicate::as_tuple_type)
+            .cloned()
+            .collect::<Vec<_>>();
+        let all_tuple_constant_predicates = environment
+            .premise
+            .predicates
+            .iter()
+            .filter_map(Predicate::as_tuple_constant)
+            .cloned()
+            .collect::<Vec<_>>();
+        let all_trait_type_equality_predicates = environment
+            .premise
+            .predicates
+            .iter()
+            .filter_map(Predicate::as_trait_type_equality)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let lifetime_unifier = Arc::new(LifetimeUnifyingPredicate);
+
+        check_ambiguous_predicates(
+            &mut environment,
+            false,
+            &all_trait_predicates,
+            &mut overflow_predicates,
+            &mut ambiguous_trait_predicates_set,
+            |lhs, rhs, environment| {
+                // check if the trait is the same
+                if lhs.id != rhs.id {
+                    return Ok(false);
+                }
+
+                // check if the arguments counts are the same
+                if lhs.generic_arguments.lifetimes.len()
+                    != rhs.generic_arguments.lifetimes.len()
+                    || lhs.generic_arguments.types.len()
+                        != rhs.generic_arguments.types.len()
+                    || lhs.generic_arguments.constants.len()
+                        != rhs.generic_arguments.constants.len()
+                {
+                    return Ok(false);
+                }
+
+                for (lhs_ty, rhs_ty) in lhs
+                    .generic_arguments
+                    .types
+                    .iter()
+                    .zip(rhs.generic_arguments.types.iter())
+                {
+                    if Unification::new(
+                        lhs_ty.clone(),
+                        rhs_ty.clone(),
+                        lifetime_unifier.clone(),
+                    )
+                    .query(environment)?
+                    .is_none()
+                    {
+                        return Ok(false);
+                    }
+                }
+
+                for (lhs_const, rhs_const) in lhs
+                    .generic_arguments
+                    .constants
+                    .iter()
+                    .zip(rhs.generic_arguments.constants.iter())
+                {
+                    if Equality::new(lhs_const.clone(), rhs_const.clone())
+                        .query(environment)?
+                        .is_none()
+                    {
+                        return Ok(false);
+                    }
+                }
+
+                // found no incompatibility, the term is ambiguous
+                Ok(true)
+            },
+        );
+        check_ambiguous_predicates(
+            &mut environment,
+            false,
+            &all_constant_type_predicates,
+            &mut overflow_predicates,
+            &mut ambiguous_constant_type_predicates_set,
+            |lhs, rhs, environment| {
+                Unification::new(
+                    lhs.0.clone(),
+                    rhs.0.clone(),
+                    lifetime_unifier.clone(),
+                )
+                .query(environment)
+                .map(|x| x.is_some())
+            },
+        );
+        check_ambiguous_predicates(
+            &mut environment,
+            false,
+            &all_tuple_type_predicates,
+            &mut overflow_predicates,
+            &mut ambiguous_tuple_type_predicates_set,
+            |lhs, rhs, environment| {
+                Unification::new(
+                    lhs.0.clone(),
+                    rhs.0.clone(),
+                    lifetime_unifier.clone(),
+                )
+                .query(environment)
+                .map(|x| x.is_some())
+            },
+        );
+        check_ambiguous_predicates(
+            &mut environment,
+            false,
+            &all_tuple_constant_predicates,
+            &mut overflow_predicates,
+            &mut ambiguous_tuple_constant_predicates_set,
+            |lhs, rhs, environment| {
+                Unification::new(
+                    lhs.0.clone(),
+                    rhs.0.clone(),
+                    lifetime_unifier.clone(),
+                )
+                .query(environment)
+                .map(|x| x.is_some())
+            },
+        );
+        check_ambiguous_predicates(
+            &mut environment,
+            true,
+            &all_trait_type_equality_predicates,
+            &mut overflow_predicates,
+            &mut ambiguous_trait_type_equality_predicates_set,
+            |lhs, rhs, environment| {
+                Unification::new(
+                    Type::TraitMember(lhs.lhs.clone()),
+                    Type::TraitMember(rhs.lhs.clone()),
+                    lifetime_unifier.clone(),
+                )
+                .query(environment)
+                .map(|x| x.is_some())
+            },
+        );
+
+        check_definite_predicate(
+            &mut environment,
+            false,
+            &all_trait_predicates,
+            &mut overflow_predicates,
+            &mut definite_predicate,
+            |predicate, environment| {
+                predicate
+                    .generic_arguments
+                    .definite_with_context(environment, &mut Context::default())
+                    .map(|x| x.is_some())
+            },
+        );
+        check_definite_predicate(
+            &mut environment,
+            false,
+            &all_constant_type_predicates,
+            &mut overflow_predicates,
+            &mut definite_predicate,
+            |predicate, environment| {
+                definite::Definite(predicate.0.clone())
+                    .query(environment)
+                    .map(|x| x.is_some())
+            },
+        );
+        check_definite_predicate(
+            &mut environment,
+            false,
+            &all_tuple_type_predicates,
+            &mut overflow_predicates,
+            &mut definite_predicate,
+            |predicate, environment| {
+                definite::Definite(predicate.0.clone())
+                    .query(environment)
+                    .map(|x| x.is_some())
+            },
+        );
+        check_definite_predicate(
+            &mut environment,
+            false,
+            &all_tuple_constant_predicates,
+            &mut overflow_predicates,
+            &mut definite_predicate,
+            |predicate, environment| {
+                definite::Definite(predicate.0.clone())
+                    .query(environment)
+                    .map(|x| x.is_some())
+            },
+        );
+        check_definite_predicate(
+            &mut environment,
+            true,
+            &all_trait_type_equality_predicates,
+            &mut overflow_predicates,
+            &mut definite_predicate,
+            |predicate, environment| {
+                definite::Definite(Type::TraitMember(predicate.lhs.clone()))
+                    .query(environment)
+                    .map(|x| x.is_some())
+            },
+        );
+
+        for equality in all_trait_type_equality_predicates
+            .iter()
+            .cloned()
+            .map(Predicate::TraitTypeEquality)
+        {
+            // temporarily remove the equality
+            assert!(environment.premise.predicates.remove(&equality));
+
+            // recursively check the equality
+            for (kind, _) in RecursiveIterator::new(
+                &equality.as_trait_type_equality().unwrap().rhs,
+            ) {
+                let Kind::Type(ty) = kind else {
+                    continue;
+                };
+
+                match Unification::new(
+                    Type::TraitMember(
+                        equality.as_trait_type_equality().unwrap().lhs.clone(),
+                    ),
+                    ty.clone(),
+                    lifetime_unifier.clone(),
+                )
+                .query(&environment)
+                {
+                    Ok(Some(_)) => {
+                        if ambiguous_trait_type_equality_predicates_set
+                            .iter()
+                            .flatten()
+                            .find(|x| {
+                                *x == equality.as_trait_type_equality().unwrap()
+                            })
+                            .is_none()
+                        {
+                            recursive_trait_type_equality_predicates.push(
+                                equality
+                                    .as_trait_type_equality()
+                                    .unwrap()
+                                    .clone(),
+                            );
+                        }
+                        break;
+                    }
+
+                    Err(error) => {
+                        let result = (equality.clone(), error);
+
+                        if !overflow_predicates.contains(&result) {
+                            overflow_predicates.push(result);
+                        }
+
+                        break;
+                    }
+
+                    Ok(None) => {}
+                }
+            }
+
+            // add the equality back
+            assert!(environment.premise.predicates.insert(equality));
+        }
+
+        overflow_predicates.sort();
+        overflow_predicates.dedup();
+
+        // remove the ambiguous and ill-formed predicates
+        for predicate_to_remove in overflow_predicates
+            .iter()
+            .map(|x| &x.0)
+            .cloned()
+            .chain(
+                ambiguous_trait_predicates_set
+                    .iter()
+                    .flatten()
+                    .cloned()
+                    .map(Predicate::Trait),
+            )
+            .chain(
+                ambiguous_constant_type_predicates_set
+                    .iter()
+                    .flatten()
+                    .cloned()
+                    .map(Predicate::ConstantType),
+            )
+            .chain(
+                ambiguous_tuple_type_predicates_set
+                    .iter()
+                    .flatten()
+                    .cloned()
+                    .map(Predicate::TupleType),
+            )
+            .chain(
+                ambiguous_tuple_constant_predicates_set
+                    .iter()
+                    .flatten()
+                    .cloned()
+                    .map(Predicate::TupleConstant),
+            )
+            .chain(
+                ambiguous_trait_type_equality_predicates_set
+                    .iter()
+                    .flatten()
+                    .cloned()
+                    .map(Predicate::TraitTypeEquality),
+            )
+            .chain(
+                recursive_trait_type_equality_predicates
+                    .iter()
+                    .cloned()
+                    .map(Predicate::TraitTypeEquality),
+            )
+            .chain(definite_predicate.iter().cloned())
+        {
+            environment.premise.predicates.remove(&predicate_to_remove);
+        }
+
+        let ambiguous_predicates_vecs: Vec<Vec<Predicate<M>>> =
+            ambiguous_trait_predicates_set
+                .into_iter()
+                .map(|x| x.into_iter().map(|x| x.into()).collect())
+                .chain(
+                    ambiguous_constant_type_predicates_set
+                        .into_iter()
+                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
+                )
+                .chain(
+                    ambiguous_tuple_type_predicates_set
+                        .into_iter()
+                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
+                )
+                .chain(
+                    ambiguous_tuple_constant_predicates_set
+                        .into_iter()
+                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
+                )
+                .chain(
+                    ambiguous_trait_type_equality_predicates_set
+                        .into_iter()
+                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
+                )
+                .collect();
+
+        let errors = overflow_predicates
+            .into_iter()
+            .map(|(predicate, error)| Error::Overflow(predicate, error))
+            .chain(
+                ambiguous_predicates_vecs
+                    .into_iter()
+                    .map(Error::AmbiguousPredicates),
+            )
+            .chain(
+                recursive_trait_type_equality_predicates
+                    .into_iter()
+                    .map(Error::RecursiveTraitTypeEqualityPredicate),
+            )
+            .chain(definite_predicate.into_iter().map(Error::DefinintePremise))
+            .collect::<Vec<_>>();
+
+        (environment, errors)
+    }
+}
+
+impl<'a, M: Model, S: State>
+    Environment<'a, M, S, normalizer::NoOp, observer::NoOp>
+{
+    /// Creates a new [`Environment`].
+    ///
+    /// The ambiguous predicates will be removed from the environment and is
+    /// extracted out to the vector of [`Error``].
+    pub fn new(
+        premise: Premise<M>,
+        table: &'a Table<S>,
+    ) -> (Self, Vec<Error<M>>) {
+        Self::new_with(premise, table, &normalizer::NO_OP, &observer::NO_OP)
     }
 }
 

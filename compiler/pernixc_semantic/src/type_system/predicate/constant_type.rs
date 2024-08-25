@@ -7,6 +7,7 @@ use crate::{
         instantiation::{self, Instantiation},
         model::Model,
         normalizer::Normalizer,
+        observer::Observer,
         query::{self, Context, Sealed},
         term::{
             constant::Constant,
@@ -21,14 +22,28 @@ use crate::{
 };
 
 #[derive(Debug)]
-struct Visitor<'a, 'c, T: State, N: Normalizer<M>, M: Model> {
+struct Visitor<
+    'a,
+    'c,
+    T: State,
+    N: Normalizer<M, T>,
+    O: Observer<M, T>,
+    M: Model,
+> {
     constant_type: Result<Output<Satisfied, M>, OverflowError>,
-    environment: &'a Environment<'a, M, T, N>,
+    environment: &'a Environment<'a, M, T, N, O>,
     context: &'c mut Context<M>,
 }
 
-impl<'a, 'c, 'v, M: Model, T: State, N: Normalizer<M>>
-    visitor::Visitor<'v, Lifetime<M>> for Visitor<'a, 'c, T, N, M>
+impl<
+        'a,
+        'c,
+        'v,
+        M: Model,
+        T: State,
+        N: Normalizer<M, T>,
+        O: Observer<M, T>,
+    > visitor::Visitor<'v, Lifetime<M>> for Visitor<'a, 'c, T, N, O, M>
 {
     fn visit(
         &mut self,
@@ -43,8 +58,15 @@ impl<'a, 'c, 'v, M: Model, T: State, N: Normalizer<M>>
     }
 }
 
-impl<'a, 'c, 'v, M: Model, T: State, N: Normalizer<M>>
-    visitor::Visitor<'v, Type<M>> for Visitor<'a, 'c, T, N, M>
+impl<
+        'a,
+        'c,
+        'v,
+        M: Model,
+        T: State,
+        N: Normalizer<M, T>,
+        O: Observer<M, T>,
+    > visitor::Visitor<'v, Type<M>> for Visitor<'a, 'c, T, N, O, M>
 {
     fn visit(
         &mut self,
@@ -78,8 +100,15 @@ impl<'a, 'c, 'v, M: Model, T: State, N: Normalizer<M>>
     }
 }
 
-impl<'a, 'c, 'v, M: Model, T: State, N: Normalizer<M>>
-    visitor::Visitor<'v, Constant<M>> for Visitor<'a, 'c, T, N, M>
+impl<
+        'a,
+        'c,
+        'v,
+        M: Model,
+        T: State,
+        N: Normalizer<M, T>,
+        O: Observer<M, T>,
+    > visitor::Visitor<'v, Constant<M>> for Visitor<'a, 'c, T, N, O, M>
 {
     fn visit(
         &mut self,
@@ -111,12 +140,13 @@ impl<M: Model> Compute for ConstantType<M> {
     type Parameter = ();
 
     #[allow(private_bounds, private_interfaces)]
-    fn implementation(
+    fn implementation<S: State>(
         &self,
         environment: &Environment<
             Self::Model,
-            impl State,
-            impl Normalizer<Self::Model>,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
         >,
         context: &mut Context<Self::Model>,
         (): Self::Parameter,
@@ -255,7 +285,7 @@ impl<M: Model> Compute for ConstantType<M> {
         _: Self::Parameter,
         _: Self::InProgress,
         _: Self::InProgress,
-        call_stacks: &[query::QueryCall<Self::Model>],
+        call_stacks: &[query::Record<Self::Model>],
     ) -> Result<Option<Self::Result>, Self::Error> {
         for call in call_stacks.iter().skip(1) {
             let Some(query) = <Self as Sealed>::from_call(call) else {

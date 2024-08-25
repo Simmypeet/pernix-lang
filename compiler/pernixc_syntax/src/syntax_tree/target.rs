@@ -246,7 +246,8 @@ impl Target {
                 Input::File { source_file, signature: access_modifier } => {
                     let token_stream =
                         TokenStream::tokenize(&source_file, handler);
-                    let mut parser = Parser::new(&token_stream);
+                    let mut parser =
+                        Parser::new(&token_stream, source_file.clone());
 
                     (
                         parser.parse_module_content(handler),

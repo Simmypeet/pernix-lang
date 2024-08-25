@@ -8,6 +8,7 @@ members = [
     "compiler/pernixc_semantic",
     "compiler/pernixc_driver",
     "compiler/pernixc",
+    "lsp/pernix_server",
 ]
 
 [workspace.dependencies]

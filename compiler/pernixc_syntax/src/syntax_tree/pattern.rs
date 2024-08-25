@@ -181,6 +181,7 @@ impl<Pattern: SourceElement> SourceElement for TupleElement<Pattern> {
 
 impl<Pattern> TupleElement<Pattern> {
     /// Dissolves the tuple element into its components.
+    #[must_use]
     pub fn dissolve(
         self,
     ) -> (Option<(Punctuation, Punctuation, Punctuation)>, Box<Pattern>) {
@@ -466,7 +467,7 @@ impl<'a> Parser<'a> {
                         SyntaxKind::Keyword(KeywordKind::Mutable),
                         SyntaxKind::Keyword(KeywordKind::Ref),
                     ],
-                    found: found.into_token(),
+                    found: self.reading_to_found(found),
                 });
                 None
             }
@@ -531,12 +532,12 @@ impl<'a> Parser<'a> {
                     .map_or(false, |x| x.punctuation == '.')
                     && parser
                         .peek_offset(1)
-                        .and_then(|x| x.into_token())
+                        .and_then(Reading::into_token)
                         .and_then(|x| x.into_punctuation().ok())
                         .map_or(false, |x| x.punctuation == '.')
                     && parser
                         .peek_offset(2)
-                        .and_then(|x| x.into_token())
+                        .and_then(Reading::into_token)
                         .and_then(|x| x.into_punctuation().ok())
                         .map_or(false, |x| x.punctuation == '.')
                 {
@@ -608,7 +609,7 @@ impl Pattern for Irrefutable {
                 handler.receive(Error {
                     expected: SyntaxKind::IrrefutablePattern,
                     alternatives: Vec::new(),
-                    found: found.into_token(),
+                    found: parser.reading_to_found(found),
                 });
 
                 // make progress
@@ -712,7 +713,7 @@ impl Pattern for Refutable {
                 handler.receive(Error {
                     expected: SyntaxKind::RefutablePattern,
                     alternatives: Vec::new(),
-                    found: found.into_token(),
+                    found: parser.reading_to_found(found),
                 });
                 parser.forward();
                 None
