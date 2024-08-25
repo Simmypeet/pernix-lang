@@ -1,32 +1,33 @@
 //! Contains the server implementation.
 
-use std::{fs::File, sync::Arc};
-
 use log::{error, info};
-use pernixc_base::source_file::SourceFile;
-use pernixc_syntax::syntax_tree::target::Target;
 use tower_lsp::{
     jsonrpc,
     lsp_types::{
-        DidChangeTextDocumentParams, DidSaveTextDocumentParams,
-        InitializeParams, InitializeResult, OneOf, ServerCapabilities,
-        TextDocumentSyncCapability, TextDocumentSyncKind,
+        DidChangeTextDocumentParams, DidOpenTextDocumentParams,
+        DidSaveTextDocumentParams, InitializeParams, InitializeResult, OneOf,
+        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
         WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
     },
     Client, LanguageServer,
 };
 
-pub mod syntax_diagnostic;
+pub mod syntax;
 
 /// The language server protocal implementation for Pernix.
 #[derive(Debug)]
 pub struct Server {
     client: Client,
+
+    syntax_content: syntax::Context,
 }
 
 impl Server {
     /// Creates a new server instance.
-    pub fn new(client: Client) -> Self { Self { client } }
+    #[must_use]
+    pub fn new(client: Client) -> Self {
+        Self { client, syntax_content: syntax::Context::default() }
+    }
 }
 
 #[tower_lsp::async_trait]
@@ -42,7 +43,7 @@ impl LanguageServer for Server {
             capabilities: ServerCapabilities {
                 inlay_hint_provider: Some(OneOf::Left(true)),
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                    TextDocumentSyncKind::FULL,
+                    TextDocumentSyncKind::INCREMENTAL,
                 )),
                 completion_provider: None,
                 execute_command_provider: None,
@@ -68,40 +69,88 @@ impl LanguageServer for Server {
 
     async fn shutdown(&self) -> jsonrpc::Result<()> { Ok(()) }
 
-    async fn did_change(&self, _: DidChangeTextDocumentParams) {}
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        info!("Did open: {}", params.text_document.uri.path());
 
-    async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        info!("Did save: {}", params.text_document.uri.path());
-        let Ok(file) = File::open(params.text_document.uri.path()) else {
-            error!("Failed to open file: {}", params.text_document.uri.path());
-            return;
-        };
+        let _ = self.syntax_content.register_source_file(
+            params.text_document.uri.clone(),
+            params.text_document.text,
+        );
 
-        let Ok(file) = SourceFile::load(
-            file,
-            params.text_document.uri.path().to_string().into(),
-        )
-        .map(Arc::new) else {
+        let Some(diagnostics) =
+            self.syntax_content.diagnose_syntax(&params.text_document.uri)
+        else {
             error!(
-                "Failed to load source file: {}",
+                "failed to diagnose syntax: {}",
                 params.text_document.uri.path()
             );
             return;
         };
 
-        let diagnostic_collector =
-            syntax_diagnostic::Collector::new(file.clone());
+        self.client
+            .publish_diagnostics(
+                params.text_document.uri,
+                diagnostics,
+                Some(params.text_document.version),
+            )
+            .await;
+    }
 
-        let _target =
-            Target::parse(&file, "main".to_string(), &diagnostic_collector);
+    async fn did_change(&self, mut params: DidChangeTextDocumentParams) {
+        info!("Did change: {}", params.text_document.uri.path(),);
 
-        let diagnostics = diagnostic_collector.into_diagnostic();
-        let count = diagnostics.len();
+        // if found a change that replaces the whole content, all the changes
+        // before it are ignored
+        let changes = match params
+            .content_changes
+            .iter()
+            .rposition(|x| x.range.is_none())
+        {
+            Some(index) => {
+                let _ = self.syntax_content.register_source_file(
+                    params.text_document.uri.clone(),
+                    std::mem::take(&mut params.content_changes[index].text),
+                );
+
+                &params.content_changes[index + 1..]
+            }
+            None => &params.content_changes,
+        };
+
+        for change in changes {
+            if let Err(err) = self.syntax_content.update_source_file(
+                &params.text_document.uri,
+                &change.text,
+                change.range.unwrap(),
+            ) {
+                error!(
+                    "failed to update source file: {}, reason: {}",
+                    params.text_document.uri.path(),
+                    err
+                );
+            }
+        }
+
+        let Some(diagnostics) =
+            self.syntax_content.diagnose_syntax(&params.text_document.uri)
+        else {
+            error!(
+                "failed to diagnose syntax: {}",
+                params.text_document.uri.path()
+            );
+            return;
+        };
 
         self.client
-            .publish_diagnostics(params.text_document.uri, diagnostics, None)
+            .publish_diagnostics(
+                params.text_document.uri,
+                diagnostics,
+                Some(params.text_document.version),
+            )
             .await;
+    }
 
-        info!("{count} diagnostics published");
+    async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        info!("Did save: {}", params.text_document.uri.path());
     }
 }

@@ -2,6 +2,7 @@
 
 //! Contains the code related to the source code input.
 
+use core::str;
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
@@ -15,8 +16,6 @@ use std::{
 };
 
 use getset::{CopyGetters, Getters};
-use memmap2::MmapOptions;
-use ouroboros::self_referencing;
 use thiserror::Error;
 
 /// Represents an error that occurs when loading/creating a source file.
@@ -29,31 +28,17 @@ pub enum Error {
     #[error(transparent)]
     Utf8Error(#[from] std::str::Utf8Error),
 }
-
-enum Source {
-    MaappedSource(MappedSource),
-    Inline(String),
-}
-
-impl Source {
-    fn content(&self) -> &str {
-        match self {
-            Source::MaappedSource(a) => a.content(),
-            Source::Inline(a) => &a,
-        }
-    }
-}
-
 /// Represents an source file input for the compiler.
-#[derive(Getters)]
+#[derive(Clone, PartialEq, Eq, Hash, Getters)]
 pub struct SourceFile {
-    source: Source,
+    content: String,
 
     /// Gets the full path to the source file.
     #[get = "pub"]
     full_path: PathBuf,
 
-    /// Gets the string source.content that the source file contains.
+    /// The byte ranges for each line in the source file (including the
+    /// newline)
     lines: Vec<Range<usize>>,
 }
 
@@ -67,71 +52,238 @@ impl Debug for SourceFile {
     }
 }
 
-#[self_referencing]
-struct MappedSource {
-    file: File,
-    mapped: Option<memmap2::Mmap>,
+/// An error returned by the [`SourceFile::replace_range`] method.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, thiserror::Error)]
+#[allow(missing_docs)]
+pub enum ReplaceRangeError {
+    #[error("found an index that does not point to a character boundary")]
+    NonCharIndex(ByteIndex),
 
-    #[borrows(mapped)]
-    mapped_str: &'this str,
-}
+    #[error("the start of the range is greater than the end")]
+    InvalidRange(Range<ByteIndex>),
 
-impl MappedSource {
-    pub fn create(file: File) -> Result<Self, Error> {
-        let mapped = if file.metadata().unwrap().len() == 0 {
-            None
-        } else {
-            Some(unsafe { MmapOptions::new().map(&file)? })
-        };
-        MappedSourceTryBuilder {
-            file,
-            mapped,
-            mapped_str_builder: |mapped| {
-                #[allow(clippy::option_if_let_else)]
-                if let Some(mmaped) = mapped {
-                    std::str::from_utf8(mmaped).map_err(Error::from)
-                } else {
-                    Ok("")
-                }
-            },
-        }
-        .try_build()
-    }
-
-    /// Gets the string source.content that the source file contains.
-    #[must_use]
-    pub fn content(&self) -> &str { self.borrow_mapped_str() }
+    #[error("found an out of bound index in the range")]
+    OutOfBoundInedx(ByteIndex),
 }
 
 impl SourceFile {
-    #[allow(unused)]
-    fn new_mapped(full_path: PathBuf, source: MappedSource) -> Self {
-        let lines = get_line_byte_positions(source.content());
-        Self { source: Source::MaappedSource(source), full_path, lines }
-    }
-
     /// Creates a new inline source file
     #[must_use]
     pub fn new_inline(full_path: PathBuf, content: String) -> Self {
         let lines = get_line_byte_positions(&content);
-        Self { source: Source::Inline(content), full_path, lines }
+        Self { content, full_path, lines }
     }
 
     /// Gets the content of the source file.
     #[must_use]
-    pub fn content(&self) -> &str { self.source.content() }
+    pub fn content(&self) -> &str { &self.content }
+
+    /// Translates a location to a byte index.
+    #[must_use]
+    pub fn into_byte_index(&self, location: Location) -> Option<ByteIndex> {
+        let start = self.lines.get(location.line)?.start;
+        let line = self.get_line(location.line)?;
+
+        line.char_indices()
+            .take(location.column + 1)
+            .last()
+            .map(|x| x.0 + start)
+    }
+
+    /// Translates a location to a byte index. This includes the ending byte.
+    ///
+    /// ```rust
+    /// use pernixc_base::source_file::{Location, SourceFile};
+    ///
+    /// let source_file = SourceFile::new_inline("".into(), "Hello".into());
+    ///
+    /// assert_eq!(
+    ///     source_file.into_byte_index_include_ending(Location::new(0, 5)),
+    ///     Some(5)
+    /// );
+    /// ```
+    #[must_use]
+    pub fn into_byte_index_include_ending(
+        &self,
+        location: Location,
+    ) -> Option<ByteIndex> {
+        let range = self.lines.get(location.line)?;
+        let line = self.get_line(location.line)?;
+
+        let mut index = 0;
+
+        for (byte_idx, _) in line.char_indices() {
+            if location.column == index {
+                return Some(byte_idx + range.start);
+            }
+
+            index += 1;
+        }
+
+        if index == location.column {
+            Some(range.end)
+        } else {
+            None
+        }
+    }
+
+    /// Replaces the content of the source file in the given range with the
+    /// given string.
+    ///
+    /// # Errors
+    ///
+    /// See [`ReplaceRangeError`] for more information.
+    #[allow(
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::range_plus_one,
+        clippy::missing_panics_doc
+    )]
+    pub fn replace_range(
+        &mut self,
+        range: Range<ByteIndex>,
+        string: &str,
+    ) -> Result<(), ReplaceRangeError> {
+        if range.start > self.content.len() {
+            return Err(ReplaceRangeError::OutOfBoundInedx(range.start));
+        }
+        if range.end > self.content.len() {
+            return Err(ReplaceRangeError::OutOfBoundInedx(range.end));
+        }
+        if range.start > range.end {
+            return Err(ReplaceRangeError::InvalidRange(range));
+        }
+
+        // just append the string
+        if range.start == range.end && range.start == self.content.len() {
+            let prior_len = self.content.len();
+            self.content.push_str(string);
+
+            if !string.contains('\n') && !string.contains('\r') {
+                self.lines.last_mut().unwrap().end += string.len();
+            } else {
+                let mut new_line_changes = get_line_byte_positions(string);
+
+                for new_range in &mut new_line_changes {
+                    new_range.start += prior_len;
+                    new_range.end += prior_len;
+                }
+
+                let last_line = self.lines.last_mut().unwrap();
+
+                last_line.end = new_line_changes[0].end;
+
+                self.lines.extend(new_line_changes.into_iter().skip(1));
+            }
+
+            return Ok(());
+        }
+
+        if !self.content.is_char_boundary(range.start) {
+            return Err(ReplaceRangeError::NonCharIndex(range.start));
+        }
+        if !self.content.is_char_boundary(range.end) {
+            return Err(ReplaceRangeError::NonCharIndex(range.end));
+        }
+
+        self.content.replace_range(range.clone(), string);
+
+        // update the line ranges
+        let start_line = self.get_line_of_byte_index(range.start).unwrap();
+        let end_line = self
+            .get_line_of_byte_index(range.end)
+            .unwrap_or(self.lines.len() - 1);
+
+        let character_difference =
+            string.len() as isize - (range.end - range.start) as isize;
+
+        // no new lines, we can skip the line calculations for new string
+        if !string.contains('\n') && !string.contains('\r') {
+            let removing_lines = start_line + 1..end_line + 1;
+
+            self.lines[start_line].end = (self.lines[end_line].end as isize
+                + character_difference)
+                as usize;
+
+            self.lines.drain(removing_lines);
+
+            for i in start_line + 1..self.lines.len() {
+                self.lines[i].start = (self.lines[i].start as isize
+                    + character_difference)
+                    as usize;
+                self.lines[i].end = (self.lines[i].end as isize
+                    + character_difference)
+                    as usize;
+            }
+        } else {
+            let mut new_line_ranges = get_line_byte_positions(string);
+            for new_range in &mut new_line_ranges {
+                new_range.start += range.start;
+                new_range.end += range.start;
+            }
+            let end_after_count = self.lines[end_line].end - range.end;
+            self.lines[start_line].end = new_line_ranges[0].end;
+
+            let removing_lines = start_line + 1..end_line + 1;
+            self.lines.drain(removing_lines);
+
+            self.lines.splice(
+                (start_line + 1)..(start_line + 1),
+                (1..(new_line_ranges.len() - 1))
+                    .map(|x| new_line_ranges[x].clone()),
+            );
+
+            self.lines.insert(
+                start_line + new_line_ranges.len() - 1,
+                new_line_ranges.last().unwrap().start
+                    ..new_line_ranges.last().unwrap().end + end_after_count,
+            );
+
+            for i in (start_line + new_line_ranges.len())..self.lines.len() {
+                self.lines[i].start = (self.lines[i].start as isize
+                    + character_difference)
+                    as usize;
+                self.lines[i].end = (self.lines[i].end as isize
+                    + character_difference)
+                    as usize;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Determines in which line number the given byte index is located.
+    #[must_use]
+    pub fn get_line_of_byte_index(
+        &self,
+        byte_index: ByteIndex,
+    ) -> Option<usize> {
+        // gets the line number by binary searching the line ranges
+        self.lines
+            .binary_search_by(|range| {
+                if range.contains(&byte_index) {
+                    Ordering::Equal
+                } else if byte_index < range.start {
+                    Ordering::Greater
+                } else {
+                    Ordering::Less
+                }
+            })
+            .ok()
+    }
 
     /// Gets the line of the source file at the given line number.
     ///
-    /// The line number starts at 1.
+    /// The line number starts at 0.
     #[must_use]
     pub fn get_line(&self, line: usize) -> Option<&str> {
-        if line == 0 {
-            return None;
-        }
+        self.lines.get(line).map(|range| &self.content[range.clone()])
+    }
 
-        let line = line - 1;
-        self.lines.get(line).map(|range| &self.source.content()[range.clone()])
+    /// Replaces the content of the source file with the given content.
+    pub fn replace(&mut self, content: String) {
+        self.lines = get_line_byte_positions(&content);
+        self.content = content;
     }
 
     /// Gets the [`Iterator`] for the source file.
@@ -139,13 +291,13 @@ impl SourceFile {
     pub fn iter<'a>(self: &'a Arc<Self>) -> Iterator<'a> {
         Iterator {
             source_file: self,
-            iterator: self.source.content().char_indices().peekable(),
+            iterator: self.content.char_indices().peekable(),
         }
     }
 
     /// Gets the number of lines in the source file.
     #[must_use]
-    pub fn line_number(&self) -> usize { self.lines.len() }
+    pub fn line_coount(&self) -> usize { self.lines.len() }
 
     /// Loads the source file from the given file path.
     ///
@@ -188,7 +340,7 @@ impl SourceFile {
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
     pub fn get_location(&self, byte_index: ByteIndex) -> Option<Location> {
-        if !self.source.content().is_char_boundary(byte_index) {
+        if !self.content.is_char_boundary(byte_index) {
             return None;
         }
 
@@ -207,17 +359,15 @@ impl SourceFile {
             .ok()?;
 
         let line_starting_byte_index = self.lines[line].start;
-        let line_str = self.get_line(line + 1).unwrap();
+        let line_str = self.get_line(line).unwrap();
 
         // gets the column number by iterating through the utf-8 characters
-        // (starts at 1)
         let column = line_str
             .char_indices()
             .take_while(|(i, _)| *i + line_starting_byte_index < byte_index)
-            .count()
-            + 1;
+            .count();
 
-        Some(Location { line: line + 1, column })
+        Some(Location { line, column })
     }
 }
 
@@ -290,11 +440,19 @@ impl std::hash::Hash for Span {
 /// Is a struct pointing to a particular location in a source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Location {
-    /// The line number of the location (starts at 1).
+    /// The line number of the location (starts at 0).
     pub line: usize,
 
-    /// The column number of the location (starts at 1).
+    /// The column number of the location (starts at 0).
     pub column: usize,
+}
+
+impl Location {
+    /// Creates a new location with the given line and column numbers.
+    #[must_use]
+    pub const fn new(line: usize, column: usize) -> Self {
+        Self { line, column }
+    }
 }
 
 impl Span {
@@ -311,10 +469,10 @@ impl Span {
         end: ByteIndex,
     ) -> Option<Self> {
         if start > end
-            || !source_file.source.content().is_char_boundary(start)
-            || source_file.source.content().len() < end
-            || (source_file.source.content().len() + 1 != end
-                && !source_file.source.content().is_char_boundary(end))
+            || !source_file.content.is_char_boundary(start)
+            || source_file.content.len() < end
+            || (source_file.content.len() + 1 != end
+                && !source_file.content.is_char_boundary(end))
         {
             return None;
         }
@@ -329,20 +487,16 @@ impl Span {
         source_file: Arc<SourceFile>,
         start: ByteIndex,
     ) -> Option<Self> {
-        if !source_file.source.content().is_char_boundary(start) {
+        if !source_file.content.is_char_boundary(start) {
             return None;
         }
-        Some(Self {
-            start,
-            end: source_file.source.content().len(),
-            source_file,
-        })
+        Some(Self { start, end: source_file.content.len(), source_file })
     }
 
     /// Gets the string slice of the source code that the span represents.
     #[must_use]
     pub fn str(&self) -> &str {
-        &self.source_file.source.content()[self.start..self.end]
+        &self.source_file.content[self.start..self.end]
     }
 
     /// Gets the starting [`Location`] of the span.

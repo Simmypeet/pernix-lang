@@ -73,14 +73,14 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
 
         let start_line = start_location.line;
         let end_line = end_location.map_or_else(
-            || self.span.source_file().line_number(),
+            || self.span.source_file().line_coount() - 1,
             |end_location| end_location.line,
         );
         let is_multiline = start_line != end_line;
 
         // when printing the source code, show the line before the span and the
         // line after the span
-        let largest_line_number_digits = get_digit(end_line + 1);
+        let largest_line_number_digits = get_digit(end_line + 2);
 
         // prints the source location
         for _ in 0..largest_line_number_digits {
@@ -92,10 +92,24 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
             "{} {}",
             Style::Bold.with(Color::Cyan.with("-->")),
             format_args!(
-                "{}:{}:{}",
+                "{}:{}:{}:{}:{}",
                 self.span.source_file().full_path().display(),
-                start_location.line,
-                start_location.column
+                start_location.line + 1,
+                start_location.column + 1,
+                end_location
+                    .as_ref()
+                    .map_or(start_location.line + 1, |x| x.line + 1),
+                end_location.as_ref().map_or_else(
+                    || {
+                        self.span
+                            .source_file()
+                            .get_line(self.span.source_file().line_coount() - 1)
+                            .unwrap()
+                            .len()
+                            + 1
+                    },
+                    |x| x.column + 1
+                )
             )
         )?;
 
@@ -108,20 +122,20 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
         }
 
         // prints previous line
-        if let Some(line) =
-            self.span.source_file().get_line(start_line.saturating_sub(1))
+        if let Some(line) = start_line
+            .checked_sub(1)
+            .and_then(|x| self.span.source_file().get_line(x))
         {
             // prints the line number
             write!(
                 f,
                 "{}{}{} ",
-                Style::Bold.with(Color::Cyan.with(start_line - 1)),
+                Style::Bold.with(Color::Cyan.with(start_line)),
                 format_args!(
                     "{:width$}",
                     "",
-                    width = largest_line_number_digits
-                        - get_digit(start_line - 1)
-                        + 1
+                    width =
+                        largest_line_number_digits - get_digit(start_line) + 1
                 ),
                 Style::Bold.with(Color::Cyan.with("┃")),
             )?;
@@ -143,12 +157,13 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
             write!(
                 f,
                 "{}{}{} ",
-                Style::Bold.with(Color::Cyan.with(line_number)),
+                Style::Bold.with(Color::Cyan.with(line_number + 1)),
                 format_args!(
                     "{:width$}",
                     "",
-                    width =
-                        largest_line_number_digits - get_digit(line_number) + 1
+                    width = largest_line_number_digits
+                        - get_digit(line_number + 1)
+                        + 1
                 ),
                 Style::Bold.with(Color::Cyan.with("┃")),
             )?;
@@ -167,7 +182,6 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                 } else if char != '\n' {
                     // check if the character is in the span
                     let is_in_span = {
-                        let index = index + 1;
                         if is_multiline {
                             (line_number == start_line
                                 && index >= start_location.column)
@@ -230,7 +244,7 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                         .chars()
                         .enumerate()
                     {
-                        if index + 1 >= start_location.column {
+                        if index >= start_location.column {
                             break;
                         }
 
@@ -261,7 +275,7 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                     "{:width$}",
                     "",
                     width = largest_line_number_digits
-                        - get_digit(end_line + 1)
+                        - get_digit(end_line + 2)
                         + 1
                 ),
                 Style::Bold.with(Color::Cyan.with("┃")),

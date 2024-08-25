@@ -22,6 +22,7 @@ use crate::{
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
 /// Where cluase predicates are built
+#[allow(unused)]
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The function signature information is built, including parameters and return
@@ -30,6 +31,7 @@ pub const DEFINITION_STATE: usize = 2;
 
 /// The information required to check the bounds is built. (the definition of
 /// where caluses are built)
+#[allow(unused)]
 pub const WELL_FORMED_STATE: usize = 3;
 
 /// The intermediate representation of the function is built.

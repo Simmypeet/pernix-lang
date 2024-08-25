@@ -302,6 +302,23 @@ impl Token {
             Self::String(token) => &token.span,
         }
     }
+
+    /// Returns `true` if the token is significant.
+    ///
+    /// A token is significant if it is not a whitespace or a comment.
+    #[must_use]
+    pub const fn is_significant(&self) -> bool {
+        match self {
+            Self::WhiteSpaces(_) | Self::Comment(_) => false,
+
+            Self::Identifier(_)
+            | Self::Keyword(_)
+            | Self::Punctuation(_)
+            | Self::Numeric(_)
+            | Self::Character(_)
+            | Self::String(_) => true,
+        }
+    }
 }
 
 impl SourceElement for Token {

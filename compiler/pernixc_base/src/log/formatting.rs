@@ -41,6 +41,7 @@ impl<T: Display> Display for WithStyle<T> {
 }
 
 /// Removes the VT100 codes applied by the styling.
+#[must_use]
 pub fn remove_vt100_codes(s: &str) -> String {
     let mut result = String::new();
     let mut in_escape = false;

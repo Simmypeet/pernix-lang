@@ -24,6 +24,7 @@ pub const DEFINITION_STATE: usize = 1;
 
 /// The information required to check the bounds is built. (the definition of
 /// where caluses are built)
+#[allow(unused)]
 pub const WELL_FORMED_STATE: usize = 2;
 
 /// Bounds check are performed

@@ -5,7 +5,7 @@ use std::{fmt::Display, sync::Arc};
 use enum_as_inner::EnumAsInner;
 use pernixc_base::{
     log::{Message, Severity, SourceCodeDisplay},
-    source_file::{SourceElement, SourceFile, Span},
+    source_file::{SourceFile, Span},
 };
 use pernixc_lexical::token::{KeywordKind, Token};
 
@@ -66,19 +66,38 @@ impl SyntaxKind {
     }
 }
 
+///A token was found unexpectedly.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Unexpected {
+    /// The insignificant token that was found before the unexpected token.
+    ///
+    /// This is used for providing a better error message.
+    pub(crate) prior_insignificant: Option<Token>,
+
+    /// The unexpected token that was found.
+    pub(crate) unexpected: Token,
+}
+
 /// What was found in place of the expected syntax kind.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum Found {
-    Token(Token),
+    Unexpected(Unexpected),
     EndOfFile(Arc<SourceFile>),
 }
 
-impl SourceElement for Found {
-    fn span(&self) -> Span {
+impl Found {
+    /// Gets the span of the found token.
+    #[must_use]
+    pub fn span(&self) -> Span {
         match self {
-            Found::Token(token) => token.span().clone(),
-            Found::EndOfFile(source_file) => {
+            Self::Unexpected(unexpected) => {
+                unexpected.prior_insignificant.as_ref().map_or_else(
+                    || unexpected.unexpected.span().clone(),
+                    |x| x.span().join(unexpected.unexpected.span()).unwrap(),
+                )
+            }
+            Self::EndOfFile(source_file) => {
                 let last_byte = source_file.content().len();
                 let mut char_boundary = last_byte - 1;
 
@@ -138,26 +157,42 @@ impl Display for Error {
         let expected_string = self.get_expected_string();
 
         let found_string = match &self.found {
-            Found::Token(Token::Comment(..)) => "a comment token".to_string(),
-            Found::Token(Token::Identifier(..)) => {
-                "an identifier token".to_string()
-            }
-            Found::Token(Token::Keyword(keyword)) => {
+            Found::Unexpected(Unexpected {
+                unexpected: Token::Comment(..),
+                ..
+            }) => "a comment token".to_string(),
+            Found::Unexpected(Unexpected {
+                unexpected: Token::Identifier(..),
+                ..
+            }) => "an identifier token".to_string(),
+            Found::Unexpected(Unexpected {
+                unexpected: Token::Keyword(keyword),
+                ..
+            }) => {
                 format!("a keyword token `{}`", keyword.kind.as_str())
             }
-            Found::Token(Token::WhiteSpaces(..)) => {
-                "a white spaces token".to_string()
-            }
-            Found::Token(Token::Punctuation(punctuation)) => {
+            Found::Unexpected(Unexpected {
+                unexpected: Token::WhiteSpaces(..),
+                ..
+            }) => "a white spaces token".to_string(),
+            Found::Unexpected(Unexpected {
+                unexpected: Token::Punctuation(punctuation),
+                ..
+            }) => {
                 format!("a punctuation token `{}`", punctuation.punctuation)
             }
-            Found::Token(Token::Numeric(..)) => "a numeric token".to_string(),
-            Found::Token(Token::Character(..)) => {
-                "a character literal token".to_string()
-            }
-            Found::Token(Token::String(..)) => {
-                "a string literal token".to_string()
-            }
+            Found::Unexpected(Unexpected {
+                unexpected: Token::Numeric(..),
+                ..
+            }) => "a numeric token".to_string(),
+            Found::Unexpected(Unexpected {
+                unexpected: Token::Character(..),
+                ..
+            }) => "a character literal token".to_string(),
+            Found::Unexpected(Unexpected {
+                unexpected: Token::String(..),
+                ..
+            }) => "a string literal token".to_string(),
 
             Found::EndOfFile(_) => "EOF".to_string(),
         };

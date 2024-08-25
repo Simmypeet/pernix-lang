@@ -22,6 +22,7 @@ use crate::{
     },
 };
 
+#[allow(unused)]
 struct TermCollector<'a, Term, T: State> {
     target: &'a Term,
     locations: Vec<Vec<TermLocation>>,
@@ -70,6 +71,7 @@ impl<'a, 'v, U: Term<Model = Default>, T: State> visitor::Recursive<'v, U>
     }
 }
 
+#[allow(unused)]
 fn get_variance_for<U: Term, T: State>(
     term: &U,
     respect_to_type: &Type<Default>,
@@ -110,7 +112,7 @@ where
 }
 
 impl<T: State> Table<T> {
-    #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
+    #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments, unused)]
     pub(super) fn build_variance<'a>(
         &self,
         generic_parameters: &GenericParameters,
@@ -210,6 +212,7 @@ impl<T: State> Table<T> {
     }
 }
 
+#[allow(unused)]
 fn get_all_term_locations<Term: visitor::Element, T: State>(
     target_term: &Term,
     respect_to_type: &Type<Default>,

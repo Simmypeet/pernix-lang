@@ -12,7 +12,7 @@ use pernixc_lexical::{
     token_stream::{Delimited, Delimiter, TokenStream, TokenTree},
 };
 
-use crate::error::{Error, Found, SyntaxKind};
+use crate::error::{Error, Found, SyntaxKind, Unexpected};
 
 /// Provides a way to iterate over a token stream.
 #[derive(
@@ -147,8 +147,14 @@ impl<'a> Frame<'a> {
     /// `None` if `offset + current_index` is less than zero or greer than
     /// `self.token_provider.token_stream().len() + 1`
     #[must_use]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
     pub fn peek_offset(&self, offset: isize) -> Option<Reading> {
-        let index = self.current_index.checked_add(offset.try_into().ok()?)?;
+        let index = self.current_index as isize + offset;
+        let index = if index < 0 {
+            return None;
+        } else {
+            index as usize
+        };
 
         if index > self.token_provider.token_stream().len() + 1 {
             return None;
@@ -325,12 +331,24 @@ impl<'a> Parser<'a> {
                         alternatives: Vec::new(),
                         found: match found {
                             TokenTree::Token(token) => {
-                                Found::Token(token.clone())
+                                Found::Unexpected(Unexpected {
+                                    prior_insignificant: self
+                                        .peek_offset(-1)
+                                        .and_then(Reading::into_token)
+                                        .filter(|x| !x.is_significant()),
+                                    unexpected: token.clone(),
+                                })
                             }
                             TokenTree::Delimited(delimited_tree) => {
-                                Found::Token(Token::Punctuation(
-                                    delimited_tree.open.clone(),
-                                ))
+                                Found::Unexpected(Unexpected {
+                                    prior_insignificant: self
+                                        .peek_offset(-1)
+                                        .and_then(Reading::into_token)
+                                        .filter(|x| !x.is_significant()),
+                                    unexpected: Token::Punctuation(
+                                        delimited_tree.open.clone(),
+                                    ),
+                                })
                             }
                         },
                     });
@@ -401,10 +419,18 @@ impl<'a> Parser<'a> {
     }
 
     /// Converts the reading to [`Found`] for error reporting.
-    pub fn reading_to_found(&self, reading: Reading) -> Found {
+    pub(crate) fn reading_to_found(&self, reading: Reading) -> Found {
         reading.into_token().map_or_else(
             || Found::EndOfFile(self.source_file.clone()),
-            Found::Token,
+            |x| {
+                Found::Unexpected(Unexpected {
+                    prior_insignificant: self
+                        .peek_offset(-1)
+                        .and_then(Reading::into_token)
+                        .filter(|x| !x.is_significant()),
+                    unexpected: x,
+                })
+            },
         )
     }
 

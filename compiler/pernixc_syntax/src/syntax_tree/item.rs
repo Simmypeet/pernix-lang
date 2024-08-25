@@ -2463,20 +2463,32 @@ impl<'a> Parser<'a> {
             }
 
             // try to stop at the next access modifier or usings keyword
-            self.stop_at(|token| {
-                if let Reading::Unit(Token::Keyword(keyword)) = token {
+            self.stop_at(|token| match token {
+                Reading::Unit(Token::Keyword(keyword)) => {
                     (keyword.kind == KeywordKind::Public
                         || keyword.kind == KeywordKind::Private
-                        || keyword.kind == KeywordKind::Internal)
+                        || keyword.kind == KeywordKind::Internal
+                        || keyword.kind == KeywordKind::Implements
+                        || keyword.kind == KeywordKind::Final
+                        || keyword.kind == KeywordKind::Extern)
                         || if items.is_empty() {
                             keyword.kind == KeywordKind::Using
                         } else {
                             false
                         }
-                } else {
-                    false
                 }
+
+                Reading::IntoDelimited(Delimiter::Brace, _) => true,
+
+                _ => false,
             });
+
+            if matches!(
+                self.peek(),
+                Reading::IntoDelimited(Delimiter::Brace, _)
+            ) {
+                self.forward();
+            }
         }
 
         ModuleContent { usings, items }

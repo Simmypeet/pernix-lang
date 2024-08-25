@@ -156,7 +156,7 @@ where
     /// - `session`: The session to use for caching and limiting the
     ///   computation.
     /// - `handler`: The handler to report the errors.
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, unused)]
     pub(super) fn check_resolution_occurrence(
         &self,
         resolution: &resolution::Resolution<M>,
@@ -630,6 +630,7 @@ where
     }
 
     /// Do predicates check for the given type occurrences.
+    #[allow(unused)]
     pub(super) fn check_type_ocurrence(
         &self,
         ty: &r#type::Type<M>,
@@ -707,6 +708,7 @@ where
         }
     }
 
+    #[allow(unused)]
     fn check_unpacked_ocurrences<U: Term<Model = M> + 'a>(
         &self,
         unpacked_term: U,
@@ -792,6 +794,7 @@ where
 }
 
 impl Table<Building<RwLockContainer, Finalizer>> {
+    #[allow(unused)]
     pub(super) fn check_where_clause(
         &self,
         id: GlobalID,
@@ -831,6 +834,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
     /// Checks if the occurrences of symbols are valid (i.e. they satisfy the
     /// where clause predicates).
+    #[allow(unused)]
     pub(super) fn check_occurrences(
         &self,
         id: GlobalID,
