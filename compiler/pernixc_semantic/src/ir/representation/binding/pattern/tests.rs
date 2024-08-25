@@ -49,7 +49,8 @@ use crate::{
 fn create_pattern(source: impl Display) -> syntax_tree::pattern::Irrefutable {
     let counter = Counter::default();
 
-    let source_file = Arc::new(SourceFile::temp(source).unwrap());
+    let source_file =
+        Arc::new(SourceFile::new(source.to_string(), "test".into()));
     let token_stream = TokenStream::tokenize(&source_file, &counter);
 
     // no error

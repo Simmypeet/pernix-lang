@@ -16,7 +16,8 @@ pub fn parse<T, F>(source: &str, f: F) -> Result<T, TestCaseError>
 where
     F: FnOnce(&mut Parser, &Storage<error::Error>) -> Option<T>,
 {
-    let source_file = Arc::new(SourceFile::temp(source.to_string())?);
+    let source_file =
+        Arc::new(SourceFile::new(source.to_string(), "test".into()));
 
     let storage: Storage<pernixc_lexical::error::Error> = Storage::new();
 

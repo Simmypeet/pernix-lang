@@ -13,7 +13,7 @@ proptest! {
         input in super::strategy::TokenStream::arbitrary()
     ) {
         let source = input.to_string();
-        let source_file = Arc::new(SourceFile::temp(source)?);
+        let source_file = Arc::new(SourceFile::new(source, "test".into()));
 
         let storage: Storage<Error> = Storage::new();
         let token_stream =

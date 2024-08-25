@@ -789,7 +789,10 @@ pub enum ParseTargetError {
 const ROOT_MODULE_NAME: &str = "test";
 
 fn property_based_testing_impl(module: &Module) -> TestCaseResult {
-    let source_file = Arc::new(SourceFile::temp(RootModule(module))?);
+    let source_file = Arc::new(SourceFile::new(
+        RootModule(module).to_string(),
+        "test".into(),
+    ));
 
     let storage = Storage::<ParseTargetError>::default();
     let target =

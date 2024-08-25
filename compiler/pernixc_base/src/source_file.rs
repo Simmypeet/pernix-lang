@@ -4,15 +4,8 @@
 
 use core::str;
 use std::{
-    cmp::Ordering,
-    fmt::{Debug, Display},
-    fs::File,
-    io::Read,
-    iter::Peekable,
-    ops::Range,
-    path::PathBuf,
-    str::CharIndices,
-    sync::Arc,
+    cmp::Ordering, fmt::Debug, fs::File, io::Read, iter::Peekable, ops::Range,
+    path::PathBuf, str::CharIndices, sync::Arc,
 };
 
 use getset::{CopyGetters, Getters};
@@ -69,7 +62,7 @@ pub enum ReplaceRangeError {
 impl SourceFile {
     /// Creates a new inline source file
     #[must_use]
-    pub fn new_inline(full_path: PathBuf, content: String) -> Self {
+    pub fn new(content: String, full_path: PathBuf) -> Self {
         let lines = get_line_byte_positions(&content);
         Self { content, full_path, lines }
     }
@@ -311,29 +304,7 @@ impl SourceFile {
 
         let string = String::from_utf8(string).map_err(|x| x.utf8_error())?;
 
-        Ok(Self::new_inline(path, string))
-    }
-
-    /// Creates a temporary source file on the disk and writes the given
-    /// displayable object to it. Then, loads that temporary file.
-    ///
-    /// # Errors
-    /// - [`Error::IoError`]: Error occurred when creating the temporary file,
-    ///   writing to, and mapping it to memory.
-    /// - [`Error::Utf8Error`]: Error occurred when converting the mapped bytes
-    ///   to a string.
-    pub fn temp(display: impl Display) -> Result<Self, Error> {
-        use std::io::Write;
-
-        let mut tempfile = tempfile::Builder::new()
-            .prefix("flux")
-            .suffix(".flux")
-            .tempfile()?;
-
-        write!(tempfile.as_file_mut(), "{display}")?;
-        let path = tempfile.path().to_owned();
-
-        Self::load(tempfile.into_file(), path)
+        Ok(Self::new(string, path))
     }
 
     /// Gets the [`Location`] of the given byte index.

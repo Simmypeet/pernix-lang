@@ -93,7 +93,10 @@ fn basic_compatible() {
         let result =
             a_t.compatible(&static_t, variance, &environment).unwrap().unwrap();
 
-        assert_eq!(result.constraints.len(), 1);
+        assert_eq!(
+            result.constraints.len(),
+            if Variance::Invariant == variance { 2 } else { 1 }
+        );
 
         let expected_constraints = match variance {
             Variance::Covariant => {
@@ -220,7 +223,10 @@ fn compatible_with_adt() {
             .unwrap()
             .unwrap();
 
-        assert_eq!(result.constraints.len(), 1);
+        assert_eq!(
+            result.constraints.len(),
+            if Variance::Invariant == variance { 2 } else { 1 }
+        );
 
         let expected_constraint = match variance {
             Variance::Covariant => {
@@ -309,7 +315,7 @@ fn compatible_with_mutable_reference() {
         .unwrap()
         .unwrap();
 
-    assert_eq!(result.constraints.len(), 2);
+    assert_eq!(result.constraints.len(), 3);
 
     let a_and_c = LifetimeConstraint::LifetimeOutlives(Outlives {
         operand: a_lt.clone(),

@@ -26,7 +26,7 @@ fn get_line_byte_positions_with_trailing_new_line() {
 #[test]
 fn replace_range_as_insert() {
     let mut source_file =
-        SourceFile::new_inline("test".into(), "ABCD\nEFGH\nIJKL".to_string());
+        SourceFile::new("ABCD\nEFGH\nIJKL".to_string(), "test".into());
 
     source_file.replace_range(5..5, "1234").unwrap();
 
@@ -42,7 +42,7 @@ fn replace_range_as_insert() {
 #[test]
 fn replace_range_in_same_line_one_line() {
     let mut source_file =
-        SourceFile::new_inline("test".into(), "ABCD\nEFGH\nIJKL".to_string());
+        SourceFile::new("ABCD\nEFGH\nIJKL".to_string(), "test".into());
 
     source_file.replace_range(6..8, "1234").unwrap();
 
@@ -67,10 +67,8 @@ fn replace_range_in_same_line_one_line() {
 
 #[test]
 fn replace_range_multi_line_one_line() {
-    let mut source_file = SourceFile::new_inline(
-        "test".into(),
-        "ABCD\nEFGH\nIJKL\nMNOP".to_string(),
-    );
+    let mut source_file =
+        SourceFile::new("ABCD\nEFGH\nIJKL\nMNOP".to_string(), "test".into());
 
     source_file.replace_range(5..11, "1234").unwrap();
 
@@ -86,7 +84,7 @@ fn replace_range_multi_line_one_line() {
 #[test]
 fn replace_range_multi_line() {
     let mut source_file =
-        SourceFile::new_inline("test".into(), "ABC\nDEF\nGHI\nJ".to_string());
+        SourceFile::new("ABC\nDEF\nGHI\nJ".to_string(), "test".into());
 
     source_file.replace_range(5..6, "12\n3\n4").unwrap();
 
@@ -104,7 +102,7 @@ fn replace_range_multi_line() {
 #[test]
 fn replace_trimming() {
     let mut source_file =
-        SourceFile::new_inline("test".into(), "ABC\nDEF\nGHI\nJ".to_string());
+        SourceFile::new("ABC\nDEF\nGHI\nJ".to_string(), "test".into());
 
     source_file.replace_range(1..10, "1\n2").unwrap();
 
@@ -120,7 +118,7 @@ fn replace_trimming() {
 #[test]
 fn replace_add_line() {
     let mut source_file =
-        SourceFile::new_inline("test".into(), "ABC\nDEF\nGHI\nJ".to_string());
+        SourceFile::new("ABC\nDEF\nGHI\nJ".to_string(), "test".into());
 
     source_file.replace_range(5..5, "\n").unwrap();
 
@@ -137,8 +135,7 @@ fn replace_add_line() {
 
 #[test]
 fn replace_range_as_append() {
-    let mut source_file =
-        SourceFile::new_inline("test".into(), "ABC".to_string());
+    let mut source_file = SourceFile::new("ABC".to_string(), "test".into());
 
     let position = Location::new(0, 3);
     let byte_index =
@@ -154,7 +151,7 @@ fn replace_range_as_append() {
 #[test]
 fn reaplce_range_delete() {
     let mut source_file =
-        SourceFile::new_inline("test".into(), "AAA\nBBB\nCCC".to_string());
+        SourceFile::new("AAA\nBBB\nCCC".to_string(), "test".into());
 
     let start = Location::new(0, 1);
     let end = Location::new(2, 2);
@@ -167,11 +164,4 @@ fn reaplce_range_delete() {
     source_file.replace_range(start_byte_index..end_byte_index, "").unwrap();
 
     assert_eq!(source_file.content(), "AC");
-}
-
-#[test]
-fn mapped_file() {
-    const TEST_FILE: &str = "test file";
-    let source_file = super::SourceFile::temp(TEST_FILE).unwrap();
-    assert_eq!(source_file.content(), TEST_FILE);
 }

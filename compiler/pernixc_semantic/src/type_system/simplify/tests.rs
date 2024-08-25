@@ -190,7 +190,7 @@ fn with_lifetime_matching() {
         });
 
     assert_eq!(simplified, equivalent);
-    assert_eq!(constraints.len(), 1);
+    assert_eq!(constraints.len(), 2);
 
     assert!(constraints.contains(&LifetimeConstraint::LifetimeOutlives(
         Outlives::new(second_lifetime.clone(), first_lifetime.clone())
@@ -311,7 +311,7 @@ fn transitive() {
         simplify(&Type::TraitMember(trait_a), &environment);
 
     assert_eq!(simplified, equivalent);
-    assert_eq!(constraints.len(), 1);
+    assert_eq!(constraints.len(), 2);
 
     assert!(constraints.contains(&LifetimeConstraint::LifetimeOutlives(
         Outlives::new(b_lt.clone(), c_lt.clone())

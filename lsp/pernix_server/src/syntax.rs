@@ -206,8 +206,7 @@ impl Context {
     ) -> Option<SourceFile> {
         let url_path = url.path().into();
 
-        self.source_files_by_url
-            .insert(url, SourceFile::new_inline(url_path, text))
+        self.source_files_by_url.insert(url, SourceFile::new(text, url_path))
     }
 
     /// Updates the source file with the given URL.
