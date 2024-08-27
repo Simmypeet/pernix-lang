@@ -1,7 +1,19 @@
 //! Contains the server implementation.
 
+use std::{collections::HashMap, sync::Arc};
+
+use by_address::ByAddress;
+use extension::DaignosticExt;
 use log::{debug, error, info};
 use parking_lot::RwLock;
+use pernixc_base::{
+    diagnostic::Report,
+    handler::{Handler, Storage},
+    source_file::SourceFile,
+};
+use pernixc_lexical::token::Identifier;
+use pernixc_semantic::symbol::table::{self, BuildTableError};
+use pernixc_syntax::syntax_tree::target::Target;
 use tower_lsp::{
     jsonrpc,
     lsp_types::{
@@ -14,6 +26,16 @@ use tower_lsp::{
     },
     Client, LanguageServer,
 };
+
+/// A diagnostic with its source file uri.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiagnosticsWithUrl {
+    /// The uri where the diagnostics are reported.
+    pub uri: Url,
+
+    /// Diagnostic messages.
+    pub diagnostics: Vec<tower_lsp::lsp_types::Diagnostic>,
+}
 
 pub mod extension;
 pub mod semantic;
@@ -254,6 +276,8 @@ impl LanguageServer for Server {
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         info!("Did save: {}", params.text_document.uri.path());
+
+        self.semantic_check(params).await;
     }
 }
 
@@ -327,6 +351,123 @@ impl Server {
             Some((workspace.uri, Url::from_file_path(root_path).ok()?))
         } else {
             None
+        }
+    }
+}
+
+#[derive(Debug)]
+struct DiagnosticCollector(RwLock<Vec<pernixc_base::diagnostic::Diagnostic>>);
+
+impl<E: Report<()>> Handler<E> for DiagnosticCollector {
+    fn receive(&self, error: E) {
+        let Ok(diagnostic) = error.report(()) else {
+            return;
+        };
+
+        self.0.write().push(diagnostic);
+    }
+}
+
+impl Server {
+    async fn semantic_check(&self, params: DidSaveTextDocumentParams) {
+        // find the root file and target name based on the workspace
+        // configurationc
+        let (root, target_name) = 'exit: {
+            let workspace = self.workspace.read();
+
+            let Some(workspace) = workspace.as_ref() else {
+                info!("no workspace found, use the saved file as a root");
+
+                let Ok(file_path) = params.text_document.uri.to_file_path()
+                else {
+                    error!(
+                        "failed to convert uri to file path: {}",
+                        params.text_document.uri.path()
+                    );
+                    return;
+                };
+
+                let Some(name) = file_path.file_stem() else {
+                    error!("failed to get file name: {}", file_path.display());
+                    return;
+                };
+
+                if !Identifier::is_valid_identifier_string(
+                    name.to_string_lossy().as_ref(),
+                ) {
+                    error!("invalid file name: {}", name.to_string_lossy());
+                    return;
+                }
+
+                break 'exit (
+                    file_path.parent().unwrap().to_path_buf(),
+                    name.to_string_lossy().to_string(),
+                );
+            };
+
+            (
+                workspace.configuration().root_file.clone(),
+                workspace.configuration().target_name.clone(),
+            )
+        };
+
+        let file = match std::fs::File::open(&root) {
+            Ok(file) => file,
+            Err(err) => {
+                error!("{}: {}", root.display(), err);
+                return;
+            }
+        };
+
+        let root = match SourceFile::load(file, root.clone()) {
+            Ok(root) => Arc::new(root),
+            Err(err) => {
+                error!("{}: {}", root.display(), err);
+                return;
+            }
+        };
+
+        let semantic_error_storage =
+            Storage::<Box<dyn pernixc_semantic::error::Error>>::new();
+        let collector = DiagnosticCollector(RwLock::new(Vec::new()));
+
+        let target = Target::parse(&root, target_name, &collector);
+        let table =
+            table::build(std::iter::once(target), &semantic_error_storage);
+
+        // group the diagnostics by source file
+        let mut lsp_diagnostics_by_source_file = HashMap::<_, Vec<_>>::new();
+
+        for diagnostic in collector.0.into_inner() {
+            lsp_diagnostics_by_source_file
+                .entry(ByAddress(diagnostic.span.source_file().clone()))
+                .or_default()
+                .push(diagnostic.into_diagnostic());
+        }
+
+        if let Err(BuildTableError::Suboptimal(table)) = &table {
+            for error in semantic_error_storage.into_vec() {
+                let Ok(diagnostic) = error.report(table) else {
+                    continue;
+                };
+
+                lsp_diagnostics_by_source_file
+                    .entry(ByAddress(diagnostic.span.source_file().clone()))
+                    .or_default()
+                    .push(diagnostic.into_diagnostic());
+            }
+        }
+
+        // report the diagnostics in batch
+        for (source_file, diagnostics) in lsp_diagnostics_by_source_file {
+            let Some(uri) = std::fs::canonicalize(source_file.full_path())
+                .ok()
+                .and_then(|x| Url::from_file_path(x).ok())
+            else {
+                continue;
+            };
+
+            self.client.publish_diagnostics(uri, diagnostics, None).await;
         }
     }
 }

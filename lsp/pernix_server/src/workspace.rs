@@ -31,6 +31,9 @@ pub struct Workspace {
     root_path: PathBuf,
 
     json_configuration_source_file: Arc<SourceFile>,
+
+    /// The parsed configuration of the `pernix.json` file.
+    #[get = "pub"]
     configuration: Configuration,
 }
 

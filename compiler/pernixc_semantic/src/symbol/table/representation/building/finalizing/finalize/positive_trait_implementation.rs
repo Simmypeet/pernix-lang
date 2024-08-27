@@ -95,19 +95,33 @@ impl Finalize for PositiveTraitImplementation {
             }
 
             CHECK_STATE => {
-                // // make sure the implemented trait has the where clause
-                // let parent_trait_id =
-                //     table.get(symbol_id).unwrap().implemented_id;
-                // let _ = table.build_to(
-                //     parent_trait_id,
-                //     Some(symbol_id.into()),
-                //     r#trait::WHERE_CLAUSE_STATE,
-                //     handler,
-                // );
+                // make sure the implemented trait has the where clause
+                let parent_trait_id =
+                    table.get(symbol_id).unwrap().implemented_id;
+                let _ = table.build_to(
+                    parent_trait_id,
+                    Some(symbol_id.into()),
+                    r#trait::WHERE_CLAUSE_STATE,
+                    handler,
+                );
 
-                // table.check_occurrences(symbol_id.into(), data, handler);
-                // table.check_where_clause(symbol_id.into(), handler);
-                // table.implementation_signature_check(symbol_id, handler);
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &generic_parameter_occurrences,
+                    handler,
+                );
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &where_clause_occurrences,
+                    handler,
+                );
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &arguments_occurrences,
+                    handler,
+                );
+                table.check_where_clause(symbol_id.into(), handler);
+                table.implementation_signature_check(symbol_id, handler);
             }
 
             _ => panic!("invalid state flag"),

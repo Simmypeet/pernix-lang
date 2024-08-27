@@ -27,12 +27,15 @@ use crate::{
         TraitMemberID, Variant,
     },
     type_system::{
+        equality,
         model::Model,
         predicate::{self, Predicate},
         term::{
+            constant,
             r#type::{self, Qualifier, Type},
             GenericArguments,
         },
+        Premise,
     },
 };
 
@@ -1983,9 +1986,10 @@ where
 
         Ok(Diagnostic {
             span: self.index_span.clone(),
-            message: 
-                "indexing past the unpacked element in tuple is not allowed".to_string(),
-            
+            message: "indexing past the unpacked element in tuple is not \
+                      allowed"
+                .to_string(),
+
             severity: Severity::Error,
             help_message: Some(format!(
                 "the tuple type is `{}` having {} element(s) and the unpacked \
@@ -2839,14 +2843,61 @@ where
     }
 }
 
+/// The trait type equality is declared in such a way that it can be expanded
+/// infinitely.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RecursiveTraitTypeEquality<M: Model> {
+    /// The trait type equality that is recursive.
+    pub trait_type_equality:
+        equality::Equality<r#type::TraitMember<M>, r#type::Type<M>>,
+
+    /// The span where the recursive trait type equalities are declared.
+    pub predicate_declaration_spans: Vec<Span>,
+}
+
+impl<M: Model> Report<&Table<Suboptimal>> for RecursiveTraitTypeEquality<M>
+where
+    equality::Equality<r#type::TraitMember<M>, r#type::Type<M>>:
+        table::Display<Suboptimal>,
+{
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let mut span_iter = self.predicate_declaration_spans.iter();
+        let first_span = span_iter.next().ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: first_span.clone(),
+            message: format!(
+                "the predicate `{}` is recursive, it can be expanded \
+                 infinitely",
+                DisplayObject { table, display: &self.trait_type_equality }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: span_iter
+                .map(|span| Related {
+                    span: span.clone(),
+                    message: "the recursive trait type equality is declared \
+                              here"
+                        .to_string(),
+                })
+                .collect(),
+        })
+    }
+}
+
 /// The predicates are ambiguous to each other.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AmbiguousPredicates<M: Model> {
     /// The list of predicates that are ambiguous to each other.
     pub predicates: Vec<Predicate<M>>,
 
-    /// The [`GlobalID`] where the ambiguity occurs.
-    pub occurred_at_global_id: GlobalID,
+    /// The span where the ambiguous predicates are declared.
+    pub predicate_declaration_spans: Vec<Span>,
 }
 
 impl<M: Model> Report<&Table<Suboptimal>> for AmbiguousPredicates<M>
@@ -2859,48 +2910,29 @@ where
         &self,
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
-        let (Some(qualified_name), Some(spans_by_predicate)) = (
-            table.get_qualified_name(self.occurred_at_global_id),
-            table.get_active_premise_predicates_with_span::<M>(
-                self.occurred_at_global_id,
-            ),
-        ) else {
-            return Err(ReportError);
-        };
+        let mut span_iter = self.predicate_declaration_spans.iter();
+        let first_span = span_iter.next().ok_or(ReportError)?;
 
         Ok(Diagnostic {
-            span: table
-                .get_global(self.occurred_at_global_id)
-                .and_then(|x| x.span().cloned())
-                .ok_or(ReportError)?,
+            span: first_span.clone(),
             message: format!(
-                "the predicates are ambiguous to each other in \
-                 `{qualified_name}`",
-            ),
-            severity: Severity::Error,
-            help_message: Some(format!(
-                "the predicate(s) are: {}",
+                "the predicates are ambiguous to each other: {}",
                 self.predicates
                     .iter()
-                    .map(|x| DisplayObject { table, display: x }.to_string())
+                    .map(|predicate| {
+                        DisplayObject { table, display: predicate }.to_string()
+                    })
                     .collect::<Vec<_>>()
                     .join(", ")
-            )),
-            related: self
-                .predicates
-                .iter()
-                .filter_map(|predicate| {
-                    spans_by_predicate.get(predicate).map(|spans| {
-                        spans
-                            .iter()
-                            .map(|span| Related {
-                                span: span.clone(),
-                                message: String::new(),
-                            })
-                            .collect::<Vec<_>>()
-                    })
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: span_iter
+                .map(|span| Related {
+                    span: span.clone(),
+                    message: "the ambiguous predicate is declared here"
+                        .to_string(),
                 })
-                .flatten()
                 .collect(),
         })
     }
@@ -3021,21 +3053,21 @@ impl Report<&Table<Suboptimal>> for FinalImplementationCannotBeOverriden {
             .ok_or(ReportError)?;
 
         Ok(Diagnostic {
-            span: final_impl_symbol
+            span: overriden_impl_symbol
                 .span()
-                .or_else(|| overriden_impl_symbol.span())
+                .or_else(|| final_impl_symbol.span())
                 .ok_or(ReportError)?
                 .clone(),
             message: format!(
-                "the trait implementation `{}{}` is final but it is overriden \
-                 by implementation `{}{}`",
-                final_qual_name,
-                DisplayObject { table, display: final_impl_symbol.arguments() },
+                "the trait implementation `{}{}` overrides the trait \
+                 implementation `{}{}`, which is final",
                 impl_qual_name,
                 DisplayObject {
                     table,
                     display: overriden_impl_symbol.arguments()
                 },
+                final_qual_name,
+                DisplayObject { table, display: final_impl_symbol.arguments() },
             ),
             severity: Severity::Error,
             help_message: None,
@@ -3055,6 +3087,108 @@ impl Report<&Table<Suboptimal>> for FinalImplementationCannotBeOverriden {
                     }
                 }))
                 .collect::<Vec<_>>(),
+        })
+    }
+}
+
+/// Overflow calculating the requirement for instantiation of a particular
+/// symbol.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct OverflowCalculatingRequirementForInstantiation {
+    /// The span where the instantiation occurs.
+    pub instantiation_span: Span,
+}
+
+impl Report<&Table<Suboptimal>>
+    for OverflowCalculatingRequirementForInstantiation
+{
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.instantiation_span.clone(),
+            message: "overflow calculating the requirement for instantiation"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: Some(
+                "try reducing the complexity of the given symbol or this \
+                 instantiation"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The constant argument has a mismatched type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConstantArgumentTypeMismatched<M: Model> {
+    /// The span of the constant argument.
+    pub span: Span,
+
+    /// The expected type of the constant argument.
+    pub expected_type: Type<M>,
+
+    /// The constant argument that has a mismatched type.
+    pub constant_argument: constant::Constant<M>,
+}
+
+impl<M: Model> Report<&Table<Suboptimal>> for ConstantArgumentTypeMismatched<M>
+where
+    Type<M>: Display<Suboptimal>,
+    constant::Constant<M>: Display<Suboptimal>,
+{
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the constant argument `{}` has a mismatched type: expected \
+                 `{}`",
+                DisplayObject { display: &self.constant_argument, table },
+                DisplayObject { display: &self.expected_type, table }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The predicate declared is definite (its satisfiability is already known).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefinitePremisePredicate<M: Model> {
+    /// The span of the definite premise.
+    pub span: Span,
+
+    /// The definite premise.
+    pub predicate: Predicate<M>,
+}
+
+impl<M: Model> Report<&Table<Suboptimal>> for DefinitePremisePredicate<M>
+where
+    Predicate<M>: Display<Suboptimal>,
+{
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the predicate `{}` is definite, the satisfiability of the \
+                 predicate is already known when the it's declared",
+                DisplayObject { display: &self.predicate, table }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
         })
     }
 }

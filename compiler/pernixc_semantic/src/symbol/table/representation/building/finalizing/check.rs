@@ -15,13 +15,16 @@ use super::{
 use crate::{
     arena::ID,
     error::{
-        self, AdtImplementationIsNotGeneralEnough, AmbiguousPredicates, Error,
+        self, AdtImplementationIsNotGeneralEnough, AmbiguousPredicates,
+        ConstantArgumentTypeMismatched, DefinitePremisePredicate, Error,
         ExtraneousTraitMemberPredicate,
         MismatchedGenericParameterCountInImplementation,
         MismatchedImplementationArguments,
         MismatchedImplementationConstantTypeParameter,
-        TraitImplementationIsNotGeneralEnough, UndecidablePredicate,
-        UnsatisifedPredicate, UnusedGenericParameterInImplementation,
+        OverflowCalculatingRequirementForInstantiation,
+        RecursiveTraitTypeEquality, TraitImplementationIsNotGeneralEnough,
+        UndecidablePredicate, UnsatisifedPredicate,
+        UnusedGenericParameterInImplementation,
     },
     symbol::{
         table::{
@@ -36,7 +39,9 @@ use crate::{
         TypeParameterID,
     },
     type_system::{
-        compatible::{Compatibility, Compatible},
+        compatible::{
+            Compatibility, Compatible, NotGeneralEnoughLifetimeError,
+        },
         deduction,
         environment::{self, Environment},
         instantiation::{self, Instantiation},
@@ -262,7 +267,13 @@ where
                         }
 
                         Err(deduction::Error::Overflow(_)) => {
-                            todo!("report overflow")
+                            handler.receive(Box::new(
+                                OverflowCalculatingRequirementForInstantiation {
+                                    instantiation_span: resolution_span.clone(),
+                                }
+                            ));
+
+                            return;
                         }
                     };
 
@@ -732,15 +743,27 @@ where
                 let expected_type =
                     r#type::Type::Primitive(r#type::Primitive::Usize);
                 let type_check =
-                    TypeCheck::new(array.length.clone(), expected_type);
+                    TypeCheck::new(array.length.clone(), expected_type.clone());
 
                 match type_check.query(self) {
                     Ok(Some(Succeeded { result: Satisfied, .. })) => {}
 
-                    Ok(None) => todo!("report unsatisfied"),
+                    Ok(None) => {
+                        handler.receive(Box::new(
+                            ConstantArgumentTypeMismatched {
+                                span: instantiation_span.clone(),
+                                expected_type,
+                                constant_argument: array.length.clone(),
+                            },
+                        ));
+                    }
 
                     Err(_) => {
-                        todo!("report undecidable")
+                        handler.receive(Box::new(
+                            OverflowCalculatingRequirementForInstantiation {
+                                instantiation_span: instantiation_span.clone(),
+                            },
+                        ));
                     }
                 }
             }
@@ -855,23 +878,63 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             &NO_OP,
             &observer::NO_OP,
         );
+        let active_premise_with_span = self
+            .get_active_premise_predicates_with_span::<Default>(id)
+            .unwrap();
 
         for error in environment_errors {
             match error {
-                environment::Error::AmbiguousPredicates(predicates) => handler
-                    .receive(Box::new(AmbiguousPredicates {
+                environment::Error::AmbiguousPredicates(predicates) => {
+                    let spans = predicates
+                        .iter()
+                        .flat_map(|x| {
+                            active_premise_with_span.get(x).unwrap().iter()
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>();
+
+                    handler.receive(Box::new(AmbiguousPredicates {
                         predicates,
-                        occurred_at_global_id: id,
-                    })),
-
-                environment::Error::DefinintePremise(_) => todo!(),
-
-                environment::Error::RecursiveTraitTypeEqualityPredicate(_) => {
-                    todo!()
+                        predicate_declaration_spans: spans,
+                    }));
                 }
 
-                environment::Error::Overflow(_, _) => {
-                    todo!()
+                environment::Error::DefinintePremise(definite) => {
+                    let span = active_premise_with_span.get(&definite).unwrap();
+
+                    for span in span {
+                        handler.receive(Box::new(DefinitePremisePredicate {
+                            predicate: definite.clone(),
+                            span: span.clone(),
+                        }));
+                    }
+                }
+
+                environment::Error::RecursiveTraitTypeEqualityPredicate(
+                    pred,
+                ) => {
+                    let pred = Predicate::TraitTypeEquality(pred);
+                    let spans =
+                        active_premise_with_span.get(&pred).unwrap().clone();
+
+                    handler.receive(Box::new(RecursiveTraitTypeEquality {
+                        trait_type_equality: pred
+                            .into_trait_type_equality()
+                            .unwrap(),
+                        predicate_declaration_spans: spans,
+                    }));
+                }
+
+                environment::Error::Overflow(pred, _) => {
+                    let spans = active_premise_with_span.get(&pred).unwrap();
+
+                    for span in spans {
+                        handler.receive(Box::new(
+                            OverflowCalculatingRequirementForInstantiation {
+                                instantiation_span: span.clone(),
+                            },
+                        ));
+                    }
                 }
             }
         }
@@ -1295,7 +1358,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             ) {
                 Ok(Some(_)) => {}
 
-                Ok(None) => handler.receive(Box::new(
+                Err(_) | Ok(None) => handler.receive(Box::new(
                     MismatchedImplementationConstantTypeParameter {
                         implementation_member_constant_parameter_id:
                             ConstantParameterID {
@@ -1310,8 +1373,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         },
                     },
                 )),
-
-                Err(_) => todo!("report undecidable error"),
             }
         }
 
@@ -1405,8 +1466,21 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     }
 
                     PredicateError::TraitImplementationIsNotGeneralEnough {
-                        ..
-                    } => todo!("report this error"),
+                        required_trait_predicate,
+                        resolved_implementation,
+                        predicate_declaration_span,
+                    } => handler.receive(Box::new(
+                        TraitImplementationIsNotGeneralEnough {
+                            positive_trait_implementation_id:
+                                resolved_implementation.id,
+                            required_trait_predicate,
+                            instantiation_span: implementation_member_sym
+                                .span()
+                                .cloned()
+                                .unwrap(),
+                            predicate_declaration_span,
+                        },
+                    )),
                 }
             }
         }
