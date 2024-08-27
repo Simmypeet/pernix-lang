@@ -145,6 +145,8 @@ pub enum KeywordKind {
     Try,
     /// `with` keyword
     With,
+    /// `null` keyword.
+    Null,
 }
 
 impl std::fmt::Display for KeywordKind {
@@ -244,6 +246,7 @@ impl KeywordKind {
             Self::Do => "do",
             Self::Try => "try",
             Self::With => "with",
+            Self::Null => "null",
         }
     }
 }
@@ -385,6 +388,25 @@ impl SourceElement for WhiteSpaces {
 pub struct Identifier {
     /// Is the span that makes up the token.
     pub span: Span,
+}
+
+impl Identifier {
+    /// Checks if the given string is a valid identifier string.
+    pub fn is_valid_identifier_string(s: &str) -> bool {
+        let mut chars = s.chars();
+
+        if let Some(character) = chars.next() {
+            if !Token::is_first_identifier_character(character) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+
+        let identifier = chars.all(Token::is_identifier_character);
+
+        KeywordKind::from_str(s).is_err() && identifier
+    }
 }
 
 impl SourceElement for Identifier {

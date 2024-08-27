@@ -14,7 +14,7 @@ use pernixc_base::{
 use crate::token_stream::Delimiter;
 
 /// The source code contains an unclosed `/*` comment.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct UnterminatedDelimitedComment {
     /// The span of the unclosed `/*` that starts the comment.
     pub span: Span,
@@ -32,7 +32,7 @@ impl Display for UnterminatedDelimitedComment {
 }
 
 /// The delimiter is not closed by its corresponding closing pair.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct UndelimitedDelimiter {
     /// The span of the opening delimiter.
     pub opening_span: Span,
@@ -59,7 +59,7 @@ impl Display for UndelimitedDelimiter {
 }
 
 /// The source code contains an unterminated string literal.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct UnterminatedStringLiteral {
     /// The span of the unclosed double quote that starts the string literal.
     pub span: Span,
@@ -80,7 +80,7 @@ impl Display for UnterminatedStringLiteral {
 }
 
 /// The source code contains an invalid escape sequence.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct InvalidEscapeSequence {
     /// The span of the invalid escape sequence (including the backslash).
     pub span: Span,
@@ -99,13 +99,27 @@ impl Display for InvalidEscapeSequence {
 
 /// Is an enumeration containing all kinds of lexical errors that can occur
 /// while tokenizing the source code.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 #[allow(missing_docs)]
 pub enum Error {
     UnterminatedDelimitedComment(UnterminatedDelimitedComment),
     UndelimitedDelimiter(UndelimitedDelimiter),
     UnterminatedStringLiteral(UnterminatedStringLiteral),
     InvalidEscapeSequence(InvalidEscapeSequence),
+}
+
+impl Error {
+    /// Gets the span where the error occurred.
+    pub fn span(&self) -> &Span {
+        match self {
+            Self::UnterminatedDelimitedComment(err) => &err.span,
+            Self::UndelimitedDelimiter(err) => &err.opening_span,
+            Self::UnterminatedStringLiteral(err) => &err.span,
+            Self::InvalidEscapeSequence(err) => &err.span,
+        }
+    }
 }
 
 impl Display for Error {

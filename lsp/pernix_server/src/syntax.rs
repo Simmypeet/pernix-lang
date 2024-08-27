@@ -8,13 +8,13 @@ use parking_lot::RwLock;
 use pernixc_base::{
     diagnostic::Handler,
     log::formatting,
-    source_file::{
-        Location, ReplaceRangeError, SourceElement, SourceFile, Span,
-    },
+    source_file::{Location, ReplaceRangeError, SourceElement, SourceFile},
 };
 use pernixc_lexical::token_stream::TokenStream;
 use pernixc_syntax::parser::Parser;
-use tower_lsp::lsp_types::{self, Diagnostic, Position, Url};
+use tower_lsp::lsp_types::{self, Diagnostic, Url};
+
+use crate::span_ext::SpanExt;
 
 /// A struct which implements [`Handler`] for collecting diagnostics.
 #[derive(Debug)]
@@ -38,29 +38,6 @@ impl Collector {
     pub fn into_diagnostic(self) -> Vec<Diagnostic> {
         self.diagnostics.into_inner()
     }
-}
-
-#[allow(clippy::cast_possible_truncation)]
-fn convert_span(span: &Span) -> tower_lsp::lsp_types::Range {
-    let start = Position::new(
-        span.start_location().line as u32,
-        span.start_location().column as u32,
-    );
-    let end = span.end_location().map_or_else(
-        || {
-            let line = span.source_file().line_coount() - 1;
-            let column = span
-                .source_file()
-                .get_line(span.source_file().line_coount() - 1)
-                .unwrap()
-                .len();
-
-            Position::new(line as u32, column as u32)
-        },
-        |x| Position::new(x.line as u32, x.column as u32),
-    );
-
-    tower_lsp::lsp_types::Range { start, end }
 }
 
 fn cut_message(message: &str, string_prefix: &str) -> String {
@@ -96,7 +73,7 @@ impl Handler<pernixc_lexical::error::Error> for Collector {
             return;
         }
 
-        let range = convert_span(sp);
+        let range = sp.to_range();
         let message = cut_message(&error.to_string(), "[error]:");
 
         self.diagnostics.write().push(Diagnostic {
@@ -119,7 +96,7 @@ impl Handler<pernixc_syntax::error::Error> for Collector {
                 return;
             }
 
-            convert_span(&span)
+            span.to_range()
         };
 
         // cutoff the error message after new line character
@@ -152,7 +129,7 @@ impl Handler<pernixc_syntax::syntax_tree::target::Error> for Collector {
             return;
         }
 
-        let range = convert_span(&span);
+        let range = span.to_range();
         let message = cut_message(&error.to_string(), "[error]:");
 
         self.diagnostics.write().push(Diagnostic {
@@ -166,11 +143,9 @@ impl Handler<pernixc_syntax::syntax_tree::target::Error> for Collector {
 
 /// Manages analysis related to the syntax of the source files.
 #[derive(Debug, Default, Getters, derive_more::Index)]
-pub struct Context {
+pub struct Syntax {
     /// Gets the map of source files by their URL.
-    #[get = "pub"]
-    #[index]
-    source_files_by_url: DashMap<Url, SourceFile>,
+    source_files_by_url: DashMap<Url, Arc<SourceFile>>,
 }
 
 /// An error that can occur when updating a source file.
@@ -193,20 +168,26 @@ pub enum UpdateSourceFileError {
     ReplaceRange(#[from] ReplaceRangeError),
 }
 
-impl Context {
+impl Syntax {
     /// Creates a new source file for the given [`Url`] and inserts it into the
     /// context.
     ///
     /// This directly cooresponds to the `textDocument/didOpen` notification.
     #[must_use]
-    pub fn register_source_file(
-        &self,
-        url: Url,
-        text: String,
-    ) -> Option<SourceFile> {
+    pub fn register_source_file(&self, url: Url, text: String) {
         let url_path = url.path().into();
 
-        self.source_files_by_url.insert(url, SourceFile::new(text, url_path))
+        match self.source_files_by_url.entry(url) {
+            dashmap::Entry::Occupied(mut entry) => {
+                Arc::get_mut(entry.get_mut())
+                    .expect("should be unique")
+                    .replace(text);
+            }
+
+            dashmap::Entry::Vacant(entry) => {
+                entry.insert(Arc::new(SourceFile::new(text, url_path)));
+            }
+        }
     }
 
     /// Updates the source file with the given URL.
@@ -243,13 +224,15 @@ impl Context {
             .into_byte_index_include_ending(pernix_location_end)
             .ok_or(UpdateSourceFileError::InvalidRange(range))?;
 
-        Ok(source_file.replace_range(start..end, text)?)
+        Ok(Arc::get_mut(&mut source_file)
+            .expect("should be unique")
+            .replace_range(start..end, text)?)
     }
 
     /// Diagnoses the syntax of the source file with the given URL.
     #[must_use]
     pub fn diagnose_syntax(&self, url: &Url) -> Option<Vec<Diagnostic>> {
-        let source_file = Arc::new(self.source_files_by_url.get(url)?.clone());
+        let source_file = self.source_files_by_url.get(url)?.clone();
 
         let collector = Collector::new(source_file.clone());
         let token_stream = TokenStream::tokenize(&source_file, &collector);

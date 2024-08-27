@@ -16,11 +16,12 @@ use thiserror::Error;
 #[allow(missing_docs)]
 pub enum Error {
     #[error(transparent)]
-    IoError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
 
     #[error(transparent)]
-    Utf8Error(#[from] std::str::Utf8Error),
+    Utf8(#[from] std::str::Utf8Error),
 }
+
 /// Represents an source file input for the compiler.
 #[derive(Clone, PartialEq, Eq, Hash, Getters)]
 pub struct SourceFile {
@@ -33,6 +34,20 @@ pub struct SourceFile {
     /// The byte ranges for each line in the source file (including the
     /// newline)
     lines: Vec<Range<usize>>,
+}
+
+impl PartialOrd for SourceFile {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SourceFile {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.full_path
+            .cmp(&other.full_path)
+            .then(self.content.cmp(&other.content))
+    }
 }
 
 #[allow(clippy::missing_fields_in_debug)]

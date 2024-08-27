@@ -71,7 +71,7 @@ pub fn run(argument: Arguments) -> ExitCode {
 
     let source_file = match SourceFile::load(file, argument.file.clone()) {
         Ok(file) => Arc::new(file),
-        Err(source_file::Error::IoError(error)) => {
+        Err(source_file::Error::Io(error)) => {
             let msg = Message::new(
                 Severity::Error,
                 format!("{}: {error}", argument.file.display()),
@@ -80,7 +80,7 @@ pub fn run(argument: Arguments) -> ExitCode {
             eprintln!("{msg}");
             return ExitCode::FAILURE;
         }
-        Err(source_file::Error::Utf8Error(error)) => {
+        Err(source_file::Error::Utf8(error)) => {
             let msg = Message::new(
                 Severity::Error,
                 format!("{}: {error}", argument.file.display()),

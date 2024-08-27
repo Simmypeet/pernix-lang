@@ -32,6 +32,7 @@ pub enum SyntaxKind {
     Numeric,
     Predicate,
     String,
+    JsonValue,
 }
 
 impl SyntaxKind {
@@ -62,6 +63,7 @@ impl SyntaxKind {
             Self::RefutablePattern => "a refutable pattern syntax".to_string(),
             Self::Numeric => "a numeric token".to_string(),
             Self::String => "a string literal".to_string(),
+            Self::JsonValue => "a JSON value syntax".to_string(),
         }
     }
 }
@@ -79,7 +81,7 @@ pub struct Unexpected {
 }
 
 /// What was found in place of the expected syntax kind.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Found {
     Unexpected(Unexpected),
@@ -113,7 +115,7 @@ impl Found {
 }
 
 /// A syntax/token is expected but found an other invalid token.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Error {
     /// The kind of syntax that was expected.
     pub expected: SyntaxKind,
