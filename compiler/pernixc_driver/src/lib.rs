@@ -1,7 +1,6 @@
 //! Contains the main `run()` function for the compiler.
 
 use std::{
-    fmt::Display,
     fs::File,
     path::PathBuf,
     process::ExitCode,
@@ -9,7 +8,8 @@ use std::{
 };
 
 use pernixc_base::{
-    diagnostic::{Handler, Storage},
+    diagnostic::Report,
+    handler::{Handler, Storage},
     log::{Message, Severity},
     source_file::{self, SourceFile},
 };
@@ -46,9 +46,17 @@ impl Printer {
     fn has_printed(&self) -> bool { *self.printed.read().unwrap() }
 }
 
-impl<E: Display> Handler<E> for Printer {
+impl<E: Report> Handler<E> for Printer
+where
+    E::Parameter: Default,
+{
     fn receive(&self, error: E) {
-        eprintln!("{error}\n");
+        let Ok(diagnostic) = error.report(E::Parameter::default()) else {
+            return;
+        };
+
+        eprintln!("{diagnostic}\n");
+
         *self.printed.write().unwrap() = true;
     }
 }

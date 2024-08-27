@@ -7,7 +7,7 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use pernixc_base::{
-    diagnostic::Handler,
+    handler::Handler,
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::token;

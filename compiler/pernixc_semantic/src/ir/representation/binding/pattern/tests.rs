@@ -1,7 +1,7 @@
 use std::{fmt::Display, sync::Arc};
 
 use pernixc_base::{
-    diagnostic::{Counter, Storage},
+    handler::{Counter, Storage},
     source_file::SourceFile,
 };
 use pernixc_lexical::token_stream::TokenStream;

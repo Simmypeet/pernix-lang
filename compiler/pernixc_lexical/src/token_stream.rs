@@ -4,7 +4,7 @@ use std::{ops::Index, sync::Arc};
 
 use derive_more::{Deref, From};
 use enum_as_inner::EnumAsInner;
-use pernixc_base::{diagnostic::Handler, source_file::SourceFile};
+use pernixc_base::{handler::Handler, source_file::SourceFile};
 
 use crate::{
     error::{self, UndelimitedDelimiter},

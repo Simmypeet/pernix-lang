@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
+use pernixc_base::{handler::Storage, source_file::SourceFile};
 use pernixc_lexical::token_stream::TokenStream;
 use pernixc_tests::input::Input;
 use proptest::{

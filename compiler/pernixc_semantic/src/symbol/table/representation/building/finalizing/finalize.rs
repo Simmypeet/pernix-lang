@@ -2,7 +2,7 @@
 
 use std::fmt::Debug;
 
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::handler::Handler;
 
 use super::finalizer::Finalizer;
 use crate::{

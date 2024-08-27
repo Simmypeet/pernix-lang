@@ -1,7 +1,7 @@
 //! Contains the code related to resolving the correct [`Variance`] for each
 //! generic parameters defined in the ADTs.
 
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::handler::Handler;
 
 use crate::{
     error::Error,

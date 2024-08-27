@@ -1,13 +1,14 @@
 //! Contains all kinds of lexical errors that can occur while tokenizing the
 //! source code.
 
-use std::fmt::Display;
+use std::convert::Infallible;
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_base::{
-    log::{Message, Severity, SourceCodeDisplay},
+    diagnostic::{Diagnostic, Report},
+    log::Severity,
     source_file::Span,
 };
 
@@ -20,14 +21,19 @@ pub struct UnterminatedDelimitedComment {
     pub span: Span,
 }
 
-impl Display for UnterminatedDelimitedComment {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}\n{}",
-            Message::new(Severity::Error, "found an unclosed `/*` comment"),
-            SourceCodeDisplay::new(&self.span, Option::<i32>::None)
-        )
+impl Report for UnterminatedDelimitedComment {
+    type Error = Infallible;
+    type Parameter = ();
+
+    /// Gets the diagnostic information for the error.
+    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "found an unclosed `/*` comment".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -41,20 +47,22 @@ pub struct UndelimitedDelimiter {
     pub delimiter: Delimiter,
 }
 
-impl Display for UndelimitedDelimiter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}\n{}",
-            Message::new(Severity::Error, "found an undelimited delimiter"),
-            SourceCodeDisplay::new(
-                &self.opening_span,
-                Some(
-                    "this delimiter is not closed by its corresponding \
-                     closing pair"
-                )
-            )
-        )
+impl Report for UndelimitedDelimiter {
+    type Error = Infallible;
+    type Parameter = ();
+
+    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.opening_span.clone(),
+            message: "found an undelimited delimiter".to_string(),
+            severity: Severity::Error,
+            help_message: Some(
+                "this delimiter is not closed by its corresponding closing \
+                 pair"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        })
     }
 }
 
@@ -65,17 +73,18 @@ pub struct UnterminatedStringLiteral {
     pub span: Span,
 }
 
-impl Display for UnterminatedStringLiteral {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}\n{}",
-            Message::new(
-                Severity::Error,
-                "found an unterminated string literal"
-            ),
-            SourceCodeDisplay::new(&self.span, Option::<i32>::None)
-        )
+impl Report for UnterminatedStringLiteral {
+    type Error = Infallible;
+    type Parameter = ();
+
+    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "found an unterminated string literal".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -86,14 +95,18 @@ pub struct InvalidEscapeSequence {
     pub span: Span,
 }
 
-impl Display for InvalidEscapeSequence {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}\n{}",
-            Message::new(Severity::Error, "found an invalid escape sequence"),
-            SourceCodeDisplay::new(&self.span, Option::<i32>::None)
-        )
+impl Report for InvalidEscapeSequence {
+    type Error = Infallible;
+    type Parameter = ();
+
+    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "found an invalid escape sequence".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -122,13 +135,16 @@ impl Error {
     }
 }
 
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Report for Error {
+    type Error = Infallible;
+    type Parameter = ();
+
+    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
         match self {
-            Self::UnterminatedDelimitedComment(err) => write!(f, "{err}"),
-            Self::UndelimitedDelimiter(err) => write!(f, "{err}"),
-            Self::UnterminatedStringLiteral(err) => write!(f, "{err}"),
-            Self::InvalidEscapeSequence(err) => write!(f, "{err}"),
+            Self::UnterminatedDelimitedComment(err) => err.report(()),
+            Self::UndelimitedDelimiter(err) => err.report(()),
+            Self::UnterminatedStringLiteral(err) => err.report(()),
+            Self::InvalidEscapeSequence(err) => err.report(()),
         }
     }
 }

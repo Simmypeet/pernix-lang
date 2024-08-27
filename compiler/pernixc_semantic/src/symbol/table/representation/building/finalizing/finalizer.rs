@@ -12,7 +12,7 @@ use std::{
 
 use parking_lot::{Condvar, Mutex, RwLock};
 use paste::paste;
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::handler::Handler;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::finalize::{Finalize, StateFlag};

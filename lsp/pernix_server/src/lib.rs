@@ -15,8 +15,8 @@ use tower_lsp::{
     Client, LanguageServer,
 };
 
+pub mod extension;
 pub mod semantic;
-pub mod span_ext;
 pub mod syntax;
 pub mod workspace;
 

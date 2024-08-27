@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
+use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
 use super::{r#enum, Finalize};

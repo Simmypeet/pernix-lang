@@ -1,6 +1,6 @@
 //! Contains the code for creating generic parameters for a generic symbol.
 
-use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
+use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
 use super::{finalizer::builder::Basic, occurrences::Occurrences, Finalizer};

@@ -1,4 +1,4 @@
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::handler::Handler;
 use pernixc_syntax::syntax_tree;
 
 use super::{r#trait, Finalize};

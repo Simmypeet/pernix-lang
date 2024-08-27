@@ -1,10 +1,11 @@
 //! Contains the definition of [`Error`]
 
-use std::{fmt::Display, sync::Arc};
+use std::{convert::Infallible, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_base::{
-    log::{Message, Severity, SourceCodeDisplay},
+    diagnostic::{Diagnostic, Report},
+    log::Severity,
     source_file::{SourceFile, Span},
 };
 use pernixc_lexical::token::{KeywordKind, Token};
@@ -154,8 +155,11 @@ impl Error {
     }
 }
 
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Report for Error {
+    type Error = Infallible;
+    type Parameter = ();
+
+    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
         let expected_string = self.get_expected_string();
 
         let found_string = match &self.found {
@@ -202,9 +206,12 @@ impl Display for Error {
         let message =
             format!("expected {expected_string}, but found {found_string}");
 
-        write!(f, "{}", Message::new(Severity::Error, message))?;
-
-        let span = self.found.span();
-        write!(f, "\n{}", SourceCodeDisplay::new(&span, None::<i32>))
+        Ok(Diagnostic {
+            span: self.found.span(),
+            message,
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }

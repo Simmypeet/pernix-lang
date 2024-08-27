@@ -7,7 +7,7 @@ use infer::{
     Constraint, Context, Erased, InferenceVariable, NoConstraint, UnifyError,
 };
 use parking_lot::RwLock;
-use pernixc_base::{diagnostic::Handler, source_file::Span};
+use pernixc_base::{handler::Handler, source_file::Span};
 use pernixc_syntax::syntax_tree;
 use stack::Stack;
 

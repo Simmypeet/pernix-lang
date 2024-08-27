@@ -1,6 +1,6 @@
 //! Contains the logic to bind a statement syntax tree to the IR.
 
-use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
+use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree;
 
 use super::{

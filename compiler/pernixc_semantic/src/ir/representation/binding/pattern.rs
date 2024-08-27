@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use pernixc_base::{
-    diagnostic::Handler,
+    handler::Handler,
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::token::Identifier;

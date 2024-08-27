@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
-use pernixc_base::{diagnostic::Handler, source_file::SourceFile};
+use pernixc_base::{handler::Handler, source_file::SourceFile};
 use pernixc_lexical::{
     token::{
         self, Identifier, Keyword, KeywordKind, Numeric, Punctuation, Token,

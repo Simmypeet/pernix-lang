@@ -1,7 +1,7 @@
 //! Contains the definition of [`Occurrences`].
 
 use getset::Getters;
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::handler::Handler;
 use pernixc_syntax::syntax_tree::{self, GenericIdentifier};
 
 use crate::{

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
+use pernixc_base::{handler::Storage, source_file::SourceFile};
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::{Arbitrary, TestCaseError},

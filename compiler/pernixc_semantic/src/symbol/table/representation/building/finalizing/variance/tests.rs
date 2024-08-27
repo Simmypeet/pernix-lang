@@ -1,6 +1,6 @@
 use std::{fmt::Display, sync::Arc};
 
-use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
+use pernixc_base::{handler::Storage, source_file::SourceFile};
 use pernixc_syntax::syntax_tree::target::{self, Target};
 
 use crate::{

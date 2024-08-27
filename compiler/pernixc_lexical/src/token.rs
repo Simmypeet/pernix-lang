@@ -7,7 +7,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use lazy_static::lazy_static;
 use pernixc_base::{
-    diagnostic::Handler,
+    handler::Handler,
     source_file::{self, ByteIndex, SourceElement, Span},
 };
 use strum::IntoEnumIterator;

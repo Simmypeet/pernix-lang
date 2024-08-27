@@ -12,7 +12,7 @@ use getset::Getters;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use paste::paste;
 use pernixc_base::{
-    diagnostic::Handler,
+    handler::Handler,
     source_file::{SourceElement, Span},
 };
 use pernixc_syntax::syntax_tree::{target::Target, AccessModifier};

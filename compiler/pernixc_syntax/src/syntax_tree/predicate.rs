@@ -4,7 +4,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_base::{
-    diagnostic::Handler,
+    handler::Handler,
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::{

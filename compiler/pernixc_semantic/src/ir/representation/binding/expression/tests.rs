@@ -1,4 +1,4 @@
-use pernixc_base::diagnostic::Storage;
+use pernixc_base::handler::Storage;
 
 use super::Expression;
 use crate::{

@@ -8,15 +8,15 @@ use std::{
 use getset::Getters;
 use parking_lot::RwLock;
 use pernixc_base::{
-    diagnostic::Handler,
-    log::formatting,
+    diagnostic::Report,
+    handler::Handler,
     source_file::{SourceElement, SourceFile, Span},
 };
 use pernixc_lexical::{token, token_stream::TokenStream};
 use pernixc_syntax::{parser::Parser, syntax_tree::json};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Url};
 
-use crate::span_ext::SpanExt;
+use crate::extension::{DaignosticExt, SpanExt};
 
 /// Handles the workspace configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
@@ -146,48 +146,20 @@ impl JsonConfigurationError {
             }
         }
 
-        fn cut_message(message: &str, string_prefix: &str) -> String {
-            let result = if let Some((first, _)) = message.split_once('\n') {
-                first
-            } else {
-                message
-            };
-
-            let result = formatting::remove_vt100_codes(result);
-
-            result.replace(string_prefix, "")
-        }
-
         Some(match self {
             JsonConfigurationError::Lexical(error) => {
                 if skip_parising_errors {
                     return None;
                 }
 
-                let error_message = error.to_string();
-                let message = cut_message(&error_message, "[error]:");
-
-                Diagnostic {
-                    range: error.span().to_range(),
-                    severity: Some(DiagnosticSeverity::ERROR),
-                    message,
-                    ..Default::default()
-                }
+                error.report(()).unwrap().into_diagnostic()
             }
             JsonConfigurationError::Syntax(error) => {
                 if skip_parising_errors {
                     return None;
                 }
 
-                let error_message = error.to_string();
-                let message = cut_message(&error_message, "[error]:");
-
-                Diagnostic {
-                    range: error.found.span().to_range(),
-                    severity: Some(DiagnosticSeverity::ERROR),
-                    message,
-                    ..Default::default()
-                }
+                error.report(()).unwrap().into_diagnostic()
             }
             JsonConfigurationError::ExpectMap(e) => create_error_diagnostic(
                 &e.span(),

@@ -6,7 +6,7 @@ use std::{
 };
 
 use parking_lot::RwLock;
-use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
+use pernixc_base::{handler::Storage, source_file::SourceFile};
 use pernixc_lexical::token::KeywordKind;
 use pernixc_syntax::syntax_tree::target::{self, Target};
 use proptest::{

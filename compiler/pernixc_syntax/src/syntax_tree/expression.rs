@@ -5,7 +5,7 @@
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_base::{
-    diagnostic::{Dummy, Handler},
+    handler::{Dummy, Handler},
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::{

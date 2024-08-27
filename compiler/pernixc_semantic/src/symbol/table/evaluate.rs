@@ -1,6 +1,6 @@
 //! Contains the logic for compile-time constant evaluation.
 
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::handler::Handler;
 use pernixc_syntax::syntax_tree::expression::Expression;
 
 use super::{State, Table};

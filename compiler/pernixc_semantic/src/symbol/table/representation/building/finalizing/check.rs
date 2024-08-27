@@ -4,7 +4,7 @@
 use std::{collections::HashSet, ops::Deref};
 
 use pernixc_base::{
-    diagnostic::Handler,
+    handler::Handler,
     source_file::{SourceElement, Span},
 };
 

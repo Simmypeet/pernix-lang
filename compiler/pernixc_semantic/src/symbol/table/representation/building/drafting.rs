@@ -10,7 +10,7 @@ use std::{
 };
 
 use parking_lot::RwLock;
-use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
+use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{
     self,

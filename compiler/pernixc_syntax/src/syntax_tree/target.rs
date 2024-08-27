@@ -15,8 +15,9 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use parking_lot::RwLock;
 use pernixc_base::{
-    diagnostic::Handler,
-    log::{Message, Severity, SourceCodeDisplay},
+    diagnostic::{Diagnostic, Related, Report},
+    handler::Handler,
+    log::Severity,
     source_file::{self, SourceFile, Span},
 };
 use pernixc_lexical::token_stream::TokenStream;
@@ -104,20 +105,20 @@ pub struct RootSubmoduleConflict {
     pub submodule_span: Span,
 }
 
-impl std::fmt::Display for RootSubmoduleConflict {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", Message {
-            severity: Severity::Error,
-            display: "the submodule of the root source file ends up pointing \
-                      to the root source file itself",
-        })?;
-        write!(
-            f,
-            "{}",
-            SourceCodeDisplay::new(&self.submodule_span, Some("submodule"))
-        )?;
+impl Report for RootSubmoduleConflict {
+    type Error = ();
+    type Parameter = ();
 
-        Ok(())
+    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            severity: Severity::Error,
+            message: "the submodule of the root source file ends up pointing \
+                      to the root source file itself"
+                .to_string(),
+            span: self.submodule_span.clone(),
+            help_message: None,
+            related: vec![],
+        })
     }
 }
 
@@ -134,25 +135,23 @@ pub struct SourceFileLoadFail {
     pub path: PathBuf,
 }
 
-impl std::fmt::Display for SourceFileLoadFail {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
-                "failed to load a source file for the submodule {}",
-                self.path.display()
-            )
-        })?;
-        writeln!(
-            f,
-            "{}",
-            SourceCodeDisplay::new(
-                &self.submodule.signature().identifier().span,
-                Option::<i32>::None
-            )
-        )?;
+impl Report for SourceFileLoadFail {
+    type Error = ();
+    type Parameter = ();
 
-        Ok(())
+    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            severity: Severity::Error,
+            message: "failed to load a source file for the submodule"
+                .to_string(),
+            span: self.submodule.signature().identifier().span.clone(),
+            help_message: Some(format!(
+                "{}: {}",
+                self.path.display(),
+                self.source_error
+            )),
+            related: vec![],
+        })
     }
 }
 
@@ -166,30 +165,21 @@ pub struct ModuleRedefinition {
     pub redefinition_submodule_span: Span,
 }
 
-impl std::fmt::Display for ModuleRedefinition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", Message {
-            severity: Severity::Error,
-            display: "a module with the given name already exists",
-        })?;
-        writeln!(
-            f,
-            "{}",
-            SourceCodeDisplay::new(
-                &self.existing_module_span,
-                Some("existing module")
-            )
-        )?;
-        write!(
-            f,
-            "{}",
-            SourceCodeDisplay::new(
-                &self.redefinition_submodule_span,
-                Some("redefinition")
-            )
-        )?;
+impl Report for ModuleRedefinition {
+    type Error = ();
+    type Parameter = ();
 
-        Ok(())
+    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            severity: Severity::Error,
+            message: "a module with the given name already exists".to_string(),
+            span: self.redefinition_submodule_span.clone(),
+            help_message: None,
+            related: vec![Related {
+                span: self.existing_module_span.clone(),
+                message: "existing module".to_string(),
+            }],
+        })
     }
 }
 
@@ -202,12 +192,15 @@ pub enum Error {
     SourceFileLoadFail(SourceFileLoadFail),
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Report for Error {
+    type Error = ();
+    type Parameter = ();
+
+    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
         match self {
-            Self::ModuleRedefinition(error) => error.fmt(f),
-            Self::RootSubmoduleConflict(error) => error.fmt(f),
-            Self::SourceFileLoadFail(error) => error.fmt(f),
+            Self::ModuleRedefinition(err) => err.report(()),
+            Self::RootSubmoduleConflict(err) => err.report(()),
+            Self::SourceFileLoadFail(err) => err.report(()),
         }
     }
 }

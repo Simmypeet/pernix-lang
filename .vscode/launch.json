@@ -5,12 +5,11 @@
             "args": [
                 "--extensionDevelopmentPath=${workspaceFolder}/lsp/client/code"
             ],
-            // "runtimeExecutable": "${execPath}",
-            "name": "Launch Extension",
+            "name": "Launch LSP Client Extension",
             "outFiles": [
                 "${workspaceFolder}/lsp/client/code/out/**/*.js"
             ],
-            "preLaunchTask": "Build Extension",
+            "preLaunchTask": "Build LSP Client Extension",
             "request": "launch",
             "type": "extensionHost"
         },
