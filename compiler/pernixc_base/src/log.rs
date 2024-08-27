@@ -270,7 +270,7 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
             write!(
                 f,
                 "{}{}{} ",
-                Style::Bold.with(Color::Cyan.with(end_line + 1)),
+                Style::Bold.with(Color::Cyan.with(end_line + 2)),
                 format_args!(
                     "{:width$}",
                     "",

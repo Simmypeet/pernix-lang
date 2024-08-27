@@ -20,14 +20,10 @@ use crate::{
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
 /// Where cluase predicates are built
-pub const DEFINITION_STATE: usize = 1;
-
-/// The information required to check the bounds is built. (the definition of
-/// where caluses are built)
-pub const WELL_FORMED_STATE: usize = 2;
+pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// Bounds check are performed
-pub const CHECK_STATE: usize = 3;
+pub const CHECK_STATE: usize = 2;
 
 impl Finalize for TraitType {
     type SyntaxTree = syntax_tree::item::TraitType;
@@ -61,17 +57,8 @@ impl Finalize for TraitType {
                 );
             }
 
-            DEFINITION_STATE => {
-                // make sure the trait's geneirc parameters are built
-                let parent_trait_id = table.get(symbol_id).unwrap().parent_id;
-                let _ = table.build_to(
-                    parent_trait_id,
-                    Some(symbol_id.into()),
-                    r#trait::DEFINITION_STATE,
-                    handler,
-                );
-
-                table.create_where_clause_predicates_for_definition(
+            WHERE_CLAUSE_STATE => {
+                table.create_where_clause(
                     symbol_id,
                     syntax_tree.where_clause().as_ref(),
                     where_clause_ocurrences,
@@ -79,63 +66,31 @@ impl Finalize for TraitType {
                 );
             }
 
-            WELL_FORMED_STATE => table
-                .create_where_clause_predicates_for_well_formed(
-                    symbol_id,
-                    syntax_tree.where_clause().as_ref(),
-                    where_clause_ocurrences,
+            CHECK_STATE => {
+                // make sure the trait's geneirc parameters are built
+                let parent_trait_id = table.get(symbol_id).unwrap().parent_id;
+                let _ = table.build_to(
+                    parent_trait_id,
+                    Some(symbol_id.into()),
+                    r#trait::WHERE_CLAUSE_STATE,
                     handler,
-                ),
+                );
 
-            CHECK_STATE => {}
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &generic_parameter_ocurrences,
+                    handler,
+                );
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &where_clause_ocurrences,
+                    handler,
+                );
+
+                table.check_where_clause(symbol_id.into(), handler);
+            }
 
             _ => panic!("invalid state flag"),
         }
-        // match state_flag {
-        //     GENERIC_PARAMETER_STATE => {
-        //         // make sure the trait's geneirc parameters are built
-        //         let parent_trait_id =
-        // table.get(symbol_id).unwrap().parent_id;         let _ =
-        // table.build_to(             parent_trait_id,
-        //             Some(symbol_id.into()),
-        //             r#trait::GENERIC_PARAMETER_STATE,
-        //             handler,
-        //         );
-
-        //         table.create_generic_parameters(
-        //             symbol_id,
-        //             syntax_tree.signature().generic_parameters().as_ref(),
-        //             data,
-        //             handler,
-        //         );
-        //     }
-
-        //     WHERE_CLAUSE_STATE => {
-        //         table.create_where_clause_predicates(
-        //             symbol_id,
-        //             syntax_tree.where_clause().as_ref(),
-        //             data,
-        //             handler,
-        //         );
-        //     }
-
-        //     WELL_FORMED_STATE => {}
-
-        //     CHECK_STATE => {
-        //         // make sure the trait where clause predicates are built
-        //         let parent_trait_id =
-        // table.get(symbol_id).unwrap().parent_id;         let _ =
-        // table.build_to(             parent_trait_id,
-        //             Some(symbol_id.into()),
-        //             r#trait::WHERE_CLAUSE_STATE,
-        //             handler,
-        //         );
-
-        //         table.check_occurrences(symbol_id.into(), data, handler);
-        //         table.check_where_clause(symbol_id.into(), handler);
-        //     }
-
-        //     _ => panic!("invalid state flag"),
-        // }
     }
 }

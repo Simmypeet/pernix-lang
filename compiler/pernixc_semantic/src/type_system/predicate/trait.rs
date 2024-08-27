@@ -355,7 +355,7 @@ pub fn resolve_implementation_with_context<M: Model, S: State>(
             ) {
                 Ok(unification) => unification,
 
-                Err(deduction::Error::TypeSystem(overflow)) => {
+                Err(deduction::Error::Overflow(overflow)) => {
                     return Err(overflow.into())
                 }
 
@@ -558,7 +558,7 @@ fn is_in_active_trait_implementation<M: Model, S: State>(
                     }),
                     constraints: result.constraints,
                 })),
-                Err(deduction::Error::TypeSystem(err)) => return Err(err),
+                Err(deduction::Error::Overflow(err)) => return Err(err),
                 _ => return Ok(None),
             }
         }

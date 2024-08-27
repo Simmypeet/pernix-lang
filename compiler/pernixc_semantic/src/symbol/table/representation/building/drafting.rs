@@ -64,43 +64,50 @@ impl Table<Building<RwLockContainer, Drafter>> {
         parent_module_id: ID<Module>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        let (access_modifier, signature, body) = syntax_tree.dissolve();
+        let identifiers = syntax_tree
+            .body()
+            .variant_list()
+            .as_ref()
+            .into_iter()
+            .flat_map(ConnectedList::elements)
+            .map(|x| x.identifier())
+            .cloned()
+            .collect::<Vec<_>>();
+
         let enum_accessibility = self
-            .create_accessibility(parent_module_id.into(), &access_modifier)
+            .create_accessibility(
+                parent_module_id.into(),
+                syntax_tree.access_modifier(),
+            )
             .unwrap();
 
         let enum_id: ID<Enum> = self.draft_member(
-            signature,
+            syntax_tree,
             parent_module_id,
-            |syn| syn.identifier(),
+            |syn| syn.signature().identifier(),
             enum_accessibility,
             handler,
         );
 
         // draft each variant
-        for variant_syn in
-            body.dissolve().1.into_iter().flat_map(ConnectedList::into_elements)
-        {
-            let name = variant_syn.identifier().span.str().to_owned();
-
+        for variant_syn in identifiers {
             // gets the variant id
             let variant_id =
                 self.representation.variants.insert(RwLock::new(Variant {
-                    name: name.clone(),
+                    name: variant_syn.span.str().to_owned(),
                     associated_type: None,
                     parent_enum_id: enum_id,
-                    span: Some(variant_syn.identifier().span.clone()),
-                    syntax_tree: Some(variant_syn.clone()),
+                    span: Some(variant_syn.span.clone()),
                 }));
-
-            // draft the variant
-            assert!(self.state.finalizer.draft_symbol(variant_id, variant_syn));
 
             let enum_sym =
                 self.representation.enums.get_mut(enum_id).unwrap().get_mut();
 
             // check for duplication
-            match enum_sym.variant_ids_by_name.entry(name) {
+            match enum_sym
+                .variant_ids_by_name
+                .entry(variant_syn.span.str().to_owned())
+            {
                 Entry::Occupied(entry) => {
                     handler.receive(Box::new(RedefinedGlobal {
                         existing_global_id: (*entry.get()).into(),

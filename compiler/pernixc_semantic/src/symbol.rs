@@ -11,7 +11,6 @@ use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use paste::paste;
 use pernixc_base::source_file::Span;
-use pernixc_syntax::syntax_tree;
 
 use crate::{
     arena::{Arena, Map, ID},
@@ -1003,9 +1002,6 @@ pub struct Variant {
     /// The span where the variant is declared.
     #[get = "pub"]
     span: Option<Span>,
-
-    /// The syntax tree of the variant.
-    syntax_tree: Option<syntax_tree::item::Variant>,
 }
 
 impl Global for Variant {

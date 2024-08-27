@@ -8,7 +8,10 @@ use pernixc_base::{
     source_file::{SourceElement, Span},
 };
 
-use super::{occurrences::Occurrences, Finalizer};
+use super::{
+    finalize::positive_trait_implementation, finalizer::builder,
+    occurrences::Occurrences, Finalizer,
+};
 use crate::{
     arena::ID,
     error::{
@@ -24,7 +27,7 @@ use crate::{
         table::{
             self,
             representation::{Element, Index, RwLockContainer},
-            resolution, Building, State, Table,
+            resolution, Building, Table,
         },
         ConstantParameter, ConstantParameterID, Generic, GenericID,
         GenericParameter, GenericParameters, GenericTemplate, GlobalID,
@@ -135,8 +138,12 @@ where
     }
 }
 
-impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
-    Environment<'a, M, T, N, O>
+impl<
+        'a,
+        M: Model,
+        N: Normalizer<M, Building<RwLockContainer, Finalizer>>,
+        O: Observer<M, Building<RwLockContainer, Finalizer>>,
+    > Environment<'a, M, Building<RwLockContainer, Finalizer>, N, O>
 where
     predicate::Predicate<M>: table::Display<table::Suboptimal>,
 
@@ -162,6 +169,7 @@ where
         resolution: &resolution::Resolution<M>,
         resolution_span: &Span,
         do_outlives_check: bool,
+        checking_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match resolution {
@@ -184,6 +192,8 @@ where
                         predicate,
                         None,
                         do_outlives_check,
+                        checking_site,
+                        handler,
                     );
 
                     for error in errors {
@@ -196,6 +206,7 @@ where
                     generic.generic_arguments.clone(),
                     resolution_span,
                     do_outlives_check,
+                    checking_site,
                     handler,
                 );
             }
@@ -250,7 +261,7 @@ where
                             return; // can't continue
                         }
 
-                        Err(deduction::Error::TypeSystem(_)) => {
+                        Err(deduction::Error::Overflow(_)) => {
                             todo!("report overflow")
                         }
                     };
@@ -267,6 +278,7 @@ where
                             &result.result.instantiation,
                             resolution_span,
                             do_outlives_check,
+                            checking_site,
                             handler,
                         );
 
@@ -325,6 +337,7 @@ where
                     &parent_instantiation,
                     resolution_span,
                     do_outlives_check,
+                    checking_site,
                     handler,
                 );
             }
@@ -352,6 +365,7 @@ where
         generic_arguments: GenericArguments<M>,
         instantiation_span: &Span,
         do_outlives_check: bool,
+        checking_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         // convert the generic arguments to an instantiation and delegate the
@@ -371,6 +385,7 @@ where
             .unwrap(),
             instantiation_span,
             do_outlives_check,
+            checking_site,
             handler,
         );
     }
@@ -395,6 +410,7 @@ where
         instantiation: &Instantiation<M>,
         instantiation_span: &Span,
         do_outlives_check: bool,
+        checking_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         predicate::Predicate<M>: table::Display<table::Suboptimal>,
@@ -402,6 +418,13 @@ where
         // get all the predicates and instantiate them with the given generic
         // arguments
         let instantiated_sym = self.table().get_generic(instantiated).unwrap();
+
+        let _ = builder::build_for_where_clause(
+            self.table(),
+            instantiated.into(),
+            Some(checking_site),
+            handler,
+        );
 
         #[allow(clippy::significant_drop_in_scrutinee)]
         for predicate_info in &instantiated_sym.generic_declaration().predicates
@@ -415,6 +438,8 @@ where
                 predicate,
                 predicate_info.span.clone(),
                 do_outlives_check,
+                checking_site,
+                handler,
             );
 
             for error in errors {
@@ -429,6 +454,8 @@ where
         predicate: Predicate<M>,
         predicate_declaration_span: Option<Span>,
         do_outlives_check: bool,
+        checking_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Vec<PredicateError<M>> {
         let (result, mut extra_predicate_error) = match &predicate {
             predicate::Predicate::TraitTypeEquality(eq) => {
@@ -532,16 +559,26 @@ where
                             });
                         }
 
-                        let implementation_sym =
-                            self.table().get(implementation.id).unwrap();
+                        let _ = self.table().build_to(
+                            implementation.id,
+                            Some(checking_site),
+                            positive_trait_implementation::WHERE_CLAUSE_STATE,
+                            handler,
+                        );
+
+                        let predicates = self
+                            .table()
+                            .get(implementation.id)
+                            .unwrap()
+                            .generic_declaration()
+                            .predicates
+                            .clone();
 
                         // check for each predicate in the implementation
-                        for predicate in
-                            &implementation_sym.generic_declaration().predicates
-                        {
+                        for predicate in predicates {
                             let mut predicate_instantiated =
                                 Predicate::from_default_model(
-                                    predicate.predicate.clone(),
+                                    predicate.predicate,
                                 );
 
                             predicate_instantiated
@@ -549,8 +586,10 @@ where
 
                             errors.extend(self.predicate_satisfied(
                                 predicate_instantiated,
-                                predicate.span.clone(),
+                                predicate.span,
                                 do_outlives_check,
+                                checking_site,
+                                handler,
                             ));
                         }
 
@@ -713,6 +752,7 @@ where
         &self,
         unpacked_term: U,
         instantiation_span: &Span,
+        checking_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         predicate::Predicate<M>:
@@ -720,8 +760,13 @@ where
     {
         let tuple_predicate = Tuple(unpacked_term);
 
-        let errors =
-            self.predicate_satisfied(tuple_predicate.into(), None, true);
+        let errors = self.predicate_satisfied(
+            tuple_predicate.into(),
+            None,
+            true,
+            checking_site,
+            handler,
+        );
 
         for error in errors {
             error.report(instantiation_span.clone(), handler);
@@ -855,6 +900,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 resolution,
                 &generic_identifier.span(),
                 true,
+                id,
                 handler,
             );
         }
@@ -869,6 +915,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             environment.check_unpacked_ocurrences(
                 unpacked.clone(),
                 &syn.span(),
+                id,
                 handler,
             );
         }
@@ -878,6 +925,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             environment.check_unpacked_ocurrences(
                 unpacked.clone(),
                 &syn.span(),
+                id,
                 handler,
             );
         }
@@ -1276,6 +1324,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 predicate_instantiated,
                 predicate.span.clone(),
                 true,
+                implementation_member_id.into(),
+                handler,
             ) {
                 error.report(
                     implementation_member_sym.span().cloned().unwrap(),
@@ -1317,6 +1367,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 predicate_decl.predicate.clone(),
                 predicate_decl.span.clone(),
                 true,
+                trait_member_id.into(),
+                handler,
             ) {
                 match error {
                     PredicateError::Undecidable { predicate, .. } => {
@@ -1486,6 +1538,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             implementation_sym.arguments.clone(),
             implementation_sym.span().as_ref().unwrap(),
             true,
+            implementation_id.into(),
             handler,
         );
     }

@@ -1920,7 +1920,6 @@ impl<T: Container> Representation<T> {
             parent_enum_id,
             associated_type,
             span,
-            syntax_tree: None,
         }));
 
         // add the trait member to the parent trait

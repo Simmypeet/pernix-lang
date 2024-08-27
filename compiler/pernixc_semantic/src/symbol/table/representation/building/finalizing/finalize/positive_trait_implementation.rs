@@ -20,18 +20,14 @@ use crate::{
 /// Generic parameters are built
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
+/// The where clause of the trait implementation is built.
+pub const WHERE_CLAUSE_STATE: usize = 1;
+
 /// The generic arguments of the implementation are built.
-pub const ARGUMENTS_STATE: usize = 1;
-
-/// The definition of the implementation is built.
-pub const DEFINITION_STATE: usize = 2;
-
-/// The information required to check the bounds is built. (the definition of
-/// where caluses are built)
-pub const WELL_FORMED_STATE: usize = 3;
+pub const ARGUMENTS_STATE: usize = 2;
 
 /// Bounds check are performed
-pub const CHECK_STATE: usize = 4;
+pub const CHECK_STATE: usize = 3;
 
 impl Finalize for PositiveTraitImplementation {
     type SyntaxTree = syntax_tree::item::ImplementationSignature;
@@ -46,8 +42,8 @@ impl Finalize for PositiveTraitImplementation {
         syntax_tree: &Self::SyntaxTree,
         (
             generic_parameter_occurrences,
-            arguments_occurrences,
             where_clause_occurrences,
+            arguments_occurrences,
         ): &mut Self::Data,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
@@ -57,6 +53,15 @@ impl Finalize for PositiveTraitImplementation {
                     symbol_id,
                     syntax_tree.generic_parameters().as_ref(),
                     generic_parameter_occurrences,
+                    handler,
+                );
+            }
+
+            WHERE_CLAUSE_STATE => {
+                table.create_where_clause(
+                    symbol_id,
+                    syntax_tree.where_clause().as_ref(),
+                    where_clause_occurrences,
                     handler,
                 );
             }
@@ -88,22 +93,6 @@ impl Finalize for PositiveTraitImplementation {
                     handler,
                 );
             }
-
-            DEFINITION_STATE => table
-                .create_where_clause_predicates_for_definition(
-                    symbol_id,
-                    syntax_tree.where_clause().as_ref(),
-                    where_clause_occurrences,
-                    handler,
-                ),
-
-            WELL_FORMED_STATE => table
-                .create_where_clause_predicates_for_well_formed(
-                    symbol_id,
-                    syntax_tree.where_clause().as_ref(),
-                    where_clause_occurrences,
-                    handler,
-                ),
 
             CHECK_STATE => {
                 // // make sure the implemented trait has the where clause

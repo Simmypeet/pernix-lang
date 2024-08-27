@@ -9,7 +9,7 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::builder::{Definition, DefinitionA},
+                    finalizer::builder::{Basic, Definition},
                     occurrences::Occurrences,
                     Finalizer,
                 },
@@ -26,12 +26,11 @@ use crate::{
 /// Generic parameters are built
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
-/// The complete information of the type alias is built.
-pub const DEFINITION_STATE: usize = 1;
+/// The where clause of the type alias is built.
+pub const WHERE_CLAUSE_STATE: usize = 1;
 
-/// The information required to check the bounds is built. (the definition of
-/// where caluses are built)
-pub const WELL_FORMED_STATE: usize = 2;
+/// The complete information of the type alias is built.
+pub const DEFINITION_STATE: usize = 2;
 
 /// All the bounds are checked.
 pub const CHECK_STATE: usize = 3;
@@ -61,20 +60,17 @@ impl Finalize for Type {
                 handler,
             ),
 
-            DEFINITION_STATE => {
-                // build the where clause predicates
-                table.create_where_clause_predicates_for_definition(
+            WHERE_CLAUSE_STATE => {
+                table.create_where_clause(
                     symbol_id,
                     syntax_tree.definition().where_clause().as_ref(),
                     where_clause_occurrences,
                     handler,
                 );
+            }
 
+            DEFINITION_STATE => {
                 // resolve the type
-                let mut definition_builder = Definition::new();
-                let mut observer =
-                    definition_builder.chain(definition_occurrences);
-
                 let mut ty = table
                     .resolve_type(
                         syntax_tree.definition().ty(),
@@ -83,14 +79,16 @@ impl Finalize for Type {
                             ellided_lifetime_provider: None,
                             ellided_type_provider: None,
                             ellided_constant_provider: None,
-                            observer: Some(&mut observer),
+                            observer: Some(
+                                &mut (&mut Basic).chain(definition_occurrences),
+                            ),
                             higher_ranked_lifetimes: None,
                         },
                         handler,
                     )
                     .unwrap_or_default();
 
-                let observer = DefinitionA::new(symbol_id.into(), handler);
+                let observer = Definition::new(symbol_id.into(), handler);
 
                 let (environment, _) = Environment::new_with(
                     table.get_active_premise(symbol_id.into()).unwrap(),
@@ -124,85 +122,27 @@ impl Finalize for Type {
                 table.types().get(symbol_id).unwrap().write().r#type = ty;
             }
 
-            WELL_FORMED_STATE => table
-                .create_where_clause_predicates_for_well_formed(
-                    symbol_id,
-                    syntax_tree.definition().where_clause().as_ref(),
-                    where_clause_occurrences,
-                    handler,
-                ),
-
-            CHECK_STATE => {}
-
-            _ => panic!("invalid state flag"),
-        }
-        /*
-        match state_flag {
-            GENERIC_PARAMETER_STATE => table.create_generic_parameters(
-                symbol_id,
-                syntax_tree.signature().generic_parameters().as_ref(),
-                generic_parameter_occurrences,
-                handler,
-            ),
-
-            DEFINITION_STATE => {
-                table.create_where_clause_predicates(
-                    symbol_id,
-                    syntax_tree.definition().where_clause().as_ref(),
-                    where_clause_occurrences,
-                    handler,
-                );
-
-                let ty = table
-                    .resolve_type(
-                        syntax_tree.definition().ty(),
-                        symbol_id.into(),
-                        resolution::Config {
-                            ellided_lifetime_provider: None,
-                            ellided_type_provider: None,
-                            ellided_constant_provider: None,
-                            observer: Some(definition_occurrences),
-                            higher_ranked_lifetimes: None,
-                        },
-                        handler,
-                    )
-                    .unwrap_or_default();
-
-                let ty_accessible = table.get_type_accessibility(&ty).unwrap();
-
-                // private entity leaked to public interface
-                if ty_accessible
-                    < table.get_accessibility(symbol_id.into()).unwrap()
-                {
-                    handler.receive(Box::new(
-                        PrivateEntityLeakedToPublicInterface {
-                            entity: ty.clone(),
-                            entity_overall_accessibility: ty_accessible,
-                            leaked_span: syntax_tree.definition().ty().span(),
-                            public_interface_id: symbol_id.into(),
-                        },
-                    ));
-                }
-
-                definition_occurrences.build_occurrences_to_definition(
-                    table,
-                    symbol_id.into(),
-                    handler,
-                );
-
-                table.types.get(symbol_id).unwrap().write().r#type = ty;
-            }
             CHECK_STATE => {
                 table.check_occurrences(
                     symbol_id.into(),
                     &generic_parameter_occurrences,
                     handler,
                 );
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &where_clause_occurrences,
+                    handler,
+                );
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &definition_occurrences,
+                    handler,
+                );
 
                 table.check_where_clause(symbol_id.into(), handler);
             }
+
             _ => panic!("invalid state flag"),
         }
-        */
     }
 }

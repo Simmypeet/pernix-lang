@@ -27,7 +27,6 @@ pub(in crate::symbol::table::representation::building) mod trait_implementation_
 pub(in crate::symbol::table::representation::building) mod trait_implementation_type;
 pub(in crate::symbol::table::representation::building) mod trait_type;
 pub(in crate::symbol::table::representation::building) mod r#type;
-pub(in crate::symbol::table::representation::building) mod variant;
 
 /// The type used to determine the state of the finalization.
 pub type StateFlag = usize;

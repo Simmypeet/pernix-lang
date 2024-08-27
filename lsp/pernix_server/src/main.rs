@@ -5,7 +5,6 @@ use tower_lsp::LspService;
 
 #[tokio::main]
 async fn main() {
-    // log to stdout
     env_logger::init();
 
     let stdin = tokio::io::stdin();

@@ -1,44 +1,48 @@
-use pernixc_base::diagnostic::Handler;
-use pernixc_syntax::syntax_tree;
+use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
+use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::Finalize;
+use super::{r#struct, Finalize};
 use crate::{
     arena::ID,
-    error,
+    error::{self, PrivateEntityLeakedToPublicInterface},
     symbol::{
         table::{
             representation::{
-                building::finalizing::{occurrences::Occurrences, Finalizer},
-                RwLockContainer,
+                building::finalizing::{
+                    finalizer::builder::{Basic, Definition},
+                    occurrences::Occurrences,
+                    Finalizer,
+                },
+                Index, RwLockContainer,
             },
+            resolution::{self, Observer},
             Building, Table,
         },
-        Enum,
+        Enum, GenericParameterVariances, GlobalID,
     },
+    type_system::{environment::Environment, normalizer},
 };
 
 /// Generic parameters are built
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
+/// The where clause predicates are built.
+pub const WHERE_CLAUSE_STATE: usize = 1;
+
 /// The variants of the enum are built and some of the variance information is
 /// built
-pub const PRE_DEFINITION_STATE: usize = 1;
+pub const PRE_DEFINITION_STATE: usize = 2;
 
 /// The complete information of the struct is built.
-pub const DEFINITION_STATE: usize = 2;
-
-/// The information required to check the bounds is built. (the definition of
-/// where caluses are built)
-#[allow(unused)]
-pub const WELL_FORMED_STATE: usize = 3;
+pub const DEFINITION_STATE: usize = 3;
 
 /// Bounds check are performed
 pub const CHECK_STATE: usize = 4;
 
 impl Finalize for Enum {
-    type SyntaxTree = syntax_tree::item::EnumSignature;
+    type SyntaxTree = syntax_tree::item::Enum;
     const FINAL_STATE: usize = CHECK_STATE;
-    type Data = Occurrences;
+    type Data = (Occurrences, Occurrences, Occurrences);
 
     #[allow(
         clippy::significant_drop_in_scrutinee,
@@ -46,195 +50,316 @@ impl Finalize for Enum {
         clippy::too_many_lines
     )]
     fn finalize(
-        _table: &Table<Building<RwLockContainer, Finalizer>>,
-        _symbol_id: ID<Self>,
-        _state_flag: usize,
-        _syntax_tree: &Self::SyntaxTree,
-        _data: &mut Self::Data,
-        _handler: &dyn Handler<Box<dyn error::Error>>,
+        table: &Table<Building<RwLockContainer, Finalizer>>,
+        symbol_id: ID<Self>,
+        state_flag: usize,
+        syntax_tree: &Self::SyntaxTree,
+        (
+            generic_parameter_occurrences,
+            where_caluse_occurrences,
+            definition_occurrences,
+        ): &mut Self::Data,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        // match state_flag {
-        //     GENERIC_PARAMETER_STATE => table.create_generic_parameters(
-        //         symbol_id,
-        //         syntax_tree.generic_parameters().as_ref(),
-        //         data,
-        //         handler,
-        //     ),
+        match state_flag {
+            GENERIC_PARAMETER_STATE => table.create_generic_parameters(
+                symbol_id,
+                syntax_tree.signature().generic_parameters().as_ref(),
+                generic_parameter_occurrences,
+                handler,
+            ),
 
-        //     WHERE_CLAUSE_STATE => {
-        //         table.create_where_clause_predicates(
-        //             symbol_id,
-        //             syntax_tree.where_clause().as_ref(),
-        //             data,
-        //             handler,
-        //         );
-        //     }
+            WHERE_CLAUSE_STATE => {
+                table.create_where_clause(
+                    symbol_id,
+                    syntax_tree.signature().where_clause().as_ref(),
+                    where_caluse_occurrences,
+                    handler,
+                );
+            }
 
-        //     PRE_DEFINITION_STATE => {
-        //         for variant in table
-        //             .get(symbol_id)
-        //             .unwrap()
-        //             .variant_ids_by_name
-        //             .values()
-        //             .copied()
-        //         {
-        //             let _ = table.build_to(
-        //                 variant,
-        //                 Some(symbol_id.into()),
-        //                 variant::COMPLETE_STATE,
-        //                 handler,
-        //             );
-        //         }
+            PRE_DEFINITION_STATE => {
+                for variant_id in table
+                    .get(symbol_id)
+                    .unwrap()
+                    .variant_ids_by_name
+                    .values()
+                    .copied()
+                {
+                    let variant = table.get(variant_id).unwrap();
+                    let syntax_tree = syntax_tree
+                        .body()
+                        .variant_list()
+                        .as_ref()
+                        .into_iter()
+                        .flat_map(ConnectedList::elements)
+                        .find(|x| {
+                            &x.identifier().span
+                                == variant.span.as_ref().unwrap()
+                        })
+                        .unwrap();
+                    drop(variant);
 
-        //         // build all the occurrences to partial complete
-        //         data.build_all_occurrences_to::<builder::PartialComplete>(
-        //             table,
-        //             symbol_id.into(),
-        //             handler,
-        //         );
+                    if let Some(association) = syntax_tree.association() {
+                        let ty = table
+                            .resolve_type(
+                                association.r#type(),
+                                symbol_id.into(),
+                                resolution::Config {
+                                    ellided_lifetime_provider: None,
+                                    ellided_type_provider: None,
+                                    ellided_constant_provider: None,
+                                    observer: Some(
+                                        &mut (&mut Basic)
+                                            .chain(definition_occurrences),
+                                    ),
+                                    higher_ranked_lifetimes: None,
+                                },
+                                handler,
+                            )
+                            .unwrap_or_default();
 
-        //         let variant_ids = table
-        //             .get(symbol_id)
-        //             .unwrap()
-        //             .variant_ids_by_name
-        //             .values()
-        //             .copied()
-        //             .collect::<Vec<_>>();
+                        let ty_accessible =
+                            table.get_type_accessibility(&ty).unwrap();
 
-        //         let (environment, _) = Environment::new(
-        //             table.get_active_premise(symbol_id.into()).unwrap(),
-        //             table,
-        //             &NO_OP,
-        //         );
-        //         for variant_id in variant_ids {
-        //             let Some(mut variant_ty) =
-        //
-        // table.get(variant_id).unwrap().associated_type.clone()
-        //             else {
-        //                 continue;
-        //             };
+                        // private entity leaked to public interface
+                        if ty_accessible
+                            < table.get_accessibility(symbol_id.into()).unwrap()
+                        {
+                            handler.receive(Box::new(
+                                PrivateEntityLeakedToPublicInterface {
+                                    entity: ty.clone(),
+                                    entity_overall_accessibility: ty_accessible,
+                                    leaked_span: association.span(),
+                                    public_interface_id: symbol_id.into(),
+                                },
+                            ));
+                        }
 
-        //             let variant_ty_syn = table
-        //                 .get(variant_id)
-        //                 .unwrap()
-        //                 .syntax_tree
-        //                 .as_ref()
-        //                 .map(|x| {
-        //                     x.association().as_ref().map(|x|
-        // x.r#type().span())                 })
-        //                 .unwrap()
-        //                 .unwrap();
+                        // assign the simplfiied type to the variant
+                        table
+                            .representation
+                            .variants
+                            .get(variant_id)
+                            .unwrap()
+                            .write()
+                            .associated_type = Some(ty);
+                    }
+                }
 
-        //             variant_ty = environment
-        //                 .simplify_and_check_lifetime_constraints(
-        //                     &variant_ty,
-        //                     &variant_ty_syn,
-        //                     handler,
-        //                 );
+                let definition_builder =
+                    Definition::new(symbol_id.into(), handler);
+                let variant_ids = table
+                    .get(symbol_id)
+                    .unwrap()
+                    .variant_ids_by_name
+                    .values()
+                    .copied()
+                    .collect::<Vec<_>>();
 
-        //             table
-        //                 .representation
-        //                 .variants
-        //                 .get(variant_id)
-        //                 .unwrap()
-        //                 .write()
-        //                 .associated_type = Some(variant_ty);
-        //         }
+                let environment = Environment::new_with(
+                    table.get_active_premise(symbol_id.into()).unwrap(),
+                    table,
+                    &normalizer::NO_OP,
+                    &definition_builder,
+                )
+                .0;
 
-        //         // build the variance
-        //         let premise =
-        //             table.get_active_premise(symbol_id.into()).unwrap();
-        //         let enum_sym = table.get(symbol_id).unwrap();
+                for variant_id in variant_ids {
+                    let Some(mut variant_ty) =
+                        table.get(variant_id).unwrap().associated_type.clone()
+                    else {
+                        continue;
+                    };
 
-        //         #[allow(clippy::needless_collect)]
-        //         let type_usages = enum_sym
-        //             .variant_ids_by_name
-        //             .values()
-        //             .filter_map(|f| {
-        //                 table.get(*f).unwrap().associated_type.clone()
-        //             })
-        //             .collect::<Vec<_>>();
+                    let variant = table.get(variant_id).unwrap();
+                    let syntax_tree = syntax_tree
+                        .body()
+                        .variant_list()
+                        .as_ref()
+                        .into_iter()
+                        .flat_map(ConnectedList::elements)
+                        .find_map(|x| {
+                            (&x.identifier().span
+                                == variant.span.as_ref().unwrap())
+                            .then_some(x.association().as_ref().unwrap())
+                        })
+                        .unwrap();
+                    drop(variant);
 
-        //         let mut generic_parameter_variances =
-        //             GenericParameterVariances::default();
+                    variant_ty = environment
+                        .simplify_and_check_lifetime_constraints(
+                            &variant_ty,
+                            &syntax_tree.span(),
+                            handler,
+                        );
 
-        //         table.build_variance(
-        //             &enum_sym.generic_declaration.parameters,
-        //             &mut generic_parameter_variances,
-        //             premise,
-        //             symbol_id.into(),
-        //             type_usages.iter(),
-        //             true,
-        //             handler,
-        //         );
+                    table
+                        .representation
+                        .variants
+                        .get(variant_id)
+                        .unwrap()
+                        .write()
+                        .associated_type = Some(variant_ty);
+                }
 
-        //         // drop the current read
-        //         drop(enum_sym);
+                for id in definition_occurrences
+                    .resolutions()
+                    .iter()
+                    .map(|x| x.0.global_id())
+                {
+                    match id {
+                        GlobalID::Struct(id) => {
+                            let _ = table.build_to(
+                                id,
+                                Some(symbol_id.into()),
+                                r#struct::PRE_DEFINITION_STATE,
+                                handler,
+                            );
+                        }
 
-        //         // write the variance
-        //         table
-        //             .representation
-        //             .enums
-        //             .get(symbol_id)
-        //             .unwrap()
-        //             .write()
-        //             .generic_parameter_variances =
-        // generic_parameter_variances;     }
+                        GlobalID::Enum(id) => {
+                            let _ = table.build_to(
+                                id,
+                                Some(symbol_id.into()),
+                                super::r#enum::PRE_DEFINITION_STATE,
+                                handler,
+                            );
+                        }
 
-        //     DEFINITION_STATE => {
-        //         // build all the occurrences to partial complete
-        //         data.build_all_occurrences_to::<builder::Complete>(
-        //             table,
-        //             symbol_id.into(),
-        //             handler,
-        //         );
+                        _ => {}
+                    }
+                }
 
-        //         // build the variance
-        //         let premise =
-        //             table.get_active_premise(symbol_id.into()).unwrap();
-        //         let enum_sym = table.get(symbol_id).unwrap();
+                // build the variance
+                let premise =
+                    table.get_active_premise(symbol_id.into()).unwrap();
+                let enum_sym = table.get(symbol_id).unwrap();
 
-        //         #[allow(clippy::needless_collect)]
-        //         let type_usages = enum_sym
-        //             .variant_ids_by_name
-        //             .values()
-        //             .filter_map(|f| {
-        //                 table.get(*f).unwrap().associated_type.clone()
-        //             })
-        //             .collect::<Vec<_>>();
+                #[allow(clippy::needless_collect)]
+                let type_usages = enum_sym
+                    .variant_ids_by_name
+                    .values()
+                    .filter_map(|f| {
+                        table.get(*f).unwrap().associated_type.clone()
+                    })
+                    .collect::<Vec<_>>();
 
-        //         let mut generic_parameter_variances =
-        //             enum_sym.generic_parameter_variances.clone();
+                let mut generic_parameter_variances =
+                    GenericParameterVariances::default();
 
-        //         table.build_variance(
-        //             &enum_sym.generic_declaration.parameters,
-        //             &mut generic_parameter_variances,
-        //             premise,
-        //             symbol_id.into(),
-        //             type_usages.iter(),
-        //             false,
-        //             handler,
-        //         );
+                table.build_variance(
+                    &enum_sym.generic_declaration.parameters,
+                    &mut generic_parameter_variances,
+                    premise,
+                    symbol_id.into(),
+                    type_usages.iter(),
+                    true,
+                    handler,
+                );
 
-        //         // drop the read
-        //         drop(enum_sym);
+                // drop the current read
+                drop(enum_sym);
 
-        //         // write the variance
-        //         table
-        //             .representation
-        //             .enums
-        //             .get(symbol_id)
-        //             .unwrap()
-        //             .write()
-        //             .generic_parameter_variances =
-        // generic_parameter_variances;     }
+                // write the variance
+                table
+                    .representation
+                    .enums
+                    .get(symbol_id)
+                    .unwrap()
+                    .write()
+                    .generic_parameter_variances = generic_parameter_variances;
+            }
 
-        //     CHECK_STATE => {
-        //         table.check_occurrences(symbol_id.into(), data, handler);
-        //         table.check_where_clause(symbol_id.into(), handler);
-        //     }
+            DEFINITION_STATE => {
+                for id in definition_occurrences
+                    .resolutions()
+                    .iter()
+                    .map(|x| x.0.global_id())
+                {
+                    match id {
+                        GlobalID::Struct(id) => {
+                            let _ = table.build_to(
+                                id,
+                                Some(symbol_id.into()),
+                                r#struct::DEFINITION_STATE,
+                                handler,
+                            );
+                        }
 
-        //     _ => panic!("invalid state flag"),
-        // }
+                        GlobalID::Enum(id) => {
+                            let _ = table.build_to(
+                                id,
+                                Some(symbol_id.into()),
+                                super::r#enum::DEFINITION_STATE,
+                                handler,
+                            );
+                        }
+
+                        _ => {}
+                    }
+                }
+
+                // build the variance
+                let premise =
+                    table.get_active_premise(symbol_id.into()).unwrap();
+                let enum_sym = table.get(symbol_id).unwrap();
+
+                #[allow(clippy::needless_collect)]
+                let type_usages = enum_sym
+                    .variant_ids_by_name
+                    .values()
+                    .filter_map(|f| {
+                        table.get(*f).unwrap().associated_type.clone()
+                    })
+                    .collect::<Vec<_>>();
+
+                let mut generic_parameter_variances =
+                    enum_sym.generic_parameter_variances.clone();
+
+                table.build_variance(
+                    &enum_sym.generic_declaration.parameters,
+                    &mut generic_parameter_variances,
+                    premise,
+                    symbol_id.into(),
+                    type_usages.iter(),
+                    false,
+                    handler,
+                );
+
+                // drop the read
+                drop(enum_sym);
+
+                // write the variance
+                table
+                    .representation
+                    .enums
+                    .get(symbol_id)
+                    .unwrap()
+                    .write()
+                    .generic_parameter_variances = generic_parameter_variances;
+            }
+
+            CHECK_STATE => {
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &generic_parameter_occurrences,
+                    handler,
+                );
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &where_caluse_occurrences,
+                    handler,
+                );
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &definition_occurrences,
+                    handler,
+                );
+                table.check_where_clause(symbol_id.into(), handler);
+            }
+
+            _ => panic!("invalid state flag"),
+        }
     }
 }

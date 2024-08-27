@@ -14,14 +14,14 @@ use crate::{
                     r#type, trait_constant, trait_function,
                     trait_implementation_constant,
                     trait_implementation_function, trait_implementation_type,
-                    trait_type, variant,
+                    trait_type,
                 },
-                RwLockContainer,
+                Index, RwLockContainer,
             },
             resolution::{Observer, Resolution},
             Building, Table,
         },
-        GlobalID, TraitImplementationType,
+        GlobalID, TraitImplementationID, TraitImplementationType,
     },
     type_system::{
         self,
@@ -34,13 +34,14 @@ use crate::{
     },
 };
 
+// assume the symbols are built with `Basic` builder
 #[derive(Clone, Copy)]
-pub struct DefinitionA<'a> {
+pub struct Definition<'a> {
     site: GlobalID,
     handler: &'a dyn Handler<Box<dyn error::Error>>,
 }
 
-impl<'a> DefinitionA<'a> {
+impl<'a> Definition<'a> {
     pub fn new(
         site: GlobalID,
         handler: &'a dyn Handler<Box<dyn error::Error>>,
@@ -51,7 +52,7 @@ impl<'a> DefinitionA<'a> {
 
 impl<'a, M: Model>
     type_system::observer::Observer<M, Building<RwLockContainer, Finalizer>>
-    for DefinitionA<'a>
+    for Definition<'a>
 {
     fn on_query(
         record: &Record<M>,
@@ -61,7 +62,7 @@ impl<'a, M: Model>
             impl Normalizer<M, Building<RwLockContainer, Finalizer>>,
             Self,
         >,
-        context: &mut Context<M>,
+        _: &mut Context<M>,
     ) -> Result<(), OverflowError> {
         let build_result = match record {
             Record::LifetimeEquality(_)
@@ -107,23 +108,37 @@ impl<'a, M: Model>
             }
 
             Record::TraitSatisfiability(q) => {
-                let state_flag = if q
-                    .query
-                    .generic_arguments
-                    .definite_with_context(environment, context)?
-                    .is_some()
-                {
-                    r#trait::FINAL_IMPLEMENTATION_STATE
-                } else {
-                    r#trait::NON_FINAL_IMPLEMENTATION_STATE
-                };
+                let final_implementations = environment
+                    .table()
+                    .get(q.query.id)
+                    .unwrap()
+                    .implementations
+                    .iter()
+                    .copied()
+                    .collect::<Vec<_>>();
 
-                environment.table().build_to(
-                    q.query.id,
-                    Some(environment.observer().site),
-                    state_flag,
-                    environment.observer().handler,
-                )
+                for implementation_id in final_implementations {
+                    let _ = match implementation_id {
+                        TraitImplementationID::Positive(id) => {
+                            environment.table().build_to(
+                                id,
+                                Some(environment.observer().site),
+                                positive_trait_implementation::ARGUMENTS_STATE,
+                                environment.observer().handler,
+                            )
+                        }
+                        TraitImplementationID::Negative(id) => {
+                            environment.table().build_to(
+                                id,
+                                Some(environment.observer().site),
+                                negative_trait_implementation::ARGUMENTS_STATE,
+                                environment.observer().handler,
+                            )
+                        }
+                    };
+                }
+
+                Ok(())
             }
         };
 
@@ -284,96 +299,129 @@ impl<M: Model> Observer<Building<RwLockContainer, Finalizer>, M> for Basic {
     ) {
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Definition(bool);
-
-impl Definition {
-    pub fn new() -> Self { Self(false) }
-}
-
-impl<M: Model> Observer<Building<RwLockContainer, Finalizer>, M>
-    for Definition
-{
-    fn on_global_id_resolved(
-        &mut self,
-        table: &Table<Building<RwLockContainer, Finalizer>>,
-        referring_site: GlobalID,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-        global_id: GlobalID,
-        _: &pernixc_lexical::token::Identifier,
-    ) -> bool {
-        build_for_definition_internal(
-            table,
-            global_id,
-            referring_site,
-            self.0,
+/// Build the symbol so that it has where clause predicates.
+pub fn build_for_where_clause(
+    table: &Table<Building<RwLockContainer, Finalizer>>,
+    global_id: GlobalID,
+    required_from: Option<GlobalID>,
+    handler: &dyn Handler<Box<dyn error::Error>>,
+) -> Result<(), BuildSymbolError> {
+    match global_id {
+        GlobalID::Struct(id) => table.build_to(
+            id,
+            required_from,
+            r#struct::WHERE_CLAUSE_STATE,
             handler,
-        )
-        .is_ok()
-    }
+        ),
 
-    fn on_resolution_resolved(
-        &mut self,
-        _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
-        _: &dyn Handler<Box<dyn error::Error>>,
-        _: &Resolution<M>,
-        _: &pernixc_syntax::syntax_tree::GenericIdentifier,
-    ) -> bool {
-        true
-    }
+        GlobalID::Enum(id) => table.build_to(
+            id,
+            required_from,
+            r#enum::WHERE_CLAUSE_STATE,
+            handler,
+        ),
 
-    fn on_type_resolved(
-        &mut self,
-        _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
-        _: &dyn Handler<Box<dyn error::Error>>,
-        ty: term::r#type::Type<M>,
-        _: &pernixc_syntax::syntax_tree::r#type::Type,
-    ) -> Option<term::r#type::Type<M>> {
-        Some(ty)
-    }
+        GlobalID::Trait(id) => table.build_to(
+            id,
+            required_from,
+            r#trait::WHERE_CLAUSE_STATE,
+            handler,
+        ),
 
-    fn on_lifetime_resolved(
-        &mut self,
-        _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
-        _: &dyn Handler<Box<dyn error::Error>>,
-        lt: crate::type_system::term::lifetime::Lifetime<M>,
-        _: &pernixc_syntax::syntax_tree::Lifetime,
-    ) -> Option<crate::type_system::term::lifetime::Lifetime<M>> {
-        Some(lt)
-    }
+        GlobalID::Type(id) => table.build_to(
+            id,
+            required_from,
+            r#type::WHERE_CLAUSE_STATE,
+            handler,
+        ),
 
-    fn on_constant_arguments_resolved(
-        &mut self,
-        _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
-        _: &dyn Handler<Box<dyn error::Error>>,
-        _: &crate::type_system::term::constant::Constant<M>,
-        _: &pernixc_syntax::syntax_tree::Constant,
-    ) {
-    }
+        GlobalID::Function(id) => table.build_to(
+            id,
+            required_from,
+            function::WHERE_CLAUSE_STATE,
+            handler,
+        ),
 
-    fn on_unpacked_type_resolved(
-        &mut self,
-        _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
-        _: &dyn Handler<Box<dyn error::Error>>,
-        _: &term::r#type::Type<M>,
-        _: &pernixc_syntax::syntax_tree::r#type::Type,
-    ) {
-    }
+        GlobalID::Constant(id) => table.build_to(
+            id,
+            required_from,
+            constant::WHERE_CLAUSE_STATE,
+            handler,
+        ),
 
-    fn on_unpacked_constant_resolved(
-        &mut self,
-        _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
-        _: &dyn Handler<Box<dyn error::Error>>,
-        _: &crate::type_system::term::constant::Constant<M>,
-        _: &pernixc_syntax::syntax_tree::expression::Expression,
-    ) {
+        GlobalID::Variant(_) => Ok(()),
+
+        GlobalID::TraitFunction(id) => table.build_to(
+            id,
+            required_from,
+            trait_function::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
+        GlobalID::TraitConstant(id) => table.build_to(
+            id,
+            required_from,
+            trait_constant::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
+        GlobalID::TraitType(id) => table.build_to(
+            id,
+            required_from,
+            trait_type::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
+        GlobalID::TraitImplementationFunction(id) => table.build_to(
+            id,
+            required_from,
+            trait_implementation_function::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
+        GlobalID::TraitImplementationConstant(id) => table.build_to(
+            id,
+            required_from,
+            trait_implementation_constant::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
+        GlobalID::TraitImplementationType(id) => table.build_to(
+            id,
+            required_from,
+            trait_implementation_type::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
+        GlobalID::AdtImplementationFunction(id) => table.build_to(
+            id,
+            required_from,
+            adt_implementation_function::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
+        GlobalID::PositiveTraitImplementation(id) => table.build_to(
+            id,
+            required_from,
+            positive_trait_implementation::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
+        GlobalID::NegativeTraitImplementation(id) => table.build_to(
+            id,
+            required_from,
+            negative_trait_implementation::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
+        GlobalID::AdtImplementation(id) => table.build_to(
+            id,
+            required_from,
+            adt_implementation::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
+        GlobalID::Module(_) => Ok(()),
     }
 }
 
@@ -426,13 +474,6 @@ pub fn build_for_basic_resolution(
             id,
             required_from,
             constant::GENERIC_PARAMETER_STATE,
-            handler,
-        ),
-
-        GlobalID::Variant(id) => table.build_to(
-            id,
-            required_from,
-            variant::GENERIC_PARAMETER_STATE,
             handler,
         ),
 
@@ -506,7 +547,7 @@ pub fn build_for_basic_resolution(
             handler,
         ),
 
-        GlobalID::Module(_) => Ok(()),
+        GlobalID::Variant(_) | GlobalID::Module(_) => Ok(()),
     }?;
 
     // this variable will either be AdtImplementation or
@@ -527,7 +568,7 @@ pub fn build_for_basic_resolution(
             match table.build_to(
                 id,
                 required_from,
-                positive_trait_implementation::DEFINITION_STATE,
+                positive_trait_implementation::ARGUMENTS_STATE,
                 handler,
             ) {
                 Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => Ok(()),
@@ -542,7 +583,7 @@ pub fn build_for_basic_resolution(
             match table.build_to(
                 id,
                 required_from,
-                positive_trait_implementation::DEFINITION_STATE,
+                positive_trait_implementation::ARGUMENTS_STATE,
                 handler,
             ) {
                 Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => Ok(()),
@@ -558,6 +599,7 @@ pub fn build_for_basic_resolution(
     }
 }
 
+#[allow(unused)]
 pub fn build_for_definition_internal(
     table: &Table<Building<RwLockContainer, Finalizer>>,
     global_id: GlobalID,
@@ -616,13 +658,6 @@ pub fn build_for_definition_internal(
             handler,
         ),
 
-        GlobalID::Variant(id) => table.build_to(
-            id,
-            Some(required_from),
-            variant::DEFINITION_STATE,
-            handler,
-        ),
-
         GlobalID::TraitFunction(id) => table.build_to(
             id,
             Some(required_from),
@@ -675,14 +710,14 @@ pub fn build_for_definition_internal(
         GlobalID::PositiveTraitImplementation(id) => table.build_to(
             id,
             Some(required_from),
-            positive_trait_implementation::DEFINITION_STATE,
+            positive_trait_implementation::ARGUMENTS_STATE,
             handler,
         ),
 
         GlobalID::NegativeTraitImplementation(id) => table.build_to(
             id,
             Some(required_from),
-            negative_trait_implementation::DEFINITION_STATE,
+            negative_trait_implementation::ARGUMENTS_STATE,
             handler,
         ),
 
@@ -693,7 +728,7 @@ pub fn build_for_definition_internal(
             handler,
         ),
 
-        GlobalID::Module(_) => Ok(()),
+        GlobalID::Variant(_) | GlobalID::Module(_) => Ok(()),
     }?;
 
     // this variable will either be AdtImplementation or

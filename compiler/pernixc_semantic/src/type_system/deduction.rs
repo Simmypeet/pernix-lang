@@ -229,7 +229,7 @@ pub struct UnificationFailureError;
 #[allow(missing_docs)]
 pub enum Error {
     #[error(transparent)]
-    TypeSystem(#[from] super::OverflowError),
+    Overflow(#[from] super::OverflowError),
 
     #[error(transparent)]
     MismatchedGenericArgumentCount(#[from] MismatchedGenericArgumentCountError),

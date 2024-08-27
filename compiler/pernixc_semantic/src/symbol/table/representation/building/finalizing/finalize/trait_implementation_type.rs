@@ -1,7 +1,7 @@
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree;
 
-use super::{positive_trait_implementation, Finalize};
+use super::{positive_trait_implementation, trait_type, Finalize};
 use crate::{
     arena::ID,
     error::{self, PrivateEntityLeakedToPublicInterface},
@@ -9,29 +9,30 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::builder::{Definition, DefinitionA},
+                    finalizer::builder::{Basic, Definition},
                     occurrences::Occurrences,
                     Finalizer,
                 },
-                RwLockContainer,
+                Index, RwLockContainer,
             },
             resolution::{self, Observer},
             Building, Table,
         },
         TraitImplementationType,
     },
-    type_system::{environment::Environment, normalizer},
+    type_system::{
+        environment::Environment, instantiation::Instantiation, normalizer,
+    },
 };
 
 /// Generic parameters are built
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
-/// The complete information of the trait implementation type is built.
-pub const DEFINITION_STATE: usize = 1;
+/// The where clause of the trait implementation type is built.
+pub const WHERE_CLAUSE_STATE: usize = 1;
 
-/// The information required to check the bounds is built. (the definition of
-/// where caluses are built)
-pub const WELL_FORMED_STATE: usize = 2;
+/// The complete information of the trait implementation type is built.
+pub const DEFINITION_STATE: usize = 2;
 
 /// Bounds check are performed
 pub const CHECK_STATE: usize = 3;
@@ -78,6 +79,13 @@ impl Finalize for TraitImplementationType {
                 );
             }
 
+            WHERE_CLAUSE_STATE => table.create_where_clause(
+                symbol_id,
+                syntax_tree.definition().where_clause().as_ref(),
+                where_clause_occurrences,
+                handler,
+            ),
+
             DEFINITION_STATE => {
                 let parent_implementation_id = table
                     .trait_implementation_types
@@ -88,22 +96,11 @@ impl Finalize for TraitImplementationType {
                 let _ = table.build_to(
                     parent_implementation_id,
                     Some(symbol_id.into()),
-                    positive_trait_implementation::DEFINITION_STATE,
-                    handler,
-                );
-
-                table.create_where_clause_predicates_for_definition(
-                    symbol_id,
-                    syntax_tree.definition().where_clause().as_ref(),
-                    where_clause_occurrences,
+                    positive_trait_implementation::ARGUMENTS_STATE,
                     handler,
                 );
 
                 // resolve the type
-                let mut definition_builder = Definition::new();
-                let mut observer =
-                    definition_builder.chain(definition_occurrences);
-
                 let mut ty = table
                     .resolve_type(
                         syntax_tree.definition().ty(),
@@ -112,14 +109,16 @@ impl Finalize for TraitImplementationType {
                             ellided_lifetime_provider: None,
                             ellided_type_provider: None,
                             ellided_constant_provider: None,
-                            observer: Some(&mut observer),
+                            observer: Some(
+                                &mut (&mut Basic).chain(definition_occurrences),
+                            ),
                             higher_ranked_lifetimes: None,
                         },
                         handler,
                     )
                     .unwrap_or_default();
 
-                let observer = DefinitionA::new(symbol_id.into(), handler);
+                let observer = Definition::new(symbol_id.into(), handler);
 
                 let (environment, _) = Environment::new_with(
                     table.get_active_premise(symbol_id.into()).unwrap(),
@@ -158,78 +157,87 @@ impl Finalize for TraitImplementationType {
                     .r#type = ty;
             }
 
-            WELL_FORMED_STATE => table
-                .create_where_clause_predicates_for_well_formed(
-                    symbol_id,
-                    syntax_tree.definition().where_clause().as_ref(),
-                    where_clause_occurrences,
-                    handler,
-                ),
-
             CHECK_STATE => {
-                // let (trait_implementation_id, trait_id) = {
-                //     let trait_implementation_type_sym =
-                //         table.get(symbol_id).unwrap();
-                //     let trait_implementation_sym = table
-                //         .get(trait_implementation_type_sym.parent_id)
-                //         .unwrap();
+                let parent_implementation_id = table
+                    .trait_implementation_types
+                    .get(symbol_id)
+                    .unwrap()
+                    .read()
+                    .parent_id;
+                let _ = table.build_to(
+                    parent_implementation_id,
+                    Some(symbol_id.into()),
+                    positive_trait_implementation::WHERE_CLAUSE_STATE,
+                    handler,
+                );
 
-                //     (
-                //         trait_implementation_type_sym.parent_id,
-                //         trait_implementation_sym.implemented_id,
-                //     )
-                // };
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &generic_parameters_occurrences,
+                    handler,
+                );
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &where_clause_occurrences,
+                    handler,
+                );
+                table.check_occurrences(
+                    symbol_id.into(),
+                    &definition_occurrences,
+                    handler,
+                );
+                table.check_where_clause(symbol_id.into(), handler);
 
-                // let _ = table.build_to(
-                //     trait_implementation_id,
-                //     Some(symbol_id.into()),
-                //     positive_trait_implementation::WHERE_CLAUSE_STATE,
-                //     handler,
-                // );
+                let trait_id = {
+                    let trait_implementation_type_sym =
+                        table.get(symbol_id).unwrap();
+                    let trait_implementation_sym = table
+                        .get(trait_implementation_type_sym.parent_id)
+                        .unwrap();
 
-                // let trait_implementation_type_sym = table
-                //     .trait_implementation_types
-                //     .get(symbol_id)
-                //     .unwrap()
-                //     .read();
-                // let trait_implementation_sym = table
-                //     .positive_trait_implementations
-                //     .get(trait_implementation_type_sym.parent_id)
-                //     .unwrap()
-                //     .read();
-                // let trait_sym = table.traits.get(trait_id).unwrap().read();
+                    trait_implementation_sym.implemented_id
+                };
 
-                // // get the trait type id equivalent
-                // let Some(trait_type_id) = trait_sym
-                //     .member_ids_by_name
-                //     .get(trait_implementation_type_sym.name())
-                //     .copied()
-                //     .and_then(|x| x.into_type().ok())
-                // else {
-                //     return;
-                // };
+                let trait_implementation_type_sym = table
+                    .trait_implementation_types
+                    .get(symbol_id)
+                    .unwrap()
+                    .read();
+                let trait_implementation_sym = table
+                    .positive_trait_implementations
+                    .get(trait_implementation_type_sym.parent_id)
+                    .unwrap()
+                    .read();
+                let trait_sym = table.traits.get(trait_id).unwrap().read();
 
-                // table.check_occurrences(symbol_id.into(), data, handler);
-                // table.check_where_clause(symbol_id.into(), handler);
+                // get the trait type id equivalent
+                let Some(trait_type_id) = trait_sym
+                    .member_ids_by_name
+                    .get(trait_implementation_type_sym.name())
+                    .copied()
+                    .and_then(|x| x.into_type().ok())
+                else {
+                    return;
+                };
 
-                // let _ = table.build_to(
-                //     trait_type_id,
-                //     Some(symbol_id.into()),
-                //     trait_type::WHERE_CLAUSE_STATE,
-                //     handler,
-                // );
+                let _ = table.build_to(
+                    trait_type_id,
+                    Some(symbol_id.into()),
+                    trait_type::WHERE_CLAUSE_STATE,
+                    handler,
+                );
 
-                // table.implementation_member_check(
-                //     symbol_id.into(),
-                //     trait_type_id.into(),
-                //     Instantiation::from_generic_arguments(
-                //         trait_implementation_sym.arguments.clone(),
-                //         trait_implementation_sym.implemented_id.into(),
-                //         &trait_sym.generic_declaration.parameters,
-                //     )
-                //     .unwrap_or_default(),
-                //     handler,
-                // );
+                table.implementation_member_check(
+                    symbol_id.into(),
+                    trait_type_id.into(),
+                    Instantiation::from_generic_arguments(
+                        trait_implementation_sym.arguments.clone(),
+                        trait_implementation_sym.implemented_id.into(),
+                        &trait_sym.generic_declaration.parameters,
+                    )
+                    .unwrap_or_default(),
+                    handler,
+                );
             }
 
             _ => panic!("invalid state flag"),

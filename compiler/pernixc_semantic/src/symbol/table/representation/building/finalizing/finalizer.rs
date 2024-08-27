@@ -25,7 +25,7 @@ use crate::{
         GlobalID, NegativeTraitImplementation, PositiveTraitImplementation,
         Struct, Trait, TraitConstant, TraitFunction,
         TraitImplementationConstant, TraitImplementationFunction,
-        TraitImplementationType, TraitType, Type, Variant,
+        TraitImplementationType, TraitType, Type,
     },
 };
 
@@ -97,7 +97,6 @@ pub struct Representation {
     trait_types: HashMap<ID<TraitType>, State<TraitType>>,
     traits: HashMap<ID<Trait>, State<Trait>>,
     types: HashMap<ID<Type>, State<Type>>,
-    variants: HashMap<ID<Variant>, State<Variant>>,
 
     dependencies_by_dependant: HashMap<GlobalID, GlobalID>,
     reported_cyclic_dependencies: HashSet<BTreeSet<GlobalID>>,
@@ -166,9 +165,6 @@ impl Representation {
             GlobalID::Enum(id) => {
                 self.enums.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::Variant(id) => {
-                self.variants.get(&id).map(|x| &x.dependants_by_flag)
-            }
             GlobalID::Constant(id) => {
                 self.constants.get(&id).map(|x| &x.dependants_by_flag)
             }
@@ -217,7 +213,8 @@ impl Representation {
             GlobalID::TraitType(id) => {
                 self.trait_types.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::Module(_) => None,
+
+            GlobalID::Variant(_) | GlobalID::Module(_) => None,
         }
     }
 
@@ -234,9 +231,6 @@ impl Representation {
                 x.dependants_by_flag.values().any(|x| x.contains(&dependent))
             }),
             GlobalID::Enum(id) => self.enums.get(&id).map(|x| {
-                x.dependants_by_flag.values().any(|x| x.contains(&dependent))
-            }),
-            GlobalID::Variant(id) => self.variants.get(&id).map(|x| {
                 x.dependants_by_flag.values().any(|x| x.contains(&dependent))
             }),
             GlobalID::Constant(id) => self.constants.get(&id).map(|x| {
@@ -317,7 +311,8 @@ impl Representation {
             GlobalID::TraitType(id) => self.trait_types.get(&id).map(|x| {
                 x.dependants_by_flag.values().any(|x| x.contains(&dependent))
             }),
-            GlobalID::Module(_) => None,
+
+            GlobalID::Variant(_) | GlobalID::Module(_) => None,
         }
     }
 }
@@ -371,7 +366,6 @@ implements_element!(NegativeTraitImplementation);
 implements_element!(TraitType);
 implements_element!(Trait);
 implements_element!(Type);
-implements_element!(Variant);
 
 impl Finalizer {
     /// Adds a new symbol to the builder and sets its state to drafting.
@@ -731,7 +725,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         }
 
         let enum_ids = make_ids!(Enum);
-        let variant_ids = make_ids!(Variant);
         let struct_ids = make_ids!(Struct);
         let constant_ids = make_ids!(Constant);
         let type_ids = make_ids!(Type);
@@ -779,7 +772,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
         build_all!(
             Enum,
-            Variant,
             Struct,
             Constant,
             Type,

@@ -25,7 +25,8 @@ pub enum ParseTargetError {
 }
 
 fn build_table_from_source(source: impl Display) -> Table<Success> {
-    let source_file = Arc::new(SourceFile::temp(source).unwrap());
+    let source_file =
+        Arc::new(SourceFile::new(source.to_string(), "test".into()));
 
     let storage = Storage::<ParseTargetError>::default();
     let target = Target::parse(&source_file, "test".to_string(), &storage);

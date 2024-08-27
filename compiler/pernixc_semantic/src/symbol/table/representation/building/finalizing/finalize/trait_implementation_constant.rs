@@ -19,13 +19,13 @@ use crate::{
 /// Generic parameters are built
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
-/// The complete information of the constant is built.
-pub const DEFINITION_STATE: usize = 1;
-
 /// The information required to check the bounds is built. (the definition of
 /// where caluses are built)
 #[allow(unused)]
-pub const WELL_FORMED_STATE: usize = 2;
+pub const WHERE_CLAUSE_STATE: usize = 1;
+
+/// The complete information of the constant is built.
+pub const DEFINITION_STATE: usize = 2;
 
 /// Bounds check are performed
 pub const CHECK_STATE: usize = 3;

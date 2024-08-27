@@ -133,9 +133,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
     {
-        let mut basic = Basic;
-        let mut observer = basic.chain(occurrences);
-
         for trait_bound in syntax_tree.bounds().elements() {
             let higher_ranked_lifetimes = trait_bound
                 .higher_rankded_lifetimes()
@@ -149,7 +146,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     ellided_lifetime_provider: None,
                     ellided_type_provider: None,
                     ellided_constant_provider: None,
-                    observer: Some(&mut observer),
+                    observer: Some(&mut (&mut Basic).chain(occurrences)),
                     higher_ranked_lifetimes: higher_ranked_lifetimes.as_ref(),
                 },
                 handler,
@@ -354,9 +351,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
     {
-        let mut basic = Basic;
-        let mut observer = basic.chain(occurrences);
-
         for tuple in syntax_tree.operands().elements() {
             match tuple.kind() {
                 syntax_tree::predicate::TupleOperandKind::Type(ty) => {
@@ -365,21 +359,22 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             Self::create_higher_ranked_lifetimes(x, handler)
                         });
 
-                    let config = resolution::Config {
-                        ellided_lifetime_provider: None,
-                        ellided_type_provider: None,
-                        ellided_constant_provider: None,
-                        observer: Some(&mut observer),
-                        higher_ranked_lifetimes: higher_ranked_lifetimes
-                            .as_ref(),
-                    };
-
-                    let Ok(ty) = self.resolve_type(
+                    let resolve_type = self.resolve_type(
                         ty,
                         generic_id.into(),
-                        config,
+                        resolution::Config {
+                            ellided_lifetime_provider: None,
+                            ellided_type_provider: None,
+                            ellided_constant_provider: None,
+                            observer: Some(
+                                &mut (&mut Basic).chain(occurrences),
+                            ),
+                            higher_ranked_lifetimes: higher_ranked_lifetimes
+                                .as_ref(),
+                        },
                         handler,
-                    ) else {
+                    );
+                    let Ok(ty) = resolve_type else {
                         continue;
                     };
 
@@ -458,7 +453,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     }
 
     /// Creates where clause predicates for the given generic symbol.
-    pub(in crate::symbol::table::representation::building) fn create_where_clause_predicates_for_definition<
+    pub(in crate::symbol::table::representation::building) fn create_where_clause<
         T: Generic + table::representation::Element + finalizer::Element,
     >(
         &self,
@@ -473,96 +468,57 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             return;
         };
 
-        // 1. Lifetime outlives, so that we can use them in more complex
-        //    predicates which require us to compute the lifetime constraints.
-        for clause in where_clause
-            .predicate_list()
-            .elements()
-            .filter_map(|x| x.as_outlives())
-            .filter(|x| x.operand().is_lifetime_parameter())
-        {
-            self.create_lifetime_outlives_predicates(
-                generic_id,
-                clause,
-                occurrences,
-                handler,
-            );
-        }
+        for predicate in where_clause.predicate_list().elements() {
+            match predicate {
+                syntax_tree::predicate::Predicate::TraitTypeEquality(
+                    trait_type_equality,
+                ) => {
+                    self.create_trait_member_predicates(
+                        generic_id,
+                        trait_type_equality,
+                        occurrences,
+                        handler,
+                    );
+                }
 
-        // 2. Trait type equalities, so that we can normalize the rest of the
-        //    terms in the where clause.
-        for clause in where_clause
-            .predicate_list()
-            .elements()
-            .filter_map(|x| x.as_trait_type_equality())
-        {
-            self.create_trait_member_predicates(
-                generic_id,
-                clause,
-                occurrences,
-                handler,
-            );
-        }
-    }
-
-    /// Creates where clause predicates for the given generic symbol.
-    pub(in crate::symbol::table::representation::building) fn create_where_clause_predicates_for_well_formed<
-        T: Generic + table::representation::Element + finalizer::Element,
-    >(
-        &self,
-        generic_id: ID<T>,
-        syntax_tree: Option<&syntax_tree::item::WhereClause>,
-        occurrences: &mut Occurrences,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) where
-        ID<T>: Into<GlobalID> + Into<GenericID>,
-    {
-        let Some(where_clause) = syntax_tree else {
-            return;
-        };
-
-        // skip lifettime outlives, and trait type equalities
-        for clause in where_clause.predicate_list().elements().filter(|x| {
-            !(x.is_trait_type_equality()
-                || x.as_outlives()
-                    .map_or(false, |x| x.operand().is_lifetime_parameter()))
-        }) {
-            match clause {
-                syntax_tree::predicate::Predicate::Trait(syn) => {
+                syntax_tree::predicate::Predicate::Trait(tr) => {
                     self.create_trait_bound_predicates(
                         generic_id,
-                        syn,
-                        occurrences,
-                        handler,
-                    );
-                }
-                syntax_tree::predicate::Predicate::Outlives(syn) => {
-                    self.create_lifetime_outlives_predicates(
-                        generic_id,
-                        syn,
-                        occurrences,
-                        handler,
-                    );
-                }
-                syntax_tree::predicate::Predicate::ConstantType(syn) => {
-                    self.create_constant_type_predicates(
-                        generic_id,
-                        syn,
-                        occurrences,
-                        handler,
-                    );
-                }
-                syntax_tree::predicate::Predicate::Tuple(syn) => {
-                    self.create_tuple_predicates(
-                        generic_id,
-                        syn,
+                        tr,
                         occurrences,
                         handler,
                     );
                 }
 
-                syntax_tree::predicate::Predicate::TraitTypeEquality(_) => {
-                    unreachable!()
+                syntax_tree::predicate::Predicate::Outlives(
+                    lifetime_outlives,
+                ) => {
+                    self.create_lifetime_outlives_predicates(
+                        generic_id,
+                        lifetime_outlives,
+                        occurrences,
+                        handler,
+                    );
+                }
+
+                syntax_tree::predicate::Predicate::ConstantType(
+                    constant_type,
+                ) => {
+                    self.create_constant_type_predicates(
+                        generic_id,
+                        constant_type,
+                        occurrences,
+                        handler,
+                    );
+                }
+
+                syntax_tree::predicate::Predicate::Tuple(tuple) => {
+                    self.create_tuple_predicates(
+                        generic_id,
+                        tuple,
+                        occurrences,
+                        handler,
+                    );
                 }
             }
         }

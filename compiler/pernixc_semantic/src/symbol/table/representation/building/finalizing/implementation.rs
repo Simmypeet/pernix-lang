@@ -4,7 +4,7 @@ use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
 use super::{
-    finalizer::{self, builder::Definition},
+    finalizer::{self, builder::Basic},
     occurrences::Occurrences,
     Finalize, Finalizer,
 };
@@ -48,9 +48,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             handler,
         );
 
-        let mut definition = Definition::new();
-        let mut observer = definition.chain(occurrences);
-
         let generic_arguments = self
             .resolve_generic_arguments(
                 generic_identifier,
@@ -60,7 +57,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     ellided_lifetime_provider: None,
                     ellided_type_provider: None,
                     ellided_constant_provider: None,
-                    observer: Some(&mut observer),
+                    observer: Some(&mut (&mut Basic).chain(occurrences)),
                     higher_ranked_lifetimes: None,
                 },
                 handler,

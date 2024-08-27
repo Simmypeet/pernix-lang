@@ -10,7 +10,6 @@ members = [
     "compiler/pernixc",
     "lsp/pernix_server",
 ]
-default-members = ["compiler/pernixc"]
 
 [workspace.dependencies]
 enum-as-inner = "0.6.0"
