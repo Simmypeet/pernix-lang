@@ -4,14 +4,15 @@ use super::Expression;
 use crate::{
     arena::ID,
     error::{
-        ArrayExpected, CannotDereference, CannotIndexPastUnpackedTuple,
-        DuplicatedFieldInitialization, Error, ExpectedAssociatedValue,
-        ExpectedLValue, ExpressionIsNotCallable, FieldIsNotAccessible,
-        FieldNotFound, FloatingPointLiteralHasIntegralSuffix, InvalidCastType,
+        CannotDereference, CannotIndexPastUnpackedTuple,
+        DuplicatedFieldInitialization, Error, ExpectArray, ExpectStructType,
+        ExpectedAssociatedValue, ExpectedLValue, ExpressionIsNotCallable,
+        FieldIsNotAccessible, FieldNotFound,
+        FloatingPointLiteralHasIntegralSuffix, InvalidCastType,
         InvalidNumericSuffix, MismatchedArgumentCount, MismatchedMutability,
         MismatchedReferenceQualifier, MismatchedType,
-        NotAllFlowPathsExpressValue, StructExpected, TooLargeTupleIndex,
-        TupleExpected, TupleIndexOutOfBOunds, UninitializedFields,
+        NotAllFlowPathsExpressValue, TooLargeTupleIndex, TupleExpected,
+        TupleIndexOutOfBOunds, UninitializedFields,
     },
     ir::{
         address::{self, Address, Memory},
@@ -3467,7 +3468,7 @@ fn struct_access() {
             assert!(errors.iter().any(|x| {
                 let Some(error) = x
                     .as_any()
-                    .downcast_ref::<StructExpected<ConstraintModel>>()
+                    .downcast_ref::<ExpectStructType<ConstraintModel>>()
                 else {
                     return false;
                 };
@@ -3726,7 +3727,7 @@ fn array_access() {
         |_binder, _exp, errors, _alloca_id| {
             assert!(errors.iter().any(|x| {
                 let Some(error) =
-                    x.as_any().downcast_ref::<ArrayExpected<ConstraintModel>>()
+                    x.as_any().downcast_ref::<ExpectArray<ConstraintModel>>()
                 else {
                     return false;
                 };

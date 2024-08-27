@@ -119,7 +119,7 @@ impl Map {
     }
 }
 
-//// Syntax Synopsis:
+/// Syntax Synopsis:
 ///
 /// ```txt
 /// Value:
@@ -144,12 +144,12 @@ pub enum Value {
 impl SourceElement for Value {
     fn span(&self) -> pernixc_base::source_file::Span {
         match self {
-            Value::Null(kw) => kw.span(),
-            Value::Boolean(b) => b.span(),
-            Value::Numeric(n) => n.span(),
-            Value::String(s) => s.span(),
-            Value::Array(a) => a.span(),
-            Value::Map(m) => m.span(),
+            Self::Null(kw) => kw.span(),
+            Self::Boolean(b) => b.span(),
+            Self::Numeric(n) => n.span(),
+            Self::String(s) => s.span(),
+            Self::Array(a) => a.span(),
+            Self::Map(m) => m.span(),
         }
     }
 }

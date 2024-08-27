@@ -13,7 +13,7 @@ use super::{
 use crate::{
     arena::ID,
     error::{
-        self, ExpectTrait, ExpectedTraitMember, RedefinedHigherRankedLifetime,
+        self, ExpectTrait, ExpectTraitMember, HigherRankedLifetimeRedefinition,
         UnexpectedInference,
     },
     symbol::{
@@ -112,7 +112,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             }
 
             _ => {
-                handler.receive(Box::new(ExpectedTraitMember {
+                handler.receive(Box::new(ExpectTraitMember {
                     non_trait_member_span: syntax_tree
                         .qualified_identifier()
                         .span(),
@@ -442,9 +442,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     entry.insert(forall);
                 }
                 Entry::Occupied(_) => {
-                    handler.receive(Box::new(RedefinedHigherRankedLifetime {
-                        redefinition_span: syn.span(),
-                    }));
+                    handler.receive(Box::new(
+                        HigherRankedLifetimeRedefinition {
+                            redefinition_span: syn.span(),
+                        },
+                    ));
                 }
             }
         }

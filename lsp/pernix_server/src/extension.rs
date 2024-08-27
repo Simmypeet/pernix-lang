@@ -10,6 +10,7 @@ pub trait SpanExt {
 }
 
 impl SpanExt for pernixc_base::source_file::Span {
+    #[allow(clippy::cast_possible_truncation)]
     fn to_range(&self) -> tower_lsp::lsp_types::Range {
         let start = Position::new(
             self.start_location().line as u32,

@@ -21,12 +21,11 @@ pub struct UnterminatedDelimitedComment {
     pub span: Span,
 }
 
-impl Report for UnterminatedDelimitedComment {
+impl Report<()> for UnterminatedDelimitedComment {
     type Error = Infallible;
-    type Parameter = ();
 
     /// Gets the diagnostic information for the error.
-    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             span: self.span.clone(),
             message: "found an unclosed `/*` comment".to_string(),
@@ -47,11 +46,10 @@ pub struct UndelimitedDelimiter {
     pub delimiter: Delimiter,
 }
 
-impl Report for UndelimitedDelimiter {
+impl Report<()> for UndelimitedDelimiter {
     type Error = Infallible;
-    type Parameter = ();
 
-    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             span: self.opening_span.clone(),
             message: "found an undelimited delimiter".to_string(),
@@ -73,11 +71,10 @@ pub struct UnterminatedStringLiteral {
     pub span: Span,
 }
 
-impl Report for UnterminatedStringLiteral {
+impl Report<()> for UnterminatedStringLiteral {
     type Error = Infallible;
-    type Parameter = ();
 
-    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             span: self.span.clone(),
             message: "found an unterminated string literal".to_string(),
@@ -95,11 +92,10 @@ pub struct InvalidEscapeSequence {
     pub span: Span,
 }
 
-impl Report for InvalidEscapeSequence {
+impl Report<()> for InvalidEscapeSequence {
     type Error = Infallible;
-    type Parameter = ();
 
-    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             span: self.span.clone(),
             message: "found an invalid escape sequence".to_string(),
@@ -125,7 +121,8 @@ pub enum Error {
 
 impl Error {
     /// Gets the span where the error occurred.
-    pub fn span(&self) -> &Span {
+    #[must_use]
+    pub const fn span(&self) -> &Span {
         match self {
             Self::UnterminatedDelimitedComment(err) => &err.span,
             Self::UndelimitedDelimiter(err) => &err.opening_span,
@@ -135,11 +132,10 @@ impl Error {
     }
 }
 
-impl Report for Error {
+impl Report<()> for Error {
     type Error = Infallible;
-    type Parameter = ();
 
-    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
         match self {
             Self::UnterminatedDelimitedComment(err) => err.report(()),
             Self::UndelimitedDelimiter(err) => err.report(()),

@@ -25,18 +25,17 @@ use super::{
 use crate::{
     arena::ID,
     error::{
-        self, ArrayExpected, BlockWithGivenLableNameNotFound,
-        CannotDereference, CannotIndexPastUnpackedTuple,
-        DuplicatedFieldInitialization, ExpectedLValue, ExpressOutsideBlock,
+        self, BlockWithGivenLableNameNotFound, CannotDereference,
+        CannotIndexPastUnpackedTuple, DuplicatedFieldInitialization,
+        ExpectArray, ExpectStructType, ExpectedLValue, ExpressOutsideBlock,
         ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
         FloatingPointLiteralHasIntegralSuffix, InvalidCastType,
         InvalidNumericSuffix, InvalidRelationalOperation, LoopControlFlow,
         LoopControlFlowOutsideLoop, LoopWithGivenLabelNameNotFound,
         MismatchedArgumentCount, MismatchedMutability,
         MismatchedReferenceQualifier, MoreThanOneUnpackedInTupleExpression,
-        NotAllFlowPathsExpressValue, ReturnIsNotAllowed, StructExpected,
-        SymbolIsNotCallable, TooLargeTupleIndex, TupleExpected,
-        TupleIndexOutOfBOunds,
+        NotAllFlowPathsExpressValue, ReturnIsNotAllowed, SymbolIsNotCallable,
+        TooLargeTupleIndex, TupleExpected, TupleIndexOutOfBOunds,
     },
     ir::{
         address::{self, Address, Memory},
@@ -1366,7 +1365,7 @@ impl<
 
                             found_type => {
                                 self.create_handler_wrapper(handler).receive(
-                                    Box::new(StructExpected {
+                                    Box::new(ExpectStructType {
                                         span: syntax_tree.postfixable().span(),
                                         r#type: self
                                             .inference_context
@@ -1574,7 +1573,7 @@ impl<
 
                         if !matches!(access_type, Type::Array(_)) {
                             self.create_handler_wrapper(handler).receive(
-                                Box::new(ArrayExpected {
+                                Box::new(ExpectArray {
                                     span: syntax_tree.postfixable().span(),
                                     r#type: self
                                         .inference_context
@@ -1861,7 +1860,7 @@ impl<
         }) = resolution
         else {
             self.create_handler_wrapper(handler).receive(Box::new(
-                error::ExpectedStruct { span: syntax_tree.span() },
+                error::ExpectStruct { span: syntax_tree.span() },
             ));
             return Err(Error::Semantic(SemanticError(syntax_tree.span())));
         };

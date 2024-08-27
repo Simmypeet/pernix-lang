@@ -13,7 +13,7 @@ use pernixc_base::{
     log::{Message, Severity},
     source_file::{self, SourceFile},
 };
-use pernixc_semantic::symbol::table::{self, BuildTableError, DisplayObject};
+use pernixc_semantic::symbol::table::{self, BuildTableError};
 use pernixc_syntax::syntax_tree::target::Target;
 
 /// The arguments to the program.
@@ -46,12 +46,9 @@ impl Printer {
     fn has_printed(&self) -> bool { *self.printed.read().unwrap() }
 }
 
-impl<E: Report> Handler<E> for Printer
-where
-    E::Parameter: Default,
-{
+impl<E: Report<()>> Handler<E> for Printer {
     fn receive(&self, error: E) {
-        let Ok(diagnostic) = error.report(E::Parameter::default()) else {
+        let Ok(diagnostic) = error.report(()) else {
             return;
         };
 
@@ -137,12 +134,11 @@ pub fn run(argument: Arguments) -> ExitCode {
             dbg!(&table);
 
             for error in storage.into_vec() {
-                let msg = DisplayObject {
-                    table: &table,
-                    display: error.as_display_with_table(),
+                let Ok(diag) = error.report(&table) else {
+                    continue;
                 };
 
-                eprintln!("{msg}\n");
+                eprintln!("{diag}\n");
             }
 
             return ExitCode::FAILURE;

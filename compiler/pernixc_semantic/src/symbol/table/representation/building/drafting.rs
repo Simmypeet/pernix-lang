@@ -23,8 +23,8 @@ use super::finalizing::{self, Finalize, Finalizer};
 use crate::{
     arena::ID,
     error::{
-        self, InvalidSymbolInImplementation,
-        MismatchedTraitMemberAndImplementationMember, RedefinedGlobal,
+        self, GlobalRedifinition, InvalidSymbolInImplementation,
+        MismatchedTraitMemberAndImplementationMember,
         SymbolIsMoreAccessibleThanParent, UnexpectedAdtImplementationMember,
         UnimplementedTraitMembers, UnknownExternCallingConvention,
         UnknownTraitImplementationMember,
@@ -109,7 +109,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 .entry(variant_syn.span.str().to_owned())
             {
                 Entry::Occupied(entry) => {
-                    handler.receive(Box::new(RedefinedGlobal {
+                    handler.receive(Box::new(GlobalRedifinition {
                         existing_global_id: (*entry.get()).into(),
                         new_global_id: variant_id.into(),
                         in_global_id: enum_id.into(),
@@ -255,7 +255,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
 
         // check for duplication
         if let Some(existing) = insertion.duplication {
-            handler.receive(Box::new(RedefinedGlobal {
+            handler.receive(Box::new(GlobalRedifinition {
                 existing_global_id: existing.into(),
                 new_global_id: insertion.id.into(),
                 in_global_id: parent_id.into(),

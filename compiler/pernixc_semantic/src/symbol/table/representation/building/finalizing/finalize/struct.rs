@@ -6,7 +6,7 @@ use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use super::{r#enum, Finalize};
 use crate::{
     arena::ID,
-    error::{self, DuplicatedField, PrivateEntityLeakedToPublicInterface},
+    error::{self, FieldDuplication, PrivateEntityLeakedToPublicInterface},
     symbol::{
         table::{
             representation::{
@@ -158,7 +158,7 @@ impl Finalize for Struct {
                         }
 
                         Err((existing, _)) => {
-                            handler.receive(Box::new(DuplicatedField {
+                            handler.receive(Box::new(FieldDuplication {
                                 struct_id: symbol_id,
                                 field_id: existing,
                                 redeclaration_span: field_syn

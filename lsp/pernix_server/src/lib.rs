@@ -110,7 +110,7 @@ impl LanguageServer for Server {
                 Ok(()) => {}
 
                 Err(response) => {
-                    error!("failed to register watcher: {response}")
+                    error!("failed to register watcher: {response}");
                 }
             };
 
@@ -171,7 +171,7 @@ impl LanguageServer for Server {
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         info!("Did open: {}", params.text_document.uri.path());
 
-        let _ = self.syntax.register_source_file(
+        self.syntax.register_source_file(
             params.text_document.uri.clone(),
             params.text_document.text,
         );
@@ -209,7 +209,7 @@ impl LanguageServer for Server {
             .rposition(|x| x.range.is_none())
         {
             Some(index) => {
-                let _ = self.syntax.register_source_file(
+                self.syntax.register_source_file(
                     params.text_document.uri.clone(),
                     std::mem::take(&mut params.content_changes[index].text),
                 );
@@ -261,7 +261,7 @@ impl Server {
     /// Reads the workspace configuration file and sets the workspace.
     #[must_use]
     async fn configure_workspace(&self, base_uri: Url) -> bool {
-        let workspace = workspace::Workspace::new(base_uri);
+        let workspace = workspace::Workspace::new(&base_uri);
 
         // successfully create a new workspace
         match workspace {
@@ -324,7 +324,7 @@ impl Server {
             let mut root_path = workspace.uri.to_file_path().ok()?;
             root_path.push("pernix.json");
 
-            Some((workspace.uri.clone(), Url::from_file_path(root_path).ok()?))
+            Some((workspace.uri, Url::from_file_path(root_path).ok()?))
         } else {
             None
         }

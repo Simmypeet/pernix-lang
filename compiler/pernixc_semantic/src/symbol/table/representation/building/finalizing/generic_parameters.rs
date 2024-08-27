@@ -101,15 +101,17 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
         // check for errornous default parameters
         if errornous_default_parameters {
-            handler.receive(Box::new(
-                error::DefaultGenericParameterMustBeTrailing {
-                    invalid_generic_default_parameter_spans: default_type_syns
-                        .iter()
-                        .map(|x| x.span())
-                        .chain(default_constant_syns.iter().map(|x| x.span()))
-                        .collect(),
-                },
-            ));
+            for span in default_constant_syns
+                .iter()
+                .map(|x| x.span())
+                .chain(default_constant_syns.iter().map(|x| x.span()))
+            {
+                handler.receive(Box::new(
+                    error::DefaultGenericParameterMustBeTrailing {
+                        invalid_generic_default_parameter_span: span,
+                    },
+                ));
+            }
         }
 
         for lifetime_parameter_syn in lifetime_parameter_syns {

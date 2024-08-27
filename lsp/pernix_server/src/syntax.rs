@@ -17,7 +17,7 @@ use tower_lsp::lsp_types::{self, Diagnostic, Url};
 use crate::extension::DaignosticExt;
 
 /// A struct which implements [`Handler`] for collecting diagnostics.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Collector {
     diagnostics: RwLock<Vec<Diagnostic>>,
 }
@@ -25,7 +25,7 @@ pub struct Collector {
 impl Collector {
     /// Creates a collector handler.
     #[must_use]
-    pub fn new() -> Self { Self { diagnostics: RwLock::new(Vec::new()) } }
+    pub const fn new() -> Self { Self { diagnostics: RwLock::new(Vec::new()) } }
 
     /// Gets the list of diagnostics collected so far.
     pub fn into_diagnostic(self) -> Vec<Diagnostic> {
@@ -33,12 +33,9 @@ impl Collector {
     }
 }
 
-impl<E: Report> Handler<E> for Collector
-where
-    E::Parameter: Default,
-{
+impl<E: Report<()>> Handler<E> for Collector {
     fn receive(&self, error: E) {
-        let Ok(diagnostic) = error.report(E::Parameter::default()) else {
+        let Ok(diagnostic) = error.report(()) else {
             return;
         };
 
@@ -78,7 +75,6 @@ impl Syntax {
     /// context.
     ///
     /// This directly cooresponds to the `textDocument/didOpen` notification.
-    #[must_use]
     pub fn register_source_file(&self, url: Url, text: String) {
         let url_path = url.path().into();
 
@@ -102,6 +98,7 @@ impl Syntax {
     /// # Errors
     ///
     /// See [`UpdateSourceFileError`] for more information.
+    #[allow(clippy::significant_drop_tightening)]
     pub fn update_source_file(
         &self,
         url: &Url,

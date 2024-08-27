@@ -8,18 +8,16 @@ use crate::{
 /// Implement this trait for a type that can report a diagnostic.
 ///
 /// This trait is typically implemented by error and warning types.
-pub trait Report {
+pub trait Report<Param> {
     /// The error type that can be returned when creating a diagnostic.
     type Error;
 
-    /// The parameter type that is required to create a diagnostic.
-    type Parameter;
-
     /// Creates a diagnostic.
-    fn report(
-        &self,
-        parameter: Self::Parameter,
-    ) -> Result<Diagnostic, Self::Error>;
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the diagnostic cannot be created.
+    fn report(&self, parameter: Param) -> Result<Diagnostic, Self::Error>;
 }
 
 /// A struct containing all the information required to display the diagnostic
@@ -69,7 +67,7 @@ impl std::fmt::Display for Diagnostic {
                 f,
                 "\n{}",
                 SourceCodeDisplay::new(&related.span, Some(&related.message))
-            )?
+            )?;
         }
 
         Ok(())

@@ -8,10 +8,8 @@ use std::{
 };
 
 use pernixc_base::{
-    log::{
-        formatting::{Style, WithStyle},
-        Message, Severity, SourceCodeDisplay,
-    },
+    diagnostic::{Diagnostic, Related, Report},
+    log::{Message, Severity, SourceCodeDisplay},
     source_file::Span,
 };
 
@@ -38,9 +36,17 @@ use crate::{
     },
 };
 
+/// An error type used for [`Report::Error`] associated type.
+///
+/// This typically caused by giving an invalid table (not the same table where
+/// the error originated from) to the parameter [`Report::report`]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(clippy::module_name_repetitions)]
+pub struct ReportError;
+
 /// The global symbol with the same name already exists in the given scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RedefinedGlobal {
+pub struct GlobalRedifinition {
     /// The ID of the existing symbol.
     pub existing_global_id: GlobalID,
 
@@ -51,8 +57,13 @@ pub struct RedefinedGlobal {
     pub in_global_id: GlobalID,
 }
 
-impl<T: State> Display<T> for RedefinedGlobal {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for GlobalRedifinition {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<pernixc_base::diagnostic::Diagnostic, Self::Error> {
         let (
             Some(existing_symbol),
             Some(new_symbol),
@@ -63,33 +74,31 @@ impl<T: State> Display<T> for RedefinedGlobal {
             table.get_qualified_name(self.in_global_id),
         )
         else {
-            return Err(fmt::Error);
+            return Err(ReportError);
         };
 
-        write!(f, "{}", Message {
-            severity: pernixc_base::log::Severity::Error,
-            display: format!(
+        let Some(new_symbol_span) = new_symbol.span() else {
+            return Err(ReportError);
+        };
+
+        Ok(Diagnostic {
+            span: new_symbol_span.clone(),
+            message: format!(
                 "the symbol `{}` is already defined in `{}`",
                 existing_symbol.name(),
                 scope_qualified_name
             ),
-        })?;
-
-        if let Some(existing_span) = existing_symbol.span() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: existing_span,
-                help_display: Some("previously defined here"),
-            })?;
-        }
-
-        if let Some(new_span) = new_symbol.span() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: new_span,
-                help_display: Some("redefined here"),
-            })?;
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: existing_symbol
+                .span()
+                .map(|x| Related {
+                    span: x.clone(),
+                    message: "previously defined here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
@@ -107,13 +116,13 @@ impl<T: State> Table<T> {
     fn accessibility_description(
         &self,
         accessibility: Accessibility,
-    ) -> Result<String, fmt::Error> {
+    ) -> Result<String, ReportError> {
         match accessibility {
             Accessibility::Public => Ok("publicly accessible".to_owned()),
             Accessibility::Scoped(module_id) => {
                 let module_qualified_name = self
                     .get_qualified_name(module_id.into())
-                    .ok_or(fmt::Error)?;
+                    .ok_or(ReportError)?;
 
                 Ok(format!("accessible in `{module_qualified_name}`"))
             }
@@ -121,17 +130,22 @@ impl<T: State> Table<T> {
     }
 }
 
-impl<T: State> Display<T> for SymbolIsMoreAccessibleThanParent {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for SymbolIsMoreAccessibleThanParent {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let (Some(symbol_name), Some(parent_qualified_name)) = (
             table.get_global(self.symbol_id).map(|x| x.name().to_owned()),
             table.get_qualified_name(self.parent_id),
         ) else {
-            return Err(fmt::Error);
+            return Err(ReportError);
         };
 
         let accessibility_description =
-            |accessibility: Accessibility| -> Result<String, fmt::Error> {
+            |accessibility: Accessibility| -> Result<String, ReportError> {
                 match accessibility {
                     Accessibility::Public => {
                         Ok("publicly accessibility".to_owned())
@@ -139,7 +153,7 @@ impl<T: State> Display<T> for SymbolIsMoreAccessibleThanParent {
                     Accessibility::Scoped(module_id) => {
                         let module_qualified_name = table
                             .get_qualified_name(module_id.into())
-                            .ok_or(fmt::Error)?;
+                            .ok_or(ReportError)?;
 
                         Ok(format!("accessible in `{module_qualified_name}`"))
                     }
@@ -150,14 +164,14 @@ impl<T: State> Display<T> for SymbolIsMoreAccessibleThanParent {
             table.get_accessibility(self.symbol_id),
             table.get_accessibility(self.parent_id),
         ) else {
-            return Err(fmt::Error);
+            return Err(ReportError);
         };
 
         let (Some(symbol_span), Some(parent_span)) = (
-            table.get_global(self.symbol_id).map(|x| x.span().cloned()),
+            table.get_global(self.symbol_id).and_then(|x| x.span().cloned()),
             table.get_global(self.parent_id).map(|x| x.span().cloned()),
         ) else {
-            return Err(fmt::Error);
+            return Err(ReportError);
         };
 
         let symbol_accessibility_description =
@@ -166,34 +180,28 @@ impl<T: State> Display<T> for SymbolIsMoreAccessibleThanParent {
         let parent_accessibility_description =
             accessibility_description(parent_accessibility)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: symbol_span,
+            message: format!(
                 "the symbol `{symbol_name}` in `{parent_qualified_name}` is \
                  more accessible than the parent symbol"
             ),
-        })?;
-
-        if let Some(symbol_span) = symbol_span {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: &symbol_span,
-                help_display: Some(format!(
-                    "the symbol `{symbol_name}` is \
-                     {symbol_accessibility_description}",
-                )),
-            })?;
-        }
-
-        if let Some(parent_span) = parent_span {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: &parent_span,
-                help_display: Some(format!(
-                    "the parent symbol is {parent_accessibility_description}",
-                )),
-            })?;
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: Some(format!(
+                "the symbol `{symbol_name}` is \
+                 {symbol_accessibility_description}"
+            )),
+            related: parent_span
+                .map(|x| Related {
+                    span: x,
+                    message: format!(
+                        "the parent symbol is \
+                         {parent_accessibility_description}",
+                    ),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
@@ -207,25 +215,26 @@ pub struct InvalidSymbolInImplementation {
     pub qualified_identifier_span: Span,
 }
 
-impl<T: State> Display<T> for InvalidSymbolInImplementation {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for InvalidSymbolInImplementation {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let qualified_name = table
             .get_qualified_name(self.invalid_global_id)
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: self.qualified_identifier_span.clone(),
+            message: format!(
                 "the symbol `{qualified_name}` is not a trait, struct, or enum"
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.qualified_identifier_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -270,69 +279,27 @@ impl GlobalID {
     }
 }
 
-impl<T: State> Display<T> for ExpectModule {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let found_symbol_qualified_name =
-            table.get_qualified_name(self.found_id).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for ExpectModule {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let found_symbol_qualified_name =
+            table.get_qualified_name(self.found_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.module_path.clone(),
+            message: format!(
                 "expected a module in the module path, but found `{} {}`",
                 self.found_id.kind_str(),
                 found_symbol_qualified_name
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.module_path,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
-    }
-}
-
-/// Calculating the specialization between the implementations was undecidable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UndecidableImplementationSpecialization {
-    /// The id of the first implementation.
-    pub first_implementation_id: TraitImplementationID,
-
-    /// The id of the second implementation.
-    pub second_implementation_id: TraitImplementationID,
-}
-
-impl<T: State> Display<T> for UndecidableImplementationSpecialization {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let first_sym = table
-            .get_global(self.first_implementation_id.into())
-            .ok_or(fmt::Error)?;
-        let second_sym = table
-            .get_global(self.second_implementation_id.into())
-            .ok_or(fmt::Error)?;
-
-        write!(f, "{}", Message {
             severity: Severity::Error,
-            display: "overflow calculating the specialization between these \
-                      two implementations",
-        })?;
-
-        if let Some(first_span) = first_sym.span() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: first_span,
-                help_display: Some("first implementation defined here"),
-            })?;
-        }
-
-        if let Some(second_span) = second_sym.span() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: second_span,
-                help_display: Some("second implementation defined here"),
-            })?;
-        }
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -346,35 +313,33 @@ pub struct SelfModuleUsing {
     pub using_span: Span,
 }
 
-impl<T: State> Display<T> for SelfModuleUsing {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for SelfModuleUsing {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let module_qualified_name = table
             .get_qualified_name(self.module_id.into())
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: self.using_span.clone(),
+            message: format!(
                 "the module `{module_qualified_name}` was found to have a \
                  `using` statement that uses itself",
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.using_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
 /// The module was found having a duplicate `using` statement.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DuplicatedUsing {
-    /// The module name that was found to have a duplicate `using` statement.
-    pub used_in_module_id: ID<Module>,
-
+pub struct UsingDuplication {
     /// The module name that was used more than once in the `using` statement.
     pub already_used_module_id: ID<Module>,
 
@@ -382,33 +347,27 @@ pub struct DuplicatedUsing {
     pub using_span: Span,
 }
 
-impl<T: State> Display<T> for DuplicatedUsing {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let used_in_module_qualified_name = table
-            .get_qualified_name(self.used_in_module_id.into())
-            .ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for UsingDuplication {
+    type Error = ReportError;
 
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let already_used_module_qualified_name = table
             .get_qualified_name(self.already_used_module_id.into())
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
-                "the module `{used_in_module_qualified_name}` was found to \
-                 have a duplicate `using` statement",
-            ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.using_span,
-            help_display: Some(format!(
+        Ok(Diagnostic {
+            span: self.using_span.clone(),
+            message: format!(
                 "the module `{already_used_module_qualified_name}` was used \
                  more than once"
-            )),
-        })?;
-
-        Ok(())
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -425,28 +384,29 @@ pub struct SymbolIsNotAccessible {
     pub referred_span: Span,
 }
 
-impl<T: State> Display<T> for SymbolIsNotAccessible {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for SymbolIsNotAccessible {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let referring_site_qualified_name =
-            table.get_qualified_name(self.referring_site).ok_or(fmt::Error)?;
+            table.get_qualified_name(self.referring_site).ok_or(ReportError)?;
 
         let referred_qualified_name =
-            table.get_qualified_name(self.referred).ok_or(fmt::Error)?;
+            table.get_qualified_name(self.referred).ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: self.referred_span.clone(),
+            message: format!(
                 "the symbol `{referred_qualified_name}` is not accessible \
                  from `{referring_site_qualified_name}`",
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.referred_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -460,28 +420,33 @@ pub struct ResolutionAmbiguity {
     pub candidates: Vec<GlobalID>,
 }
 
-impl<T: State> Display<T> for ResolutionAmbiguity {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for ResolutionAmbiguity {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let candidates = self
+            .candidates
+            .iter()
+            .copied()
+            .map(|x| table.get_qualified_name(x).ok_or(ReportError))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Diagnostic {
+            span: self.resolution_span.clone(),
+            message: format!(
+                "the resolution resulted into multiple candidates: {}",
+                candidates.join(", ")
+            ),
             severity: Severity::Error,
-            display: "the symbol resolution resulted in multiple candidates",
-        })?;
-        for candidate in &self.candidates {
-            let candidate_qualified_name =
-                table.get_qualified_name(*candidate).ok_or(fmt::Error)?;
-
-            write!(f, "\n  - {}", WithStyle {
-                style: Style::Bold,
-                display: candidate_qualified_name,
-            })?;
-        }
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.resolution_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: Some(
+                "try using fully qualified name to solve the amguity"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        })
     }
 }
 
@@ -496,37 +461,41 @@ pub struct SymbolNotFound {
     pub resolution_span: Span,
 }
 
-impl<T: State> Display<T> for SymbolNotFound {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for SymbolNotFound {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         if let Some(searched_in_module_id) = self.searched_global_id {
             let qualified_name = table
                 .get_qualified_name(searched_in_module_id)
-                .ok_or(fmt::Error)?;
+                .ok_or(ReportError)?;
 
-            write!(f, "{}", Message {
-                severity: Severity::Error,
-                display: format!(
+            Ok(Diagnostic {
+                span: self.resolution_span.clone(),
+                message: format!(
                     "the symbol named `{}` does not exist in `{}`",
                     self.resolution_span.str(),
                     qualified_name
                 ),
-            })?;
-        } else {
-            write!(f, "{}", Message {
                 severity: Severity::Error,
-                display: format!(
-                    "the symbol `{}` does not exist",
-                    self.resolution_span.str(),
+                help_message: None,
+                related: Vec::new(),
+            })
+        } else {
+            Ok(Diagnostic {
+                span: self.resolution_span.clone(),
+                message: format!(
+                    "the symbol named `{}` does not exist",
+                    self.resolution_span.str()
                 ),
-            })?;
+                severity: Severity::Error,
+                help_message: None,
+                related: Vec::new(),
+            })
         }
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.resolution_span,
-            help_display: Option::<i32>::None
-        })?;
-
-        Ok(())
     }
 }
 
@@ -540,25 +509,26 @@ pub struct NoGenericArgumentsRequired {
     pub generic_argument_span: Span,
 }
 
-impl<T: State> Display<T> for NoGenericArgumentsRequired {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let qualified_name =
-            table.get_qualified_name(self.global_id).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for NoGenericArgumentsRequired {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let qualified_name =
+            table.get_qualified_name(self.global_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.generic_argument_span.clone(),
+            message: format!(
                 "the symbol `{qualified_name}` doesn't require any generic \
                  arguments"
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.generic_argument_span,
-            help_display: Some("found supplied here"),
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -572,26 +542,27 @@ pub struct ExpectTrait {
     pub trait_path: Span,
 }
 
-impl<T: State> Display<T> for ExpectTrait {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let found_symbol_qualified_name =
-            table.get_qualified_name(self.found_id).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for ExpectTrait {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
-                "txpected a trait in the trait path, but found `{} {}`",
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let found_symbol_qualified_name =
+            table.get_qualified_name(self.found_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.trait_path.clone(),
+            message: format!(
+                "expect a trait in the path, but found `{} {}`",
                 self.found_id.kind_str(),
                 found_symbol_qualified_name
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.trait_path,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -602,40 +573,52 @@ pub struct CyclicDependency {
     pub participants: BTreeSet<GlobalID>,
 }
 
-impl<T: State> Display<T> for CyclicDependency {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for CyclicDependency {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let first_symbol =
+            self.participants.iter().next().ok_or(ReportError)?;
+        let symbol_span = table
+            .get_global(*first_symbol)
+            .ok_or(ReportError)?
+            .span()
+            .ok_or(ReportError)?;
         let symbol_list = self
             .participants
             .iter()
             .map(|&symbol| {
                 let qualified_name =
-                    table.get_qualified_name(symbol).ok_or(fmt::Error)?;
+                    table.get_qualified_name(symbol).ok_or(ReportError)?;
 
                 Ok(format!("`{qualified_name}`"))
             })
             .collect::<Result<Vec<_>, _>>()?
             .join(", ");
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: symbol_span.clone(),
+            message: format!(
                 "the cyclic dependency was found in the given set of \
                  symbol(s): {symbol_list}"
             ),
-        })?;
-
-        for participant in &self.participants {
-            if let Some(participant_span) =
-                table.get_global(*participant).ok_or(fmt::Error)?.span()
-            {
-                write!(f, "\n{}", SourceCodeDisplay {
-                    span: participant_span,
-                    help_display: Option::<i32>::None,
-                })?;
-            }
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: self
+                .participants
+                .iter()
+                .filter_map(|&participant| {
+                    table.get_global(participant).and_then(|x| x.span())
+                })
+                .map(|x| Related {
+                    span: x.clone(),
+                    message: "participated in cyclic dependency".to_string(),
+                })
+                .collect(),
+        })
     }
 }
 
@@ -649,29 +632,27 @@ pub struct MisorderedGenericArgument {
     pub generic_argument: Span,
 }
 
-impl<T: State> Display<T> for MisorderedGenericArgument {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for MisorderedGenericArgument {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.generic_argument.clone(),
+            message: "the generic argument was supplied in the wrong order"
+                .to_string(),
             severity: Severity::Error,
-            display: "the generic argument was supplied in the wrong order",
-        })?;
-
-        let help_display = match self.generic_kind {
-            GenericKind::Type => {
-                Some("can't be supplied after constant arguments")
-            }
-            GenericKind::Lifetime => {
-                Some("can't be supplied after type or constant arguments")
-            }
-            GenericKind::Constant => None,
-        };
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.generic_argument,
-            help_display,
-        })?;
-
-        Ok(())
+            help_message: match self.generic_kind {
+                GenericKind::Type => Some(
+                    "can't be supplied after constant arguments".to_string(),
+                ),
+                GenericKind::Lifetime => Some(
+                    "can't be supplied after type or constant arguments"
+                        .to_string(),
+                ),
+                GenericKind::Constant => None,
+            },
+            related: Vec::new(),
+        })
     }
 }
 
@@ -685,25 +666,26 @@ pub struct NegativeImplementationOnAdt {
     pub adt_id: AdtID,
 }
 
-impl<T: State> Display<T> for NegativeImplementationOnAdt {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let adt_qualified_name =
-            table.get_qualified_name(self.adt_id.into()).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for NegativeImplementationOnAdt {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let adt_qualified_name =
+            table.get_qualified_name(self.adt_id.into()).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.negative_implementation_span.clone(),
+            message: format!(
                 "negative implementation is not allowed here because \
                  `{adt_qualified_name}` is not a trait",
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.negative_implementation_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -717,29 +699,27 @@ pub struct MisOrderedGenericParameter {
     pub generic_parameter_span: Span,
 }
 
-impl<T: State> Display<T> for MisOrderedGenericParameter {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for MisOrderedGenericParameter {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.generic_parameter_span.clone(),
+            message: "the generic parameter was declared in the wrong order"
+                .to_string(),
             severity: Severity::Error,
-            display: "the generic parameter was declared in the wrong order",
-        })?;
-
-        let help_display = match self.generic_kind {
-            GenericKind::Type => {
-                Some("can't be declared after constant parameters")
-            }
-            GenericKind::Lifetime => {
-                Some("can't be declared after type or constant parameters")
-            }
-            GenericKind::Constant => None,
-        };
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.generic_parameter_span,
-            help_display,
-        })?;
-
-        Ok(())
+            help_message: match self.generic_kind {
+                GenericKind::Type => Some(
+                    "can't be declared after constant parameters".to_string(),
+                ),
+                GenericKind::Lifetime => Some(
+                    "can't be declared after type or constant parameters"
+                        .to_string(),
+                ),
+                GenericKind::Constant => None,
+            },
+            related: Vec::new(),
+        })
     }
 }
 
@@ -760,39 +740,37 @@ pub struct PrivateEntityLeakedToPublicInterface<T> {
     pub public_interface_id: GlobalID,
 }
 
-impl<S: State, T: Display<S>> Display<S>
+impl<T: Display<Suboptimal>> Report<&Table<Suboptimal>>
     for PrivateEntityLeakedToPublicInterface<T>
 {
-    fn fmt(&self, table: &Table<S>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let entity_display = DisplayObject { display: &self.entity, table };
+    type Error = ReportError;
 
-        let public_interface_qualified_name = table
-            .get_qualified_name(self.public_interface_id)
-            .ok_or(fmt::Error)?;
-        let public_interface_accessibility = table
-            .get_accessibility(self.public_interface_id)
-            .ok_or(fmt::Error)?;
-
-        let entity_accessibility_description = table
-            .accessibility_description(self.entity_overall_accessibility)?;
-        let parent_accessibility_description =
-            table.accessibility_description(public_interface_accessibility)?;
-
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
-                "`{entity_display}` is {entity_accessibility_description} but \
-                 it was declared in a `{public_interface_qualified_name}` \
-                 interface, which is {parent_accessibility_description}",
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.leaked_span.clone(),
+            message: format!(
+                "`{}` is {} but it was declared in a `{}` interface, which is \
+                 {}",
+                DisplayObject { display: &self.entity, table },
+                table.accessibility_description(
+                    self.entity_overall_accessibility
+                )?,
+                table
+                    .get_qualified_name(self.public_interface_id)
+                    .ok_or(ReportError)?,
+                table.accessibility_description(
+                    table
+                        .get_accessibility(self.public_interface_id)
+                        .ok_or(ReportError)?
+                )?,
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.leaked_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -812,28 +790,26 @@ pub struct MismatchedGenericArgumentCount {
     pub supplied_count: usize,
 }
 
-impl<T: State> Display<T> for MismatchedGenericArgumentCount {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let generic_kind = match self.generic_kind {
-            GenericKind::Type => "type",
-            GenericKind::Lifetime => "lifetime",
-            GenericKind::Constant => "constant",
-        };
+impl Report<&Table<Suboptimal>> for MismatchedGenericArgumentCount {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.generic_identifier_span.clone(),
+            message: format!(
                 "expected {} {} arguments, but {} were supplied",
-                self.expected_count, generic_kind, self.supplied_count,
+                self.expected_count,
+                match self.generic_kind {
+                    GenericKind::Type => "type",
+                    GenericKind::Lifetime => "lifetime",
+                    GenericKind::Constant => "constant",
+                },
+                self.supplied_count,
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.generic_identifier_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -847,26 +823,27 @@ pub struct LifetimeParameterNotFound {
     pub referring_site: GlobalID,
 }
 
-impl<T: State> Display<T> for LifetimeParameterNotFound {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let referring_site_qualified_name =
-            table.get_qualified_name(self.referring_site).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for LifetimeParameterNotFound {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let referring_site_qualified_name =
+            table.get_qualified_name(self.referring_site).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.referred_span.clone(),
+            message: format!(
                 "the lifetime parameter `{}` was not found in \
                  `{referring_site_qualified_name}`",
                 self.referred_span.str()
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.referred_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -880,25 +857,23 @@ pub struct UnexpectedInference {
     pub generic_kind: GenericKind,
 }
 
-impl<T: State> Display<T> for UnexpectedInference {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!("{} inference is not allowed here", match self
+impl Report<&Table<Suboptimal>> for UnexpectedInference {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.unexpected_span.clone(),
+            message: format!("{} inference is not allowed here", match self
                 .generic_kind
             {
                 GenericKind::Type => "type",
                 GenericKind::Lifetime => "lifetime",
                 GenericKind::Constant => "constant",
-            })
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.unexpected_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            }),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -916,33 +891,35 @@ pub struct UndecidablePredicate<M: Model> {
     pub predicate_declaration_span: Option<Span>,
 }
 
-impl<T: State, M: Model> Display<T> for UndecidablePredicate<M>
+impl<M: Model> Report<&Table<Suboptimal>> for UndecidablePredicate<M>
 where
-    Predicate<M>: Display<T>,
+    Predicate<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.instantiation_span.clone(),
+            message: format!(
                 "overflow calculating the satisfiability of `{}` predicate \
                  when instantiating",
                 DisplayObject { display: &self.predicate, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.instantiation_span,
-            help_display: None::<i32>
-        })?;
-
-        if let Some(predicate_span) = self.predicate_declaration_span.as_ref() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: predicate_span,
-                help_display: Some("predicate defined here"),
-            })?;
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: self
+                .predicate_declaration_span
+                .as_ref()
+                .map(|predicate_span| Related {
+                    span: predicate_span.clone(),
+                    message: "predicate defined here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
@@ -953,20 +930,19 @@ pub struct UnexpectedAdtImplementationMember {
     pub unexpected_member_span: Span,
 }
 
-impl<T: State> Display<T> for UnexpectedAdtImplementationMember {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for UnexpectedAdtImplementationMember {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.unexpected_member_span.clone(),
+            message: "adt (struct and enum) implementation can only contain \
+                      functions"
+                .to_string(),
             severity: Severity::Error,
-            display: "adt (struct and enum) implementation can only contain \
-                      functions",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.unexpected_member_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -977,19 +953,18 @@ pub struct MoreThanOneUnpackedInTupleType {
     pub illegal_tuple_type_span: Span,
 }
 
-impl<T: State> Display<T> for MoreThanOneUnpackedInTupleType {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for MoreThanOneUnpackedInTupleType {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.illegal_tuple_type_span.clone(),
+            message: "the tuple type contains more than one unpacked type"
+                .to_string(),
             severity: Severity::Error,
-            display: "the tuple type contains more than one unpacked type",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.illegal_tuple_type_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -1003,26 +978,27 @@ pub struct ExpectType {
     pub resolved_global_id: GlobalID,
 }
 
-impl<T: State> Display<T> for ExpectType {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for ExpectType {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let qualified_name = table
             .get_qualified_name(self.resolved_global_id)
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: self.non_type_symbol_span.clone(),
+            message: format!(
                 "the type was expected but found {} `{qualified_name}`",
                 self.resolved_global_id.kind_str(),
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.non_type_symbol_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -1036,44 +1012,45 @@ pub struct DuplicatedGenericParameter<T> {
     pub duplicating_generic_parameter_span: Span,
 }
 
-impl<T: GenericParameter, S: State> Display<S>
+impl<T: GenericParameter> Report<&Table<Suboptimal>>
     for DuplicatedGenericParameter<T>
 {
-    fn fmt(&self, table: &Table<S>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let Some(generic_symbol) =
             table.get_generic(self.existing_generic_parameter_id.parent)
         else {
-            return Err(fmt::Error);
+            return Err(ReportError);
         };
 
         let Some(generic_parameter) = T::get_generic_parameters_arena(
             &generic_symbol.generic_declaration().parameters,
         )
         .get(self.existing_generic_parameter_id.id) else {
-            return Err(fmt::Error);
+            return Err(ReportError);
         };
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: self.duplicating_generic_parameter_span.clone(),
+            message: format!(
                 "the generic parameter named `{}` is already defined",
                 generic_parameter.name().unwrap_or("?")
             ),
-        })?;
-
-        if let Some(existing_span) = generic_parameter.span() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: existing_span,
-                help_display: Some("previously defined here"),
-            })?;
-        }
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.duplicating_generic_parameter_span,
-            help_display: Some("redefined here"),
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: generic_parameter
+                .span()
+                .map(|x| Related {
+                    span: x.clone(),
+                    message: "previously defined here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
@@ -1081,71 +1058,44 @@ impl<T: GenericParameter, S: State> Display<S>
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DefaultGenericParameterMustBeTrailing {
     /// The span of the generic parameter.
-    pub invalid_generic_default_parameter_spans: Vec<Span>,
+    pub invalid_generic_default_parameter_span: Span,
 }
 
-impl<T: State> Display<T> for DefaultGenericParameterMustBeTrailing {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for DefaultGenericParameterMustBeTrailing {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.invalid_generic_default_parameter_span.clone(),
+            message: "the default generic parameter must be trailing"
+                .to_string(),
             severity: Severity::Error,
-            display: "the default generic parameter must be trailing",
-        })?;
-
-        for span in &self.invalid_generic_default_parameter_spans {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Option::<i32>::None,
-            })?;
-        }
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
 /// The trait member was expected but the non-trait member was found.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExpectedTraitMember {
+pub struct ExpectTraitMember {
     /// The span where the non-trait member was found.
     pub non_trait_member_span: Span,
 }
 
-impl<T: State> Display<T> for ExpectedTraitMember {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for ExpectTraitMember {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.non_trait_member_span.clone(),
+            message: "the trait member was expected but the non-trait member \
+                      was found"
+                .to_string(),
             severity: Severity::Error,
-            display: "the trait member was expected but the non-trait member \
-                      was found",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.non_trait_member_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
-    }
-}
-
-/// Trait member bound argument mismatched.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MisMatchedTraitMemberBoundArgument {
-    /// The span where the trait member bound argument was found.
-    pub trait_member_bound_argument_span: Span,
-}
-
-impl<T: State> Display<T> for MisMatchedTraitMemberBoundArgument {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: "the trait member bound argument mismatched",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.trait_member_bound_argument_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -1184,13 +1134,20 @@ pub struct MismatchedTraitMemberAndImplementationMember {
     pub implementation_member_identifer_span: Span,
 }
 
-impl<T: State> Display<T> for MismatchedTraitMemberAndImplementationMember {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>>
+    for MismatchedTraitMemberAndImplementationMember
+{
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let trait_member_qualified_identifier = table
             .get_qualified_name(self.trait_member_id.into())
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
         let trait_member_sym =
-            table.get_global(self.trait_member_id.into()).ok_or(fmt::Error)?;
+            table.get_global(self.trait_member_id.into()).ok_or(ReportError)?;
 
         let trait_member_kind = match self.trait_member_id {
             TraitMemberID::Type(_) => TraitMemberKind::Type,
@@ -1198,48 +1155,48 @@ impl<T: State> Display<T> for MismatchedTraitMemberAndImplementationMember {
             TraitMemberID::Constant(_) => TraitMemberKind::Constant,
         };
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: self.implementation_member_identifer_span.clone(),
+            message: format!(
                 "the trait member `{trait_member_qualified_identifier}` is of \
                  kind `{trait_member_kind}` but the implementation member is \
                  of kind `{}`",
                 self.found_kind
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.implementation_member_identifer_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        if let Some(span) = trait_member_sym.span() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("the trait member is defined here"),
-            })?;
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: trait_member_sym
+                .span()
+                .map(|x| Related {
+                    span: x.clone(),
+                    message: "the trait member is defined here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
 /// Generic parameter is unused in the implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnusedGenericParameterInImplementation<ID> {
+pub struct UnusedGenericParameterInImplementation {
     /// The ID of the unused generic parameter.
     pub generic_parameter_id: LocalGenericParameterID,
 
     /// The ID of the implementation in which the generic parameter is unused.
-    pub implementation_id: ID,
+    pub implementation_id: GenericID,
 }
 
-impl<T: State, ID: Copy + Into<GenericID>> Display<T>
-    for UnusedGenericParameterInImplementation<ID>
-{
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let generic_id: GenericID = self.implementation_id.into();
-        let generic_symbol = table.get_generic(generic_id).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for UnusedGenericParameterInImplementation {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let generic_id = self.implementation_id;
+        let generic_symbol =
+            table.get_generic(generic_id).ok_or(ReportError)?;
 
         let (span, name, kind) = {
             match self.generic_parameter_id {
@@ -1249,7 +1206,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
                         .parameters
                         .lifetimes()
                         .get(lifetime_parameter_id)
-                        .ok_or(fmt::Error)?;
+                        .ok_or(ReportError)?;
 
                     (
                         lifetime_param.span(),
@@ -1263,7 +1220,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
                         .parameters
                         .types()
                         .get(type_parameter_id)
-                        .ok_or(fmt::Error)?;
+                        .ok_or(ReportError)?;
 
                     (
                         type_param.span(),
@@ -1277,7 +1234,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
                         .parameters
                         .constants()
                         .get(constant_parameter_id)
-                        .ok_or(fmt::Error)?;
+                        .ok_or(ReportError)?;
 
                     (
                         constant_param.span(),
@@ -1288,21 +1245,17 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
             }
         };
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
-                "The {kind} `{name}` is unused in the implementation",
+        let span = span.ok_or(ReportError)?.clone();
+
+        Ok(Diagnostic {
+            span,
+            message: format!(
+                "the {kind} `{name}` is unused in the implementation",
             ),
-        })?;
-
-        if let Some(span) = span {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("consider removing it")
-            })?;
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -1316,67 +1269,78 @@ pub struct AmbiguousImplementation {
     pub second_implementation_id: TraitImplementationID,
 }
 
-impl<T: State> Display<T> for AmbiguousImplementation {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for AmbiguousImplementation {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let trait_name = table
             .get_qualified_name(self.first_implementation_id.into())
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
-                "the implementations of the trait `{trait_name}` are ambiguous"
+        Ok(Diagnostic {
+            span: table
+                .get_global(self.first_implementation_id.into())
+                .ok_or(ReportError)?
+                .span()
+                .ok_or(ReportError)?
+                .clone(),
+            message: format!(
+                "the implementations of the trait `{trait_name}` are ambiguous",
             ),
-        })?;
-
-        if let Some(first_implementation_span) = table
-            .get_global(self.first_implementation_id.into())
-            .ok_or(fmt::Error)?
-            .span()
-        {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: first_implementation_span,
-                help_display: Option::<i32>::None
-            })?;
-        }
-
-        if let Some(second_implementation_span) = table
-            .get_global(self.second_implementation_id.into())
-            .ok_or(fmt::Error)?
-            .span()
-        {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: second_implementation_span,
-                help_display: Option::<i32>::None
-            })?;
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: vec![
+                Related {
+                    span: table
+                        .get_global(self.first_implementation_id.into())
+                        .ok_or(ReportError)?
+                        .span()
+                        .ok_or(ReportError)?
+                        .clone(),
+                    message: format!(
+                        "the first implementation of the trait `{trait_name}`",
+                    ),
+                },
+                Related {
+                    span: table
+                        .get_global(self.second_implementation_id.into())
+                        .ok_or(ReportError)?
+                        .span()
+                        .ok_or(ReportError)?
+                        .clone(),
+                    message: format!(
+                        "the second implementation of the trait `{trait_name}`",
+                    ),
+                },
+            ],
+        })
     }
 }
 
 /// The higher-ranked lifetime with the same name already exists in the given
 /// scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RedefinedHigherRankedLifetime {
+pub struct HigherRankedLifetimeRedefinition {
     /// The span of the redefinition.
     pub redefinition_span: Span,
 }
 
-impl<T: State> Display<T> for RedefinedHigherRankedLifetime {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for HigherRankedLifetimeRedefinition {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.redefinition_span.clone(),
+            message: "the higher-ranked lifetime with the same name already \
+                      exists in the given scope"
+                .to_string(),
             severity: Severity::Error,
-            display: "the higher-ranked lifetime with the same name already \
-                      exists in the given scope",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.redefinition_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -1400,46 +1364,44 @@ pub struct MismatchedGenericParameterCountInImplementation {
     pub generic_kind: GenericKind,
 }
 
-impl<T: State> Display<T> for MismatchedGenericParameterCountInImplementation {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>>
+    for MismatchedGenericParameterCountInImplementation
+{
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let generic_kind = match self.generic_kind {
             GenericKind::Type => "type",
             GenericKind::Lifetime => "lifetime",
             GenericKind::Constant => "constant",
         };
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: table
+                .get_global(self.implementation_member_id.into())
+                .and_then(|x| x.span())
+                .ok_or(ReportError)?
+                .clone(),
+            message: format!(
                 "the implementation member has {} {generic_kind} parameters, \
                  but the trait member has {}",
                 self.declared_count, self.expected_count
             ),
-        })?;
-
-        if let Some(implementation_member_span) = table
-            .get_global(self.implementation_member_id.into())
-            .ok_or(fmt::Error)?
-            .span()
-        {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: implementation_member_span,
-                help_display: Some("implemented here")
-            })?;
-        }
-
-        if let Some(trait_member_span) = table
-            .get_global(self.trait_member_id.into())
-            .ok_or(fmt::Error)?
-            .span()
-        {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: trait_member_span,
-                help_display: Some("trait member declared here")
-            })?;
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: table
+                .get_global(self.trait_member_id.into())
+                .and_then(|x| x.span())
+                .map(|x| Related {
+                    span: x.clone(),
+                    message: "trait member declared here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
@@ -1453,36 +1415,37 @@ pub struct UnknownTraitImplementationMember {
     pub trait_id: ID<Trait>,
 }
 
-impl<T: State> Display<T> for UnknownTraitImplementationMember {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let trait_qualified_name =
-            table.get_qualified_name(self.trait_id.into()).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for UnknownTraitImplementationMember {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let trait_qualified_name = table
+            .get_qualified_name(self.trait_id.into())
+            .ok_or(ReportError)?;
         let trait_sym =
-            table.get_global(self.trait_id.into()).ok_or(fmt::Error)?;
+            table.get_global(self.trait_id.into()).ok_or(ReportError)?;
         let trait_span = trait_sym.span();
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: self.identifier_span.clone(),
+            message: format!(
                 "the symbol named `{}` is not a member of the trait \
                  `{trait_qualified_name}`",
-                self.identifier_span.str(),
-            )
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.identifier_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        if let Some(span) = trait_span {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("trait declared here"),
-            })?;
-        }
-
-        Ok(())
+                self.identifier_span.str()
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: trait_span
+                .map(|x| Related {
+                    span: x.clone(),
+                    message: "trait declared here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
@@ -1499,39 +1462,35 @@ pub struct AlreadyImplementedTraitMember {
     pub new_implementation_span: Span,
 }
 
-impl<T: State> Display<T> for AlreadyImplementedTraitMember {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for AlreadyImplementedTraitMember {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let trait_member_qualified_name = table
             .get_qualified_name(self.trait_member_id.into())
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: self.new_implementation_span.clone(),
+            message: format!(
                 "the trait member `{trait_member_qualified_name}` is already \
                  implemented"
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.new_implementation_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        if let Some(span) = table
-            .get_global(self.implemented_id.into())
-            .ok_or(fmt::Error)?
-            .span()
-        {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some(
-                    "the trait member is already implemented here"
-                ),
-            })?;
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: vec![Related {
+                span: table
+                    .get_global(self.implemented_id.into())
+                    .and_then(|x| x.span())
+                    .ok_or(ReportError)?
+                    .clone(),
+                message: "the trait member is already implemented here"
+                    .to_string(),
+            }],
+        })
     }
 }
 
@@ -1551,32 +1510,33 @@ pub struct FieldIsNotAccessible {
     pub referring_identifier_span: Span,
 }
 
-impl<T: State> Display<T> for FieldIsNotAccessible {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for FieldIsNotAccessible {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let struct_sym = table.get(self.struct_id).ok_or(ReportError)?;
         let field_sym =
-            struct_sym.fields().get(self.field_id).ok_or(fmt::Error)?;
+            struct_sym.fields().get(self.field_id).ok_or(ReportError)?;
         let referring_site_qualified_name =
-            table.get_qualified_name(self.referring_site).ok_or(fmt::Error)?;
+            table.get_qualified_name(self.referring_site).ok_or(ReportError)?;
         let struct_qualified_name = table
             .get_qualified_name(self.struct_id.into())
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: self.referring_identifier_span.clone(),
+            message: format!(
                 "the field `{}` of `{struct_qualified_name}` is not \
                  accessible in the scope `{referring_site_qualified_name}`",
                 field_sym.name
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.referring_identifier_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -1591,8 +1551,15 @@ pub struct MismatchedImplementationConstantTypeParameter {
     pub trait_member_constant_parameter_id: ConstantParameterID,
 }
 
-impl<T: State> Display<T> for MismatchedImplementationConstantTypeParameter {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>>
+    for MismatchedImplementationConstantTypeParameter
+{
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let trait_member_span = table
             .get_generic(
                 self.implementation_member_constant_parameter_id.parent,
@@ -1604,7 +1571,7 @@ impl<T: State> Display<T> for MismatchedImplementationConstantTypeParameter {
                     .get(self.implementation_member_constant_parameter_id.id)
                     .map(|x| x.span().cloned())
             })
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
         let implementation_member_span = table
             .get_generic(self.trait_member_constant_parameter_id.parent)
@@ -1615,30 +1582,26 @@ impl<T: State> Display<T> for MismatchedImplementationConstantTypeParameter {
                     .get(self.trait_member_constant_parameter_id.id)
                     .map(|x| x.span().cloned())
             })
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: "the type of the constant parameter in the \
+        Ok(Diagnostic {
+            span: implementation_member_span.ok_or(ReportError)?,
+            message: "the type of the constant parameter in the \
                       implementation doesn't match the type of the constant \
-                      parameter in the trait",
-        })?;
-
-        if let Some(span) = implementation_member_span {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: &span,
-                help_display: Option::<i32>::None
-            })?;
-        }
-
-        if let Some(span) = trait_member_span {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: &span,
-                help_display: Option::<i32>::None
-            })?;
-        }
-
-        Ok(())
+                      parameter in the trait"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: trait_member_span
+                .map(|x| Related {
+                    span: x,
+                    message: "the constant parameter in the trait is declared \
+                              here"
+                        .to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
@@ -1652,44 +1615,39 @@ pub struct UnimplementedTraitMembers {
     pub implementation_id: ID<PositiveTraitImplementation>,
 }
 
-impl<T: State> Display<T> for UnimplementedTraitMembers {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for UnimplementedTraitMembers {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let trait_member_qualified_names = self
             .unimplemented_trait_member_ids
             .iter()
             .map(|&trait_member_id| {
                 table
                     .get_qualified_name(trait_member_id.into())
-                    .ok_or(fmt::Error)
+                    .ok_or(ReportError)
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        write!(f, "{}", Message {
+        Ok(Diagnostic {
+            span: table
+                .get_global(self.implementation_id.into())
+                .and_then(|x| x.span())
+                .ok_or(ReportError)?
+                .clone(),
+            message: "not all trait member(s) are implemented in the \
+                      implementation"
+                .to_string(),
             severity: Severity::Error,
-            display: "mot all trait members are implemented in the \
-                      implementation",
-        })?;
-
-        if let Some(span) = table
-            .get_global(self.implementation_id.into())
-            .ok_or(fmt::Error)?
-            .span()
-        {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("the implementation is declared here"),
-            })?;
-        }
-
-        write!(f, "\n{}", Message {
-            severity: Severity::Info,
-            display: format!(
-                "the following trait members are not implemented: {}",
+            help_message: Some(format!(
+                "the following trait member(s) are not implemented: {}",
                 trait_member_qualified_names.join(", ")
-            ),
-        })?;
-
-        Ok(())
+            )),
+            related: Vec::new(),
+        })
     }
 }
 
@@ -1706,38 +1664,40 @@ pub struct UnsatisifedPredicate<M: Model> {
     pub predicate_declaration_span: Option<Span>,
 }
 
-impl<S: State, M: Model> Display<S> for UnsatisifedPredicate<M>
+impl<M: Model> Report<&Table<Suboptimal>> for UnsatisifedPredicate<M>
 where
-    Predicate<M>: table::Display<S>,
+    Predicate<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<S>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.instantiation_span.clone(),
+            message: format!(
                 "the predicate `{}` is not satisfied",
                 DisplayObject { display: &self.predicate, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.instantiation_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        if let Some(span) = self.predicate_declaration_span.as_ref() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("predicate declared here"),
-            })?;
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: self
+                .predicate_declaration_span
+                .as_ref()
+                .map(|predicate_span| Related {
+                    span: predicate_span.clone(),
+                    message: "predicate declared here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
 /// The field with the same name already exists in the struct.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DuplicatedField {
+pub struct FieldDuplication {
     /// The struct ID where the field is duplicated.
     pub struct_id: ID<Struct>,
 
@@ -1748,38 +1708,35 @@ pub struct DuplicatedField {
     pub redeclaration_span: Span,
 }
 
-impl<T: State> Display<T> for DuplicatedField {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for FieldDuplication {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let struct_qualified_name = table
             .get_qualified_name(self.struct_id.into())
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
-        let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
+        let struct_sym = table.get(self.struct_id).ok_or(ReportError)?;
         let field_sym =
-            struct_sym.fields().get(self.field_id).ok_or(fmt::Error)?;
+            struct_sym.fields().get(self.field_id).ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: self.redeclaration_span.clone(),
+            message: format!(
                 "the field `{}` is already defined in the struct \
                  `{struct_qualified_name}`",
                 field_sym.name
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.redeclaration_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        if let Some(span) = &field_sym.span {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("is first defined here"),
-            })?;
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: vec![Related {
+                span: field_sym.span.clone().ok_or(ReportError)?,
+                message: "is first defined here".to_string(),
+            }],
+        })
     }
 }
 
@@ -1797,52 +1754,47 @@ pub struct UnsatisfiedTraitMemberPredicate<M: Model> {
     pub predicate_span: Option<Span>,
 }
 
-impl<T: State, M: Model> Display<T> for UnsatisfiedTraitMemberPredicate<M>
+impl<M: Model> Report<&Table<Suboptimal>> for UnsatisfiedTraitMemberPredicate<M>
 where
-    Predicate<M>: table::Display<T>,
+    Predicate<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Some(trait_implementation_symbol) =
-            table.get_global(self.trait_implementation_id.into())
-        else {
-            return Err(fmt::Error);
-        };
+    type Error = ReportError;
 
-        let Some(trait_implementation_symbol_span) =
-            trait_implementation_symbol.span()
-        else {
-            return Err(fmt::Error);
-        };
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let trait_implementation_symbol = table
+            .get_global(self.trait_implementation_id.into())
+            .ok_or(ReportError)?;
 
-        let Some(qualified_name) =
-            table.get_qualified_name(self.trait_implementation_id.into())
-        else {
-            return Err(fmt::Error);
-        };
+        let trait_implementation_symbol_span =
+            trait_implementation_symbol.span().ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        let qualified_name = table
+            .get_qualified_name(self.trait_implementation_id.into())
+            .ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: trait_implementation_symbol_span.clone(),
+            message: format!(
                 "the trait implementation member `{}` does not \
                  include/satisfy the predicate `{}`",
                 qualified_name,
                 DisplayObject { display: &self.predicate, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: trait_implementation_symbol_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        if let Some(span) = self.predicate_span.as_ref() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("predicate declared here"),
-            })?;
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: self
+                .predicate_span
+                .as_ref()
+                .map(|predicate_span| Related {
+                    span: predicate_span.clone(),
+                    message: "predicate declared here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
@@ -1861,53 +1813,48 @@ pub struct ExtraneousTraitMemberPredicate<M: Model> {
     pub predicate_span: Option<Span>,
 }
 
-impl<T: State, M: Model> Display<T> for ExtraneousTraitMemberPredicate<M>
+impl<M: Model> Report<&Table<Suboptimal>> for ExtraneousTraitMemberPredicate<M>
 where
-    Predicate<M>: table::Display<T>,
+    Predicate<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Some(trait_implementation_symbol) =
-            table.get_global(self.trait_implementation_member_id.into())
-        else {
-            return Err(fmt::Error);
-        };
+    type Error = ReportError;
 
-        let Some(trait_implementation_symbol_span) =
-            trait_implementation_symbol.span()
-        else {
-            return Err(fmt::Error);
-        };
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let trait_implementation_symbol = table
+            .get_global(self.trait_implementation_member_id.into())
+            .ok_or(ReportError)?;
 
-        let Some(qualified_name) = table
+        let trait_implementation_symbol_span =
+            trait_implementation_symbol.span().ok_or(ReportError)?;
+
+        let qualified_name = table
             .get_qualified_name(self.trait_implementation_member_id.into())
-        else {
-            return Err(fmt::Error);
-        };
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: trait_implementation_symbol_span.clone(),
+            message: format!(
                 "the trait implementation member `{}` contains an extraneous \
                  predicate `{}` -- a predicate that is not defined in the \
                  trait member",
                 qualified_name,
                 DisplayObject { display: &self.predicate, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: trait_implementation_symbol_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        if let Some(span) = self.predicate_span.as_ref() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("extraneous predicate declared here"),
-            })?;
-        }
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: self
+                .predicate_span
+                .as_ref()
+                .map(|predicate_span| Related {
+                    span: predicate_span.clone(),
+                    message: "extraneous predicate declared here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
@@ -1944,26 +1891,27 @@ pub struct MismatchedPatternBindingType<M: Model> {
     pub pattern_span: Span,
 }
 
-impl<T: State, M: Model> Display<T> for MismatchedPatternBindingType<M>
+impl<M: Model> Report<&Table<Suboptimal>> for MismatchedPatternBindingType<M>
 where
-    Type<M>: Display<T>,
+    Type<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.pattern_span.clone(),
+            message: format!(
                 "the pattern expects a {} type but found {} ",
                 self.expected_bindnig_type,
-                DisplayObject { table, display: &self.found_type }
+                DisplayObject { display: &self.found_type, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.pattern_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -1981,27 +1929,28 @@ pub struct MismatchedReferenceQualifier<M: Model> {
     pub span: Span,
 }
 
-impl<T: State, M: Model> Display<T> for MismatchedReferenceQualifier<M>
+impl<M: Model> Report<&Table<Suboptimal>> for MismatchedReferenceQualifier<M>
 where
-    Type<M>: Display<T>,
+    Type<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "expected a reference expression with a qualifier `{}` but \
                  found `{}`",
                 self.expected_qualifier,
                 DisplayObject { display: &self.found_reference_type, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2015,41 +1964,38 @@ pub struct CannotIndexPastUnpackedTuple<M: Model> {
     pub tuple_type: r#type::Tuple<M>,
 }
 
-impl<T: State, M: Model> Display<T> for CannotIndexPastUnpackedTuple<M>
+impl<M: Model> Report<&Table<Suboptimal>> for CannotIndexPastUnpackedTuple<M>
 where
-    r#type::Tuple<M>: Display<T>,
+    r#type::Tuple<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let unpacked_index = self
             .tuple_type
             .elements
             .iter()
             .position(|x| x.is_unpacked)
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
+        Ok(Diagnostic {
+            span: self.index_span.clone(),
+            message: 
+                "indexing past the unpacked element in tuple is not allowed".to_string(),
+            
             severity: Severity::Error,
-            display: "indexing past the unpacked element in tuple is not \
-                      allowed",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.index_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        write!(f, "\n{}", Message {
-            severity: Severity::Info,
-            display: format!(
+            help_message: Some(format!(
                 "the tuple type is `{}` having {} element(s) and the unpacked \
                  element is at index {}",
                 DisplayObject { display: &self.tuple_type, table },
                 self.tuple_type.elements.len(),
                 unpacked_index,
-            ),
-        })?;
-
-        Ok(())
+            )),
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2060,19 +2006,17 @@ pub struct TooLargeTupleIndex {
     pub access_span: Span,
 }
 
-impl<T: State> Display<T> for TooLargeTupleIndex {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for TooLargeTupleIndex {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.access_span.clone(),
+            message: "the tuple index is too large".to_string(),
             severity: Severity::Error,
-            display: "the tuple index is too large",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.access_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2086,31 +2030,28 @@ pub struct TupleIndexOutOfBOunds<M: Model> {
     pub tuple_type: r#type::Tuple<M>,
 }
 
-impl<T: State, M: Model> Display<T> for TupleIndexOutOfBOunds<M>
+impl<M: Model> Report<&Table<Suboptimal>> for TupleIndexOutOfBOunds<M>
 where
-    r#type::Tuple<M>: Display<T>,
+    r#type::Tuple<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let count = self.tuple_type.elements.len();
-        write!(f, "{}", Message {
+        Ok(Diagnostic {
+            span: self.access_span.clone(),
+            message: "the tuple index is out of bounds".to_string(),
             severity: Severity::Error,
-            display: "the tuple index is out of bounds",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.access_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        write!(f, "\n{}", Message {
-            severity: Severity::Info,
-            display: format!(
-                "the tuple type is `{}` having {count} element(s)",
+            help_message: Some(format!(
+                "the tuple type is `{}` having {} element(s)",
                 DisplayObject { display: &self.tuple_type, table },
-            ),
-        })?;
-
-        Ok(())
+                count,
+            )),
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2124,27 +2065,17 @@ pub struct FieldNotFound {
     pub struct_id: ID<Struct>,
 }
 
-impl<T: State> Display<T> for FieldNotFound {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let struct_qualified_name = table
-            .get_qualified_name(self.struct_id.into())
-            .ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for FieldNotFound {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.identifier_span.clone(),
+            message: "the field is not found in the struct".to_string(),
             severity: Severity::Error,
-            display: format!(
-                "the field `{}` is not found in the struct \
-                 `{struct_qualified_name}`",
-                self.identifier_span.str(),
-            ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.identifier_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2161,26 +2092,27 @@ pub struct AlreadyBoundFieldPattern {
     pub field_id: ID<Field>,
 }
 
-impl<T: State> Display<T> for AlreadyBoundFieldPattern {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
-        let field_sym =
-            struct_sym.fields().get(self.field_id).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for AlreadyBoundFieldPattern {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let struct_sym = table.get(self.struct_id).ok_or(ReportError)?;
+        let field_sym =
+            struct_sym.fields().get(self.field_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.pattern_span.clone(),
+            message: format!(
                 "the field `{}` is already bound in the pattern",
                 field_sym.name
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.pattern_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2197,23 +2129,21 @@ pub struct MismatchedTuplePatternLength {
     pub type_element_count: usize,
 }
 
-impl<T: State> Display<T> for MismatchedTuplePatternLength {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+impl Report<&Table<Suboptimal>> for MismatchedTuplePatternLength {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.pattern_span.clone(),
+            message: format!(
                 "the pattern contains mismatched element length: expected {} \
                  element(s) but found {}",
                 self.type_element_count, self.pattern_element_count
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.pattern_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2225,20 +2155,21 @@ pub struct FoundUnpackedElementInReferenceBoundTupleType {
     pub pattern_span: Span,
 }
 
-impl<T: State> Display<T> for FoundUnpackedElementInReferenceBoundTupleType {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>>
+    for FoundUnpackedElementInReferenceBoundTupleType
+{
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.pattern_span.clone(),
+            message: "can't bind a tuple pattern to a reference bound tuple \
+                      type with unpacked element"
+                .to_string(),
             severity: Severity::Error,
-            display: "can't bind a tuple pattern to a reference bound tuple \
-                      type with unpacked element",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.pattern_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2252,31 +2183,23 @@ pub struct MoreThanOneUnpackedInTupleExpression<M: Model> {
     pub r#type: Type<M>,
 }
 
-impl<T: State, M: Model> Display<T> for MoreThanOneUnpackedInTupleExpression<M>
+impl<M: Model> Report<&Table<Suboptimal>>
+    for MoreThanOneUnpackedInTupleExpression<M>
 where
-    Type<M>: Display<T>,
+    Type<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "the unpack operator can only be used once in a tuple \
+                      expression"
+                .to_string(),
             severity: Severity::Error,
-            display: "the unpack operator can only be used once in a tuple \
-                      expression",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        write!(f, "\n{}", Message {
-            severity: Severity::Info,
-            display: format!(
-                "the type of the tuple expression is `{}`",
-                DisplayObject { display: &self.r#type, table }
-            ),
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2287,21 +2210,20 @@ pub struct InvalidNumericSuffix {
     pub suffix_span: Span,
 }
 
-impl<T: State> Display<T> for InvalidNumericSuffix {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let suffix_str = self.suffix_span.str();
+impl Report<&Table<Suboptimal>> for InvalidNumericSuffix {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.suffix_span.clone(),
+            message: format!(
+                "the numeric suffix `{}` is unknown",
+                self.suffix_span.str()
+            ),
             severity: Severity::Error,
-            display: format!("the numeric suffix `{suffix_str}` is unknown"),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.suffix_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2315,28 +2237,23 @@ pub struct AlreadyBoundName {
     pub new_binding_span: Span,
 }
 
-impl<T: State> Display<T> for AlreadyBoundName {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = self.already_bound_identifier_span.str();
+impl Report<&Table<Suboptimal>> for AlreadyBoundName {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
-                "the name `{name}` has already been bound in the scope"
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.new_binding_span.clone(),
+            message: format!(
+                "the name `{}` has already been bound in the scope",
+                self.already_bound_identifier_span.str()
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.new_binding_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.already_bound_identifier_span,
-            help_display: Some("the name is already bound here"),
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: vec![Related {
+                span: self.already_bound_identifier_span.clone(),
+                message: "the name is already bound here".to_string(),
+            }],
+        })
     }
 }
 
@@ -2348,20 +2265,19 @@ pub struct FloatingPointLiteralHasIntegralSuffix {
     pub numeric_literal_span: Span,
 }
 
-impl<T: State> Display<T> for FloatingPointLiteralHasIntegralSuffix {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for FloatingPointLiteralHasIntegralSuffix {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.numeric_literal_span.clone(),
+            message: "the numeric expression has a suffix of an integral type \
+                      but the expression has decimal point"
+                .to_string(),
             severity: Severity::Error,
-            display: "the numeric expression has a suffix of an integral type \
-                      but the expression has decimal point",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.numeric_literal_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2372,19 +2288,17 @@ pub struct ExpectedLValue {
     pub expression_span: Span,
 }
 
-impl<T: State> Display<T> for ExpectedLValue {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for ExpectedLValue {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.expression_span.clone(),
+            message: "expected an l-value".to_string(),
             severity: Severity::Error,
-            display: "expected an l-value",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.expression_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2398,24 +2312,25 @@ pub struct ExpectedAssociatedValue {
     pub span: Span,
 }
 
-impl<T: State> Display<T> for ExpectedAssociatedValue {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let variant_sym = table.get(self.variant_id).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for ExpectedAssociatedValue {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let variant_sym = table.get(self.variant_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "the enum variant `{}` expects an associated value",
                 variant_sym.name()
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2429,24 +2344,25 @@ pub struct VariantDoesNotExpectAssociatedValue {
     pub span: Span,
 }
 
-impl<T: State> Display<T> for VariantDoesNotExpectAssociatedValue {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let variant_sym = table.get(self.variant_id).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for VariantDoesNotExpectAssociatedValue {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let variant_sym = table.get(self.variant_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "the enum variant `{}` does not expect an associated value",
                 variant_sym.name()
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2470,25 +2386,26 @@ pub struct MismatchedArgumentCount {
     pub span: Span,
 }
 
-impl<T: State> Display<T> for MismatchedArgumentCount {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let called_symbol =
-            table.get_qualified_name(self.called_id).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for MismatchedArgumentCount {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let called_symbol =
+            table.get_qualified_name(self.called_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "the symbol `{}` expects {} argument(s) but found {}",
                 called_symbol, self.expected_count, self.found_count
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2502,22 +2419,23 @@ pub struct SymbolIsNotCallable {
     pub span: Span,
 }
 
-impl<T: State> Display<T> for SymbolIsNotCallable {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Report<&Table<Suboptimal>> for SymbolIsNotCallable {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let called_symbol =
-            table.get_qualified_name(self.called_id).ok_or(fmt::Error)?;
+            table.get_qualified_name(self.called_id).ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!("the symbol `{called_symbol}` cannot be called"),
             severity: Severity::Error,
-            display: format!("the symbol `{called_symbol}` cannot be called"),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2534,51 +2452,48 @@ pub struct MismatchedType<M: Model> {
     pub span: Span,
 }
 
-impl<T: State, M: Model> Display<T> for MismatchedType<M>
+impl<M: Model> Report<&Table<Suboptimal>> for MismatchedType<M>
 where
-    M::LifetimeInference: Display<T>,
-    M::TypeInference: Display<T>,
-    M::ConstantInference: Display<T>,
+    Type<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "mismatched type: expected `{}` but found `{}`",
                 DisplayObject { display: &self.expected_type, table },
                 DisplayObject { display: &self.found_type, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
 /// The struct type was expected but the found type is different.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExpectedStruct {
+pub struct ExpectStruct {
     /// The span of the qualified identifier.
     pub span: Span,
 }
 
-impl<T: State> Display<T> for ExpectedStruct {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for ExpectStruct {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "struct type expected".to_string(),
             severity: Severity::Error,
-            display: "struct type expected",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2595,23 +2510,21 @@ pub struct UninitializedFields {
     pub struct_expression_span: Span,
 }
 
-impl<T: State> Display<T> for UninitializedFields {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for UninitializedFields {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let struct_sym = table.get(self.struct_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.struct_expression_span.clone(),
+            message: "the struct expression contains uninitialized fields"
+                .to_string(),
             severity: Severity::Error,
-            display: "the struct expression contains uninitialized fields",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.struct_expression_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        write!(f, "\n{}", Message {
-            severity: Severity::Info,
-            display: format!(
+            help_message: Some(format!(
                 "the following fields are uninitialized: {}",
                 self.uninitialized_fields
                     .iter()
@@ -2620,14 +2533,13 @@ impl<T: State> Display<T> for UninitializedFields {
                             .fields()
                             .get(field_id)
                             .map(|x| x.name.clone())
-                            .ok_or(fmt::Error)
+                            .ok_or(ReportError)
                     })
-                    .collect::<Result<Vec<_>, fmt::Error>>()?
+                    .collect::<Result<Vec<_>, ReportError>>()?
                     .join(", ")
-            ),
-        })?;
-
-        Ok(())
+            )),
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2647,37 +2559,36 @@ pub struct DuplicatedFieldInitialization {
     pub duplicate_initialization_span: Span,
 }
 
-impl<T: State> Display<T> for DuplicatedFieldInitialization {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
-        let field_sym =
-            struct_sym.fields().get(self.field_id).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for DuplicatedFieldInitialization {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let struct_sym = table.get(self.struct_id).ok_or(ReportError)?;
+        let field_sym =
+            struct_sym.fields().get(self.field_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.duplicate_initialization_span.clone(),
+            message: format!(
                 "the field `{}` is initialized more than once",
                 field_sym.name
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.duplicate_initialization_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.prior_initialization_span,
-            help_display: Some("the field is first initialized here"),
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: vec![Related {
+                span: self.prior_initialization_span.clone(),
+                message: "the field is first initialized here".to_string(),
+            }],
+        })
     }
 }
 
 /// Expected an arrary type to index into elements but found a different type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ArrayExpected<M: Model> {
+pub struct ExpectArray<M: Model> {
     /// The span of the expression where the elements are indexed.
     pub span: Span,
 
@@ -2685,25 +2596,26 @@ pub struct ArrayExpected<M: Model> {
     pub r#type: Type<M>,
 }
 
-impl<T: State, M: Model> Display<T> for ArrayExpected<M>
+impl<M: Model> Report<&Table<Suboptimal>> for ExpectArray<M>
 where
-    Type<M>: Display<T>,
+    Type<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "expected an array type to index into elements but found `{}`",
                 DisplayObject { display: &self.r#type, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2717,31 +2629,32 @@ pub struct TupleExpected<M: Model> {
     pub r#type: Type<M>,
 }
 
-impl<T: State, M: Model> Display<T> for TupleExpected<M>
+impl<M: Model> Report<&Table<Suboptimal>> for TupleExpected<M>
 where
-    Type<M>: Display<T>,
+    Type<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "expected a tuple type to access the field but found `{}`",
                 DisplayObject { display: &self.r#type, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
 /// Expected a struct type to access the field but found a different type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StructExpected<M: Model> {
+pub struct ExpectStructType<M: Model> {
     /// The span of the expression where the field is accessed.
     pub span: Span,
 
@@ -2749,25 +2662,26 @@ pub struct StructExpected<M: Model> {
     pub r#type: Type<M>,
 }
 
-impl<T: State, M: Model> Display<T> for StructExpected<M>
+impl<M: Model> Report<&Table<Suboptimal>> for ExpectStructType<M>
 where
-    Type<M>: Display<T>,
+    Type<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "expected a struct type to access the field but found `{}`",
                 DisplayObject { display: &self.r#type, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2781,27 +2695,26 @@ pub struct CannotDereference<M: Model> {
     pub span: Span,
 }
 
-impl<T: State, M: Model> Display<T> for CannotDereference<M>
+impl<M: Model> Report<&Table<Suboptimal>> for CannotDereference<M>
 where
-    M::LifetimeInference: Display<T>,
-    M::TypeInference: Display<T>,
-    M::ConstantInference: Display<T>,
+    Type<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "the expression of type `{}` cannot be dereferenced",
                 DisplayObject { display: &self.found_type, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -2820,35 +2733,37 @@ pub struct MismatchedImplementationArguments<M: Model> {
     pub instantiation_span: Span,
 }
 
-impl<T: State, M: Model> Display<T> for MismatchedImplementationArguments<M> {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<M: Model> Report<&Table<Suboptimal>>
+    for MismatchedImplementationArguments<M>
+where
+    GenericArguments<M>: Display<Suboptimal>,
+{
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let adt_implementation_symbol =
-            table.get(self.adt_implementation_id).ok_or(fmt::Error)?;
+            table.get(self.adt_implementation_id).ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
+        Ok(Diagnostic {
+            span: self.instantiation_span.clone(),
+            message: "the generic arguments are not compatible with the \
+                      generic arguments defined in the implementation"
+                .to_string(),
             severity: Severity::Error,
-            display: "the generic arguments are not compatible with the \
-                      generic arguments defined in the implementation",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.instantiation_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        if let Some(span) = adt_implementation_symbol.span() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("the implementation is defined here"),
-            })?;
-
-            write!(f, "\n{}", Message {
-                severity: Severity::Info,
-                display: "the implementation is defined here",
-            })?;
-        }
-
-        Ok(())
+            help_message: None,
+            related: adt_implementation_symbol
+                .span()
+                .as_ref()
+                .map(|span| Related {
+                    span: span.clone(),
+                    message: "the implementation is defined here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
@@ -2870,26 +2785,28 @@ pub struct TraitImplementationIsNotGeneralEnough<M: Model> {
     pub instantiation_span: Span,
 }
 
-impl<T: State, M: Model> Display<T> for TraitImplementationIsNotGeneralEnough<M>
+impl<M: Model> Report<&Table<Suboptimal>>
+    for TraitImplementationIsNotGeneralEnough<M>
 where
-    Predicate<M>: table::Display<T>,
-
-    M::LifetimeInference: Display<T>,
-    M::TypeInference: Display<T>,
-    M::ConstantInference: Display<T>,
+    GenericArguments<M>: table::Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let positive_trait_implementation_symbol = table
             .get(self.positive_trait_implementation_id)
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
         let implemented_trait_qualified_name = table
             .get_qualified_name(self.required_trait_predicate.id.into())
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: self.instantiation_span.clone(),
+            message: format!(
                 "the trait implementation is not general enough to satisfy \
                  {}{}",
                 implemented_trait_qualified_name,
@@ -2897,22 +2814,28 @@ where
                     table,
                     display: &self.required_trait_predicate.generic_arguments
                 }
-            )
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.instantiation_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        if let Some(span) = positive_trait_implementation_symbol.span() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("the implementation is defined here"),
-            })?;
-        }
-
-        Ok(())
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: self
+                .predicate_declaration_span
+                .as_ref()
+                .map(|span| Related {
+                    span: span.clone(),
+                    message: "the trait predicate is declared here".to_string(),
+                })
+                .into_iter()
+                .chain(
+                    positive_trait_implementation_symbol.span().as_ref().map(
+                        |span| Related {
+                            span: span.clone(),
+                            message: "the implementation is defined here"
+                                .to_string(),
+                        },
+                    ),
+                )
+                .collect(),
+        })
     }
 }
 
@@ -2926,56 +2849,60 @@ pub struct AmbiguousPredicates<M: Model> {
     pub occurred_at_global_id: GlobalID,
 }
 
-impl<M: Model, T: State> Display<T> for AmbiguousPredicates<M>
+impl<M: Model> Report<&Table<Suboptimal>> for AmbiguousPredicates<M>
 where
-    Predicate<M>: table::Display<T>,
+    Predicate<M>: table::Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         let (Some(qualified_name), Some(spans_by_predicate)) = (
             table.get_qualified_name(self.occurred_at_global_id),
             table.get_active_premise_predicates_with_span::<M>(
                 self.occurred_at_global_id,
             ),
         ) else {
-            return Err(fmt::Error);
+            return Err(ReportError);
         };
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: table
+                .get_global(self.occurred_at_global_id)
+                .and_then(|x| x.span().cloned())
+                .ok_or(ReportError)?,
+            message: format!(
                 "the predicates are ambiguous to each other in \
-                 {qualified_name}",
+                 `{qualified_name}`",
             ),
-        })?;
-
-        for predicate in &self.predicates {
-            let Some(spans) = spans_by_predicate.get(predicate) else {
-                continue;
-            };
-
-            for span in spans {
-                write!(f, "\n{}", SourceCodeDisplay {
-                    span,
-                    help_display: Option::<i32>::None,
-                })?;
-            }
-        }
-
-        let predicate_names = self
-            .predicates
-            .iter()
-            .map(|predicate| {
-                format!("{}", DisplayObject { table, display: predicate })
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        write!(f, "\n{}", Message {
-            severity: Severity::Info,
-            display: format!("the predicates are: {predicate_names}"),
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: Some(format!(
+                "the predicate(s) are: {}",
+                self.predicates
+                    .iter()
+                    .map(|x| DisplayObject { table, display: x }.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            related: self
+                .predicates
+                .iter()
+                .filter_map(|predicate| {
+                    spans_by_predicate.get(predicate).map(|spans| {
+                        spans
+                            .iter()
+                            .map(|span| Related {
+                                span: span.clone(),
+                                message: String::new(),
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .flatten()
+                .collect(),
+        })
     }
 }
 
@@ -2994,46 +2921,45 @@ pub struct AdtImplementationIsNotGeneralEnough<M: Model> {
     pub instantiation_span: Span,
 }
 
-impl<M: Model> Display<Suboptimal> for AdtImplementationIsNotGeneralEnough<M>
+impl<M: Model> Report<&Table<Suboptimal>>
+    for AdtImplementationIsNotGeneralEnough<M>
 where
     GenericArguments<M>: table::Display<Suboptimal>,
 {
-    fn fmt(
+    type Error = ReportError;
+
+    fn report(
         &self,
         table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+    ) -> Result<Diagnostic, Self::Error> {
         let adt_implementation_symbol =
-            table.get(self.adt_implementation_id).ok_or(fmt::Error)?;
+            table.get(self.adt_implementation_id).ok_or(ReportError)?;
 
         let implemented_qualified_name = table
             .get_qualified_name(
                 adt_implementation_symbol.implemented_id().into(),
             )
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+        Ok(Diagnostic {
+            span: self.instantiation_span.clone(),
+            message: format!(
                 "the implementation is not general enough for {}{}",
                 implemented_qualified_name,
                 DisplayObject { table, display: &self.generic_arguments }
-            )
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.instantiation_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        if let Some(span) = adt_implementation_symbol.span() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("the implementation is defined here"),
-            })?;
-        }
-
-        Ok(())
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: adt_implementation_symbol
+                .span()
+                .as_ref()
+                .map(|span| Related {
+                    span: span.clone(),
+                    message: "the implementation is defined here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
     }
 }
 
@@ -3044,20 +2970,19 @@ pub struct NotAllFlowPathsExpressValue {
     pub span: Span,
 }
 
-impl<T: State> Display<T> for NotAllFlowPathsExpressValue {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for NotAllFlowPathsExpressValue {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "not all flow paths in this block expression express a \
+                      value"
+                .to_string(),
             severity: Severity::Error,
-            display: "not all flow paths in this block expression express a \
-                      value",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -3072,54 +2997,65 @@ pub struct FinalImplementationCannotBeOverriden {
     pub overriden_implementation_id: TraitImplementationID,
 }
 
-impl Display<Suboptimal> for FinalImplementationCannotBeOverriden {
-    fn fmt(
+impl Report<&Table<Suboptimal>> for FinalImplementationCannotBeOverriden {
+    type Error = ReportError;
+
+    fn report(
         &self,
         table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+    ) -> Result<Diagnostic, Self::Error> {
         let final_impl_symbol = table
             .get_implementation(self.final_implementation_id.into())
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
 
         let overriden_impl_symbol = table
             .get_implementation(self.overriden_implementation_id.into())
-            .ok_or(fmt::Error)?;
+            .ok_or(ReportError)?;
+
+        let final_qual_name = table
+            .get_qualified_name(self.final_implementation_id.into())
+            .ok_or(ReportError)?;
 
         let impl_qual_name = table
-            .get_qualified_name(self.final_implementation_id.into())
-            .ok_or(fmt::Error)?;
+            .get_qualified_name(self.overriden_implementation_id.into())
+            .ok_or(ReportError)?;
 
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
-                "the trait implementation `{impl_qual_name}{}` is final but \
-                 it is overriden by implementation `{impl_qual_name}{}`",
+        Ok(Diagnostic {
+            span: final_impl_symbol
+                .span()
+                .or_else(|| overriden_impl_symbol.span())
+                .ok_or(ReportError)?
+                .clone(),
+            message: format!(
+                "the trait implementation `{}{}` is final but it is overriden \
+                 by implementation `{}{}`",
+                final_qual_name,
                 DisplayObject { table, display: final_impl_symbol.arguments() },
+                impl_qual_name,
                 DisplayObject {
                     table,
                     display: overriden_impl_symbol.arguments()
                 },
-            )
-        })?;
-
-        if let Some(span) = final_impl_symbol.span() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some("the final implementation is defined here"),
-            })?;
-        }
-
-        if let Some(span) = overriden_impl_symbol.span() {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span,
-                help_display: Some(
-                    "the overriden implementation is defined here"
-                ),
-            })?;
-        }
-
-        Ok(())
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: final_impl_symbol
+                .span()
+                .map(|span| Related {
+                    span: span.clone(),
+                    message: "the final implementation is defined here"
+                        .to_string(),
+                })
+                .into_iter()
+                .chain(overriden_impl_symbol.span().map(|span| {
+                    Related {
+                        span: span.clone(),
+                        message: "the overriden implementation is defined here"
+                            .to_string(),
+                    }
+                }))
+                .collect::<Vec<_>>(),
+        })
     }
 }
 
@@ -3130,19 +3066,17 @@ pub struct MismatchedMutability {
     pub span: Span,
 }
 
-impl<T: State> Display<T> for MismatchedMutability {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for MismatchedMutability {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!("`{}` is not mutable", self.span.str()),
             severity: Severity::Error,
-            display: format!("`{}` is not mutable", self.span.str())
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -3156,25 +3090,26 @@ pub struct InvalidBitwiseOperation<M: Model> {
     pub span: Span,
 }
 
-impl<T: State, M: Model> Display<T> for InvalidBitwiseOperation<M>
+impl<M: Model> Report<&Table<Suboptimal>> for InvalidBitwiseOperation<M>
 where
-    Type<M>: Display<T>,
+    Type<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "can't perform bitwise operation on expression with type `{}`",
                 DisplayObject { display: &self.found_type, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -3188,26 +3123,27 @@ pub struct InvalidRelationalOperation<M: Model> {
     pub span: Span,
 }
 
-impl<T: State, M: Model> Display<T> for InvalidRelationalOperation<M>
+impl<M: Model> Report<&Table<Suboptimal>> for InvalidRelationalOperation<M>
 where
-    Type<M>: Display<T>,
+    Type<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "can't perform relational operation on expression with type \
                  `{}`",
                 DisplayObject { display: &self.found_type, table }
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -3242,22 +3178,20 @@ pub struct LoopControlFlowOutsideLoop {
     pub control_flow: LoopControlFlow,
 }
 
-impl<T: State> Display<T> for LoopControlFlowOutsideLoop {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+impl Report<&Table<Suboptimal>> for LoopControlFlowOutsideLoop {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "`{}` expression can't be used outside of a loop",
                 self.control_flow
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -3268,20 +3202,19 @@ pub struct ExpressOutsideBlock {
     pub span: Span,
 }
 
-impl<T: State> Display<T> for ExpressOutsideBlock {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for ExpressOutsideBlock {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "`express` expression can't be used outside of a block \
+                      expression"
+                .to_string(),
             severity: Severity::Error,
-            display: "`express` expression can't be used outside of a block \
-                      expression",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -3292,22 +3225,20 @@ pub struct LoopWithGivenLabelNameNotFound {
     pub span: Span,
 }
 
-impl<T: State> Display<T> for LoopWithGivenLabelNameNotFound {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+impl Report<&Table<Suboptimal>> for LoopWithGivenLabelNameNotFound {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "loop with label named `{}` was not found",
                 self.span.str()
             ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -3318,22 +3249,20 @@ pub struct BlockWithGivenLableNameNotFound {
     pub span: Span,
 }
 
-impl<T: State> Display<T> for BlockWithGivenLableNameNotFound {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+impl Report<&Table<Suboptimal>> for BlockWithGivenLableNameNotFound {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "block with label named `{}` was not found",
                 self.span.str()
-            )
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -3344,19 +3273,18 @@ pub struct ReturnIsNotAllowed {
     pub span: Span,
 }
 
-impl<T: State> Display<T> for ReturnIsNotAllowed {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+impl Report<&Table<Suboptimal>> for ReturnIsNotAllowed {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "`return` expression is not allowed in this context"
+                .to_string(),
             severity: Severity::Error,
-            display: "`return` expression is not allowed outside the function",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -3367,22 +3295,20 @@ pub struct ExpressionIsNotCallable {
     pub span: Span,
 }
 
-impl<T: State> Display<T> for ExpressionIsNotCallable {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
+impl Report<&Table<Suboptimal>> for ExpressionIsNotCallable {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
                 "the expression `{}` is not callable",
                 self.span.str()
-            )
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -3396,24 +3322,20 @@ pub struct SymbolCannotBeUsedAsAnExpression {
     pub symbol: GlobalID,
 }
 
-impl<T: State> Display<T> for SymbolCannotBeUsedAsAnExpression {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let symbol_name =
-            table.get_qualified_name(self.symbol).ok_or(fmt::Error)?;
+impl Report<&Table<Suboptimal>> for SymbolCannotBeUsedAsAnExpression {
+    type Error = ReportError;
 
-        write!(f, "{}", Message {
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the symbol `{}` cannot be used as an expression",
+                self.span.str()
+            ),
             severity: Severity::Error,
-            display: format!(
-                "the symbol `{symbol_name}` cannot be used as an expression",
-            )
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -3427,30 +3349,26 @@ pub struct InvalidCastType<M: Model> {
     pub r#type: Type<M>,
 }
 
-impl<T: State, M: Model> Display<T> for InvalidCastType<M>
+impl<M: Model> Report<&Table<Suboptimal>> for InvalidCastType<M>
 where
-    Type<M>: Display<T>,
+    Type<M>: Display<Suboptimal>,
 {
-    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "cannot castt an expression to type type `{}`",
+                DisplayObject { display: &self.r#type, table }
+            ),
             severity: Severity::Error,
-            display: "the given type cannot be used in cast expression",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        write!(f, "\n{}", Message {
-            severity: Severity::Info,
-            display: format!("the type is `{}`", DisplayObject {
-                display: &self.r#type,
-                table
-            }),
-        })?;
-
-        Ok(())
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 
@@ -3459,6 +3377,23 @@ where
 pub struct UnknownExternCallingConvention {
     /// The span of the extern calling convention.
     pub span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for UnknownExternCallingConvention {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "unknown calling convention `{}` in `extern`",
+                self.span.str()
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
 }
 
 impl<T: State> Display<T> for UnknownExternCallingConvention {
@@ -3482,11 +3417,13 @@ impl<T: State> Display<T> for UnknownExternCallingConvention {
 
 /// Implemented by all semantic errors.
 pub trait Error:
-    Debug + Display<Suboptimal> + Any + Send + Sync + 'static
+    for<'a> Report<&'a Table<Suboptimal>, Error = ReportError>
+    + Debug
+    + Any
+    + Send
+    + Sync
+    + 'static
 {
-    #[allow(missing_docs, clippy::missing_errors_doc)]
-    fn as_display_with_table(&self) -> &dyn Display<Suboptimal>;
-
     #[allow(missing_docs)]
     fn as_any(&self) -> &dyn Any;
 
@@ -3494,12 +3431,15 @@ pub trait Error:
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-impl<U: Debug + Display<Suboptimal> + Any + Send + Sync + 'static> Error for U
-where
-    for<'a> DisplayObject<'a, U, Suboptimal>: fmt::Display,
+impl<
+        U: for<'a> Report<&'a Table<Suboptimal>, Error = ReportError>
+            + Debug
+            + Any
+            + Send
+            + Sync
+            + 'static,
+    > Error for U
 {
-    fn as_display_with_table(&self) -> &dyn Display<Suboptimal> { self }
-
     fn as_any(&self) -> &dyn Any { self }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }

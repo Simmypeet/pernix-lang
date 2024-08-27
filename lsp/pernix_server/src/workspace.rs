@@ -13,7 +13,10 @@ use pernixc_base::{
     source_file::{SourceElement, SourceFile, Span},
 };
 use pernixc_lexical::{token, token_stream::TokenStream};
-use pernixc_syntax::{parser::Parser, syntax_tree::json};
+use pernixc_syntax::{
+    parser::Parser,
+    syntax_tree::{json, ConnectedList},
+};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Url};
 
 use crate::extension::{DaignosticExt, SpanExt};
@@ -133,6 +136,8 @@ pub enum JsonConfigurationError {
 
 impl JsonConfigurationError {
     /// Converts the error to an LSP diagnostic.
+    #[allow(clippy::too_many_lines)]
+    #[must_use]
     pub fn to_diagnostic(
         &self,
         skip_parising_errors: bool,
@@ -147,69 +152,55 @@ impl JsonConfigurationError {
         }
 
         Some(match self {
-            JsonConfigurationError::Lexical(error) => {
+            Self::Lexical(error) => {
                 if skip_parising_errors {
                     return None;
                 }
 
                 error.report(()).unwrap().into_diagnostic()
             }
-            JsonConfigurationError::Syntax(error) => {
+            Self::Syntax(error) => {
                 if skip_parising_errors {
                     return None;
                 }
 
                 error.report(()).unwrap().into_diagnostic()
             }
-            JsonConfigurationError::ExpectMap(e) => create_error_diagnostic(
+            Self::ExpectMap(e) => create_error_diagnostic(
                 &e.span(),
                 "expect JSON map".to_string(),
             ),
-            JsonConfigurationError::UnknownKey(e) => create_error_diagnostic(
+            Self::UnknownKey(e) => create_error_diagnostic(
                 &e.span,
                 format!("key {} is unknown", e.span.str()),
             ),
-            JsonConfigurationError::TargetNameIsNotIdentifier(e) => {
-                create_error_diagnostic(
-                    &e.span,
-                    e.value
-                        .as_ref()
-                        .map(|x| {
-                            format!(
-                                "\"{}\" is not a valid identifier for target \
-                                 name",
-                                x
-                            )
-                        })
-                        .unwrap_or_else(|| {
-                            "\"targetName\" contains an invalid identifier \
-                             value"
-                                .to_string()
-                        }),
-                )
-            }
-            JsonConfigurationError::RootFileExpectString(e) => {
-                create_error_diagnostic(
-                    &e.span(),
-                    "\"rootFile\" expects a string value".to_string(),
-                )
-            }
-            JsonConfigurationError::KeyExpectString { key, found } => {
-                create_error_diagnostic(
-                    &found.span(),
-                    format!("\"{}\" expects a string value", key),
-                )
-            }
-            JsonConfigurationError::MissingKeys { keys, map_span } => {
-                create_error_diagnostic(
-                    map_span,
-                    format!(
-                        "the key(s) are missing: \"{}\"",
-                        keys.join("\", \"")
-                    ),
-                )
-            }
-            JsonConfigurationError::RootFilePathIsInvalid { path, string } => {
+            Self::TargetNameIsNotIdentifier(e) => create_error_diagnostic(
+                &e.span,
+                e.value.as_ref().map_or_else(
+                    || {
+                        "\"targetName\" contains an invalid identifier value"
+                            .to_string()
+                    },
+                    |x| {
+                        format!(
+                            "\"{x}\" is not a valid identifier for target name",
+                        )
+                    },
+                ),
+            ),
+            Self::RootFileExpectString(e) => create_error_diagnostic(
+                &e.span(),
+                "\"rootFile\" expects a string value".to_string(),
+            ),
+            Self::KeyExpectString { key, found } => create_error_diagnostic(
+                &found.span(),
+                format!("\"{key}\" expects a string value"),
+            ),
+            Self::MissingKeys { keys, map_span } => create_error_diagnostic(
+                map_span,
+                format!("the key(s) are missing: \"{}\"", keys.join("\", \"")),
+            ),
+            Self::RootFilePathIsInvalid { path, string } => {
                 create_error_diagnostic(
                     &string.span,
                     path.as_ref().map_or_else(
@@ -223,7 +214,7 @@ impl JsonConfigurationError {
                     ),
                 )
             }
-            JsonConfigurationError::RootFilePathNotFound { path, string } => {
+            Self::RootFilePathNotFound { path, string } => {
                 create_error_diagnostic(
                     &string.span,
                     format!(
@@ -232,7 +223,7 @@ impl JsonConfigurationError {
                     ),
                 )
             }
-            JsonConfigurationError::RootFilePathIsNotFile { path, string } => {
+            Self::RootFilePathIsNotFile { path, string } => {
                 create_error_diagnostic(
                     &string.span,
                     format!(
@@ -241,26 +232,23 @@ impl JsonConfigurationError {
                     ),
                 )
             }
-            JsonConfigurationError::RootFilePathIsNotPnxFile {
-                path,
-                string,
-            } => create_error_diagnostic(
-                &string.span,
-                format!(
-                    "\"rootFile\" path \"{}\" does not have `.pnx` file \
-                     extension",
-                    path.display()
-                ),
-            ),
-            JsonConfigurationError::DuplicatedKey { duplicated, .. } => {
+            Self::RootFilePathIsNotPnxFile { path, string } => {
                 create_error_diagnostic(
-                    &duplicated.span,
+                    &string.span,
                     format!(
-                        "duplicated key {} found in map",
-                        duplicated.span.str()
+                        "\"rootFile\" path \"{}\" does not have `.pnx` file \
+                         extension",
+                        path.display()
                     ),
                 )
             }
+            Self::DuplicatedKey { duplicated, .. } => create_error_diagnostic(
+                &duplicated.span,
+                format!(
+                    "duplicated key {} found in map",
+                    duplicated.span.str()
+                ),
+            ),
         })
     }
 }
@@ -314,19 +302,19 @@ pub enum NewWorkspaceError {
 impl From<pernixc_base::source_file::Error> for NewWorkspaceError {
     fn from(error: pernixc_base::source_file::Error) -> Self {
         match error {
-            pernixc_base::source_file::Error::Io(err) => {
-                NewWorkspaceError::Io(err)
-            }
-            pernixc_base::source_file::Error::Utf8(err) => {
-                NewWorkspaceError::Utf8(err)
-            }
+            pernixc_base::source_file::Error::Io(err) => Self::Io(err),
+            pernixc_base::source_file::Error::Utf8(err) => Self::Utf8(err),
         }
     }
 }
 
 impl Workspace {
     /// Creates a new workspace from the given root URL.
-    pub fn new(root_url: Url) -> Result<Self, NewWorkspaceError> {
+    ///
+    /// # Errors
+    ///
+    /// See [`NewWorkspaceError`] for the possible errors that can occur.
+    pub fn new(root_url: &Url) -> Result<Self, NewWorkspaceError> {
         // the path
         let Some(abs_root_pathbuf) = root_url.to_file_path().ok() else {
             return Err(NewWorkspaceError::NonLocalHostPath);
@@ -412,6 +400,7 @@ impl Workspace {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn parse_configuration(
         configuration_map: json::Map,
         error_collector: &mut Vec<JsonConfigurationError>,
@@ -428,7 +417,7 @@ impl Workspace {
             .dissolve()
             .1
             .into_iter()
-            .flat_map(|x| x.into_elements())
+            .flat_map(ConnectedList::into_elements)
         {
             let (key, _, value) = pair.dissolve();
 
@@ -509,67 +498,63 @@ impl Workspace {
                     root_file_key_string = Some(key.clone());
 
                     // is not a valid identifier
-                    let file_path = match &path_string.value {
-                        Some(string) => {
-                            // convert to absolute path
-                            let path = root_path.join(string);
-                            let Ok(path) = std::fs::canonicalize(&path) else {
-                                error_collector.push(
-                                    JsonConfigurationError::RootFilePathIsInvalid {
-                                        path: Some(path),
-                                        string: path_string,
-                                    },
-                                );
-                                continue;
-                            };
-
-                            // file not found
-                            if !path.exists() {
-                                error_collector.push(
-                                    JsonConfigurationError::RootFilePathNotFound {
-                                        path,
-                                        string: path_string,
-                                    },
-                                );
-                                continue;
-                            }
-
-                            // not a file
-                            if !path.is_file() {
-                                error_collector.push(
-                                    JsonConfigurationError::RootFilePathIsNotFile{
-                                        path,
-                                        string: path_string
-                                    },
-                                );
-                                continue;
-                            }
-
-                            // not a `.pnx` file
-                            if path.extension().and_then(|x| x.to_str())
-                                != Some("pnx")
-                            {
-                                error_collector.push(
-                                    JsonConfigurationError::RootFilePathIsNotPnxFile{
-                                        path,
-                                        string: path_string
-                                    },
-                                );
-                                continue;
-                            }
-
-                            path
-                        }
-
-                        _ => {
+                    let file_path = if let Some(string) = &path_string.value {
+                        // convert to absolute path
+                        let path = root_path.join(string);
+                        let Ok(path) = std::fs::canonicalize(&path) else {
                             error_collector.push(
                                 JsonConfigurationError::RootFilePathIsInvalid {
-                                    path: None,
+                                    path: Some(path),
+                                    string: path_string,
+                                },
+                            );
+                            continue;
+                        };
+
+                        // file not found
+                        if !path.exists() {
+                            error_collector.push(
+                                JsonConfigurationError::RootFilePathNotFound {
+                                    path,
                                     string: path_string,
                                 },
                             );
                             continue;
                         }
+
+                        // not a file
+                        if !path.is_file() {
+                            error_collector.push(
+                                JsonConfigurationError::RootFilePathIsNotFile {
+                                    path,
+                                    string: path_string,
+                                },
+                            );
+                            continue;
+                        }
+
+                        // not a `.pnx` file
+                        if path.extension().and_then(|x| x.to_str())
+                            != Some("pnx")
+                        {
+                            error_collector.push(
+                                JsonConfigurationError::RootFilePathIsNotPnxFile{
+                                    path,
+                                    string: path_string
+                                },
+                            );
+                            continue;
+                        }
+
+                        path
+                    } else {
+                        error_collector.push(
+                            JsonConfigurationError::RootFilePathIsInvalid {
+                                path: None,
+                                string: path_string,
+                            },
+                        );
+                        continue;
                     };
 
                     root_file = Some(file_path);
@@ -582,31 +567,27 @@ impl Workspace {
             }
         }
 
-        match (target_name, root_file) {
-            (Some(target_name), Some(root_file)) => {
-                Some(Configuration { target_name, root_file })
+        if let (Some(target_name), Some(root_file)) = (target_name, root_file) {
+            Some(Configuration { target_name, root_file })
+        } else {
+            let mut missing_keys = Vec::new();
+
+            if target_name_key_string.is_none() {
+                missing_keys.push("targetName");
             }
 
-            (_, _) => {
-                let mut missing_keys = Vec::new();
-
-                if target_name_key_string.is_none() {
-                    missing_keys.push("targetName");
-                }
-
-                if root_file_key_string.is_none() {
-                    missing_keys.push("rootFile");
-                }
-
-                if !missing_keys.is_empty() {
-                    error_collector.push(JsonConfigurationError::MissingKeys {
-                        keys: missing_keys,
-                        map_span,
-                    });
-                }
-
-                None
+            if root_file_key_string.is_none() {
+                missing_keys.push("rootFile");
             }
+
+            if !missing_keys.is_empty() {
+                error_collector.push(JsonConfigurationError::MissingKeys {
+                    keys: missing_keys,
+                    map_span,
+                });
+            }
+
+            None
         }
     }
 }

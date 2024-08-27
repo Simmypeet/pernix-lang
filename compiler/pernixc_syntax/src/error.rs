@@ -155,11 +155,10 @@ impl Error {
     }
 }
 
-impl Report for Error {
+impl Report<()> for Error {
     type Error = Infallible;
-    type Parameter = ();
 
-    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
         let expected_string = self.get_expected_string();
 
         let found_string = match &self.found {

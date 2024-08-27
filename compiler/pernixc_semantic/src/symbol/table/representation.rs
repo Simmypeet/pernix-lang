@@ -21,7 +21,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use super::{Building, State, Suboptimal, Success, Table};
 use crate::{
     arena::{Arena, ID},
-    error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
+    error::{self, ExpectModule, SelfModuleUsing, UsingDuplication},
     symbol::{
         self, Accessibility, Adt, AdtID, AdtImplementation,
         AdtImplementationFunction, Callable, CallableID, Constant, Enum,
@@ -1595,8 +1595,7 @@ fn transition_to_building(
             drop(modules);
 
             if duplicated {
-                handler.receive(Box::new(DuplicatedUsing {
-                    used_in_module_id: current_module_id,
+                handler.receive(Box::new(UsingDuplication {
                     already_used_module_id: using_module_id,
                     using_span: using.span(),
                 }));

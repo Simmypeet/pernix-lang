@@ -105,11 +105,10 @@ pub struct RootSubmoduleConflict {
     pub submodule_span: Span,
 }
 
-impl Report for RootSubmoduleConflict {
+impl Report<()> for RootSubmoduleConflict {
     type Error = ();
-    type Parameter = ();
 
-    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             severity: Severity::Error,
             message: "the submodule of the root source file ends up pointing \
@@ -135,11 +134,10 @@ pub struct SourceFileLoadFail {
     pub path: PathBuf,
 }
 
-impl Report for SourceFileLoadFail {
+impl Report<()> for SourceFileLoadFail {
     type Error = ();
-    type Parameter = ();
 
-    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             severity: Severity::Error,
             message: "failed to load a source file for the submodule"
@@ -165,11 +163,10 @@ pub struct ModuleRedefinition {
     pub redefinition_submodule_span: Span,
 }
 
-impl Report for ModuleRedefinition {
+impl Report<()> for ModuleRedefinition {
     type Error = ();
-    type Parameter = ();
 
-    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             severity: Severity::Error,
             message: "a module with the given name already exists".to_string(),
@@ -192,11 +189,10 @@ pub enum Error {
     SourceFileLoadFail(SourceFileLoadFail),
 }
 
-impl Report for Error {
+impl Report<()> for Error {
     type Error = ();
-    type Parameter = ();
 
-    fn report(&self, (): Self::Parameter) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
         match self {
             Self::ModuleRedefinition(err) => err.report(()),
             Self::RootSubmoduleConflict(err) => err.report(()),

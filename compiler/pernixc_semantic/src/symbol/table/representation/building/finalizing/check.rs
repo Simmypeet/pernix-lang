@@ -988,21 +988,21 @@ impl UnusedGenericParameters {
         for unused_lt in &self.lifetimes {
             handler.receive(Box::new(UnusedGenericParameterInImplementation {
                 generic_parameter_id: unused_lt.id.into(),
-                implementation_id: implementation_kind_id,
+                implementation_id: implementation_kind_id.into(),
             }));
         }
 
         for unused_ty in &self.types {
             handler.receive(Box::new(UnusedGenericParameterInImplementation {
                 generic_parameter_id: unused_ty.id.into(),
-                implementation_id: implementation_kind_id,
+                implementation_id: implementation_kind_id.into(),
             }));
         }
 
         for unused_val in &self.constants {
             handler.receive(Box::new(UnusedGenericParameterInImplementation {
                 generic_parameter_id: unused_val.id.into(),
-                implementation_id: implementation_kind_id,
+                implementation_id: implementation_kind_id.into(),
             }));
         }
     }
