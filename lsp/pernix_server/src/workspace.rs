@@ -61,7 +61,7 @@ pub enum JsonConfigurationError {
     #[error("unknown key {}", .0.span.str())]
     UnknownKey(token::String),
 
-    #[error("\"targetName\" ket is not a valid identifier name")]
+    #[error("\"targetName\" key contains non a valid identifier name")]
     TargetNameIsNotIdentifier(token::String),
 
     #[error("\"rootFile\" key expects a string value")]
@@ -76,10 +76,10 @@ pub enum JsonConfigurationError {
         found: json::Value,
     },
 
-    #[error("missing key {key}")]
-    MissingKey {
-        /// The missing key.
-        key: &'static str,
+    #[error("missing keys: {keys:?}")]
+    MissingKeys {
+        /// The missing keys.
+        keys: Vec<&'static str>,
 
         /// The source file where the key is missing.
         map_span: Span,
@@ -200,7 +200,20 @@ impl JsonConfigurationError {
             JsonConfigurationError::TargetNameIsNotIdentifier(e) => {
                 create_error_diagnostic(
                     &e.span,
-                    "\"targetName\" is not a valid identifier name".to_string(),
+                    e.value
+                        .as_ref()
+                        .map(|x| {
+                            format!(
+                                "\"{}\" is not a valid identifier for target \
+                                 name",
+                                x
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            "\"targetName\" contains an invalid identifier \
+                             value"
+                                .to_string()
+                        }),
                 )
             }
             JsonConfigurationError::RootFileExpectString(e) => {
@@ -215,10 +228,13 @@ impl JsonConfigurationError {
                     format!("\"{}\" expects a string value", key),
                 )
             }
-            JsonConfigurationError::MissingKey { key, map_span } => {
+            JsonConfigurationError::MissingKeys { keys, map_span } => {
                 create_error_diagnostic(
                     map_span,
-                    format!("missing key \"{}\"", key),
+                    format!(
+                        "the key(s) are missing: \"{}\"",
+                        keys.join("\", \"")
+                    ),
                 )
             }
             JsonConfigurationError::RootFilePathIsInvalid { path, string } => {
@@ -268,7 +284,7 @@ impl JsonConfigurationError {
                 create_error_diagnostic(
                     &duplicated.span,
                     format!(
-                        "duplicated key \"{}\" found in map",
+                        "duplicated key {} found in map",
                         duplicated.span.str()
                     ),
                 )
@@ -430,8 +446,11 @@ impl Workspace {
         root_path: &Path,
     ) -> Option<Configuration> {
         let map_span = configuration_map.span();
-        let mut target_name: Option<(String, token::String)> = None;
-        let mut root_file: Option<(PathBuf, token::String)> = None;
+        let mut target_name_key_string: Option<token::String> = None;
+        let mut root_file_key_string: Option<token::String> = None;
+
+        let mut target_name: Option<String> = None;
+        let mut root_file: Option<PathBuf> = None;
 
         for pair in configuration_map
             .dissolve()
@@ -458,6 +477,19 @@ impl Workspace {
                         }
                     };
 
+                    // duplicated key
+                    if let Some(first_appearance) = &target_name_key_string {
+                        error_collector.push(
+                            JsonConfigurationError::DuplicatedKey {
+                                first_appearance: first_appearance.clone(),
+                                duplicated: key,
+                            },
+                        );
+                        continue;
+                    }
+
+                    target_name_key_string = Some(key.clone());
+
                     // is not a valid identifier
                     let target_name_value = match target_name_string.value {
                         Some(string)
@@ -473,18 +505,7 @@ impl Workspace {
                         }
                     };
 
-                    // duplicated key
-                    if let Some((_, first_appearance)) = &target_name {
-                        error_collector.push(
-                            JsonConfigurationError::DuplicatedKey {
-                                first_appearance: first_appearance.clone(),
-                                duplicated: key,
-                            },
-                        );
-                        continue;
-                    }
-
-                    target_name = Some((target_name_value, key));
+                    target_name = Some(target_name_value);
                 }
 
                 Some("rootFile") => {
@@ -501,6 +522,19 @@ impl Workspace {
                             continue;
                         }
                     };
+
+                    // duplicated key
+                    if let Some(first_appearance) = &root_file_key_string {
+                        error_collector.push(
+                            JsonConfigurationError::DuplicatedKey {
+                                first_appearance: first_appearance.clone(),
+                                duplicated: key,
+                            },
+                        );
+                        continue;
+                    }
+
+                    root_file_key_string = Some(key.clone());
 
                     // is not a valid identifier
                     let file_path = match &path_string.value {
@@ -566,18 +600,7 @@ impl Workspace {
                         }
                     };
 
-                    // duplicated key
-                    if let Some((_, first_appearance)) = &root_file {
-                        error_collector.push(
-                            JsonConfigurationError::DuplicatedKey {
-                                first_appearance: first_appearance.clone(),
-                                duplicated: key,
-                            },
-                        );
-                        continue;
-                    }
-
-                    root_file = Some((file_path, key));
+                    root_file = Some(file_path);
                 }
 
                 _ => {
@@ -588,22 +611,25 @@ impl Workspace {
         }
 
         match (target_name, root_file) {
-            (Some((target_name, _)), Some((root_file, _))) => {
+            (Some(target_name), Some(root_file)) => {
                 Some(Configuration { target_name, root_file })
             }
 
-            (target_name, root_file) => {
-                if target_name.is_none() {
-                    error_collector.push(JsonConfigurationError::MissingKey {
-                        key: "targetName",
-                        map_span: map_span.clone(),
-                    });
+            (_, _) => {
+                let mut missing_keys = Vec::new();
+
+                if target_name_key_string.is_none() {
+                    missing_keys.push("targetName");
                 }
 
-                if root_file.is_none() {
-                    error_collector.push(JsonConfigurationError::MissingKey {
-                        key: "rootFile",
-                        map_span: map_span.clone(),
+                if root_file_key_string.is_none() {
+                    missing_keys.push("rootFile");
+                }
+
+                if !missing_keys.is_empty() {
+                    error_collector.push(JsonConfigurationError::MissingKeys {
+                        keys: missing_keys,
+                        map_span,
                     });
                 }
 
