@@ -87,28 +87,15 @@ impl Finalize for TraitImplementationType {
             ),
 
             DEFINITION_STATE => {
-                let parent_implementation_id = table
-                    .trait_implementation_types
-                    .get(symbol_id)
-                    .unwrap()
-                    .read()
-                    .parent_id;
-                let _ = table.build_to(
-                    parent_implementation_id,
-                    Some(symbol_id.into()),
-                    positive_trait_implementation::ARGUMENT_STATE,
-                    handler,
-                );
-
                 // resolve the type
                 let mut ty = table
                     .resolve_type(
                         syntax_tree.definition().ty(),
                         symbol_id.into(),
                         resolution::Config {
-                            ellided_lifetime_provider: None,
-                            ellided_type_provider: None,
-                            ellided_constant_provider: None,
+                            elided_lifetime_provider: None,
+                            elided_type_provider: None,
+                            elided_constant_provider: None,
                             observer: Some(
                                 &mut (&mut builder::Resolution::basic())
                                     .chain(definition_occurrences),
@@ -169,7 +156,7 @@ impl Finalize for TraitImplementationType {
                 let _ = table.build_to(
                     parent_implementation_id,
                     Some(symbol_id.into()),
-                    positive_trait_implementation::WHERE_CLAUSE_STATE,
+                    positive_trait_implementation::ARGUMENT_STATE,
                     handler,
                 );
 

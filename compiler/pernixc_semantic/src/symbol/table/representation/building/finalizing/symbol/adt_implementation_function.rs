@@ -1,6 +1,7 @@
 use pernixc_base::handler::Handler;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
+use super::adt_implementation;
 use crate::{
     arena::ID,
     error,
@@ -13,7 +14,7 @@ use crate::{
                     utility::{builder, occurrences::Occurrences},
                     Finalizer,
                 },
-                RwLockContainer, Table,
+                Index, RwLockContainer, Table,
             },
             Building,
         },
@@ -53,6 +54,14 @@ impl Finalize for AdtImplementationFunction {
     ) {
         match state_flag {
             GENERIC_PARAMETER_STATE => {
+                let parent_trait_id = table.get(symbol_id).unwrap().parent_id;
+                let _ = table.build_to(
+                    parent_trait_id,
+                    Some(symbol_id.into()),
+                    adt_implementation::GENERIC_PARAMETER_STATE,
+                    handler,
+                );
+
                 // Create the generic parameters
                 table.create_generic_parameters(
                     symbol_id,
@@ -69,7 +78,7 @@ impl Finalize for AdtImplementationFunction {
                 handler,
             ),
 
-            SIGNATURE_STATE => table.build_function_parameters(
+            SIGNATURE_STATE => table.build_function_signature(
                 symbol_id,
                 syntax_tree.signature(),
                 signature_occurrences,
@@ -77,6 +86,14 @@ impl Finalize for AdtImplementationFunction {
             ),
 
             INTERMEDIATE_REPRESENTATION_AND_CHECK_STATE => {
+                let parent_trait_id = table.get(symbol_id).unwrap().parent_id;
+                let _ = table.build_to(
+                    parent_trait_id,
+                    Some(symbol_id.into()),
+                    adt_implementation::WHERE_CLAUSE_STATE,
+                    handler,
+                );
+
                 // check all the occurrences
                 table.check_occurrences(
                     symbol_id.into(),

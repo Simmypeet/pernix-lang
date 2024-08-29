@@ -1696,6 +1696,53 @@ where
     }
 }
 
+/// Tuple pack pattern expected.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectTuplePackPattern {
+    /// Where the tuple pack pattern was expected.
+    pub illegal_tuple_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for ExpectTuplePackPattern {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.illegal_tuple_span.clone(),
+            message: "tuple pack pattern expected".to_string(),
+            severity: Severity::Error,
+            help_message: Some(
+                "unpacked tuple type needs to be matched with a tuple pack \
+                 pattern"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The pattern contains more than one packed tuple pattern.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MoreThanOnePackedTuplePattern {
+    /// The span where the illegal tuple pattern was found.
+    pub illegal_tuple_pattern_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for MoreThanOnePackedTuplePattern {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.illegal_tuple_pattern_span.clone(),
+            message: "the pattern contains more than one packed tuple pattern"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
 /// The field with the same name already exists in the struct.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldDuplication {
@@ -2152,13 +2199,13 @@ impl Report<&Table<Suboptimal>> for MismatchedTuplePatternLength {
 /// Can't bind a tuple pattern to a reference bound tuple type with unpacked
 /// element.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FoundUnpackedElementInReferenceBoundTupleType {
+pub struct FoundPackTuplePatternInReferenceBoundTupleType {
     /// The span of the pattern.
     pub pattern_span: Span,
 }
 
 impl Report<&Table<Suboptimal>>
-    for FoundUnpackedElementInReferenceBoundTupleType
+    for FoundPackTuplePatternInReferenceBoundTupleType
 {
     type Error = ReportError;
 
@@ -2166,7 +2213,7 @@ impl Report<&Table<Suboptimal>>
         Ok(Diagnostic {
             span: self.pattern_span.clone(),
             message: "can't bind a tuple pattern to a reference bound tuple \
-                      type with unpacked element"
+                      type with pack element"
                 .to_string(),
             severity: Severity::Error,
             help_message: None,

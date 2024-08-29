@@ -968,39 +968,17 @@ impl SourceElement for Postfixable {
     }
 }
 
-/// Syntax Synopsis:    
-///
-/// ``` txt
-/// ReferenceOfKind:
-///     '&'
-///     | '@'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum ReferenceOfKind {
-    Local(Punctuation),
-    Regular(Punctuation),
-}
-
-impl SourceElement for ReferenceOfKind {
-    fn span(&self) -> Span {
-        match self {
-            Self::Local(p) | Self::Regular(p) => p.span.clone(),
-        }
-    }
-}
-
 /// Syntax Synopsis:
 ///
 /// ``` txt
 /// ReferenceOf:
-///     ReferenceOfKind Qualifier?
+///     '&' Qualifier?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ReferenceOf {
     #[get = "pub"]
-    kind: ReferenceOfKind,
+    ampersand: Punctuation,
     #[get = "pub"]
     qualifier: Option<Qualifier>,
 }
@@ -1008,8 +986,8 @@ pub struct ReferenceOf {
 impl SourceElement for ReferenceOf {
     fn span(&self) -> Span {
         self.qualifier.as_ref().map_or_else(
-            || self.kind.span(),
-            |qualifier| self.kind.span().join(&qualifier.span()).unwrap(),
+            || self.ampersand.span(),
+            |qualifier| self.ampersand.span().join(&qualifier.span()).unwrap(),
         )
     }
 }
@@ -1802,17 +1780,11 @@ impl Parser<'_> {
                 }
             }
 
-            Reading::Unit(Token::Punctuation(p))
-                if matches!(p.punctuation, '&' | '@') =>
-            {
+            Reading::Unit(Token::Punctuation(
+                ampersand @ Punctuation { punctuation: '&', .. },
+            )) => {
                 // eat the token
                 self.forward();
-
-                let reference_kind = match p.punctuation {
-                    '&' => ReferenceOfKind::Regular(p),
-                    '@' => ReferenceOfKind::Local(p),
-                    _ => unreachable!(),
-                };
 
                 let qualifier = match self.stop_at_significant() {
                     Reading::Unit(Token::Keyword(
@@ -1835,7 +1807,7 @@ impl Parser<'_> {
                 };
 
                 PrefixOperator::ReferenceOf(ReferenceOf {
-                    kind: reference_kind,
+                    ampersand,
                     qualifier,
                 })
             }

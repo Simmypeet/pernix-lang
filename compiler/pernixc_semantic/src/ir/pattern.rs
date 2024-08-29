@@ -4,7 +4,7 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use pernixc_base::{handler::Handler, source_file::Span};
 
-use super::address::Stack;
+use super::address::Address;
 use crate::{
     arena::ID,
     error::{AlreadyBoundName, Error},
@@ -51,7 +51,7 @@ pub struct Named<M: Model> {
 
     /// The address to the location where the value is stored with this name
     /// binding.
-    pub load_address: Stack<M>,
+    pub load_address: Address<M>,
 
     /// Determined if the underlying value is mutable or not.
     pub mutable: bool,
@@ -60,34 +60,12 @@ pub struct Named<M: Model> {
     pub span: Option<Span>,
 }
 
-/// A tuple binding where alll of the patterns are regular.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RegularTupleBinding<T: Pattern> {
-    /// The pattern binding for each element in the tuple.
-    pub elements: Vec<T>,
-}
-
-/// A tuple binding with at least one packed element.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PackedTupleBinding<T: Pattern> {
-    /// The pattern binding for each element in the tuple up to the packed
-    /// element.
-    pub before_packed_elements: Vec<T>,
-
-    /// The pattern binding for each element in the tuple after the packed
-    /// element to the end of the tuple.
-    pub after_packed_elements: Vec<T>,
-
-    /// The tuple pattern for the packed element.
-    pub packed_element: Box<T>,
-}
-
 /// A pattern bound to a tuple type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Tuple<T: Pattern> {
-    Regular(RegularTupleBinding<T>),
-    Packed(PackedTupleBinding<T>),
+pub struct Tuple<T: Pattern> {
+    /// The pattern binding for each element in the tuple.
+    pub elements: Vec<T>,
 }
 
 /// A pattern that matches on a struct with fields.
@@ -163,27 +141,13 @@ impl<M: Model> NameBindingPoint<M> {
                     }
                 }
             }
-            Irrefutable::Tuple(tuple) => match tuple {
-                Tuple::Regular(tuple) => {
-                    for element in &tuple.elements {
-                        self.add_irrefutable_binding(element, handler);
-                    }
-                }
-                Tuple::Packed(tuple) => {
-                    for element in &tuple.before_packed_elements {
-                        self.add_irrefutable_binding(element, handler);
-                    }
 
-                    self.add_irrefutable_binding(
-                        &tuple.packed_element,
-                        handler,
-                    );
-
-                    for element in &tuple.after_packed_elements {
-                        self.add_irrefutable_binding(element, handler);
-                    }
+            Irrefutable::Tuple(tuple) => {
+                for element in &tuple.elements {
+                    self.add_irrefutable_binding(element, handler);
                 }
-            },
+            }
+
             Irrefutable::Structural(structural) => {
                 for pattern in structural.patterns_by_field_id.values() {
                     self.add_irrefutable_binding(pattern, handler);

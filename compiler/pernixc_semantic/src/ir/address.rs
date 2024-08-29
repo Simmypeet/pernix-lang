@@ -1,14 +1,4 @@
 //! Contains the definition of [`Address`] and its variants.
-//!
-//! ## `Address<Memory<_>>` vs `Address<ID<Register<_>>`
-//!
-//! The `Address<Memory<_>>` variant is used to represent a **real** memory in
-//! the program. This can be used in various instructions such as `Load` and
-//! `Store`.  
-//!
-//! The `Address<ID<Register<_>>>` variant is used to represent a **virtual**
-//! memory in the registers. This is used to address a temporary value that is
-//! stored in a register.
 
 use enum_as_inner::EnumAsInner;
 
@@ -88,16 +78,6 @@ pub struct Tuple<M: Model> {
 
     /// The offset of the element to access.
     pub offset: Offset,
-}
-
-/// Represents a stack location.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
-)]
-#[allow(missing_docs)]
-pub enum Stack<M: Model> {
-    Alloca(ID<Alloca<M>>),
-    Parameter(ID<Parameter>),
 }
 
 /// Represents a real memory location.

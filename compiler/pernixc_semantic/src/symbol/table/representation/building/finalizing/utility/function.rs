@@ -8,23 +8,67 @@ use crate::{
     symbol::{
         table::{
             representation::{
-                building::finalizing::Finalizer, Element, RwLockContainer,
+                self, building::finalizing::Finalizer, Element, RwLockContainer,
             },
             resolution::{self, Observer},
             Building, Table,
         },
-        Callable, CallableID, GenericID, GlobalID, Parameter,
+        Callable, CallableID, Generic, GenericID, GlobalID, LifetimeParameter,
+        LifetimeParameterID, Parameter,
     },
     type_system::{
         environment::Environment,
+        model::Default,
         normalizer,
-        term::{self, r#type},
+        term::{self, lifetime::Lifetime, r#type},
     },
 };
 
+#[derive(Debug)]
+struct ElidedParameterLifetimeProvider<'t, G> {
+    id: ID<G>,
+    table: &'t Table<Building<RwLockContainer, Finalizer>>,
+
+    created_lifetiems: Vec<ID<LifetimeParameter>>,
+}
+
+impl<'a, G: Generic + representation::Element>
+    resolution::ElidedTermProvider<Lifetime<Default>>
+    for ElidedParameterLifetimeProvider<'a, G>
+where
+    ID<G>: Into<GenericID>,
+{
+    fn create(&mut self) -> Lifetime<Default> {
+        let id = G::get_arena(self.table)
+            .get(self.id)
+            .unwrap()
+            .write()
+            .generic_declaration_mut()
+            .parameters
+            .add_lifetime_parameter(LifetimeParameter {
+                name: Some(format!("{}", self.created_lifetiems.len())),
+                span: None,
+            })
+            .unwrap();
+
+        self.created_lifetiems.push(id);
+
+        Lifetime::Parameter(LifetimeParameterID { parent: self.id.into(), id })
+    }
+}
+
+#[derive(Debug)]
+struct ElidedReturnLifetimeProvider(LifetimeParameterID);
+
+impl resolution::ElidedTermProvider<Lifetime<Default>>
+    for ElidedReturnLifetimeProvider
+{
+    fn create(&mut self) -> Lifetime<Default> { Lifetime::Parameter(self.0) }
+}
+
 impl Table<Building<RwLockContainer, Finalizer>> {
     /// Builds the function parameters and return type
-    pub fn build_function_parameters<F: Callable + Element>(
+    pub fn build_function_signature<F: Callable + Element>(
         &self,
         function_id: ID<F>,
         syntax_tree: &syntax_tree::item::FunctionSignature,
@@ -44,6 +88,12 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             &definition_builder,
         );
 
+        let mut elided_lifetime_provider = ElidedParameterLifetimeProvider {
+            id: function_id,
+            table: self,
+            created_lifetiems: Vec::new(),
+        };
+
         // build the parameters
         for parameter in syntax_tree
             .parameters()
@@ -56,9 +106,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     parameter.r#type(),
                     function_id.into(),
                     resolution::Config {
-                        ellided_lifetime_provider: None,
-                        ellided_type_provider: None,
-                        ellided_constant_provider: None,
+                        elided_lifetime_provider: Some(
+                            &mut elided_lifetime_provider,
+                        ),
+                        elided_type_provider: None,
+                        elided_constant_provider: None,
                         observer: Some(
                             &mut (&mut builder::Resolution::basic())
                                 .chain(signature_occurrences),
@@ -85,6 +137,16 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             function_write.parameter_order_mut().push(parameter_id);
         }
 
+        let mut elided_lifetime_provider =
+            elided_lifetime_provider.created_lifetiems.len().eq(&1).then(
+                || {
+                    ElidedReturnLifetimeProvider(LifetimeParameterID {
+                        parent: function_id.into(),
+                        id: elided_lifetime_provider.created_lifetiems[0],
+                    })
+                },
+            );
+
         // build the return type
         {
             if let Some(return_type_syn) = syntax_tree.return_type() {
@@ -93,9 +155,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         return_type_syn.r#type(),
                         function_id.into(),
                         resolution::Config {
-                            ellided_lifetime_provider: None,
-                            ellided_type_provider: None,
-                            ellided_constant_provider: None,
+                            elided_lifetime_provider: elided_lifetime_provider
+                                .as_mut()
+                                .map(|x| x as _),
+                            elided_type_provider: None,
+                            elided_constant_provider: None,
                             observer: Some(
                                 &mut (&mut builder::Resolution::basic())
                                     .chain(signature_occurrences),

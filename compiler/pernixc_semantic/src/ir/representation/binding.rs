@@ -32,7 +32,7 @@ use crate::{
         table::{
             self,
             representation::Index,
-            resolution::{self, EliidedTermProvider, Resolution},
+            resolution::{self, ElidedTermProvider, Resolution},
             Table,
         },
         FunctionTemplate, GenericTemplate, GlobalID,
@@ -304,19 +304,19 @@ impl From<TypeOfError<infer::Model>> for Error {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct InferenceProvider;
 
-impl EliidedTermProvider<Lifetime<infer::Model>> for InferenceProvider {
+impl ElidedTermProvider<Lifetime<infer::Model>> for InferenceProvider {
     fn create(&mut self) -> Lifetime<infer::Model> {
         Lifetime::Inference(Erased)
     }
 }
 
-impl EliidedTermProvider<Type<infer::Model>> for InferenceProvider {
+impl ElidedTermProvider<Type<infer::Model>> for InferenceProvider {
     fn create(&mut self) -> Type<infer::Model> {
         Type::Inference(InferenceVariable::new())
     }
 }
 
-impl EliidedTermProvider<Constant<infer::Model>> for InferenceProvider {
+impl ElidedTermProvider<Constant<infer::Model>> for InferenceProvider {
     fn create(&mut self) -> Constant<infer::Model> {
         Constant::Inference(InferenceVariable::new())
     }
@@ -474,9 +474,9 @@ impl<
                 syntax_tree,
                 self.current_site,
                 resolution::Config {
-                    ellided_lifetime_provider: Some(&mut InferenceProvider),
-                    ellided_type_provider: Some(&mut InferenceProvider),
-                    ellided_constant_provider: Some(&mut InferenceProvider),
+                    elided_lifetime_provider: Some(&mut InferenceProvider),
+                    elided_type_provider: Some(&mut InferenceProvider),
+                    elided_constant_provider: Some(&mut InferenceProvider),
                     observer: Some(&mut self.resolution_observer),
                     higher_ranked_lifetimes: None,
                 },
@@ -570,9 +570,9 @@ impl<
                 syntax_tree,
                 self.current_site,
                 resolution::Config {
-                    ellided_lifetime_provider: Some(&mut InferenceProvider),
-                    ellided_type_provider: Some(&mut InferenceProvider),
-                    ellided_constant_provider: Some(&mut InferenceProvider),
+                    elided_lifetime_provider: Some(&mut InferenceProvider),
+                    elided_type_provider: Some(&mut InferenceProvider),
+                    elided_constant_provider: Some(&mut InferenceProvider),
                     observer: Some(&mut self.resolution_observer),
                     higher_ranked_lifetimes: None,
                 },

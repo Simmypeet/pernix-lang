@@ -505,36 +505,10 @@ impl<
                     handler,
                 )?;
 
-                // check if the address is mutable
-                let expected = match reference_of.kind() {
-                    syntax_tree::expression::ReferenceOfKind::Local(_) => {
-                        let inference_variable = self.create_type_inference(
-                            r#type::Constraint::All(false),
-                        );
-
-                        Some(Type::Local(Local(Box::new(Type::Inference(
-                            inference_variable,
-                        )))))
-                    }
-                    syntax_tree::expression::ReferenceOfKind::Regular(_) => {
-                        None
-                    }
-                };
-
-                if let Some(expected) = expected {
-                    self.type_check(
-                        self.type_of_address(&address)?,
-                        Expected::Known(expected),
-                        syntax_tree.span(),
-                        handler,
-                    )?;
-                }
-
                 let register_id = self.create_register_assignmnet(
                     Assignment::ReferenceOf(ReferenceOf {
                         address,
                         qualifier,
-                        is_local: reference_of.kind().is_local(),
                         lifetime: Lifetime::Inference(Erased),
                     }),
                     Some(syntax_tree.span()),
@@ -1194,11 +1168,11 @@ impl<
                         cast_syn.r#type(),
                         self.current_site,
                         resolution::Config {
-                            ellided_lifetime_provider: Some(
+                            elided_lifetime_provider: Some(
                                 &mut InferenceProvider,
                             ),
-                            ellided_type_provider: None,
-                            ellided_constant_provider: None,
+                            elided_type_provider: None,
+                            elided_constant_provider: None,
                             observer: Some(&mut self.resolution_observer),
                             higher_ranked_lifetimes: None,
                         },
@@ -1686,31 +1660,13 @@ impl<
                     break 'out;
                 };
 
-                let address = Address::Memory(match name.load_address {
-                    address::Stack::Alloca(alloca_id) => {
-                        address::Memory::Alloca(alloca_id)
-                    }
-                    address::Stack::Parameter(parameter) => {
-                        address::Memory::Parameter(parameter)
-                    }
-                });
+                let address = name.load_address.clone();
 
                 match config.target {
                     Target::Statement | Target::Value => {
                         let register_id = self.create_register_assignmnet(
                             Assignment::Load(Load {
-                                address: Address::Memory(
-                                    match name.load_address {
-                                        address::Stack::Alloca(alloca_id) => {
-                                            address::Memory::Alloca(alloca_id)
-                                        }
-                                        address::Stack::Parameter(
-                                            parameter,
-                                        ) => address::Memory::Parameter(
-                                            parameter,
-                                        ),
-                                    },
-                                ),
+                                address,
                                 kind: LoadKind::Copy,
                             }),
                             Some(syntax_tree.span()),
@@ -4094,8 +4050,27 @@ impl<
             syntax_tree::expression::Brace::Loop(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Brace::Match(_) => todo!(),
+            syntax_tree::expression::Brace::Match(syn) => {
+                self.bind(syn, config, handler)
+            }
         }
+    }
+}
+
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::Match> for Binder<'t, S, RO, TO>
+{
+    fn bind(
+        &mut self,
+        _syntax_tree: &syntax_tree::expression::Match,
+        _config: Config,
+        _handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        todo!()
     }
 }
 
@@ -4385,4 +4360,4 @@ impl<
 }
 
 #[cfg(test)]
-mod tests;
+mod test;

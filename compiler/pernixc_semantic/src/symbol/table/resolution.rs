@@ -224,7 +224,7 @@ trait GenericParameter<M: Model>: Sized + 'static {
 
     fn get_ellided_term_provider<'a, S: State>(
         config: &'a mut Config<S, M>,
-    ) -> Option<&'a mut dyn EliidedTermProvider<Self::Argument>>;
+    ) -> Option<&'a mut dyn ElidedTermProvider<Self::Argument>>;
 
     fn on_resolved<S: State>(
         table: &Table<S>,
@@ -252,9 +252,9 @@ impl<M: Model> GenericParameter<M> for LifetimeParameter {
 
     fn get_ellided_term_provider<'a, S: State>(
         config: &'a mut Config<S, M>,
-    ) -> Option<&'a mut dyn EliidedTermProvider<Self::Argument>> {
+    ) -> Option<&'a mut dyn ElidedTermProvider<Self::Argument>> {
         #[allow(clippy::option_if_let_else)]
-        match &mut config.ellided_lifetime_provider {
+        match &mut config.elided_lifetime_provider {
             Some(provider) => Some(&mut **provider),
             None => None,
         }
@@ -289,9 +289,9 @@ impl<M: Model> GenericParameter<M> for TypeParameter {
 
     fn get_ellided_term_provider<'a, S: State>(
         config: &'a mut Config<S, M>,
-    ) -> Option<&'a mut dyn EliidedTermProvider<Self::Argument>> {
+    ) -> Option<&'a mut dyn ElidedTermProvider<Self::Argument>> {
         #[allow(clippy::option_if_let_else)]
-        match &mut config.ellided_type_provider {
+        match &mut config.elided_type_provider {
             Some(provider) => Some(&mut **provider),
             None => None,
         }
@@ -336,7 +336,7 @@ impl<M: Model> GenericParameter<M> for ConstantParameter {
                 }
             }
             syntax_tree::Constant::Elided(elided) => {
-                if let Some(provider) = config.ellided_constant_provider {
+                if let Some(provider) = config.elided_constant_provider {
                     Ok(provider.create())
                 } else {
                     handler.receive(Box::new(UnexpectedInference {
@@ -351,9 +351,9 @@ impl<M: Model> GenericParameter<M> for ConstantParameter {
 
     fn get_ellided_term_provider<'a, S: State>(
         config: &'a mut Config<S, M>,
-    ) -> Option<&'a mut dyn EliidedTermProvider<Self::Argument>> {
+    ) -> Option<&'a mut dyn ElidedTermProvider<Self::Argument>> {
         #[allow(clippy::option_if_let_else)]
-        match &mut config.ellided_constant_provider {
+        match &mut config.elided_constant_provider {
             Some(provider) => Some(&mut **provider),
             None => None,
         }
@@ -438,7 +438,7 @@ pub enum ResolveSimplePathError {
 }
 
 /// A trait for providing elided terms.
-pub trait EliidedTermProvider<T>: Debug {
+pub trait ElidedTermProvider<T> {
     /// Creates a new instance of the term to supply the required missing term.
     fn create(&mut self) -> T;
 }
@@ -626,7 +626,7 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
 /// during the resolution process.
 ///
 /// This is primarily used for dependency injection.
-pub trait Observer<T: State, M: Model>: Debug {
+pub trait Observer<T: State, M: Model> {
     /// Notifies the observer when a global ID is resolved.
     ///
     /// Returns `true` if the resolution should continue, otherwise `false`.
@@ -802,22 +802,23 @@ impl<T: State, M: Model> Observer<T, M> for NoOp {
 }
 
 /// The configuration struct specifying the behaviour of the resolution process.
-#[derive(Debug, Default)]
+#[derive(Default)]
+#[allow(missing_debug_implementations)]
 pub struct Config<'lp, 'tp, 'cp, 'ob, 'hrlt, S: State, M: Model> {
     /// If specified, when the lifetime argument is elided, the provider will
     /// be used to supply the missing required lifetimes.
-    pub ellided_lifetime_provider:
-        Option<&'lp mut dyn EliidedTermProvider<Lifetime<M>>>,
+    pub elided_lifetime_provider:
+        Option<&'lp mut dyn ElidedTermProvider<Lifetime<M>>>,
 
     /// If specified, when the type argument is elided, the provider will be
     /// used to supply the missing required types.
-    pub ellided_type_provider:
-        Option<&'tp mut dyn EliidedTermProvider<term::r#type::Type<M>>>,
+    pub elided_type_provider:
+        Option<&'tp mut dyn ElidedTermProvider<term::r#type::Type<M>>>,
 
     /// If specified, when the constant argument is elided, the provider will
     /// be used to supply the missing required constants.
-    pub ellided_constant_provider:
-        Option<&'cp mut dyn EliidedTermProvider<term::constant::Constant<M>>>,
+    pub elided_constant_provider:
+        Option<&'cp mut dyn ElidedTermProvider<term::constant::Constant<M>>>,
 
     /// If specified, during the resolution process, the observer will be
     /// notified each time a type, lifetime, or constant is resolved.
@@ -835,17 +836,15 @@ impl<'lp, 'tp, 'cp, 'ob, 'hrlt, S: State, M: Model>
     #[allow(clippy::option_if_let_else)]
     pub fn reborrow(&mut self) -> Config<S, M> {
         Config {
-            ellided_lifetime_provider: match &mut self.ellided_lifetime_provider
-            {
+            elided_lifetime_provider: match &mut self.elided_lifetime_provider {
                 Some(provider) => Some(&mut **provider),
                 None => None,
             },
-            ellided_type_provider: match &mut self.ellided_type_provider {
+            elided_type_provider: match &mut self.elided_type_provider {
                 Some(provider) => Some(&mut **provider),
                 None => None,
             },
-            ellided_constant_provider: match &mut self.ellided_constant_provider
-            {
+            elided_constant_provider: match &mut self.elided_constant_provider {
                 Some(provider) => Some(&mut **provider),
                 None => None,
             },
@@ -1172,7 +1171,7 @@ impl<S: State> Table<S> {
                     .map_or(Lifetime::Error(term::Error), Lifetime::Parameter)
             }
             LifetimeIdentifier::Elided(elided) => {
-                if let Some(provider) = config.ellided_lifetime_provider {
+                if let Some(provider) = config.elided_lifetime_provider {
                     provider.create()
                 } else {
                     handler.receive(Box::new(UnexpectedInference {
@@ -1529,7 +1528,7 @@ impl<S: State> Table<S> {
                 let lifetime = if let Some(lifetime) = lifetime {
                     lifetime
                 } else if let Some(provider) =
-                    config.ellided_lifetime_provider.as_mut()
+                    config.elided_lifetime_provider.as_mut()
                 {
                     provider.create()
                 } else {
@@ -1658,7 +1657,7 @@ impl<S: State> Table<S> {
                     },
                     syntax_tree::Constant::Elided(elided) => {
                         if let Some(provider) =
-                            config.ellided_constant_provider.as_mut()
+                            config.elided_constant_provider.as_mut()
                         {
                             provider.create()
                         } else {
@@ -1694,7 +1693,7 @@ impl<S: State> Table<S> {
                 r#type::Type::Phantom(r#type::Phantom(Box::new(ty)))
             }
             syntax_tree::r#type::Type::Elided(elided) => {
-                if let Some(provider) = config.ellided_type_provider {
+                if let Some(provider) = config.elided_type_provider {
                     provider.create()
                 } else {
                     handler.receive(Box::new(UnexpectedInference {

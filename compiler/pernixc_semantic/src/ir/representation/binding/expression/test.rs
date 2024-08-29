@@ -19,7 +19,7 @@ use crate::{
         instruction::Instruction,
         representation::binding::{
             expression::{Bind, Config, Target},
-            infer::{self, ConstraintModel, Erased, NoConstraint},
+            infer::{self, ConstraintModel, NoConstraint},
             tests::{parse_expression, parse_statement, TestTemplate},
             Binder,
         },
@@ -892,105 +892,6 @@ fn reference_of() {
                 *reference_of.address.as_memory().unwrap().as_alloca().unwrap(),
                 alloca_id
             );
-            assert!(!reference_of.is_local);
-            assert_eq!(reference_of.qualifier, qualifier);
-        };
-
-    assert_reference_of(reference_of_immutable_id, Qualifier::Immutable);
-    assert_reference_of(reference_of_mutable_id, Qualifier::Mutable);
-    assert_reference_of(reference_of_unique_id, Qualifier::Unique);
-}
-
-#[test]
-fn reference_of_local() {
-    const LOCAL_DECLARATION: &str = "let mutable x = local 6420i32;";
-    const REFERENCE_OF_IMMUTABLE: &str = "@x";
-    const REFERENCE_OF_MUTABLE: &str = "@mutable x";
-    const REFERENCE_OF_UNIQUE: &str = "@unique x";
-
-    let test_template = TestTemplate::new();
-    let (mut binder, storage) = test_template.create_binder();
-
-    let local_declaration =
-        parse_statement(LOCAL_DECLARATION).into_variable_declaration().unwrap();
-
-    let alloca_id =
-        binder.bind_variable_declaration(&local_declaration, &storage).unwrap();
-
-    let reference_of_immutable = parse_expression(REFERENCE_OF_IMMUTABLE)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_prefix()
-        .unwrap();
-    let reference_of_mutable = parse_expression(REFERENCE_OF_MUTABLE)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_prefix()
-        .unwrap();
-    let reference_of_unique = parse_expression(REFERENCE_OF_UNIQUE)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_prefix()
-        .unwrap();
-
-    let reference_of_immutable_id = binder
-        .bind(
-            &reference_of_immutable,
-            Config { target: Target::Value },
-            &storage,
-        )
-        .unwrap()
-        .into_value()
-        .unwrap()
-        .into_register()
-        .unwrap();
-    let reference_of_mutable_id = binder
-        .bind(&reference_of_mutable, Config { target: Target::Value }, &storage)
-        .unwrap()
-        .into_value()
-        .unwrap()
-        .into_register()
-        .unwrap();
-    let reference_of_unique_id = binder
-        .bind(&reference_of_unique, Config { target: Target::Value }, &storage)
-        .unwrap()
-        .into_value()
-        .unwrap()
-        .into_register()
-        .unwrap();
-
-    assert!(storage.as_vec().is_empty());
-
-    let assert_reference_of =
-        |id: ID<Register<infer::Model>>, qualifier: Qualifier| {
-            let register =
-                binder.intermediate_representation.registers.get(id).unwrap();
-
-            assert!(Equality::new(
-                binder.type_of_register(id).unwrap(),
-                Type::Reference(Reference {
-                    qualifier,
-                    lifetime: Lifetime::Inference(Erased),
-                    pointee: Box::new(Type::Primitive(Primitive::Int32)),
-                }),
-            )
-            .query(&binder.create_environment())
-            .unwrap()
-            .is_some());
-
-            let reference_of = register.assignment.as_reference_of().unwrap();
-
-            assert_eq!(
-                *reference_of.address.as_memory().unwrap().as_alloca().unwrap(),
-                alloca_id
-            );
-            assert!(reference_of.is_local);
             assert_eq!(reference_of.qualifier, qualifier);
         };
 
@@ -1031,49 +932,6 @@ fn reference_of_mutability_error() {
         .iter()
         .find_map(|x| x.as_any().downcast_ref::<MismatchedMutability>())
         .is_some());
-}
-
-#[test]
-fn reference_of_local_error() {
-    const VARIABLE_DECLARATION: &str = "let x = 6420i32;";
-    const REFERENCE_OF_MUTABLE: &str = "@x";
-
-    let test_template = TestTemplate::new();
-    let (mut binder, storage) = test_template.create_binder();
-
-    let local_declaration = parse_statement(VARIABLE_DECLARATION)
-        .into_variable_declaration()
-        .unwrap();
-
-    let _ = binder.bind_variable_declaration(&local_declaration, &storage);
-
-    let reference_of_mutable = parse_expression(REFERENCE_OF_MUTABLE)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_prefix()
-        .unwrap();
-
-    assert!(binder
-        .bind(&reference_of_mutable, Config { target: Target::Value }, &storage)
-        .is_err());
-
-    let errors = storage.into_vec();
-
-    assert!(errors.iter().any(|x| {
-        let Some(error) =
-            x.as_any().downcast_ref::<MismatchedType<infer::ConstraintModel>>()
-        else {
-            return false;
-        };
-
-        error.expected_type
-            == Type::Local(Local(Box::new(Type::Inference(Constraint::All(
-                false,
-            )))))
-            && error.found_type == Type::Primitive(Primitive::Int32)
-    }));
 }
 
 #[test]

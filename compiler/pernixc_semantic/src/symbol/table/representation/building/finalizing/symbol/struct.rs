@@ -95,9 +95,9 @@ impl Finalize for Struct {
                             field_syn.r#type(),
                             symbol_id.into(),
                             resolution::Config {
-                                ellided_lifetime_provider: None,
-                                ellided_type_provider: None,
-                                ellided_constant_provider: None,
+                                elided_lifetime_provider: None,
+                                elided_type_provider: None,
+                                elided_constant_provider: None,
                                 observer: Some(
                                     &mut (&mut builder::Resolution::basic())
                                         .chain(definition_occurrences),

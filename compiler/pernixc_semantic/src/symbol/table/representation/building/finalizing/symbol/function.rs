@@ -86,7 +86,7 @@ impl Finalize for Function {
                         .0 = function.const_keyword().is_some();
                 }
 
-                table.build_function_parameters(
+                table.build_function_signature(
                     symbol_id,
                     syntax_tree.signature(),
                     signature_occurrences,

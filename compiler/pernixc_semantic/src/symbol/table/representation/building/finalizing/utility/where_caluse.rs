@@ -55,9 +55,9 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let mut observer = basic.chain(occurrences);
 
         let mut config = resolution::Config {
-            ellided_lifetime_provider: None,
-            ellided_type_provider: None,
-            ellided_constant_provider: None,
+            elided_lifetime_provider: None,
+            elided_type_provider: None,
+            elided_constant_provider: None,
             observer: Some(&mut observer),
             higher_ranked_lifetimes: higher_ranked_lifetimes.as_ref(),
         };
@@ -142,9 +142,9 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 trait_bound.qualified_identifier(),
                 generic_id.into(),
                 resolution::Config {
-                    ellided_lifetime_provider: None,
-                    ellided_type_provider: None,
-                    ellided_constant_provider: None,
+                    elided_lifetime_provider: None,
+                    elided_type_provider: None,
+                    elided_constant_provider: None,
                     observer: Some(
                         &mut (&mut builder::Resolution::basic())
                             .chain(occurrences),
@@ -207,9 +207,9 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let mut observer = basic.chain(occurrences);
 
         let mut config = resolution::Config {
-            ellided_lifetime_provider: None,
-            ellided_type_provider: None,
-            ellided_constant_provider: None,
+            elided_lifetime_provider: None,
+            elided_type_provider: None,
+            elided_constant_provider: None,
             observer: Some(&mut observer),
             higher_ranked_lifetimes: None,
         };
@@ -312,9 +312,9 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 .map(|x| Self::create_higher_ranked_lifetimes(x, handler));
 
             let config = resolution::Config {
-                ellided_lifetime_provider: None,
-                ellided_type_provider: None,
-                ellided_constant_provider: None,
+                elided_lifetime_provider: None,
+                elided_type_provider: None,
+                elided_constant_provider: None,
                 observer: Some(&mut observer),
                 higher_ranked_lifetimes: higher_ranked_lifetimes.as_ref(),
             };
@@ -365,9 +365,9 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         ty,
                         generic_id.into(),
                         resolution::Config {
-                            ellided_lifetime_provider: None,
-                            ellided_type_provider: None,
-                            ellided_constant_provider: None,
+                            elided_lifetime_provider: None,
+                            elided_type_provider: None,
+                            elided_constant_provider: None,
                             observer: Some(
                                 &mut (&mut builder::Resolution::basic())
                                     .chain(occurrences),

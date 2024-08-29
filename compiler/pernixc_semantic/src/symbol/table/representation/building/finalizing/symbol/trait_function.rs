@@ -68,15 +68,6 @@ impl Finalize for TraitFunction {
                 );
             }
             WHERE_CLAUSE_STATE => {
-                // make sure the trait's where clause is built
-                let parent_trait_id = table.get(symbol_id).unwrap().parent_id;
-                let _ = table.build_to(
-                    parent_trait_id,
-                    Some(symbol_id.into()),
-                    crate::symbol::table::representation::building::finalizing::symbol::trait_type::WHERE_CLAUSE_STATE,
-                    handler,
-                );
-
                 table.create_where_clause(
                     symbol_id,
                     syntax_tree.signature().where_clause().as_ref(),
@@ -85,7 +76,7 @@ impl Finalize for TraitFunction {
                 );
             }
 
-            DEFINITION_STATE => table.build_function_parameters(
+            DEFINITION_STATE => table.build_function_signature(
                 symbol_id,
                 syntax_tree.signature(),
                 definition_ocurrences,

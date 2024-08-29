@@ -1642,53 +1642,12 @@ impl Display for Postfixable {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ReferenceOfKind {
-    Local,
-    Regular,
-}
-
-impl Input<&super::ReferenceOfKind> for &ReferenceOfKind {
-    fn assert(self, output: &super::ReferenceOfKind) -> TestCaseResult {
-        match (self, output) {
-            (ReferenceOfKind::Local, super::ReferenceOfKind::Local(_))
-            | (ReferenceOfKind::Regular, super::ReferenceOfKind::Regular(_)) => {
-                Ok(())
-            }
-
-            (input, output) => Err(TestCaseError::fail(format!(
-                "expected {input:?}, got {output:?}",
-            ))),
-        }
-    }
-}
-
-impl Arbitrary for ReferenceOfKind {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![Just(Self::Local), Just(Self::Regular)].boxed()
-    }
-}
-
-impl Display for ReferenceOfKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Local => f.write_char('@'),
-            Self::Regular => f.write_char('&'),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReferenceOf {
-    pub kind: ReferenceOfKind,
     pub qualifier: Option<Qualifier>,
 }
 
 impl Input<&super::ReferenceOf> for &ReferenceOf {
     fn assert(self, output: &super::ReferenceOf) -> TestCaseResult {
-        self.kind.assert(output.kind())?;
         self.qualifier.as_ref().assert(output.qualifier().as_ref())
     }
 }
@@ -1698,18 +1657,15 @@ impl Arbitrary for ReferenceOf {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            ReferenceOfKind::arbitrary(),
-            proptest::option::of(Qualifier::arbitrary_with(())),
-        )
-            .prop_map(|(kind, qualifier)| Self { kind, qualifier })
+        proptest::option::of(Qualifier::arbitrary_with(()))
+            .prop_map(|qualifier| Self { qualifier })
             .boxed()
     }
 }
 
 impl Display for ReferenceOf {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.kind, f)?;
+        write!(f, "&")?;
 
         if let Some(qualifier) = &self.qualifier {
             write!(f, "{qualifier} ")?;

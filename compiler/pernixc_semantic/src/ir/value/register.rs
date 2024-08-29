@@ -139,9 +139,6 @@ pub struct ReferenceOf<M: Model> {
     /// The qualfier of the reference.
     pub qualifier: Qualifier,
 
-    /// Checks if the reference of operation is local (with `@` operator).
-    pub is_local: bool,
-
     /// The lifetime introduces by the reference of operation.
     pub lifetime: Lifetime<M>,
 }
@@ -158,36 +155,15 @@ impl<M: Model> Representation<M> {
             impl Observer<M, S>,
         >,
     ) -> Result<Type<M>, TypeOfError<M>> {
-        let mut ty = self.type_of_address(
-            &reference_of.address,
-            current_site,
-            environment,
-        )?;
-
-        Ok(if reference_of.is_local {
-            ty = simplify::simplify(&ty, environment).result;
-
-            match ty {
-                Type::Local(local) => Type::Reference(r#type::Reference {
-                    qualifier: reference_of.qualifier,
-                    lifetime: reference_of.lifetime.clone(),
-                    pointee: local.0,
-                }),
-
-                another_ty => {
-                    return Err(TypeOfError::NonLocalAddressType {
-                        address: reference_of.address.clone(),
-                        r#type: another_ty,
-                    })
-                }
-            }
-        } else {
-            Type::Reference(r#type::Reference {
-                pointee: Box::new(ty),
-                qualifier: reference_of.qualifier,
-                lifetime: reference_of.lifetime.clone(),
-            })
-        })
+        Ok(Type::Reference(r#type::Reference {
+            pointee: Box::new(self.type_of_address(
+                &reference_of.address,
+                current_site,
+                environment,
+            )?),
+            qualifier: reference_of.qualifier,
+            lifetime: reference_of.lifetime.clone(),
+        }))
     }
 }
 
