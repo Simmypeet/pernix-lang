@@ -1,14 +1,14 @@
 use pernixc_base::handler::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::Finalize;
 use crate::{
     arena::ID,
     error,
     symbol::{
         table::{
             representation::{
-                building::finalizing::Finalizer, RwLockContainer, Table,
+                building::finalizing::{state::Finalize, Finalizer},
+                RwLockContainer, Table,
             },
             Building,
         },

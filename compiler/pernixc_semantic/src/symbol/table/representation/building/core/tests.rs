@@ -74,8 +74,8 @@ fn check_primitives_tuple_copyable_impl(
     let (environment, _) = Environment::new_with(
         active_premise,
         &table,
-        &normalizer::NO_OP,
-        &observer::NO_OP,
+        normalizer::NO_OP,
+        observer::NO_OP,
     );
 
     let trait_predicate = predicate::Trait {

@@ -38,8 +38,8 @@ fn reflexive() {
         .query(&Environment {
             premise: Premise::<Default>::default(),
             table: &table,
-            normalizer: &normalizer::NO_OP,
-            observer: &observer::NO_OP,
+            normalizer: normalizer::NO_OP,
+            observer: observer::NO_OP,
         })
         .unwrap()
         .unwrap();
@@ -65,8 +65,8 @@ fn symmetric() {
     let environment = Environment {
         premise,
         table: &Table::<Building>::default(),
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
 
     assert!(Equality::new(
@@ -105,8 +105,8 @@ fn not_equal() {
     let environment = Environment {
         premise,
         table: &Table::<Building>::default(),
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
 
     assert!(Equality::new(
@@ -155,8 +155,8 @@ fn transitivity() {
     let environment = Environment {
         premise,
         table: &Table::<Building>::default(),
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
 
     assert!(Equality::new(
@@ -228,8 +228,8 @@ fn congruence() {
     let environment = Environment {
         premise,
         table: &table,
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
 
     assert!(Equality::new(lhs.clone(), rhs.clone())
@@ -392,8 +392,8 @@ where
             .query(&Environment {
                 premise: premise.clone(),
                 table,
-                normalizer: &normalizer::NO_OP,
-                observer: &observer::NO_OP,
+                normalizer: normalizer::NO_OP,
+                observer: observer::NO_OP,
             })?
             .is_none()
         } else {
@@ -404,8 +404,8 @@ where
             .query(&Environment {
                 premise: premise.clone(),
                 table,
-                normalizer: &normalizer::NO_OP,
-                observer: &observer::NO_OP,
+                normalizer: normalizer::NO_OP,
+                observer: observer::NO_OP,
             })?
             .is_none()
         };
@@ -640,8 +640,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     let environment = &Environment {
         premise: premise.clone(),
         table: &table,
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
     prop_assert!(Equality::new(term1.clone(), term2.clone())
         .query(&environment)
@@ -674,8 +674,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
         let modified_environment = &Environment {
             premise: modified_premise,
             table: &table,
-            normalizer: &normalizer::NO_OP,
-            observer: &observer::NO_OP,
+            normalizer: normalizer::NO_OP,
+            observer: observer::NO_OP,
         };
 
         prop_assert!(Equality::new(term1.clone(), term2.clone())
@@ -697,7 +697,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
             let environment = &Environment {
                 premise: &premise,
                 table: &table,
-                normalizer: &normalizer::NO_OP,
+                normalizer: normalizer::NO_OP,
             };
 
             prop_assert!(!equals(
@@ -727,8 +727,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     let environment = &Environment {
         premise,
         table: &table,
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
     prop_assert!(Equality::new(term1.clone(), term2.clone())
         .query(&environment)

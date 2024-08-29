@@ -1,19 +1,22 @@
 use pernixc_base::handler::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{r#trait, Finalize};
+use super::r#trait;
 use crate::{
     arena::ID,
     error,
     symbol::{
         table::{
             representation::{
-                building::finalizing::{occurrences::Occurrences, Finalizer},
+                building::finalizing::{
+                    state::Finalize, utility::occurrences::Occurrences,
+                    Finalizer,
+                },
                 Index, RwLockContainer,
             },
             Building, Table,
         },
-        PositiveTraitImplementation,
+        NegativeTraitImplementation,
     },
 };
 
@@ -24,17 +27,16 @@ pub const GENERIC_PARAMETER_STATE: usize = 0;
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The generic arguments of the implementation are built.
-pub const ARGUMENTS_STATE: usize = 2;
+pub const ARGUMENT_STATE: usize = 2;
 
 /// Bounds check are performed
 pub const CHECK_STATE: usize = 3;
 
-impl Finalize for PositiveTraitImplementation {
+impl Finalize for NegativeTraitImplementation {
     type SyntaxTree = syntax_tree::item::ImplementationSignature;
     const FINAL_STATE: usize = CHECK_STATE;
     type Data = (Occurrences, Occurrences, Occurrences);
 
-    #[allow(clippy::too_many_lines)]
     fn finalize(
         table: &Table<Building<RwLockContainer, Finalizer>>,
         symbol_id: ID<Self>,
@@ -43,7 +45,7 @@ impl Finalize for PositiveTraitImplementation {
         (
             generic_parameter_occurrences,
             where_clause_occurrences,
-            arguments_occurrences,
+            argument_occurrences,
         ): &mut Self::Data,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
@@ -66,7 +68,7 @@ impl Finalize for PositiveTraitImplementation {
                 );
             }
 
-            ARGUMENTS_STATE => {
+            ARGUMENT_STATE => {
                 let parent_trait_id =
                     table.get(symbol_id).unwrap().implemented_id;
 
@@ -80,7 +82,7 @@ impl Finalize for PositiveTraitImplementation {
                     );
 
                 table
-                    .positive_trait_implementations
+                    .negative_trait_implementations
                     .get(symbol_id)
                     .unwrap()
                     .write()
@@ -89,7 +91,7 @@ impl Finalize for PositiveTraitImplementation {
                     parent_trait_id,
                     r#trait::GENERIC_PARAMETER_STATE,
                     generic_identifier,
-                    arguments_occurrences,
+                    argument_occurrences,
                     handler,
                 );
             }
@@ -117,7 +119,7 @@ impl Finalize for PositiveTraitImplementation {
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &arguments_occurrences,
+                    &argument_occurrences,
                     handler,
                 );
                 table.check_where_clause(symbol_id.into(), handler);

@@ -8,7 +8,7 @@ use crate::{
         environment::{Environment, Error},
         equality::Equality,
         model::Default,
-        normalizer::NoOp,
+        normalizer, observer,
         predicate::{self, Predicate},
         term::{
             lifetime::Lifetime,
@@ -151,8 +151,12 @@ fn check_ambiguous_without_equality() {
     };
 
     let table = &Table::<Building>::default();
-    let normalizer = NoOp;
-    let (environment, errors) = Environment::new(premise, &table, &normalizer);
+    let (environment, errors) = Environment::new_with(
+        premise,
+        &table,
+        normalizer::NO_OP,
+        observer::NO_OP,
+    );
 
     assert_eq!(errors.len(), 3);
 
@@ -240,9 +244,13 @@ fn check_non_ambiguous_equality() {
     };
 
     let table = Table::<Building>::default();
-    let normalizer = NoOp;
 
-    let (environment, errors) = Environment::new(premise, &table, &normalizer);
+    let (environment, errors) = Environment::new_with(
+        premise,
+        &table,
+        normalizer::NO_OP,
+        observer::NO_OP,
+    );
 
     assert!(errors.is_empty());
     assert_eq!(environment.premise.predicates.len(), 2);
@@ -324,9 +332,13 @@ fn check_ambiguous_equality() {
     };
 
     let table = Table::<Building>::default();
-    let normalizer = NoOp;
 
-    let (environment, errors) = Environment::new(premise, &table, &normalizer);
+    let (environment, errors) = Environment::new_with(
+        premise,
+        &table,
+        normalizer::NO_OP,
+        observer::NO_OP,
+    );
 
     assert!(environment.premise.predicates.len() == 1);
     assert!(environment
@@ -402,9 +414,13 @@ fn check_recursive_equality() {
     };
 
     let table = Table::<Building>::default();
-    let normalizer = NoOp;
 
-    let (environment, errors) = Environment::new(premise, &table, &normalizer);
+    let (environment, errors) = Environment::new_with(
+        premise,
+        &table,
+        normalizer::NO_OP,
+        observer::NO_OP,
+    );
 
     assert_eq!(errors.len(), 1);
     assert_eq!(environment.premise.predicates.len(), 1);

@@ -1113,10 +1113,9 @@ impl<'a, M: Model, S: State>
         premise: Premise<M>,
         table: &'a Table<S>,
     ) -> (Self, Vec<Error<M>>) {
-        Self::new_with(premise, table, &normalizer::NO_OP, &observer::NO_OP)
+        Self::new_with(premise, table, normalizer::NO_OP, observer::NO_OP)
     }
 }
 
-// TODO: Add test back
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

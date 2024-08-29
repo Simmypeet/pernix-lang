@@ -35,7 +35,6 @@ use crate::{
             r#type::{self, Qualifier, Type},
             GenericArguments,
         },
-        Premise,
     },
 };
 
@@ -1641,14 +1640,13 @@ impl Report<&Table<Suboptimal>> for UnimplementedTraitMembers {
                 .and_then(|x| x.span())
                 .ok_or(ReportError)?
                 .clone(),
-            message: "not all trait member(s) are implemented in the \
-                      implementation"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: Some(format!(
-                "the following trait member(s) are not implemented: {}",
+            message: format!(
+                "not all trait member(s) are implemented in the \
+                 implementation: {}",
                 trait_member_qualified_names.join(", ")
-            )),
+            ),
+            severity: Severity::Error,
+            help_message: None,
             related: Vec::new(),
         })
     }

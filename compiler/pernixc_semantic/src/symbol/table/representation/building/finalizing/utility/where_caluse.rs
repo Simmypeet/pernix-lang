@@ -5,11 +5,7 @@ use std::collections::{hash_map::Entry, HashMap};
 use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::{
-    finalizer::{self, builder::Basic},
-    occurrences::Occurrences,
-    Finalizer,
-};
+use super::{builder, occurrences::Occurrences};
 use crate::{
     arena::ID,
     error::{
@@ -20,7 +16,10 @@ use crate::{
         self,
         table::{
             self,
-            representation::{Element, RwLockContainer},
+            representation::{
+                building::finalizing::{self, Finalizer},
+                Element, RwLockContainer,
+            },
             resolution::{
                 self, MemberGeneric, MemberGenericID, Observer, Resolution,
             },
@@ -52,7 +51,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             .as_ref()
             .map(|x| Self::create_higher_ranked_lifetimes(x, handler));
 
-        let mut basic = Basic;
+        let mut basic = builder::Resolution::basic();
         let mut observer = basic.chain(occurrences);
 
         let mut config = resolution::Config {
@@ -123,7 +122,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
     #[allow(clippy::too_many_lines)]
     fn create_trait_bound_predicates<
-        T: Generic + table::representation::Element + finalizer::Element,
+        T: Generic + table::representation::Element + finalizing::Element,
     >(
         &self,
         generic_id: ID<T>,
@@ -146,7 +145,10 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     ellided_lifetime_provider: None,
                     ellided_type_provider: None,
                     ellided_constant_provider: None,
-                    observer: Some(&mut (&mut Basic).chain(occurrences)),
+                    observer: Some(
+                        &mut (&mut builder::Resolution::basic())
+                            .chain(occurrences),
+                    ),
                     higher_ranked_lifetimes: higher_ranked_lifetimes.as_ref(),
                 },
                 handler,
@@ -189,7 +191,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
     #[allow(clippy::too_many_lines)]
     fn create_lifetime_outlives_predicates<
-        T: Generic + table::representation::Element + finalizer::Element,
+        T: Generic + table::representation::Element + finalizing::Element,
     >(
         &self,
         generic_id: ID<T>,
@@ -201,7 +203,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     {
         let mut bounds = Vec::new();
 
-        let mut basic = Basic;
+        let mut basic = builder::Resolution::basic();
         let mut observer = basic.chain(occurrences);
 
         let mut config = resolution::Config {
@@ -290,7 +292,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     // create a constant type predicate
     #[allow(clippy::too_many_lines)]
     fn create_constant_type_predicates<
-        T: Generic + table::representation::Element + finalizer::Element,
+        T: Generic + table::representation::Element + finalizing::Element,
     >(
         &self,
         generic_id: ID<T>,
@@ -300,7 +302,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
     {
-        let mut basic = Basic;
+        let mut basic = builder::Resolution::basic();
         let mut observer = basic.chain(occurrences);
 
         for bound in syntax_tree.bounds().elements() {
@@ -367,7 +369,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             ellided_type_provider: None,
                             ellided_constant_provider: None,
                             observer: Some(
-                                &mut (&mut Basic).chain(occurrences),
+                                &mut (&mut builder::Resolution::basic())
+                                    .chain(occurrences),
                             ),
                             higher_ranked_lifetimes: higher_ranked_lifetimes
                                 .as_ref(),
@@ -455,8 +458,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     }
 
     /// Creates where clause predicates for the given generic symbol.
-    pub(in crate::symbol::table::representation::building) fn create_where_clause<
-        T: Generic + table::representation::Element + finalizer::Element,
+    pub fn create_where_clause<
+        T: Generic + table::representation::Element + finalizing::Element,
     >(
         &self,
         generic_id: ID<T>,

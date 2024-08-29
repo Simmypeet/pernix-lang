@@ -217,11 +217,20 @@ pub trait Callable: Generic {
     /// The parameters defined in the funciton.
     fn parameters(&self) -> &Arena<Parameter>;
 
+    #[doc(hidden)]
+    fn parameters_mut(&mut self) -> &mut Arena<Parameter>;
+
     /// The array of parameter IDs that are stored in order of the declaration.
     fn parameter_order(&self) -> &[ID<Parameter>];
 
+    #[doc(hidden)]
+    fn parameter_order_mut(&mut self) -> &mut Vec<ID<Parameter>>;
+
     /// The return type of the function.
     fn return_type(&self) -> &r#type::Type<Default>;
+
+    #[doc(hidden)]
+    fn return_type_mut(&mut self) -> &mut r#type::Type<Default>;
 }
 
 impl<ParentID: Copy + Into<GlobalID>, Definition> Callable
@@ -232,6 +241,18 @@ impl<ParentID: Copy + Into<GlobalID>, Definition> Callable
     fn parameter_order(&self) -> &[ID<Parameter>] { &self.parameter_order }
 
     fn return_type(&self) -> &r#type::Type<Default> { &self.return_type }
+
+    fn parameters_mut(&mut self) -> &mut Arena<Parameter> {
+        &mut self.parameters
+    }
+
+    fn parameter_order_mut(&mut self) -> &mut Vec<ID<Parameter>> {
+        &mut self.parameter_order
+    }
+
+    fn return_type_mut(&mut self) -> &mut r#type::Type<Default> {
+        &mut self.return_type
+    }
 }
 
 /// Represents a kind of symbol that defines a algebraic data type.

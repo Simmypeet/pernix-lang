@@ -41,8 +41,8 @@ fn basic() {
         simplify(&Type::TraitMember(trait_member), &Environment {
             premise,
             table: &table,
-            normalizer: &normalizer::NO_OP,
-            observer: &observer::NO_OP,
+            normalizer: normalizer::NO_OP,
+            observer: observer::NO_OP,
         });
 
     assert_eq!(simplified, equivalent);
@@ -85,8 +85,8 @@ fn sub_term() {
         &Environment {
             premise,
             table: &table,
-            normalizer: &normalizer::NO_OP,
-            observer: &observer::NO_OP,
+            normalizer: normalizer::NO_OP,
+            observer: observer::NO_OP,
         },
     );
 
@@ -133,8 +133,8 @@ fn already_simplified() {
         simplify(&equivalent, &Environment {
             premise,
             table: &table,
-            normalizer: &normalizer::NO_OP,
-            observer: &observer::NO_OP,
+            normalizer: normalizer::NO_OP,
+            observer: observer::NO_OP,
         });
 
     assert_eq!(simplified, equivalent);
@@ -185,8 +185,8 @@ fn with_lifetime_matching() {
         simplify(&Type::TraitMember(to_be_simplified), &Environment {
             premise,
             table: &table,
-            normalizer: &normalizer::NO_OP,
-            observer: &observer::NO_OP,
+            normalizer: normalizer::NO_OP,
+            observer: observer::NO_OP,
         });
 
     assert_eq!(simplified, equivalent);
@@ -229,8 +229,8 @@ fn multiple_equivalences() {
     let environment = Environment {
         premise,
         table: &table,
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
 
     let Succeeded { result: result1, constraints: constraints1 } =
@@ -303,8 +303,8 @@ fn transitive() {
     let environment = Environment {
         premise,
         table: &table,
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
 
     let Succeeded { result: simplified, constraints } =

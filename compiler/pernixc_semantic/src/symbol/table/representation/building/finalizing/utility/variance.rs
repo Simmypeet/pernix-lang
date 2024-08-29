@@ -6,7 +6,12 @@ use pernixc_base::handler::Handler;
 use crate::{
     error::Error,
     symbol::{
-        table::{State, Table},
+        table::{
+            representation::{
+                building::finalizing::Finalizer, RwLockContainer,
+            },
+            Building, State, Table,
+        },
         GenericID, GenericParameterVariances, GenericParameters,
         LifetimeParameterID, TypeParameterID, Variance,
     },
@@ -111,9 +116,10 @@ where
     current_variance
 }
 
-impl<T: State> Table<T> {
+impl Table<Building<RwLockContainer, Finalizer>> {
+    /// Builds the variance for the generic parameters of the given generic
     #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments, unused)]
-    pub(super) fn build_variance<'a>(
+    pub fn build_variance<'a>(
         &self,
         generic_parameters: &GenericParameters,
         generic_parameter_variances: &mut GenericParameterVariances,
@@ -126,8 +132,8 @@ impl<T: State> Table<T> {
         let (environment, _) = Environment::new_with(
             active_premise,
             self,
-            &normalizer::NO_OP,
-            &observer::NO_OP,
+            normalizer::NO_OP,
+            observer::NO_OP,
         );
 
         for (id, _) in generic_parameters.lifetime_parameters_as_order() {
@@ -236,4 +242,4 @@ where
 }
 
 #[cfg(test)]
-mod tests;
+mod test;

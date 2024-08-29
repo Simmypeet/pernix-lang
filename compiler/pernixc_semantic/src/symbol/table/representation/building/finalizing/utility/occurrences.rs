@@ -20,7 +20,7 @@ use crate::{
 };
 
 /// A structure containing the list of all resolution resolved so far in the
-/// building process.
+/// finalizing process.
 ///
 /// This is primarily used for well-formedness checking of all instantiations
 /// made in the program.

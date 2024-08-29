@@ -8,10 +8,7 @@ use pernixc_base::{
     source_file::{SourceElement, Span},
 };
 
-use super::{
-    finalize::positive_trait_implementation, finalizer::builder,
-    occurrences::Occurrences, Finalizer,
-};
+use super::{builder, occurrences::Occurrences};
 use crate::{
     arena::ID,
     error::{
@@ -29,7 +26,12 @@ use crate::{
     symbol::{
         table::{
             self,
-            representation::{Element, Index, RwLockContainer},
+            representation::{
+                building::finalizing::{
+                    symbol::positive_trait_implementation, Finalizer,
+                },
+                Element, Index, RwLockContainer,
+            },
             resolution, Building, Table,
         },
         ConstantParameter, ConstantParameterID, Generic, GenericID,
@@ -39,14 +41,12 @@ use crate::{
         TypeParameterID,
     },
     type_system::{
-        compatible::{
-            Compatibility, Compatible, NotGeneralEnoughLifetimeError,
-        },
+        compatible::{Compatibility, Compatible},
         deduction,
         environment::{self, Environment},
         instantiation::{self, Instantiation},
         model::{Default, Model},
-        normalizer::{Normalizer, NO_OP},
+        normalizer::{self, Normalizer},
         observer::{self, Observer},
         predicate::{self, Outlives, Predicate, Tuple},
         simplify,
@@ -842,7 +842,7 @@ where
     /// the lifetime constraints coming with simplification.
     ///
     /// The errors (if any) are reported to the `handler`.
-    pub(super) fn simplify_and_check_lifetime_constraints(
+    pub fn simplify_and_check_lifetime_constraints(
         &self,
         ty: &r#type::Type<M>,
         instantiation_span: &Span,
@@ -862,8 +862,9 @@ where
 }
 
 impl Table<Building<RwLockContainer, Finalizer>> {
+    /// Checks the well-formedness of the where clause predicates
     #[allow(unused)]
-    pub(super) fn check_where_clause(
+    pub fn check_where_clause(
         &self,
         id: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
@@ -875,8 +876,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let (_, environment_errors) = Environment::new_with(
             self.get_active_premise::<Default>(id).unwrap(),
             self,
-            &NO_OP,
-            &observer::NO_OP,
+            normalizer::NO_OP,
+            observer::NO_OP,
         );
         let active_premise_with_span = self
             .get_active_premise_predicates_with_span::<Default>(id)
@@ -943,7 +944,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     /// Checks if the occurrences of symbols are valid (i.e. they satisfy the
     /// where clause predicates).
     #[allow(unused)]
-    pub(super) fn check_occurrences(
+    pub fn check_occurrences(
         &self,
         id: GlobalID,
         occurrences: &Occurrences,
@@ -953,8 +954,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let (environment, _) = Environment::new_with(
             active_premise,
             self,
-            &NO_OP,
-            &observer::NO_OP,
+            normalizer::NO_OP,
+            observer::NO_OP,
         );
 
         // check resolution occurrences
@@ -1332,8 +1333,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let (environment, _) = Environment::new_with(
             implementation_member_active_premise.clone(),
             self,
-            &NO_OP,
-            &observer::NO_OP,
+            normalizer::NO_OP,
+            observer::NO_OP,
         );
 
         for ((tr_const_id, tr_const_param), (im_const_id, im_const_param)) in
@@ -1415,8 +1416,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let (environment, _) = Environment::new_with(
             trait_member_active_premise,
             self,
-            &NO_OP,
-            &observer::NO_OP,
+            normalizer::NO_OP,
+            observer::NO_OP,
         );
 
         // check for any extraneous predicates defined in the implementation
@@ -1604,8 +1605,12 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let premise =
             self.get_active_premise(implementation_id.into()).unwrap();
 
-        let (environment, _) =
-            Environment::new_with(premise, self, &NO_OP, &observer::NO_OP);
+        let (environment, _) = Environment::new_with(
+            premise,
+            self,
+            normalizer::NO_OP,
+            observer::NO_OP,
+        );
 
         environment.check_instantiation_predicates_by_generic_arguments(
             implementation_sym.implemented_id.into(),
@@ -1618,5 +1623,5 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     }
 }
 
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod test;

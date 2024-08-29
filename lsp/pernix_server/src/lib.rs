@@ -1,19 +1,7 @@
 //! Contains the server implementation.
 
-use std::{collections::HashMap, sync::Arc};
-
-use by_address::ByAddress;
-use extension::DaignosticExt;
 use log::{debug, error, info};
 use parking_lot::RwLock;
-use pernixc_base::{
-    diagnostic::Report,
-    handler::{Handler, Storage},
-    source_file::SourceFile,
-};
-use pernixc_lexical::token::Identifier;
-use pernixc_semantic::symbol::table::{self, BuildTableError};
-use pernixc_syntax::syntax_tree::target::Target;
 use tower_lsp::{
     jsonrpc,
     lsp_types::{
@@ -47,7 +35,8 @@ pub mod workspace;
 pub struct Server {
     client: Client,
 
-    syntax: syntax::Syntax,
+    syntax: RwLock<syntax::Syntax>,
+    semantic: RwLock<semantic::Semantic>,
 
     /// Present if the server started with a workspace.
     workspace: RwLock<Option<workspace::Workspace>>,
@@ -59,7 +48,8 @@ impl Server {
     pub fn new(client: Client) -> Self {
         Self {
             client,
-            syntax: syntax::Syntax::default(),
+            syntax: RwLock::new(syntax::Syntax::default()),
+            semantic: RwLock::new(semantic::Semantic::default()),
             workspace: RwLock::new(None),
         }
     }
@@ -189,95 +179,34 @@ impl LanguageServer for Server {
 
     async fn shutdown(&self) -> jsonrpc::Result<()> { Ok(()) }
 
-    /// Register the source file content and report syntax errors.
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         info!("Did open: {}", params.text_document.uri.path());
 
-        self.syntax.register_source_file(
-            params.text_document.uri.clone(),
-            params.text_document.text,
-        );
+        let uri = params.text_document.uri.clone();
+        let version = params.text_document.version;
+        let diagnostics = self.analyze_did_open(params);
 
-        let Some(diagnostics) =
-            self.syntax.diagnose_syntax(&params.text_document.uri)
-        else {
-            error!(
-                "failed to diagnose syntax: {}",
-                params.text_document.uri.path()
-            );
-            return;
-        };
-
-        // check syntax errors
-        self.client
-            .publish_diagnostics(
-                params.text_document.uri,
-                diagnostics,
-                Some(params.text_document.version),
-            )
-            .await;
+        self.client.publish_diagnostics(uri, diagnostics, Some(version)).await;
     }
 
-    /// synchornize the source file content with the server and report syntax
-    /// errors
-    async fn did_change(&self, mut params: DidChangeTextDocumentParams) {
-        info!("Did change: {}", params.text_document.uri.path(),);
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        info!("Did change: {}", params.text_document.uri.path());
 
-        // if found a change that replaces the whole content, all the changes
-        // before it are ignored
-        let changes = match params
-            .content_changes
-            .iter()
-            .rposition(|x| x.range.is_none())
-        {
-            Some(index) => {
-                self.syntax.register_source_file(
-                    params.text_document.uri.clone(),
-                    std::mem::take(&mut params.content_changes[index].text),
-                );
+        let uri = params.text_document.uri.clone();
+        let version = params.text_document.version;
+        let diagnostics = self.analyze_did_change(params);
 
-                &params.content_changes[index + 1..]
-            }
-            None => &params.content_changes,
-        };
-
-        for change in changes {
-            if let Err(err) = self.syntax.update_source_file(
-                &params.text_document.uri,
-                &change.text,
-                change.range.unwrap(),
-            ) {
-                error!(
-                    "failed to update source file: {}, reason: {}",
-                    params.text_document.uri.path(),
-                    err
-                );
-            }
-        }
-
-        let Some(diagnostics) =
-            self.syntax.diagnose_syntax(&params.text_document.uri)
-        else {
-            error!(
-                "failed to diagnose syntax: {}",
-                params.text_document.uri.path()
-            );
-            return;
-        };
-
-        self.client
-            .publish_diagnostics(
-                params.text_document.uri,
-                diagnostics,
-                Some(params.text_document.version),
-            )
-            .await;
+        self.client.publish_diagnostics(uri, diagnostics, Some(version)).await;
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         info!("Did save: {}", params.text_document.uri.path());
 
-        self.semantic_check(params).await;
+        let diagnostics = self.analyze_did_save(params);
+
+        for (uri, diagnostics) in diagnostics {
+            self.client.publish_diagnostics(uri, diagnostics, None).await;
+        }
     }
 }
 
@@ -355,119 +284,91 @@ impl Server {
     }
 }
 
-#[derive(Debug)]
-struct DiagnosticCollector(RwLock<Vec<pernixc_base::diagnostic::Diagnostic>>);
-
-impl<E: Report<()>> Handler<E> for DiagnosticCollector {
-    fn receive(&self, error: E) {
-        let Ok(diagnostic) = error.report(()) else {
-            return;
-        };
-
-        self.0.write().push(diagnostic);
-    }
-}
-
 impl Server {
-    async fn semantic_check(&self, params: DidSaveTextDocumentParams) {
-        // find the root file and target name based on the workspace
-        // configurationc
-        let (root, target_name) = 'exit: {
-            let workspace = self.workspace.read();
+    fn analyze_did_open(
+        &self,
+        params: DidOpenTextDocumentParams,
+    ) -> Vec<tower_lsp::lsp_types::Diagnostic> {
+        let mut syntax = self.syntax.write();
 
-            let Some(workspace) = workspace.as_ref() else {
-                info!("no workspace found, use the saved file as a root");
+        syntax.register_source_file(
+            params.text_document.uri.clone(),
+            params.text_document.text,
+        );
 
-                let Ok(file_path) = params.text_document.uri.to_file_path()
-                else {
-                    error!(
-                        "failed to convert uri to file path: {}",
-                        params.text_document.uri.path()
-                    );
-                    return;
-                };
+        syntax.analyze(&params.text_document.uri).unwrap_or_else(|| {
+            error!(
+                "failed to diagnose syntax: {}",
+                params.text_document.uri.path()
+            );
+            Vec::new()
+        })
+    }
 
-                let Some(name) = file_path.file_stem() else {
-                    error!("failed to get file name: {}", file_path.display());
-                    return;
-                };
+    /// Analyze the semantic when the source file is saved.
+    fn analyze_did_save(
+        &self,
+        params: DidSaveTextDocumentParams,
+    ) -> Vec<(Url, Vec<tower_lsp::lsp_types::Diagnostic>)> {
+        let mut semantic = self.semantic.write();
+        let workspace = self.workspace.read();
 
-                if !Identifier::is_valid_identifier_string(
-                    name.to_string_lossy().as_ref(),
-                ) {
-                    error!("invalid file name: {}", name.to_string_lossy());
-                    return;
-                }
+        semantic.analyze(workspace.as_ref().map_or_else(
+            || semantic::OperatingMode::SingleFile(params.text_document.uri),
+            semantic::OperatingMode::Workspace,
+        ))
+    }
 
-                break 'exit (
-                    file_path.parent().unwrap().to_path_buf(),
-                    name.to_string_lossy().to_string(),
+    /// Analyze the changes in the source file and report syntax errors.
+    ///
+    /// TODO: In the [`semantic::Semantic::latest_semantic_errors_by_uri`]
+    /// diagnostics' location should be updated according to the
+    /// changes so that we can append those semantic diagnostics along with
+    /// the syntax diagnostics.
+    fn analyze_did_change(
+        &self,
+        mut params: DidChangeTextDocumentParams,
+    ) -> Vec<tower_lsp::lsp_types::Diagnostic> {
+        let mut syntax = self.syntax.write();
+
+        // if found a change that replaces the whole content, all the changes
+        // before it are ignored
+        let changes = match params
+            .content_changes
+            .iter()
+            .rposition(|x| x.range.is_none())
+        {
+            Some(index) => {
+                syntax.register_source_file(
+                    params.text_document.uri.clone(),
+                    std::mem::take(&mut params.content_changes[index].text),
                 );
-            };
 
-            (
-                workspace.configuration().root_file.clone(),
-                workspace.configuration().target_name.clone(),
-            )
-        };
-
-        let file = match std::fs::File::open(&root) {
-            Ok(file) => file,
-            Err(err) => {
-                error!("{}: {}", root.display(), err);
-                return;
+                &params.content_changes[index + 1..]
             }
+            None => &params.content_changes,
         };
 
-        let root = match SourceFile::load(file, root.clone()) {
-            Ok(root) => Arc::new(root),
-            Err(err) => {
-                error!("{}: {}", root.display(), err);
-                return;
-            }
-        };
-
-        let semantic_error_storage =
-            Storage::<Box<dyn pernixc_semantic::error::Error>>::new();
-        let collector = DiagnosticCollector(RwLock::new(Vec::new()));
-
-        let target = Target::parse(&root, target_name, &collector);
-        let table =
-            table::build(std::iter::once(target), &semantic_error_storage);
-
-        // group the diagnostics by source file
-        let mut lsp_diagnostics_by_source_file = HashMap::<_, Vec<_>>::new();
-
-        for diagnostic in collector.0.into_inner() {
-            lsp_diagnostics_by_source_file
-                .entry(ByAddress(diagnostic.span.source_file().clone()))
-                .or_default()
-                .push(diagnostic.into_diagnostic());
-        }
-
-        if let Err(BuildTableError::Suboptimal(table)) = &table {
-            for error in semantic_error_storage.into_vec() {
-                let Ok(diagnostic) = error.report(table) else {
-                    continue;
-                };
-
-                lsp_diagnostics_by_source_file
-                    .entry(ByAddress(diagnostic.span.source_file().clone()))
-                    .or_default()
-                    .push(diagnostic.into_diagnostic());
+        for change in changes {
+            if let Err(err) = syntax.update_source_file(
+                &params.text_document.uri,
+                &change.text,
+                change.range.unwrap(),
+            ) {
+                error!(
+                    "failed to update source file: {}, reason: {}",
+                    params.text_document.uri.path(),
+                    err
+                );
             }
         }
 
-        // report the diagnostics in batch
-        for (source_file, diagnostics) in lsp_diagnostics_by_source_file {
-            let Some(uri) = std::fs::canonicalize(source_file.full_path())
-                .ok()
-                .and_then(|x| Url::from_file_path(x).ok())
-            else {
-                continue;
-            };
-
-            self.client.publish_diagnostics(uri, diagnostics, None).await;
-        }
+        syntax.analyze(&params.text_document.uri).unwrap_or_else(|| {
+            error!(
+                "failed to diagnose syntax: {}",
+                params.text_document.uri.path()
+            );
+            Vec::new()
+        })
     }
 }

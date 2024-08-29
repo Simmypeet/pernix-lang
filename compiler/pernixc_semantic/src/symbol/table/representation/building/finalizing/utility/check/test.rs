@@ -1,6 +1,6 @@
 use std::{fmt::Display, sync::Arc};
 
-use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
+use pernixc_base::{handler::Storage, source_file::SourceFile};
 use pernixc_syntax::syntax_tree::target::{self, Target};
 
 use crate::{
@@ -42,7 +42,8 @@ struct BuildTableError {
 fn build_table_from_source(
     source: impl Display,
 ) -> Result<Table<Success>, BuildTableError> {
-    let source_file = Arc::new(SourceFile::temp(source).unwrap());
+    let source_file =
+        Arc::new(SourceFile::new(source.to_string(), "test".into()));
 
     let storage = Storage::<ParseTargetError>::default();
     let target = Target::parse(&source_file, "test".to_string(), &storage);

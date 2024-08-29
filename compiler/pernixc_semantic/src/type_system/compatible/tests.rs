@@ -33,8 +33,8 @@ proptest! {
         let environment = Environment {
             premise: Premise::default(),
             table: &Table::<Building>::default(),
-            normalizer: &normalizer::NO_OP,
-            observer: &observer::NO_OP,
+            normalizer: normalizer::NO_OP,
+            observer: observer::NO_OP,
         };
 
          assert!(term
@@ -85,8 +85,8 @@ fn basic_compatible() {
     let environment = Environment {
         premise: Premise::default(),
         table: &Table::<Building>::default(),
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
 
     let check = |variance: Variance| {
@@ -217,8 +217,8 @@ fn compatible_with_adt() {
             .compatible(&b_t, Variance::Covariant, &Environment {
                 premise: Premise::default(),
                 table: &table,
-                normalizer: &normalizer::NO_OP,
-                observer: &observer::NO_OP,
+                normalizer: normalizer::NO_OP,
+                observer: observer::NO_OP,
             })
             .unwrap()
             .unwrap();
@@ -306,8 +306,8 @@ fn compatible_with_mutable_reference() {
     let environment = Environment {
         premise: Premise::default(),
         table: &Table::<Building>::default(),
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
 
     let result = lhs

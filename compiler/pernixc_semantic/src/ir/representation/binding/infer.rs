@@ -1454,7 +1454,7 @@ impl Context {
             DUMMY_PREMISE.clone(),
             &DUMMY_TABLE,
             &constraint_normalizer,
-            &observer::NO_OP,
+            observer::NO_OP,
         );
 
         intermediary_type = simplify(&intermediary_type, &environment).result;

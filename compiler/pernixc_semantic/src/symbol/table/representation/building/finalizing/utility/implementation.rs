@@ -3,17 +3,16 @@
 use pernixc_base::handler::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{
-    finalizer::{self, builder::Basic},
-    occurrences::Occurrences,
-    Finalize, Finalizer,
-};
+use super::{builder, occurrences::Occurrences};
 use crate::{
     arena::ID,
     error::Error,
     symbol::{
         table::{
-            representation::RwLockContainer,
+            representation::{
+                building::finalizing::{self, Finalize, Finalizer},
+                RwLockContainer,
+            },
             resolution::{self, Observer},
             Building, Table,
         },
@@ -26,9 +25,11 @@ use crate::{
 };
 
 impl Table<Building<RwLockContainer, Finalizer>> {
-    pub(super) fn create_implementation_arguments<
-        T: Finalize + finalizer::Element,
-    >(
+    /// Creates the generic arguments for an implementation.
+    ///
+    /// The generic arguments are not assigned to the implementation symbol
+    /// here.
+    pub fn create_implementation_arguments<T: Finalize + finalizing::Element>(
         &self,
         implementation_id: GenericID,
         implemented_id: ID<T>,
@@ -57,7 +58,10 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     ellided_lifetime_provider: None,
                     ellided_type_provider: None,
                     ellided_constant_provider: None,
-                    observer: Some(&mut (&mut Basic).chain(occurrences)),
+                    observer: Some(
+                        &mut (&mut builder::Resolution::basic())
+                            .chain(occurrences),
+                    ),
                     higher_ranked_lifetimes: None,
                 },
                 handler,

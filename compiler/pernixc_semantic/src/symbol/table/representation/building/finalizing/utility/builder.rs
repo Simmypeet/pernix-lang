@@ -1,25 +1,27 @@
 use pernixc_base::handler::Handler;
 
-use super::{BuildSymbolError, Finalizer};
 use crate::{
     arena::ID,
     error,
     symbol::{
         table::{
             representation::{
-                building::finalizing::finalize::{
-                    adt_implementation, adt_implementation_function, constant,
-                    function, negative_trait_implementation,
-                    positive_trait_implementation, r#enum, r#struct, r#trait,
-                    r#type, trait_constant, trait_function,
-                    trait_implementation_constant,
-                    trait_implementation_function, trait_implementation_type,
-                    trait_type,
+                building::finalizing::{
+                    state::BuildSymbolError,
+                    symbol::{
+                        adt_implementation, adt_implementation_function,
+                        constant, function, negative_trait_implementation,
+                        positive_trait_implementation, r#enum, r#struct,
+                        r#trait, r#type, trait_constant, trait_function,
+                        trait_implementation_constant,
+                        trait_implementation_function,
+                        trait_implementation_type, trait_type,
+                    },
+                    Finalizer,
                 },
                 Index, RwLockContainer,
             },
-            resolution::{Observer, Resolution},
-            Building, Table,
+            resolution, Building, Table,
         },
         GlobalID, TraitImplementationID, TraitImplementationType,
     },
@@ -36,12 +38,12 @@ use crate::{
 
 // assume the symbols are built with `Basic` builder
 #[derive(Clone, Copy)]
-pub struct Definition<'a> {
+pub struct TypeSystem<'a> {
     site: GlobalID,
     handler: &'a dyn Handler<Box<dyn error::Error>>,
 }
 
-impl<'a> Definition<'a> {
+impl<'a> TypeSystem<'a> {
     pub fn new(
         site: GlobalID,
         handler: &'a dyn Handler<Box<dyn error::Error>>,
@@ -52,7 +54,7 @@ impl<'a> Definition<'a> {
 
 impl<'a, M: Model>
     type_system::observer::Observer<M, Building<RwLockContainer, Finalizer>>
-    for Definition<'a>
+    for TypeSystem<'a>
 {
     fn on_query(
         record: &Record<M>,
@@ -123,7 +125,7 @@ impl<'a, M: Model>
                             environment.table().build_to(
                                 id,
                                 Some(environment.observer().site),
-                                positive_trait_implementation::ARGUMENTS_STATE,
+                                positive_trait_implementation::ARGUMENT_STATE,
                                 environment.observer().handler,
                             )
                         }
@@ -131,7 +133,7 @@ impl<'a, M: Model>
                             environment.table().build_to(
                                 id,
                                 Some(environment.observer().site),
-                                negative_trait_implementation::ARGUMENTS_STATE,
+                                negative_trait_implementation::ARGUMENT_STATE,
                                 environment.observer().handler,
                             )
                         }
@@ -211,14 +213,35 @@ impl<'a, M: Model>
     }
 }
 
-/// A struct implementing [`Observer`] trait that builds the symbols
-/// so that it contains basic information required for resolution.
-///
-/// This directly invokes the [`build_for_basic_resolution`] function.
+/// A builder that implements [`resolution::Observer`] trait that builds the
+/// symbols while resolving the symbols.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Basic;
+pub struct Resolution {
+    builder_function: for<'a, 'h> fn(
+        &'a Table<Building<RwLockContainer, Finalizer>>,
+        GlobalID,
+        Option<GlobalID>,
+        &'h dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<(), BuildSymbolError>,
+}
 
-impl<M: Model> Observer<Building<RwLockContainer, Finalizer>, M> for Basic {
+impl Resolution {
+    /// Creates a resolution builder that builds the symbols for generic
+    /// parameters and implementation's generic arguments
+    pub fn basic() -> Self {
+        Self { builder_function: build_for_basic_resolution }
+    }
+
+    /// Creates a resolution builder that builds the symbols for where clause
+    /// predicates.
+    pub fn definition() -> Self {
+        Self { builder_function: build_for_definition }
+    }
+}
+
+impl<M: Model> resolution::Observer<Building<RwLockContainer, Finalizer>, M>
+    for Resolution
+{
     fn on_global_id_resolved(
         &mut self,
         table: &Table<Building<RwLockContainer, Finalizer>>,
@@ -227,13 +250,8 @@ impl<M: Model> Observer<Building<RwLockContainer, Finalizer>, M> for Basic {
         global_id: GlobalID,
         _: &pernixc_lexical::token::Identifier,
     ) -> bool {
-        build_for_basic_resolution(
-            table,
-            global_id,
-            Some(referring_site),
-            handler,
-        )
-        .is_ok()
+        (self.builder_function)(table, global_id, Some(referring_site), handler)
+            .is_ok()
     }
 
     fn on_resolution_resolved(
@@ -241,7 +259,7 @@ impl<M: Model> Observer<Building<RwLockContainer, Finalizer>, M> for Basic {
         _: &Table<Building<RwLockContainer, Finalizer>>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        _: &Resolution<M>,
+        _: &resolution::Resolution<M>,
         _: &pernixc_syntax::syntax_tree::GenericIdentifier,
     ) -> bool {
         true
@@ -263,9 +281,9 @@ impl<M: Model> Observer<Building<RwLockContainer, Finalizer>, M> for Basic {
         _: &Table<Building<RwLockContainer, Finalizer>>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        lt: crate::type_system::term::lifetime::Lifetime<M>,
+        lt: term::lifetime::Lifetime<M>,
         _: &pernixc_syntax::syntax_tree::Lifetime,
-    ) -> Option<crate::type_system::term::lifetime::Lifetime<M>> {
+    ) -> Option<term::lifetime::Lifetime<M>> {
         Some(lt)
     }
 
@@ -274,9 +292,10 @@ impl<M: Model> Observer<Building<RwLockContainer, Finalizer>, M> for Basic {
         _: &Table<Building<RwLockContainer, Finalizer>>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        _: &crate::type_system::term::constant::Constant<M>,
+        _: &term::constant::Constant<M>,
         _: &pernixc_syntax::syntax_tree::Constant,
     ) {
+        todo!()
     }
 
     fn on_unpacked_type_resolved(
@@ -294,11 +313,12 @@ impl<M: Model> Observer<Building<RwLockContainer, Finalizer>, M> for Basic {
         _: &Table<Building<RwLockContainer, Finalizer>>,
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        _: &crate::type_system::term::constant::Constant<M>,
+        _: &term::constant::Constant<M>,
         _: &pernixc_syntax::syntax_tree::expression::Expression,
     ) {
     }
 }
+
 /// Build the symbol so that it has where clause predicates.
 pub fn build_for_where_clause(
     table: &Table<Building<RwLockContainer, Finalizer>>,
@@ -568,7 +588,7 @@ pub fn build_for_basic_resolution(
             match table.build_to(
                 id,
                 required_from,
-                positive_trait_implementation::ARGUMENTS_STATE,
+                positive_trait_implementation::ARGUMENT_STATE,
                 handler,
             ) {
                 Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => Ok(()),
@@ -583,7 +603,7 @@ pub fn build_for_basic_resolution(
             match table.build_to(
                 id,
                 required_from,
-                positive_trait_implementation::ARGUMENTS_STATE,
+                positive_trait_implementation::ARGUMENT_STATE,
                 handler,
             ) {
                 Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => Ok(()),
@@ -599,18 +619,34 @@ pub fn build_for_basic_resolution(
     }
 }
 
-#[allow(unused)]
-pub fn build_for_definition_internal(
+/// Build the symbol so that it has the definition information.
+pub fn build_for_definition(
     table: &Table<Building<RwLockContainer, Finalizer>>,
     global_id: GlobalID,
-    required_from: GlobalID,
+    required_from: Option<GlobalID>,
+    handler: &dyn Handler<Box<dyn error::Error>>,
+) -> Result<(), BuildSymbolError> {
+    build_for_definition_internal(
+        table,
+        global_id,
+        required_from,
+        false,
+        handler,
+    )
+}
+
+#[allow(unused)]
+fn build_for_definition_internal(
+    table: &Table<Building<RwLockContainer, Finalizer>>,
+    global_id: GlobalID,
+    required_from: Option<GlobalID>,
     pre_definition: bool,
     handler: &dyn Handler<Box<dyn error::Error>>,
 ) -> Result<(), BuildSymbolError> {
     match global_id {
         GlobalID::Struct(id) => table.build_to(
             id,
-            Some(required_from),
+            required_from,
             if pre_definition {
                 r#struct::PRE_DEFINITION_STATE
             } else {
@@ -621,7 +657,7 @@ pub fn build_for_definition_internal(
 
         GlobalID::Enum(id) => table.build_to(
             id,
-            Some(required_from),
+            required_from,
             if pre_definition {
                 r#enum::PRE_DEFINITION_STATE
             } else {
@@ -632,99 +668,96 @@ pub fn build_for_definition_internal(
 
         GlobalID::Trait(id) => table.build_to(
             id,
-            Some(required_from),
+            required_from,
             r#trait::GENERIC_PARAMETER_STATE,
             handler,
         ),
 
-        GlobalID::Type(id) => table.build_to(
-            id,
-            Some(required_from),
-            r#type::DEFINITION_STATE,
-            handler,
-        ),
+        GlobalID::Type(id) => {
+            table.build_to(id, required_from, r#type::DEFINITION_STATE, handler)
+        }
 
         GlobalID::Function(id) => table.build_to(
             id,
-            Some(required_from),
-            function::DEFINITION_STATE,
+            required_from,
+            function::SIGNATURE_STATE,
             handler,
         ),
 
         GlobalID::Constant(id) => table.build_to(
             id,
-            Some(required_from),
+            required_from,
             constant::DEFINITION_STATE,
             handler,
         ),
 
         GlobalID::TraitFunction(id) => table.build_to(
             id,
-            Some(required_from),
+            required_from,
             trait_function::DEFINITION_STATE,
             handler,
         ),
 
         GlobalID::TraitConstant(id) => table.build_to(
             id,
-            Some(required_from),
+            required_from,
             trait_constant::DEFINITION_STATE,
             handler,
         ),
 
         GlobalID::TraitType(id) => table.build_to(
             id,
-            Some(required_from),
+            required_from,
             trait_type::GENERIC_PARAMETER_STATE,
             handler,
         ),
 
         GlobalID::TraitImplementationFunction(id) => table.build_to(
             id,
-            Some(required_from),
+            required_from,
             trait_implementation_function::DEFINITION_STATE,
             handler,
         ),
 
         GlobalID::TraitImplementationConstant(id) => table.build_to(
             id,
-            Some(required_from),
+            required_from,
             trait_implementation_constant::DEFINITION_STATE,
             handler,
         ),
 
         GlobalID::TraitImplementationType(id) => table.build_to(
             id,
-            Some(required_from),
+            required_from,
             trait_implementation_type::DEFINITION_STATE,
             handler,
         ),
 
         GlobalID::AdtImplementationFunction(id) => table.build_to(
             id,
-            Some(required_from),
-            adt_implementation_function::DEFINITION_STATE,
+            required_from,
+            adt_implementation_function::SIGNATURE_STATE,
             handler,
         ),
 
         GlobalID::PositiveTraitImplementation(id) => table.build_to(
             id,
-            Some(required_from),
-            positive_trait_implementation::ARGUMENTS_STATE,
+            required_from,
+            positive_trait_implementation::ARGUMENT_STATE,
             handler,
         ),
 
         GlobalID::NegativeTraitImplementation(id) => table.build_to(
             id,
-            Some(required_from),
-            negative_trait_implementation::ARGUMENTS_STATE,
+            required_from,
+            negative_trait_implementation::ARGUMENT_STATE,
             handler,
         ),
 
         GlobalID::AdtImplementation(id) => table.build_to(
             id,
-            Some(required_from),
-            adt_implementation::DEFINITION_STATE,
+            required_from,
+            adt_implementation::ARGUMENT_STATE,
             handler,
         ),
 
@@ -748,8 +781,8 @@ pub fn build_for_definition_internal(
         Some(GlobalID::PositiveTraitImplementation(id)) => {
             match table.build_to(
                 id,
-                Some(required_from),
-                positive_trait_implementation::ARGUMENTS_STATE,
+                required_from,
+                positive_trait_implementation::ARGUMENT_STATE,
                 handler,
             ) {
                 Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => Ok(()),
@@ -763,8 +796,8 @@ pub fn build_for_definition_internal(
         Some(GlobalID::AdtImplementation(id)) => {
             match table.build_to(
                 id,
-                Some(required_from),
-                positive_trait_implementation::ARGUMENTS_STATE,
+                required_from,
+                positive_trait_implementation::ARGUMENT_STATE,
                 handler,
             ) {
                 Err(BuildSymbolError::EntryNotFound(_)) | Ok(()) => Ok(()),

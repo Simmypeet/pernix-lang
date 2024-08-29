@@ -420,22 +420,9 @@ impl Arbitrary for MatchArmGuard {
     }
 }
 
-impl Input<&super::MatchArmGuard> for &MatchArmGuard {
-    fn assert(self, output: &super::MatchArmGuard) -> TestCaseResult {
-        self.expression.assert(output.expression())
-    }
-}
-
-impl Display for MatchArmGuard {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "if ({})", self.expression)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MatchArm {
     pub refutable_pattern: Refutable,
-    pub guard: Option<MatchArmGuard>,
     pub block: Block,
 }
 
@@ -449,14 +436,9 @@ impl Arbitrary for MatchArm {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        (
-            Refutable::arbitrary(),
-            proptest::option::of(MatchArmGuard::arbitrary_with(args.clone())),
-            Block::arbitrary_with(args),
-        )
-            .prop_map(|(pattern, guard, block)| Self {
+        (Refutable::arbitrary(), Block::arbitrary_with(args))
+            .prop_map(|(pattern, block)| Self {
                 refutable_pattern: pattern,
-                guard,
                 block,
             })
             .boxed()
@@ -466,7 +448,6 @@ impl Arbitrary for MatchArm {
 impl Input<&super::MatchArm> for &MatchArm {
     fn assert(self, output: &super::MatchArm) -> TestCaseResult {
         self.refutable_pattern.assert(output.refutable_pattern())?;
-        self.guard.as_ref().assert(output.guard().as_ref())?;
         self.block.assert(output.block())
     }
 }
@@ -474,11 +455,6 @@ impl Input<&super::MatchArm> for &MatchArm {
 impl Display for MatchArm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.refutable_pattern)?;
-
-        if let Some(guard) = &self.guard {
-            write!(f, " {guard}")?;
-        }
-
         write!(f, ": {}", self.block)
     }
 }

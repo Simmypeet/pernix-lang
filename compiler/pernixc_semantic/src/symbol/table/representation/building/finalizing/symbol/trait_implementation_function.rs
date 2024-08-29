@@ -1,37 +1,38 @@
 use pernixc_base::handler::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::Finalize;
 use crate::{
     arena::ID,
     error,
     symbol::{
         table::{
             representation::{
-                building::finalizing::Finalizer, RwLockContainer, Table,
+                building::finalizing::{state::Finalize, Finalizer},
+                RwLockContainer, Table,
             },
             Building,
         },
-        TraitFunction,
+        TraitImplementationFunction,
     },
 };
 
 /// Generic parameters are built
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
-/// The where clause predicates are built.
+/// The where clause of the trait implementation function is built.
+#[allow(unused)]
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The function signature information is built, including parameters and return
 /// type.
 pub const DEFINITION_STATE: usize = 2;
 
-/// Bounds check are performed
-pub const CHECK_STATE: usize = 3;
+/// The intermediate representation of the function is built.
+pub const INTERMEDIATE_REPRESENTATION_AND_CEHCK_STATE: usize = 3;
 
-impl Finalize for TraitFunction {
-    type SyntaxTree = syntax_tree::item::TraitFunction;
-    const FINAL_STATE: usize = CHECK_STATE;
+impl Finalize for TraitImplementationFunction {
+    type SyntaxTree = syntax_tree::item::Function;
+    const FINAL_STATE: usize = INTERMEDIATE_REPRESENTATION_AND_CEHCK_STATE;
     type Data = ();
 
     fn finalize(

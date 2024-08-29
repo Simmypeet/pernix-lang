@@ -4,14 +4,9 @@
 //! It builds the symbol table to its final form and having all the correct
 //! information.
 
-mod check;
-mod finalize;
-mod finalizer;
-mod generic_parameters;
-mod implementation;
-mod occurrences;
-mod variance;
-mod where_caluse;
+mod state;
+mod symbol;
+mod utility;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FunctionKind {
@@ -28,6 +23,5 @@ impl FunctionKind {
     }
 }
 
-pub use finalize::Finalize;
-pub use finalizer::{Element, Finalizer};
 use pernixc_syntax::syntax_tree;
+pub use state::{Element, Finalize, Finalizer};

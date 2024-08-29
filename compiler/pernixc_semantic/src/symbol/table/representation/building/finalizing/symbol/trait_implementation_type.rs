@@ -1,7 +1,7 @@
 use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree;
 
-use super::{positive_trait_implementation, trait_type, Finalize};
+use super::{positive_trait_implementation, trait_type};
 use crate::{
     arena::ID,
     error::{self, PrivateEntityLeakedToPublicInterface},
@@ -9,8 +9,8 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::builder::{Basic, Definition},
-                    occurrences::Occurrences,
+                    state::Finalize,
+                    utility::{builder, occurrences::Occurrences},
                     Finalizer,
                 },
                 Index, RwLockContainer,
@@ -96,7 +96,7 @@ impl Finalize for TraitImplementationType {
                 let _ = table.build_to(
                     parent_implementation_id,
                     Some(symbol_id.into()),
-                    positive_trait_implementation::ARGUMENTS_STATE,
+                    positive_trait_implementation::ARGUMENT_STATE,
                     handler,
                 );
 
@@ -110,7 +110,8 @@ impl Finalize for TraitImplementationType {
                             ellided_type_provider: None,
                             ellided_constant_provider: None,
                             observer: Some(
-                                &mut (&mut Basic).chain(definition_occurrences),
+                                &mut (&mut builder::Resolution::basic())
+                                    .chain(definition_occurrences),
                             ),
                             higher_ranked_lifetimes: None,
                         },
@@ -118,12 +119,13 @@ impl Finalize for TraitImplementationType {
                     )
                     .unwrap_or_default();
 
-                let observer = Definition::new(symbol_id.into(), handler);
+                let observer =
+                    builder::TypeSystem::new(symbol_id.into(), handler);
 
                 let (environment, _) = Environment::new_with(
                     table.get_active_premise(symbol_id.into()).unwrap(),
                     table,
-                    &normalizer::NO_OP,
+                    normalizer::NO_OP,
                     &observer,
                 );
 

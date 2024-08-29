@@ -84,8 +84,8 @@ where
         let environment = Environment {
             premise: premise.clone(),
             table,
-            normalizer: &normalizer::NO_OP,
-            observer: &observer::NO_OP,
+            normalizer: normalizer::NO_OP,
+            observer: observer::NO_OP,
         };
 
         if outlives.query(&environment)?.is_none() {
@@ -193,8 +193,8 @@ impl Property<Type<Default>> for LifetimeMatching {
             .query(&Environment {
                 premise: premise.clone(),
                 table,
-                normalizer: &normalizer::NO_OP,
-                observer: &observer::NO_OP,
+                normalizer: normalizer::NO_OP,
+                observer: observer::NO_OP,
             })?
             .is_none()
         {
@@ -310,8 +310,8 @@ where
             .query(&Environment {
                 premise: premise.clone(),
                 table,
-                normalizer: &normalizer::NO_OP,
-                observer: &observer::NO_OP,
+                normalizer: normalizer::NO_OP,
+                observer: observer::NO_OP,
             })?
             .is_none()
         {
@@ -350,8 +350,8 @@ impl<T: Term<Model = Default>> Property<T> for Transitive<T> {
             .query(&Environment {
                 premise: premise.clone(),
                 table,
-                normalizer: &normalizer::NO_OP,
-                observer: &observer::NO_OP,
+                normalizer: normalizer::NO_OP,
+                observer: observer::NO_OP,
             })?
             .is_none()
         {
@@ -444,8 +444,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     let environment = &Environment {
         table: &table,
         premise,
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
 
     prop_assert!(Outlives::new(term1, term2)
@@ -485,8 +485,8 @@ proptest! {
         let environment = &Environment {
             table: &Table::<Building>::default(),
             premise: Premise::default(),
-            normalizer: &normalizer::NO_OP,
-            observer: &observer::NO_OP
+            normalizer: normalizer::NO_OP,
+            observer: observer::NO_OP
         };
         prop_assert!(
             Outlives::new(constant, lifetime).query(environment)?.is_some()

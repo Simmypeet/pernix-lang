@@ -2,7 +2,6 @@ use parking_lot::RwLockReadGuard;
 use pernixc_base::handler::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::Finalize;
 use crate::{
     arena::ID,
     error::{
@@ -12,7 +11,9 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::builder, occurrences::Occurrences, Finalizer,
+                    state::Finalize,
+                    utility::{builder, occurrences::Occurrences},
+                    Finalizer,
                 },
                 Index, RwLockContainer,
             },
@@ -95,12 +96,12 @@ impl Finalize for Trait {
 
                 let trait_sym = table.get(symbol_id).unwrap();
                 let definition =
-                    builder::Definition::new(symbol_id.into(), handler);
+                    builder::TypeSystem::new(symbol_id.into(), handler);
 
                 let default_environment = Environment::new_with(
                     Premise::default(),
                     table,
-                    &normalizer::NO_OP,
+                    normalizer::NO_OP,
                     &definition,
                 )
                 .0;

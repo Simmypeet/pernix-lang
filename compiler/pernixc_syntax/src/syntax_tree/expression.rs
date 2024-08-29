@@ -124,39 +124,14 @@ impl SourceElement for Statements {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ArmGuard:
-///     'if' '(' Expression ')'
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct MatchArmGuard {
-    #[get = "pub"]
-    if_keyword: Keyword,
-    #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    expression: Box<Expression>,
-    #[get = "pub"]
-    right_paren: Punctuation,
-}
-
-impl SourceElement for MatchArmGuard {
-    fn span(&self) -> Span {
-        self.if_keyword.span.join(&self.right_paren.span).unwrap()
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
 /// MatchArm:
-///     RefutablePattern ArmGuard? ':' Block
+///     RefutablePattern ':' Block
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct MatchArm {
     #[get = "pub"]
     refutable_pattern: Refutable,
-    #[get = "pub"]
-    guard: Option<MatchArmGuard>,
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
@@ -1365,33 +1340,10 @@ impl Parser<'_> {
     ) -> Option<MatchArm> {
         let refutable_pattern = self.parse_refutable_pattern(handler)?;
 
-        let guard = match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(if_keyword))
-                if if_keyword.kind == KeywordKind::If =>
-            {
-                // eat if keyword
-                self.forward();
-
-                let delimited_tree = self.step_into(
-                    Delimiter::Parenthesis,
-                    |parser| parser.parse_expression(handler).map(Box::new),
-                    handler,
-                )?;
-
-                Some(MatchArmGuard {
-                    if_keyword,
-                    left_paren: delimited_tree.open,
-                    expression: delimited_tree.tree?,
-                    right_paren: delimited_tree.close,
-                })
-            }
-            _ => None,
-        };
-
         let colon = self.parse_punctuation(':', true, handler)?;
         let block = self.parse_block(handler)?;
 
-        Some(MatchArm { refutable_pattern, guard, colon, block })
+        Some(MatchArm { refutable_pattern, colon, block })
     }
 
     fn parse_match(&mut self, handler: &dyn Handler<Error>) -> Option<Match> {

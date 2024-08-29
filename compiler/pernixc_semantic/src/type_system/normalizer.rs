@@ -33,7 +33,7 @@ pub trait Normalizer<M: Model, T: State>: Sized {
 pub struct NoOp;
 
 /// The instance of [`NoOp`] normalizer.
-pub const NO_OP: NoOp = NoOp;
+pub const NO_OP: &'static NoOp = &NoOp;
 
 impl<M: Model, T: State> Normalizer<M, T> for NoOp {
     fn normalize_type(

@@ -1,7 +1,6 @@
 use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree;
 
-use super::Finalize;
 use crate::{
     arena::ID,
     error::{self, PrivateEntityLeakedToPublicInterface},
@@ -9,8 +8,8 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::builder::{Basic, Definition},
-                    occurrences::Occurrences,
+                    state::Finalize,
+                    utility::{builder, occurrences::Occurrences},
                     Finalizer,
                 },
                 RwLockContainer,
@@ -80,7 +79,8 @@ impl Finalize for Type {
                             ellided_type_provider: None,
                             ellided_constant_provider: None,
                             observer: Some(
-                                &mut (&mut Basic).chain(definition_occurrences),
+                                &mut (&mut builder::Resolution::basic())
+                                    .chain(definition_occurrences),
                             ),
                             higher_ranked_lifetimes: None,
                         },
@@ -88,12 +88,13 @@ impl Finalize for Type {
                     )
                     .unwrap_or_default();
 
-                let observer = Definition::new(symbol_id.into(), handler);
+                let observer =
+                    builder::TypeSystem::new(symbol_id.into(), handler);
 
                 let (environment, _) = Environment::new_with(
                     table.get_active_premise(symbol_id.into()).unwrap(),
                     table,
-                    &normalizer::NO_OP,
+                    normalizer::NO_OP,
                     &observer,
                 );
 

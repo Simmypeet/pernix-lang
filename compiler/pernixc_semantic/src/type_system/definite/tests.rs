@@ -207,8 +207,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     let environment = &Environment {
         table: &table,
         premise,
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
 
     prop_assert!(Definite(term)

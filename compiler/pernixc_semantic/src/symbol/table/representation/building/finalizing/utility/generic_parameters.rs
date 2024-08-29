@@ -3,13 +3,15 @@
 use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::{finalizer::builder::Basic, occurrences::Occurrences, Finalizer};
+use super::{builder, occurrences::Occurrences};
 use crate::{
     arena::ID,
     error::{self, DuplicatedGenericParameter, MisOrderedGenericParameter},
     symbol::{
         table::{
-            representation::{Element, RwLockContainer},
+            representation::{
+                building::finalizing::Finalizer, Element, RwLockContainer,
+            },
             resolution::{self, Observer},
             Building, Table,
         },
@@ -21,9 +23,7 @@ use crate::{
 impl Table<Building<RwLockContainer, Finalizer>> {
     /// Creates a generic parameter for the given generic symbol
     #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
-    pub(in crate::symbol::table) fn create_generic_parameters<
-        T: Generic + Element,
-    >(
+    pub fn create_generic_parameters<T: Generic + Element>(
         &self,
         generic_id: ID<T>,
         syntax_tree: Option<&syntax_tree::item::GenericParameters>,
@@ -182,7 +182,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             ellided_type_provider: None,
                             ellided_constant_provider: None,
                             observer: Some(
-                                &mut (&mut Basic).chain(occurrences),
+                                &mut (&mut builder::Resolution::basic())
+                                    .chain(occurrences),
                             ),
                             higher_ranked_lifetimes: None,
                         },

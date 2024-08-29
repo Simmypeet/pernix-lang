@@ -1,7 +1,7 @@
 use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::{r#struct, Finalize};
+use super::r#struct;
 use crate::{
     arena::ID,
     error::{self, PrivateEntityLeakedToPublicInterface},
@@ -9,8 +9,8 @@ use crate::{
         table::{
             representation::{
                 building::finalizing::{
-                    finalizer::builder::{Basic, Definition},
-                    occurrences::Occurrences,
+                    state::Finalize,
+                    utility::{builder, occurrences::Occurrences},
                     Finalizer,
                 },
                 Index, RwLockContainer,
@@ -110,7 +110,8 @@ impl Finalize for Enum {
                                     ellided_type_provider: None,
                                     ellided_constant_provider: None,
                                     observer: Some(
-                                        &mut (&mut Basic)
+                                        &mut (&mut builder::Resolution::basic(
+                                        ))
                                             .chain(definition_occurrences),
                                     ),
                                     higher_ranked_lifetimes: None,
@@ -148,7 +149,7 @@ impl Finalize for Enum {
                 }
 
                 let definition_builder =
-                    Definition::new(symbol_id.into(), handler);
+                    builder::TypeSystem::new(symbol_id.into(), handler);
                 let variant_ids = table
                     .get(symbol_id)
                     .unwrap()
@@ -160,7 +161,7 @@ impl Finalize for Enum {
                 let environment = Environment::new_with(
                     table.get_active_premise(symbol_id.into()).unwrap(),
                     table,
-                    &normalizer::NO_OP,
+                    normalizer::NO_OP,
                     &definition_builder,
                 )
                 .0;

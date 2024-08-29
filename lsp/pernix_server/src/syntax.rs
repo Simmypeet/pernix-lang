@@ -1,8 +1,10 @@
 //! Contains logic related to handling syntax errors.
 
-use std::sync::Arc;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Arc,
+};
 
-use dashmap::DashMap;
 use getset::Getters;
 use parking_lot::RwLock;
 use pernixc_base::{
@@ -47,7 +49,7 @@ impl<E: Report<()>> Handler<E> for Collector {
 #[derive(Debug, Default, Getters, derive_more::Index)]
 pub struct Syntax {
     /// Gets the map of source files by their URL.
-    source_files_by_url: DashMap<Url, Arc<SourceFile>>,
+    source_files_by_url: HashMap<Url, Arc<SourceFile>>,
 }
 
 /// An error that can occur when updating a source file.
@@ -75,17 +77,17 @@ impl Syntax {
     /// context.
     ///
     /// This directly cooresponds to the `textDocument/didOpen` notification.
-    pub fn register_source_file(&self, url: Url, text: String) {
+    pub fn register_source_file(&mut self, url: Url, text: String) {
         let url_path = url.path().into();
 
         match self.source_files_by_url.entry(url) {
-            dashmap::Entry::Occupied(mut entry) => {
+            Entry::Occupied(mut entry) => {
                 Arc::get_mut(entry.get_mut())
                     .expect("should be unique")
                     .replace(text);
             }
 
-            dashmap::Entry::Vacant(entry) => {
+            Entry::Vacant(entry) => {
                 entry.insert(Arc::new(SourceFile::new(text, url_path)));
             }
         }
@@ -100,7 +102,7 @@ impl Syntax {
     /// See [`UpdateSourceFileError`] for more information.
     #[allow(clippy::significant_drop_tightening)]
     pub fn update_source_file(
-        &self,
+        &mut self,
         url: &Url,
         text: &str,
         range: tower_lsp::lsp_types::Range,
@@ -133,7 +135,7 @@ impl Syntax {
 
     /// Diagnoses the syntax of the source file with the given URL.
     #[must_use]
-    pub fn diagnose_syntax(&self, url: &Url) -> Option<Vec<Diagnostic>> {
+    pub fn analyze(&self, url: &Url) -> Option<Vec<Diagnostic>> {
         let source_file = self.source_files_by_url.get(url)?.clone();
 
         let collector = Collector::new();

@@ -492,8 +492,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     let environment = Environment {
         premise: premise.clone(),
         table: &table,
-        normalizer: &normalizer::NO_OP,
-        observer: &observer::NO_OP,
+        normalizer: normalizer::NO_OP,
+        observer: observer::NO_OP,
     };
 
     if Equality::new(lhs.clone(), rhs.clone())
@@ -519,8 +519,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
         let environment = Environment {
             premise,
             table: &table,
-            normalizer: &normalizer::NO_OP,
-            observer: &observer::NO_OP,
+            normalizer: normalizer::NO_OP,
+            observer: observer::NO_OP,
         };
 
         let Some(satisfied) = Equality::new(lhs, rhs)
