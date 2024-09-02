@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 
+use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 
 use super::instruction::{Instruction, Jump, Terminator};
@@ -76,7 +77,16 @@ pub struct ControlFlowGraph<M: Model> {
 
 /// An error from calling [`ControlFlowGraph::insert_terminator`].
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    thiserror::Error,
+    EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum InsertTerminatorError<M: Model> {

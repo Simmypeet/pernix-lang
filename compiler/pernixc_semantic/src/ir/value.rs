@@ -9,7 +9,7 @@ use crate::{
     symbol::{table, GlobalID},
     type_system::{
         environment::Environment, model::Model, normalizer::Normalizer,
-        observer::Observer, term::r#type::Type,
+        observer::Observer, simplify, term::r#type::Type, Succeeded,
     },
 };
 
@@ -58,12 +58,14 @@ impl<M: Model> Representation<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Type<M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
         match value {
             Value::Register(register) => {
                 self.type_of_register(*register, current_site, environment)
             }
-            Value::Literal(literal) => Ok(literal.r#type()),
+            Value::Literal(literal) => {
+                Ok(simplify::simplify(&literal.r#type(), environment))
+            }
         }
     }
 }

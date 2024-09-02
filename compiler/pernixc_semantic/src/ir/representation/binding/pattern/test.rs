@@ -9,11 +9,11 @@ use pernixc_syntax::{parser::Parser, syntax_tree};
 
 use crate::{
     arena::ID,
-    error::Error,
+    error::{self, Error},
     ir::{
         address::{self, Address, Field, Memory},
         instruction::Instruction,
-        pattern::{Irrefutable, Named},
+        pattern::{BindingKind, Irrefutable, NameBindingPoint, Named, Pattern},
         representation::{
             binding::{
                 infer::{self, Erased},
@@ -26,6 +26,7 @@ use crate::{
     symbol::{
         self,
         table::{
+            self,
             representation::{Index, IndexMut, Insertion},
             resolution, Building, Table,
         },
@@ -67,17 +68,20 @@ impl Representation<infer::Model> {
     /// Check for the named pattern that bound as `ref QUALIFIER IDENTIFIER`
     fn check_reference_bound_named_pattern(
         &self,
-        named_pattern: &Named<infer::Model>,
+        named_pattern: &Named,
+        binding_point: &NameBindingPoint<infer::Model>,
         expected_name: &str,
         expected_stored_adress: &Address<infer::Model>,
         qualifier: Qualifier,
         ty: &Type<infer::Model>,
     ) {
         assert_eq!(named_pattern.name, expected_name);
+        let binding =
+            binding_point.named_patterns_by_name.get(expected_name).unwrap();
 
         // should store the address at some alloca
         let Address::Memory(Memory::Alloca(stored_address_alloca_id)) =
-            named_pattern.load_address
+            binding.load_address
         else {
             panic!("Expected an alloca address")
         };
@@ -162,12 +166,58 @@ fn create_dummy_function() -> (Table<Building>, ID<Function>) {
     (table, function_id)
 }
 
+impl<
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'_, S, RO, TO>
+{
+    fn bind_irrefutable(
+        &mut self,
+        source: impl Display,
+        ty: &Type<infer::Model>,
+        address: Address<infer::Model>,
+    ) -> (Irrefutable, NameBindingPoint<infer::Model>) {
+        let pattern_syn = create_pattern(source);
+
+        let storage = Storage::<Box<dyn error::Error>>::default();
+
+        let irrefutable = Irrefutable::bind(
+            &pattern_syn,
+            ty,
+            self.current_site,
+            &self.create_environment(),
+            &storage,
+        )
+        .unwrap();
+
+        let storage = storage.into_vec();
+        assert!(storage.is_empty(), "{storage:?}");
+
+        let mut binding_point = NameBindingPoint::default();
+
+        let storage = Storage::<Box<dyn error::Error>>::default();
+
+        self.insert_named_binding_point(
+            &mut binding_point,
+            &irrefutable.result,
+            ty,
+            address,
+            &storage,
+        );
+
+        let storage = storage.into_vec();
+        assert!(storage.is_empty(), "{storage:?}");
+
+        (irrefutable.result, binding_point)
+    }
+}
+
 #[test]
 fn value_bound_named() {
     const VALUE_BOUND_NAMED: &str = "mutable helloWorld";
 
     let (table, function_id) = create_dummy_function();
-    let pattern = create_pattern(VALUE_BOUND_NAMED);
 
     let storage: Storage<Box<dyn Error>> = Storage::default();
     let mut binder = Binder::new_function(
@@ -180,38 +230,34 @@ fn value_bound_named() {
     )
     .unwrap();
 
+    assert!(storage.as_vec().is_empty());
+
     let alloca_id = binder.create_alloca(Type::default(), None);
 
-    let pattern = binder
-        .create_irrefutable(
-            &pattern,
-            &Type::default(),
-            &Address::Memory(Memory::Alloca(alloca_id)),
-            &storage,
-        )
-        .unwrap();
-
-    // no error
-    assert!(storage.as_vec().is_empty());
+    let (pattern, binding_point) = binder.bind_irrefutable(
+        VALUE_BOUND_NAMED,
+        &Type::default(),
+        Address::Memory(Memory::Alloca(alloca_id)),
+    );
 
     let Irrefutable::Named(pattern) = pattern else {
         panic!("Expected a named pattern")
     };
 
     assert_eq!(pattern.name, "helloWorld");
-    assert_eq!(
-        pattern.load_address,
-        Address::Memory(Memory::Alloca(alloca_id))
-    );
-    assert!(pattern.mutable);
+    assert_eq!(pattern.kind, BindingKind::Value(true));
+
+    let name = binding_point.named_patterns_by_name.get("helloWorld").unwrap();
+
+    assert_eq!(name.mutable, true);
+    assert_eq!(name.load_address, Address::Memory(Memory::Alloca(alloca_id)));
 }
 
 #[test]
 fn reference_bound_named() {
-    const SIMPLE_NAMED_VALUE_BOUND: &str = "ref unique helloWorld";
+    const SIMPLE_NAMED_REFERENCE_BOUND: &str = "ref unique helloWorld";
 
     let (table, function_id) = create_dummy_function();
-    let pattern = create_pattern(SIMPLE_NAMED_VALUE_BOUND);
 
     let storage: Storage<Box<dyn Error>> = Storage::default();
     let mut binder = Binder::new_function(
@@ -225,15 +271,11 @@ fn reference_bound_named() {
     .unwrap();
 
     let alloca_id = binder.create_alloca(Type::default(), None);
-
-    let pattern = binder
-        .create_irrefutable(
-            &pattern,
-            &Type::default(),
-            &Address::Memory(Memory::Alloca(alloca_id)),
-            &storage,
-        )
-        .unwrap();
+    let (pattern, binding_point) = binder.bind_irrefutable(
+        SIMPLE_NAMED_REFERENCE_BOUND,
+        &Type::default(),
+        Address::Memory(Memory::Alloca(alloca_id)),
+    );
 
     // no error
     assert!(storage.as_vec().is_empty());
@@ -244,6 +286,7 @@ fn reference_bound_named() {
 
     binder.intermediate_representation.check_reference_bound_named_pattern(
         &pattern,
+        &binding_point,
         "helloWorld",
         &Address::Memory(Memory::Alloca(alloca_id)),
         Qualifier::Unique,
@@ -300,7 +343,6 @@ fn value_bound_struct() {
         struct_id
     };
 
-    let pattern = create_pattern(VALUE_BOUND_STRUCT);
     let struct_ty = Type::Symbol(Symbol {
         id: SymbolID::Struct(struct_id),
         generic_arguments: GenericArguments::default(),
@@ -324,14 +366,11 @@ fn value_bound_struct() {
 
     let struct_alloca_id = binder.create_alloca(struct_ty.clone(), None);
 
-    let pattern = binder
-        .create_irrefutable(
-            &pattern,
-            &struct_ty,
-            &Address::Memory(Memory::Alloca(struct_alloca_id)),
-            &storage,
-        )
-        .unwrap();
+    let (pattern, binding_point) = binder.bind_irrefutable(
+        VALUE_BOUND_STRUCT,
+        &struct_ty,
+        Address::Memory(Memory::Alloca(struct_alloca_id)),
+    );
 
     // no error
     assert!(storage.as_vec().is_empty());
@@ -350,6 +389,7 @@ fn value_bound_struct() {
 
         binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
+            &binding_point,
             "a",
             &Address::Field(Field {
                 struct_address: Box::new(Address::Memory(Memory::Alloca(
@@ -371,10 +411,10 @@ fn value_bound_struct() {
         };
 
         assert_eq!(pattern.name, "b");
-        assert!(pattern.mutable);
+        assert_eq!(pattern.kind, BindingKind::Value(true));
 
         assert_eq!(
-            pattern.load_address,
+            binding_point.named_patterns_by_name.get("b").unwrap().load_address,
             Address::Field(Field {
                 struct_address: Box::new(Address::Memory(Memory::Alloca(
                     struct_alloca_id,
@@ -435,6 +475,8 @@ fn reference_bound_struct() {
         struct_id
     };
 
+    let storage: Storage<Box<dyn Error>> = Storage::default();
+
     let mut binder = Binder::new_function(
         &table,
         resolution::NoOp,
@@ -444,9 +486,10 @@ fn reference_bound_struct() {
         &Counter::default(),
     )
     .unwrap();
-    let storage: Storage<Box<dyn Error>> = Storage::default();
 
-    let pattern = create_pattern(REFERENCE_BOUND_STRUCT);
+    // no error
+    assert!(storage.as_vec().is_empty());
+
     let struct_ty = Type::Symbol(Symbol {
         id: SymbolID::Struct(struct_id),
         generic_arguments: GenericArguments::default(),
@@ -465,17 +508,11 @@ fn reference_bound_struct() {
     let struct_alloca_id =
         binder.create_alloca(reference_struct_ty.clone(), None);
 
-    let pattern = binder
-        .create_irrefutable(
-            &pattern,
-            &reference_struct_ty,
-            &Address::Memory(Memory::Alloca(struct_alloca_id)),
-            &storage,
-        )
-        .unwrap();
-
-    // no error
-    assert!(storage.as_vec().is_empty());
+    let (pattern, binding_point) = binder.bind_irrefutable(
+        REFERENCE_BOUND_STRUCT,
+        &reference_struct_ty,
+        Address::Memory(Memory::Alloca(struct_alloca_id)),
+    );
 
     let Irrefutable::Structural(pattern) = pattern else {
         panic!("Expected a named pattern")
@@ -515,6 +552,7 @@ fn reference_bound_struct() {
 
         binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
+            &binding_point,
             "a",
             &Address::Field(Field {
                 struct_address: Box::new(Address::Memory(
@@ -539,6 +577,7 @@ fn reference_bound_struct() {
 
         binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
+            &binding_point,
             "b",
             &Address::Field(Field {
                 struct_address: Box::new(Address::Memory(
@@ -561,7 +600,6 @@ fn value_bound_tuple() {
 
     let (table, function_id) = create_dummy_function();
 
-    let pattern = create_pattern(VALUE_BOUND_TUPLE);
     let tuple_ty = Type::Tuple(Tuple {
         elements: vec![
             TupleElement {
@@ -586,19 +624,16 @@ fn value_bound_tuple() {
     )
     .unwrap();
 
-    let tuple_alloca_id = binder.create_alloca(tuple_ty.clone(), None);
-
-    let pattern = binder
-        .create_irrefutable(
-            &pattern,
-            &tuple_ty,
-            &Address::Memory(Memory::Alloca(tuple_alloca_id)),
-            &storage,
-        )
-        .unwrap();
-
     // no error
     assert!(storage.as_vec().is_empty());
+
+    let tuple_alloca_id = binder.create_alloca(tuple_ty.clone(), None);
+
+    let (pattern, binding_point) = binder.bind_irrefutable(
+        VALUE_BOUND_TUPLE,
+        &tuple_ty,
+        Address::Memory(Memory::Alloca(tuple_alloca_id)),
+    );
 
     let Irrefutable::Tuple(pattern) = pattern else {
         panic!("Expected a named pattern")
@@ -606,12 +641,19 @@ fn value_bound_tuple() {
 
     // ref a tuple check
     {
-        let Some(Irrefutable::Named(pattern)) = pattern.elements.first() else {
+        let Some(pattern) = pattern.elements.first() else {
+            panic!("Expected a named pattern")
+        };
+
+        assert!(!pattern.is_packed);
+
+        let Irrefutable::Named(pattern) = &pattern.pattern else {
             panic!("Expected a named pattern")
         };
 
         binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
+            &binding_point,
             "a",
             &Address::Tuple(address::Tuple {
                 tuple_address: Box::new(Address::Memory(Memory::Alloca(
@@ -626,15 +668,21 @@ fn value_bound_tuple() {
 
     // mutable b check field
     {
-        let Some(Irrefutable::Named(pattern)) = pattern.elements.get(1) else {
+        let Some(pattern) = pattern.elements.last() else {
+            panic!("Expected a named pattern")
+        };
+
+        assert!(!pattern.is_packed);
+
+        let Irrefutable::Named(pattern) = &pattern.pattern else {
             panic!("Expected a named pattern")
         };
 
         assert_eq!(pattern.name, "b");
-        assert!(pattern.mutable);
+        assert_eq!(pattern.kind, BindingKind::Value(true));
 
         assert_eq!(
-            pattern.load_address,
+            binding_point.named_patterns_by_name.get("b").unwrap().load_address,
             Address::Tuple(address::Tuple {
                 tuple_address: Box::new(Address::Memory(Memory::Alloca(
                     tuple_alloca_id
@@ -651,7 +699,6 @@ fn reference_bound_tuple() {
 
     let (table, function_id) = create_dummy_function();
 
-    let pattern = create_pattern(REFERENCE_BOUND_TUPLE);
     let tuple_ty = Type::Tuple(Tuple {
         elements: vec![
             TupleElement {
@@ -684,14 +731,11 @@ fn reference_bound_tuple() {
     let tuple_alloca_id =
         binder.create_alloca(reference_tuple_ty.clone(), None);
 
-    let pattern = binder
-        .create_irrefutable(
-            &pattern,
-            &reference_tuple_ty,
-            &Address::Memory(Memory::Alloca(tuple_alloca_id)),
-            &storage,
-        )
-        .unwrap();
+    let (pattern, binding_point) = binder.bind_irrefutable(
+        REFERENCE_BOUND_TUPLE,
+        &reference_tuple_ty,
+        Address::Memory(Memory::Alloca(tuple_alloca_id)),
+    );
 
     let Irrefutable::Tuple(pattern) = pattern else {
         panic!("Expected a named pattern")
@@ -723,12 +767,17 @@ fn reference_bound_tuple() {
 
     // ref a tuple check
     {
-        let Some(Irrefutable::Named(pattern)) = pattern.elements.first() else {
+        let pattern = pattern.elements.first().unwrap();
+
+        assert!(!pattern.is_packed);
+
+        let Irrefutable::Named(pattern) = &pattern.pattern else {
             panic!("Expected a named pattern")
         };
 
         binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
+            &binding_point,
             "a",
             &Address::Tuple(address::Tuple {
                 tuple_address: Box::new(Address::Memory(
@@ -745,12 +794,17 @@ fn reference_bound_tuple() {
 
     // mutable b check field
     {
-        let Some(Irrefutable::Named(pattern)) = pattern.elements.get(1) else {
+        let pattern = pattern.elements.last().unwrap();
+
+        assert!(!pattern.is_packed);
+
+        let Irrefutable::Named(pattern) = &pattern.pattern else {
             panic!("Expected a named pattern")
         };
 
         binder.intermediate_representation.check_reference_bound_named_pattern(
             pattern,
+            &binding_point,
             "b",
             &Address::Tuple(address::Tuple {
                 tuple_address: Box::new(Address::Memory(
@@ -767,160 +821,11 @@ fn reference_bound_tuple() {
 }
 
 #[test]
-#[allow(clippy::too_many_lines)]
-fn packed_tuple() {
-    const PACKED_TUPLE: &str = "(ref a, ...b, mutable c)";
-
-    let (table, function_id) = create_dummy_function();
-
-    let pattern = create_pattern(PACKED_TUPLE);
-    let tuple_ty = Type::Tuple(Tuple {
-        elements: vec![
-            TupleElement {
-                term: Type::Primitive(Primitive::Bool),
-                is_unpacked: false,
-            },
-            TupleElement {
-                term: Type::Parameter(MemberID {
-                    parent: GenericID::Struct(ID::new(0)),
-                    id: ID::new(0),
-                }),
-                is_unpacked: true,
-            },
-            TupleElement {
-                term: Type::Primitive(Primitive::Int32),
-                is_unpacked: false,
-            },
-        ],
-    });
-
-    let storage: Storage<Box<dyn Error>> = Storage::default();
-    let mut binder = Binder::new_function(
-        &table,
-        resolution::NoOp,
-        type_system::observer::NoOp,
-        function_id,
-        std::iter::empty(),
-        &storage,
-    )
-    .unwrap();
-
-    let tuple_alloca_id = binder.create_alloca(tuple_ty.clone(), None);
-
-    let pattern = binder
-        .create_irrefutable(
-            &pattern,
-            &tuple_ty,
-            &Address::Memory(Memory::Alloca(tuple_alloca_id)),
-            &storage,
-        )
-        .unwrap();
-
-    // no error
-    assert!(storage.as_vec().is_empty());
-
-    let Irrefutable::Tuple(pattern) = pattern else {
-        panic!("Expected a tuple pattern")
-    };
-
-    // ref a tuple check
-    {
-        let Some(Irrefutable::Named(pattern)) = pattern.elements.first() else {
-            panic!("Expected a named pattern")
-        };
-
-        binder.intermediate_representation.check_reference_bound_named_pattern(
-            pattern,
-            "a",
-            &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Memory(Memory::Alloca(
-                    tuple_alloca_id,
-                ))),
-                offset: address::Offset::FromStart(0),
-            }),
-            Qualifier::Immutable,
-            &Type::Primitive(Primitive::Bool),
-        );
-    }
-
-    // mutable c check field
-    {
-        let Some(Irrefutable::Named(pattern)) = pattern.elements.last() else {
-            panic!("Expected a named pattern")
-        };
-
-        assert_eq!(pattern.name, "c");
-        assert!(pattern.mutable);
-
-        assert_eq!(
-            pattern.load_address,
-            Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Memory(Memory::Alloca(
-                    tuple_alloca_id
-                ))),
-                offset: address::Offset::FromEnd(0),
-            })
-        )
-    }
-
-    {
-        let block = binder.current_block();
-
-        let Irrefutable::Named(pat) = &pattern.elements[1] else {
-            panic!("Expected a named pattern")
-        };
-
-        let store_address = block
-            .instructions()
-            .iter()
-            .find_map(|inst| {
-                let Instruction::TuplePack(pack) = inst else {
-                    return None;
-                };
-
-                if pack.before_packed_element_count == 1
-                    && pack.after_packed_element_count == 1
-                    && pack.tuple_address
-                        == Address::Memory(Memory::Alloca(tuple_alloca_id))
-                {
-                    Some(&pack.store_address)
-                } else {
-                    None
-                }
-            })
-            .unwrap();
-
-        assert_eq!(*store_address, pat.load_address);
-
-        assert_eq!(
-            binder
-                .intermediate_representation
-                .allocas
-                .get(
-                    *pat.load_address.as_memory().unwrap().as_alloca().unwrap()
-                )
-                .unwrap()
-                .r#type,
-            Type::Tuple(term::Tuple {
-                elements: vec![TupleElement {
-                    term: Type::Parameter(MemberID {
-                        parent: GenericID::Struct(ID::new(0)),
-                        id: ID::new(0),
-                    }),
-                    is_unpacked: true
-                }]
-            }),
-        );
-    }
-}
-
-#[test]
 fn more_packed_tuple() {
     const PACKED_TUPLE: &str = "(a, ...b,  c)";
 
     let (table, function_id) = create_dummy_function();
 
-    let pattern = create_pattern(PACKED_TUPLE);
     let tuple_ty = Type::Tuple(Tuple {
         elements: vec![
             TupleElement {
@@ -966,14 +871,11 @@ fn more_packed_tuple() {
 
     let tuple_alloca_id = binder.create_alloca(tuple_ty.clone(), None);
 
-    let pattern = binder
-        .create_irrefutable(
-            &pattern,
-            &tuple_ty,
-            &Address::Memory(Memory::Alloca(tuple_alloca_id)),
-            &storage,
-        )
-        .unwrap();
+    let (pattern, binding_point) = binder.bind_irrefutable(
+        PACKED_TUPLE,
+        &tuple_ty,
+        Address::Memory(Memory::Alloca(tuple_alloca_id)),
+    );
 
     // no error
     assert!(storage.as_vec().is_empty());
@@ -984,14 +886,18 @@ fn more_packed_tuple() {
 
     // a tuple field
     {
-        let Some(Irrefutable::Named(pattern)) = pattern.elements.first() else {
+        let pattern = pattern.elements.first().unwrap();
+
+        assert!(!pattern.is_packed);
+
+        let Irrefutable::Named(pattern) = &pattern.pattern else {
             panic!("Expected a named pattern")
         };
 
         assert_eq!(pattern.name, "a");
 
         assert_eq!(
-            pattern.load_address,
+            binding_point.named_patterns_by_name.get("a").unwrap().load_address,
             Address::Tuple(address::Tuple {
                 tuple_address: Box::new(Address::Memory(Memory::Alloca(
                     tuple_alloca_id
@@ -1003,9 +909,17 @@ fn more_packed_tuple() {
 
     // b tuple check
     {
-        let Irrefutable::Named(pattern) = &pattern.elements[1] else {
+        assert!(pattern.elements[1].is_packed);
+        let Irrefutable::Named(_) = &pattern.elements[1].pattern else {
             panic!("Expected a named pattern")
         };
+
+        let load_address = binding_point
+            .named_patterns_by_name
+            .get("b")
+            .unwrap()
+            .load_address
+            .clone();
 
         let block = binder.current_block();
 
@@ -1019,7 +933,7 @@ fn more_packed_tuple() {
                 && pack.after_packed_element_count == 3
                 && pack.tuple_address
                     == Address::Memory(Memory::Alloca(tuple_alloca_id))
-                && pack.store_address == pattern.load_address
+                && pack.store_address == load_address
         }));
         // store int16
         assert!(block.instructions().iter().any(|inst| {
@@ -1029,7 +943,7 @@ fn more_packed_tuple() {
 
             &store.address
                 == &Address::Tuple(address::Tuple {
-                    tuple_address: Box::new(pattern.load_address.clone()),
+                    tuple_address: Box::new(load_address.clone()),
                     offset: address::Offset::FromStart(0),
                 })
                 && store.value.as_register().copied().map_or(false, |reg| {
@@ -1057,7 +971,7 @@ fn more_packed_tuple() {
 
             store.address
                 == Address::Tuple(address::Tuple {
-                    tuple_address: Box::new(pattern.load_address.clone()),
+                    tuple_address: Box::new(load_address.clone()),
                     offset: address::Offset::FromEnd(1),
                 })
                 && store.value.as_register().copied().map_or(false, |reg| {
@@ -1085,7 +999,7 @@ fn more_packed_tuple() {
 
             store.address
                 == Address::Tuple(address::Tuple {
-                    tuple_address: Box::new(pattern.load_address.clone()),
+                    tuple_address: Box::new(load_address.clone()),
                     offset: address::Offset::FromEnd(0),
                 })
                 && store.value.as_register().copied().map_or(false, |reg| {
@@ -1111,14 +1025,7 @@ fn more_packed_tuple() {
             binder
                 .intermediate_representation
                 .allocas
-                .get(
-                    *pattern
-                        .load_address
-                        .as_memory()
-                        .unwrap()
-                        .as_alloca()
-                        .unwrap()
-                )
+                .get(*load_address.as_memory().unwrap().as_alloca().unwrap())
                 .unwrap()
                 .r#type,
             Type::Tuple(term::Tuple {
@@ -1149,14 +1056,18 @@ fn more_packed_tuple() {
 
     // c check field
     {
-        let Some(Irrefutable::Named(pattern)) = pattern.elements.last() else {
+        assert!(!pattern.elements.last().unwrap().is_packed);
+
+        let Irrefutable::Named(pattern) =
+            &pattern.elements.last().unwrap().pattern
+        else {
             panic!("Expected a named pattern")
         };
 
         assert_eq!(pattern.name, "c");
 
         assert_eq!(
-            pattern.load_address,
+            binding_point.named_patterns_by_name.get("c").unwrap().load_address,
             Address::Tuple(address::Tuple {
                 tuple_address: Box::new(Address::Memory(Memory::Alloca(
                     tuple_alloca_id
@@ -1166,112 +1077,3 @@ fn more_packed_tuple() {
         )
     }
 }
-
-/*
-#[test]
-#[allow(clippy::too_many_lines)]
-fn optimize_unused_pack_tuple() {
-    const PACKED_TUPLE: &str = "(ref a, ?, mutable c)";
-
-    let mut representation = Representation::default();
-    let (table, referring_site) = create_table();
-
-    let pattern = create_pattern(PACKED_TUPLE);
-    let tuple_ty = Type::Tuple(Tuple {
-        elements: vec![
-            TupleElement::Regular(Type::Primitive(Primitive::Bool)),
-            TupleElement::Unpacked(Type::Parameter(MemberID {
-                parent: GenericID::Struct(ID::new(0)),
-                id: ID::new(0),
-            })),
-            TupleElement::Regular(Type::Primitive(Primitive::Int32)),
-        ],
-    });
-
-    let tuple_alloca_id = representation
-        .allocas
-        .insert(Alloca { r#type: tuple_ty.clone(), span: None });
-
-    let counter = Counter::default();
-
-    let pattern = representation
-        .create_irrefutable(
-            &table,
-            &pattern,
-            &tuple_ty,
-            &Address::Alloca(tuple_alloca_id),
-            representation.control_flow_graph.entry_block_id(),
-            referring_site.into(),
-            &counter,
-        )
-        .unwrap();
-
-    // no error
-    assert_eq!(counter.count(), 0);
-
-    let Irrefutable::Tuple(pattern::Tuple::Packed(pattern)) = pattern else {
-        panic!("Expected a named pattern")
-    };
-
-    // ref a tuple check
-    {
-        let Some(Irrefutable::Named(pattern)) =
-            pattern.before_packed_elements.first()
-        else {
-            panic!("Expected a named pattern")
-        };
-
-        representation.check_reference_bound_named_pattern(
-            pattern,
-            "a",
-            &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Alloca(tuple_alloca_id)),
-                offset: address::Offset::FromStart(0),
-            }),
-            Qualifier::Immutable,
-            &Type::Primitive(Primitive::Bool),
-        );
-    }
-
-    // mutable c check field
-    {
-        let Some(Irrefutable::Named(pattern)) =
-            pattern.after_packed_elements.first()
-        else {
-            panic!("Expected a named pattern")
-        };
-
-        assert_eq!(pattern.name, "c");
-        assert!(pattern.mutable);
-
-        // should store the address at some alloca
-        let Address::Tuple(tuple_address) = &pattern.load_address else {
-            panic!("Expected a tuple address")
-        };
-
-        assert_eq!(tuple_address.offset, address::Offset::FromEnd(0));
-        assert_eq!(
-            &*tuple_address.tuple_address,
-            &Address::Alloca(tuple_alloca_id)
-        );
-    }
-
-    {
-        let block = representation
-            .control_flow_graph
-            .get_block(representation.control_flow_graph.entry_block_id())
-            .unwrap();
-
-        // no need to pack the tuple since it's not used (wildcard)
-        assert!(!block.instructions().iter().any(|inst| {
-            let Instruction::Basic(Basic::TuplePack(pack)) = inst else {
-                return false;
-            };
-
-            pack.before_packed_element_count == 1
-                && pack.after_packed_element_count == 1
-                && pack.tuple_address == Address::Alloca(tuple_alloca_id)
-        }));
-    }
-}
-*/

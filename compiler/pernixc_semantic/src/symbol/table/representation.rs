@@ -1932,6 +1932,10 @@ impl<T: Container> Representation<T> {
             }
         };
 
+        if duplication.is_none() {
+            parent_symbol.variant_declaration_order.push(member_id);
+        }
+
         Some(Insertion { id: member_id, duplication })
     }
 

@@ -513,11 +513,58 @@ impl Display for Match {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct While {
+    pub condition: Box<Expression>,
+    pub block: Block,
+}
+
+impl Arbitrary for While {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let expression = args.0.clone().unwrap_or_else(|| {
+            Expression::arbitrary_with((
+                args.1.clone(),
+                args.2.clone(),
+                args.3.clone(),
+            ))
+        });
+
+        (expression, Block::arbitrary_with(args))
+            .prop_map(|(condition, block)| Self {
+                condition: Box::new(condition),
+                block,
+            })
+            .boxed()
+    }
+}
+
+impl Input<&super::While> for &While {
+    fn assert(self, output: &super::While) -> TestCaseResult {
+        self.condition.assert(output.condition())?;
+        self.block.assert(output.block())
+    }
+}
+
+impl Display for While {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "while ({}) {}", self.condition, self.block)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Brace {
     Block(Block),
     Loop(Loop),
     IfElse(IfElse),
     Match(Match),
+    While(While),
 }
 
 impl Input<&super::Brace> for &Brace {
@@ -533,6 +580,9 @@ impl Input<&super::Brace> for &Brace {
                 input.assert(output)
             }
             (Brace::Match(input), super::Brace::Match(output)) => {
+                input.assert(output)
+            }
+            (Brace::While(input), super::Brace::While(output)) => {
                 input.assert(output)
             }
 
@@ -557,6 +607,7 @@ impl Arbitrary for Brace {
             Block::arbitrary_with(args.clone()).prop_map(Brace::Block),
             Loop::arbitrary_with(args.clone()).prop_map(Brace::Loop),
             IfElse::arbitrary_with(args.clone()).prop_map(Brace::IfElse),
+            While::arbitrary_with(args.clone()).prop_map(Brace::While),
             Match::arbitrary_with(args).prop_map(Brace::Match),
         ]
         .boxed()
@@ -570,6 +621,7 @@ impl Display for Brace {
             Self::Loop(loop_) => Display::fmt(loop_, f),
             Self::IfElse(if_else) => Display::fmt(if_else, f),
             Self::Match(match_) => Display::fmt(match_, f),
+            Self::While(while_) => Display::fmt(while_, f),
         }
     }
 }

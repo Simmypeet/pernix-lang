@@ -1074,6 +1074,10 @@ pub struct EnumDefinition {
     /// Maps the name of the variants defined in the enum to its ID.
     #[get = "pub"]
     variant_ids_by_name: HashMap<String, ID<Variant>>,
+
+    /// The declaration order of the variants in the enum.
+    #[get = "pub"]
+    variant_declaration_order: Vec<ID<Variant>>,
 }
 
 /// Contains the definition for the regular type declaration i.e. those that are

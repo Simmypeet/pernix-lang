@@ -146,6 +146,20 @@ impl<Result, M: Model> Succeeded<Result, M> {
     ) -> Self {
         Self { result, constraints }
     }
+
+    /// Maps the [`Result`] of the [`Succeeded`] to another type.
+    pub fn map<N>(self, f: impl FnOnce(Result) -> N) -> Succeeded<N, M> {
+        Succeeded { result: f(self.result), constraints: self.constraints }
+    }
+
+    /// Maps the [`Result`] of the [`Succeeded`] to another type with the
+    /// possibility of failure.
+    pub fn try_map<N, E>(
+        self,
+        f: impl FnOnce(Result) -> std::result::Result<N, E>,
+    ) -> std::result::Result<Succeeded<N, M>, E> {
+        Ok(Succeeded { result: f(self.result)?, constraints: self.constraints })
+    }
 }
 
 impl<M: Model> Succeeded<Satisfied, M> {

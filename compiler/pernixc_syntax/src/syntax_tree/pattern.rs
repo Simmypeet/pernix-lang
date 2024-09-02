@@ -9,14 +9,11 @@ use pernixc_base::{
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::{
-    token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
+    token::{self, Identifier, Keyword, KeywordKind, Punctuation, Token},
     token_stream::Delimiter,
 };
 
-use super::{
-    expression::{Boolean, Numeric},
-    ConnectedList, Qualifier,
-};
+use super::{expression::Boolean, ConnectedList, Qualifier};
 use crate::{
     error::{self, Error, SyntaxKind},
     parser::{Parser, Reading},
@@ -75,7 +72,7 @@ impl<Pattern: SourceElement> SourceElement for Field<Pattern> {
 /// Syntax Synopsis:
 /// ``` txt
 /// Structural:
-///     '{' (Field (',' Field)* ','?)? '}'
+///     '{' (Field (',' Field)* ','?)? '..'? '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -84,6 +81,8 @@ pub struct Structural<Pattern> {
     left_brace: Punctuation,
     #[get = "pub"]
     fields: Option<ConnectedList<Field<Pattern>, Punctuation>>,
+    #[get = "pub"]
+    wildcard: Option<Wildcard>,
     #[get = "pub"]
     right_brace: Punctuation,
 }
@@ -278,6 +277,30 @@ impl SourceElement for Named {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// Integer:
+///     '-'?
+///     NumericToken
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Integer {
+    #[get = "pub"]
+    minus: Option<Punctuation>,
+    #[get = "pub"]
+    numeric: token::Numeric,
+}
+
+impl SourceElement for Integer {
+    fn span(&self) -> Span {
+        self.minus.as_ref().map_or_else(
+            || self.numeric.span(),
+            |minus| minus.span().join(&self.numeric.span()).unwrap(),
+        )
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// Refutable:
 ///     Boolean
 ///     | Numeric
@@ -299,7 +322,7 @@ impl SourceElement for Named {
 )]
 pub enum Refutable {
     Boolean(Boolean),
-    Numeric(Numeric),
+    Integer(Integer),
     Structural(Structural<Self>),
     Enum(Enum<Self>),
     Named(Named),
@@ -311,7 +334,7 @@ impl SourceElement for Refutable {
     fn span(&self) -> Span {
         match self {
             Self::Boolean(boolean_literal) => boolean_literal.span(),
-            Self::Numeric(numeric_literal) => numeric_literal.span(),
+            Self::Integer(numeric_literal) => numeric_literal.span(),
             Self::Structural(structural) => structural.span(),
             Self::Enum(associated_enum) => associated_enum.span(),
             Self::Named(identifier) => identifier.span(),
@@ -474,46 +497,162 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_field<T: Pattern + Debug>(
+        &mut self,
+        handler: &dyn Handler<error::Error>,
+    ) -> Option<Field<T>> {
+        let named_pattern = self.parse_named_pattern(handler)?;
+
+        // can accept a nested pattern
+        if named_pattern.binding.as_value().map_or(false, Option::is_none)
+            && matches!(
+                self.stop_at_significant(),
+                Reading::Unit(Token::Punctuation(punc))
+                if punc.punctuation == ':'
+            )
+        {
+            let colon = self.parse_punctuation(':', true, handler)?;
+            let pattern = T::parse(self, handler)?;
+
+            Some(Field::Association(FieldAssociation {
+                identifier: named_pattern.identifier,
+                colon,
+                pattern: Box::new(pattern),
+            }))
+        } else {
+            Some(Field::Named(named_pattern))
+        }
+    }
+
     fn parse_structural_pattern<T: Pattern + Debug>(
         &mut self,
         handler: &dyn Handler<error::Error>,
     ) -> Option<Structural<T>> {
-        let enclosed_tree = self.parse_delimited_list(
-            Delimiter::Brace,
-            ',',
-            |parser| {
-                let named_pattern = parser.parse_named_pattern(handler)?;
-
-                // can accept a nested pattern
-                if named_pattern
-                    .binding
-                    .as_value()
-                    .map_or(false, Option::is_none)
-                    && matches!(
-                        parser.stop_at_significant(),
-                        Reading::Unit(Token::Punctuation(punc))
-                        if punc.punctuation == ':'
+        fn skip_to_next_separator(
+            this: &mut Parser,
+            separator: char,
+        ) -> Option<Punctuation> {
+            if let Reading::Unit(Token::Punctuation(pun)) =
+                this.stop_at(|token| {
+                    matches!(
+                        token, Reading::Unit(Token::Punctuation(pun))
+                        if pun.punctuation == separator
                     )
-                {
-                    let colon = parser.parse_punctuation(':', true, handler)?;
-                    let pattern = T::parse(parser, handler)?;
+                })
+            {
+                this.forward();
+                Some(pun)
+            } else {
+                None
+            }
+        }
+        let tree = self.step_into(
+            Delimiter::Brace,
+            |parser| {
+                let mut first = None;
+                let mut rest = Vec::new();
+                let mut trailing_separator: Option<Punctuation> = None;
+                let mut wildcard = None;
 
-                    Some(Field::Association(FieldAssociation {
-                        identifier: named_pattern.identifier,
-                        colon,
-                        pattern: Box::new(pattern),
-                    }))
-                } else {
-                    Some(Field::Named(named_pattern))
+                while !parser.is_exhausted() && wildcard.is_none() {
+                    if let (
+                        Reading::Unit(Token::Punctuation(
+                            first_dot @ Punctuation { punctuation: '.', .. },
+                        )),
+                        Some(Reading::Unit(Token::Punctuation(
+                            second_dot @ Punctuation {
+                                punctuation: '.', ..
+                            },
+                        ))),
+                    ) = (parser.stop_at_significant(), parser.peek_offset(1))
+                    {
+                        // eat the first dot
+                        parser.forward();
+                        parser.forward();
+
+                        wildcard = Some(Wildcard(first_dot, second_dot));
+                        break;
+                    }
+
+                    let Some(element) = parser.parse_field(handler) else {
+                        skip_to_next_separator(parser, ',');
+                        continue;
+                    };
+
+                    // adds new element
+                    match (&first, &trailing_separator) {
+                        (None, None) => {
+                            first = Some(element);
+                        }
+                        (Some(_), Some(separator)) => {
+                            rest.push((separator.clone(), element));
+                            trailing_separator = None;
+                        }
+                        (first, trailing_separator) => {
+                            unreachable!("{first:?} {trailing_separator:?}")
+                        }
+                    }
+
+                    // expect separator if not exhausted
+                    if !parser.is_exhausted() {
+                        if let (
+                            Reading::Unit(Token::Punctuation(
+                                first_dot @ Punctuation {
+                                    punctuation: '.', ..
+                                },
+                            )),
+                            Some(Reading::Unit(Token::Punctuation(
+                                second_dot @ Punctuation {
+                                    punctuation: '.',
+                                    ..
+                                },
+                            ))),
+                        ) = (
+                            parser.stop_at_significant(),
+                            parser.peek_offset(1),
+                        ) {
+                            // eat the first dot
+                            parser.forward();
+                            parser.forward();
+
+                            wildcard = Some(Wildcard(first_dot, second_dot));
+                            break;
+                        }
+
+                        let Some(separator) =
+                            parser.parse_punctuation(',', true, handler)
+                        else {
+                            if let Some(punctuation) =
+                                skip_to_next_separator(parser, ',')
+                            {
+                                trailing_separator = Some(punctuation);
+                            }
+
+                            continue;
+                        };
+
+                        trailing_separator = Some(separator);
+                    }
                 }
+
+                Some((
+                    first.map(|first| ConnectedList {
+                        first,
+                        rest,
+                        trailing_separator,
+                    }),
+                    wildcard,
+                ))
             },
             handler,
         )?;
 
+        let inner_tree = tree.tree?;
         Some(Structural {
-            left_brace: enclosed_tree.open,
-            fields: enclosed_tree.list,
-            right_brace: enclosed_tree.close,
+            left_brace: tree.open,
+            fields: inner_tree.0,
+            wildcard: inner_tree.1,
+            right_brace: tree.close,
         })
     }
 
@@ -688,9 +827,22 @@ impl Pattern for Refutable {
                 parser.parse_structural_pattern(handler).map(Self::Structural)
             }
 
-            // parse numeric literal pattern
-            Reading::Unit(Token::Numeric(_)) => {
-                Some(Self::Numeric(parser.parse_numeric_literal()?))
+            // parse integer literal pattern
+            Reading::Unit(Token::Numeric(numeric)) => {
+                parser.forward();
+
+                Some(Self::Integer(Integer { minus: None, numeric }))
+            }
+
+            // parse integer literal pattern with minus sign
+            Reading::Unit(Token::Punctuation(
+                punc @ Punctuation { punctuation: '-', .. },
+            )) => {
+                parser.forward();
+
+                let numeric = parser.parse_numeric(handler)?;
+
+                Some(Self::Integer(Integer { minus: Some(punc), numeric }))
             }
 
             // parse boolean literal pattern

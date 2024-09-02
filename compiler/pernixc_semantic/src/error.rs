@@ -1721,6 +1721,56 @@ impl Report<&Table<Suboptimal>> for ExpectTuplePackPattern {
     }
 }
 
+/// Not all fields are bound in the pattern.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnboundFields {
+    /// The ID of the struct where the fields are unbound.
+    pub field_ids: Vec<ID<Field>>,
+
+    /// The ID of the struct where the fields are unbound.
+    pub struct_id: ID<Struct>,
+
+    /// The span of the pattern where the fields are unbound.
+    pub pattern_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for UnboundFields {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let struct_sym = table.get(self.struct_id).ok_or(ReportError)?;
+        let field_names = self
+            .field_ids
+            .iter()
+            .map(|&field_id| {
+                struct_sym
+                    .fields()
+                    .get(field_id)
+                    .map(|field_sym| field_sym.name.clone())
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.pattern_span.clone(),
+            message: format!(
+                "not all fields are bound in the pattern: {}",
+                field_names.join(", ")
+            ),
+            severity: Severity::Error,
+            help_message: Some(
+                "try to handle all fields in the pattern or use the `..` \
+                 syntax after the fields to ignore the rest"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        })
+    }
+}
+
 /// The pattern contains more than one packed tuple pattern.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MoreThanOnePackedTuplePattern {
@@ -1906,6 +1956,27 @@ where
     }
 }
 
+/// Th numeric literal is too large.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TooLargetNumericLiteral {
+    /// The span of the numeric literal.
+    pub span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for TooLargetNumericLiteral {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "the numeric literal is too large".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
 /// The kind of the pattern binding.
 #[derive(
     Debug,
@@ -1924,6 +1995,12 @@ pub enum PatternBindingType {
     Struct,
     #[display(fmt = "tuple")]
     Tuple,
+    #[display(fmt = "enum")]
+    Enum,
+    #[display(fmt = "integer")]
+    Integer,
+    #[display(fmt = "boolean")]
+    Boolean,
 }
 
 /// Pattern expects a different kind of binding.
@@ -2332,12 +2409,12 @@ impl Report<&Table<Suboptimal>> for FloatingPointLiteralHasIntegralSuffix {
 
 /// Expected an l-value but found an r-value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExpectedLValue {
+pub struct ExpectLValue {
     /// The span of the r-value.
     pub expression_span: Span,
 }
 
-impl Report<&Table<Suboptimal>> for ExpectedLValue {
+impl Report<&Table<Suboptimal>> for ExpectLValue {
     type Error = ReportError;
 
     fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
@@ -2351,9 +2428,82 @@ impl Report<&Table<Suboptimal>> for ExpectedLValue {
     }
 }
 
+/// The variant doesn't have an associated value but pattern contains an
+/// associated value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnexpectedAssociatedPattern {
+    /// The variant ID that the pattern matches.
+    pub variant_id: ID<Variant>,
+
+    /// The span of the pattern with the associated pattern.
+    pub associated_pattern_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for UnexpectedAssociatedPattern {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let variant_name = table
+            .get_qualified_name(self.variant_id.into())
+            .ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.associated_pattern_span.clone(),
+            message: format!(
+                "the variant `{}` doesn't have an associated value but the \
+                 matched pattern contains one",
+                variant_name
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The variant expects an associated pattern but none was provided.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectAssociatedPattern {
+    /// The ID of the variant where the associated pattern is expected.
+    pub variant_id: ID<Variant>,
+
+    /// The span of the variant pattern where the associated pattern is
+    /// expected.
+    pub pattern_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for ExpectAssociatedPattern {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let variant_sym = table.get(self.variant_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.pattern_span.clone(),
+            message: format!(
+                "the enum variant `{}` expects an associated pattern",
+                variant_sym.name()
+            ),
+            severity: Severity::Error,
+            help_message: Some(
+                "if you want to discard the associated value, use the `case \
+                 Name(..)` pattern"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        })
+    }
+}
+
 /// The enum variant expects an associated value but none was provided.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExpectedAssociatedValue {
+pub struct ExpectAssociatedValue {
     /// The ID of the variant where the associated value is expected.
     pub variant_id: ID<Variant>,
 
@@ -2361,7 +2511,7 @@ pub struct ExpectedAssociatedValue {
     pub span: Span,
 }
 
-impl Report<&Table<Suboptimal>> for ExpectedAssociatedValue {
+impl Report<&Table<Suboptimal>> for ExpectAssociatedValue {
     type Error = ReportError;
 
     fn report(

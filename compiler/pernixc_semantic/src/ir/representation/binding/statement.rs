@@ -14,7 +14,7 @@ use crate::{
         address::{Address, Memory},
         alloca::Alloca,
         instruction::{Instruction, Store},
-        pattern::{Irrefutable, NameBindingPoint, Wildcard},
+        pattern::{self, Irrefutable, NameBindingPoint, Pattern, Wildcard},
     },
     symbol::table::{self, resolution},
     type_system::{
@@ -92,7 +92,7 @@ impl<
 
         let initialize_type = self.type_of_value(&initializer)?;
 
-        let mut variable_type = match syntax_tree.type_annotation().as_ref() {
+        let variable_type = match syntax_tree.type_annotation().as_ref() {
             Some(type_syn) => {
                 let type_annotation = self
                     .resolve_type_with_inference(type_syn.ty(), handler)
@@ -109,7 +109,8 @@ impl<
                     handler,
                 );
 
-                type_annotation
+                simplify::simplify(&type_annotation, &self.create_environment())
+                    .result
             }
             None => initialize_type,
         };
@@ -124,23 +125,28 @@ impl<
             }),
         );
 
-        // create the pattern
-        variable_type =
-            simplify::simplify(&variable_type, &self.create_environment())
-                .result;
-
-        let pattern = self
-            .create_irrefutable(
-                syntax_tree.irrefutable_pattern(),
-                &variable_type,
-                &Address::Memory(Memory::Alloca(alloca_id)),
-                &self.create_handler_wrapper(handler),
-            )
-            .unwrap_or(Irrefutable::Wildcard(Wildcard));
+        let pattern = match Irrefutable::bind(
+            syntax_tree.irrefutable_pattern(),
+            &variable_type,
+            self.current_site,
+            &self.create_environment(),
+            handler,
+        ) {
+            Ok(v) => v.result,
+            Err(pattern::Error::Semantic) => Irrefutable::Wildcard(Wildcard {
+                span: Some(syntax_tree.irrefutable_pattern().span()),
+            }),
+            Err(err) => {
+                panic!("unexpected error: {:#?}", err);
+            }
+        };
 
         let mut name_binding_point = NameBindingPoint::default();
-        name_binding_point.add_irrefutable_binding(
+        self.insert_named_binding_point(
+            &mut name_binding_point,
             &pattern,
+            &variable_type,
+            Address::Memory(Memory::Alloca(alloca_id)),
             &self.create_handler_wrapper(handler),
         );
 

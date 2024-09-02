@@ -20,14 +20,14 @@ use pernixc_syntax::syntax_tree::{
 use super::{
     infer::{self, Erased},
     stack::Scope,
-    Binder, Error, InferenceProvider, InternalError, SemanticError,
+    Binder, Error, InferenceProvider, InternalError, LoopKind, SemanticError,
 };
 use crate::{
     arena::ID,
     error::{
         self, BlockWithGivenLableNameNotFound, CannotDereference,
         CannotIndexPastUnpackedTuple, DuplicatedFieldInitialization,
-        ExpectArray, ExpectStructType, ExpectedLValue, ExpressOutsideBlock,
+        ExpectArray, ExpectLValue, ExpectStructType, ExpressOutsideBlock,
         ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
         FloatingPointLiteralHasIntegralSuffix, InvalidCastType,
         InvalidNumericSuffix, InvalidRelationalOperation, LoopControlFlow,
@@ -315,7 +315,7 @@ impl<
 
                     Ok(Address::Memory(Memory::Alloca(alloca_id)))
                 } else {
-                    handler.receive(Box::new(ExpectedLValue {
+                    handler.receive(Box::new(ExpectLValue {
                         expression_span: syntax_tree.span(),
                     }));
 
@@ -449,7 +449,7 @@ impl<
                                 address: Address::Memory(
                                     address::Memory::ReferenceValue(operand),
                                 ),
-                                kind: LoadKind::Copy,
+                                kind: LoadKind::Move,
                             }),
                             Some(syntax_tree.span()),
                         );
@@ -1585,7 +1585,7 @@ impl<
                         let register_id = self.create_register_assignmnet(
                             Assignment::Load(Load {
                                 address,
-                                kind: LoadKind::Copy,
+                                kind: LoadKind::Move,
                             }),
                             Some(syntax_tree.span()),
                         );
@@ -1667,7 +1667,7 @@ impl<
                         let register_id = self.create_register_assignmnet(
                             Assignment::Load(Load {
                                 address,
-                                kind: LoadKind::Copy,
+                                kind: LoadKind::Move,
                             }),
                             Some(syntax_tree.span()),
                         );
@@ -1714,7 +1714,7 @@ impl<
                 // expected a variant type
                 if variant.associated_type.is_some() {
                     self.create_handler_wrapper(handler).receive(Box::new(
-                        error::ExpectedAssociatedValue {
+                        error::ExpectAssociatedValue {
                             span: syntax_tree.span(),
                             variant_id: variant_res.variant,
                         },
@@ -2114,10 +2114,12 @@ impl<
                         span: Some(syntax_tree.span()),
                     }))
                 } else {
-                    Value::Register(self.create_register_assignmnet(
-                        Assignment::Tuple(register::Tuple { elements }),
-                        Some(syntax_tree.span()),
-                    ))
+                    let create_register_assignmnet = self
+                        .create_register_assignmnet(
+                            Assignment::Tuple(register::Tuple { elements }),
+                            Some(syntax_tree.span()),
+                        );
+                    Value::Register(create_register_assignmnet)
                 };
 
                 Ok(Expression::Value(value))
@@ -2531,7 +2533,7 @@ impl<
                 let register_id = self.create_register_assignmnet(
                     Assignment::Load(Load {
                         address: lhs_address,
-                        kind: LoadKind::Copy,
+                        kind: LoadKind::Move,
                     }),
                     Some(tree.span()),
                 );
@@ -2591,7 +2593,7 @@ impl<
                 let lhs_register = self.create_register_assignmnet(
                     Assignment::Load(Load {
                         address: lhs_address.clone(),
-                        kind: LoadKind::Copy,
+                        kind: LoadKind::Move,
                     }),
                     Some(syntax_tree.left.span()),
                 );
@@ -2912,7 +2914,10 @@ impl<
                     };
 
                     // pop the scope
-                    assert!(self.stack.pop_scope());
+                    assert_eq!(
+                        self.stack.pop_scope().map(|x| x.scope_id()),
+                        Some(true_branch)
+                    );
                     let _ = self.current_block_mut().insert_instruction(
                         Instruction::ScopePop(ScopePop(true_branch)),
                     );
@@ -2972,7 +2977,10 @@ impl<
                     };
 
                     // pop the scope
-                    assert!(self.stack.pop_scope());
+                    assert_eq!(
+                        self.stack.pop_scope().map(|x| x.scope_id()),
+                        Some(false_branch)
+                    );
                     let _ = self.current_block_mut().insert_instruction(
                         Instruction::ScopePop(ScopePop(false_branch)),
                     );
@@ -3366,36 +3374,60 @@ impl<
             |x| self.type_of_value(x),
         )?;
 
-        if let Some(break_type) = &self
-            .loop_states_by_scope_id
-            .get(&loop_scope_id)
-            .unwrap()
-            .break_type
-        {
-            let _ = self.type_check(
-                value_type,
-                Expected::Known(break_type.clone()),
-                syntax_tree.span(),
-                handler,
-            );
-        } else {
-            // have no break before, gets to decide the type.
-            self.loop_states_by_scope_id
-                .get_mut(&loop_scope_id)
-                .unwrap()
-                .break_type = Some(value_type);
-        };
+        match &self.loop_states_by_scope_id.get(&loop_scope_id).unwrap().kind {
+            // can only be unit type
+            LoopKind::While => {
+                let _ = self.type_check(
+                    value_type,
+                    Expected::Known(Type::Tuple(term::Tuple {
+                        elements: Vec::new(),
+                    })),
+                    syntax_tree
+                        .binary()
+                        .as_ref()
+                        .map_or_else(|| syntax_tree.span(), |x| x.span()),
+                    handler,
+                );
+            }
 
-        if let Entry::Vacant(entry) = self
-            .loop_states_by_scope_id
-            .get_mut(&loop_scope_id)
-            .unwrap()
-            .incoming_values
-            .entry(self.current_block_id)
-        {
-            entry.insert(value.unwrap_or(Value::Literal(Literal::Unit(
-                literal::Unit { span: Some(syntax_tree.span()) },
-            ))));
+            // can use any type
+            LoopKind::Loop { break_type, .. } => {
+                if let Some(break_type) = break_type {
+                    let _ = self.type_check(
+                        value_type,
+                        Expected::Known(break_type.clone()),
+                        syntax_tree.span(),
+                        handler,
+                    );
+                } else {
+                    *self
+                        .loop_states_by_scope_id
+                        .get_mut(&loop_scope_id)
+                        .unwrap()
+                        .kind
+                        .as_loop_mut()
+                        .unwrap()
+                        .1 = Some(value_type);
+                }
+
+                // insert incoming value
+                if let Entry::Vacant(entry) = self
+                    .loop_states_by_scope_id
+                    .get_mut(&loop_scope_id)
+                    .unwrap()
+                    .kind
+                    .as_loop_mut()
+                    .unwrap()
+                    .0
+                    .entry(self.current_block_id)
+                {
+                    entry.insert(value.unwrap_or(Value::Literal(
+                        Literal::Unit(literal::Unit {
+                            span: Some(syntax_tree.span()),
+                        }),
+                    )));
+                }
+            }
         }
 
         // pop all the needed scopes
@@ -3668,6 +3700,31 @@ impl<
         let if_else_successor_block_id =
             self.intermediate_representation.control_flow_graph.new_block();
 
+        /*
+        wrapper_scope_id: {
+            if_scope_id: {} && else_scope_id: {}
+        }
+         */
+
+        let wrapper_scope_id = {
+            let scopes = self
+                .intermediate_representation
+                .scope_tree
+                .new_child_branch(
+                    self.stack.current_scope().scope_id(),
+                    NonZeroUsize::new(1).unwrap(),
+                )
+                .unwrap();
+
+            scopes[0]
+        };
+
+        // push wrapper scope
+        let _ = self.current_block_mut().insert_instruction(
+            Instruction::ScopePush(ScopePush(wrapper_scope_id)),
+        );
+        self.stack.push_scope(wrapper_scope_id);
+
         let (then_scope_id, else_scope_id) = {
             let scopes = self
                 .intermediate_representation
@@ -3785,6 +3842,15 @@ impl<
         // change the current block to the if else successor block
         self.current_block_id = if_else_successor_block_id;
 
+        // pop the wrapper scope
+        let _ = self.current_block_mut().insert_instruction(
+            Instruction::ScopePop(ScopePop(wrapper_scope_id)),
+        );
+        assert_eq!(
+            self.stack.pop_scope().map(|x| x.scope_id()),
+            Some(wrapper_scope_id)
+        );
+
         let value = match self.current_block().predecessors().len() {
             0 => Value::Literal(Literal::Unreachable(Unreachable {
                 r#type: {
@@ -3894,6 +3960,7 @@ impl<
             self.intermediate_representation.control_flow_graph.new_block();
         let exit_block_id =
             self.intermediate_representation.control_flow_graph.new_block();
+
         let loop_scope_id = {
             let result = self
                 .intermediate_representation
@@ -3929,9 +3996,11 @@ impl<
         self.stack.push_scope(loop_scope_id);
         self.loop_states_by_scope_id.insert(loop_scope_id, LoopState {
             label,
-            incoming_values: HashMap::new(),
+            kind: LoopKind::Loop {
+                incoming_values: HashMap::new(),
+                break_type: None,
+            },
             loop_block_id,
-            break_type: None,
             exit_block_id,
             span: syntax_tree.span(),
         });
@@ -3942,11 +4011,14 @@ impl<
         }
 
         // pop the loop scope
-        assert!(self.stack.pop_scope());
+        assert_eq!(
+            self.stack.pop_scope().map(|x| x.scope_id()),
+            Some(loop_scope_id)
+        );
         let _ = self
             .current_block_mut()
             .insert_instruction(Instruction::ScopePop(ScopePop(loop_scope_id)));
-        let mut loop_state =
+        let loop_state =
             self.loop_states_by_scope_id.remove(&loop_scope_id).unwrap();
 
         // jump to the loop header block
@@ -3965,39 +4037,43 @@ impl<
 
         // set the current block to the exit block
         self.current_block_id = loop_state.exit_block_id;
+        let (mut incoming_values, break_type) =
+            loop_state.kind.into_loop().unwrap();
 
-        let value = if let Some(break_type) = loop_state.break_type {
-            assert!(self.current_block().predecessors().iter().copied().all(
-                |block_id| loop_state.incoming_values.contains_key(&block_id)
-            ));
+        let value = if let Some(break_type) = break_type {
+            assert!(self
+                .current_block()
+                .predecessors()
+                .iter()
+                .copied()
+                .all(|block_id| incoming_values.contains_key(&block_id)));
 
             // filter out the incoming values that are unreachable
             #[allow(clippy::needless_collect)]
-            for remove in loop_state
-                .incoming_values
+            for remove in incoming_values
                 .keys()
                 .copied()
                 .filter(|x| !self.current_block().predecessors().contains(x))
                 .collect::<Vec<_>>()
             {
-                loop_state.incoming_values.remove(&remove);
+                incoming_values.remove(&remove);
             }
 
-            match loop_state.incoming_values.len() {
+            match incoming_values.len() {
                 0 => Value::Literal(Literal::Unreachable(Unreachable {
                     r#type: break_type,
                     span: Some(syntax_tree.span()),
                 })),
 
                 // only one incoming value, just return it
-                1 => loop_state.incoming_values.into_iter().next().unwrap().1,
+                1 => incoming_values.into_iter().next().unwrap().1,
 
                 // multiple incoming values, create a phi node
                 _ => {
                     let phi_register_id = self.create_register_assignmnet(
                         Assignment::Phi(Phi {
                             r#type: break_type,
-                            incoming_values: loop_state.incoming_values,
+                            incoming_values,
                         }),
                         Some(syntax_tree.span()),
                     );
@@ -4006,7 +4082,7 @@ impl<
                 }
             }
         } else {
-            assert!(loop_state.incoming_values.is_empty());
+            assert!(incoming_values.is_empty());
             assert!(self.current_block().is_unreachable_or_terminated());
 
             Value::Literal(Literal::Unreachable(Unreachable {
@@ -4053,7 +4129,214 @@ impl<
             syntax_tree::expression::Brace::Match(syn) => {
                 self.bind(syn, config, handler)
             }
+            syntax_tree::expression::Brace::While(syn) => {
+                self.bind(syn, config, handler)
+            }
         }
+    }
+}
+
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Bind<&syntax_tree::expression::While> for Binder<'t, S, RO, TO>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &syntax_tree::expression::While,
+        _: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        let label = syntax_tree
+            .block()
+            .label_specifier()
+            .as_ref()
+            .map(|x| x.label().identifier().span.str().to_owned());
+
+        let loop_block_id =
+            self.intermediate_representation.control_flow_graph.new_block();
+        let loop_body_block_id =
+            self.intermediate_representation.control_flow_graph.new_block();
+        let condition_fail_block_id =
+            self.intermediate_representation.control_flow_graph.new_block();
+        let exit_block_id =
+            self.intermediate_representation.control_flow_graph.new_block();
+
+        let while_scope_id = {
+            let result = self
+                .intermediate_representation
+                .scope_tree
+                .new_child_branch(
+                    self.stack.current_scope().scope_id(),
+                    NonZeroUsize::new(1).unwrap(),
+                )
+                .unwrap();
+
+            result[0]
+        };
+
+        /*
+        current:
+            ...
+
+        loop_block:
+            scope push $while_scope_id
+            branch condition, loop_body_block, condition_fail_block
+
+        loop_body_block:
+            ...
+            scope pop $while_scope_id
+            jump loop_block
+
+        condition_fail_block:
+            scope pop $while_scope_id
+            jump exit_block
+
+        exit:
+            ...
+        */
+
+        // jump to the loop header block
+        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
+            .intermediate_representation
+            .control_flow_graph
+            .insert_terminator(
+                self.current_block_id,
+                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                    target: loop_block_id,
+                })),
+            )
+        {
+            panic!("invalid block id");
+        }
+
+        // set the current block to the loop header block
+        self.current_block_id = loop_block_id;
+        let _ = self.current_block_mut().insert_instruction(
+            Instruction::ScopePush(ScopePush(while_scope_id)),
+        );
+        self.stack.push_scope(while_scope_id);
+        self.loop_states_by_scope_id.insert(while_scope_id, LoopState {
+            label,
+            kind: LoopKind::While,
+            loop_block_id,
+            exit_block_id,
+            span: syntax_tree.span(),
+        });
+
+        // bind the conditional value
+        let condition =
+            self.bind_value_or_error(&**syntax_tree.condition(), handler)?;
+        let _ = self.type_check(
+            self.type_of_value(&condition)?,
+            Expected::Known(Type::Primitive(r#type::Primitive::Bool)),
+            syntax_tree.condition().span(),
+            handler,
+        );
+
+        // based on the condition, jump to the loop body block or the condition
+        // fail block
+        assert!(
+            !self
+                .intermediate_representation
+                .control_flow_graph
+                .insert_terminator(
+                    loop_block_id,
+                    Terminator::Jump(Jump::Conditional(
+                        crate::ir::instruction::ConditionalJump {
+                            condition,
+                            true_target: loop_body_block_id,
+                            false_target: condition_fail_block_id,
+                        },
+                    )),
+                )
+                .err()
+                .map_or(false, |x| x.is_invalid_block_id()),
+            "invalid block id"
+        );
+
+        // handle condition fail block
+        self.current_block_id = condition_fail_block_id;
+
+        // pop the loop scope
+        let _ = self.current_block_mut().insert_instruction(
+            Instruction::ScopePop(ScopePop(while_scope_id)),
+        );
+        // jump to the exit block
+        assert!(
+            !self
+                .intermediate_representation
+                .control_flow_graph
+                .insert_terminator(
+                    condition_fail_block_id,
+                    Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                        target: exit_block_id,
+                    })),
+                )
+                .err()
+                .map_or(false, |x| x.is_invalid_block_id()),
+            "invalid block id"
+        );
+
+        // handle loop body block
+        self.current_block_id = loop_body_block_id;
+
+        // bind the loop block
+        for statement in syntax_tree.block().statements().statements() {
+            self.bind_statement(statement, handler)?;
+        }
+
+        // pop the loop scope
+        let _ = self.current_block_mut().insert_instruction(
+            Instruction::ScopePop(ScopePop(while_scope_id)),
+        );
+
+        // jump to the loop header block
+        assert!(
+            !self
+                .intermediate_representation
+                .control_flow_graph
+                .insert_terminator(
+                    self.current_block_id,
+                    Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                        target: loop_block_id,
+                    })),
+                )
+                .err()
+                .map_or(false, |x| x.is_invalid_block_id()),
+            "invalid block id"
+        );
+
+        // pop the loop scope
+        assert_eq!(
+            self.stack.pop_scope().map(|x| x.scope_id()),
+            Some(while_scope_id)
+        );
+
+        // set the current block to the exit block
+        self.current_block_id = exit_block_id;
+
+        let value = if self.current_block().predecessors().is_empty() {
+            Value::Literal(Literal::Unreachable(Unreachable {
+                r#type: {
+                    let inference = InferenceVariable::new();
+                    assert!(self
+                        .inference_context
+                        .register(inference, Constraint::All(true)));
+
+                    Type::Inference(inference)
+                },
+                span: Some(syntax_tree.span()),
+            }))
+        } else {
+            Value::Literal(Literal::Unit(literal::Unit {
+                span: Some(syntax_tree.span()),
+            }))
+        };
+
+        Ok(Expression::Value(value))
     }
 }
 
@@ -4257,7 +4540,10 @@ impl<
         }
 
         // ends the scope
-        assert!(self.stack.pop_scope());
+        assert_eq!(
+            self.stack.pop_scope().map(|x| x.scope_id()),
+            Some(scope_id)
+        );
         let _ = self
             .current_block_mut()
             .insert_instruction(Instruction::ScopePop(ScopePop(scope_id)));

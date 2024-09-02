@@ -5,9 +5,9 @@ use crate::{
     arena::ID,
     error::{
         CannotDereference, CannotIndexPastUnpackedTuple,
-        DuplicatedFieldInitialization, Error, ExpectArray, ExpectStructType,
-        ExpectedAssociatedValue, ExpectedLValue, ExpressionIsNotCallable,
-        FieldIsNotAccessible, FieldNotFound,
+        DuplicatedFieldInitialization, Error, ExpectArray,
+        ExpectAssociatedValue, ExpectLValue, ExpectStructType,
+        ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
         FloatingPointLiteralHasIntegralSuffix, InvalidCastType,
         InvalidNumericSuffix, MismatchedArgumentCount, MismatchedMutability,
         MismatchedReferenceQualifier, MismatchedType,
@@ -1886,7 +1886,7 @@ fn qualified_identifier_variant_expected_associated_value_error() {
     assert_eq!(errors.len(), 1);
 
     assert!(errors.iter().any(|x| {
-        let Some(error) = x.as_any().downcast_ref::<ExpectedAssociatedValue>()
+        let Some(error) = x.as_any().downcast_ref::<ExpectAssociatedValue>()
         else {
             return false;
         };
@@ -3089,9 +3089,9 @@ fn expected_lvalue_error() {
     bind_as_value_expect_error("true = false", |_, result, errors| {
         assert!(result.is_err());
 
-        assert!(errors.iter().any(|x| {
-            x.as_any().downcast_ref::<ExpectedLValue>().is_some()
-        }));
+        assert!(errors
+            .iter()
+            .any(|x| { x.as_any().downcast_ref::<ExpectLValue>().is_some() }));
     });
 }
 

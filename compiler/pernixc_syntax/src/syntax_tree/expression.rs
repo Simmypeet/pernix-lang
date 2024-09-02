@@ -68,6 +68,7 @@ pub enum Brace {
     IfElse(IfElse),
     Loop(Loop),
     Match(Match),
+    While(While),
 }
 
 impl SourceElement for Brace {
@@ -77,6 +78,7 @@ impl SourceElement for Brace {
             Self::IfElse(syn) => syn.span(),
             Self::Loop(syn) => syn.span(),
             Self::Match(syn) => syn.span(),
+            Self::While(syn) => syn.span(),
         }
     }
 }
@@ -289,6 +291,48 @@ impl SourceElement for IfElse {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// While:
+///     'while' '(' Expression ')' Block
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct While {
+    #[get = "pub"]
+    while_keyword: Keyword,
+    #[get = "pub"]
+    left_paren: Punctuation,
+    #[get = "pub"]
+    condition: Box<Expression>,
+    #[get = "pub"]
+    right_paren: Punctuation,
+    #[get = "pub"]
+    block: Block,
+}
+
+impl SourceElement for While {
+    fn span(&self) -> Span {
+        self.while_keyword.span().join(&self.block.span()).unwrap()
+    }
+}
+
+impl While {
+    /// Destructs the while into its components
+    #[must_use]
+    pub fn destruct(
+        self,
+    ) -> (Keyword, Punctuation, Box<Expression>, Punctuation, Block) {
+        (
+            self.while_keyword,
+            self.left_paren,
+            self.condition,
+            self.right_paren,
+            self.block,
+        )
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// Loop:
 ///     'loop' Block
 ///     ;
@@ -465,7 +509,7 @@ impl SourceElement for Break {
 ///     | 'false'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Boolean {
     True(Keyword),
     False(Keyword),
@@ -1477,6 +1521,30 @@ impl Parser<'_> {
             {
                 self.parse_match(handler)
                     .map(|x| Expression::Brace(Brace::Match(x)))
+            }
+
+            // parse while
+            Reading::Unit(Token::Keyword(while_keyword))
+                if while_keyword.kind == KeywordKind::While =>
+            {
+                // eat while keyword
+                self.forward();
+
+                let delimited_tree_condition = self.step_into(
+                    Delimiter::Parenthesis,
+                    |parser| parser.parse_expression(handler).map(Box::new),
+                    handler,
+                )?;
+
+                let block = self.parse_block(handler)?;
+
+                Some(Expression::Brace(Brace::While(While {
+                    while_keyword,
+                    left_paren: delimited_tree_condition.open,
+                    condition: delimited_tree_condition.tree?,
+                    right_paren: delimited_tree_condition.close,
+                    block,
+                })))
             }
 
             // parse loop

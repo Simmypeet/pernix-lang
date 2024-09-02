@@ -25,6 +25,7 @@ use crate::{
             r#type::{SymbolID, Type},
             Symbol,
         },
+        Succeeded,
     },
 };
 
@@ -142,7 +143,7 @@ impl<M: Model> Representation<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Type<M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
         match address {
             Address::Memory(Memory::Parameter(parameter)) => {
                 let callable_id =
@@ -165,7 +166,7 @@ impl<M: Model> Representation<M> {
                     .r#type
                     .clone();
 
-                Ok(M::from_default_type(ty))
+                Ok(simplify::simplify(&M::from_default_type(ty), environment))
             }
 
             Address::Memory(Memory::Alloca(parameter)) => {
@@ -174,40 +175,29 @@ impl<M: Model> Representation<M> {
                     .get(*parameter)
                     .ok_or(TypeOfError::InvalidAllocaID(*parameter))?;
 
-                Ok(alloca.r#type.clone())
+                Ok(simplify::simplify(&alloca.r#type.clone(), environment))
             }
 
-            Address::Memory(Memory::ReferenceValue(value)) => {
-                let mut ty =
-                    self.type_of_value(value, current_site, environment)?;
-
-                // the lifetime constraints are ignored
-                ty = simplify::simplify(&ty, environment).result;
-
-                let pointee = match ty {
-                    Type::Reference(reference) => *reference.pointee,
-                    another_ty => {
-                        return Err(TypeOfError::NonReferenceAddressType {
-                            value: value.clone(),
-                            r#type: another_ty,
-                        });
-                    }
-                };
-
-                Ok(pointee)
-            }
+            Address::Memory(Memory::ReferenceValue(value)) => self
+                .type_of_value(value, current_site, environment)?
+                .try_map(|x| match x {
+                    Type::Reference(x) => Ok(*x.pointee),
+                    found => Err(TypeOfError::NonReferenceAddressType {
+                        value: value.clone(),
+                        r#type: found,
+                    }),
+                }),
 
             Address::Field(field_address) => {
-                let mut struct_ty = self.type_of_address(
-                    &field_address.struct_address,
-                    current_site,
-                    environment,
-                )?;
+                // the type of address should've been simplified
+                let Succeeded { result, mut constraints } = self
+                    .type_of_address(
+                        &field_address.struct_address,
+                        current_site,
+                        environment,
+                    )?;
 
-                // the lifetime constraints are ignored
-                struct_ty = simplify::simplify(&struct_ty, environment).result;
-
-                let (struct_id, generic_arguments) = match struct_ty {
+                let (struct_id, generic_arguments) = match result {
                     Type::Symbol(Symbol {
                         id: SymbolID::Struct(struct_id),
                         generic_arguments,
@@ -255,91 +245,90 @@ impl<M: Model> Representation<M> {
                 );
 
                 instantiation::instantiate(&mut field_ty, &instantiation);
+                let simplification = simplify::simplify(&field_ty, environment);
+                constraints.extend(simplification.constraints);
 
-                Ok(field_ty)
+                Ok(Succeeded { result: simplification.result, constraints })
             }
 
             Address::Tuple(tuple) => {
-                let mut tuple_ty = self.type_of_address(
+                self.type_of_address(
                     &tuple.tuple_address,
                     current_site,
                     environment,
-                )?;
-
-                // simplfiy the tuple type
-                tuple_ty = simplify::simplify(&tuple_ty, environment).result;
-
-                let mut tuple_ty = match tuple_ty {
-                    Type::Tuple(tuple_ty) => tuple_ty,
-                    another_ty => {
-                        return Err(TypeOfError::NonTupleAddressType {
-                            address: (*tuple.tuple_address).clone(),
-                            r#type: another_ty,
-                        })
-                    }
-                };
-
-                match match tuple.offset {
-                    address::Offset::FromStart(id) => Some(id),
-                    address::Offset::FromEnd(id) => tuple_ty
-                        .elements
-                        .len()
-                        .checked_sub(1)
-                        .and_then(|x| x.checked_sub(id)),
-                } {
-                    Some(id) if id < tuple_ty.elements.len() => {
-                        let element_ty = tuple_ty.elements.remove(id);
-
-                        Ok(if element_ty.is_unpacked {
-                            Type::Tuple(term::Tuple {
-                                elements: vec![term::TupleElement {
-                                    term: element_ty.term,
-                                    is_unpacked: true,
-                                }],
+                )?
+                .try_map(|x| {
+                    // extract tuple type
+                    let mut tuple_ty = match x {
+                        Type::Tuple(tuple_ty) => tuple_ty,
+                        another_ty => {
+                            return Err(TypeOfError::NonTupleAddressType {
+                                address: (*tuple.tuple_address).clone(),
+                                r#type: another_ty,
                             })
-                        } else {
-                            element_ty.term
-                        })
-                    }
+                        }
+                    };
 
-                    _ => Err(TypeOfError::InvalidTupleOffset {
-                        offset: tuple.offset,
-                        tuple_type: tuple_ty,
-                    }),
-                }
+                    match match tuple.offset {
+                        address::Offset::FromStart(id) => Some(id),
+                        address::Offset::FromEnd(id) => tuple_ty
+                            .elements
+                            .len()
+                            .checked_sub(1)
+                            .and_then(|x| x.checked_sub(id)),
+                    } {
+                        Some(id) if id < tuple_ty.elements.len() => {
+                            let element_ty = tuple_ty.elements.remove(id);
+
+                            Ok(if element_ty.is_unpacked {
+                                Type::Tuple(term::Tuple {
+                                    elements: vec![term::TupleElement {
+                                        term: element_ty.term,
+                                        is_unpacked: true,
+                                    }],
+                                })
+                            } else {
+                                element_ty.term
+                            })
+                        }
+
+                        _ => Err(TypeOfError::InvalidTupleOffset {
+                            offset: tuple.offset,
+                            tuple_type: tuple_ty,
+                        }),
+                    }
+                })
             }
-            Address::Index(index) => {
-                let array_ty = self.type_of_address(
+
+            Address::Index(index) => self
+                .type_of_address(
                     &index.array_address,
                     current_site,
                     environment,
-                )?;
+                )?
+                .try_map(|x| {
+                    let element_ty = match x {
+                        Type::Array(array_ty) => *array_ty.r#type,
+                        another_ty => {
+                            return Err(TypeOfError::NonArrayAddressType {
+                                address: (*index.array_address).clone(),
+                                r#type: another_ty,
+                            });
+                        }
+                    };
 
-                let array_ty =
-                    simplify::simplify(&array_ty, environment).result;
+                    Ok(element_ty)
+                }),
 
-                let element_ty = match array_ty {
-                    Type::Array(array_ty) => *array_ty.r#type,
-                    another_ty => {
-                        return Err(TypeOfError::NonArrayAddressType {
-                            address: (*index.array_address).clone(),
-                            r#type: another_ty,
-                        });
-                    }
-                };
-
-                Ok(element_ty)
-            }
             Address::Variant(variant) => {
-                let enum_ty = self.type_of_address(
-                    &variant.enum_address,
-                    current_site,
-                    environment,
-                )?;
+                let Succeeded { result, mut constraints } = self
+                    .type_of_address(
+                        &variant.enum_address,
+                        current_site,
+                        environment,
+                    )?;
 
-                let enum_ty = simplify::simplify(&enum_ty, environment).result;
-
-                let (enum_id, generic_arguments) = match enum_ty {
+                let (enum_id, generic_arguments) = match result {
                     Type::Symbol(Symbol {
                         id: SymbolID::Enum(enum_id),
                         generic_arguments,
@@ -398,7 +387,14 @@ impl<M: Model> Representation<M> {
 
                 instantiation::instantiate(&mut variant_ty, &instantiation);
 
-                Ok(variant_ty)
+                let simplification =
+                    simplify::simplify(&variant_ty, environment);
+                constraints.extend(simplification.constraints);
+
+                Ok(Succeeded::with_constraints(
+                    simplification.result,
+                    constraints,
+                ))
             }
         }
     }

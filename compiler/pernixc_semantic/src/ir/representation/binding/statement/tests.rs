@@ -16,7 +16,6 @@ fn variable_declaration_with_type_annotation() {
 
     let named = binder.stack.search("x").unwrap();
 
-    assert_eq!(named.name, "x");
     assert_eq!(
         named
             .load_address

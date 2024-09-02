@@ -7,7 +7,7 @@ use crate::{
     arena::ID,
     ir::{
         alloca::Alloca,
-        pattern::{NameBindingPoint, Named},
+        pattern::{NameBinding, NameBindingPoint},
         scope,
     },
 };
@@ -84,12 +84,11 @@ impl Stack {
 
     /// Pops the latest scope from the stack.
     #[must_use]
-    pub fn pop_scope(&mut self) -> bool {
+    pub fn pop_scope(&mut self) -> Option<Scope> {
         if self.scopes.len() > 1 {
-            assert!(self.scopes.pop().is_some());
-            true
+            self.scopes.pop()
         } else {
-            false
+            None
         }
     }
 
@@ -107,7 +106,7 @@ impl Stack {
     pub fn scopes(&self) -> &[Scope] { &self.scopes }
 
     /// Searches for a named binding point in the stack.
-    pub fn search(&self, name: &str) -> Option<&Named<infer::Model>> {
+    pub fn search(&self, name: &str) -> Option<&NameBinding<infer::Model>> {
         for scope in self.scopes.iter().rev() {
             for name_binding_point in scope.named_binding_points.iter().rev() {
                 if let Some(named) =

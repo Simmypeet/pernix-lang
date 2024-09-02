@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use enum_as_inner::EnumAsInner;
+use pernixc_lexical::token;
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
@@ -10,7 +11,7 @@ use proptest::{
 };
 
 use crate::syntax_tree::{
-    expression::strategy::{Boolean, Numeric},
+    expression::strategy::Boolean,
     strategy::{ConnectedList, ConstantPunctuation, Identifier, Qualifier},
 };
 
@@ -223,6 +224,7 @@ impl<Pattern: Display> Display for Field<Pattern> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Structural<Pattern> {
     pub fields: Option<ConnectedList<Field<Pattern>, ConstantPunctuation<','>>>,
+    pub wildcard: bool,
 }
 
 impl<I: Debug, O: Debug> Input<&super::Structural<O>> for &Structural<I>
@@ -230,6 +232,7 @@ where
     for<'i, 'o> &'i I: Input<&'o O>,
 {
     fn assert(self, output: &super::Structural<O>) -> TestCaseResult {
+        assert_eq!(self.wildcard, output.wildcard.is_some());
         self.fields.as_ref().assert(output.fields.as_ref())
     }
 }
@@ -241,12 +244,15 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        proptest::option::of(ConnectedList::arbitrary_with(
-            Field::arbitrary_with(args),
-            ConstantPunctuation::<','>::arbitrary(),
-        ))
-        .prop_map(|fields| Self { fields })
-        .boxed()
+        (
+            proptest::option::of(ConnectedList::arbitrary_with(
+                Field::arbitrary_with(args),
+                ConstantPunctuation::<','>::arbitrary(),
+            )),
+            proptest::bool::ANY,
+        )
+            .prop_map(|(fields, wildcard)| Self { fields, wildcard })
+            .boxed()
     }
 }
 
@@ -256,6 +262,11 @@ impl<Pattern: Display> Display for Structural<Pattern> {
         if let Some(fields) = &self.fields {
             write!(f, "{fields}")?;
         }
+
+        if self.wildcard {
+            write!(f, "..")?;
+        }
+
         write!(f, " }}")?;
         Ok(())
     }
@@ -461,9 +472,43 @@ impl<Pattern: Display> Display for Enum<Pattern> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Integer {
+    pub minus: bool,
+    pub value: token::strategy::Numeric,
+}
+
+impl Input<&super::Integer> for &Integer {
+    fn assert(self, output: &super::Integer) -> TestCaseResult {
+        prop_assert_eq!(self.minus, output.minus.is_some());
+        self.value.assert(&output.numeric)
+    }
+}
+
+impl Arbitrary for Integer {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        (proptest::bool::ANY, token::strategy::Numeric::arbitrary())
+            .prop_map(|(minus, value)| Self { minus, value })
+            .boxed()
+    }
+}
+
+impl Display for Integer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.minus {
+            write!(f, "-")?;
+        }
+
+        write!(f, "{}", self.value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Refutable {
     BooleanLiteral(Boolean),
-    NumericLiteral(Numeric),
+    Integer(Integer),
     Structural(Structural<Self>),
     Tuple(Tuple<Self>),
     Enum(Enum<Self>),
@@ -478,10 +523,9 @@ impl Input<&super::Refutable> for &Refutable {
                 Refutable::BooleanLiteral(input),
                 super::Refutable::Boolean(output),
             ) => input.assert(output),
-            (
-                Refutable::NumericLiteral(input),
-                super::Refutable::Numeric(output),
-            ) => input.assert(output),
+            (Refutable::Integer(input), super::Refutable::Integer(output)) => {
+                input.assert(output)
+            }
             (
                 Refutable::Structural(input),
                 super::Refutable::Structural(output),
@@ -513,7 +557,7 @@ impl Arbitrary for Refutable {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         let leaf = prop_oneof![
             Boolean::arbitrary().prop_map(Self::BooleanLiteral),
-            Numeric::arbitrary().prop_map(Self::NumericLiteral),
+            Integer::arbitrary().prop_map(Self::Integer),
             Named::arbitrary().prop_map(Self::Named),
             Wildcard::arbitrary().prop_map(Self::Wildcard),
         ];
@@ -537,7 +581,7 @@ impl Display for Refutable {
             Self::BooleanLiteral(boolean_literal) => {
                 write!(f, "{boolean_literal}")
             }
-            Self::NumericLiteral(numeric_literal) => {
+            Self::Integer(numeric_literal) => {
                 write!(f, "{numeric_literal}")
             }
             Self::Structural(structural) => write!(f, "{structural}"),

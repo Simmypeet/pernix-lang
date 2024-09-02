@@ -2,12 +2,16 @@
 
 use std::{collections::HashMap, sync::Arc};
 
+use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use infer::{
     Constraint, Context, Erased, InferenceVariable, NoConstraint, UnifyError,
 };
 use parking_lot::RwLock;
-use pernixc_base::{handler::Handler, source_file::Span};
+use pernixc_base::{
+    handler::Handler,
+    source_file::{SourceElement, Span},
+};
 use pernixc_syntax::syntax_tree;
 use stack::Stack;
 
@@ -16,11 +20,12 @@ use crate::{
     arena::ID,
     error::{self, MismatchedType},
     ir::{
+        self,
         address::{Address, Memory},
         alloca::Alloca,
         control_flow_graph::Block,
         instruction::{self, ScopePush},
-        pattern::NameBindingPoint,
+        pattern::{Irrefutable, NameBindingPoint, Pattern, Wildcard},
         scope,
         value::{
             register::{Assignment, Register},
@@ -61,12 +66,20 @@ pub mod statement;
 
 mod pattern;
 
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
+enum LoopKind {
+    While,
+    Loop {
+        incoming_values: HashMap<ID<Block<infer::Model>>, Value<infer::Model>>,
+        break_type: Option<Type<infer::Model>>,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LoopState {
     label: Option<String>,
-    incoming_values: HashMap<ID<Block<infer::Model>>, Value<infer::Model>>,
     loop_block_id: ID<Block<infer::Model>>,
-    break_type: Option<Type<infer::Model>>,
+    kind: LoopKind,
     exit_block_id: ID<Block<infer::Model>>,
     span: Span,
 }
@@ -230,18 +243,32 @@ impl<
             let parameter_type =
                 infer::Model::from_default_type(parameter_sym.r#type.clone());
 
-            let Ok(pattern) = binder.create_irrefutable(
+            let pattern = match Irrefutable::bind(
                 syntax_tree,
                 &parameter_type,
-                &Address::Memory(Memory::Parameter(parameter_id)),
+                binder.current_site,
+                &binder.create_environment(),
                 &handler,
-            ) else {
-                continue;
+            ) {
+                Ok(v) => v.result,
+                Err(ir::pattern::Error::Semantic) => {
+                    Irrefutable::Wildcard(Wildcard {
+                        span: Some(syntax_tree.span()),
+                    })
+                }
+                Err(err) => {
+                    panic!("unexpected error: {:#?}", err);
+                }
             };
 
             // add the binding point
-            parameter_name_binding_point
-                .add_irrefutable_binding(&pattern, &handler);
+            binder.insert_named_binding_point(
+                &mut parameter_name_binding_point,
+                &pattern,
+                &parameter_type,
+                Address::Memory(Memory::Parameter(parameter_id)),
+                &handler,
+            )
         }
 
         binder
@@ -422,11 +449,13 @@ impl<
         &self,
         register_id: ID<Register<infer::Model>>,
     ) -> Result<Type<infer::Model>, TypeOfError<infer::Model>> {
-        self.intermediate_representation.type_of_register(
-            register_id,
-            self.current_site,
-            &self.create_environment(),
-        )
+        self.intermediate_representation
+            .type_of_register(
+                register_id,
+                self.current_site,
+                &self.create_environment(),
+            )
+            .map(|x| x.result)
     }
 
     /// Gets the type of the given `value`.
@@ -445,11 +474,13 @@ impl<
         &self,
         address: &Address<infer::Model>,
     ) -> Result<Type<infer::Model>, TypeOfError<infer::Model>> {
-        self.intermediate_representation.type_of_address(
-            address,
-            self.current_site,
-            &self.create_environment(),
-        )
+        self.intermediate_representation
+            .type_of_address(
+                address,
+                self.current_site,
+                &self.create_environment(),
+            )
+            .map(|x| x.result)
     }
 
     /// Creates a handler that triggers the suboptimal flag inside this

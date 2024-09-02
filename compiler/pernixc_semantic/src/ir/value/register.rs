@@ -3,7 +3,7 @@
 //! The register is a place where SSA values are stored. The assignment is the
 //! value that is stored in the register.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
@@ -34,6 +34,7 @@ use crate::{
             r#type::{self, Qualifier, SymbolID, Type},
             GenericArguments, Local, Symbol,
         },
+        Succeeded,
     },
 };
 
@@ -65,12 +66,15 @@ impl<M: Model> Representation<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Type<M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
+        let mut constraints = BTreeSet::new();
         let mut elements = Vec::new();
 
         for element in &tuple.elements {
-            let ty =
+            let Succeeded { result: ty, constraints: new_constraint } =
                 self.type_of_value(&element.value, current_site, environment)?;
+
+            constraints.extend(new_constraint);
 
             if element.is_unpacked {
                 match ty {
@@ -86,10 +90,10 @@ impl<M: Model> Representation<M> {
             }
         }
 
-        let mut ty = Type::Tuple(term::Tuple { elements });
-        ty = simplify::simplify(&ty, environment).result;
-
-        Ok(ty)
+        Ok(Succeeded::with_constraints(
+            Type::Tuple(term::Tuple { elements }),
+            constraints,
+        ))
     }
 }
 
@@ -125,7 +129,7 @@ impl<M: Model> Representation<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Type<M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
         self.type_of_address(&load.address, current_site, environment)
     }
 }
@@ -154,16 +158,17 @@ impl<M: Model> Representation<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Type<M>, TypeOfError<M>> {
-        Ok(Type::Reference(r#type::Reference {
-            pointee: Box::new(self.type_of_address(
-                &reference_of.address,
-                current_site,
-                environment,
-            )?),
-            qualifier: reference_of.qualifier,
-            lifetime: reference_of.lifetime.clone(),
-        }))
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
+        self.type_of_address(&reference_of.address, current_site, environment)
+            .map(|x| {
+                x.map(|x| {
+                    Type::Reference(r#type::Reference {
+                        qualifier: reference_of.qualifier,
+                        lifetime: reference_of.lifetime.clone(),
+                        pointee: Box::new(x),
+                    })
+                })
+            })
     }
 }
 
@@ -207,7 +212,7 @@ impl<M: Model> Representation<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Type<M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
         let mut operand_type =
             self.type_of_value(&prefix.operand, current_site, environment)?;
 
@@ -217,25 +222,19 @@ impl<M: Model> Representation<M> {
             | PrefixOperator::BitwiseNot => Ok(operand_type),
 
             PrefixOperator::Local => {
-                Ok(Type::Local(Local(Box::new(operand_type))))
+                operand_type.result =
+                    Type::Local(Local(Box::new(operand_type.result)));
+
+                Ok(operand_type)
             }
 
-            PrefixOperator::Unlocal => {
-                operand_type =
-                    simplify::simplify(&operand_type, environment).result;
-
-                let inner = match operand_type {
-                    Type::Local(inner) => *inner.0,
-                    ty => {
-                        return Err(TypeOfError::NonLocalAssignmentType {
-                            value: prefix.operand.clone(),
-                            r#type: ty,
-                        })
-                    }
-                };
-
-                Ok(inner)
-            }
+            PrefixOperator::Unlocal => operand_type.try_map(|x| match x {
+                Type::Local(x) => Ok(*x.0),
+                _ => Err(TypeOfError::NonLocalAssignmentType {
+                    value: prefix.operand.clone(),
+                    r#type: x,
+                }),
+            }),
         }
     }
 }
@@ -423,16 +422,12 @@ impl<M: Model> Representation<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Type<M>, TypeOfError<M>> {
-        match binary.operator {
-            BinaryOperator::Bitwise(_) | BinaryOperator::Arithmetic(_) => {
-                // jsut return the lhs type
-                self.type_of_value(&binary.lhs, current_site, environment)
-            }
-            BinaryOperator::Relational(_) => {
-                // always return boolean
-                Ok(Type::Primitive(r#type::Primitive::Bool))
-            }
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
+        // the return type always based on the lhs field
+        if let BinaryOperator::Relational(_) = binary.operator {
+            Ok(Succeeded::new(Type::Primitive(r#type::Primitive::Bool)))
+        } else {
+            self.type_of_value(&binary.lhs, current_site, environment)
         }
     }
 }
@@ -529,30 +524,41 @@ impl<M: Model> Representation<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Type<M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
         let register = self
             .registers()
             .get(id)
             .ok_or(TypeOfError::InvalidRegisterID(id))?;
 
-        match &register.assignment {
+        let ty = match &register.assignment {
             Assignment::Tuple(tuple) => {
-                self.type_of_tuple_assignment(tuple, current_site, environment)
+                return self.type_of_tuple_assignment(
+                    tuple,
+                    current_site,
+                    environment,
+                )
             }
             Assignment::Load(load) => {
-                self.type_of_load_assignment(load, current_site, environment)
+                return self.type_of_load_assignment(
+                    load,
+                    current_site,
+                    environment,
+                )
             }
-            Assignment::ReferenceOf(reference_of) => self
-                .type_of_reference_of_assignment(
+            Assignment::ReferenceOf(reference_of) => {
+                return self.type_of_reference_of_assignment(
                     reference_of,
                     current_site,
                     environment,
-                ),
-            Assignment::Prefix(prefix) => self.type_of_prefix_assignment(
-                prefix,
-                current_site,
-                environment,
-            ),
+                )
+            }
+            Assignment::Prefix(prefix) => {
+                return self.type_of_prefix_assignment(
+                    prefix,
+                    current_site,
+                    environment,
+                )
+            }
             Assignment::Struct(st) => Ok(type_of_struct_assignment(st)),
             Assignment::Variant(variant) => {
                 type_of_variant_assignment(variant, environment.table())
@@ -564,7 +570,7 @@ impl<M: Model> Representation<M> {
                 )
             }
             Assignment::Binary(binary) => {
-                self.type_of_binary(binary, current_site, environment)
+                return self.type_of_binary(binary, current_site, environment);
             }
             Assignment::Phi(phi_node) => Ok(phi_node.r#type.clone()),
             Assignment::Array(array) => Ok(Type::Array(r#type::Array {
@@ -574,6 +580,8 @@ impl<M: Model> Representation<M> {
                 )),
             })),
             Assignment::Cast(cast) => Ok(cast.r#type.clone()),
-        }
+        }?;
+
+        Ok(simplify::simplify(&ty, environment))
     }
 }
