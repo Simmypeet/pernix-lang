@@ -15,8 +15,8 @@ use crate::syntax_tree::{
     r#type::strategy::Type,
     statement::strategy::Statement,
     strategy::{
-        ConnectedList, ConstantPunctuation, Identifier, Label,
-        QualifiedIdentifier, Qualifier,
+        ConnectedList, ConstantPunctuation, GenericIdentifier, Identifier,
+        Label, QualifiedIdentifier, ReferenceOf,
     },
 };
 
@@ -461,14 +461,14 @@ impl Display for MatchArm {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Match {
-    pub expression: Box<Expression>,
-    pub arms: Vec<MatchArm>,
+    pub parenthesized: Parenthesized,
+    pub arms: Option<ConnectedList<MatchArm, ConstantPunctuation<','>>>,
 }
 
 impl Input<&super::Match> for &Match {
     fn assert(self, output: &super::Match) -> TestCaseResult {
-        self.expression.assert(output.expression())?;
-        self.arms.assert(output.arms())
+        self.parenthesized.assert(output.parenthesized())?;
+        self.arms.as_ref().assert(output.arms().as_ref())
     }
 }
 
@@ -482,31 +482,24 @@ impl Arbitrary for Match {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression = args.0.clone().unwrap_or_else(|| {
-            Expression::arbitrary_with((
-                args.1.clone(),
-                args.2.clone(),
-                args.3.clone(),
-            ))
-        });
-
+        let parenthesized = Parenthesized::arbitrary_with(args.0.clone());
         (
-            expression,
-            proptest::collection::vec(MatchArm::arbitrary_with(args), 1..=6),
+            parenthesized,
+            proptest::option::of(ConnectedList::arbitrary_with(
+                MatchArm::arbitrary_with(args),
+                ConstantPunctuation::<','>::arbitrary(),
+            )),
         )
-            .prop_map(|(expression, arms)| Self {
-                expression: Box::new(expression),
-                arms,
-            })
+            .prop_map(|(parenthesized, arms)| Self { parenthesized, arms })
             .boxed()
     }
 }
 
 impl Display for Match {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "match ({}) {{", self.expression)?;
-        for arm in &self.arms {
-            write!(f, "{arm}")?;
+        write!(f, "match {} {{", self.parenthesized)?;
+        if let Some(arms) = &self.arms {
+            write!(f, "{arms}")?;
         }
         write!(f, "}}")
     }
@@ -1414,7 +1407,7 @@ impl Display for AccessOperator {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AccessKind {
-    Identifier(Identifier),
+    GenericIdentifier(GenericIdentifier),
     Tuple(bool, syntax_tree::strategy::Numeric),
     Index(Box<Expression>),
 }
@@ -1423,8 +1416,8 @@ impl Input<&super::AccessKind> for &AccessKind {
     fn assert(self, output: &super::AccessKind) -> TestCaseResult {
         match (self, output) {
             (
-                AccessKind::Identifier(input),
-                super::AccessKind::Identifier(output),
+                AccessKind::GenericIdentifier(input),
+                super::AccessKind::GenericIdentifier(output),
             ) => input.assert(output),
 
             (
@@ -1447,16 +1440,21 @@ impl Input<&super::AccessKind> for &AccessKind {
 }
 
 impl Arbitrary for AccessKind {
-    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Parameters =
+        (Option<BoxedStrategy<Expression>>, Option<BoxedStrategy<Type>>);
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
-        let strat = strat.unwrap_or_else(Expression::arbitrary);
+        let expr_strat = strat.0.unwrap_or_else(Expression::arbitrary);
         prop_oneof![
-            Identifier::arbitrary().prop_map(Self::Identifier),
+            GenericIdentifier::arbitrary_with((
+                strat.1,
+                Some(expr_strat.clone()),
+            ))
+            .prop_map(Self::GenericIdentifier),
             (proptest::bool::ANY, syntax_tree::strategy::Numeric::arbitrary())
                 .prop_map(|(is_neg, index)| Self::Tuple(is_neg, index)),
-            strat.prop_map(Box::new).prop_map(Self::Index),
+            expr_strat.prop_map(Box::new).prop_map(Self::Index),
         ]
         .boxed()
     }
@@ -1465,7 +1463,7 @@ impl Arbitrary for AccessKind {
 impl Display for AccessKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Identifier(identifier) => Display::fmt(identifier, f),
+            Self::GenericIdentifier(identifier) => Display::fmt(identifier, f),
             Self::Tuple(is_neg, numeric) => {
                 if *is_neg {
                     f.write_char('-')?;
@@ -1492,16 +1490,12 @@ impl Input<&super::Access> for &Access {
 }
 
 impl Arbitrary for Access {
-    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Parameters =
+        (Option<BoxedStrategy<Expression>>, Option<BoxedStrategy<Type>>);
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
-        let strat = strat.unwrap_or_else(Expression::arbitrary);
-
-        (
-            AccessOperator::arbitrary_with(()),
-            AccessKind::arbitrary_with(Some(strat)),
-        )
+        (AccessOperator::arbitrary_with(()), AccessKind::arbitrary_with(strat))
             .prop_map(|(operator, kind)| Self { operator, kind })
             .boxed()
     }
@@ -1556,6 +1550,8 @@ impl Arbitrary for PostfixOperator {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Call::arbitrary_with(args.0.clone()).prop_map(Self::Call),
+            Access::arbitrary_with((args.0.clone(), args.1.clone()))
+                .prop_map(Self::Access),
             Cast::arbitrary_with(args).prop_map(Self::Cast),
         ]
         .boxed()
@@ -1690,40 +1686,6 @@ impl Display for Postfixable {
             Self::Unit(unit) => Display::fmt(unit, f),
             Self::Postfix(postfix) => Display::fmt(postfix, f),
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ReferenceOf {
-    pub qualifier: Option<Qualifier>,
-}
-
-impl Input<&super::ReferenceOf> for &ReferenceOf {
-    fn assert(self, output: &super::ReferenceOf) -> TestCaseResult {
-        self.qualifier.as_ref().assert(output.qualifier().as_ref())
-    }
-}
-
-impl Arbitrary for ReferenceOf {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        proptest::option::of(Qualifier::arbitrary_with(()))
-            .prop_map(|qualifier| Self { qualifier })
-            .boxed()
-    }
-}
-
-impl Display for ReferenceOf {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "&")?;
-
-        if let Some(qualifier) = &self.qualifier {
-            write!(f, "{qualifier} ")?;
-        }
-
-        Ok(())
     }
 }
 

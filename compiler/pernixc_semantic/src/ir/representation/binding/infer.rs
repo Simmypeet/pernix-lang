@@ -25,6 +25,7 @@ use crate::{
         query,
         simplify::simplify,
         term::{
+            self,
             constant::Constant,
             lifetime::Lifetime,
             r#type::{self, Type},
@@ -1308,7 +1309,7 @@ impl<'a, S: table::State> Normalizer<IntermediaryModel, S>
                             ))))
                         }
                     },
-                    None => Ok(None),
+                    None => Ok(Some(Succeeded::new(Type::Error(term::Error)))),
                 }
             }
             InferenceOrConstraint::Constraint(_) => Ok(None), /* no need to
@@ -1358,7 +1359,9 @@ impl<'a, S: table::State> Normalizer<IntermediaryModel, S>
                             ))))
                         }
                     },
-                    None => Ok(None),
+                    None => {
+                        Ok(Some(Succeeded::new(Constant::Error(term::Error))))
+                    }
                 }
             }
             InferenceOrConstraint::Constraint(_) => Ok(None), /* no need to

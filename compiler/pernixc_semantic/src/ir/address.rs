@@ -11,7 +11,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index as _},
-        CallableID, GlobalID, Parameter,
+        AdtID, CallableID, GlobalID, Parameter,
     },
     type_system::{
         environment::Environment,
@@ -20,11 +20,7 @@ use crate::{
         normalizer::Normalizer,
         observer::Observer,
         simplify,
-        term::{
-            self,
-            r#type::{SymbolID, Type},
-            Symbol,
-        },
+        term::{self, r#type::Type, Symbol},
         Succeeded,
     },
 };
@@ -81,6 +77,25 @@ pub struct Tuple<M: Model> {
     pub offset: Offset,
 }
 
+/// The memory pointer is stored in an address.
+///
+/// # Example
+///
+/// ```pnx
+/// let x = 32;
+/// let address = &unique x;
+/// *address = 5;
+/// ```
+///
+/// The `*address` is represented by `ReferenceAddress { address:
+/// Memory::Alloca(&address) }`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(clippy::module_name_repetitions)]
+pub struct ReferenceAddress<M: Model> {
+    /// The address where the memory pointer is stored.
+    pub reference_address: Box<Address<M>>,
+}
+
 /// Represents a real memory location.
 ///
 /// This is used to represent the base address of a memory location for the
@@ -92,6 +107,16 @@ pub enum Memory<M: Model> {
     Alloca(ID<Alloca<M>>),
 
     /// The memory pointer is stored in a register.
+    ///
+    /// # Example
+    ///
+    /// ```pnx
+    /// *getReference() = 5;
+    /// ```
+    ///
+    /// The `*getReference()` is represented by `Memory::ReferenceValue(
+    /// "getReference()" )` where `getReference()` is a function that returns a
+    /// reference.
     ReferenceValue(Value<M>),
 }
 
@@ -108,6 +133,7 @@ pub enum Address<M: Model> {
     Tuple(Tuple<M>),
     Index(Index<M>),
     Variant(Variant<M>),
+    ReferenceAddress(ReferenceAddress<M>),
 }
 
 #[derive(
@@ -182,7 +208,7 @@ impl<M: Model> Representation<M> {
                 .type_of_value(value, current_site, environment)?
                 .try_map(|x| match x {
                     Type::Reference(x) => Ok(*x.pointee),
-                    found => Err(TypeOfError::NonReferenceAddressType {
+                    found => Err(TypeOfError::NonReferenceValueType {
                         value: value.clone(),
                         r#type: found,
                     }),
@@ -199,7 +225,7 @@ impl<M: Model> Representation<M> {
 
                 let (struct_id, generic_arguments) = match result {
                     Type::Symbol(Symbol {
-                        id: SymbolID::Struct(struct_id),
+                        id: AdtID::Struct(struct_id),
                         generic_arguments,
                     }) => (struct_id, generic_arguments),
 
@@ -330,7 +356,7 @@ impl<M: Model> Representation<M> {
 
                 let (enum_id, generic_arguments) = match result {
                     Type::Symbol(Symbol {
-                        id: SymbolID::Enum(enum_id),
+                        id: AdtID::Enum(enum_id),
                         generic_arguments,
                     }) => (enum_id, generic_arguments),
 
@@ -396,6 +422,20 @@ impl<M: Model> Representation<M> {
                     constraints,
                 ))
             }
+
+            Address::ReferenceAddress(value) => self
+                .type_of_address(
+                    &value.reference_address,
+                    current_site,
+                    environment,
+                )?
+                .try_map(|x| match x {
+                    Type::Reference(value) => Ok(*value.pointee),
+                    _ => Err(TypeOfError::NonReferenceAddressType {
+                        address: (*value.reference_address).clone(),
+                        r#type: x,
+                    }),
+                }),
         }
     }
 }

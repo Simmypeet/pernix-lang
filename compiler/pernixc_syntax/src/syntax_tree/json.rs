@@ -255,6 +255,7 @@ impl<'a> Parser<'a> {
                     alternatives: vec![],
                     found: self.reading_to_found(found),
                 });
+                self.forward();
 
                 None
             }

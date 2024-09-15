@@ -20,11 +20,11 @@ use crate::{
             self, representation::Index, Display, DisplayObject, State,
             Suboptimal, Table,
         },
-        Accessibility, AdtID, AdtImplementation, ConstantParameterID, Field,
-        GenericID, GenericKind, GenericParameter, GlobalID,
-        LocalGenericParameterID, MemberID, Module, PositiveTraitImplementation,
-        Struct, Trait, TraitImplementationID, TraitImplementationMemberID,
-        TraitMemberID, Variant,
+        Accessibility, AdtID, AdtImplementation, AdtImplementationFunction,
+        ConstantParameterID, Field, GenericID, GenericKind, GenericParameter,
+        GlobalID, LocalGenericParameterID, MemberID, Module,
+        PositiveTraitImplementation, Struct, Trait, TraitImplementationID,
+        TraitImplementationMemberID, TraitMemberID, Variant,
     },
     type_system::{
         equality,
@@ -1896,6 +1896,78 @@ where
     }
 }
 
+/// The name is already exists in the given module.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConflictingUsing {
+    /// The span of the using statement.
+    pub using_span: Span,
+
+    /// The name that conflicts with the existing name in the module.
+    pub name: String,
+
+    /// The module where the name is already defined.
+    pub module_id: ID<Module>,
+
+    /// The span of the conflicting name.
+    ///
+    /// This can either be the span to the declared symbol or the previous
+    /// using that uses the given name.
+    pub conflicting_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for ConflictingUsing {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let module_qualified_name = table
+            .get_qualified_name(self.module_id.into())
+            .ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.using_span.clone(),
+            message: format!(
+                "the using `{name}` conflicts with the existing name in the \
+                 module `{module_qualified_name}`",
+                name = self.name,
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: vec![Related {
+                span: self.conflicting_span.clone(),
+                message: "the conflicting name is declared here".to_string(),
+            }],
+        })
+    }
+}
+
+/// `this` keyword is used outside the allowed scope.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ThisNotFound {
+    /// The span where the `this` keyword was found.
+    pub span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for ThisNotFound {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "`this` keyword cannot be used here".to_string(),
+            severity: Severity::Error,
+            help_message: Some(
+                "`this` keyword can only be used in `trait` and `implements` \
+                 to refer to that particular symbol"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        })
+    }
+}
+
 /// The trait implementation member contains extraneous predicate--a predicate
 /// that is not defined in the trait member.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -2032,45 +2104,6 @@ where
                 "the pattern expects a {} type but found {} ",
                 self.expected_bindnig_type,
                 DisplayObject { display: &self.found_type, table }
-            ),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        })
-    }
-}
-
-/// Expected a reference expression with a particular qualifier requirement but
-/// found a different reference type.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MismatchedReferenceQualifier<M: Model> {
-    /// The reference type that was found.
-    pub found_reference_type: Type<M>,
-
-    /// The expected qualifier.
-    pub expected_qualifier: Qualifier,
-
-    /// The span of the reference expression.
-    pub span: Span,
-}
-
-impl<M: Model> Report<&Table<Suboptimal>> for MismatchedReferenceQualifier<M>
-where
-    Type<M>: Display<Suboptimal>,
-{
-    type Error = ReportError;
-
-    fn report(
-        &self,
-        table: &Table<Suboptimal>,
-    ) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
-            span: self.span.clone(),
-            message: format!(
-                "expected a reference expression with a qualifier `{}` but \
-                 found `{}`",
-                self.expected_qualifier,
-                DisplayObject { display: &self.found_reference_type, table }
             ),
             severity: Severity::Error,
             help_message: None,
@@ -2363,6 +2396,50 @@ pub struct AlreadyBoundName {
     pub new_binding_span: Span,
 }
 
+/// The given l-value cannot be referenced as the given one.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedQualifierForReferenceOf {
+    /// The span of the reference of expression
+    pub reference_of_span: Span,
+
+    /// The qualifier of the l-value.
+    pub found_qualifier: Qualifier,
+
+    /// The requested qualifier for the reference of expression.
+    pub expected_qualifier: Qualifier,
+
+    /// Whether or not the l-value is behind an another reference.
+    pub is_behind_reference: bool,
+}
+
+impl Report<&Table<Suboptimal>> for MismatchedQualifierForReferenceOf {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        let message = if self.is_behind_reference {
+            format!(
+                "the l-value is behind a reference with qualifier `{}` but \
+                 the reference of expression expects a qualifier `{}`",
+                self.found_qualifier, self.expected_qualifier
+            )
+        } else {
+            format!(
+                "the l-value has qualifier `{}` but the reference of \
+                 expression expects a qualifier `{}`",
+                self.found_qualifier, self.expected_qualifier
+            )
+        };
+
+        Ok(Diagnostic {
+            span: self.reference_of_span.clone(),
+            message,
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
 impl Report<&Table<Suboptimal>> for AlreadyBoundName {
     type Error = ReportError;
 
@@ -2453,10 +2530,69 @@ impl Report<&Table<Suboptimal>> for UnexpectedAssociatedPattern {
         Ok(Diagnostic {
             span: self.associated_pattern_span.clone(),
             message: format!(
-                "the variant `{}` doesn't have an associated value but the \
-                 matched pattern contains one",
-                variant_name
+                "the variant `{variant_name}` doesn't have an associated \
+                 value but the matched pattern contains one",
             ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// Adt implementation function cannot be used as a method.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AdtImplementationFunctionCannotBeUsedAsMethod {
+    /// The ID of the ADT implementation function.
+    pub adt_implementation_function_id: ID<AdtImplementationFunction>,
+
+    /// The span of the function call.
+    pub span: Span,
+}
+
+impl Report<&Table<Suboptimal>>
+    for AdtImplementationFunctionCannotBeUsedAsMethod
+{
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let adt_implementation_function_symbol = table
+            .get_qualified_name(self.adt_implementation_function_id.into())
+            .ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the ADT implementation function `{}` cannot be used as a \
+                 method",
+                adt_implementation_function_symbol
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The field access is not allowed to have generic arguments.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnexpectedGenericArgumentsInField {
+    /// The span of the field access.
+    pub field_access_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for UnexpectedGenericArgumentsInField {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.field_access_span.clone(),
+            message: "the field access is not allowed to have generic \
+                      arguments"
+                .to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
@@ -3388,22 +3524,65 @@ where
     }
 }
 
-/// The lvalue found is not mutable.
+/// Cannot dereference a particular reference as the given qualifier as it's
+/// behind a reference which has more restrictive qualifier.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MismatchedMutability {
-    /// The span of the l-value.
-    pub span: Span,
+pub struct BehindReferenceQualifierMismathced {
+    /// The qualifier of the reference behind the expression.
+    pub behind_reference_qualifier: Qualifier,
+
+    /// The expected qualifier of the reference.
+    pub expected_qualifier: Qualifier,
+
+    /// The span to be dereferenced.
+    pub expression_span: Span,
 }
 
-impl Report<&Table<Suboptimal>> for MismatchedMutability {
+impl Report<&Table<Suboptimal>> for BehindReferenceQualifierMismathced {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.expression_span.clone(),
+            message: format!(
+                "cannot dereference the expression `{}` as `{}` since it's \
+                 behind a reference with `{}` qualifier",
+                self.expression_span.str(),
+                self.expected_qualifier,
+                self.behind_reference_qualifier
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// Attempts to assign to a non-mutable l-value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AssignToNonMutable {
+    /// The span of the assignment.
+    pub span: Span,
+
+    /// The qualifier of the l-value.
+    pub qualifier: Qualifier,
+}
+
+impl Report<&Table<Suboptimal>> for AssignToNonMutable {
     type Error = ReportError;
 
     fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             span: self.span.clone(),
-            message: format!("`{}` is not mutable", self.span.str()),
+            message: format!(
+                "cannot assign to `{}` since it's {}",
+                self.span.str(),
+                self.qualifier
+            ),
             severity: Severity::Error,
-            help_message: None,
+            help_message: Some(
+                "the value must be `mutable` to assign".to_string(),
+            ),
             related: Vec::new(),
         })
     }

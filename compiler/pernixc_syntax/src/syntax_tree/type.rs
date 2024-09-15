@@ -13,9 +13,7 @@ use pernixc_lexical::{
     token_stream::Delimiter,
 };
 
-use super::{
-    ConnectedList, Constant, Elided, Lifetime, QualifiedIdentifier, Qualifier,
-};
+use super::{ConnectedList, Constant, Elided, Lifetime, QualifiedIdentifier};
 use crate::{
     error::{Error, SyntaxKind},
     parser::{Parser, Reading},
@@ -80,7 +78,7 @@ impl SourceElement for Primitive {
 /// Syntax Synopsis:
 /// ``` txt
 /// Reference:
-///     '&' Lifetime? Qualifier? Type
+///      Qualifier Type
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -91,14 +89,23 @@ pub struct Reference {
     #[get = "pub"]
     lifetime: Option<Lifetime>,
     #[get = "pub"]
-    qualifier: Option<Qualifier>,
+    mutable_keyword: Option<Keyword>,
     #[get = "pub"]
     operand: Box<Type>,
 }
 
 impl SourceElement for Reference {
     fn span(&self) -> Span {
-        self.ampersand.span.join(&self.operand.span()).unwrap()
+        self.ampersand.span().join(&self.operand.span()).unwrap()
+    }
+}
+
+impl Reference {
+    /// Destructs the `Reference` into its components.
+    pub fn destruct(
+        self,
+    ) -> (Punctuation, Option<Lifetime>, Option<Keyword>, Box<Type>) {
+        (self.ampersand, self.lifetime, self.mutable_keyword, self.operand)
     }
 }
 
@@ -161,7 +168,7 @@ impl SourceElement for Array {
 /// Syntax Synopsis:
 /// ``` txt
 /// Pointer:
-///     '*' Qualifier? Type
+///     '*' mutable? Type
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -169,7 +176,7 @@ pub struct Pointer {
     #[get = "pub"]
     asterisk: Punctuation,
     #[get = "pub"]
-    qualifier: Option<Qualifier>,
+    mutable_keyword: Option<Keyword>,
     #[get = "pub"]
     operand: Box<Type>,
 }
@@ -304,41 +311,49 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<Error>,
     ) -> Option<Reference> {
-        let ampersand = self.parse_punctuation('&', true, handler)?;
-        let lifetime_argument = match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(apostrophe))
-                if apostrophe.punctuation == '\'' =>
-            {
-                Some(self.parse_lifetime(handler)?)
-            }
-
-            _ => None,
-        };
-        let reference_qualifier = match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Mutable =>
-            {
+        match self.stop_at_significant() {
+            Reading::Unit(Token::Punctuation(
+                ampersand @ Punctuation { punctuation: '&', .. },
+            )) => {
+                // eat the ampersand
                 self.forward();
-                Some(Qualifier::Mutable(k))
+
+                let lifetime = self.try_parse_lifetime(handler)?;
+                let mutable = if let Reading::Unit(Token::Keyword(
+                    mutable_keyowrd @ Keyword {
+                        kind: KeywordKind::Mutable, ..
+                    },
+                )) = self.stop_at_significant()
+                {
+                    self.forward();
+                    Some(mutable_keyowrd)
+                } else {
+                    None
+                };
+
+                let operand = Box::new(self.parse_type(handler)?);
+
+                Some(Reference {
+                    ampersand,
+                    lifetime,
+                    mutable_keyword: mutable,
+                    operand,
+                })
             }
 
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Unique =>
-            {
+            found => {
+                handler.receive(Error {
+                    expected: SyntaxKind::Punctuation('&'),
+                    alternatives: Vec::new(),
+                    found: self.reading_to_found(found),
+                });
+
+                // eat the current token / make progress
                 self.forward();
-                Some(Qualifier::Unique(k))
+
+                None
             }
-
-            _ => None,
-        };
-        let operand = Box::new(self.parse_type(handler)?);
-
-        Some(Reference {
-            ampersand,
-            lifetime: lifetime_argument,
-            qualifier: reference_qualifier,
-            operand,
-        })
+        }
     }
 
     fn parse_pointer_type(
@@ -347,19 +362,12 @@ impl<'a> Parser<'a> {
     ) -> Option<Pointer> {
         let asterisk = self.parse_punctuation('*', true, handler)?;
 
-        let qualifier = match self.stop_at_significant() {
+        let mutable_keyword = match self.stop_at_significant() {
             Reading::Unit(Token::Keyword(k))
                 if k.kind == KeywordKind::Mutable =>
             {
                 self.forward();
-                Some(Qualifier::Mutable(k))
-            }
-
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Unique =>
-            {
-                self.forward();
-                Some(Qualifier::Unique(k))
+                Some(k)
             }
 
             _ => None,
@@ -367,7 +375,7 @@ impl<'a> Parser<'a> {
 
         let operand_type = Box::new(self.parse_type(handler)?);
 
-        Some(Pointer { asterisk, qualifier, operand: operand_type })
+        Some(Pointer { asterisk, mutable_keyword, operand: operand_type })
     }
 
     fn parse_array_type(
@@ -465,26 +473,9 @@ impl<'a> Parser<'a> {
     #[allow(clippy::missing_errors_doc, clippy::too_many_lines)]
     pub fn parse_type(&mut self, handler: &dyn Handler<Error>) -> Option<Type> {
         match self.stop_at_significant() {
-            // parse qualified identifier
-            Reading::Unit(Token::Punctuation(first_colon))
-                if first_colon.punctuation == ':'
-                    && self.peek_offset(1).map_or(false, |x| {
-                        matches!(
-                            x,
-                            Reading::Unit(Token::Punctuation(p)) if p.punctuation == ':'
-                        )
-                    }) =>
-            {
-                Some(Type::QualifiedIdentifier(
-                    self.parse_qualified_identifier(handler)?,
-                ))
-            }
-
             // parse elided type
             Reading::Unit(Token::Punctuation(
-                first_dot @ Punctuation {
-                    punctuation: '.', ..
-                }
+                first_dot @ Punctuation { punctuation: '.', .. },
             )) => {
                 // eat the first dot
                 self.forward();
@@ -496,7 +487,8 @@ impl<'a> Parser<'a> {
 
             // parse local type
             Reading::Unit(Token::Keyword(keyword))
-                if keyword.kind == KeywordKind::Local => {
+                if keyword.kind == KeywordKind::Local =>
+            {
                 // eat local keyword
                 self.forward();
 
@@ -509,7 +501,14 @@ impl<'a> Parser<'a> {
             }
 
             // parse qualified identifier
-            Reading::Unit(Token::Identifier(..)) => Some(Type::QualifiedIdentifier(
+            Reading::Unit(
+                Token::Identifier(..)
+                | Token::Keyword(Keyword {
+                    kind:
+                        KeywordKind::This | KeywordKind::Super | KeywordKind::Target,
+                    ..
+                }),
+            ) => Some(Type::QualifiedIdentifier(
                 self.parse_qualified_identifier(handler)?,
             )),
 
@@ -519,9 +518,10 @@ impl<'a> Parser<'a> {
             }
 
             // parse reference
-            Reading::Unit(Token::Punctuation(p)) if p.punctuation == '&' => {
-                self.parse_reference_type(handler).map(Type::Reference)
-            }
+            Reading::Unit(Token::Punctuation(Punctuation {
+                punctuation: '&' | '@',
+                ..
+            })) => self.parse_reference_type(handler).map(Type::Reference),
 
             // parse array type
             Reading::IntoDelimited(Delimiter::Bracket, _) => {
@@ -534,7 +534,8 @@ impl<'a> Parser<'a> {
             }
 
             Reading::Unit(Token::Keyword(phantom_keyword))
-                if phantom_keyword.kind == KeywordKind::Phantom => {
+                if phantom_keyword.kind == KeywordKind::Phantom =>
+            {
                 // eat phantom keyword
                 self.forward();
 
@@ -589,14 +590,13 @@ impl<'a> Parser<'a> {
             }
 
             found => {
-                // eat the current token / make progress
-                self.forward();
-
                 handler.receive(Error {
                     expected: SyntaxKind::TypeSpecifier,
                     alternatives: Vec::new(),
                     found: self.reading_to_found(found),
                 });
+                // eat the current token / make progress
+                self.forward();
 
                 None
             }

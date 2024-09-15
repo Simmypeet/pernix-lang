@@ -9,8 +9,8 @@ use crate::{
         ExpectAssociatedValue, ExpectLValue, ExpectStructType,
         ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
         FloatingPointLiteralHasIntegralSuffix, InvalidCastType,
-        InvalidNumericSuffix, MismatchedArgumentCount, MismatchedMutability,
-        MismatchedReferenceQualifier, MismatchedType,
+        InvalidNumericSuffix, MismatchedArgumentCount,
+        MismatchedQualifierForReferenceOf, MismatchedType,
         NotAllFlowPathsExpressValue, TooLargeTupleIndex, TupleExpected,
         TupleIndexOutOfBOunds, UninitializedFields,
     },
@@ -19,7 +19,7 @@ use crate::{
         instruction::Instruction,
         representation::binding::{
             expression::{Bind, Config, Target},
-            infer::{self, ConstraintModel, NoConstraint},
+            infer::{self, ConstraintModel, Erased},
             tests::{parse_expression, parse_statement, TestTemplate},
             Binder,
         },
@@ -37,10 +37,11 @@ use crate::{
             representation::{Index, IndexMut, Insertion, RwLockContainer},
             resolution, Building, Table,
         },
-        Accessibility, AdtTemplate, Enum, EnumDefinition, Field, Function,
+        Accessibility, AdtImplementationDefinition, AdtImplementationFunction,
+        AdtTemplate, CallableID, Enum, EnumDefinition, Field, Function,
         FunctionDefinition, FunctionTemplate, GenericDeclaration, GenericID,
-        Module, Parameter, Struct, StructDefinition, TypeParameter,
-        TypeParameterID, Variant,
+        LifetimeParameter, LifetimeParameterID, Module, Parameter, Struct,
+        StructDefinition, TypeParameter, TypeParameterID, Variant,
     },
     type_system::{
         self,
@@ -48,7 +49,7 @@ use crate::{
         term::{
             lifetime::Lifetime,
             r#type::{self, Constraint, Primitive, Qualifier, Reference, Type},
-            Local,
+            GenericArguments, Local, Symbol,
         },
         Compute,
     },
@@ -108,9 +109,9 @@ fn numeric_literal_suffix() {
     .unwrap();
 
     let numeric_literal = binder
-        .bind(&expression, Config { target: Target::Value }, &storage)
+        .bind(&expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_literal()
         .unwrap()
@@ -153,9 +154,9 @@ fn numberic_literal_float_infer() {
     .unwrap();
 
     let numeric_literal = binder
-        .bind(&expression, Config { target: Target::Value }, &storage)
+        .bind(&expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_literal()
         .unwrap()
@@ -214,9 +215,9 @@ fn numeric_literal_number_infer() {
     .unwrap();
 
     let numeric_literal = binder
-        .bind(&expression, Config { target: Target::Value }, &storage)
+        .bind(&expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_literal()
         .unwrap()
@@ -273,7 +274,7 @@ fn invalid_numeric_literal_suffix() {
     .unwrap();
 
     assert!(binder
-        .bind(&expression, Config { target: Target::Value }, &storage)
+        .bind(&expression, Config { target: Target::RValue }, &storage)
         .is_err());
 
     let mut storage = storage.into_vec();
@@ -313,7 +314,7 @@ fn floating_point_literal_has_integral_suffix() {
     .unwrap();
 
     assert!(binder
-        .bind(&expression, Config { target: Target::Value }, &storage)
+        .bind(&expression, Config { target: Target::RValue }, &storage)
         .is_err());
 
     let mut storage = storage.into_vec();
@@ -368,18 +369,18 @@ fn bind_boolean_literal() {
     .unwrap();
 
     let true_value = binder
-        .bind(&true_expression, Config { target: Target::Value }, &storage)
+        .bind(&true_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_literal()
         .unwrap()
         .into_boolean()
         .unwrap();
     let false_value = binder
-        .bind(&false_expression, Config { target: Target::Value }, &storage)
+        .bind(&false_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_literal()
         .unwrap()
@@ -451,9 +452,9 @@ fn bind_prefix_operator() {
     .unwrap();
 
     let local = binder
-        .bind(&local_expression, Config { target: Target::Value }, &storage)
+        .bind(&local_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -469,11 +470,11 @@ fn bind_prefix_operator() {
     let logical_not = binder
         .bind(
             &logical_not_expression,
-            Config { target: Target::Value },
+            Config { target: Target::RValue },
             &storage,
         )
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -487,9 +488,9 @@ fn bind_prefix_operator() {
         .is_prefix());
 
     let negate = binder
-        .bind(&negate_expression, Config { target: Target::Value }, &storage)
+        .bind(&negate_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -505,11 +506,11 @@ fn bind_prefix_operator() {
     let bitwise_not = binder
         .bind(
             &bitwise_not_expression,
-            Config { target: Target::Value },
+            Config { target: Target::RValue },
             &storage,
         )
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -523,9 +524,9 @@ fn bind_prefix_operator() {
         .is_prefix());
 
     let unlocal = binder
-        .bind(&unlocal_expression, Config { target: Target::Value }, &storage)
+        .bind(&unlocal_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -594,22 +595,22 @@ fn prefix_type_mismatched_error() {
     assert!(binder
         .bind(
             &logical_not_expression,
-            Config { target: Target::Value },
+            Config { target: Target::RValue },
             &storage,
         )
         .is_err());
     assert!(binder
-        .bind(&negate_expression, Config { target: Target::Value }, &storage,)
+        .bind(&negate_expression, Config { target: Target::RValue }, &storage,)
         .is_err());
     assert!(binder
         .bind(
             &bitwise_not_expression,
-            Config { target: Target::Value },
+            Config { target: Target::RValue },
             &storage,
         )
         .is_err());
     assert!(binder
-        .bind(&unlocal_expression, Config { target: Target::Value }, &storage,)
+        .bind(&unlocal_expression, Config { target: Target::RValue }, &storage,)
         .is_err());
 
     let storage = storage.into_vec();
@@ -710,9 +711,9 @@ fn named_load() {
         .unwrap();
 
     let register_id = binder
-        .bind(&named_load, Config { target: Target::Value }, &storage)
+        .bind(&named_load, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -733,19 +734,12 @@ fn named_load() {
 
     assert_eq!(load_alloca_id, alloca_id);
 
-    let (as_address, _) = binder
-        .bind(
-            &named_load,
-            Config {
-                target: Target::Address {
-                    expected_qualifier: Qualifier::Mutable,
-                },
-            },
-            &storage,
-        )
+    let as_address = binder
+        .bind(&named_load, Config { target: Target::LValue }, &storage)
         .unwrap()
-        .into_address()
-        .unwrap();
+        .into_l_value()
+        .unwrap()
+        .address;
 
     assert!(storage.as_vec().is_empty());
 
@@ -756,65 +750,10 @@ fn named_load() {
 }
 
 #[test]
-fn named_load_mutability_error() {
-    const VARIABLE_DECLARATION: &str = "let x: int32 = 32;";
-    const VARIABLE_LOAD: &str = "x";
-
-    let test_template = TestTemplate::new();
-    let (mut binder, storage) = test_template.create_binder();
-
-    let variable_declaration = parse_statement(VARIABLE_DECLARATION)
-        .into_variable_declaration()
-        .unwrap();
-
-    let alloca_id = binder
-        .bind_variable_declaration(&variable_declaration, &storage)
-        .unwrap();
-
-    let named_load = parse_expression(VARIABLE_LOAD)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_postfixable()
-        .unwrap()
-        .into_unit()
-        .unwrap()
-        .into_qualified_identifier()
-        .unwrap();
-
-    let (as_address, _) = binder
-        .bind(
-            &named_load,
-            Config {
-                target: Target::Address {
-                    expected_qualifier: Qualifier::Mutable,
-                },
-            },
-            &storage,
-        )
-        .unwrap()
-        .into_address()
-        .unwrap();
-
-    assert_eq!(
-        alloca_id,
-        as_address.into_memory().unwrap().into_alloca().unwrap()
-    );
-
-    let errors = storage.into_vec();
-    assert!(errors
-        .iter()
-        .find_map(|x| x.as_any().downcast_ref::<MismatchedMutability>())
-        .is_some());
-}
-
-#[test]
 fn reference_of() {
     const VARIABLE_DECLARATION: &str = "let mutable x: int32 = 32;";
     const REFERENCE_OF_IMMUTABLE: &str = "&x";
     const REFERENCE_OF_MUTABLE: &str = "&mutable x";
-    const REFERENCE_OF_UNIQUE: &str = "&unique x";
 
     let test_template = TestTemplate::new();
     let (mut binder, storage) = test_template.create_binder();
@@ -841,36 +780,26 @@ fn reference_of() {
         .0
         .into_prefix()
         .unwrap();
-    let reference_of_unique = parse_expression(REFERENCE_OF_UNIQUE)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_prefix()
-        .unwrap();
 
     let reference_of_immutable_id = binder
         .bind(
             &reference_of_immutable,
-            Config { target: Target::Value },
+            Config { target: Target::RValue },
             &storage,
         )
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
     let reference_of_mutable_id = binder
-        .bind(&reference_of_mutable, Config { target: Target::Value }, &storage)
+        .bind(
+            &reference_of_mutable,
+            Config { target: Target::RValue },
+            &storage,
+        )
         .unwrap()
-        .into_value()
-        .unwrap()
-        .into_register()
-        .unwrap();
-    let reference_of_unique_id = binder
-        .bind(&reference_of_unique, Config { target: Target::Value }, &storage)
-        .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -897,7 +826,6 @@ fn reference_of() {
 
     assert_reference_of(reference_of_immutable_id, Qualifier::Immutable);
     assert_reference_of(reference_of_mutable_id, Qualifier::Mutable);
-    assert_reference_of(reference_of_unique_id, Qualifier::Unique);
 }
 
 #[test]
@@ -923,15 +851,26 @@ fn reference_of_mutability_error() {
         .unwrap();
 
     assert!(binder
-        .bind(&reference_of_mutable, Config { target: Target::Value }, &storage)
+        .bind(
+            &reference_of_mutable,
+            Config { target: Target::RValue },
+            &storage
+        )
         .is_ok());
 
     let errors = storage.into_vec();
 
-    assert!(errors
-        .iter()
-        .find_map(|x| x.as_any().downcast_ref::<MismatchedMutability>())
-        .is_some());
+    assert!(errors.iter().any(|x| {
+        let Some(error) =
+            x.as_any().downcast_ref::<MismatchedQualifierForReferenceOf>()
+        else {
+            return false;
+        };
+
+        error.expected_qualifier == Qualifier::Mutable
+            && error.found_qualifier == Qualifier::Immutable
+            && !error.is_behind_reference
+    }));
 }
 
 #[test]
@@ -969,9 +908,9 @@ fn dereference_as_value() {
         .unwrap();
 
     let register_id = binder
-        .bind(&dereference, Config { target: Target::Value }, &storage)
+        .bind(&dereference, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -983,39 +922,16 @@ fn dereference_as_value() {
 
     let dereference = dereference_register.assignment.as_load().unwrap();
 
-    let reference_value = dereference
-        .address
-        .as_memory()
-        .unwrap()
-        .as_reference_value()
-        .unwrap()
-        .as_register()
-        .unwrap();
-
-    let name_load_register = binder
-        .intermediate_representation
-        .registers
-        .get(*reference_value)
-        .unwrap();
-
     assert_eq!(
-        *name_load_register
-            .assignment
-            .as_load()
-            .unwrap()
-            .address
-            .as_memory()
-            .unwrap()
-            .as_alloca()
-            .unwrap(),
-        reference_alloca_id
+        *dereference.address.as_reference_address().unwrap().reference_address,
+        Address::Memory(Memory::Alloca(reference_alloca_id))
     );
 }
 
 #[test]
 fn dereference_as_address() {
     const VALUE_VARIABLE_DECLARATION: &str = "let mutable x = 6420i32;";
-    const REFERENCE_VARIABLE_DECLARATION: &str = "let y = &unique x;";
+    const REFERENCE_VARIABLE_DECLARATION: &str = "let y = &mutable x;";
     const DEREFERENCE: &str = "*y";
 
     let test_template = TestTemplate::new();
@@ -1046,113 +962,19 @@ fn dereference_as_address() {
         .into_prefix()
         .unwrap();
 
-    let (address, _) = binder
-        .bind(
-            &dereference,
-            Config {
-                target: Target::Address {
-                    expected_qualifier: Qualifier::Unique,
-                },
-            },
-            &storage,
-        )
+    let address = binder
+        .bind(&dereference, Config { target: Target::LValue }, &storage)
         .unwrap()
-        .into_address()
-        .unwrap();
+        .into_l_value()
+        .unwrap()
+        .address;
 
     assert!(storage.as_vec().is_empty());
 
-    let reference_id = *address
-        .as_memory()
-        .unwrap()
-        .as_reference_value()
-        .unwrap()
-        .as_register()
-        .unwrap();
-
     assert_eq!(
-        *binder
-            .intermediate_representation
-            .registers
-            .get(reference_id)
-            .unwrap()
-            .assignment
-            .as_load()
-            .unwrap()
-            .address
-            .as_memory()
-            .unwrap()
-            .as_alloca()
-            .unwrap(),
-        reference_alloca_id
+        *address.as_reference_address().unwrap().reference_address,
+        Address::Memory(Memory::Alloca(reference_alloca_id))
     );
-}
-
-#[test]
-fn dereference_mismatched_qualifier_error() {
-    const VALUE_VARIABLE_DECLARATION: &str = "let mutable x = 6420i32;";
-    const REFERENCE_VARIABLE_DECLARATION: &str = "let y = &mutable x;";
-    const DEREFERENCE: &str = "*y";
-
-    let test_template = TestTemplate::new();
-    let (mut binder, storage) = test_template.create_binder();
-
-    let value_variable_declaration =
-        parse_statement(VALUE_VARIABLE_DECLARATION)
-            .into_variable_declaration()
-            .unwrap();
-
-    let _ =
-        binder.bind_variable_declaration(&value_variable_declaration, &storage);
-    let reference_variable_declaration =
-        parse_statement(REFERENCE_VARIABLE_DECLARATION)
-            .into_variable_declaration()
-            .unwrap();
-
-    let _ = binder
-        .bind_variable_declaration(&reference_variable_declaration, &storage);
-
-    let dereference = parse_expression(DEREFERENCE)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_prefix()
-        .unwrap();
-
-    let _ = binder
-        .bind(
-            &dereference,
-            Config {
-                target: Target::Address {
-                    expected_qualifier: Qualifier::Unique,
-                },
-            },
-            &storage,
-        )
-        .unwrap()
-        .into_address()
-        .unwrap();
-
-    let errors = storage.into_vec();
-
-    assert!(errors.iter().any(|predicate| {
-        let Some(error) = predicate
-                    .as_any()
-                    .downcast_ref::<MismatchedReferenceQualifier<
-                    infer::ConstraintModel,
-                >>() else {
-                    return false;
-                };
-
-        error.expected_qualifier == Qualifier::Unique
-            && error.found_reference_type
-                == Type::Reference(Reference {
-                    qualifier: Qualifier::Mutable,
-                    lifetime: Lifetime::Inference(NoConstraint),
-                    pointee: Box::new(Type::Primitive(Primitive::Int32)),
-                })
-    }));
 }
 
 impl TestTemplate {
@@ -1230,9 +1052,9 @@ fn struct_expression() {
         .unwrap();
 
     let register_id = binder
-        .bind(&struct_expression, Config { target: Target::Value }, &storage)
+        .bind(&struct_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -1291,9 +1113,9 @@ fn struct_uninitialized_field_error() {
         .unwrap();
 
     let _ = binder
-        .bind(&struct_expression, Config { target: Target::Value }, &storage)
+        .bind(&struct_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap();
 
     let errors = storage.into_vec();
@@ -1336,9 +1158,9 @@ fn struct_duplicated_initialization_error() {
         .unwrap();
 
     let _ = binder
-        .bind(&struct_expression, Config { target: Target::Value }, &storage)
+        .bind(&struct_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap();
 
     let errors = storage.into_vec();
@@ -1380,9 +1202,9 @@ fn struct_unknown_field_error() {
         .unwrap();
 
     let _ = binder
-        .bind(&struct_expression, Config { target: Target::Value }, &storage)
+        .bind(&struct_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap();
 
     let errors = storage.into_vec();
@@ -1435,9 +1257,9 @@ fn struct_field_is_not_accessible_error() {
         .unwrap();
 
     let _ = binder
-        .bind(&struct_expression, Config { target: Target::Value }, &storage)
+        .bind(&struct_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap();
 
     let errors = storage.into_vec();
@@ -1608,11 +1430,11 @@ fn variant_call() {
     let first_register_id = binder
         .bind(
             &first_variant_call_expression,
-            Config { target: Target::Value },
+            Config { target: Target::RValue },
             &storage,
         )
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -1645,11 +1467,11 @@ fn variant_call() {
     let fourth_register_id = binder
         .bind(
             &fourth_variant_call_expression,
-            Config { target: Target::Value },
+            Config { target: Target::RValue },
             &storage,
         )
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -1704,9 +1526,9 @@ fn variant_call_mismatched_argument_count_error() {
 
     // no check
     let _ = binder
-        .bind(&first_expression, Config { target: Target::Value }, &storage)
+        .bind(&first_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap();
 
     assert_eq!(storage.as_vec().len(), 1);
@@ -1736,9 +1558,9 @@ fn variant_call_mismatched_argument_count_error() {
     storage.clear();
 
     let _ = binder
-        .bind(&second_expression, Config { target: Target::Value }, &storage)
+        .bind(&second_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap();
 
     assert_eq!(storage.as_vec().len(), 1);
@@ -1767,9 +1589,9 @@ fn variant_call_mismatched_argument_count_error() {
     storage.clear();
 
     let _ = binder
-        .bind(&fourth_expression, Config { target: Target::Value }, &storage)
+        .bind(&fourth_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap();
 
     assert_eq!(storage.as_vec().len(), 1);
@@ -1820,9 +1642,9 @@ fn qualified_identifier_variant() {
 
     // no check
     let fourth_register = binder
-        .bind(&fourth_expression, Config { target: Target::Value }, &storage)
+        .bind(&fourth_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -1876,9 +1698,9 @@ fn qualified_identifier_variant_expected_associated_value_error() {
 
     // no check
     let _ = binder
-        .bind(&first_expression, Config { target: Target::Value }, &storage)
+        .bind(&first_expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap();
 
     let errors = storage.into_vec();
@@ -1958,15 +1780,11 @@ impl TestTemplate {
 
 #[test]
 fn function_call() {
-    const FUNCTION_CALL: &str = "sample::test(true, false, 32)";
+    const FUNCTION_CALL: &str = "test(true, false, 32)";
 
     let mut test_template = TestTemplate::new();
-    let module_id = test_template
-        .table
-        .create_root_module("sample".to_string())
-        .unwrap_no_duplication();
-
-    let function_id = test_template.create_function_template(module_id);
+    let function_id =
+        test_template.create_function_template(test_template.test_module_id);
     let (mut binder, storage) = test_template.create_binder();
 
     let call_expression = parse_expression(FUNCTION_CALL)
@@ -1980,15 +1798,16 @@ fn function_call() {
         .unwrap();
 
     // no check
-    let call_register = binder
-        .bind(&call_expression, Config { target: Target::Value }, &storage)
-        .unwrap()
-        .into_value()
-        .unwrap()
-        .into_register()
-        .unwrap();
+    let call_register = binder.bind(
+        &call_expression,
+        Config { target: Target::RValue },
+        &storage,
+    );
 
-    assert!(storage.as_vec().is_empty());
+    assert!(storage.as_vec().is_empty(), "{:?}", storage.as_vec());
+
+    let call_register =
+        call_register.unwrap().into_r_value().unwrap().into_register().unwrap();
 
     let function_call_assignment = binder
         .intermediate_representation
@@ -2084,17 +1903,13 @@ fn function_call() {
 
 #[test]
 fn function_call_mismatched_argument_count_error() {
-    const TOO_MANY_ARGUMENTS: &str = "sample::test(true, false, 32, 64)";
-    const TOO_FEW_ARGUMENTS: &str = "sample::test(true, false)";
+    const TOO_MANY_ARGUMENTS: &str = "test(true, false, 32, 64)";
+    const TOO_FEW_ARGUMENTS: &str = "test(true, false)";
 
     let mut test_template = TestTemplate::new();
 
-    let module_id = test_template
-        .table
-        .create_root_module("sample".to_string())
-        .unwrap_no_duplication();
-
-    let function_id = test_template.create_function_template(module_id);
+    let function_id =
+        test_template.create_function_template(test_template.test_module_id);
     let (mut binder, storage) = test_template.create_binder();
 
     let too_many_arguments = parse_expression(TOO_MANY_ARGUMENTS)
@@ -2119,9 +1934,9 @@ fn function_call_mismatched_argument_count_error() {
 
     // no check
     let _ = binder
-        .bind(&too_many_arguments, Config { target: Target::Value }, &storage)
+        .bind(&too_many_arguments, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap();
 
     assert_eq!(storage.as_vec().len(), 1);
@@ -2140,9 +1955,9 @@ fn function_call_mismatched_argument_count_error() {
     storage.clear();
 
     let _ = binder
-        .bind(&too_few_arguments, Config { target: Target::Value }, &storage)
+        .bind(&too_few_arguments, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap();
 
     assert_eq!(storage.as_vec().len(), 1);
@@ -2179,19 +1994,11 @@ fn assignment() {
     let assignment = parse_expression(ASSIGNMENT).into_binary().unwrap();
 
     let found_address = binder
-        .bind(
-            &assignment,
-            Config {
-                target: Target::Address {
-                    expected_qualifier: Qualifier::Immutable,
-                },
-            },
-            &storage,
-        )
+        .bind(&assignment, Config { target: Target::LValue }, &storage)
         .unwrap()
-        .into_address()
+        .into_l_value()
         .unwrap()
-        .0;
+        .address;
 
     assert!(storage.as_vec().is_empty());
 
@@ -2219,9 +2026,9 @@ fn assignment() {
 
     // bind as value
     let register_id = binder
-        .bind(&assignment, Config { target: Target::Value }, &storage)
+        .bind(&assignment, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -2255,9 +2062,9 @@ fn normal_operator() {
         let arithmetic = parse_expression(source).into_binary().unwrap();
 
         let register_id = binder
-            .bind(&arithmetic, Config { target: Target::Value }, &storage)
+            .bind(&arithmetic, Config { target: Target::RValue }, &storage)
             .unwrap()
-            .into_value()
+            .into_r_value()
             .unwrap()
             .into_register()
             .unwrap();
@@ -2331,19 +2138,11 @@ fn compound_binary_operator() {
     let assignment = parse_expression(ASSIGNMENT).into_binary().unwrap();
 
     let found_address = binder
-        .bind(
-            &assignment,
-            Config {
-                target: Target::Address {
-                    expected_qualifier: Qualifier::Immutable,
-                },
-            },
-            &storage,
-        )
+        .bind(&assignment, Config { target: Target::LValue }, &storage)
         .unwrap()
-        .into_address()
+        .into_l_value()
         .unwrap()
-        .0;
+        .address;
 
     assert!(storage.as_vec().is_empty());
 
@@ -2422,9 +2221,9 @@ fn binary_operator_precedence() {
     let expression = parse_expression(EXPRESSION).into_binary().unwrap();
 
     let add_op = binder
-        .bind(&expression, Config { target: Target::Value }, &storage)
+        .bind(&expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -2494,9 +2293,9 @@ fn not_all_flow_path_express_value_error() {
         parse_expression(BLOCK).into_brace().unwrap().into_block().unwrap();
 
     let _ = binder
-        .bind(&block, Config { target: Target::Value }, &storage)
+        .bind(&block, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap();
 
     let errors = storage.into_vec();
@@ -2523,9 +2322,9 @@ fn single_express_block() {
         parse_expression(BLOCK).into_brace().unwrap().into_block().unwrap();
 
     let numeric_literal = binder
-        .bind(&block, Config { target: Target::Value }, &storage)
+        .bind(&block, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_literal()
         .unwrap()
@@ -2560,9 +2359,9 @@ fn multiple_express_block() {
         parse_expression(BLOCK).into_brace().unwrap().into_block().unwrap();
 
     let register_id = binder
-        .bind(&block, Config { target: Target::Value }, &storage)
+        .bind(&block, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_register()
         .unwrap();
@@ -2622,9 +2421,9 @@ fn unrechable_block() {
         .unwrap();
 
     let unreachable = binder
-        .bind(&block, Config { target: Target::Value }, &storage)
+        .bind(&block, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_literal()
         .unwrap()
@@ -2642,9 +2441,9 @@ fn unrechable_block() {
         .unwrap();
 
     let unreachable = binder
-        .bind(&block, Config { target: Target::Value }, &storage)
+        .bind(&block, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap()
         .into_literal()
         .unwrap()
@@ -2685,9 +2484,9 @@ fn bind_as_value(
     let expression = parse_expression(source);
 
     let value = binder
-        .bind(&expression, Config { target: Target::Value }, &storage)
+        .bind(&expression, Config { target: Target::RValue }, &storage)
         .unwrap()
-        .into_value()
+        .into_r_value()
         .unwrap();
 
     check(&binder, value);
@@ -2708,7 +2507,7 @@ fn bind_as_value_expect_error(
     let expression = parse_expression(source);
 
     let result =
-        binder.bind(&expression, Config { target: Target::Value }, &storage);
+        binder.bind(&expression, Config { target: Target::RValue }, &storage);
 
     check(&binder, result, storage.into_vec());
 }
@@ -2835,7 +2634,7 @@ fn parenthesized_as_tuple() {
 fn more_than_one_unpacked_error() {
     bind_as_value_expect_error("(...(), ...())", |binder, result, errors| {
         let regsiter_id =
-            result.unwrap().into_value().unwrap().into_register().unwrap();
+            result.unwrap().into_r_value().unwrap().into_register().unwrap();
 
         let tuple_assignment = binder
             .intermediate_representation
@@ -2966,7 +2765,7 @@ fn array() {
 fn array_type_mismatched_error() {
     bind_as_value_expect_error("[1i32, true]", |binder, result, errors| {
         let register_id =
-            result.unwrap().into_value().unwrap().into_register().unwrap();
+            result.unwrap().into_r_value().unwrap().into_register().unwrap();
 
         let array_assignment = binder
             .intermediate_representation
@@ -3250,18 +3049,14 @@ fn setup_and_bind<T: 'static>(
 fn struct_access() {
     let normal_check = Check::new(
         "vector2.x",
-        Config {
-            target: Target::Address {
-                expected_qualifier: Qualifier::Immutable,
-            },
-        },
+        Config { target: Target::LValue },
         |_binder,
          exp,
          errors,
          (_struct_id, x_field_id, _y_field_id, alloca_id)| {
             assert!(errors.is_empty());
 
-            let address = exp.unwrap().into_address().unwrap().0;
+            let address = exp.unwrap().into_l_value().unwrap().address;
 
             let expected_address = Address::Field(address::Field {
                 struct_address: Box::new(Address::Memory(Memory::Alloca(
@@ -3276,7 +3071,7 @@ fn struct_access() {
 
     let field_not_found_check = Check::new(
         "vector2.bar",
-        Config { target: Target::Value },
+        Config { target: Target::RValue },
         |_binder,
          exp,
          errors,
@@ -3297,7 +3092,7 @@ fn struct_access() {
 
     let field_is_not_accessible_check = Check::new(
         "vector2.y",
-        Config { target: Target::Value },
+        Config { target: Target::RValue },
         |binder,
          _exp,
          errors,
@@ -3318,7 +3113,7 @@ fn struct_access() {
 
     let struct_expected = Check::new(
         "32i32.x",
-        Config { target: Target::Value },
+        Config { target: Target::RValue },
         |_binder,
          _exp,
          errors,
@@ -3358,7 +3153,7 @@ fn struct_access() {
             let (mut binder, storage) = test_template.create_binder();
 
             let statement = parse_statement(
-                "let vector2 = test::inner::Vector2 { x: 32, y: 64 };",
+                "let vector2 = inner::Vector2 { x: 32, y: 64 };",
             );
 
             let alloca_id = binder
@@ -3383,15 +3178,11 @@ fn struct_access() {
 fn tuple_access() {
     let normal_from_start = Check::new(
         "myTuple.0",
-        Config {
-            target: Target::Address {
-                expected_qualifier: Qualifier::Immutable,
-            },
-        },
+        Config { target: Target::LValue },
         |_binder, exp, errors, alloca_id| {
             assert!(errors.is_empty());
 
-            let address = exp.unwrap().into_address().unwrap().0;
+            let address = exp.unwrap().into_l_value().unwrap().address;
 
             let expected_address = Address::Tuple(address::Tuple {
                 tuple_address: Box::new(Address::Memory(Memory::Alloca(
@@ -3406,15 +3197,11 @@ fn tuple_access() {
 
     let normal_from_end = Check::new(
         "myTuple.-1",
-        Config {
-            target: Target::Address {
-                expected_qualifier: Qualifier::Immutable,
-            },
-        },
+        Config { target: Target::LValue },
         |_binder, exp, errors, alloca_id| {
             assert!(errors.is_empty());
 
-            let address = exp.unwrap().into_address().unwrap().0;
+            let address = exp.unwrap().into_l_value().unwrap().address;
 
             let expected_address = Address::Tuple(address::Tuple {
                 tuple_address: Box::new(Address::Memory(Memory::Alloca(
@@ -3429,7 +3216,7 @@ fn tuple_access() {
 
     let out_of_bounds = Check::new(
         "myTuple.10",
-        Config { target: Target::Value },
+        Config { target: Target::RValue },
         |_binder, exp, errors, _alloca_id| {
             assert!(exp.is_err());
 
@@ -3448,7 +3235,7 @@ fn tuple_access() {
 
     let index_past_unpacked_from_start = Check::new(
         "myTuple.3",
-        Config { target: Target::Value },
+        Config { target: Target::RValue },
         |_binder, exp, errors, _alloca_id| {
             assert!(exp.is_err());
 
@@ -3460,7 +3247,7 @@ fn tuple_access() {
 
     let index_past_unpacked_from_end = Check::new(
         "myTuple.-3",
-        Config { target: Target::Value },
+        Config { target: Target::RValue },
         |_binder, exp, errors, _alloca_id| {
             assert!(exp.is_err());
 
@@ -3472,7 +3259,7 @@ fn tuple_access() {
 
     let tuple_expected = Check::new(
         "32i32.0",
-        Config { target: Target::Value },
+        Config { target: Target::RValue },
         |_binder, exp, errors, _alloca_id| {
             assert!(exp.is_err());
 
@@ -3490,7 +3277,7 @@ fn tuple_access() {
 
     let tuple_index_too_large = Check::new(
         "myTuple.123456789123456789123456789",
-        Config { target: Target::Value },
+        Config { target: Target::RValue },
         |_binder, exp, errors, _alloca_id| {
             assert!(exp.is_err());
 
@@ -3533,16 +3320,17 @@ fn tuple_access() {
 fn array_access() {
     let normal = Check::new(
         "myArray.[3]",
-        Config {
-            target: Target::Address {
-                expected_qualifier: Qualifier::Immutable,
-            },
-        },
+        Config { target: Target::LValue },
         |_binder, exp, errors, alloca_id| {
             assert!(errors.is_empty());
 
-            let index_address =
-                exp.unwrap().into_address().unwrap().0.into_index().unwrap();
+            let index_address = exp
+                .unwrap()
+                .into_l_value()
+                .unwrap()
+                .address
+                .into_index()
+                .unwrap();
 
             assert_eq!(
                 *index_address.array_address,
@@ -3563,7 +3351,7 @@ fn array_access() {
 
     let usize_expected = Check::new(
         "myArray.[3f64]",
-        Config { target: Target::Value },
+        Config { target: Target::RValue },
         |_binder, _exp, errors, _alloca_id| {
             assert!(errors.iter().any(|x| {
                 let Some(error) = x
@@ -3581,7 +3369,7 @@ fn array_access() {
     );
     let array_expected = Check::new(
         "32i32.[3]",
-        Config { target: Target::Value },
+        Config { target: Target::RValue },
         |_binder, _exp, errors, _alloca_id| {
             assert!(errors.iter().any(|x| {
                 let Some(error) =
@@ -3619,15 +3407,18 @@ fn array_access() {
 #[test]
 fn arrow_access() {
     let norml_check = Check::new(
-        "(&unique myTuple)->0",
-        Config {
-            target: Target::Address { expected_qualifier: Qualifier::Mutable },
-        },
+        "(&mutable myTuple)->0",
+        Config { target: Target::LValue },
         |binder, exp, errors, my_tuple_alloca_id| {
             assert!(errors.is_empty());
 
-            let address =
-                exp.unwrap().into_address().unwrap().0.into_tuple().unwrap();
+            let address = exp
+                .unwrap()
+                .into_l_value()
+                .unwrap()
+                .address
+                .into_tuple()
+                .unwrap();
 
             let tuple_ref_register_id = address
                 .tuple_address
@@ -3655,27 +3446,9 @@ fn arrow_access() {
             assert_eq!(address.offset, address::Offset::FromStart(0));
         },
     );
-    let mismatched_reference_qualifier = Check::new(
-        "(&myTuple)->0",
-        Config {
-            target: Target::Address { expected_qualifier: Qualifier::Mutable },
-        },
-        |_binder, _exp, errors, _my_tuple_alloca_id| {
-            assert!(errors.iter().any(|x| {
-                let Some(error) = x
-                    .as_any()
-                    .downcast_ref::<MismatchedReferenceQualifier<ConstraintModel>>()
-                else {
-                    return false;
-                };
-
-                error.expected_qualifier == Qualifier::Mutable
-            }));
-        },
-    );
     let reference_type_expected = Check::new(
         "myTuple->0",
-        Config { target: Target::Value },
+        Config { target: Target::RValue },
         |_binder, _exp, errors, _my_tuple_alloca_id| {
             assert!(errors.iter().any(|x| {
                 x.as_any()
@@ -3702,6 +3475,421 @@ fn arrow_access() {
 
             (binder, my_tuple_alloca_id)
         },
-        [norml_check, mismatched_reference_qualifier, reference_type_expected],
+        [norml_check, reference_type_expected],
     );
+}
+
+#[test]
+fn struct_method() {
+    let get_x_check = Check::new(
+        "vector2.getX()",
+        Config { target: Target::RValue },
+        |binder, exp, errors, (_, get_x_id, _, _, alloca_id, _)| {
+            assert!(errors.is_empty(), "{:?}", errors);
+
+            let call_register_id =
+                exp.unwrap().into_r_value().unwrap().into_register().unwrap();
+
+            let call = binder
+                .intermediate_representation
+                .registers
+                .get(call_register_id)
+                .unwrap()
+                .assignment
+                .as_function_call()
+                .unwrap();
+
+            assert_eq!(call.arguments.len(), 1);
+            assert_eq!(
+                call.callable_id,
+                CallableID::AdtImplementationFunction(*get_x_id)
+            );
+
+            let load_register_id =
+                *call.arguments.get(0).unwrap().as_register().unwrap();
+
+            let load = binder
+                .intermediate_representation
+                .registers
+                .get(load_register_id)
+                .unwrap()
+                .assignment
+                .as_load()
+                .unwrap();
+
+            assert_eq!(
+                load.address,
+                Address::Memory(Memory::Alloca(*alloca_id))
+            );
+
+            assert!(Equality::new(
+                Type::Primitive(Primitive::Int32),
+                binder.type_of_register(call_register_id).unwrap()
+            )
+            .query(&binder.create_environment())
+            .unwrap()
+            .is_some());
+        },
+    );
+
+    let get_ref_x_check = Check::new(
+        "vector2.getRefX()",
+        Config { target: Target::RValue },
+        |binder, exp, errors, (_, _, get_ref_x_id, _, alloca_id, _)| {
+            assert!(errors.is_empty(), "{:?}", errors);
+
+            let call_register_id =
+                exp.unwrap().into_r_value().unwrap().into_register().unwrap();
+
+            let call = binder
+                .intermediate_representation
+                .registers
+                .get(call_register_id)
+                .unwrap()
+                .assignment
+                .as_function_call()
+                .unwrap();
+
+            assert_eq!(call.arguments.len(), 1);
+            assert_eq!(
+                call.callable_id,
+                CallableID::AdtImplementationFunction(*get_ref_x_id)
+            );
+
+            let reference_of_register_id =
+                *call.arguments.get(0).unwrap().as_register().unwrap();
+
+            let reference_of = binder
+                .intermediate_representation
+                .registers
+                .get(reference_of_register_id)
+                .unwrap()
+                .assignment
+                .as_reference_of()
+                .unwrap();
+
+            assert_eq!(
+                reference_of.address,
+                Address::Memory(Memory::Alloca(*alloca_id))
+            );
+            assert_eq!(reference_of.qualifier, Qualifier::Immutable);
+            assert_eq!(reference_of.lifetime, Lifetime::Inference(Erased));
+
+            assert!(Equality::new(
+                Type::Reference(Reference {
+                    lifetime: Lifetime::Inference(Erased),
+                    qualifier: Qualifier::Immutable,
+                    pointee: Box::new(Type::Primitive(Primitive::Int32)),
+                }),
+                binder.type_of_register(call_register_id).unwrap()
+            )
+            .query(&binder.create_environment())
+            .unwrap()
+            .is_some());
+        },
+    );
+
+    let set_x_check = Check::new(
+        "vector2Mutable.setX(0)",
+        Config { target: Target::RValue },
+        |binder, exp, errors, (_, _, _, set_x_id, _, alloca_id)| {
+            assert!(errors.is_empty(), "{:?}", errors);
+
+            let call_register_id =
+                exp.unwrap().into_r_value().unwrap().into_register().unwrap();
+
+            let call = binder
+                .intermediate_representation
+                .registers
+                .get(call_register_id)
+                .unwrap()
+                .assignment
+                .as_function_call()
+                .unwrap();
+
+            assert_eq!(call.arguments.len(), 2);
+            assert_eq!(
+                call.callable_id,
+                CallableID::AdtImplementationFunction(*set_x_id)
+            );
+
+            let reference_of_register_id =
+                *call.arguments.get(0).unwrap().as_register().unwrap();
+
+            let reference_of = binder
+                .intermediate_representation
+                .registers
+                .get(reference_of_register_id)
+                .unwrap()
+                .assignment
+                .as_reference_of()
+                .unwrap();
+
+            assert_eq!(
+                reference_of.address,
+                Address::Memory(Memory::Alloca(*alloca_id))
+            );
+            assert_eq!(reference_of.qualifier, Qualifier::Mutable);
+            assert_eq!(reference_of.lifetime, Lifetime::Inference(Erased));
+
+            let numeric_literal = call
+                .arguments
+                .get(1)
+                .unwrap()
+                .as_literal()
+                .unwrap()
+                .as_numeric()
+                .unwrap();
+
+            assert_eq!(numeric_literal.decimal_stirng, None);
+            assert_eq!(numeric_literal.integer_string, "0");
+        },
+    );
+
+    setup_and_bind(
+        |test_template| {
+            // create struct Vector2[T] { public x: T, public y: T }
+            let struct_id = test_template
+                .table
+                .insert_member(
+                    "Vector2".to_string(),
+                    Accessibility::Public,
+                    test_template.test_module_id,
+                    None,
+                    {
+                        let mut generic = GenericDeclaration::default();
+                        let _ = generic.parameters.add_type_parameter(
+                            TypeParameter { name: None, span: None },
+                        );
+                        generic
+                    },
+                    AdtTemplate::<StructDefinition>::default(),
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+
+            let t_parameter_id;
+            let implementation_id = test_template
+                .table
+                .insert_implementation(
+                    struct_id,
+                    test_template.test_module_id,
+                    {
+                        let mut generic = GenericDeclaration::default();
+                        t_parameter_id = generic
+                            .parameters
+                            .add_type_parameter(TypeParameter {
+                                name: Some("T".to_string()),
+                                span: None,
+                            })
+                            .unwrap();
+
+                        generic
+                    },
+                    None,
+                    GenericArguments::default(),
+                    AdtImplementationDefinition::default(),
+                )
+                .unwrap();
+
+            test_template.table.get_mut(implementation_id).unwrap().arguments =
+                GenericArguments {
+                    lifetimes: Vec::new(),
+                    types: vec![Type::Parameter(TypeParameterID {
+                        parent: implementation_id.into(),
+                        id: t_parameter_id,
+                    })],
+                    constants: Vec::new(),
+                };
+
+            // create getX(this): T
+            let get_x_id: ID<AdtImplementationFunction> = test_template
+                .table
+                .insert_member(
+                    "getX".to_string(),
+                    Accessibility::Public,
+                    implementation_id,
+                    None,
+                    GenericDeclaration::default(),
+                    FunctionTemplate::default(),
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+
+            let get_x_func = test_template.table.get_mut(get_x_id).unwrap();
+            get_x_func.insert_parameter(Parameter {
+                r#type: Type::Symbol(Symbol {
+                    id: struct_id.into(),
+                    generic_arguments: GenericArguments {
+                        lifetimes: Vec::new(),
+                        types: vec![Type::Parameter(TypeParameterID {
+                            parent: implementation_id.into(),
+                            id: t_parameter_id,
+                        })],
+                        constants: Vec::new(),
+                    },
+                }),
+
+                span: None,
+            });
+            get_x_func.return_type = Type::Parameter(TypeParameterID {
+                parent: implementation_id.into(),
+                id: t_parameter_id,
+            });
+
+            // create getRefX['a](vector2: &'a Vector2[T]): &'a T
+            let a_lifetime_id;
+            let get_ref_x_id = test_template
+                .table
+                .insert_member(
+                    "getRefX".to_string(),
+                    Accessibility::Public,
+                    implementation_id,
+                    None,
+                    {
+                        let mut generic = GenericDeclaration::default();
+                        a_lifetime_id = generic
+                            .parameters
+                            .add_lifetime_parameter(LifetimeParameter {
+                                name: Some("a".to_string()),
+                                span: None,
+                            })
+                            .unwrap();
+
+                        generic
+                    },
+                    FunctionTemplate::default(),
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+
+            let get_ref_x_func =
+                test_template.table.get_mut(get_ref_x_id).unwrap();
+            get_ref_x_func.insert_parameter(Parameter {
+                r#type: Type::Reference(Reference {
+                    lifetime: Lifetime::Parameter(LifetimeParameterID {
+                        parent: get_ref_x_id.into(),
+                        id: a_lifetime_id,
+                    }),
+                    qualifier: Qualifier::Immutable,
+                    pointee: Box::new(Type::Symbol(Symbol {
+                        id: struct_id.into(),
+                        generic_arguments: GenericArguments {
+                            lifetimes: Vec::new(),
+                            types: vec![Type::Parameter(TypeParameterID {
+                                parent: implementation_id.into(),
+                                id: t_parameter_id,
+                            })],
+                            constants: Vec::new(),
+                        },
+                    })),
+                }),
+
+                span: None,
+            });
+            get_ref_x_func.return_type = Type::Reference(Reference {
+                lifetime: Lifetime::Parameter(LifetimeParameterID {
+                    parent: get_ref_x_id.into(),
+                    id: a_lifetime_id,
+                }),
+                qualifier: Qualifier::Immutable,
+                pointee: Box::new(Type::Parameter(TypeParameterID {
+                    parent: implementation_id.into(),
+                    id: t_parameter_id,
+                })),
+            });
+
+            // create setX['a](vector2: &'a mutable Vector2[T], value: T)
+            let a_lifetime_id;
+            let set_x_id = test_template
+                .table
+                .insert_member(
+                    "setX".to_string(),
+                    Accessibility::Public,
+                    implementation_id,
+                    None,
+                    {
+                        let mut generic = GenericDeclaration::default();
+                        a_lifetime_id = generic
+                            .parameters
+                            .add_lifetime_parameter(LifetimeParameter {
+                                name: Some("a".to_string()),
+                                span: None,
+                            })
+                            .unwrap();
+
+                        generic
+                    },
+                    FunctionTemplate::default(),
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+            let set_x_func = test_template.table.get_mut(set_x_id).unwrap();
+            set_x_func.insert_parameter(Parameter {
+                r#type: Type::Reference(Reference {
+                    lifetime: Lifetime::Parameter(LifetimeParameterID {
+                        parent: set_x_id.into(),
+                        id: a_lifetime_id,
+                    }),
+                    qualifier: Qualifier::Mutable,
+                    pointee: Box::new(Type::Symbol(Symbol {
+                        id: struct_id.into(),
+                        generic_arguments: GenericArguments {
+                            lifetimes: Vec::new(),
+                            types: vec![Type::Parameter(TypeParameterID {
+                                parent: implementation_id.into(),
+                                id: t_parameter_id,
+                            })],
+                            constants: Vec::new(),
+                        },
+                    })),
+                }),
+
+                span: None,
+            });
+            set_x_func.insert_parameter(Parameter {
+                r#type: Type::Parameter(TypeParameterID {
+                    parent: implementation_id.into(),
+                    id: t_parameter_id,
+                }),
+                span: None,
+            });
+
+            let (mut binder, storage) = test_template.create_binder();
+            let statement = parse_statement(
+                "let vector2 = Vector2[int32] { x: 32, y: 64 };",
+            );
+
+            let alloca_id = binder
+                .bind_variable_declaration(
+                    &statement.into_variable_declaration().unwrap(),
+                    &storage,
+                )
+                .unwrap();
+
+            let statement = parse_statement(
+                "let mutable vector2Mutable = Vector2[int32] { x: 32, y: 64 };",
+            );
+
+            let mutable_alloca_id = binder
+                .bind_variable_declaration(
+                    &statement.into_variable_declaration().unwrap(),
+                    &storage,
+                )
+                .unwrap();
+
+            (
+                binder,
+                (
+                    struct_id,
+                    get_x_id,
+                    get_ref_x_id,
+                    set_x_id,
+                    alloca_id,
+                    mutable_alloca_id,
+                ),
+            )
+        },
+        [get_x_check, get_ref_x_check, set_x_check],
+    )
 }

@@ -443,48 +443,91 @@ impl Display for GenericIdentifier {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum Qualifier {
-    Mutable,
-    Unique,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum QualifiedIdentifierRoot {
+    This,
+    Target,
+    GenericIdentifier(GenericIdentifier),
 }
 
-impl Arbitrary for Qualifier {
-    type Parameters = ();
+impl Arbitrary for QualifiedIdentifierRoot {
+    type Parameters = Option<BoxedStrategy<GenericIdentifier>>;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![Just(Self::Mutable), Just(Self::Unique),].boxed()
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Just(Self::This),
+            Just(Self::Target),
+            args.unwrap_or_else(GenericIdentifier::arbitrary)
+                .prop_map(Self::GenericIdentifier),
+        ]
+        .boxed()
     }
 }
 
-impl Input<&super::Qualifier> for &Qualifier {
-    fn assert(self, output: &super::Qualifier) -> TestCaseResult {
+impl Input<&super::QualifiedIdentifierRoot> for &QualifiedIdentifierRoot {
+    fn assert(self, output: &super::QualifiedIdentifierRoot) -> TestCaseResult {
         match (self, output) {
-            (Qualifier::Mutable, super::Qualifier::Mutable(..))
-            | (Qualifier::Unique, super::Qualifier::Unique(..)) => Ok(()),
+            (
+                QualifiedIdentifierRoot::This,
+                super::QualifiedIdentifierRoot::This(..),
+            ) => Ok(()),
 
+            (
+                QualifiedIdentifierRoot::Target,
+                super::QualifiedIdentifierRoot::Target(..),
+            ) => Ok(()),
+
+            (
+                QualifiedIdentifierRoot::GenericIdentifier(i),
+                super::QualifiedIdentifierRoot::GenericIdentifier(o),
+            ) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
-                "Expected {self:?} but got {output:?}",
+                "Expected {self:?}, got {output:?}"
             ))),
         }
     }
 }
 
-impl Display for Qualifier {
+impl Display for QualifiedIdentifierRoot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Mutable => f.write_str("mutable"),
-            Self::Unique => f.write_str("unique"),
+            Self::This => f.write_str("this"),
+            Self::Target => f.write_str("target"),
+            Self::GenericIdentifier(i) => Display::fmt(i, f),
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReferenceOf {
+    pub is_mutable: bool,
+}
+
+impl Input<&super::ReferenceOf> for &ReferenceOf {
+    fn assert(self, output: &super::ReferenceOf) -> TestCaseResult {
+        prop_assert_eq!(self.is_mutable, output.mutable_keyword.is_some());
+        Ok(())
+    }
+}
+
+impl Arbitrary for ReferenceOf {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        proptest::bool::ANY.prop_map(|is_mutable| Self { is_mutable }).boxed()
+    }
+}
+
+impl Display for ReferenceOf {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "&{}", if self.is_mutable { "mutable " } else { "" })
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct QualifiedIdentifier {
-    pub leading_scope_separator: bool,
-    pub first: GenericIdentifier,
+    pub root: QualifiedIdentifierRoot,
     pub rest: Vec<GenericIdentifier>,
 }
 
@@ -497,27 +540,19 @@ impl Arbitrary for QualifiedIdentifier {
         let generic_identifier_strategy =
             GenericIdentifier::arbitrary_with(args).boxed();
         (
-            proptest::bool::ANY,
-            generic_identifier_strategy.clone(),
+            QualifiedIdentifierRoot::arbitrary_with(Some(
+                generic_identifier_strategy.clone(),
+            )),
             proptest::collection::vec(generic_identifier_strategy, 0..=6),
         )
-            .prop_map(|(leading_scope_separator, first, rest)| Self {
-                leading_scope_separator,
-                first,
-                rest,
-            })
+            .prop_map(|(root, rest)| Self { root, rest })
             .boxed()
     }
 }
 
 impl Input<&super::QualifiedIdentifier> for &QualifiedIdentifier {
     fn assert(self, output: &super::QualifiedIdentifier) -> TestCaseResult {
-        prop_assert_eq!(
-            self.leading_scope_separator,
-            output.leading_scope_separator().is_some()
-        );
-
-        self.first.assert(output.first())?;
+        self.root.assert(output.root())?;
 
         prop_assert_eq!(self.rest.len(), output.rest().len());
 
@@ -531,14 +566,100 @@ impl Input<&super::QualifiedIdentifier> for &QualifiedIdentifier {
 
 impl Display for QualifiedIdentifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.leading_scope_separator {
-            f.write_str("::")?;
-        }
-
-        Display::fmt(&self.first, f)?;
+        Display::fmt(&self.root, f)?;
         for identifier in &self.rest {
             f.write_str("::")?;
             Display::fmt(identifier, f)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SimplePathRoot {
+    Target,
+    Identifier(Identifier),
+}
+
+impl Input<&super::SimplePathRoot> for &SimplePathRoot {
+    fn assert(self, output: &super::SimplePathRoot) -> TestCaseResult {
+        match (self, output) {
+            (SimplePathRoot::Target, super::SimplePathRoot::Target(_)) => {
+                Ok(())
+            }
+            (
+                SimplePathRoot::Identifier(i),
+                super::SimplePathRoot::Identifier(o),
+            ) => i.assert(o),
+            _ => Err(TestCaseError::fail(format!(
+                "Expected {self:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for SimplePathRoot {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Just(Self::Target),
+            Identifier::arbitrary().prop_map(Self::Identifier),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for SimplePathRoot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Target => f.write_str("target"),
+            Self::Identifier(identifier) => Display::fmt(identifier, f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SimplePath {
+    pub root: SimplePathRoot,
+    pub rest: Vec<Identifier>,
+}
+
+impl Input<&super::SimplePath> for &SimplePath {
+    fn assert(self, output: &super::SimplePath) -> TestCaseResult {
+        self.root.assert(output.root())?;
+        prop_assert_eq!(self.rest.len(), output.rest().len());
+
+        for (input, (_, output)) in self.rest.iter().zip(output.rest().iter()) {
+            input.assert(output)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Arbitrary for SimplePath {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            SimplePathRoot::arbitrary(),
+            proptest::collection::vec(Identifier::arbitrary(), 0..=6),
+        )
+            .prop_map(|(root, rest)| Self { root, rest })
+            .boxed()
+    }
+}
+
+impl Display for SimplePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.root, f)?;
+
+        for identifier in &self.rest {
+            write!(f, "::{identifier}")?;
         }
 
         Ok(())

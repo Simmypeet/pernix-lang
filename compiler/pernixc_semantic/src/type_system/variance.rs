@@ -124,15 +124,10 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                         r#type::SubLifetimeLocation::Symbol(location),
                         Type::Symbol(symbol),
                     ) => {
-                        let adt_id = match symbol.id {
-                            r#type::SymbolID::Struct(id) => AdtID::Struct(id),
-                            r#type::SymbolID::Enum(id) => AdtID::Enum(id),
-                        };
-
                         let adt = self
                             .table()
-                            .get_adt(adt_id)
-                            .ok_or(GetVarianceError::InvalidAdtID(adt_id))?;
+                            .get_adt(symbol.id)
+                            .ok_or(GetVarianceError::InvalidAdtID(symbol.id))?;
 
                         // there's no sub-term in the lifetime
                         if locations.next().is_some() {
@@ -147,7 +142,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                             .get(location.0)
                             .ok_or(GetVarianceError::InvalidLocation)?;
 
-                        Observer::on_retrieving_variance(adt_id, self)
+                        Observer::on_retrieving_variance(symbol.id, self)
                             .map_err(|x| GetVarianceError::Overflow(x))?;
 
                         Ok(parent_variance.xfrom(
@@ -155,7 +150,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                                 .variances_by_lifetime_ids
                                 .get(id)
                                 .ok_or(GetVarianceError::NoVarianceInfo(
-                                    adt_id,
+                                    symbol.id,
                                 ))?,
                         ))
                     }
@@ -210,15 +205,10 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                         r#type::SubTypeLocation::Symbol(location),
                         Type::Symbol(symbol),
                     ) => {
-                        let adt_id = match symbol.id {
-                            r#type::SymbolID::Struct(id) => AdtID::Struct(id),
-                            r#type::SymbolID::Enum(id) => AdtID::Enum(id),
-                        };
-
                         let adt = self
                             .table
-                            .get_adt(adt_id)
-                            .ok_or(GetVarianceError::InvalidAdtID(adt_id))?;
+                            .get_adt(symbol.id)
+                            .ok_or(GetVarianceError::InvalidAdtID(symbol.id))?;
 
                         // gets the id based on the position
                         let id = adt
@@ -234,7 +224,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                                 .get(id)
                                 .copied()
                                 .ok_or(GetVarianceError::NoVarianceInfo(
-                                    adt_id,
+                                    symbol.id,
                                 ))?,
                         );
 
@@ -261,8 +251,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                                     Variance::Covariant
                                 }
 
-                                r#type::Qualifier::Mutable
-                                | r#type::Qualifier::Unique => {
+                                r#type::Qualifier::Mutable => {
                                     Variance::Invariant
                                 }
                             });
@@ -279,15 +268,10 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                         Type::Pointer(pointer),
                     ) => {
                         let current_variance =
-                            parent_variance.xfrom(match pointer.qualifier {
-                                r#type::Qualifier::Immutable => {
-                                    Variance::Covariant
-                                }
-
-                                r#type::Qualifier::Mutable
-                                | r#type::Qualifier::Unique => {
-                                    Variance::Invariant
-                                }
+                            parent_variance.xfrom(if pointer.mutable {
+                                Variance::Invariant
+                            } else {
+                                Variance::Covariant
                             });
 
                         self.get_variance_of(

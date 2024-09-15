@@ -11,7 +11,7 @@ use pernixc_lexical::token::KeywordKind;
 use pernixc_syntax::syntax_tree::target::{self, Target};
 use proptest::{
     arbitrary::Arbitrary,
-    prop_assert, prop_assert_eq, prop_oneof, proptest,
+    prop_assert_eq, prop_oneof, proptest,
     strategy::{BoxedStrategy, Just, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
@@ -536,7 +536,6 @@ impl Arbitrary for Constant {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
-    pub usings: HashSet<Vec<String>>,
     pub access_modifier: AccessModifier,
     pub items: HashMap<String, Item>,
 }
@@ -550,18 +549,6 @@ impl Module {
         drafting_table: &Table<Building<RwLockContainer, Finalizer>>,
     ) -> TestCaseResult {
         let sym = drafting_table.get(self_id).unwrap();
-
-        prop_assert_eq!(self.usings.len(), sym.usings.len());
-
-        for using in &self.usings {
-            let using_id = drafting_table
-                .get_by_qualified_name(using.iter().map(AsRef::as_ref))
-                .expect("should exist")
-                .into_module()
-                .expect("should be module");
-
-            prop_assert!(sym.usings.contains(&using_id));
-        }
 
         // verify name, parent module, and accessibility
         prop_assert_eq!(&sym.name, expected_name);
@@ -607,7 +594,6 @@ impl Arbitrary for Module {
                 name_strategy(),
                 item_strategy(AccessModifier::arbitrary().prop_map(
                     |access_modifier| Self {
-                        usings: HashSet::new(),
                         access_modifier,
                         items: HashMap::new(),
                     },
@@ -616,7 +602,6 @@ impl Arbitrary for Module {
             ),
         )
             .prop_map(|(access_modifier, items)| Self {
-                usings: HashSet::new(),
                 access_modifier,
                 items,
             });
@@ -631,7 +616,6 @@ impl Arbitrary for Module {
                 ),
             )
                 .prop_map(|(access_modifier, items)| Self {
-                    usings: HashSet::new(),
                     access_modifier,
                     items,
                 })
@@ -649,10 +633,6 @@ pub struct WithName<'a, T> {
 impl<'a> Display for WithName<'a, Module> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} module {} {{ ", self.value.access_modifier, self.name)?;
-
-        for using in &self.value.usings {
-            write!(f, "using {};", using.join("::"))?;
-        }
 
         for (name, item) in &self.value.items {
             write!(f, "{}", WithName { name, value: item })?;
@@ -764,10 +744,6 @@ pub struct RootModule<'a>(&'a Module);
 
 impl<'a> Display for RootModule<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for using in &self.0.usings {
-            write!(f, "using {};", using.join("::"))?;
-        }
-
         for (name, item) in &self.0.items {
             write!(f, "{}", WithName { name, value: item })?;
         }
@@ -832,121 +808,6 @@ fn property_based_testing_impl(module: &Module) -> TestCaseResult {
     Ok(())
 }
 
-fn get_module_by_name<'a>(
-    parent_module_name: &[String],
-    current_module_name: String,
-    module: &'a mut Module,
-    expected_module_name: &[String],
-) -> Option<&'a mut Module> {
-    let mut current_full_module_name = parent_module_name.to_vec();
-    current_full_module_name.push(current_module_name);
-
-    if current_full_module_name == expected_module_name {
-        return Some(module);
-    }
-
-    for (name, item) in &mut module.items {
-        if let Item::Module(module) = item {
-            if let Some(module) = get_module_by_name(
-                &current_full_module_name,
-                name.to_string(),
-                module,
-                expected_module_name,
-            ) {
-                return Some(module);
-            }
-        }
-    }
-
-    None
-}
-
-fn get_all_modules_name(
-    parent_module_name: &[String],
-    parent_accessibility: AccessModifier,
-    current_module_name: String,
-    module: &Module,
-    all_modules_name: &mut Vec<(Vec<String>, AccessModifier)>,
-) {
-    let intrinsic_accessibility =
-        parent_accessibility.min(module.access_modifier);
-
-    let mut current_full_module_name = parent_module_name.to_vec();
-    current_full_module_name.push(current_module_name);
-    all_modules_name
-        .push((current_full_module_name.clone(), intrinsic_accessibility));
-
-    for (name, item) in &module.items {
-        if let Item::Module(module) = item {
-            get_all_modules_name(
-                &current_full_module_name,
-                intrinsic_accessibility,
-                name.to_string(),
-                module,
-                all_modules_name,
-            );
-        }
-    }
-}
-
-fn module_strategy_with_usings() -> impl Strategy<Value = Module> {
-    let module_strategy = Module::arbitrary();
-
-    module_strategy.prop_flat_map(move |module| {
-        let mut all_module_name = Vec::new();
-
-        get_all_modules_name(
-            &[],
-            AccessModifier::Public,
-            ROOT_MODULE_NAME.to_string(),
-            &module,
-            &mut all_module_name,
-        );
-
-        let module_count = all_module_name.len();
-
-        proptest::collection::hash_map(
-            proptest::sample::select(
-                all_module_name
-                    .clone()
-                    .into_iter()
-                    .map(|(name, _)| name)
-                    .collect::<Vec<_>>(),
-            ),
-            proptest::collection::hash_set(
-                proptest::sample::select(all_module_name),
-                0..=module_count,
-            ),
-            0..=module_count,
-        )
-        .prop_map(move |usings_by_module_name| {
-            let mut module = module.clone();
-
-            for (module_name, usings) in usings_by_module_name {
-                let module = get_module_by_name(
-                    &[],
-                    ROOT_MODULE_NAME.to_string(),
-                    &mut module,
-                    &module_name,
-                )
-                .expect("should be found");
-
-                for using in usings {
-                    if using.1 != AccessModifier::Public {
-                        continue;
-                    }
-
-                    if using.0 != module_name {
-                        module.usings.insert(using.0);
-                    }
-                }
-            }
-
-            module
-        })
-    })
-}
-
 proptest! {
     #![proptest_config(proptest::test_runner::Config {
         cases: 2048,
@@ -956,7 +817,7 @@ proptest! {
 
     #[test]
     fn property_based_testing(
-        mut module in module_strategy_with_usings()
+        mut module in Module::arbitrary()
     ) {
         module.access_modifier = AccessModifier::Public;
         property_based_testing_impl(&module)?;

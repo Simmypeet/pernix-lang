@@ -2,7 +2,7 @@ use crate::{
     arena::ID,
     symbol::{
         table::{Building, Table},
-        GenericID, LifetimeParameterID,
+        AdtID, GenericID, LifetimeParameterID,
     },
     type_system::{
         equality::Equality,
@@ -12,7 +12,7 @@ use crate::{
         simplify::simplify,
         term::{
             lifetime::Lifetime,
-            r#type::{self, Primitive, SymbolID, TraitMember, Type},
+            r#type::{self, Primitive, TraitMember, Type},
             GenericArguments, Symbol,
         },
         Environment, LifetimeConstraint, Premise, Succeeded, TraitContext,
@@ -68,11 +68,11 @@ fn sub_term() {
 
     let Succeeded { result: simplified, constraints } = simplify(
         &Type::Symbol(Symbol {
-            id: SymbolID::Struct(ID::new(0)),
+            id: AdtID::Struct(ID::new(0)),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
                 types: vec![Type::Symbol(Symbol {
-                    id: SymbolID::Struct(ID::new(0)),
+                    id: AdtID::Struct(ID::new(0)),
                     generic_arguments: GenericArguments {
                         lifetimes: Vec::new(),
                         types: vec![Type::TraitMember(trait_member)],
@@ -93,11 +93,11 @@ fn sub_term() {
     assert_eq!(
         simplified,
         Type::Symbol(Symbol {
-            id: SymbolID::Struct(ID::new(0)),
+            id: AdtID::Struct(ID::new(0)),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
                 types: vec![Type::Symbol(Symbol {
-                    id: SymbolID::Struct(ID::new(0)),
+                    id: AdtID::Struct(ID::new(0)),
                     generic_arguments: GenericArguments {
                         lifetimes: Vec::new(),
                         types: vec![equivalent],

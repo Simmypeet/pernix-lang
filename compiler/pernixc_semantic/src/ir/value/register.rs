@@ -18,7 +18,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index, Table},
-        CallableID, Field, GlobalID,
+        AdtID, CallableID, Field, GlobalID,
     },
     type_system::{
         environment::Environment,
@@ -31,7 +31,7 @@ use crate::{
             self,
             constant::{self, Constant},
             lifetime::Lifetime,
-            r#type::{self, Qualifier, SymbolID, Type},
+            r#type::{self, Qualifier, Type},
             GenericArguments, Local, Symbol,
         },
         Succeeded,
@@ -254,7 +254,7 @@ pub struct Struct<M: Model> {
 
 fn type_of_struct_assignment<M: Model>(st: &Struct<M>) -> Type<M> {
     Type::Symbol(Symbol {
-        id: SymbolID::Struct(st.struct_id),
+        id: AdtID::Struct(st.struct_id),
         generic_arguments: st.generic_arguments.clone(),
     })
 }
@@ -282,7 +282,7 @@ fn type_of_variant_assignment<M: Model>(
         .parent_enum_id();
 
     Ok(Type::Symbol(Symbol {
-        id: SymbolID::Enum(enum_id),
+        id: AdtID::Enum(enum_id),
         generic_arguments: variant.generic_arguments.clone(),
     }))
 }

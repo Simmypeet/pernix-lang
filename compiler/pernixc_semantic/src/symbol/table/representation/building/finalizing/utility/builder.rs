@@ -1,4 +1,4 @@
-use pernixc_base::handler::Handler;
+use pernixc_base::{handler::Handler, source_file::Span};
 
 use crate::{
     arena::ID,
@@ -23,7 +23,7 @@ use crate::{
             },
             resolution, Building, Table,
         },
-        GlobalID, TraitImplementationID, TraitImplementationType,
+        AdtID, GlobalID, TraitImplementationID, TraitImplementationType,
     },
     type_system::{
         self,
@@ -90,22 +90,18 @@ impl<'a, M: Model>
                 };
 
                 match id {
-                    term::r#type::SymbolID::Struct(id) => {
-                        environment.table().build_to(
-                            *id,
-                            Some(environment.observer().site),
-                            r#struct::DEFINITION_STATE,
-                            environment.observer().handler,
-                        )
-                    }
-                    term::r#type::SymbolID::Enum(id) => {
-                        environment.table().build_to(
-                            *id,
-                            Some(environment.observer().site),
-                            r#enum::DEFINITION_STATE,
-                            environment.observer().handler,
-                        )
-                    }
+                    AdtID::Struct(id) => environment.table().build_to(
+                        *id,
+                        Some(environment.observer().site),
+                        r#struct::DEFINITION_STATE,
+                        environment.observer().handler,
+                    ),
+                    AdtID::Enum(id) => environment.table().build_to(
+                        *id,
+                        Some(environment.observer().site),
+                        r#enum::DEFINITION_STATE,
+                        environment.observer().handler,
+                    ),
                 }
             }
 
@@ -248,7 +244,7 @@ impl<M: Model> resolution::Observer<Building<RwLockContainer, Finalizer>, M>
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         global_id: GlobalID,
-        _: &pernixc_lexical::token::Identifier,
+        _: &Span,
     ) -> bool {
         (self.builder_function)(table, global_id, Some(referring_site), handler)
             .is_ok()
@@ -260,7 +256,7 @@ impl<M: Model> resolution::Observer<Building<RwLockContainer, Finalizer>, M>
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
         _: &resolution::Resolution<M>,
-        _: &pernixc_syntax::syntax_tree::GenericIdentifier,
+        _: &Span,
     ) -> bool {
         true
     }
@@ -326,7 +322,7 @@ pub fn build_for_where_clause(
     required_from: Option<GlobalID>,
     handler: &dyn Handler<Box<dyn error::Error>>,
 ) -> Result<(), BuildSymbolError> {
-    match global_id {
+    let first_result = match global_id {
         GlobalID::Struct(id) => table.build_to(
             id,
             required_from,
@@ -442,6 +438,11 @@ pub fn build_for_where_clause(
         ),
 
         GlobalID::Module(_) => Ok(()),
+    };
+
+    match first_result {
+        Ok(()) | Err(BuildSymbolError::EntryNotFound(_)) => Ok(()),
+        err @ Err(_) => return err,
     }
 }
 
@@ -457,7 +458,7 @@ pub fn build_for_basic_resolution(
     required_from: Option<GlobalID>,
     handler: &dyn Handler<Box<dyn error::Error>>,
 ) -> Result<(), BuildSymbolError> {
-    match global_id {
+    let first_result = match global_id {
         GlobalID::Struct(id) => table.build_to(
             id,
             required_from,
@@ -549,26 +550,31 @@ pub fn build_for_basic_resolution(
         GlobalID::PositiveTraitImplementation(id) => table.build_to(
             id,
             required_from,
-            positive_trait_implementation::GENERIC_PARAMETER_STATE,
+            positive_trait_implementation::ARGUMENT_STATE,
             handler,
         ),
 
         GlobalID::NegativeTraitImplementation(id) => table.build_to(
             id,
             required_from,
-            negative_trait_implementation::GENERIC_PARAMETER_STATE,
+            negative_trait_implementation::ARGUMENT_STATE,
             handler,
         ),
 
         GlobalID::AdtImplementation(id) => table.build_to(
             id,
             required_from,
-            adt_implementation::GENERIC_PARAMETER_STATE,
+            adt_implementation::ARGUMENT_STATE,
             handler,
         ),
 
         GlobalID::Variant(_) | GlobalID::Module(_) => Ok(()),
-    }?;
+    };
+
+    match first_result {
+        Ok(()) | Err(BuildSymbolError::EntryNotFound(_)) => {}
+        err @ Err(_) => return err,
+    }
 
     // this variable will either be AdtImplementation or
     // PositiveTraitImplementation
@@ -643,7 +649,7 @@ fn build_for_definition_internal(
     pre_definition: bool,
     handler: &dyn Handler<Box<dyn error::Error>>,
 ) -> Result<(), BuildSymbolError> {
-    match global_id {
+    let first_result = match global_id {
         GlobalID::Struct(id) => table.build_to(
             id,
             required_from,
@@ -754,15 +760,41 @@ fn build_for_definition_internal(
             handler,
         ),
 
-        GlobalID::AdtImplementation(id) => table.build_to(
-            id,
-            required_from,
-            adt_implementation::ARGUMENT_STATE,
-            handler,
-        ),
+        GlobalID::AdtImplementation(id) => {
+            let first = table.build_to(
+                id,
+                required_from,
+                adt_implementation::ARGUMENT_STATE,
+                handler,
+            );
+            let second = match table.get(id).unwrap().implemented_id {
+                AdtID::Struct(id) => build_for_definition_internal(
+                    table,
+                    id.into(),
+                    required_from,
+                    pre_definition,
+                    handler,
+                ),
+                AdtID::Enum(id) => build_for_definition_internal(
+                    table,
+                    id.into(),
+                    required_from,
+                    pre_definition,
+                    handler,
+                ),
+            };
+
+            first?;
+            second
+        }
 
         GlobalID::Variant(_) | GlobalID::Module(_) => Ok(()),
-    }?;
+    };
+
+    match first_result {
+        Ok(()) | Err(BuildSymbolError::EntryNotFound(_)) => {}
+        err @ Err(_) => return err,
+    }
 
     // this variable will either be AdtImplementation or
     // PositiveTraitImplementation

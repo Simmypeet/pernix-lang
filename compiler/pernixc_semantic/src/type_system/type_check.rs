@@ -18,7 +18,7 @@ use crate::{
     symbol::{
         self,
         table::{representation::Index, State},
-        ConstantParameterID,
+        AdtID, ConstantParameterID,
     },
     type_system::{
         instantiation::{self, Instantiation},
@@ -298,7 +298,7 @@ impl<M: Model> Compute for TypeCheck<M> {
                 // check struct type
                 (
                     Type::Symbol(Symbol {
-                        id: r#type::SymbolID::Struct(struct_id),
+                        id: AdtID::Struct(struct_id),
                         generic_arguments,
                     }),
                     Constant::Struct(value),
@@ -359,7 +359,7 @@ impl<M: Model> Compute for TypeCheck<M> {
                 // check enum type
                 (
                     Type::Symbol(Symbol {
-                        id: r#type::SymbolID::Enum(enum_id),
+                        id: AdtID::Enum(enum_id),
                         generic_arguments,
                     }),
                     Constant::Enum(enum_value),

@@ -14,8 +14,8 @@ use crate::{
             representation::{IndexMut, Insertion},
             Building, Table,
         },
-        Accessibility, AdtTemplate, GenericDeclaration, LifetimeParameter,
-        Module, StructDefinition,
+        Accessibility, AdtID, AdtTemplate, GenericDeclaration,
+        LifetimeParameter, Module, StructDefinition,
     },
     type_system::{
         equality,
@@ -23,9 +23,7 @@ use crate::{
         normalizer, observer,
         predicate::{Equality, Outlives, Predicate},
         term::{
-            constant::Constant,
-            lifetime::Lifetime,
-            r#type::{SymbolID, Type},
+            constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments, Symbol, Term,
         },
         variance::Variance,
@@ -181,7 +179,7 @@ impl Property<Type<Default>> for LifetimeMatching {
         }
 
         let ty_operand = Type::Symbol(Symbol {
-            id: SymbolID::Struct(id),
+            id: AdtID::Struct(id),
             generic_arguments: GenericArguments {
                 lifetimes: operand_lifetimes,
                 types: Vec::new(),
@@ -200,7 +198,7 @@ impl Property<Type<Default>> for LifetimeMatching {
         {
             premise.predicates.insert(Predicate::TypeOutlives(Outlives {
                 operand: Type::Symbol(Symbol {
-                    id: SymbolID::Struct(id),
+                    id: AdtID::Struct(id),
                     generic_arguments: GenericArguments {
                         lifetimes: bound_lifetimes,
                         types: Vec::new(),

@@ -11,7 +11,7 @@ use crate::{
     arena::{self, ID},
     symbol::{
         table::{Building, Table},
-        Module,
+        AdtID, Module,
     },
     type_system::{
         equality::Equality,
@@ -21,7 +21,7 @@ use crate::{
         term::{
             constant::Constant,
             lifetime::Lifetime,
-            r#type::{self, Primitive, SymbolID, TraitMember, Type},
+            r#type::{self, Primitive, TraitMember, Type},
             GenericArguments, Local, Symbol, Term,
         },
         Compute, Environment, OverflowError, Premise,
@@ -206,7 +206,7 @@ fn congruence() {
 
     let table = Table::<Building>::default();
     let lhs = Type::Symbol(Symbol {
-        id: SymbolID::Struct(ID::new(0)),
+        id: AdtID::Struct(ID::new(0)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![
@@ -217,7 +217,7 @@ fn congruence() {
         },
     });
     let rhs = Type::Symbol(Symbol {
-        id: SymbolID::Struct(ID::new(0)),
+        id: AdtID::Struct(ID::new(0)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![first_equivalence, second_equivalence],

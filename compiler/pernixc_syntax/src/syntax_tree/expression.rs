@@ -17,7 +17,7 @@ use pernixc_lexical::{
 
 use super::{
     pattern::Refutable, r#type::Type, statement::Statement, ConnectedList,
-    Label, QualifiedIdentifier, Qualifier,
+    GenericIdentifier, Label, QualifiedIdentifier, ReferenceOf,
 };
 use crate::{
     error::{Error, SyntaxKind},
@@ -157,15 +157,11 @@ pub struct Match {
     #[get = "pub"]
     match_keyword: Keyword,
     #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    expression: Box<Expression>,
-    #[get = "pub"]
-    right_paren: Punctuation,
+    parenthesized: Parenthesized,
     #[get = "pub"]
     left_brace: Punctuation,
     #[get = "pub"]
-    arms: Vec<MatchArm>,
+    arms: Option<ConnectedList<MatchArm, Punctuation>>,
     #[get = "pub"]
     right_brace: Punctuation,
 }
@@ -820,7 +816,7 @@ impl SourceElement for Cast {
 ///     | '->'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum AccessOperator {
     Dot(Punctuation),
     Arrow(Punctuation, Punctuation),
@@ -904,9 +900,9 @@ impl TupleIndex {
 ///     | Index
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum AccessKind {
-    Identifier(Identifier),
+    GenericIdentifier(GenericIdentifier),
     Tuple(TupleIndex),
     Index(Index),
 }
@@ -914,7 +910,7 @@ pub enum AccessKind {
 impl SourceElement for AccessKind {
     fn span(&self) -> Span {
         match self {
-            Self::Identifier(identifier) => identifier.span(),
+            Self::GenericIdentifier(identifier) => identifier.span(),
             Self::Tuple(index) => index.span(),
             Self::Index(index) => index.span(),
         }
@@ -951,7 +947,7 @@ impl SourceElement for Access {
 ///     | Access
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum PostfixOperator {
     Call(Call),
     Cast(Cast),
@@ -1009,30 +1005,6 @@ impl SourceElement for Postfixable {
             Self::Unit(unit) => unit.span(),
             Self::Postfix(postfix) => postfix.span(),
         }
-    }
-}
-
-/// Syntax Synopsis:
-///
-/// ``` txt
-/// ReferenceOf:
-///     '&' Qualifier?
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ReferenceOf {
-    #[get = "pub"]
-    ampersand: Punctuation,
-    #[get = "pub"]
-    qualifier: Option<Qualifier>,
-}
-
-impl SourceElement for ReferenceOf {
-    fn span(&self) -> Span {
-        self.qualifier.as_ref().map_or_else(
-            || self.ampersand.span(),
-            |qualifier| self.ampersand.span().join(&qualifier.span()).unwrap(),
-        )
     }
 }
 
@@ -1370,52 +1342,26 @@ impl Parser<'_> {
 
     fn parse_match(&mut self, handler: &dyn Handler<Error>) -> Option<Match> {
         let match_keyword = self.parse_keyword(KeywordKind::Match, handler)?;
+        let parenthesized = self.parse_parenthesized_expression(handler)?;
 
-        let delimited_tree_expression = self.step_into(
-            Delimiter::Parenthesis,
-            |parser| parser.parse_expression(handler).map(Box::new),
-            handler,
-        )?;
-
-        let delimited_tree_arms = self.step_into(
+        let delimited_tree_arms = self.parse_delimited_list(
             Delimiter::Brace,
-            |parser| {
-                let mut arms = Vec::new();
-
-                while !parser.is_exhausted() {
-                    let Some(arm) = parser.parse_match_arm(handler) else {
-                        // forward to the next {}
-                        parser.stop_at(|token| {
-                            matches!(
-                                token, Reading::Unit(Token::Punctuation(p))
-                                if p.punctuation == '{'
-                            )
-                        });
-                        parser.forward();
-
-                        continue;
-                    };
-
-                    arms.push(arm);
-                }
-
-                Some(arms)
-            },
+            ',',
+            |parser| parser.parse_match_arm(handler),
             handler,
         )?;
 
         Some(Match {
             match_keyword,
-            left_paren: delimited_tree_expression.open,
-            expression: delimited_tree_expression.tree?,
-            right_paren: delimited_tree_expression.close,
+            parenthesized,
             left_brace: delimited_tree_arms.open,
-            arms: delimited_tree_arms.tree?,
+            arms: delimited_tree_arms.list,
             right_brace: delimited_tree_arms.close,
         })
     }
 
     /// Parses a binary expression.
+    #[allow(clippy::too_many_lines)]
     pub fn parse_expression(
         &mut self,
         handler: &dyn Handler<Error>,
@@ -1851,32 +1797,24 @@ impl Parser<'_> {
             Reading::Unit(Token::Punctuation(
                 ampersand @ Punctuation { punctuation: '&', .. },
             )) => {
-                // eat the token
                 self.forward();
 
-                let qualifier = match self.stop_at_significant() {
+                let mutable_keyword = match self.stop_at_significant() {
                     Reading::Unit(Token::Keyword(
-                        keyword @ Keyword {
-                            kind: KeywordKind::Mutable | KeywordKind::Unique,
+                        mutable_keyword @ Keyword {
+                            kind: KeywordKind::Mutable,
                             ..
                         },
                     )) => {
-                        // eat the token
                         self.forward();
-
-                        Some(match keyword.kind {
-                            KeywordKind::Mutable => Qualifier::Mutable(keyword),
-                            KeywordKind::Unique => Qualifier::Unique(keyword),
-                            _ => unreachable!(),
-                        })
+                        Some(mutable_keyword)
                     }
-
                     _ => None,
                 };
 
                 PrefixOperator::ReferenceOf(ReferenceOf {
                     ampersand,
-                    qualifier,
+                    mutable_keyword,
                 })
             }
 
@@ -1916,10 +1854,11 @@ impl Parser<'_> {
                                 index: n,
                             })
                         }
-                        Reading::Unit(Token::Identifier(i)) => {
-                            // eat the access kind
-                            self.forward();
-                            AccessKind::Identifier(i)
+                        Reading::Unit(Token::Identifier(_)) => {
+                            let generic_identifier =
+                                self.parse_generic_identifier(handler)?;
+
+                            AccessKind::GenericIdentifier(generic_identifier)
                         }
 
                         Reading::Unit(Token::Punctuation(
@@ -2003,10 +1942,11 @@ impl Parser<'_> {
                             })
                         }
 
-                        Reading::Unit(Token::Identifier(i)) => {
-                            // eat the access kind
-                            self.forward();
-                            AccessKind::Identifier(i)
+                        Reading::Unit(Token::Identifier(_)) => {
+                            let generic_identifier =
+                                self.parse_generic_identifier(handler)?;
+
+                            AccessKind::GenericIdentifier(generic_identifier)
                         }
 
                         Reading::Unit(Token::Punctuation(
@@ -2149,20 +2089,14 @@ impl Parser<'_> {
                 Some(Unit::Numeric(self.parse_numeric_literal()?))
             }
 
-            Reading::Unit(Token::Identifier(_)) => {
-                self.parse_identifier_expression(handler)
-            }
-
-            Reading::Unit(Token::Punctuation(p))
-                if p.punctuation == ':'
-                    && matches!(
-                        self.peek_offset(1),
-                        Some(Reading::Unit(Token::Punctuation(p2)))
-                        if p2.punctuation == ':'
-                    ) =>
-            {
-                self.parse_identifier_expression(handler)
-            }
+            Reading::Unit(
+                Token::Identifier(_)
+                | Token::Keyword(Keyword {
+                    kind:
+                        KeywordKind::This | KeywordKind::Target | KeywordKind::Super,
+                    ..
+                }),
+            ) => self.parse_identifier_expression(handler),
 
             Reading::IntoDelimited(Delimiter::Bracket, _) => {
                 let delimited_list = self.parse_delimited_list(

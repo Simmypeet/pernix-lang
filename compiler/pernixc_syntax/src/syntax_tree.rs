@@ -474,6 +474,76 @@ impl SourceElement for LifetimeParameter {
 }
 
 /// Syntax Synopsis:
+/// ```txt
+/// SimplePathRoot:
+///     'target'
+///     | Identifier
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum SimplePathRoot {
+    Target(Keyword),
+    Identifier(Identifier),
+}
+
+impl SourceElement for SimplePathRoot {
+    fn span(&self) -> Span {
+        match self {
+            Self::Target(target) => target.span.clone(),
+            Self::Identifier(identifier) => identifier.span.clone(),
+        }
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// SimplePath:
+///     SimplePathRoot ('::' Identifier)*
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct SimplePath {
+    #[get = "pub"]
+    root: SimplePathRoot,
+    #[get = "pub"]
+    rest: Vec<(ScopeSeparator, Identifier)>,
+}
+
+impl SourceElement for SimplePath {
+    fn span(&self) -> Span {
+        self.rest.last().map_or_else(
+            || self.root.span(),
+            |last| self.root.span().join(&last.1.span).unwrap(),
+        )
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// QualifiedIdentifierRoot:
+///     'target'
+///     | 'this'
+///     | 'super'
+///     | GenericIdentifier
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum QualifiedIdentifierRoot {
+    Target(Keyword),
+    This(Keyword),
+    GenericIdentifier(GenericIdentifier),
+}
+
+impl SourceElement for QualifiedIdentifierRoot {
+    fn span(&self) -> Span {
+        match self {
+            Self::Target(keyword) | Self::This(keyword) => keyword.span.clone(),
+            Self::GenericIdentifier(ident) => ident.span(),
+        }
+    }
+}
+
+/// Syntax Synopsis:
 /// ``` txt
 /// QualifiedIdentifier:
 ///     '::'? GenericIdentifier ('::' GenericIdentifier)*
@@ -483,37 +553,19 @@ impl SourceElement for LifetimeParameter {
 #[allow(missing_docs)]
 pub struct QualifiedIdentifier {
     #[get = "pub"]
-    leading_scope_separator: Option<ScopeSeparator>,
-    #[get = "pub"]
-    first: GenericIdentifier,
+    root: QualifiedIdentifierRoot,
     #[get = "pub"]
     rest: Vec<(ScopeSeparator, GenericIdentifier)>,
 }
 
-impl QualifiedIdentifier {
-    /// Returns an iterator over the generic identifiers in this qualified
-    /// identifier.
-    pub fn generic_identifiers(
-        &self,
-    ) -> impl Iterator<Item = &GenericIdentifier> {
-        std::iter::once(&self.first)
-            .chain(self.rest.iter().map(|(_, ident)| ident))
-    }
-}
-
 impl SourceElement for QualifiedIdentifier {
     fn span(&self) -> Span {
-        let start = self
-            .leading_scope_separator
-            .as_ref()
-            .map_or_else(|| self.first.span(), SourceElement::span);
-
-        let end = self
-            .rest
-            .last()
-            .map_or_else(|| self.first.span(), |(_, ident)| ident.span());
-
-        start.join(&end).unwrap()
+        self.rest.last().map_or_else(
+            || self.root.span(),
+            |(_, identifier)| {
+                self.root.span().join(&identifier.span()).unwrap()
+            },
+        )
     }
 }
 
@@ -539,24 +591,26 @@ impl SourceElement for Label {
 }
 
 /// Syntax Synopsis:
+///
 /// ``` txt
-/// Qualifier:
-///     'mutable'
-///     | 'unique'
+/// ReferenceOf:
+///    '&' 'mutable'?
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum Qualifier {
-    Mutable(Keyword),
-    Unique(Keyword),
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct ReferenceOf {
+    #[get = "pub"]
+    ampersand: Punctuation,
+    #[get = "pub"]
+    mutable_keyword: Option<Keyword>,
 }
 
-impl SourceElement for Qualifier {
+impl SourceElement for ReferenceOf {
     fn span(&self) -> Span {
-        match self {
-            Self::Mutable(token) | Self::Unique(token) => token.span.clone(),
-        }
+        self.mutable_keyword.as_ref().map_or_else(
+            || self.ampersand.span(),
+            |keyword| self.ampersand.span().join(&keyword.span()).unwrap(),
+        )
     }
 }
 
@@ -638,26 +692,29 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<Error>,
     ) -> Option<QualifiedIdentifier> {
-        // stop at significant tokens
-        self.stop_at_significant();
+        let root = match self.stop_at_significant() {
+            Reading::Unit(Token::Keyword(
+                this_keyword @ Keyword { kind: KeywordKind::This, .. },
+            )) => {
+                // eat keyword
+                self.forward();
 
-        // leading scope separator
-        let parse_leading_scope_separator =
-            self.peek().into_unit().map_or(
-                false,
-                |token| matches!(token, Token::Punctuation(p) if p.punctuation == ':'),
-            ) && self.peek_offset(1).and_then(|x| x.into_unit().ok()).map_or(
-                false,
-                |token| matches!(token, Token::Punctuation(p) if p.punctuation == ':'),
-            );
+                QualifiedIdentifierRoot::This(this_keyword)
+            }
 
-        let leading_scope_separator = if parse_leading_scope_separator {
-            Some(self.parse_scope_separator(handler)?)
-        } else {
-            None
+            Reading::Unit(Token::Keyword(
+                target_keyword @ Keyword { kind: KeywordKind::Target, .. },
+            )) => {
+                // eat keyword
+                self.forward();
+
+                QualifiedIdentifierRoot::Target(target_keyword)
+            }
+
+            _ => QualifiedIdentifierRoot::GenericIdentifier(
+                self.parse_generic_identifier(handler)?,
+            ),
         };
-
-        let first = self.parse_generic_identifier(handler)?;
         let mut rest = Vec::new();
 
         // parses the identifier chain
@@ -669,7 +726,7 @@ impl<'a> Parser<'a> {
             rest.push((token, another_identifier));
         }
 
-        Some(QualifiedIdentifier { leading_scope_separator, first, rest })
+        Some(QualifiedIdentifier { root, rest })
     }
 
     /// Parses a [`LifetimeParameter`]
@@ -681,6 +738,21 @@ impl<'a> Parser<'a> {
         let identifier = self.parse_identifier(handler)?;
 
         Some(LifetimeParameter { apostrophe, identifier })
+    }
+
+    pub fn try_parse_lifetime(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Option<Lifetime>> {
+        if let Reading::Unit(Token::Punctuation(Punctuation {
+            punctuation: '\'',
+            ..
+        })) = self.stop_at_significant()
+        {
+            Some(Some(self.parse_lifetime(handler)?))
+        } else {
+            Some(None)
+        }
     }
 
     /// Parses a [`Lifetime`]
@@ -725,6 +797,10 @@ impl<'a> Parser<'a> {
                     )],
                     found: self.reading_to_found(found),
                 });
+
+                // make progress
+                self.forward();
+
                 return None;
             }
         };
@@ -809,6 +885,36 @@ impl<'a> Parser<'a> {
         }
 
         Some(UnionList { first, rest })
+    }
+
+    /// Parses a [`SimplePath`]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn parse_simple_path(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<SimplePath> {
+        let root = match self.stop_at_significant() {
+            Reading::Unit(Token::Keyword(
+                target_keyword @ Keyword { kind: KeywordKind::Target, .. },
+            )) => {
+                self.forward();
+
+                SimplePathRoot::Target(target_keyword)
+            }
+
+            _ => SimplePathRoot::Identifier(self.parse_identifier(handler)?),
+        };
+
+        let mut rest = Vec::new();
+
+        while let Some(scope_separator) =
+            self.try_parse(|this| this.parse_scope_separator(&Dummy))
+        {
+            let identifier = self.parse_identifier(handler)?;
+            rest.push((scope_separator, identifier));
+        }
+
+        Some(SimplePath { root, rest })
     }
 
     /// Parses a [`GenericArguments`]

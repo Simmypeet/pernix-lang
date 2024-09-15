@@ -1,6 +1,6 @@
 //! Contains the definition of [`Binder`], the struct used for building the IR.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -24,9 +24,9 @@ use crate::{
         address::{Address, Memory},
         alloca::Alloca,
         control_flow_graph::Block,
-        instruction::{self, ScopePush},
+        instruction::{self, Instruction, ScopePop, ScopePush},
         pattern::{Irrefutable, NameBindingPoint, Pattern, Wildcard},
-        scope,
+        scope::{self, Scope},
         value::{
             register::{Assignment, Register},
             Value,
@@ -48,13 +48,11 @@ use crate::{
         model::Model,
         simplify::simplify,
         term::{
-            self,
             constant::Constant,
             lifetime::Lifetime,
-            r#type::{self, Expected, Type},
-            GenericArguments,
+            r#type::{self, Expected, Qualifier, Type},
+            Term,
         },
-        visitor::RecursiveIterator,
         Premise,
     },
 };
@@ -329,23 +327,32 @@ impl From<TypeOfError<infer::Model>> for Error {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-struct InferenceProvider;
+struct LifetimeInferenceProvider;
 
-impl ElidedTermProvider<Lifetime<infer::Model>> for InferenceProvider {
+impl ElidedTermProvider<Lifetime<infer::Model>> for LifetimeInferenceProvider {
     fn create(&mut self) -> Lifetime<infer::Model> {
         Lifetime::Inference(Erased)
     }
 }
 
-impl ElidedTermProvider<Type<infer::Model>> for InferenceProvider {
-    fn create(&mut self) -> Type<infer::Model> {
-        Type::Inference(InferenceVariable::new())
-    }
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+struct InferenceProvider<T> {
+    cerated_inferences: Vec<T>,
 }
 
-impl ElidedTermProvider<Constant<infer::Model>> for InferenceProvider {
-    fn create(&mut self) -> Constant<infer::Model> {
-        Constant::Inference(InferenceVariable::new())
+impl<T> InferenceProvider<T> {
+    pub fn new() -> Self { Self { cerated_inferences: Vec::new() } }
+}
+
+impl<T: Default + Clone, U: Term<InferenceVariable = T>> ElidedTermProvider<U>
+    for InferenceProvider<T>
+{
+    fn create(&mut self) -> U {
+        let inference = T::default();
+        let inference_term = U::from_inference(inference.clone());
+        self.cerated_inferences.push(inference);
+
+        inference_term
     }
 }
 
@@ -499,92 +506,70 @@ impl<
     ) -> Option<Resolution<infer::Model>> {
         let handler = self.create_handler_wrapper(handler);
 
-        let resolution = self
-            .table
-            .resolve(
-                syntax_tree,
-                self.current_site,
-                resolution::Config {
-                    elided_lifetime_provider: Some(&mut InferenceProvider),
-                    elided_type_provider: Some(&mut InferenceProvider),
-                    elided_constant_provider: Some(&mut InferenceProvider),
-                    observer: Some(&mut self.resolution_observer),
-                    higher_ranked_lifetimes: None,
-                },
-                &handler,
-            )
-            .ok()?;
+        let mut type_inferences = InferenceProvider::default();
+        let mut constant_inferences = InferenceProvider::default();
 
-        let mut type_inferences = Vec::new();
-        let mut constant_inferences = Vec::new();
+        let resolution = dbg!(self.table.resolve(
+            syntax_tree,
+            self.current_site,
+            resolution::Config {
+                elided_lifetime_provider: Some(
+                    &mut InferenceProvider::default(),
+                ),
+                elided_type_provider: Some(&mut type_inferences),
+                elided_constant_provider: Some(&mut constant_inferences),
+                observer: Some(&mut self.resolution_observer),
+                higher_ranked_lifetimes: None,
+            },
+            &handler,
+        ))
+        .ok()?;
 
-        let mut gather_inferences =
-            |generic_arguments: &GenericArguments<infer::Model>| {
-                for types in generic_arguments.types.iter() {
-                    for (kind, _) in RecursiveIterator::new(types) {
-                        match kind {
-                            term::Kind::Type(Type::Inference(
-                                inference_variable,
-                            )) => {
-                                type_inferences.push(*inference_variable);
-                            }
-                            term::Kind::Constant(Constant::Inference(
-                                inference_variable,
-                            )) => {
-                                constant_inferences.push(*inference_variable);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-
-                for constants in generic_arguments.constants.iter() {
-                    for (kind, _) in RecursiveIterator::new(constants) {
-                        match kind {
-                            term::Kind::Type(Type::Inference(
-                                inference_variable,
-                            )) => {
-                                type_inferences.push(*inference_variable);
-                            }
-                            term::Kind::Constant(Constant::Inference(
-                                inference_variable,
-                            )) => {
-                                constant_inferences.push(*inference_variable);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            };
-
-        match &resolution {
-            Resolution::Module(_) => {}
-            Resolution::Variant(variant) => {
-                gather_inferences(&variant.generic_arguments);
-            }
-            Resolution::Generic(generic) => {
-                gather_inferences(&generic.generic_arguments);
-            }
-            Resolution::MemberGeneric(generic) => {
-                gather_inferences(&generic.generic_arguments);
-                gather_inferences(&generic.parent_generic_arguments);
-            }
-        }
-
-        for inference in type_inferences {
+        for inference in type_inferences.cerated_inferences {
             assert!(self.inference_context.register::<Type<_>>(
                 inference,
                 r#type::Constraint::All(false)
             ));
         }
 
-        for inference in constant_inferences {
+        for inference in constant_inferences.cerated_inferences {
             assert!(self
                 .inference_context
                 .register::<Constant<_>>(inference, NoConstraint));
         }
 
         Some(resolution)
+    }
+
+    /// Creates a new scope at the current instruction pointer and pushes it to
+    /// the stack.
+    fn push_scope(&mut self) -> ID<Scope> {
+        let scope_id = self
+            .intermediate_representation
+            .scope_tree
+            .new_child_branch(
+                self.stack.current_scope().scope_id(),
+                NonZeroUsize::new(1).unwrap(),
+            )
+            .unwrap()[0];
+
+        self.stack.push_scope(scope_id);
+        let _ = self
+            .current_block_mut()
+            .insert_instruction(Instruction::ScopePush(ScopePush(scope_id)));
+
+        scope_id
+    }
+
+    /// Pops the current scope from the stack.
+    fn pop_scope(&mut self, scope_id: ID<Scope>) {
+        assert_eq!(
+            self.stack.pop_scope().map(|x| x.scope_id()),
+            Some(scope_id)
+        );
+        let _ = self
+            .current_block_mut()
+            .insert_instruction(Instruction::ScopePop(ScopePop(scope_id)));
     }
 
     /// Resolves the given `syntax_tree` to a type where inference is allowed.
@@ -595,15 +580,20 @@ impl<
     ) -> Option<Type<infer::Model>> {
         let handler = self.create_handler_wrapper(handler);
 
+        let mut type_inferences = InferenceProvider::default();
+        let mut constant_inferences = InferenceProvider::default();
+
         let ty = self
             .table
             .resolve_type(
                 syntax_tree,
                 self.current_site,
                 resolution::Config {
-                    elided_lifetime_provider: Some(&mut InferenceProvider),
-                    elided_type_provider: Some(&mut InferenceProvider),
-                    elided_constant_provider: Some(&mut InferenceProvider),
+                    elided_lifetime_provider: Some(
+                        &mut InferenceProvider::default(),
+                    ),
+                    elided_type_provider: Some(&mut type_inferences),
+                    elided_constant_provider: Some(&mut constant_inferences),
                     observer: Some(&mut self.resolution_observer),
                     higher_ranked_lifetimes: None,
                 },
@@ -611,37 +601,71 @@ impl<
             )
             .ok()?;
 
-        let mut type_inferences = Vec::new();
-        let mut constant_inferences = Vec::new();
-
-        for (kind, _) in RecursiveIterator::new(&ty) {
-            match kind {
-                term::Kind::Type(Type::Inference(inference_variable)) => {
-                    type_inferences.push(*inference_variable);
-                }
-                term::Kind::Constant(Constant::Inference(
-                    inference_variable,
-                )) => {
-                    constant_inferences.push(*inference_variable);
-                }
-                _ => {}
-            }
-        }
-
-        for inference in type_inferences {
+        for inference in type_inferences.cerated_inferences {
             assert!(self.inference_context.register::<Type<_>>(
                 inference,
                 r#type::Constraint::All(false)
             ));
         }
 
-        for inference in constant_inferences {
+        for inference in constant_inferences.cerated_inferences {
             assert!(self
                 .inference_context
                 .register::<Constant<_>>(inference, NoConstraint));
         }
 
         Some(ty)
+    }
+
+    fn is_behind_reference(
+        &self,
+        address: &Address<infer::Model>,
+    ) -> Option<Qualifier> {
+        match address {
+            Address::Memory(Memory::Alloca(_) | Memory::Parameter(_)) => None,
+
+            Address::Memory(Memory::ReferenceValue(value)) => {
+                let ty = self.type_of_value(value).unwrap();
+                let ref_ty = match ty {
+                    Type::Reference(ref_ty) => ref_ty,
+                    found => {
+                        panic!(
+                            "expected a reference type, found: {:#?}",
+                            found
+                        );
+                    }
+                };
+
+                Some(ref_ty.qualifier)
+            }
+
+            Address::Field(ad) => self.is_behind_reference(&ad.struct_address),
+            Address::Tuple(ad) => self.is_behind_reference(&ad.tuple_address),
+            Address::Index(ad) => self.is_behind_reference(&ad.array_address),
+            Address::Variant(ad) => self.is_behind_reference(&ad.enum_address),
+            Address::ReferenceAddress(ad) => {
+                let ty = self.type_of_address(&ad.reference_address).unwrap();
+                let ref_ty = match ty {
+                    Type::Reference(ref_ty) => ref_ty,
+                    found => {
+                        panic!(
+                            "expected a reference type, found: {:#?}",
+                            found
+                        );
+                    }
+                };
+
+                let mut qualifier = ref_ty.qualifier;
+
+                if let Some(inner_qual) =
+                    self.is_behind_reference(&ad.reference_address)
+                {
+                    qualifier = qualifier.min(inner_qual)
+                }
+
+                Some(qualifier)
+            }
+        }
     }
 
     /// Performs type checking on the given `ty`.

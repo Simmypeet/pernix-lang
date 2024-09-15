@@ -16,7 +16,7 @@ use pernixc_syntax::syntax_tree::{
     self,
     item::{ImplementationKind, ImplementationMember},
     target::ModuleTree,
-    ConnectedList, GenericIdentifier,
+    ConnectedList,
 };
 
 use super::finalizing::{self, Finalize, Finalizer};
@@ -40,9 +40,9 @@ use crate::{
         },
         Accessibility, AdtID, AdtImplementationDefinition,
         AdtImplementationFunction, Constant, Enum, Extern, Function,
-        FunctionDefinition, GenericDeclaration, GenericTemplate, GlobalID,
-        HierarchyRelationship, Module, ModuleMemberID,
-        NegativeTraitImplementationDefinition,
+        FunctionDefinition, FunctionTemplate, GenericDeclaration,
+        GenericTemplate, GlobalID, HierarchyRelationship, Module,
+        ModuleMemberID, NegativeTraitImplementationDefinition,
         PositiveTraitImplementationDefinition, Struct, Trait,
         TraitImplementationMemberID, TraitMemberID, Type, Variant,
     },
@@ -294,7 +294,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                     .signature()
                     .as_ref()
                     .map(|x| x.signature.identifier().span()),
-                usings: HashSet::new(),
+                imports: HashMap::new(),
             }))
         };
 
@@ -481,7 +481,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 trait_id,
                 declared_in,
                 GenericDeclaration::default(),
-                Some(implementation_signature.qualified_identifier().span()),
+                Some(implementation_signature.simple_path().span()),
                 GenericArguments::default(),
                 PositiveTraitImplementationDefinition {
                     is_const: implementation_signature
@@ -663,7 +663,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
             ImplementationKind::Negative(_) => {
                 handler.receive(Box::new(error::NegativeImplementationOnAdt {
                     negative_implementation_span: signature
-                        .qualified_identifier()
+                        .simple_path()
                         .span(),
                     adt_id,
                 }));
@@ -679,7 +679,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 id,
                 declared_in,
                 GenericDeclaration::default(),
-                Some(signature.qualified_identifier().span()),
+                Some(signature.simple_path().span()),
                 GenericArguments::default(),
                 AdtImplementationDefinition::default(),
             ),
@@ -687,7 +687,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 id,
                 declared_in,
                 GenericDeclaration::default(),
-                Some(signature.qualified_identifier().span()),
+                Some(signature.simple_path().span()),
                 GenericArguments::default(),
                 AdtImplementationDefinition::default(),
             ),
@@ -723,13 +723,46 @@ impl Table<Building<RwLockContainer, Drafter>> {
                         )
                         .unwrap();
 
-                    let _: ID<AdtImplementationFunction> = self.draft_member(
-                        syn,
-                        adt_implementation_id,
-                        |syn| syn.signature().identifier(),
-                        accessibility,
-                        handler,
-                    );
+                    if let Ok(id) = self.get_member_of(
+                        adt_id.into(),
+                        syn.signature().identifier().span.str(),
+                    ) {
+                        let new_id = self.adt_implementation_functions.insert(
+                            RwLock::new(AdtImplementationFunction {
+                                name: syn
+                                    .signature()
+                                    .identifier()
+                                    .span
+                                    .str()
+                                    .to_owned(),
+                                accessibility,
+                                parent_id: adt_implementation_id,
+                                span: Some(
+                                    syn.signature().identifier().span.clone(),
+                                ),
+                                generic_declaration:
+                                    GenericDeclaration::default(),
+                                definition: FunctionTemplate::default(),
+                            }),
+                        );
+
+                        let _ = self.state.finalizer.draft_symbol(new_id, syn);
+
+                        handler.receive(Box::new(GlobalRedifinition {
+                            existing_global_id: id,
+                            new_global_id: new_id.into(),
+                            in_global_id: adt_id.into(),
+                        }));
+                    } else {
+                        let _: ID<AdtImplementationFunction> = self
+                            .draft_member(
+                                syn,
+                                adt_implementation_id,
+                                |syn| syn.signature().identifier(),
+                                accessibility,
+                                handler,
+                            );
+                    }
                 }
             };
         }
@@ -751,7 +784,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                         trait_id,
                         declared_in,
                         GenericDeclaration::default(),
-                        Some(signature.qualified_identifier().span()),
+                        Some(signature.simple_path().span()),
                         GenericArguments::default(),
                         NegativeTraitImplementationDefinition {
                             is_final: signature.final_keyword().is_some(),
@@ -784,17 +817,9 @@ impl Table<Building<RwLockContainer, Drafter>> {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         let Ok(id) = self.resolve_simple_path(
-            implementation
-                .signature()
-                .qualified_identifier()
-                .generic_identifiers()
-                .map(GenericIdentifier::identifier),
+            implementation.signature().simple_path(),
             defined_in_module_id.into(),
-            implementation
-                .signature()
-                .qualified_identifier()
-                .leading_scope_separator()
-                .is_some(),
+            false,
             handler,
         ) else {
             return;
@@ -827,7 +852,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                     invalid_global_id,
                     qualified_identifier_span: implementation
                         .signature()
-                        .qualified_identifier()
+                        .simple_path()
                         .span(),
                 }));
             }

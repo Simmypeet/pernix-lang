@@ -15,8 +15,8 @@ use crate::syntax_tree::{
     r#type,
     statement::strategy::Statement,
     strategy::{
-        AccessModifier, ConnectedList, ConstantPunctuation, Identifier,
-        LifetimeParameter, QualifiedIdentifier,
+        AccessModifier, ConnectedList, ConstantPunctuation, GenericArguments,
+        Identifier, LifetimeParameter, SimplePath,
     },
 };
 
@@ -61,44 +61,37 @@ impl Display for Module {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ModulePath {
-    pub first: Identifier,
-    pub rest: Vec<Identifier>,
+pub struct UsingOne {
+    pub simple_path: SimplePath,
+    pub alias: Option<Identifier>,
 }
 
-impl Input<&super::ModulePath> for &ModulePath {
-    fn assert(self, output: &super::ModulePath) -> TestCaseResult {
-        self.first.assert(output.first())?;
-        prop_assert_eq!(self.rest.len(), output.rest().len());
-
-        for (input, (_, output)) in self.rest.iter().zip(output.rest().iter()) {
-            input.assert(output)?;
-        }
-
-        Ok(())
+impl Input<&super::UsingOne> for &UsingOne {
+    fn assert(self, output: &super::UsingOne) -> TestCaseResult {
+        self.simple_path.assert(output.simple_path())?;
+        self.alias
+            .as_ref()
+            .assert(output.alias().as_ref().map(|x| &x.identifier))
     }
 }
 
-impl Arbitrary for ModulePath {
+impl Arbitrary for UsingOne {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            Identifier::arbitrary(),
-            proptest::collection::vec(Identifier::arbitrary(), 0..=6),
-        )
-            .prop_map(|(first, rest)| Self { first, rest })
+        (SimplePath::arbitrary(), proptest::option::of(Identifier::arbitrary()))
+            .prop_map(|(simple_path, alias)| Self { simple_path, alias })
             .boxed()
     }
 }
 
-impl Display for ModulePath {
+impl Display for UsingOne {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.first, f)?;
+        write!(f, "{}", self.simple_path)?;
 
-        for identifier in &self.rest {
-            write!(f, "::{identifier}")?;
+        if let Some(alias) = &self.alias {
+            write!(f, " as {alias}")?;
         }
 
         Ok(())
@@ -106,13 +99,131 @@ impl Display for ModulePath {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Import {
+    pub identifier: Identifier,
+    pub alias: Option<Identifier>,
+}
+
+impl Input<&super::Import> for &Import {
+    fn assert(self, output: &super::Import) -> TestCaseResult {
+        self.identifier.assert(output.identifier())?;
+        self.alias
+            .as_ref()
+            .assert(output.alias().as_ref().map(|x| &x.identifier))
+    }
+}
+
+impl Arbitrary for Import {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (Identifier::arbitrary(), proptest::option::of(Identifier::arbitrary()))
+            .prop_map(|(identifier, alias)| Self { identifier, alias })
+            .boxed()
+    }
+}
+
+impl Display for Import {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.identifier)?;
+
+        if let Some(alias) = &self.alias {
+            write!(f, " as {alias}")?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UsingFrom {
+    pub imports: Option<ConnectedList<Import, ConstantPunctuation<','>>>,
+    pub from: SimplePath,
+}
+
+impl Input<&super::UsingFrom> for &UsingFrom {
+    fn assert(self, output: &super::UsingFrom) -> TestCaseResult {
+        self.imports.as_ref().assert(output.imports().as_ref())?;
+        self.from.assert(&output.from().simple_path)
+    }
+}
+
+impl Arbitrary for UsingFrom {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            proptest::option::of(ConnectedList::arbitrary_with(
+                Import::arbitrary(),
+                ConstantPunctuation::arbitrary(),
+            )),
+            SimplePath::arbitrary(),
+        )
+            .prop_map(|(imports, from)| Self { imports, from })
+            .boxed()
+    }
+}
+
+impl Display for UsingFrom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{")?;
+        if let Some(imports) = &self.imports {
+            Display::fmt(imports, f)?;
+        }
+        write!(f, "}} from {}", self.from)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum UsingKind {
+    One(UsingOne),
+    From(UsingFrom),
+}
+
+impl Input<&super::UsingKind> for &UsingKind {
+    fn assert(self, output: &super::UsingKind) -> TestCaseResult {
+        match (self, output) {
+            (UsingKind::One(i), super::UsingKind::One(o)) => i.assert(o),
+            (UsingKind::From(i), super::UsingKind::From(o)) => i.assert(o),
+            _ => Err(TestCaseError::fail(format!(
+                "Expected {self:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for UsingKind {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            UsingOne::arbitrary().prop_map(Self::One),
+            UsingFrom::arbitrary().prop_map(Self::From),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for UsingKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::One(one) => Display::fmt(one, f),
+            Self::From(from) => Display::fmt(from, f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Using {
-    module_path: ModulePath,
+    pub kind: UsingKind,
 }
 
 impl Input<&super::Using> for &Using {
     fn assert(self, output: &super::Using) -> TestCaseResult {
-        self.module_path.assert(output.module_path())
+        self.kind.assert(output.kind())
     }
 }
 
@@ -121,15 +232,13 @@ impl Arbitrary for Using {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        ModulePath::arbitrary()
-            .prop_map(|module_path| Self { module_path })
-            .boxed()
+        UsingKind::arbitrary().prop_map(|kind| Self { kind }).boxed()
     }
 }
 
 impl Display for Using {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "using {};", self.module_path)
+        write!(f, "using {};", self.kind)
     }
 }
 
@@ -1809,7 +1918,8 @@ pub struct ImplementationSignature {
     pub is_final: bool,
     pub generic_parameters: Option<GenericParameters>,
     pub is_const: bool,
-    pub qualified_identifier: QualifiedIdentifier,
+    pub simple_path: SimplePath,
+    pub generic_arguments: Option<GenericArguments>,
     pub where_clause: Option<WhereClause>,
 }
 
@@ -1819,7 +1929,10 @@ impl Input<&super::ImplementationSignature> for &ImplementationSignature {
         self.generic_parameters
             .as_ref()
             .assert(output.generic_parameters().as_ref())?;
-        self.qualified_identifier.assert(output.qualified_identifier())?;
+        self.simple_path.assert(output.simple_path())?;
+        self.generic_arguments
+            .as_ref()
+            .assert(output.generic_arguments().as_ref())?;
         prop_assert_eq!(self.is_const, output.const_keyword.is_some());
         self.where_clause.as_ref().assert(output.where_clause().as_ref())
     }
@@ -1833,7 +1946,8 @@ impl Arbitrary for ImplementationSignature {
         (
             proptest::bool::ANY,
             proptest::option::of(GenericParameters::arbitrary()),
-            QualifiedIdentifier::arbitrary(),
+            SimplePath::arbitrary(),
+            proptest::option::of(GenericArguments::arbitrary()),
             proptest::bool::ANY,
             proptest::option::of(WhereClause::arbitrary()),
         )
@@ -1841,7 +1955,8 @@ impl Arbitrary for ImplementationSignature {
                 |(
                     is_final,
                     generic_parameters,
-                    qualified_identifier,
+                    simple_path,
+                    generic_arguments,
                     is_const,
                     where_clause,
                 )| {
@@ -1849,7 +1964,8 @@ impl Arbitrary for ImplementationSignature {
                         is_final,
                         generic_parameters,
                         is_const,
-                        qualified_identifier,
+                        simple_path,
+                        generic_arguments,
                         where_clause,
                     }
                 },
@@ -1874,7 +1990,11 @@ impl Display for ImplementationSignature {
             write!(f, " const")?;
         }
 
-        write!(f, " {}", self.qualified_identifier)?;
+        write!(f, " {}", self.simple_path)?;
+
+        if let Some(generic_arguments) = &self.generic_arguments {
+            Display::fmt(generic_arguments, f)?;
+        }
 
         if let Some(where_clause) = self.where_clause.as_ref() {
             write!(f, " {where_clause}")?;

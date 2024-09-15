@@ -18,8 +18,8 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index, DisplayObject, State, Table},
-        Enum, GenericID, GlobalID, Struct, TraitImplementationMemberID,
-        TypeParameter, TypeParameterID,
+        AdtID, GlobalID, TraitImplementationMemberID, TypeParameter,
+        TypeParameterID,
     },
     type_system::{
         self,
@@ -45,43 +45,6 @@ use crate::{
     },
 };
 
-/// Enumeration of all symbol kinds (as a type term).
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    EnumAsInner,
-    derive_more::From,
-)]
-#[allow(missing_docs)]
-pub enum SymbolID {
-    Struct(ID<Struct>),
-    Enum(ID<Enum>),
-}
-
-impl From<SymbolID> for GlobalID {
-    fn from(value: SymbolID) -> Self {
-        match value {
-            SymbolID::Struct(id) => Self::Struct(id),
-            SymbolID::Enum(id) => Self::Enum(id),
-        }
-    }
-}
-
-impl From<SymbolID> for GenericID {
-    fn from(value: SymbolID) -> Self {
-        match value {
-            SymbolID::Struct(id) => Self::Struct(id),
-            SymbolID::Enum(id) => Self::Enum(id),
-        }
-    }
-}
-
 /// A qualifier that can be applied to references/pointers.  
 #[derive(
     Debug,
@@ -100,15 +63,13 @@ pub enum Qualifier {
     Immutable,
     #[display(fmt = "mutable")]
     Mutable,
-    #[display(fmt = "unique")]
-    Unique,
 }
 
-/// Represents a pointer type, denoted by `*QUALIFIER TYPE` syntax.
+/// Represents a pointer type, denoted by `*mutable? TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pointer<M: Model> {
-    /// The qualifier applied to the pointer.
-    pub qualifier: Qualifier,
+    /// Determines whether the pointer is mutable.
+    pub mutable: bool,
 
     /// The type that the pointer points to.
     pub pointee: Box<Type<M>>,
@@ -613,7 +574,7 @@ impl<M: Model> Match for Type<M> {
             }
 
             (Self::Pointer(lhs), Self::Pointer(rhs))
-                if lhs.qualifier == rhs.qualifier =>
+                if lhs.mutable == rhs.mutable =>
             {
                 Some(matching::Substructural {
                     lifetimes: Vec::new(),
@@ -759,7 +720,7 @@ pub enum Type<M: Model> {
     Parameter(TypeParameterID),
     Inference(M::TypeInference),
     #[from]
-    Symbol(Symbol<M, SymbolID>),
+    Symbol(Symbol<M, AdtID>),
     #[from]
     Pointer(Pointer<M>),
     #[from]
@@ -890,7 +851,7 @@ where
                 Self::Symbol(Symbol::from_other_model(symbol))
             }
             Type::Pointer(pointer) => Self::Pointer(Pointer {
-                qualifier: pointer.qualifier,
+                mutable: pointer.mutable,
                 pointee: Box::new(Self::from_other_model(*pointer.pointee)),
             }),
             Type::Reference(reference) => Self::Reference(Reference {
@@ -932,7 +893,7 @@ where
                 Self::Symbol(Symbol::try_from_other_model(symbol)?)
             }
             Type::Pointer(pointer) => Self::Pointer(Pointer {
-                qualifier: pointer.qualifier,
+                mutable: pointer.mutable,
                 pointee: Box::new(Self::try_from_other_model(
                     *pointer.pointee,
                 )?),
@@ -1230,7 +1191,7 @@ where
     fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>> {
         match self {
             Self::Symbol(Symbol { id, generic_arguments }) => match *id {
-                SymbolID::Struct(struct_id) => {
+                AdtID::Struct(struct_id) => {
                     let struct_sym = table.get(struct_id)?;
 
                     let Ok(substitution) =
@@ -1259,7 +1220,7 @@ where
                             .collect(),
                     )
                 }
-                SymbolID::Enum(enum_id) => {
+                AdtID::Enum(enum_id) => {
                     let enum_sym = table.get(enum_id)?;
 
                     let Ok(substitution) =
@@ -1460,14 +1421,8 @@ where
             Self::Pointer(pointer) => {
                 write!(f, "*")?;
 
-                match pointer.qualifier {
-                    Qualifier::Immutable => {}
-                    Qualifier::Mutable => {
-                        write!(f, "mutable ")?;
-                    }
-                    Qualifier::Unique => {
-                        write!(f, "unique ")?;
-                    }
+                if pointer.mutable {
+                    write!(f, "mutable ")?;
                 }
 
                 write!(f, "{}", DisplayObject {
@@ -1483,14 +1438,8 @@ where
                     display: &reference.lifetime
                 })?;
 
-                match reference.qualifier {
-                    Qualifier::Immutable => {}
-                    Qualifier::Mutable => {
-                        write!(f, "mutable ")?;
-                    }
-                    Qualifier::Unique => {
-                        write!(f, "unique ")?;
-                    }
+                if let Qualifier::Mutable = reference.qualifier {
+                    write!(f, "mutable ")?;
                 }
 
                 write!(f, "{}", DisplayObject {

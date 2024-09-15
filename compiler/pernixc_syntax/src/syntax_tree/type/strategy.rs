@@ -3,6 +3,7 @@ use std::fmt::{Display, Write};
 use enum_as_inner::EnumAsInner;
 use pernixc_tests::input::Input;
 use proptest::{
+    bool,
     prelude::Arbitrary,
     prop_assert_eq, prop_oneof,
     strategy::{BoxedStrategy, Just, Strategy},
@@ -13,14 +14,14 @@ use crate::syntax_tree::{
     expression::strategy::Expression,
     strategy::{
         ConnectedList, Constant, ConstantPunctuation, Lifetime,
-        QualifiedIdentifier, Qualifier,
+        QualifiedIdentifier,
     },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Reference {
     pub lifetime: Option<Lifetime>,
-    pub qualifier: Option<Qualifier>,
+    pub is_mutable: bool,
     pub operand_type: Box<Type>,
 }
 
@@ -31,12 +32,12 @@ impl Arbitrary for Reference {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             proptest::option::of(Lifetime::arbitrary()),
-            proptest::option::of(Qualifier::arbitrary()),
+            proptest::bool::ANY,
             args.unwrap_or_else(Type::arbitrary),
         )
-            .prop_map(|(lifetime, qualifier, operand_type)| Self {
+            .prop_map(|(lifetime, is_mutable, operand_type)| Self {
                 lifetime,
-                qualifier,
+                is_mutable,
                 operand_type: Box::new(operand_type),
             })
             .boxed()
@@ -45,24 +46,22 @@ impl Arbitrary for Reference {
 
 impl Input<&super::Reference> for &Reference {
     fn assert(self, output: &super::Reference) -> TestCaseResult {
-        self.lifetime.as_ref().assert(output.lifetime().as_ref())?;
-        self.qualifier.as_ref().assert(output.qualifier().as_ref())?;
+        prop_assert_eq!(self.is_mutable, output.mutable_keyword.is_some());
+        self.lifetime.as_ref().assert(output.lifetime.as_ref())?;
         self.operand_type.assert(output.operand())
     }
 }
 
 impl Display for Reference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_char('&')?;
+        write!(f, "&")?;
 
-        if let Some(lifetime_argument) = &self.lifetime {
-            Display::fmt(lifetime_argument, f)?;
-            f.write_char(' ')?;
+        if let Some(lifetime) = &self.lifetime {
+            write!(f, "{lifetime} ")?;
         }
 
-        if let Some(qualifier) = &self.qualifier {
-            Display::fmt(qualifier, f)?;
-            f.write_char(' ')?;
+        if self.is_mutable {
+            write!(f, "mutable ")?;
         }
 
         Display::fmt(&self.operand_type, f)
@@ -200,15 +199,14 @@ impl Display for Array {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pointer {
+    pub is_mutable: bool,
     pub operand: Box<Type>,
-    pub qualifier: Option<Qualifier>,
 }
 
 impl Input<&super::Pointer> for &Pointer {
     fn assert(self, output: &super::Pointer) -> TestCaseResult {
-        self.operand.assert(output.operand())?;
-        self.qualifier.as_ref().assert(output.qualifier().as_ref())?;
-        Ok(())
+        prop_assert_eq!(self.is_mutable, output.mutable_keyword().is_some());
+        self.operand.assert(output.operand())
     }
 }
 
@@ -217,13 +215,10 @@ impl Arbitrary for Pointer {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        (
-            args.unwrap_or_else(Type::arbitrary),
-            proptest::option::of(Qualifier::arbitrary()),
-        )
-            .prop_map(|(operand, qualifier)| Self {
+        (proptest::bool::ANY, args.unwrap_or_else(Type::arbitrary))
+            .prop_map(|(is_mutable, operand)| Self {
+                is_mutable,
                 operand: Box::new(operand),
-                qualifier,
             })
             .boxed()
     }
@@ -233,9 +228,8 @@ impl Display for Pointer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('*')?;
 
-        if let Some(qualifier) = &self.qualifier {
-            Display::fmt(qualifier, f)?;
-            f.write_char(' ')?;
+        if self.is_mutable {
+            write!(f, "mutable ")?;
         }
 
         Display::fmt(&self.operand, f)

@@ -9,13 +9,13 @@ use pernixc_base::{
 };
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{
-    self, ConnectedList, GenericIdentifier, LifetimeIdentifier,
-    QualifiedIdentifier,
+    self, ConnectedList, LifetimeIdentifier, QualifiedIdentifier,
+    QualifiedIdentifierRoot, SimplePath, SimplePathRoot,
 };
 
 use super::{
     evaluate,
-    representation::{self, Index},
+    representation::{self, Container, Index, Representation},
     State, Table,
 };
 use crate::{
@@ -24,15 +24,16 @@ use crate::{
         self, ExpectType, LifetimeParameterNotFound,
         MismatchedGenericArgumentCount, MisorderedGenericArgument,
         MoreThanOneUnpackedInTupleType, NoGenericArgumentsRequired,
-        ResolutionAmbiguity, SymbolNotFound, UnexpectedInference,
+        SymbolNotFound, ThisNotFound, UnexpectedInference,
     },
     symbol::{
-        self, AdtImplementationFunction, Constant, ConstantParameter, Enum,
-        Function, GenericKind, GlobalID, LifetimeParameter,
-        LifetimeParameterID, MemberID, Module, Struct, Trait, TraitConstant,
-        TraitFunction, TraitImplementationConstant,
-        TraitImplementationFunction, TraitImplementationType, TraitType, Type,
-        TypeParameter, TypeParameterID,
+        self, AdtID, AdtImplementationFunction, Constant, ConstantParameter,
+        Enum, Function, GenericKind, GlobalID, LifetimeParameter,
+        LifetimeParameterID, MemberID, Module, PositiveTraitImplementation,
+        Struct, Trait, TraitConstant, TraitFunction,
+        TraitImplementationConstant, TraitImplementationFunction,
+        TraitImplementationType, TraitType, Type, TypeParameter,
+        TypeParameterID,
     },
     type_system::{
         instantiation::{self, Instantiation},
@@ -40,7 +41,7 @@ use crate::{
         term::{
             self, constant,
             lifetime::{Forall, Lifetime},
-            r#type::{self, Qualifier, SymbolID},
+            r#type::{self, Qualifier},
             GenericArguments, Local, Term, TupleElement,
         },
     },
@@ -391,6 +392,7 @@ pub enum Resolution<M: Model> {
     Variant(Variant<M>),
     Generic(Generic<M>),
     MemberGeneric(MemberGeneric<M>),
+    PositiveTraitImplementation(ID<PositiveTraitImplementation>),
 }
 
 impl<M: Model> Resolution<M> {
@@ -402,6 +404,9 @@ impl<M: Model> Resolution<M> {
             Self::Variant(variant) => GlobalID::Variant(variant.variant),
             Self::Generic(generic) => generic.id.into(),
             Self::MemberGeneric(member_generic) => member_generic.id.into(),
+            Self::PositiveTraitImplementation(implementation) => {
+                (*implementation).into()
+            }
         }
     }
 }
@@ -424,12 +429,12 @@ pub enum Error {
     Abort,
 }
 
-/// An error returned by [`Table::resolve_simple_path`].
+/// An error returned by [`Representation::resolve_sequence`].
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
-pub enum ResolveSimplePathError {
+pub enum ResolveSequenceError {
     #[error("the given 'simple_path' iterator was empty")]
     EmptyIterator,
 
@@ -459,20 +464,20 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         global_id: GlobalID,
-        identifier: &Identifier,
+        span: &Span,
     ) -> bool {
         self.first.on_global_id_resolved(
             table,
             referring_site,
             handler,
             global_id,
-            identifier,
+            span,
         ) && self.second.on_global_id_resolved(
             table,
             referring_site,
             handler,
             global_id,
-            identifier,
+            span,
         )
     }
 
@@ -482,20 +487,20 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         resolution: &Resolution<M>,
-        generic_identifier: &GenericIdentifier,
+        span: &Span,
     ) -> bool {
         self.first.on_resolution_resolved(
             table,
             referring_site,
             handler,
             resolution,
-            generic_identifier,
+            span,
         ) && self.second.on_resolution_resolved(
             table,
             referring_site,
             handler,
             resolution,
-            generic_identifier,
+            span,
         )
     }
 
@@ -639,7 +644,7 @@ pub trait Observer<T: State, M: Model> {
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         global_id: GlobalID,
-        identifier: &Identifier,
+        span: &Span,
     ) -> bool;
 
     /// Notifies the observer when a resolution is resolved.
@@ -654,7 +659,7 @@ pub trait Observer<T: State, M: Model> {
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         resolution: &Resolution<M>,
-        generic_identifier: &GenericIdentifier,
+        span: &Span,
     ) -> bool;
 
     /// Notifies the observer when a type is resolved.
@@ -732,7 +737,7 @@ impl<T: State, M: Model> Observer<T, M> for NoOp {
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
         _: GlobalID,
-        _: &Identifier,
+        _: &Span,
     ) -> bool {
         true
     }
@@ -743,7 +748,7 @@ impl<T: State, M: Model> Observer<T, M> for NoOp {
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
         _: &Resolution<M>,
-        _: &GenericIdentifier,
+        _: &Span,
     ) -> bool {
         true
     }
@@ -857,46 +862,86 @@ impl<'lp, 'tp, 'cp, 'ob, 'hrlt, S: State, M: Model>
     }
 }
 
-impl<S: State> Table<S> {
-    /// Resolves an ID from the given simple path.
-    ///
-    /// # Errors
-    ///
-    /// See [`ResolveSimplePathError`] for more information
-    pub fn resolve_simple_path<'a>(
+impl<S: Container> Representation<S> {
+    /// Resolves a [`SimplePath`] as a [`GlobalID`].
+    pub fn resolve_simple_path(
         &self,
-        mut simple_path: impl Iterator<Item = &'a Identifier>,
+        simple_path: &SimplePath,
         referring_site: GlobalID,
-        always_start_from_root: bool,
+        start_from_root: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<GlobalID, ResolveSimplePathError> {
-        let mut lastest_resolution = {
-            let Some(first_identifier) = simple_path.next() else {
-                return Err(ResolveSimplePathError::EmptyIterator);
-            };
-
-            if always_start_from_root {
-                self.root_module_ids_by_name()
-                    .get(first_identifier.span.str())
-                    .copied()
-                    .map(Into::into)
-                    .ok_or_else(|| {
+    ) -> Result<GlobalID, Error> {
+        let root: GlobalID = match simple_path.root() {
+            SimplePathRoot::Target(_) => {
+                self.get_root_module_id(referring_site.into()).unwrap().into()
+            }
+            SimplePathRoot::Identifier(ident) => {
+                if start_from_root {
+                    let Some(id) = self
+                        .root_module_ids_by_name()
+                        .get(ident.span.str())
+                        .copied()
+                    else {
                         handler.receive(Box::new(SymbolNotFound {
                             searched_global_id: None,
-                            resolution_span: first_identifier.span.clone(),
+                            resolution_span: ident.span.clone(),
                         }));
 
-                        Error::SemanticError
-                    })?
-            } else {
-                self.resolve_root_relative(
-                    first_identifier,
-                    referring_site,
-                    handler,
-                )?
+                        return Err(Error::SemanticError);
+                    };
+
+                    id.into()
+                } else {
+                    let closet_module_id = self
+                        .get_closet_module_id(referring_site)
+                        .ok_or(Error::InvalidReferringSiteID)?;
+
+                    let module = self.get(closet_module_id).unwrap();
+
+                    let Some(id) = module
+                        .member_ids_by_name()
+                        .get(ident.span.str())
+                        .copied()
+                        .or_else(|| {
+                            module.imports.get(ident.span.str()).map(|x| x.0)
+                        })
+                    else {
+                        handler.receive(Box::new(SymbolNotFound {
+                            searched_global_id: Some(closet_module_id.into()),
+                            resolution_span: ident.span.clone(),
+                        }));
+
+                        return Err(Error::SemanticError);
+                    };
+
+                    id.into()
+                }
             }
         };
 
+        match self.resolve_sequence(
+            simple_path.rest().iter().map(|x| &x.1),
+            referring_site,
+            root.into(),
+            handler,
+        ) {
+            Ok(id) => Ok(id),
+            Err(err) => match err {
+                ResolveSequenceError::EmptyIterator => Ok(root.into()),
+                ResolveSequenceError::ResolutionError(err) => Err(err),
+            },
+        }
+    }
+
+    /// Resolves a sequence of identifier starting of from the given `root`.
+    pub fn resolve_sequence<'a>(
+        &self,
+        simple_path: impl Iterator<Item = &'a Identifier>,
+        referring_site: GlobalID,
+        root: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<GlobalID, ResolveSequenceError> {
+        let mut lastest_resolution = root;
         for identifier in simple_path {
             let new_id = self
                 .get_member_of(lastest_resolution, identifier.span.str())
@@ -925,180 +970,9 @@ impl<S: State> Table<S> {
 
         Ok(lastest_resolution)
     }
+}
 
-    fn resolve_root_from_using_and_self(
-        &self,
-        identifier: &Identifier,
-        referring_site: GlobalID,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Option<GlobalID>, Error> {
-        let closet_module_id = self
-            .get_closet_module_id(referring_site)
-            .ok_or(Error::InvalidReferringSiteID)?;
-        let closet_module = self.get(closet_module_id).unwrap();
-
-        let map = closet_module.usings.iter().copied().map(Into::into);
-        let search_locations = map.chain(std::iter::once(referring_site));
-
-        let mut candidates = search_locations
-            .filter_map(|x| self.get_member_of(x, identifier.span.str()).ok())
-            .filter(|x| {
-                self.symbol_accessible(referring_site, *x)
-                    .expect("should've been a valid ID")
-            });
-
-        // if there is only one candidate, return it.
-        let Some(result) = candidates.next() else {
-            return Ok(None);
-        };
-
-        // if there are more than one candidate, report an ambiguity error.
-        candidates.next().map_or(Ok(Some(result)), |other| {
-            handler.receive(Box::new(ResolutionAmbiguity {
-                resolution_span: identifier.span.clone(),
-                candidates: [result, other]
-                    .into_iter()
-                    .chain(candidates)
-                    .collect(),
-            }));
-            Err(Error::SemanticError)
-        })
-    }
-
-    fn resolve_root_down_the_tree(
-        &self,
-        identifier: &Identifier,
-        mut referring_site: GlobalID,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<GlobalID, Error> {
-        // NOTE: Accessibility is not checked here because the symbol searching
-        // is done within the same module ancestor tree.
-
-        loop {
-            // try to find the symbol in the current scope
-            if let Ok(id) =
-                self.get_member_of(referring_site, identifier.span.str())
-            {
-                return Ok(id);
-            }
-
-            let global_symbol = self
-                .get_global(referring_site)
-                .ok_or(Error::InvalidReferringSiteID)?;
-
-            if let Some(parent_id) = global_symbol.parent_global_id() {
-                referring_site = parent_id;
-            } else {
-                // try to search the symbol in the root scope
-                if let Some(id) = self
-                    .root_module_ids_by_name()
-                    .get(identifier.span.str())
-                    .copied()
-                {
-                    return Ok(id.into());
-                }
-
-                handler.receive(Box::new(SymbolNotFound {
-                    searched_global_id: None,
-                    resolution_span: identifier.span.clone(),
-                }));
-                return Err(Error::SemanticError);
-            }
-        }
-    }
-
-    /// Resolves the symbol for the first identifier appearing in the qualified
-    /// identifier.
-    ///
-    /// # Errors
-    ///
-    /// See [`Error`] for more information
-    pub fn resolve_root_relative(
-        &self,
-        identifier: &Identifier,
-        referring_site: GlobalID,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<GlobalID, Error> {
-        if let Some(error) = self.resolve_root_from_using_and_self(
-            identifier,
-            referring_site,
-            handler,
-        )? {
-            return Ok(error);
-        }
-
-        self.resolve_root_down_the_tree(identifier, referring_site, handler)
-    }
-
-    fn resolve_single_no_generics<M: Model>(
-        &self,
-        identifier: &Identifier,
-        latest_resolution: &Option<Resolution<M>>,
-        referring_site: GlobalID,
-        search_from_root: bool,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<GlobalID, Error> {
-        let (resolved_global_id, searched_global_id) = match latest_resolution {
-            Some(resolution) => {
-                // gets the global id from the resolution
-                let parent_global_id = resolution.global_id();
-
-                (
-                    self.get_member_of(parent_global_id, identifier.span.str())
-                        .map_or_else(
-                            |err| match err {
-                                representation::GetMemberError::InvalidID => {
-                                    unreachable!("invalid ID detected!")
-                                }
-                                representation::GetMemberError::MemberNotFound => None,
-                            },
-                            Some,
-                        ),
-                    Some(parent_global_id),
-                )
-            }
-            None => {
-                if search_from_root {
-                    (
-                        self.root_module_ids_by_name()
-                            .get(identifier.span.str())
-                            .copied()
-                            .map(Into::into),
-                        None,
-                    )
-                } else {
-                    return self.resolve_root_relative(
-                        identifier,
-                        referring_site,
-                        handler,
-                    );
-                }
-            }
-        };
-
-        resolved_global_id.map_or_else(
-            || {
-                handler.receive(Box::new(SymbolNotFound {
-                    searched_global_id,
-                    resolution_span: identifier.span.clone(),
-                }));
-                Err(Error::SemanticError)
-            },
-            |id| {
-                // non-fatal error, no need to return early
-                if !self.symbol_accessible(referring_site, id).unwrap() {
-                    handler.receive(Box::new(error::SymbolIsNotAccessible {
-                        referring_site,
-                        referred: id,
-                        referred_span: identifier.span.clone(),
-                    }));
-                }
-
-                Ok(id)
-            },
-        )
-    }
-
+impl<S: State> Table<S> {
     /// Resolves an [`Identifier`] as a [`LifetimeParameterID`].
     ///
     /// # Errors
@@ -1207,16 +1081,15 @@ impl<S: State> Table<S> {
     #[allow(clippy::too_many_lines)]
     pub fn resolve_generic_arguments<M: Model>(
         &self,
-        generic_identifier: &GenericIdentifier,
+        generic_arguments: Option<&syntax_tree::GenericArguments>,
+        resolution_span: &Span,
         referring_site: GlobalID,
         resolved_id: GlobalID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Option<GenericArguments<M>>, Error> {
         let Ok(generic_id) = symbol::GenericID::try_from(resolved_id) else {
-            if let Some(generic_arguments) =
-                generic_identifier.generic_arguments()
-            {
+            if let Some(generic_arguments) = generic_arguments {
                 // non-fatal error, keep going
                 handler.receive(Box::new(NoGenericArgumentsRequired {
                     global_id: resolved_id,
@@ -1233,11 +1106,9 @@ impl<S: State> Table<S> {
 
         // extracts the generic arguments from the syntax tree to the list of
         // syntax trees
-        for generic_argument in
-            generic_identifier.generic_arguments().iter().flat_map(|x| {
-                x.argument_list().iter().flat_map(ConnectedList::elements)
-            })
-        {
+        for generic_argument in generic_arguments.into_iter().flat_map(|x| {
+            x.argument_list().iter().flat_map(ConnectedList::elements)
+        }) {
             let misordered = match generic_argument {
                 syntax_tree::GenericArgument::Constant(arg) => {
                     constant_argument_syns.push(arg.constant());
@@ -1327,7 +1198,8 @@ impl<S: State> Table<S> {
                 lifetime_argument_syns.into_iter(),
                 lifetime_parameter_orders.iter(),
                 Option::<std::iter::Empty<_>>::None,
-                generic_identifier.span(),
+                generic_arguments
+                    .map_or(resolution_span.clone(), SourceElement::span),
                 referring_site,
                 config.reborrow(),
                 handler,
@@ -1336,7 +1208,8 @@ impl<S: State> Table<S> {
                 type_argument_syns.into_iter(),
                 type_parameter_orders.iter(),
                 default_type_arguments.as_ref().map(|x| x.iter()),
-                generic_identifier.span(),
+                generic_arguments
+                    .map_or(resolution_span.clone(), SourceElement::span),
                 referring_site,
                 config.reborrow(),
                 handler,
@@ -1345,7 +1218,8 @@ impl<S: State> Table<S> {
                 constant_argument_syns.into_iter(),
                 constant_parameter_ords.iter(),
                 Some(default_constant_arguments.iter()),
-                generic_identifier.span(),
+                generic_arguments
+                    .map_or(resolution_span.clone(), SourceElement::span),
                 referring_site,
                 config,
                 handler,
@@ -1363,8 +1237,8 @@ impl<S: State> Table<S> {
                 | GenericID::Enum(_)
                 | GenericID::Type(_) => {
                     let id = match symbol.id {
-                        GenericID::Struct(id) => SymbolID::Struct(id),
-                        GenericID::Enum(id) => SymbolID::Enum(id),
+                        GenericID::Struct(id) => AdtID::Struct(id),
+                        GenericID::Enum(id) => AdtID::Enum(id),
                         GenericID::Type(id) => {
                             let type_symbol = self.get(id).unwrap();
 
@@ -1434,6 +1308,7 @@ impl<S: State> Table<S> {
 
                 _ => Err(Resolution::MemberGeneric(symbol)),
             },
+
             resolution => Err(resolution),
         }
     }
@@ -1533,20 +1408,16 @@ impl<S: State> Table<S> {
                     provider.create()
                 } else {
                     handler.receive(Box::new(UnexpectedInference {
-                        unexpected_span: reference.ampersand().span.clone(),
+                        unexpected_span: reference.ampersand().span(),
                         generic_kind: GenericKind::Lifetime,
                     }));
                     Lifetime::Error(term::Error)
                 };
 
-                let qualifier = match reference.qualifier() {
-                    Some(syntax_tree::Qualifier::Mutable(..)) => {
-                        Qualifier::Mutable
-                    }
-                    Some(syntax_tree::Qualifier::Unique(..)) => {
-                        Qualifier::Unique
-                    }
-                    None => Qualifier::Immutable,
+                let qualifier = if reference.mutable_keyword().is_some() {
+                    Qualifier::Mutable
+                } else {
+                    Qualifier::Immutable
                 };
 
                 let pointee = Box::new(self.resolve_type(
@@ -1563,16 +1434,6 @@ impl<S: State> Table<S> {
                 })
             }
             syntax_tree::r#type::Type::Pointer(pointer_ty) => {
-                let qualifier = match pointer_ty.qualifier() {
-                    Some(syntax_tree::Qualifier::Mutable(..)) => {
-                        Qualifier::Mutable
-                    }
-                    Some(syntax_tree::Qualifier::Unique(..)) => {
-                        Qualifier::Unique
-                    }
-                    None => Qualifier::Immutable,
-                };
-
                 let pointee = Box::new(self.resolve_type(
                     pointer_ty.operand(),
                     referring_site,
@@ -1580,7 +1441,10 @@ impl<S: State> Table<S> {
                     handler,
                 )?);
 
-                r#type::Type::Pointer(r#type::Pointer { qualifier, pointee })
+                r#type::Type::Pointer(r#type::Pointer {
+                    mutable: pointer_ty.mutable_keyword().is_some(),
+                    pointee,
+                })
             }
             syntax_tree::r#type::Type::Tuple(syntax_tree) => {
                 let mut elements = Vec::new();
@@ -1728,8 +1592,10 @@ impl<S: State> Table<S> {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<r#type::Type<M>, Error> {
         let is_simple_identifier = syntax_tree.rest().is_empty()
-            && syntax_tree.leading_scope_separator().is_none()
-            && syntax_tree.first().generic_arguments().is_none();
+            && syntax_tree
+                .root()
+                .as_generic_identifier()
+                .map_or(false, |x| x.generic_arguments().is_none());
 
         // try to resolve the identifier as a type parameter
         if is_simple_identifier {
@@ -1749,7 +1615,15 @@ impl<S: State> Table<S> {
                     .generic_declaration()
                     .parameters
                     .type_parameter_ids_by_name()
-                    .get(syntax_tree.first().identifier().span.str())
+                    .get(
+                        syntax_tree
+                            .root()
+                            .as_generic_identifier()
+                            .unwrap()
+                            .identifier()
+                            .span
+                            .str(),
+                    )
                     .copied()
                 {
                     return Ok(r#type::Type::Parameter(TypeParameterID {
@@ -1911,19 +1785,9 @@ impl<S: State> Table<S> {
 
     fn get_parent_generic_arguments_from_latest_resolution<M: Model>(
         &self,
-        parent_generic_id: symbol::GenericID,
-        latest_resolution: Option<Resolution<M>>,
+        latest_resolution: Resolution<M>,
     ) -> GenericArguments<M> {
-        latest_resolution.map_or_else(
-            || {
-                self.get_generic(parent_generic_id)
-                    .unwrap()
-                    .generic_declaration()
-                    .parameters
-                    .create_identity_generic_arguments(parent_generic_id)
-            },
-            |resolution| resolution.into_generic().unwrap().generic_arguments,
-        )
+        latest_resolution.into_generic().unwrap().generic_arguments
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1931,7 +1795,7 @@ impl<S: State> Table<S> {
         &self,
         resolved_id: GlobalID,
         generic_arguments: Option<GenericArguments<M>>,
-        latest_resolution: Option<Resolution<M>>,
+        latest_resolution: Resolution<M>,
     ) -> Resolution<M> {
         match resolved_id {
             GlobalID::Module(id) => Resolution::Module(id),
@@ -1962,7 +1826,6 @@ impl<S: State> Table<S> {
             GlobalID::Variant(id) => Resolution::Variant(Variant {
                 generic_arguments: self
                     .get_parent_generic_arguments_from_latest_resolution(
-                        self.get(id).unwrap().parent_enum_id.into(),
                         latest_resolution,
                     ),
                 variant: id,
@@ -1970,33 +1833,30 @@ impl<S: State> Table<S> {
             GlobalID::TraitType(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
-                    parent_generic_arguments: self
-                        .get_parent_generic_arguments_from_latest_resolution(
-                            self.get(id).unwrap().parent_id.into(),
-                            latest_resolution,
-                        ),
+                    parent_generic_arguments: latest_resolution
+                        .into_generic()
+                        .unwrap()
+                        .generic_arguments,
                     generic_arguments: generic_arguments.unwrap(),
                 })
             }
             GlobalID::TraitFunction(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
-                    parent_generic_arguments: self
-                        .get_parent_generic_arguments_from_latest_resolution(
-                            self.get(id).unwrap().parent_id.into(),
-                            latest_resolution,
-                        ),
+                    parent_generic_arguments: latest_resolution
+                        .into_generic()
+                        .unwrap()
+                        .generic_arguments,
                     generic_arguments: generic_arguments.unwrap(),
                 })
             }
             GlobalID::TraitConstant(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
-                    parent_generic_arguments: self
-                        .get_parent_generic_arguments_from_latest_resolution(
-                            self.get(id).unwrap().parent_id.into(),
-                            latest_resolution,
-                        ),
+                    parent_generic_arguments: latest_resolution
+                        .into_generic()
+                        .unwrap()
+                        .generic_arguments,
                     generic_arguments: generic_arguments.unwrap(),
                 })
             }
@@ -2010,26 +1870,24 @@ impl<S: State> Table<S> {
             GlobalID::AdtImplementationFunction(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
-                    parent_generic_arguments: latest_resolution.map_or_else(
-                        || {
-                            let adt_impl_id = self.get(id).unwrap().parent_id;
-                            GenericArguments::from_default_model(
-                                self.get(adt_impl_id)
-                                    .unwrap()
-                                    .arguments
-                                    .clone(),
-                            )
-                        },
-                        |resolution| {
-                            resolution.into_generic().unwrap().generic_arguments
-                        },
-                    ),
+                    parent_generic_arguments: match latest_resolution {
+                        Resolution::Generic(Generic {
+                            id: GenericID::Struct(_) | GenericID::Enum(_),
+                            generic_arguments,
+                        }) => generic_arguments,
+                        found => {
+                            panic!("unexpected resolution {found:?}");
+                        }
+                    },
                     generic_arguments: generic_arguments.unwrap(),
                 })
             }
 
             GlobalID::TraitImplementationFunction(id) => {
-                assert!(latest_resolution.is_none());
+                assert!(matches!(
+                    latest_resolution,
+                    Resolution::PositiveTraitImplementation(_)
+                ));
 
                 Resolution::Generic(Generic {
                     id: id.into(),
@@ -2038,7 +1896,10 @@ impl<S: State> Table<S> {
             }
 
             GlobalID::TraitImplementationType(id) => {
-                assert!(latest_resolution.is_none());
+                assert!(matches!(
+                    latest_resolution,
+                    Resolution::PositiveTraitImplementation(_)
+                ));
 
                 Resolution::Generic(Generic {
                     id: id.into(),
@@ -2047,12 +1908,242 @@ impl<S: State> Table<S> {
             }
 
             GlobalID::TraitImplementationConstant(id) => {
-                assert!(latest_resolution.is_none());
+                assert!(matches!(
+                    latest_resolution,
+                    Resolution::PositiveTraitImplementation(_)
+                ));
 
                 Resolution::Generic(Generic {
                     id: id.into(),
                     generic_arguments: generic_arguments.unwrap(),
                 })
+            }
+        }
+    }
+
+    /// Resolves for the root of the qualified identifier.
+    pub fn resolve_qualified_identifier_root<M: Model>(
+        &self,
+        root_syn: &QualifiedIdentifierRoot,
+        referring_site: GlobalID,
+        mut config: Config<S, M>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Resolution<M>, Error> {
+        let span = root_syn.span();
+        match root_syn {
+            QualifiedIdentifierRoot::Target(_) => {
+                let root = self
+                    .get_root_module_id(referring_site)
+                    .ok_or(Error::InvalidReferringSiteID)?;
+
+                if let Some(observer) = config.observer.as_mut() {
+                    if !observer.on_global_id_resolved(
+                        self,
+                        referring_site,
+                        handler,
+                        root.into(),
+                        &span,
+                    ) {
+                        return Err(Error::Abort);
+                    }
+                }
+
+                let resolution = Resolution::Module(root);
+
+                if let Some(observer) = config.observer.as_mut() {
+                    if !observer.on_resolution_resolved(
+                        self,
+                        referring_site,
+                        handler,
+                        &resolution,
+                        &span,
+                    ) {
+                        return Err(Error::Abort);
+                    }
+                }
+
+                Ok(resolution)
+            }
+            QualifiedIdentifierRoot::This(this) => {
+                let found_this = self
+                    .scope_walker(referring_site)
+                    .ok_or(Error::InvalidReferringSiteID)?
+                    .find_map(|x| match x {
+                        id @ (GlobalID::Trait(_)
+                        | GlobalID::PositiveTraitImplementation(_)
+                        | GlobalID::AdtImplementation(_)) => Some(id),
+                        _ => None,
+                    });
+
+                let Some(this) = found_this else {
+                    handler
+                        .receive(Box::new(ThisNotFound { span: this.span() }));
+                    return Err(Error::SemanticError);
+                };
+
+                if let Some(observer) = config.observer.as_mut() {
+                    if !observer.on_global_id_resolved(
+                        self,
+                        referring_site,
+                        handler,
+                        this,
+                        &span,
+                    ) {
+                        return Err(Error::Abort);
+                    }
+                }
+
+                let resolution = match this {
+                    GlobalID::Trait(trait_id) => Resolution::Generic(Generic {
+                        id: trait_id.into(),
+                        generic_arguments: self
+                            .get(trait_id)
+                            .unwrap()
+                            .generic_declaration
+                            .parameters
+                            .create_identity_generic_arguments(trait_id.into()),
+                    }),
+                    GlobalID::PositiveTraitImplementation(id) => {
+                        Resolution::PositiveTraitImplementation(id)
+                    }
+                    GlobalID::AdtImplementation(id) => {
+                        let implementation = self.get(id).unwrap();
+                        let generic_arguments =
+                            GenericArguments::from_default_model(
+                                implementation.arguments.clone(),
+                            );
+
+                        Resolution::Generic(Generic {
+                            id: match implementation.implemented_id {
+                                AdtID::Struct(id) => GenericID::Struct(id),
+                                AdtID::Enum(id) => GenericID::Enum(id),
+                            },
+                            generic_arguments,
+                        })
+                    }
+                    _ => unreachable!(),
+                };
+
+                if let Some(observer) = config.observer.as_mut() {
+                    if !observer.on_resolution_resolved(
+                        self,
+                        referring_site,
+                        handler,
+                        &resolution,
+                        &span,
+                    ) {
+                        return Err(Error::Abort);
+                    }
+                }
+
+                Ok(resolution)
+            }
+            QualifiedIdentifierRoot::GenericIdentifier(generic_identifier) => {
+                let current_module_id = self
+                    .get_closet_module_id(referring_site)
+                    .ok_or(Error::InvalidReferringSiteID)?;
+                let module = self.get(current_module_id).unwrap();
+
+                let id = module
+                    .member_ids_by_name()
+                    .get(generic_identifier.identifier().span.str())
+                    .copied()
+                    .or_else(|| {
+                        module
+                            .imports
+                            .get(generic_identifier.identifier().span.str())
+                            .map(|x| x.0)
+                    });
+
+                let Some(id) = id else {
+                    handler.receive(Box::new(SymbolNotFound {
+                        searched_global_id: Some(current_module_id.into()),
+                        resolution_span: generic_identifier
+                            .identifier()
+                            .span
+                            .clone(),
+                    }));
+
+                    return Err(Error::SemanticError);
+                };
+
+                if let Some(observer) = config.observer.as_mut() {
+                    if !observer.on_global_id_resolved(
+                        self,
+                        referring_site,
+                        handler,
+                        id.into(),
+                        &generic_identifier.identifier().span,
+                    ) {
+                        return Err(Error::Abort);
+                    }
+                }
+
+                let generic_arguments = self.resolve_generic_arguments(
+                    generic_identifier.generic_arguments().as_ref(),
+                    &generic_identifier.identifier().span,
+                    referring_site,
+                    id.into(),
+                    config.reborrow(),
+                    handler,
+                )?;
+
+                let resolution = match id {
+                    symbol::ModuleMemberID::Module(id) => {
+                        assert!(generic_arguments.is_none());
+                        Resolution::Module(id)
+                    }
+                    symbol::ModuleMemberID::Enum(id) => {
+                        Resolution::Generic(Generic {
+                            id: id.into(),
+                            generic_arguments: generic_arguments.unwrap(),
+                        })
+                    }
+                    symbol::ModuleMemberID::Struct(id) => {
+                        Resolution::Generic(Generic {
+                            id: id.into(),
+                            generic_arguments: generic_arguments.unwrap(),
+                        })
+                    }
+                    symbol::ModuleMemberID::Trait(id) => {
+                        Resolution::Generic(Generic {
+                            id: id.into(),
+                            generic_arguments: generic_arguments.unwrap(),
+                        })
+                    }
+                    symbol::ModuleMemberID::Type(id) => {
+                        Resolution::Generic(Generic {
+                            id: id.into(),
+                            generic_arguments: generic_arguments.unwrap(),
+                        })
+                    }
+                    symbol::ModuleMemberID::Function(id) => {
+                        Resolution::Generic(Generic {
+                            id: id.into(),
+                            generic_arguments: generic_arguments.unwrap(),
+                        })
+                    }
+                    symbol::ModuleMemberID::Constant(id) => {
+                        Resolution::Generic(Generic {
+                            id: id.into(),
+                            generic_arguments: generic_arguments.unwrap(),
+                        })
+                    }
+                };
+
+                if let Some(observer) = config.observer.as_mut() {
+                    if !observer.on_resolution_resolved(
+                        self,
+                        referring_site,
+                        handler,
+                        &resolution,
+                        &span,
+                    ) {
+                        return Err(Error::Abort);
+                    }
+                }
+
+                Ok(resolution)
             }
         }
     }
@@ -2085,19 +2176,36 @@ impl<S: State> Table<S> {
         );
 
         // create the current root
-        let mut latest_resolution = None;
-        let has_leading_scope_separator =
-            qualified_identifier.leading_scope_separator().is_some();
+        let mut latest_resolution = self.resolve_qualified_identifier_root(
+            qualified_identifier.root(),
+            referring_site,
+            config.reborrow(),
+            handler,
+        )?;
 
-        for generic_identifier in qualified_identifier.generic_identifiers() {
-            // resolves the identifier
-            let global_id = self.resolve_single_no_generics(
-                generic_identifier.identifier(),
-                &latest_resolution,
-                referring_site,
-                has_leading_scope_separator,
-                handler,
-            )?;
+        for (_, generic_identifier) in qualified_identifier.rest() {
+            let global_id = match self.get_member_of(
+                latest_resolution.global_id(),
+                generic_identifier.identifier().span.str(),
+            ) {
+                Ok(id) => id,
+                Err(error) => match error {
+                    representation::GetMemberError::InvalidID => unreachable!(),
+                    representation::GetMemberError::MemberNotFound => {
+                        handler.receive(Box::new(SymbolNotFound {
+                            searched_global_id: Some(
+                                latest_resolution.global_id(),
+                            ),
+                            resolution_span: generic_identifier
+                                .identifier()
+                                .span
+                                .clone(),
+                        }));
+
+                        return Err(Error::SemanticError);
+                    }
+                },
+            };
 
             // invoke the observer
             if let Some(observer) = config.observer.as_mut() {
@@ -2106,14 +2214,15 @@ impl<S: State> Table<S> {
                     referring_site,
                     handler,
                     global_id,
-                    generic_identifier.identifier(),
+                    &generic_identifier.identifier().span,
                 ) {
                     return Err(Error::Abort);
                 }
             }
 
             let generic_arguments = self.resolve_generic_arguments(
-                generic_identifier,
+                generic_identifier.generic_arguments().as_ref(),
+                &generic_identifier.identifier().span,
                 referring_site,
                 global_id,
                 config.reborrow(),
@@ -2132,15 +2241,15 @@ impl<S: State> Table<S> {
                     referring_site,
                     handler,
                     &next_resolution,
-                    generic_identifier,
+                    &generic_identifier.span(),
                 ) {
                     return Err(Error::Abort);
                 }
             }
 
-            latest_resolution = Some(next_resolution);
+            latest_resolution = next_resolution;
         }
 
-        Ok(latest_resolution.expect("should at least have one resolution"))
+        Ok(latest_resolution)
     }
 }

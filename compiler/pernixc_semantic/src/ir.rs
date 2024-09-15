@@ -106,7 +106,7 @@ pub enum TypeOfError<M: Model> {
         /// The address that doesn't have the struct type.
         address: Address<M>,
 
-        /// The type of the [`NonStructAddressType::address`].
+        /// The type of the [`address::Field::struct_address`].
         r#type: Type<M>,
     },
 
@@ -136,11 +136,23 @@ pub enum TypeOfError<M: Model> {
          requires the register to have a type of `Type::Reference` but found \
          the other type"
     )]
-    NonReferenceAddressType {
+    NonReferenceValueType {
         /// The address that doesn't have the reference type.
         value: Value<M>,
 
-        /// The type of the [`NonReferenceAddressType::address`].
+        /// The type of the [`address::Memory::ReferenceValue`].
+        r#type: Type<M>,
+    },
+
+    #[error(
+        "the variant `ReferenceAddress::address` requires the address to have \
+         a type of `Type::Reference` but found the other type"
+    )]
+    NonReferenceAddressType {
+        /// The address that doesn't have the reference type.
+        address: Address<M>,
+
+        /// The type of the [`address::ReferenceAddress`].
         r#type: Type<M>,
     },
 
@@ -152,7 +164,7 @@ pub enum TypeOfError<M: Model> {
         /// The address that doesn't have the enum type.
         address: Address<M>,
 
-        /// The type of the [`NonEnumAddressType::address`].
+        /// The type of the [`address::Variant::enum_address`].
         r#type: Type<M>,
     },
 
@@ -164,7 +176,7 @@ pub enum TypeOfError<M: Model> {
         /// The address that doesn't have the tuple type.
         address: Address<M>,
 
-        /// The type of the [`NonTupleAddressType::address`].
+        /// The type of the [`address::Tuple::tuple_address`].
         r#type: Type<M>,
     },
 
@@ -177,20 +189,7 @@ pub enum TypeOfError<M: Model> {
         /// The value that doesn't have the local type.
         value: Value<M>,
 
-        /// The type of the [`NonLocalAssignmentType::register`].
-        r#type: Type<M>,
-    },
-
-    #[error(
-        "the `ReferenceOf` assignment requires the field `address` to have an \
-         address of type `local` when `is_loal` is true but found the other \
-         type"
-    )]
-    NonLocalAddressType {
-        /// The address that doesn't have the local type.
-        address: Address<M>,
-
-        /// The type of the [`NonLocalAddressType::address`].
+        /// The type of the [`value::register::Prefix::operand`].
         r#type: Type<M>,
     },
 
@@ -202,7 +201,7 @@ pub enum TypeOfError<M: Model> {
         /// The address that doesn't have the array type.
         address: Address<M>,
 
-        /// The type of the [`NonArrayAddressType::address`].
+        /// The type of the [`address::Index::array_address`].
         r#type: Type<M>,
     },
 

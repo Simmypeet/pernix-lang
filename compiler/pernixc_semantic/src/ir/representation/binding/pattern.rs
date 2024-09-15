@@ -12,15 +12,18 @@ use crate::{
         address::{self, Address, Memory},
         instruction::{self, Instruction, Store, TuplePack},
         pattern::{
-            self, Irrefutable, NameBinding, NameBindingPoint, Pattern,
-            Structural, Tuple,
+            Irrefutable, NameBinding, NameBindingPoint, Pattern, Structural,
+            Tuple,
         },
         value::{
             register::{Assignment, Load, LoadKind, ReferenceOf},
             Value,
         },
     },
-    symbol::table::{self, representation::Index, resolution},
+    symbol::{
+        table::{self, representation::Index, resolution},
+        AdtID,
+    },
     type_system::{
         self,
         instantiation::{self, Instantiation},
@@ -29,7 +32,7 @@ use crate::{
         term::{
             self,
             lifetime::Lifetime,
-            r#type::{Qualifier, Reference, SymbolID, Type},
+            r#type::{Qualifier, Reference, Type},
             Symbol,
         },
     },
@@ -517,7 +520,7 @@ impl<
 
         // must be a struct type
         let Type::Symbol(Symbol {
-            id: SymbolID::Struct(struct_id),
+            id: AdtID::Struct(struct_id),
             generic_arguments,
         }) = binding.r#type
         else {
@@ -575,31 +578,26 @@ impl<
     ) {
         match irreftuable {
             Irrefutable::Named(pat) => {
-                match (pat.kind, binding.kind) {
+                match (pat.reference_binding, binding.kind) {
                     // obtains the reference of the value.
-                    (
-                        pattern::BindingKind::Reference(qualifier),
-                        BindingKind::Value,
-                    ) => self.create_reference_bound_named_pattern(
-                        name_binding_point,
-                        binding.r#type.clone(),
-                        qualifier,
-                        binding.address,
-                        pat.span.clone().unwrap(),
-                        pat.name.clone(),
-                        false,
-                        handler,
-                    ),
+                    (Some(qualifier), BindingKind::Value) => self
+                        .create_reference_bound_named_pattern(
+                            name_binding_point,
+                            binding.r#type.clone(),
+                            qualifier,
+                            binding.address,
+                            pat.span.clone().unwrap(),
+                            pat.name.clone(),
+                            pat.is_mutable,
+                            handler,
+                        ),
 
                     // normal value binding
-                    (
-                        pattern::BindingKind::Value(mutable),
-                        BindingKind::Value,
-                    ) => {
+                    (None, BindingKind::Value) => {
                         let _ = name_binding_point.insert(
                             pat.name.clone(),
                             NameBinding {
-                                mutable,
+                                mutable: pat.is_mutable,
                                 load_address: binding.address.clone(),
                                 span: Some(pat.span.clone().unwrap()),
                             },
@@ -615,10 +613,7 @@ impl<
                             binding.address,
                             pat.span.clone().unwrap(),
                             pat.name.clone(),
-                            match pat.kind {
-                                pattern::BindingKind::Value(mutable) => mutable,
-                                pattern::BindingKind::Reference(_) => false,
-                            },
+                            pat.is_mutable,
                             handler,
                         );
                     }

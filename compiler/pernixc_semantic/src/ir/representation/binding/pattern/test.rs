@@ -13,7 +13,7 @@ use crate::{
     ir::{
         address::{self, Address, Field, Memory},
         instruction::Instruction,
-        pattern::{BindingKind, Irrefutable, NameBindingPoint, Named, Pattern},
+        pattern::{Irrefutable, NameBindingPoint, Named, Pattern},
         representation::{
             binding::{
                 infer::{self, Erased},
@@ -30,7 +30,7 @@ use crate::{
             representation::{Index, IndexMut, Insertion},
             resolution, Building, Table,
         },
-        Accessibility, AdtTemplate, Function, FunctionDefinition,
+        Accessibility, AdtID, AdtTemplate, Function, FunctionDefinition,
         FunctionTemplate, GenericDeclaration, GenericID, MemberID,
         StructDefinition,
     },
@@ -39,7 +39,7 @@ use crate::{
         term::{
             self,
             lifetime::Lifetime,
-            r#type::{Primitive, Qualifier, Reference, SymbolID, Type},
+            r#type::{Primitive, Qualifier, Reference, Type},
             GenericArguments, Symbol, Tuple, TupleElement,
         },
     },
@@ -245,7 +245,8 @@ fn value_bound_named() {
     };
 
     assert_eq!(pattern.name, "helloWorld");
-    assert_eq!(pattern.kind, BindingKind::Value(true));
+    assert_eq!(pattern.is_mutable, true);
+    assert_eq!(pattern.reference_binding, None);
 
     let name = binding_point.named_patterns_by_name.get("helloWorld").unwrap();
 
@@ -255,7 +256,7 @@ fn value_bound_named() {
 
 #[test]
 fn reference_bound_named() {
-    const SIMPLE_NAMED_REFERENCE_BOUND: &str = "ref unique helloWorld";
+    const SIMPLE_NAMED_REFERENCE_BOUND: &str = "&mutable helloWorld";
 
     let (table, function_id) = create_dummy_function();
 
@@ -289,7 +290,7 @@ fn reference_bound_named() {
         &binding_point,
         "helloWorld",
         &Address::Memory(Memory::Alloca(alloca_id)),
-        Qualifier::Unique,
+        Qualifier::Mutable,
         &Type::default(),
     );
 }
@@ -297,7 +298,7 @@ fn reference_bound_named() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn value_bound_struct() {
-    const VALUE_BOUND_STRUCT: &str = "{ ref unique a, mutable b }";
+    const VALUE_BOUND_STRUCT: &str = "{ &mutable a, mutable b }";
 
     let (mut table, function_id) = create_dummy_function();
     let struct_id = {
@@ -344,7 +345,7 @@ fn value_bound_struct() {
     };
 
     let struct_ty = Type::Symbol(Symbol {
-        id: SymbolID::Struct(struct_id),
+        id: AdtID::Struct(struct_id),
         generic_arguments: GenericArguments::default(),
     });
 
@@ -397,7 +398,7 @@ fn value_bound_struct() {
                 ))),
                 id: a_field_id,
             }),
-            Qualifier::Unique,
+            Qualifier::Mutable,
             &Type::Primitive(Primitive::Int32),
         );
     }
@@ -411,7 +412,8 @@ fn value_bound_struct() {
         };
 
         assert_eq!(pattern.name, "b");
-        assert_eq!(pattern.kind, BindingKind::Value(true));
+        assert_eq!(pattern.is_mutable, true);
+        assert_eq!(pattern.reference_binding, None);
 
         assert_eq!(
             binding_point.named_patterns_by_name.get("b").unwrap().load_address,
@@ -429,7 +431,7 @@ fn value_bound_struct() {
 #[allow(clippy::too_many_lines)]
 fn reference_bound_struct() {
     // both a and b are bound by reference
-    const REFERENCE_BOUND_STRUCT: &str = "{ ref a, mutable b }";
+    const REFERENCE_BOUND_STRUCT: &str = "{ &a, mutable b }";
 
     let (mut table, function_id) = create_dummy_function();
     let struct_id = {
@@ -491,7 +493,7 @@ fn reference_bound_struct() {
     assert!(storage.as_vec().is_empty());
 
     let struct_ty = Type::Symbol(Symbol {
-        id: SymbolID::Struct(struct_id),
+        id: AdtID::Struct(struct_id),
         generic_arguments: GenericArguments::default(),
     });
     let reference_struct_ty = Type::Reference(Reference {
@@ -596,7 +598,7 @@ fn reference_bound_struct() {
 #[test]
 #[allow(missing_docs)]
 fn value_bound_tuple() {
-    const VALUE_BOUND_TUPLE: &str = "(ref a, mutable b)";
+    const VALUE_BOUND_TUPLE: &str = "(&a, mutable b)";
 
     let (table, function_id) = create_dummy_function();
 
@@ -679,7 +681,8 @@ fn value_bound_tuple() {
         };
 
         assert_eq!(pattern.name, "b");
-        assert_eq!(pattern.kind, BindingKind::Value(true));
+        assert_eq!(pattern.reference_binding, None);
+        assert_eq!(pattern.is_mutable, true);
 
         assert_eq!(
             binding_point.named_patterns_by_name.get("b").unwrap().load_address,
@@ -695,7 +698,7 @@ fn value_bound_tuple() {
 
 #[test]
 fn reference_bound_tuple() {
-    const REFERENCE_BOUND_TUPLE: &str = "(ref a, mutable b)";
+    const REFERENCE_BOUND_TUPLE: &str = "(&a, mutable b)";
 
     let (table, function_id) = create_dummy_function();
 

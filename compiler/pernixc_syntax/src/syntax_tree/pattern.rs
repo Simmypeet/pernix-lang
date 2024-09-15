@@ -13,7 +13,7 @@ use pernixc_lexical::{
     token_stream::Delimiter,
 };
 
-use super::{expression::Boolean, ConnectedList, Qualifier};
+use super::{expression::Boolean, ConnectedList, ReferenceOf};
 use crate::{
     error::{self, Error, SyntaxKind},
     parser::{Parser, Reading},
@@ -212,66 +212,35 @@ impl<Pattern> SourceElement for Tuple<Pattern> {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// Ref:
-///     `ref` Qualifier?
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Ref {
-    #[get = "pub"]
-    ref_keyword: Keyword,
-    #[get = "pub"]
-    qualifier: Option<Qualifier>,
-}
-
-impl SourceElement for Ref {
-    fn span(&self) -> Span {
-        self.qualifier().as_ref().map_or_else(
-            || self.ref_keyword.span(),
-            |end| self.ref_keyword.span().join(&end.span()).unwrap(),
-        )
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Binding:
-///     Ref
-///     | 'mutable'?
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum Binding {
-    Ref(Ref),
-    Value { mutable_keyword: Option<Keyword> },
-}
-
-/// Syntax Synopsis:
-/// ``` txt
 /// Named:
-///     'ref'? 'mutable'? Identifier
+///     'mutable'? Qualifier? Identifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Named {
     #[get = "pub"]
-    binding: Binding,
+    mutable_keyword: Option<Keyword>,
+    #[get = "pub"]
+    reference_of: Option<ReferenceOf>,
     #[get = "pub"]
     identifier: Identifier,
 }
 
 impl SourceElement for Named {
     fn span(&self) -> Span {
-        match &self.binding {
-            Binding::Ref(r) => r.span().join(&self.identifier.span()).unwrap(),
-            Binding::Value { mutable_keyword } => {
-                mutable_keyword.as_ref().map_or_else(
+        self.mutable_keyword.as_ref().map_or_else(
+            || {
+                self.reference_of.as_ref().map_or_else(
                     || self.identifier.span(),
-                    |keyword| {
-                        keyword.span().join(&self.identifier.span()).unwrap()
+                    |qualifier| {
+                        qualifier.span().join(&self.identifier.span()).unwrap()
                     },
                 )
-            }
-        }
+            },
+            |mutable_keyword| {
+                mutable_keyword.span().join(&self.identifier.span()).unwrap()
+            },
+        )
     }
 }
 
@@ -422,63 +391,77 @@ impl<'a> Parser<'a> {
         handler: &dyn Handler<error::Error>,
     ) -> Option<Named> {
         match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(mutable_keyword))
-                if mutable_keyword.kind == KeywordKind::Mutable =>
-            {
+            Reading::Unit(Token::Keyword(
+                mutable_keyword @ Keyword { kind: KeywordKind::Mutable, .. },
+            )) => {
                 // eat the mutable keyword
                 self.forward();
 
-                let identifier = self.parse_identifier(handler)?;
+                let reference_of = if let Reading::Unit(Token::Punctuation(
+                    ampersand @ Punctuation { punctuation: '&', .. },
+                )) = self.stop_at_significant()
+                {
+                    self.forward();
 
-                Some(Named {
-                    binding: Binding::Value {
-                        mutable_keyword: Some(mutable_keyword),
-                    },
-                    identifier,
-                })
-            }
+                    let mutable_keyword =
+                        if let Reading::Unit(Token::Keyword(
+                            mutable @ Keyword {
+                                kind: KeywordKind::Mutable, ..
+                            },
+                        )) = self.stop_at_significant()
+                        {
+                            self.forward();
+                            Some(mutable)
+                        } else {
+                            None
+                        };
 
-            Reading::Unit(Token::Keyword(ref_keyword))
-                if ref_keyword.kind == KeywordKind::Ref =>
-            {
-                // eat ref keyword
-                self.forward();
-
-                // parse qualifier
-                let qualifier = match self.stop_at_significant() {
-                    Reading::Unit(Token::Keyword(mutable_keyword))
-                        if mutable_keyword.kind == KeywordKind::Mutable =>
-                    {
-                        // eat mutable keyword
-                        self.forward();
-
-                        Some(Qualifier::Mutable(mutable_keyword))
-                    }
-
-                    Reading::Unit(Token::Keyword(unique_keyword))
-                        if unique_keyword.kind == KeywordKind::Unique =>
-                    {
-                        // eat unique keyword
-                        self.forward();
-
-                        Some(Qualifier::Unique(unique_keyword))
-                    }
-
-                    _ => None,
+                    Some(ReferenceOf { ampersand, mutable_keyword })
+                } else {
+                    None
                 };
 
                 let identifier = self.parse_identifier(handler)?;
 
                 Some(Named {
-                    binding: Binding::Ref(Ref { ref_keyword, qualifier }),
+                    mutable_keyword: Some(mutable_keyword),
+                    reference_of,
                     identifier,
                 })
             }
 
             Reading::Unit(Token::Identifier(identifier)) => {
                 self.forward();
+
                 Some(Named {
-                    binding: Binding::Value { mutable_keyword: None },
+                    mutable_keyword: None,
+                    reference_of: None,
+                    identifier,
+                })
+            }
+
+            Reading::Unit(Token::Punctuation(
+                ampersand @ Punctuation { punctuation: '&', .. },
+            )) => {
+                self.forward();
+
+                let mutable_keyword = if let Reading::Unit(Token::Keyword(
+                    mutable @ Keyword { kind: KeywordKind::Mutable, .. },
+                )) = self.stop_at_significant()
+                {
+                    self.forward();
+                    Some(mutable)
+                } else {
+                    None
+                };
+                let identifier = self.parse_identifier(handler)?;
+
+                Some(Named {
+                    mutable_keyword: None,
+                    reference_of: Some(ReferenceOf {
+                        ampersand,
+                        mutable_keyword,
+                    }),
                     identifier,
                 })
             }
@@ -488,10 +471,15 @@ impl<'a> Parser<'a> {
                     expected: SyntaxKind::Identifier,
                     alternatives: vec![
                         SyntaxKind::Keyword(KeywordKind::Mutable),
-                        SyntaxKind::Keyword(KeywordKind::Ref),
+                        SyntaxKind::Punctuation('@'),
+                        SyntaxKind::Punctuation('&'),
                     ],
                     found: self.reading_to_found(found),
                 });
+
+                // make progress
+                self.forward();
+
                 None
             }
         }
@@ -504,7 +492,8 @@ impl<'a> Parser<'a> {
         let named_pattern = self.parse_named_pattern(handler)?;
 
         // can accept a nested pattern
-        if named_pattern.binding.as_value().map_or(false, Option::is_none)
+        if named_pattern.mutable_keyword.is_none()
+            && named_pattern.reference_of.is_none()
             && matches!(
                 self.stop_at_significant(),
                 Reading::Unit(Token::Punctuation(punc))
@@ -524,6 +513,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn parse_structural_pattern<T: Pattern + Debug>(
         &mut self,
         handler: &dyn Handler<error::Error>,
@@ -727,11 +717,11 @@ impl Pattern for Irrefutable {
 
             // parse named pattern
             Reading::Unit(
-                Token::Keyword(Keyword {
-                    kind: KeywordKind::Mutable | KeywordKind::Ref,
-                    ..
-                })
-                | Token::Identifier(_),
+                Token::Keyword(Keyword { kind: KeywordKind::Mutable, .. })
+                | Token::Identifier(_)
+                | Token::Punctuation(Punctuation {
+                    punctuation: '&' | '@', ..
+                }),
             ) => parser.parse_named_pattern(handler).map(Self::Named),
 
             // parse tuple pattern
@@ -780,11 +770,11 @@ impl Pattern for Refutable {
 
             // parse named pattern
             Reading::Unit(
-                Token::Keyword(Keyword {
-                    kind: KeywordKind::Mutable | KeywordKind::Ref,
-                    ..
-                })
-                | Token::Identifier(_),
+                Token::Keyword(Keyword { kind: KeywordKind::Mutable, .. })
+                | Token::Identifier(_)
+                | Token::Punctuation(Punctuation {
+                    punctuation: '&' | '@', ..
+                }),
             ) => parser.parse_named_pattern(handler).map(Self::Named),
 
             Reading::Unit(Token::Keyword(case_keyword))

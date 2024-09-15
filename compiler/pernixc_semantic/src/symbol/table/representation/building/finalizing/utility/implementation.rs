@@ -1,6 +1,6 @@
 //! Contains code related to building the implementation symbols.
 
-use pernixc_base::handler::Handler;
+use pernixc_base::{handler::Handler, source_file::Span};
 use pernixc_syntax::syntax_tree;
 
 use super::{builder, occurrences::Occurrences};
@@ -34,7 +34,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         implementation_id: GenericID,
         implemented_id: ID<T>,
         implemented_id_generic_parameter_state: usize,
-        generic_identifier: &syntax_tree::GenericIdentifier,
+        generic_arguments: Option<&syntax_tree::GenericArguments>,
+        resolution_span: &Span,
         occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> term::GenericArguments<model::Default>
@@ -51,7 +52,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
         let generic_arguments = self
             .resolve_generic_arguments(
-                generic_identifier,
+                generic_arguments,
+                resolution_span,
                 implementation_id.into(),
                 implemented_id.into(),
                 resolution::Config {

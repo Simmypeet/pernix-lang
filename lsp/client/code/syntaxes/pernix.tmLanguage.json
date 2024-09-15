@@ -657,7 +657,7 @@
 				{
 					"comment": "control flow keywords",
 					"name": "keyword.control.pernix",
-					"match": "\\b(await|break|continue|do|resume|with|else|for|if|loop|match|return|try|while|yield|case|express)\\b"
+					"match": "\\b(await|break|continue|do|resume|with|else|for|if|loop|match|return|try|while|yield|case|express|from)\\b"
 				},
 				{
 					"comment": "storage keywords",
@@ -715,9 +715,14 @@
 					"match": "\\b(public|private|interanl|where|implements|as|unsafe|null|property|mark|at|tuple|delete|final|and|or|inherits)\\b"
 				},
 				{
-					"comment": "crate",
-					"name": "keyword.other.crate.pernix",
-					"match": "\\bcrate\\b"
+					"comment": "target",
+					"name": "keyword.other.target.pernix",
+					"match": "\\target\\b"
+				},
+				{
+					"comment": "this",
+					"name": "keyword.other.this.pernix",
+					"match": "\\this\\b"
 				},
 				{
 					"comment": "mutable",

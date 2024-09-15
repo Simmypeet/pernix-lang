@@ -12,82 +12,20 @@ use proptest::{
 
 use crate::syntax_tree::{
     expression::strategy::Boolean,
-    strategy::{ConnectedList, ConstantPunctuation, Identifier, Qualifier},
+    strategy::{ConnectedList, ConstantPunctuation, Identifier, ReferenceOf},
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Binding {
-    Value(bool),
-    Ref(Option<Qualifier>),
-}
-
-impl Display for Binding {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Value(mutable) => {
-                if *mutable {
-                    write!(f, "mutable")?;
-                }
-
-                Ok(())
-            }
-            Self::Ref(r) => {
-                write!(f, "ref")?;
-                if let Some(r) = r {
-                    write!(f, " {r}")?;
-                }
-
-                Ok(())
-            }
-        }
-    }
-}
-
-impl Arbitrary for Binding {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            proptest::bool::ANY.prop_map(Binding::Value),
-            proptest::option::of(Qualifier::arbitrary()).prop_map(Binding::Ref),
-        ]
-        .boxed()
-    }
-}
-
-impl Input<&super::Binding> for &Binding {
-    fn assert(self, output: &super::Binding) -> TestCaseResult {
-        match (self, output) {
-            (
-                Binding::Value(input),
-                super::Binding::Value { mutable_keyword },
-            ) => {
-                prop_assert_eq!(*input, mutable_keyword.is_some());
-            }
-            (Binding::Ref(input), super::Binding::Ref(output)) => {
-                input.as_ref().assert(output.qualifier.as_ref())?;
-            }
-            (input, output) => {
-                return Err(TestCaseError::fail(format!(
-                    "Expected {input:?} but got {output:?}",
-                )));
-            }
-        }
-
-        Ok(())
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Named {
+    pub is_mutable: bool,
+    pub reference_of: Option<ReferenceOf>,
     pub identifier: Identifier,
-    pub kind: Binding,
 }
 
 impl Input<&super::Named> for &Named {
     fn assert(self, output: &super::Named) -> TestCaseResult {
-        self.kind.assert(&output.binding)?;
+        prop_assert_eq!(self.is_mutable, output.mutable_keyword.is_some());
+        self.reference_of.as_ref().assert(output.reference_of.as_ref())?;
         self.identifier.assert(&output.identifier)
     }
 }
@@ -97,15 +35,31 @@ impl Arbitrary for Named {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (Binding::arbitrary(), Identifier::arbitrary())
-            .prop_map(|(kind, identifier)| Self { identifier, kind })
+        (
+            proptest::bool::ANY,
+            proptest::option::of(ReferenceOf::arbitrary()),
+            Identifier::arbitrary(),
+        )
+            .prop_map(|(is_mutable, reference_of, identifier)| Self {
+                is_mutable,
+                reference_of,
+                identifier,
+            })
             .boxed()
     }
 }
 
 impl Display for Named {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.kind, self.identifier)
+        if self.is_mutable {
+            write!(f, "mutable ")?;
+        }
+
+        if let Some(reference_of) = &self.reference_of {
+            write!(f, "{reference_of}")?;
+        }
+
+        write!(f, "{}", self.identifier)
     }
 }
 

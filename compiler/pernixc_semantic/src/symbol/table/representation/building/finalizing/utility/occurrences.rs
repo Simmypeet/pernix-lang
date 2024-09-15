@@ -1,8 +1,8 @@
 //! Contains the definition of [`Occurrences`].
 
 use getset::Getters;
-use pernixc_base::handler::Handler;
-use pernixc_syntax::syntax_tree::{self, GenericIdentifier};
+use pernixc_base::{handler::Handler, source_file::Span};
+use pernixc_syntax::syntax_tree;
 
 use crate::{
     error,
@@ -34,7 +34,7 @@ pub struct Occurrences {
     constants: Vec<(term::constant::Constant<Default>, syntax_tree::Constant)>,
 
     #[get = "pub"]
-    resolutions: Vec<(Resolution<Default>, GenericIdentifier)>,
+    resolutions: Vec<(Resolution<Default>, Span)>,
 
     #[get = "pub"]
     unpacked_types:
@@ -128,7 +128,7 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
         _: GlobalID,
-        _: &pernixc_lexical::token::Identifier,
+        _: &Span,
     ) -> bool {
         true
     }
@@ -139,7 +139,7 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
         resolution: &Resolution<Default>,
-        generic_identifier: &GenericIdentifier,
+        generic_identifier: &Span,
     ) -> bool {
         self.resolutions.push((resolution.clone(), generic_identifier.clone()));
         true

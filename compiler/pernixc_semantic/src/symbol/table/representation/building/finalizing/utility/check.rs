@@ -352,6 +352,9 @@ where
                     handler,
                 );
             }
+
+            // no need to check for `this` resolution since it's always valid
+            resolution::Resolution::PositiveTraitImplementation(_) => {}
         }
     }
 
@@ -959,13 +962,9 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         );
 
         // check resolution occurrences
-        for (resolution, generic_identifier) in occurrences.resolutions() {
+        for (resolution, span) in occurrences.resolutions() {
             environment.check_resolution_occurrence(
-                resolution,
-                &generic_identifier.span(),
-                true,
-                id,
-                handler,
+                resolution, span, true, id, handler,
             );
         }
 
@@ -1263,7 +1262,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             id: tr,
                         }),
                         Lifetime::Parameter(LifetimeParameterID {
-                            parent: trait_member_id.into(),
+                            parent: implementation_member_id.into(),
                             id: im,
                         }),
                     )
@@ -1291,7 +1290,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             id: tr,
                         }),
                         r#type::Type::Parameter(TypeParameterID {
-                            parent: trait_member_id.into(),
+                            parent: implementation_member_id.into(),
                             id: im,
                         }),
                     )
@@ -1319,7 +1318,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             id: tr,
                         }),
                         constant::Constant::Parameter(ConstantParameterID {
-                            parent: trait_member_id.into(),
+                            parent: implementation_member_id.into(),
                             id: im,
                         }),
                     )

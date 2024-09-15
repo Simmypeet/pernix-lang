@@ -258,7 +258,8 @@ impl<ParentID: Copy + Into<GlobalID>, Definition> Callable
 /// Represents a kind of symbol that defines a algebraic data type.
 ///
 /// This primarily includes [`Struct`] and [`Enum`].
-pub trait Adt: Generic {
+#[allow(private_bounds)]
+pub trait Adt: ImplementedMut<ID<AdtImplementation>> {
     /// Gets the [`GenericParameterVariances`], containing the variances
     /// informations of all the generic parameters.
     fn generic_parameter_variances(&self) -> &GenericParameterVariances;
@@ -303,25 +304,14 @@ pub enum GlobalID {
 
 /// The private trait that is implemented by all symbols that can be implemented
 /// by `implements SYMBOL` syntax.
-pub trait Implemented {
-    /// The type of the implementation ID.
-    type ImplementationID: Debug
-        + Clone
-        + Copy
-        + PartialEq
-        + Eq
-        + PartialOrd
-        + Ord
-        + std::hash::Hash;
+pub trait Implemented<ImplementationID>: Generic {
+    /// The list of implementations on the symbol.
+    fn implementations(&self) -> &HashSet<ImplementationID>;
 }
 
-trait ImplementedSealed: Implemented {
+trait ImplementedMut<ImplementationID>: Implemented<ImplementationID> {
     /// The list of implementations on the symbol.
-    #[allow(unused)]
-    fn implementations(&self) -> &HashSet<Self::ImplementationID>;
-
-    /// The list of implementations on the symbol.
-    fn implementations_mut(&mut self) -> &mut HashSet<Self::ImplementationID>;
+    fn implementations_mut(&mut self) -> &mut HashSet<ImplementationID>;
 }
 
 /// The private trait that is implemented by all symbols that can contain
@@ -501,8 +491,9 @@ pub struct Module {
     #[get = "pub"]
     span: Option<Span>,
 
-    /// The modules that are used by `using` statements.
-    pub usings: HashSet<ID<Module>>,
+    /// The list of imports that are used by the module.
+    #[get = "pub"]
+    imports: HashMap<String, (ModuleMemberID, Option<Span>)>,
 }
 
 impl Parent for Module {
@@ -940,16 +931,20 @@ pub struct Field {
 /// Represents a struct declaration, denoted by `struct NAME { ... }` syntax.
 pub type Struct = GenericTemplate<ID<Module>, AdtTemplate<StructDefinition>>;
 
-impl Implemented for Struct {
-    type ImplementationID = ID<AdtImplementation>;
-}
-
-impl ImplementedSealed for Struct {
-    fn implementations(&self) -> &HashSet<Self::ImplementationID> {
+impl<ParentID: Copy + Into<GlobalID>, AdtDefinition>
+    Implemented<ID<AdtImplementation>>
+    for GenericTemplate<ParentID, AdtTemplate<AdtDefinition>>
+{
+    fn implementations(&self) -> &HashSet<ID<AdtImplementation>> {
         &self.implementations
     }
+}
 
-    fn implementations_mut(&mut self) -> &mut HashSet<Self::ImplementationID> {
+impl<ParentID: Copy + Into<GlobalID>, AdtDefinition>
+    ImplementedMut<ID<AdtImplementation>>
+    for GenericTemplate<ParentID, AdtTemplate<AdtDefinition>>
+{
+    fn implementations_mut(&mut self) -> &mut HashSet<ID<AdtImplementation>> {
         &mut self.implementations
     }
 }
@@ -1037,20 +1032,6 @@ impl Global for Variant {
 
 /// Represents an enum declaration, denoted by `enum NAME { ... }` syntax.
 pub type Enum = GenericTemplate<ID<Module>, AdtTemplate<EnumDefinition>>;
-
-impl Implemented for Enum {
-    type ImplementationID = ID<AdtImplementation>;
-}
-
-impl ImplementedSealed for Enum {
-    fn implementations(&self) -> &HashSet<Self::ImplementationID> {
-        &self.implementations
-    }
-
-    fn implementations_mut(&mut self) -> &mut HashSet<Self::ImplementationID> {
-        &mut self.implementations
-    }
-}
 
 impl Parent for Enum {
     type MemberID = ID<Variant>;
@@ -1182,21 +1163,21 @@ pub enum Intrinsic {
     /// `memcpy` from the reference stored im the first parameter and returns
     /// it.
     ///
-    /// This primarily used for `core::Copy` trait implementation for primitive
-    /// types.
+    /// This primarily used for `core::Clone` trait implementation for
+    /// primitive types.
     Memcpy,
 
-    /// Invokes each `core::Copy` trait implementation for each element in the
+    /// Invokes each `core::Clone` trait implementation for each element in the
     /// array and returns the copied array.
     ///
-    /// This is used for `core::Copy` trait implementation for array types.
-    ArrayCopy,
+    /// This is used for `core::Clone` trait implementation for array types.
+    ArrayClone,
 
-    /// Invokes each `core::Copy` trait implementation for each element in
+    /// Invokes each `core::Clone` trait implementation for each element in
     /// the tuple and returns the copied tuple.
     ///
-    /// This is used for `core::Copy` trait implementation for tuple types.
-    TupleCopy,
+    /// This is used for `core::Clone` trait implementation for tuple types.
+    TupleClone,
 }
 
 /// Represents the external linkage of the function.
@@ -1597,16 +1578,14 @@ from_ids!(
 /// Represents a trait declaration, denoted by `trait NAME { ... }` syntax.
 pub type Trait = GenericTemplate<ID<Module>, TraitDefinition>;
 
-impl Implemented for Trait {
-    type ImplementationID = TraitImplementationID;
-}
-
-impl ImplementedSealed for Trait {
-    fn implementations(&self) -> &HashSet<Self::ImplementationID> {
+impl Implemented<TraitImplementationID> for Trait {
+    fn implementations(&self) -> &HashSet<TraitImplementationID> {
         &self.implementations
     }
+}
 
-    fn implementations_mut(&mut self) -> &mut HashSet<Self::ImplementationID> {
+impl ImplementedMut<TraitImplementationID> for Trait {
+    fn implementations_mut(&mut self) -> &mut HashSet<TraitImplementationID> {
         &mut self.implementations
     }
 }

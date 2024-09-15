@@ -13,7 +13,7 @@ use pernixc_base::{
 use pernixc_lexical::token;
 use pernixc_syntax::syntax_tree::{
     self,
-    expression::{BlockOrIfElse, Loop},
+    expression::{AccessKind, BlockOrIfElse, Loop, PostfixOperator},
     ConnectedList, Label,
 };
 
@@ -25,20 +25,22 @@ use super::{
 use crate::{
     arena::ID,
     error::{
-        self, BlockWithGivenLableNameNotFound, CannotDereference,
+        self, AdtImplementationFunctionCannotBeUsedAsMethod,
+        BlockWithGivenLableNameNotFound, CannotDereference,
         CannotIndexPastUnpackedTuple, DuplicatedFieldInitialization,
         ExpectArray, ExpectLValue, ExpectStructType, ExpressOutsideBlock,
         ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
         FloatingPointLiteralHasIntegralSuffix, InvalidCastType,
         InvalidNumericSuffix, InvalidRelationalOperation, LoopControlFlow,
         LoopControlFlowOutsideLoop, LoopWithGivenLabelNameNotFound,
-        MismatchedArgumentCount, MismatchedMutability,
-        MismatchedReferenceQualifier, MoreThanOneUnpackedInTupleExpression,
-        NotAllFlowPathsExpressValue, ReturnIsNotAllowed, SymbolIsNotCallable,
+        MismatchedArgumentCount, MismatchedQualifierForReferenceOf,
+        MoreThanOneUnpackedInTupleExpression, NotAllFlowPathsExpressValue,
+        ReturnIsNotAllowed, SymbolIsNotCallable, SymbolNotFound,
         TooLargeTupleIndex, TupleExpected, TupleIndexOutOfBOunds,
+        UnexpectedGenericArgumentsInField,
     },
     ir::{
-        address::{self, Address, Memory},
+        address::{self, Address, Memory, ReferenceAddress},
         control_flow_graph::{Block, InsertTerminatorError},
         instruction::{
             self, Instruction, Jump, ScopePop, ScopePush, Store, Terminator,
@@ -73,16 +75,13 @@ use crate::{
     type_system::{
         self,
         instantiation::{self, Instantiation},
-        model::Model,
+        model::{self, Model},
         simplify,
         term::{
             self,
             constant::Constant,
             lifetime::Lifetime,
-            r#type::{
-                self, Constraint, Expected, Primitive, Qualifier, SymbolID,
-                Type,
-            },
+            r#type::{self, Constraint, Expected, Primitive, Qualifier, Type},
             GenericArguments, Local, Symbol,
         },
     },
@@ -91,16 +90,17 @@ use crate::{
 /// An enumeration describes the intended purpose of binding the expression.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Target {
-    /// Binds the expression syntax tree for the value.
-    Value,
-
-    /// Binds the syntax tree for the underlying address.
+    /// Binds the expression syntax tree for the r-value.
     ///
-    /// This is used for obtaining the address of some l-value.
-    Address {
-        /// The expected qualifier of the underlying address.
-        expected_qualifier: Qualifier,
-    },
+    /// All the expressions can be bound as a r-value.
+    RValue,
+
+    /// Binds the syntax tree for the underlying address (l-value).
+    ///
+    /// This is a *request* to bind the expression as an l-value not strictly
+    /// required. If the expression cannot be bound as an l-value, the r-value
+    /// is returned instead.
+    LValue,
 
     /// The expression is being bound for a statement, therefore the produced
     /// value will be discarded right away.
@@ -114,20 +114,31 @@ pub struct Config {
     pub target: Target,
 }
 
+/// The result of binding the expression as an l-value. (The value has an
+/// address where it is stored.)
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LValue {
+    /// The address of the l-value.
+    pub address: Address<infer::Model>,
+
+    /// The span of the expression that produces this l-value.
+    pub span: Span,
+
+    /// The qualifier of the l-value.
+    pub qualifier: Qualifier,
+
+    /// Determines whether the l-value originates from a reference.
+    pub is_behind_reference: bool,
+}
+
 /// The result of binding the expression syntax tree.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Expression {
     /// The expression is bound as an r-value.
-    Value(Value<infer::Model>),
+    RValue(Value<infer::Model>),
 
     /// The expression is bound as an l-value.
-    Address {
-        /// The address of the l-value.
-        address: Address<infer::Model>,
-
-        /// The span of the expression.
-        span: Span,
-    },
+    LValue(LValue),
 
     /// The expression is bound as a statement.
     SideEffect,
@@ -232,7 +243,7 @@ impl<
             }
         };
 
-        Ok(Expression::Value(Value::Literal(Literal::Numeric(Numeric {
+        Ok(Expression::RValue(Value::Literal(Literal::Numeric(Numeric {
             integer_string: syntax_tree.numeric().span.str().to_string(),
             decimal_stirng: syntax_tree
                 .decimal()
@@ -262,7 +273,7 @@ impl<
             syntax_tree::expression::Boolean::False(_) => false,
         };
 
-        Ok(Expression::Value(Value::Literal(Literal::Boolean(Boolean {
+        Ok(Expression::RValue(Value::Literal(Literal::Boolean(Boolean {
             value,
             span: Some(syntax_tree.span()),
         }))))
@@ -281,25 +292,22 @@ impl<
     /// If the expression cannot be bound as an address, a variable will be
     /// created an the value is stored in the variable; the address of the
     /// variable is returned.
-    fn bind_as_address<'a, T>(
+    fn bind_as_lvalue<'a, T>(
         &mut self,
         syntax_tree: &'a T,
-        qualifier: Qualifier,
         create_temporary: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Address<infer::Model>, Error>
+    ) -> Result<LValue, Error>
     where
         T: SourceElement,
         Self: Bind<&'a T>,
     {
         match self.bind(
             syntax_tree,
-            Config {
-                target: Target::Address { expected_qualifier: qualifier },
-            },
+            Config { target: Target::LValue },
             handler,
         )? {
-            Expression::Value(value) => {
+            Expression::RValue(value) => {
                 if create_temporary {
                     let type_of_value = self.type_of_value(&value)?;
                     let alloca_id = self
@@ -313,7 +321,12 @@ impl<
                         }),
                     );
 
-                    Ok(Address::Memory(Memory::Alloca(alloca_id)))
+                    Ok(LValue {
+                        address: Address::Memory(Memory::Alloca(alloca_id)),
+                        span: syntax_tree.span(),
+                        qualifier: Qualifier::Mutable,
+                        is_behind_reference: false,
+                    })
                 } else {
                     handler.receive(Box::new(ExpectLValue {
                         expression_span: syntax_tree.span(),
@@ -322,7 +335,7 @@ impl<
                     Err(Error::Semantic(SemanticError(syntax_tree.span())))
                 }
             }
-            Expression::Address { address, .. } => Ok(address),
+            Expression::LValue(lvalue) => Ok(lvalue),
             Expression::SideEffect => {
                 unreachable!()
             }
@@ -382,10 +395,10 @@ impl<
                 let operand = self
                     .bind(
                         &**syntax_tree.prefixable(),
-                        Config { target: Target::Value },
+                        Config { target: Target::RValue },
                         handler,
                     )?
-                    .into_value()
+                    .into_r_value()
                     .unwrap();
 
                 // if required, type check the operand
@@ -402,119 +415,53 @@ impl<
                     Some(syntax_tree.span()),
                 );
 
-                Ok(Expression::Value(Value::Register(register_id)))
+                Ok(Expression::RValue(Value::Register(register_id)))
             }
 
-            syntax_tree::expression::PrefixOperator::Dereference(_) => {
-                let operand = self
-                    .bind(
-                        &**syntax_tree.prefixable(),
-                        Config { target: Target::Value },
-                        handler,
-                    )?
-                    .into_value()
-                    .unwrap();
-
-                // expected a reference type
-                let mut operand_type = self.type_of_value(&operand)?;
-
-                operand_type = simplify::simplify(
-                    &operand_type,
-                    &self.create_environment(),
-                )
-                .result;
-
-                let reference_type = match operand_type {
-                    Type::Reference(reference) => reference,
-                    found_type => {
-                        self.create_handler_wrapper(handler).receive(Box::new(
-                            CannotDereference {
-                                found_type: self
-                                    .inference_context
-                                    .into_constraint_model(found_type)
-                                    .unwrap(),
-                                span: syntax_tree.span(),
-                            },
-                        ));
-                        return Err(Error::Semantic(SemanticError(
-                            syntax_tree.span(),
-                        )));
-                    }
-                };
-
-                match config.target {
-                    Target::Value | Target::Statement => {
-                        let register_id = self.create_register_assignmnet(
-                            Assignment::Load(Load {
-                                address: Address::Memory(
-                                    address::Memory::ReferenceValue(operand),
-                                ),
-                                kind: LoadKind::Move,
-                            }),
-                            Some(syntax_tree.span()),
-                        );
-
-                        Ok(Expression::Value(Value::Register(register_id)))
-                    }
-                    Target::Address { expected_qualifier, .. } => {
-                        // soft error, keep going
-                        if reference_type.qualifier < expected_qualifier {
-                            self.create_handler_wrapper(handler).receive(
-                                Box::new(MismatchedReferenceQualifier {
-                                    found_reference_type: self
-                                        .inference_context
-                                        .into_constraint_model(Type::Reference(
-                                            reference_type,
-                                        ))
-                                        .unwrap(),
-                                    expected_qualifier,
-                                    span: syntax_tree.span(),
-                                }),
-                            );
-                        }
-
-                        Ok(Expression::Address {
-                            address: Address::Memory(
-                                address::Memory::ReferenceValue(operand),
-                            ),
-                            span: syntax_tree.span(),
-                        })
-                    }
-                }
-            }
+            syntax_tree::expression::PrefixOperator::Dereference(_) => self
+                .bind_dereference(
+                    &**syntax_tree.prefixable(),
+                    config,
+                    syntax_tree.span(),
+                    handler,
+                ),
 
             syntax_tree::expression::PrefixOperator::ReferenceOf(
                 reference_of,
             ) => {
-                let qualifier = reference_of.qualifier().as_ref().map_or(
-                    r#type::Qualifier::Immutable,
-                    |qualifier| match qualifier {
-                        syntax_tree::Qualifier::Mutable(_) => {
-                            r#type::Qualifier::Mutable
-                        }
-                        syntax_tree::Qualifier::Unique(_) => {
-                            r#type::Qualifier::Unique
-                        }
-                    },
-                );
+                let qualifier = if reference_of.mutable_keyword().is_some() {
+                    Qualifier::Mutable
+                } else {
+                    Qualifier::Immutable
+                };
 
-                let address = self.bind_as_address(
+                let lvalue = self.bind_as_lvalue(
                     &**syntax_tree.prefixable(),
-                    qualifier,
                     true,
                     handler,
                 )?;
 
+                if lvalue.qualifier < qualifier {
+                    self.create_handler_wrapper(handler).receive(Box::new(
+                        MismatchedQualifierForReferenceOf {
+                            reference_of_span: syntax_tree.span(),
+                            found_qualifier: lvalue.qualifier,
+                            expected_qualifier: qualifier,
+                            is_behind_reference: lvalue.is_behind_reference,
+                        },
+                    ))
+                }
+
                 let register_id = self.create_register_assignmnet(
                     Assignment::ReferenceOf(ReferenceOf {
-                        address,
+                        address: lvalue.address,
                         qualifier,
                         lifetime: Lifetime::Inference(Erased),
                     }),
                     Some(syntax_tree.span()),
                 );
 
-                Ok(Expression::Value(Value::Register(register_id)))
+                Ok(Expression::RValue(Value::Register(register_id)))
             }
         }
     }
@@ -662,7 +609,7 @@ impl<
         instantiation: Instantiation<infer::Model>,
         syntax_tree_span: Span,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<ID<Register<infer::Model>>, TypeOfError<infer::Model>> {
+    ) -> ID<Register<infer::Model>> {
         let callable = self.table.get_callable(callable_id).unwrap();
         let mut acutal_arguments = Vec::new();
 
@@ -693,7 +640,7 @@ impl<
             instantiation::instantiate(&mut parameter_ty, &instantiation);
 
             let _ = self.type_check(
-                self.type_of_value(argument_value)?,
+                self.type_of_value(argument_value).unwrap(),
                 Expected::Known(parameter_ty),
                 argument_span.clone(),
                 handler,
@@ -727,14 +674,14 @@ impl<
 
         instantiation::instantiate(&mut return_type, &instantiation);
 
-        Ok(self.create_register_assignmnet(
+        self.create_register_assignmnet(
             Assignment::FunctionCall(FunctionCall {
                 callable_id,
                 arguments: acutal_arguments,
                 instantiation,
             }),
             Some(syntax_tree_span),
-        ))
+        )
     }
 }
 
@@ -765,7 +712,7 @@ impl<
                     handler,
                 )?);
 
-                Ok(Expression::Value(value))
+                Ok(Expression::RValue(value))
             }
 
             resolution::Resolution::Generic(resolution::Generic {
@@ -890,9 +837,9 @@ impl<
                     instantiation,
                     syntax_tree_span,
                     handler,
-                )?);
+                ));
 
-                Ok(Expression::Value(value))
+                Ok(Expression::RValue(value))
             }
 
             resolution::Resolution::MemberGeneric(
@@ -1017,17 +964,11 @@ impl<
 
                         let _ = self.type_check(
                             Type::Symbol(Symbol {
-                                id: match adt_implementation.implemented_id() {
-                                    AdtID::Struct(id) => SymbolID::Struct(id),
-                                    AdtID::Enum(id) => SymbolID::Enum(id),
-                                },
+                                id: adt_implementation.implemented_id(),
                                 generic_arguments: parent_generic_arguments,
                             }),
                             Expected::Known(Type::Symbol(Symbol {
-                                id: match adt_implementation.implemented_id() {
-                                    AdtID::Struct(id) => SymbolID::Struct(id),
-                                    AdtID::Enum(id) => SymbolID::Enum(id),
-                                },
+                                id: adt_implementation.implemented_id(),
                                 generic_arguments: {
                                     let mut adt_generic_arguments =
                                         GenericArguments::from_default_model(
@@ -1049,7 +990,7 @@ impl<
                         assert!(instantiation
                             .append_from_generic_arguments(
                                 generic_arguments,
-                                adt_implementation_id.into(),
+                                id.into(),
                                 &self
                                     .table
                                     .get(id)
@@ -1075,9 +1016,9 @@ impl<
                     inst,
                     syntax_tree_span,
                     handler,
-                )?);
+                ));
 
-                Ok(Expression::Value(value))
+                Ok(Expression::RValue(value))
             }
 
             resolution => {
@@ -1092,6 +1033,501 @@ impl<
                 Err(Error::Semantic(SemanticError(syntax_tree_span)))
             }
         }
+    }
+}
+
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
+    fn bind_dereference<'a, T>(
+        &mut self,
+        dereference: &'a T,
+        config: Config,
+        final_span: Span,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error>
+    where
+        Self: Bind<&'a T>,
+        T: SourceElement,
+    {
+        let operand =
+            self.bind(dereference, Config { target: Target::LValue }, handler)?;
+
+        // expected a reference type
+        let operand_type = match &operand {
+            Expression::RValue(val) => self.type_of_value(val).unwrap(),
+            Expression::LValue(lvalue) => {
+                self.type_of_address(&lvalue.address).unwrap()
+            }
+            Expression::SideEffect => unreachable!(),
+        };
+
+        let reference_type = match operand_type {
+            Type::Reference(reference) => reference,
+            found_type => {
+                self.create_handler_wrapper(handler).receive(Box::new(
+                    CannotDereference {
+                        found_type: self
+                            .inference_context
+                            .into_constraint_model(found_type)
+                            .unwrap(),
+                        span: dereference.span(),
+                    },
+                ));
+                return Err(Error::Semantic(SemanticError(dereference.span())));
+            }
+        };
+
+        let address = |operand| match operand {
+            Expression::RValue(value) => {
+                Address::Memory(Memory::ReferenceValue(value))
+            }
+            Expression::LValue(lvalue) => {
+                Address::ReferenceAddress(ReferenceAddress {
+                    reference_address: Box::new(lvalue.address),
+                })
+            }
+            Expression::SideEffect => unreachable!(),
+        };
+
+        match config.target {
+            Target::RValue | Target::Statement => {
+                let register_id = self.create_register_assignmnet(
+                    Assignment::Load(Load {
+                        address: address(operand),
+                        kind: LoadKind::Copy,
+                    }),
+                    Some(dereference.span()),
+                );
+
+                Ok(Expression::RValue(Value::Register(register_id)))
+            }
+            Target::LValue => {
+                let new_qualifier = reference_type.qualifier.min(
+                    operand.as_l_value().map_or(Qualifier::Mutable, |lvalue| {
+                        if lvalue.is_behind_reference {
+                            lvalue.qualifier
+                        } else {
+                            Qualifier::Mutable
+                        }
+                    }),
+                );
+
+                Ok(Expression::LValue(LValue {
+                    address: address(operand),
+                    span: final_span,
+                    qualifier: new_qualifier,
+                    is_behind_reference: true,
+                }))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum RecieverKind {
+    Value,
+    Reference(Qualifier),
+}
+
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>,
+    > Binder<'t, S, RO, TO>
+{
+    fn is_method(
+        &self,
+        first_parameter_type: &Type<model::Default>,
+        implemented_type: &Type<model::Default>,
+    ) -> Option<RecieverKind> {
+        if first_parameter_type == implemented_type {
+            return Some(RecieverKind::Value);
+        }
+
+        if let Type::Reference(parameter_type) = first_parameter_type {
+            if &*parameter_type.pointee == implemented_type {
+                return Some(RecieverKind::Reference(parameter_type.qualifier));
+            }
+
+            return None;
+        }
+
+        None
+    }
+
+    fn bind_method_call(
+        &mut self,
+        postfix: &syntax_tree::expression::Postfix,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Value<infer::Model>, Error> {
+        let struct_expression_wth_access =
+            postfix.postfixable().as_postfix().unwrap();
+        let call = postfix.operator().as_call().unwrap();
+        let struct_expression = struct_expression_wth_access.postfixable();
+        let access =
+            struct_expression_wth_access.operator().as_access().unwrap();
+        let method_ident = access.kind().as_generic_identifier().unwrap();
+        let is_arrow = access.operator().is_arrow();
+
+        let (value, access_type) = if is_arrow
+        // expect the lvalue address
+        {
+            let lvalue = self
+                .bind_dereference(
+                    &**struct_expression,
+                    Config { target: Target::LValue },
+                    struct_expression.span(),
+                    handler,
+                )?
+                .into_l_value()
+                .unwrap();
+
+            let ty = self.type_of_address(&lvalue.address)?;
+
+            (Expression::LValue(lvalue), ty)
+        }
+        // expect the rvalue reference value
+        else {
+            let value = self.bind(
+                &**struct_expression,
+                Config { target: Target::LValue },
+                handler,
+            )?;
+
+            let ty = match &value {
+                Expression::RValue(val) => self.type_of_value(val).unwrap(),
+                Expression::LValue(val) => {
+                    self.type_of_address(&val.address).unwrap()
+                }
+                Expression::SideEffect => unreachable!(),
+            };
+
+            (value, ty)
+        };
+
+        let (adt_id, adt_generic_arguments) = match access_type {
+            Type::Symbol(Symbol {
+                id,
+                generic_arguments: struct_generic_arguments,
+            }) => (id, struct_generic_arguments),
+
+            found_type => {
+                self.create_handler_wrapper(handler).receive(Box::new(
+                    ExpectStructType {
+                        span: struct_expression.span(),
+                        r#type: self
+                            .inference_context
+                            .into_constraint_model(found_type)
+                            .unwrap(),
+                    },
+                ));
+
+                return Err(Error::Semantic(SemanticError(
+                    struct_expression.span(),
+                )));
+            }
+        };
+
+        // find the method id
+        let Some(adt_implementation_function_id) = self
+            .table
+            .get_adt(adt_id)
+            .unwrap()
+            .implementations()
+            .iter()
+            .find_map(|x| {
+                self.table
+                    .get(*x)
+                    .unwrap()
+                    .member_ids_by_name()
+                    .get(method_ident.identifier().span.str())
+                    .copied()
+            })
+        else {
+            self.create_handler_wrapper(handler).receive(Box::new(
+                SymbolNotFound {
+                    searched_global_id: Some(adt_id.into()),
+                    resolution_span: method_ident.span(),
+                },
+            ));
+
+            return Err(Error::Semantic(SemanticError(postfix.span())));
+        };
+
+        // this is considered as an global id resolution, notify the observer
+        self.resolution_observer.on_global_id_resolved(
+            self.table,
+            self.current_site,
+            handler,
+            adt_implementation_function_id.into(),
+            &method_ident.identifier().span,
+        );
+
+        let mut type_inferences = InferenceProvider::default();
+        let mut constant_inferences = InferenceProvider::default();
+
+        let Ok(function_generic_arguments) =
+            self.table.resolve_generic_arguments(
+                method_ident.generic_arguments().as_ref(),
+                &method_ident.span(),
+                self.current_site,
+                adt_implementation_function_id.into(),
+                resolution::Config {
+                    elided_lifetime_provider: Some(
+                        &mut InferenceProvider::default(),
+                    ),
+                    elided_type_provider: Some(&mut type_inferences),
+                    elided_constant_provider: Some(&mut constant_inferences),
+                    observer: Some(&mut self.resolution_observer),
+                    higher_ranked_lifetimes: None,
+                },
+                handler,
+            )
+        else {
+            return Err(Error::Semantic(SemanticError(postfix.span())));
+        };
+
+        let adt_implementation_id =
+            self.table.get(adt_implementation_function_id).unwrap().parent_id();
+        let adt_implementation = self.table.get(adt_implementation_id).unwrap();
+
+        let mut type_inferences = Vec::new();
+        let mut constant_inferences = Vec::new();
+
+        let mut instantiation = Instantiation::<infer::Model> {
+            lifetimes: adt_implementation
+                .generic_declaration
+                .parameters
+                .lifetime_parameters_as_order()
+                .map(|(id, _)| {
+                    (
+                        Lifetime::Parameter(LifetimeParameterID {
+                            parent: adt_implementation_id.into(),
+                            id,
+                        }),
+                        Lifetime::Inference(Erased),
+                    )
+                })
+                .collect(),
+            types: adt_implementation
+                .generic_declaration
+                .parameters
+                .type_parameters_as_order()
+                .map(|(id, _)| {
+                    let inference_variable = InferenceVariable::new();
+                    type_inferences.push(inference_variable);
+
+                    (
+                        Type::Parameter(TypeParameterID {
+                            parent: adt_implementation_id.into(),
+                            id,
+                        }),
+                        Type::Inference(inference_variable),
+                    )
+                })
+                .collect(),
+            constants: adt_implementation
+                .generic_declaration
+                .parameters
+                .constant_parameters_as_order()
+                .map(|(id, _)| {
+                    let inference_variable = InferenceVariable::new();
+                    constant_inferences.push(inference_variable);
+
+                    (
+                        Constant::Parameter(ConstantParameterID {
+                            parent: adt_implementation_id.into(),
+                            id,
+                        }),
+                        Constant::Inference(inference_variable),
+                    )
+                })
+                .collect(),
+        };
+
+        for x in type_inferences {
+            assert!(self.inference_context.register(x, Constraint::All(false)));
+        }
+        for x in constant_inferences {
+            assert!(self.inference_context.register(x, NoConstraint));
+        }
+
+        let _ = self.type_check(
+            Type::Symbol(Symbol {
+                id: adt_implementation.implemented_id(),
+                generic_arguments: adt_generic_arguments.clone(),
+            }),
+            Expected::Known(Type::Symbol(Symbol {
+                id: adt_implementation.implemented_id(),
+                generic_arguments: {
+                    let mut adt_generic_arguments =
+                        GenericArguments::from_default_model(
+                            adt_implementation.arguments.clone(),
+                        );
+
+                    adt_generic_arguments.instantiate(&instantiation);
+
+                    adt_generic_arguments
+                },
+            })),
+            struct_expression_wth_access.postfixable().span(),
+            handler,
+        );
+
+        assert!(instantiation
+            .append_from_generic_arguments(
+                function_generic_arguments.clone().unwrap_or_default(),
+                adt_implementation_function_id.into(),
+                &self
+                    .table
+                    .get(adt_implementation_function_id)
+                    .unwrap()
+                    .generic_declaration
+                    .parameters,
+            )
+            .unwrap()
+            .is_empty());
+
+        drop(adt_implementation);
+
+        self.resolution_observer.on_resolution_resolved(
+            self.table,
+            self.current_site,
+            handler,
+            &resolution::Resolution::MemberGeneric(resolution::MemberGeneric {
+                id: MemberGenericID::AdtImplementationFunction(
+                    adt_implementation_function_id,
+                ),
+                parent_generic_arguments: adt_generic_arguments,
+                generic_arguments: function_generic_arguments
+                    .unwrap_or_default(),
+            }),
+            &method_ident.span(),
+        );
+
+        let adt_implementation_function =
+            self.table.get(adt_implementation_function_id).unwrap();
+
+        let mut arguments = call
+            .arguments()
+            .as_ref()
+            .into_iter()
+            .flat_map(ConnectedList::elements)
+            .map(|arg| {
+                self.bind_value_or_error(&**arg, handler)
+                    .map(|x| (arg.span(), x))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if adt_implementation_function.parameters().len() == 0 {
+            self.create_handler_wrapper(handler).receive(Box::new(
+                AdtImplementationFunctionCannotBeUsedAsMethod {
+                    adt_implementation_function_id,
+                    span: method_ident.span(),
+                },
+            ));
+
+            return Err(Error::Semantic(SemanticError(postfix.span())));
+        }
+
+        let implemented_type = Type::Symbol(Symbol {
+            id: adt_id,
+            generic_arguments: self
+                .table
+                .get(adt_implementation_id)
+                .unwrap()
+                .arguments
+                .clone(),
+        });
+        let first_parameter_type = &adt_implementation_function
+            .parameters()
+            .get(
+                adt_implementation_function
+                    .parameter_as_order()
+                    .next()
+                    .unwrap()
+                    .0,
+            )
+            .unwrap()
+            .r#type;
+
+        let Some(reciever_kind) =
+            self.is_method(first_parameter_type, &implemented_type)
+        else {
+            self.create_handler_wrapper(handler).receive(Box::new(
+                AdtImplementationFunctionCannotBeUsedAsMethod {
+                    adt_implementation_function_id,
+                    span: method_ident.span(),
+                },
+            ));
+
+            return Err(Error::Semantic(SemanticError(postfix.span())));
+        };
+
+        let inserting_argument = match (reciever_kind, value) {
+            (RecieverKind::Value, Expression::RValue(value)) => {
+                (struct_expression.span(), value)
+            }
+            (
+                RecieverKind::Value,
+                Expression::LValue(LValue { address, span, .. }),
+            ) => {
+                let register_id = self.create_register_assignmnet(
+                    Assignment::Load(Load { address, kind: LoadKind::Move }),
+                    Some(span.clone()),
+                );
+
+                (span, Value::Register(register_id))
+            }
+
+            (RecieverKind::Reference(_), Expression::RValue(_)) => todo!(),
+
+            (
+                RecieverKind::Reference(qualifier),
+                Expression::LValue(address),
+            ) => {
+                if qualifier > address.qualifier {
+                    self.create_handler_wrapper(handler).receive(Box::new(
+                        MismatchedQualifierForReferenceOf {
+                            reference_of_span: struct_expression.span(),
+                            found_qualifier: address.qualifier,
+                            expected_qualifier: qualifier,
+                            is_behind_reference: address.is_behind_reference,
+                        },
+                    ))
+                }
+
+                let reference_of = self.create_register_assignmnet(
+                    Assignment::ReferenceOf(ReferenceOf {
+                        address: address.address,
+                        qualifier,
+                        lifetime: Lifetime::Inference(Erased),
+                    }),
+                    Some(address.span.clone()),
+                );
+
+                (address.span, Value::Register(reference_of))
+            }
+
+            _ => unreachable!(),
+        };
+
+        arguments.insert(0, inserting_argument);
+        drop(adt_implementation_function);
+
+        Ok(Value::Register(self.bind_function_call(
+            &arguments,
+            adt_implementation_function_id.into(),
+            instantiation,
+            postfix.span(),
+            handler,
+        )))
     }
 }
 
@@ -1122,6 +1558,26 @@ impl<
                     .collect::<Result<Vec<_>, _>>()?;
 
                 match &**syntax_tree.postfixable() {
+                    // possibly method call
+                    syntax_tree::expression::Postfixable::Postfix(postfix)
+                        // is an access to a field
+                        if matches!(
+                            postfix.operator(),
+                            PostfixOperator::Access(
+                                access
+                            )
+                            if matches!(access.kind(),
+                            AccessKind::GenericIdentifier(_)
+                            )
+                        ) =>
+                    {
+                        self.bind_method_call(
+                            syntax_tree,
+                            handler
+                        ).map(Expression::RValue)
+                    }
+
+                    // function call
                     syntax_tree::expression::Postfixable::Unit(
                         syntax_tree::expression::Unit::QualifiedIdentifier(
                             qualified_identifier,
@@ -1169,7 +1625,7 @@ impl<
                         self.current_site,
                         resolution::Config {
                             elided_lifetime_provider: Some(
-                                &mut InferenceProvider,
+                                &mut InferenceProvider::default(),
                             ),
                             elided_type_provider: None,
                             elided_constant_provider: None,
@@ -1234,7 +1690,7 @@ impl<
                     handler,
                 );
 
-                Ok(Expression::Value(Value::Register(
+                Ok(Expression::RValue(Value::Register(
                     self.create_register_assignmnet(
                         Assignment::Cast(Cast { value, r#type: cast_type }),
                         Some(syntax_tree.span()),
@@ -1243,97 +1699,46 @@ impl<
             }
 
             syntax_tree::expression::PostfixOperator::Access(access_syn) => {
-                let required_qualifier = match config.target {
-                    Target::Statement | Target::Value => Qualifier::Immutable,
-                    Target::Address { expected_qualifier } => {
-                        expected_qualifier
-                    }
-                };
-
-                let (address, mut access_type) = match access_syn.operator() {
+                let (lvalue, ty) = match access_syn.operator() {
                     // expect the lvalue address
                     syntax_tree::expression::AccessOperator::Dot(_) => {
-                        let address = self.bind_as_address(
+                        let lvalue = self.bind_as_lvalue(
                             &**syntax_tree.postfixable(),
-                            required_qualifier,
                             true,
                             handler,
                         )?;
 
-                        let address_type = self.type_of_address(&address)?;
+                        let ty = self.type_of_address(&lvalue.address)?;
 
-                        (address, address_type)
+                        (lvalue, ty)
                     }
 
                     // expect the rvalue reference value
                     syntax_tree::expression::AccessOperator::Arrow(_, _) => {
-                        let value = self.bind_value_or_error(
-                            &**syntax_tree.postfixable(),
-                            handler,
-                        )?;
+                        let lvalue = self
+                            .bind_dereference(
+                                &**syntax_tree.postfixable(),
+                                Config { target: Target::LValue },
+                                syntax_tree.span(),
+                                handler,
+                            )?
+                            .into_l_value()
+                            .unwrap();
 
-                        let mut type_of_value = self.type_of_value(&value)?;
-                        type_of_value = simplify::simplify(
-                            &type_of_value,
-                            &self.create_environment(),
-                        )
-                        .result;
+                        let ty = self.type_of_address(&lvalue.address)?;
 
-                        let type_of_value = match type_of_value {
-                            Type::Reference(reference) => reference,
-                            found_type => {
-                                self.create_handler_wrapper(handler).receive(
-                                    Box::new(CannotDereference {
-                                        found_type: self
-                                            .inference_context
-                                            .into_constraint_model(found_type)
-                                            .unwrap(),
-                                        span: syntax_tree.span(),
-                                    }),
-                                );
-                                return Err(Error::Semantic(SemanticError(
-                                    syntax_tree.span(),
-                                )));
-                            }
-                        };
-
-                        // soft error, keep going
-                        if type_of_value.qualifier < required_qualifier {
-                            self.create_handler_wrapper(handler).receive(
-                                Box::new(MismatchedReferenceQualifier {
-                                    found_reference_type: self
-                                        .inference_context
-                                        .into_constraint_model(Type::Reference(
-                                            type_of_value.clone(),
-                                        ))
-                                        .unwrap(),
-                                    expected_qualifier: required_qualifier,
-                                    span: syntax_tree.span(),
-                                }),
-                            );
-                        }
-
-                        (
-                            Address::Memory(address::Memory::ReferenceValue(
-                                value,
-                            )),
-                            *type_of_value.pointee,
-                        )
+                        (lvalue, ty)
                     }
                 };
 
-                access_type = simplify::simplify(
-                    &access_type,
-                    &self.create_environment(),
-                )
-                .result;
-
                 let address = match access_syn.kind() {
                     // struct field access
-                    syntax_tree::expression::AccessKind::Identifier(ident) => {
-                        let struct_id = match access_type {
+                    syntax_tree::expression::AccessKind::GenericIdentifier(
+                        generic_ident,
+                    ) => {
+                        let struct_id = match ty {
                             Type::Symbol(Symbol {
-                                id: SymbolID::Struct(struct_id),
+                                id: AdtID::Struct(struct_id),
                                 ..
                             }) => struct_id,
 
@@ -1354,23 +1759,35 @@ impl<
                             }
                         };
 
+                        // soft error, keep going
+                        if generic_ident.generic_arguments().is_some() {
+                            self.create_handler_wrapper(handler).receive(
+                                Box::new(UnexpectedGenericArgumentsInField {
+                                    field_access_span: syntax_tree.span(),
+                                }),
+                            );
+                        }
+
                         // find field id
                         let Some(field_id) = self
                             .table
                             .get(struct_id)
                             .unwrap()
                             .fields()
-                            .get_id(ident.span.str())
+                            .get_id(generic_ident.identifier().span.str())
                         else {
                             self.create_handler_wrapper(handler).receive(
                                 Box::new(FieldNotFound {
                                     struct_id,
-                                    identifier_span: ident.span.clone(),
+                                    identifier_span: generic_ident
+                                        .identifier()
+                                        .span
+                                        .clone(),
                                 }),
                             );
 
                             return Err(Error::Semantic(SemanticError(
-                                ident.span.clone(),
+                                generic_ident.identifier().span.clone(),
                             )));
                         };
 
@@ -1397,7 +1814,8 @@ impl<
                                     field_id,
                                     struct_id,
                                     referring_site: self.current_site,
-                                    referring_identifier_span: ident
+                                    referring_identifier_span: generic_ident
+                                        .identifier()
                                         .span
                                         .clone(),
                                 }),
@@ -1405,13 +1823,13 @@ impl<
                         }
 
                         Address::Field(address::Field {
-                            struct_address: Box::new(address),
+                            struct_address: Box::new(lvalue.address),
                             id: field_id,
                         })
                     }
 
                     syntax_tree::expression::AccessKind::Tuple(syn) => {
-                        let tuple_ty = match access_type {
+                        let tuple_ty = match ty {
                             Type::Tuple(tuple_ty) => tuple_ty,
                             found_type => {
                                 self.create_handler_wrapper(handler).receive(
@@ -1530,7 +1948,7 @@ impl<
                         }
 
                         Address::Tuple(address::Tuple {
-                            tuple_address: Box::new(address),
+                            tuple_address: Box::new(lvalue.address),
                             offset: if syn.minus().is_some() {
                                 address::Offset::FromEnd(index)
                             } else {
@@ -1545,13 +1963,13 @@ impl<
                             handler,
                         )?;
 
-                        if !matches!(access_type, Type::Array(_)) {
+                        if !matches!(ty, Type::Array(_)) {
                             self.create_handler_wrapper(handler).receive(
                                 Box::new(ExpectArray {
                                     span: syntax_tree.postfixable().span(),
                                     r#type: self
                                         .inference_context
-                                        .into_constraint_model(access_type)
+                                        .into_constraint_model(ty)
                                         .unwrap(),
                                 }),
                             );
@@ -1573,14 +1991,14 @@ impl<
                         );
 
                         Address::Index(address::Index {
-                            array_address: Box::new(address),
+                            array_address: Box::new(lvalue.address),
                             indexing_value: value,
                         })
                     }
                 };
 
                 match config.target {
-                    Target::Value => {
+                    Target::RValue => {
                         // will be optimized to move later
                         let register_id = self.create_register_assignmnet(
                             Assignment::Load(Load {
@@ -1590,14 +2008,16 @@ impl<
                             Some(syntax_tree.span()),
                         );
 
-                        Ok(Expression::Value(Value::Register(register_id)))
+                        Ok(Expression::RValue(Value::Register(register_id)))
                     }
 
                     // qualifier should've been checked earlier
-                    Target::Address { .. } => Ok(Expression::Address {
+                    Target::LValue { .. } => Ok(Expression::LValue(LValue {
                         address,
                         span: syntax_tree.span(),
-                    }),
+                        qualifier: lvalue.qualifier,
+                        is_behind_reference: lvalue.is_behind_reference,
+                    })),
 
                     Target::Statement => Ok(Expression::SideEffect),
                 }
@@ -1644,26 +2064,32 @@ impl<
         config: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
-        let is_simple_identifier =
-            syntax_tree.leading_scope_separator().is_none()
-                && syntax_tree.rest().is_empty()
-                && syntax_tree.first().generic_arguments().is_none();
+        let is_simple_identifier = syntax_tree.rest().is_empty()
+            && syntax_tree
+                .root()
+                .as_generic_identifier()
+                .map_or(false, |x| x.generic_arguments().is_none());
 
         // search for the variable/parameter in the stack
         #[allow(clippy::unnecessary_operation)]
         'out: {
             if is_simple_identifier {
-                let Some(name) = self
-                    .stack
-                    .search(syntax_tree.first().identifier().span.str())
-                else {
+                let Some(name) = self.stack.search(
+                    syntax_tree
+                        .root()
+                        .as_generic_identifier()
+                        .unwrap()
+                        .identifier()
+                        .span
+                        .str(),
+                ) else {
                     break 'out;
                 };
 
                 let address = name.load_address.clone();
 
                 match config.target {
-                    Target::Statement | Target::Value => {
+                    Target::Statement | Target::RValue => {
                         let register_id = self.create_register_assignmnet(
                             Assignment::Load(Load {
                                 address,
@@ -1674,30 +2100,34 @@ impl<
 
                         return Ok(match config.target {
                             Target::Statement => Expression::SideEffect,
-                            Target::Value => {
-                                Expression::Value(Value::Register(register_id))
+                            Target::RValue => {
+                                Expression::RValue(Value::Register(register_id))
                             }
-                            Target::Address { .. } => unreachable!(),
+                            Target::LValue { .. } => unreachable!(),
                         });
                     }
-                    Target::Address { expected_qualifier, .. } => {
-                        // report mutability error, soft error, keep going
-                        if matches!(
-                            expected_qualifier,
-                            Qualifier::Mutable | Qualifier::Unique
-                        ) && !name.mutable
-                        {
-                            self.create_handler_wrapper(handler).receive(
-                                Box::new(MismatchedMutability {
-                                    span: syntax_tree.span(),
-                                }),
-                            );
-                        }
+                    Target::LValue => {
+                        let name_qualifier = if name.mutable {
+                            Qualifier::Mutable
+                        } else {
+                            Qualifier::Immutable
+                        };
 
-                        return Ok(Expression::Address {
-                            address,
+                        let (is_behind_reference, final_qualifier) =
+                            if let Some(ref_qualifier) =
+                                self.is_behind_reference(&name.load_address)
+                            {
+                                (true, ref_qualifier.min(name_qualifier))
+                            } else {
+                                (false, name_qualifier)
+                            };
+
+                        return Ok(Expression::LValue(LValue {
+                            address: name.load_address.clone(),
                             span: syntax_tree.span(),
-                        });
+                            qualifier: final_qualifier,
+                            is_behind_reference,
+                        }));
                     }
                 }
             }
@@ -1764,7 +2194,7 @@ impl<
                     Some(syntax_tree.span()),
                 );
 
-                Ok(Expression::Value(Value::Register(register_id)))
+                Ok(Expression::RValue(Value::Register(register_id)))
             }
 
             resolution::Resolution::Generic(resolution::Generic {
@@ -1942,7 +2372,7 @@ impl<
             ),
         );
 
-        Ok(Expression::Value(value))
+        Ok(Expression::RValue(value))
     }
 }
 
@@ -1989,7 +2419,7 @@ impl<
             }))
         };
 
-        Ok(Expression::Value(value))
+        Ok(Expression::RValue(value))
     }
 }
 
@@ -2029,7 +2459,7 @@ impl<
             },
         );
 
-        Ok(Expression::Value(value))
+        Ok(Expression::RValue(value))
     }
 }
 
@@ -2122,7 +2552,7 @@ impl<
                     Value::Register(create_register_assignmnet)
                 };
 
-                Ok(Expression::Value(value))
+                Ok(Expression::RValue(value))
             }
         } else {
             // propagate the target
@@ -2159,7 +2589,7 @@ impl<
             .inference_context
             .register::<Type<_>>(inference, Constraint::All(false)));
 
-        Ok(Expression::Value(Value::Literal(Literal::Phantom(
+        Ok(Expression::RValue(Value::Literal(Literal::Phantom(
             literal::Phantom {
                 r#type: Type::Inference(inference),
                 span: Some(syntax_tree.span()),
@@ -2196,7 +2626,7 @@ impl<
                 Some(syntax_tree.span()),
             );
 
-            return Ok(Expression::Value(Value::Register(register_id)));
+            return Ok(Expression::RValue(Value::Register(register_id)));
         };
 
         let mut elements = Vec::new();
@@ -2237,7 +2667,7 @@ impl<
             Some(syntax_tree.span()),
         ));
 
-        Ok(Expression::Value(value))
+        Ok(Expression::RValue(value))
     }
 }
 
@@ -2509,11 +2939,11 @@ impl<
         &mut self,
         tree: &BinaryTree,
         config: Config,
-        lhs_address: Address<infer::Model>,
+        lhs_address: LValue,
         rhs_value: Value<infer::Model>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
-        let lhs_ty = self.type_of_address(&lhs_address)?;
+        let lhs_ty = self.type_of_address(&lhs_address.address)?;
         let rhs_ty = self.type_of_value(&rhs_value)?;
 
         let _ = self.type_check(
@@ -2523,29 +2953,43 @@ impl<
             handler,
         );
 
-        let _ =
-            self.current_block_mut().insert_instruction(Instruction::Store(
-                Store { address: lhs_address.clone(), value: rhs_value },
+        if lhs_address.qualifier != Qualifier::Mutable {
+            self.create_handler_wrapper(handler).receive(Box::new(
+                error::AssignToNonMutable {
+                    span: tree.span(),
+                    qualifier: lhs_address.qualifier,
+                },
             ));
+        }
+
+        let _ = self.current_block_mut().insert_instruction(
+            Instruction::Store(Store {
+                address: lhs_address.address.clone(),
+                value: rhs_value,
+            }),
+        );
 
         Ok(match config.target {
-            Target::Value => {
+            Target::RValue => {
                 let register_id = self.create_register_assignmnet(
                     Assignment::Load(Load {
-                        address: lhs_address,
+                        address: lhs_address.address.clone(),
                         kind: LoadKind::Move,
                     }),
                     Some(tree.span()),
                 );
 
-                Expression::Value(Value::Register(register_id))
+                Expression::RValue(Value::Register(register_id))
             }
 
             // qualifier is not checked here since the address is already bound
             // as Qualifier::Unique, which has the highest priority
-            Target::Address { .. } => {
-                Expression::Address { address: lhs_address, span: tree.span() }
-            }
+            Target::LValue { .. } => Expression::LValue(LValue {
+                address: lhs_address.address,
+                span: tree.span(),
+                qualifier: lhs_address.qualifier,
+                is_behind_reference: lhs_address.is_behind_reference,
+            }),
 
             Target::Statement => Expression::SideEffect,
         })
@@ -2563,9 +3007,8 @@ impl<
 
         let (lhs_address, lhs_value) = 'out: {
             if is_compound {
-                let lhs_address = match self.bind_as_address(
+                let lhs_lvalue = match self.bind_as_lvalue(
                     &syntax_tree.left,
-                    Qualifier::Unique,
                     false,
                     handler,
                 ) {
@@ -2592,13 +3035,13 @@ impl<
 
                 let lhs_register = self.create_register_assignmnet(
                     Assignment::Load(Load {
-                        address: lhs_address.clone(),
+                        address: lhs_lvalue.address.clone(),
                         kind: LoadKind::Move,
                     }),
                     Some(syntax_tree.left.span()),
                 );
 
-                (Some(lhs_address), Value::Register(lhs_register))
+                (Some(lhs_lvalue), Value::Register(lhs_register))
             } else {
                 (None, self.bind_value_or_error(&syntax_tree.left, handler)?)
             }
@@ -2786,7 +3229,7 @@ impl<
                 handler,
             )
         } else {
-            Ok(Expression::Value(Value::Register(binary_register)))
+            Ok(Expression::RValue(Value::Register(binary_register)))
         }
     }
 }
@@ -2810,12 +3253,8 @@ impl<
             syntax_tree::expression::BinaryOperator::Assign(_) => {
                 let rhs =
                     self.bind_value_or_error(&syntax_tree.right, handler)?;
-                let lhs = self.bind_as_address(
-                    &syntax_tree.left,
-                    Qualifier::Unique,
-                    false,
-                    handler,
-                )?;
+                let lhs =
+                    self.bind_as_lvalue(&syntax_tree.left, false, handler)?;
 
                 self.bind_assignment(syntax_tree, config, lhs, rhs, handler)
             }
@@ -3071,7 +3510,7 @@ impl<
                     _ => unreachable!(),
                 };
 
-                Ok(Expression::Value(value))
+                Ok(Expression::RValue(value))
             }
 
             _ => self.bind_normal_binary(syntax_tree, config, handler),
@@ -3206,7 +3645,7 @@ impl<
                 span: Some(syntax_tree.span()),
             }));
 
-        Ok(Expression::Value(value))
+        Ok(Expression::RValue(value))
     }
 }
 
@@ -3339,7 +3778,7 @@ impl<
             span: Some(syntax_tree.span()),
         }));
 
-        Ok(Expression::Value(value))
+        Ok(Expression::RValue(value))
     }
 }
 
@@ -3350,6 +3789,7 @@ impl<
         TO: type_system::observer::Observer<infer::Model, S>,
     > Bind<&syntax_tree::expression::Break> for Binder<'t, S, RO, TO>
 {
+    #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Break,
@@ -3382,10 +3822,10 @@ impl<
                     Expected::Known(Type::Tuple(term::Tuple {
                         elements: Vec::new(),
                     })),
-                    syntax_tree
-                        .binary()
-                        .as_ref()
-                        .map_or_else(|| syntax_tree.span(), |x| x.span()),
+                    syntax_tree.binary().as_ref().map_or_else(
+                        || syntax_tree.span(),
+                        SourceElement::span,
+                    ),
                     handler,
                 );
             }
@@ -3481,7 +3921,7 @@ impl<
             span: Some(syntax_tree.span()),
         }));
 
-        Ok(Expression::Value(value))
+        Ok(Expression::RValue(value))
     }
 }
 
@@ -3664,7 +4104,7 @@ impl<
                 span: Some(syntax_tree.span()),
             }));
 
-        Ok(Expression::Value(value))
+        Ok(Expression::RValue(value))
     }
 }
 
@@ -3699,31 +4139,6 @@ impl<
             self.intermediate_representation.control_flow_graph.new_block();
         let if_else_successor_block_id =
             self.intermediate_representation.control_flow_graph.new_block();
-
-        /*
-        wrapper_scope_id: {
-            if_scope_id: {} && else_scope_id: {}
-        }
-         */
-
-        let wrapper_scope_id = {
-            let scopes = self
-                .intermediate_representation
-                .scope_tree
-                .new_child_branch(
-                    self.stack.current_scope().scope_id(),
-                    NonZeroUsize::new(1).unwrap(),
-                )
-                .unwrap();
-
-            scopes[0]
-        };
-
-        // push wrapper scope
-        let _ = self.current_block_mut().insert_instruction(
-            Instruction::ScopePush(ScopePush(wrapper_scope_id)),
-        );
-        self.stack.push_scope(wrapper_scope_id);
 
         let (then_scope_id, else_scope_id) = {
             let scopes = self
@@ -3842,15 +4257,6 @@ impl<
         // change the current block to the if else successor block
         self.current_block_id = if_else_successor_block_id;
 
-        // pop the wrapper scope
-        let _ = self.current_block_mut().insert_instruction(
-            Instruction::ScopePop(ScopePop(wrapper_scope_id)),
-        );
-        assert_eq!(
-            self.stack.pop_scope().map(|x| x.scope_id()),
-            Some(wrapper_scope_id)
-        );
-
         let value = match self.current_block().predecessors().len() {
             0 => Value::Literal(Literal::Unreachable(Unreachable {
                 r#type: {
@@ -3932,7 +4338,7 @@ impl<
             _ => unreachable!(),
         };
 
-        Ok(Expression::Value(value))
+        Ok(Expression::RValue(value))
     }
 }
 
@@ -4099,7 +4505,7 @@ impl<
             }))
         };
 
-        Ok(Expression::Value(value))
+        Ok(Expression::RValue(value))
     }
 }
 
@@ -4143,6 +4549,7 @@ impl<
         TO: type_system::observer::Observer<infer::Model, S>,
     > Bind<&syntax_tree::expression::While> for Binder<'t, S, RO, TO>
 {
+    #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::While,
@@ -4336,7 +4743,7 @@ impl<
             }))
         };
 
-        Ok(Expression::Value(value))
+        Ok(Expression::RValue(value))
     }
 }
 
@@ -4349,11 +4756,32 @@ impl<
 {
     fn bind(
         &mut self,
-        _syntax_tree: &syntax_tree::expression::Match,
+        syntax_tree: &syntax_tree::expression::Match,
         _config: Config,
-        _handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
-        todo!()
+        let successor_block_id =
+            self.intermediate_representation.control_flow_graph.new_block();
+
+        let _address =
+            self.bind_as_lvalue(syntax_tree.parenthesized(), true, handler)?;
+
+        self.current_block_id = successor_block_id;
+
+        Ok(Expression::RValue(Value::Literal(Literal::Unreachable(
+            Unreachable {
+                r#type: {
+                    let inference = InferenceVariable::<Type<_>>::new();
+
+                    assert!(self
+                        .inference_context
+                        .register(inference, Constraint::All(true)));
+
+                    Type::Inference(inference)
+                },
+                span: Some(syntax_tree.span()),
+            },
+        ))))
     }
 }
 
@@ -4488,7 +4916,7 @@ impl<
             }
         };
 
-        Ok(Expression::Value(value))
+        Ok(Expression::RValue(value))
     }
 }
 
@@ -4628,9 +5056,9 @@ impl<
     where
         Self: Bind<T>,
     {
-        match self.bind(syntax_tree, Config { target: Target::Value }, handler)
+        match self.bind(syntax_tree, Config { target: Target::RValue }, handler)
         {
-            Ok(value) => Ok(value.into_value().unwrap()),
+            Ok(value) => Ok(value.into_r_value().unwrap()),
             Err(Error::Semantic(semantic_error)) => {
                 let inference =
                     self.create_type_inference(r#type::Constraint::All(false));

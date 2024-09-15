@@ -54,15 +54,15 @@ impl Arbitrary for PrimitivesTuple {
     }
 }
 
-fn check_primitives_tuple_copyable_impl(
+fn check_primitives_tuple_cloneable_impl(
     tuple: &PrimitivesTuple,
 ) -> TestCaseResult {
     let table = Table::<Building>::default();
 
     let core_module_id =
         table.root_module_ids_by_name.get("core").copied().unwrap();
-    let copy_trait_id = table
-        .get_by_qualified_name(["core", "Copy"].into_iter())
+    let clone_trait_id = table
+        .get_by_qualified_name(["core", "Clone"].into_iter())
         .unwrap()
         .into_trait()
         .unwrap();
@@ -79,7 +79,7 @@ fn check_primitives_tuple_copyable_impl(
     );
 
     let trait_predicate = predicate::Trait {
-        id: copy_trait_id,
+        id: clone_trait_id,
         is_const: true,
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
@@ -101,9 +101,9 @@ fn check_primitives_tuple_copyable_impl(
 
 proptest! {
     #[test]
-    fn check_primitives_tuple_copyable(
+    fn check_primitives_tuple_cloneable(
         tuple in PrimitivesTuple::arbitrary()
     ) {
-        check_primitives_tuple_copyable_impl(&tuple)?;
+        check_primitives_tuple_cloneable_impl(&tuple)?;
    }
 }

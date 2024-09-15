@@ -12,14 +12,14 @@ use crate::{
     arena::{self, ID},
     symbol::{
         table::{representation::Insertion, Building, Table},
-        Module,
+        AdtID, Module,
     },
     type_system::{
         model::Default,
         normalizer, observer,
         term::{
             constant::{self, Constant},
-            r#type::{self, SymbolID, Type},
+            r#type::{self, Type},
             GenericArguments, Symbol, Term,
         },
         Compute, Environment, OverflowError, Premise,
@@ -170,7 +170,7 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
                 .unwrap_or_else(Box::<dyn Property<Constant<_>>>::arbitrary);
 
             prop_oneof![
-                4 => SymbolCongruence::<SymbolID>::arbitrary_with((
+                4 => SymbolCongruence::<AdtID>::arbitrary_with((
                     Some(inner.clone()),
                     Some(const_strat.clone())
                 )).prop_map(|x| Box::new(x) as _),

@@ -45,6 +45,8 @@ impl<
                 Ok(())
             }
             syntax_tree::statement::Statement::Expressive(expressive) => {
+                let scope_id = self.push_scope();
+
                 let result = match expressive {
                     syntax_tree::statement::Expressive::Semi(semi) => match semi
                         .expression()
@@ -72,6 +74,8 @@ impl<
                         ),
                 };
 
+                self.pop_scope(scope_id);
+
                 match result {
                     Ok(_) | Err(super::Error::Semantic(_)) => Ok(()),
                     Err(super::Error::Internal(err)) => Err(err),
@@ -87,8 +91,10 @@ impl<
         syntax_tree: &syntax_tree::statement::VariableDeclaration,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<ID<Alloca<infer::Model>>, InternalError> {
+        let scope_id = self.push_scope();
         let initializer =
             self.bind_value_or_error(syntax_tree.expression(), handler)?;
+        self.pop_scope(scope_id);
 
         let initialize_type = self.type_of_value(&initializer)?;
 

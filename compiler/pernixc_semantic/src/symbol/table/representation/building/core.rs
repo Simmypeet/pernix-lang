@@ -36,35 +36,30 @@ impl<C: Container> Representation<C> {
         let Insertion { id: core_module_id, duplication } =
             self.create_root_module("core".to_string());
 
-        let copy_trait_id = self.initialize_copy_trait(core_module_id);
+        let clone_trait_id = self.initialize_clone_trait(core_module_id);
         self.initialize_drop_trait(core_module_id);
 
-        // initialize the copy implementations for primitive types
+        // initialize the clone implementations for primitive types
         for primitive_ty in Primitive::iter() {
-            self.initialize_primitive_copy_implementation(
+            self.initialize_primitive_clone_implementation(
                 core_module_id,
-                copy_trait_id,
+                clone_trait_id,
                 Type::Primitive(primitive_ty),
             );
         }
 
-        self.initialize_array_copy_implementation(
+        self.initialize_array_clone_implementation(
             core_module_id,
-            copy_trait_id,
+            clone_trait_id,
         );
-        self.initialize_tuple_copy_implementation(
+        self.initialize_tuple_clone_implementation(
             core_module_id,
-            copy_trait_id,
+            clone_trait_id,
         );
-        self.initialize_reference_copy_implementation(
+        self.initialize_reference_clone_implementation(
             core_module_id,
-            copy_trait_id,
+            clone_trait_id,
             Qualifier::Immutable,
-        );
-        self.initialize_reference_copy_implementation(
-            core_module_id,
-            copy_trait_id,
-            Qualifier::Mutable,
         );
 
         assert!(duplication.is_none());
@@ -76,7 +71,7 @@ impl<C: Container> Representation<C> {
     ///
     /// ``` txt
     /// public trait Drop[T] {
-    ///     public function drop['a](value: &'a unique T)
+    ///     public function drop['a](value: &'a mutable T)
     ///     where
     ///         T: 'a;
     /// }
@@ -129,7 +124,7 @@ impl<C: Container> Representation<C> {
                 .generic_declaration
                 .parameters
                 .add_lifetime_parameter(LifetimeParameter {
-                    name: None,
+                    name: Some("a".to_string()),
                     span: None,
                 })
                 .unwrap();
@@ -145,7 +140,7 @@ impl<C: Container> Representation<C> {
             // add type parameter id
             drop_function.insert_parameter(Parameter {
                 r#type: Type::Reference(Reference {
-                    qualifier: Qualifier::Unique,
+                    qualifier: Qualifier::Mutable,
                     lifetime: lifetime_parameter_term.clone(),
                     pointee: Box::new(type_parameter_term.clone()),
                 }),
@@ -167,25 +162,25 @@ impl<C: Container> Representation<C> {
         };
     }
 
-    /// Creates an implementation of the `Copy` trait for the reference types.
+    /// Creates an implementation of the `Clone` trait for the reference types.
     ///
     /// Synopsis:
     ///
     /// ``` txt
-    /// implements['a, T] const Copy[&'a T]
+    /// implements['a, T] const Clone[&'a T]
     /// where
     ///     T: 'a
     /// {
-    ///     public function copy['b](value: &'b &'a T): T
+    ///     public function clone['b](value: &'b &'a T): T
     ///     where
     ///         &'a T: 'b
     ///     { ... }
     /// }
     /// ```
-    fn initialize_reference_copy_implementation(
+    fn initialize_reference_clone_implementation(
         &mut self,
         core_module_id: ID<Module>,
-        copy_trait_id: ID<Trait>,
+        clone_trait_id: ID<Trait>,
         qualifier: Qualifier,
     ) {
         let (trait_generic_declaration, ty_parameter_id, lt_parameter_id) = {
@@ -205,7 +200,7 @@ impl<C: Container> Representation<C> {
 
         let implementation_id = self
             .insert_implementation(
-                copy_trait_id,
+                clone_trait_id,
                 core_module_id,
                 trait_generic_declaration,
                 None,
@@ -249,38 +244,38 @@ impl<C: Container> Representation<C> {
 
         drop(implementation);
 
-        // create the copy function
-        let copy_function_id =
-            self.insert_copy_function(implementation_id, reference_type);
+        // create the clone function
+        let clone_function_id =
+            self.insert_clone_function(implementation_id, reference_type);
 
         // set the intrinsics
-        let mut copy_function = self.get_mut(copy_function_id).unwrap();
-        copy_function.ir = FunctionIR::Intrinsic(Intrinsic::Memcpy);
+        let mut clone_function = self.get_mut(clone_function_id).unwrap();
+        clone_function.ir = FunctionIR::Intrinsic(Intrinsic::Memcpy);
     }
 
-    /// Creates an implementation of the `Copy` trait that uses the `memcpy`
-    /// function to copy the memory of the value.
+    /// Creates an implementation of the `Clone` trait that uses the `memcpy`
+    /// function to clone the memory of the value.
     ///
     /// Synopsis:
     ///
     /// ``` txt
-    /// implements const Copy[T] {
-    ///     public function copy['a](value: &'a T): T
+    /// implements const Clone[T] {
+    ///     public function clone['a](value: &'a T): T
     ///     where
     ///         T: 'a
     ///     { ... }
     /// }
     /// ```
-    fn initialize_primitive_copy_implementation(
+    fn initialize_primitive_clone_implementation(
         &mut self,
         core_module_id: ID<Module>,
-        copy_trait_id: ID<Trait>,
+        clone_trait_id: ID<Trait>,
         ty: Type<Default>,
     ) {
         // create the implementation
         let implementation_id = self
             .insert_implementation(
-                copy_trait_id,
+                clone_trait_id,
                 core_module_id,
                 GenericDeclaration::default(),
                 None,
@@ -297,37 +292,37 @@ impl<C: Container> Representation<C> {
             )
             .unwrap();
 
-        // create the copy function
-        let copy_function_id = self
-            .insert_copy_function::<_, TraitImplementationFunctionDefinition>(
+        // create the clone function
+        let clone_function_id = self
+            .insert_clone_function::<_, TraitImplementationFunctionDefinition>(
                 implementation_id,
                 ty,
             );
 
         // set the intrinsics
-        let mut copy_function = self.get_mut(copy_function_id).unwrap();
-        copy_function.ir = FunctionIR::Intrinsic(Intrinsic::Memcpy);
+        let mut clone_function = self.get_mut(clone_function_id).unwrap();
+        clone_function.ir = FunctionIR::Intrinsic(Intrinsic::Memcpy);
     }
 
-    /// Creates an implementation of the `Copy` trait for the array types.
+    /// Creates an implementation of the `Clone` trait for the array types.
     ///
     /// Synopsis:
     ///
     /// ``` txt
-    /// implements[T, const N: usize] const Copy[[T: N]]
+    /// implements[T, const N: usize] const Clone[[T: N]]
     /// where
-    ///     const trait Copy[T] // `T` is copyable
+    ///     const trait Clone[T] // `T` is cloneable
     /// {
-    ///     public function copy['a'](value: &'a [T: N]): [T: N]
+    ///     public function clone['a'](value: &'a [T: N]): [T: N]
     ///     where
     ///         [T: N]: 'a
     ///     { ... }
     /// }
     /// ```
-    fn initialize_array_copy_implementation(
+    fn initialize_array_clone_implementation(
         &mut self,
         core_module_id: ID<Module>,
-        copy_trait_id: ID<Trait>,
+        clone_trait_id: ID<Trait>,
     ) {
         let (trait_generic_declaration, t_parameter_id, n_parameter_id) = {
             let mut generic_declaration = GenericDeclaration::default();
@@ -351,7 +346,7 @@ impl<C: Container> Representation<C> {
 
         let implementation_id = self
             .insert_implementation(
-                copy_trait_id,
+                clone_trait_id,
                 core_module_id,
                 trait_generic_declaration,
                 None,
@@ -384,23 +379,23 @@ impl<C: Container> Representation<C> {
 
         drop(implementation);
 
-        let copy_function_id = self
-            .insert_copy_function::<_, TraitImplementationFunctionDefinition>(
+        let clone_function_id = self
+            .insert_clone_function::<_, TraitImplementationFunctionDefinition>(
                 implementation_id,
                 array_type,
             );
 
-        let mut copy_function = self.get_mut(copy_function_id).unwrap();
-        copy_function.ir = FunctionIR::Intrinsic(Intrinsic::ArrayCopy);
+        let mut clone_function = self.get_mut(clone_function_id).unwrap();
+        clone_function.ir = FunctionIR::Intrinsic(Intrinsic::ArrayClone);
     }
 
-    /// Creates implementations of the `Copy` trait for the tuple types.
+    /// Creates implementations of the `Clone` trait for the tuple types.
     ///
     /// Synopsis:
     ///
     /// ```txt
-    /// implements const Copy[()] {
-    ///     public function copy['a](value: &'a ()): ())
+    /// implements const Clone[()] {
+    ///     public function clone['a](value: &'a ()): ())
     ///     where
     ///         (): 'a
     ///     {
@@ -408,28 +403,28 @@ impl<C: Container> Representation<C> {
     ///     }
     /// }
     ///
-    /// implements[T, Rest] const Copy[(T, ...Rest)]
+    /// implements[T, Rest] const Clone[(T, ...Rest)]
     /// where
-    ///     const trait Copy[T] + Copy[Rest], // `T` and `Rest` are copyable
+    ///     const trait Clone[T] + Clone[Rest], // `T` and `Rest` are cloneable
     ///     tuple Rest                        // `Rest` is a tuple
     /// {
-    ///     public function copy['a](value: &'a (T, ...Rest)): (T, ...Rest)
+    ///     public function clone['a](value: &'a (T, ...Rest)): (T, ...Rest)
     ///     where
     ///         (T, ...Rest): 'a
     ///     { ... }
     /// }
     /// ```
     #[allow(clippy::too_many_lines)]
-    fn initialize_tuple_copy_implementation(
+    fn initialize_tuple_clone_implementation(
         &mut self,
         core_module_id: ID<Module>,
-        copy_trait_id: ID<Trait>,
+        clone_trait_id: ID<Trait>,
     ) {
         // empty tuple implementation
         {
             let implementation_id = self
                 .insert_implementation(
-                    copy_trait_id,
+                    clone_trait_id,
                     core_module_id,
                     GenericDeclaration::default(),
                     None,
@@ -448,17 +443,17 @@ impl<C: Container> Representation<C> {
                 )
                 .unwrap();
 
-            let copy_function_id =
-                self.insert_copy_function::<_, TraitImplementationFunctionDefinition>(
+            let clone_function_id =
+                self.insert_clone_function::<_, TraitImplementationFunctionDefinition>(
                     implementation_id,
                     Type::Tuple(Tuple { elements: Vec::new() }),
                 );
 
-            let mut copy_function = self.get_mut(copy_function_id).unwrap();
-            copy_function.ir = FunctionIR::Intrinsic(Intrinsic::TupleCopy);
+            let mut clone_function = self.get_mut(clone_function_id).unwrap();
+            clone_function.ir = FunctionIR::Intrinsic(Intrinsic::TupleClone);
         }
 
-        // full tuple copy implementation
+        // full tuple clone implementation
         {
             let (generic_declaration, t_parameter_id, rest_parameter_id) = {
                 let mut generic_declaration = GenericDeclaration::default();
@@ -484,7 +479,7 @@ impl<C: Container> Representation<C> {
 
             let implementation_id = self
                 .insert_implementation(
-                    copy_trait_id,
+                    clone_trait_id,
                     core_module_id,
                     generic_declaration,
                     None,
@@ -520,11 +515,11 @@ impl<C: Container> Representation<C> {
                 constants: Vec::new(),
             };
 
-            // const trait Copy[T] + Copy[Rest]
+            // const trait Clone[T] + Clone[Rest]
             implementation.generic_declaration.predicates.push(
                 symbol::Predicate {
                     predicate: predicate::Predicate::Trait(predicate::Trait {
-                        id: copy_trait_id,
+                        id: clone_trait_id,
                         is_const: true,
                         generic_arguments: GenericArguments {
                             lifetimes: Vec::new(),
@@ -538,7 +533,7 @@ impl<C: Container> Representation<C> {
             implementation.generic_declaration.predicates.push(
                 symbol::Predicate {
                     predicate: predicate::Predicate::Trait(predicate::Trait {
-                        id: copy_trait_id,
+                        id: clone_trait_id,
                         is_const: true,
                         generic_arguments: GenericArguments {
                             lifetimes: Vec::new(),
@@ -562,24 +557,24 @@ impl<C: Container> Representation<C> {
 
             drop(implementation);
 
-            let copy_function_id = self
-                .insert_copy_function::<_, TraitImplementationFunctionDefinition>(
+            let clone_function_id = self
+                .insert_clone_function::<_, TraitImplementationFunctionDefinition>(
                     implementation_id,
                     tuple_type,
                 );
 
-            let mut copy_function = self.get_mut(copy_function_id).unwrap();
-            copy_function.ir = FunctionIR::Intrinsic(Intrinsic::TupleCopy);
+            let mut clone_function = self.get_mut(clone_function_id).unwrap();
+            clone_function.ir = FunctionIR::Intrinsic(Intrinsic::TupleClone);
         }
     }
 
-    fn insert_copy_function<
+    fn insert_clone_function<
         Parent: ParentSealed + Element,
         Definition: std::default::Default,
     >(
         &mut self,
         parent_id: ID<Parent>,
-        copy_type: Type<Default>,
+        clone_type: Type<Default>,
     ) -> ID<GenericTemplate<ID<Parent>, FunctionTemplate<Definition>>>
     where
         ID<GenericTemplate<ID<Parent>, FunctionTemplate<Definition>>>:
@@ -601,9 +596,9 @@ impl<C: Container> Representation<C> {
 
             (generic_declaration, lt_parameter_id)
         };
-        let Insertion { id: copy_function_id, duplication } = self
+        let Insertion { id: clone_function_id, duplication } = self
             .insert_member(
-                "copy".to_string(),
+                "clone".to_string(),
                 Accessibility::Public,
                 parent_id,
                 None,
@@ -614,9 +609,9 @@ impl<C: Container> Representation<C> {
 
         assert!(duplication.is_none());
 
-        let mut function = self.get_mut(copy_function_id).unwrap();
+        let mut function = self.get_mut(clone_function_id).unwrap();
         let function_lifetime_parameter = Lifetime::Parameter(MemberID {
-            parent: copy_function_id.into(),
+            parent: clone_function_id.into(),
             id: lifetime_parameter_id,
         });
 
@@ -625,41 +620,41 @@ impl<C: Container> Representation<C> {
             r#type: Type::Reference(Reference {
                 qualifier: Qualifier::Immutable,
                 lifetime: function_lifetime_parameter.clone(),
-                pointee: Box::new(copy_type.clone()),
+                pointee: Box::new(clone_type.clone()),
             }),
             span: None,
         });
         // add the bound
         function.generic_declaration.predicates.push(symbol::Predicate {
             predicate: predicate::Predicate::TypeOutlives(Outlives {
-                operand: copy_type.clone(),
+                operand: clone_type.clone(),
                 bound: function_lifetime_parameter,
             }),
             span: None,
         });
 
         // set the return type
-        function.return_type = copy_type;
+        function.return_type = clone_type;
 
-        copy_function_id
+        clone_function_id
     }
 
-    /// Initializes the `Copy` trait of the core module.
+    /// Initializes the `Clone` trait of the core module.
     ///
     /// Synopsis:
     ///
     /// ``` txt
-    /// public trait Copy[T] {
-    ///     public function copy['a](value: &'a T): T
+    /// public trait Clone[T] {
+    ///     public function clone['a](value: &'a T): T
     ///     where
     ///         T: 'a;
     /// }
     /// ```
-    fn initialize_copy_trait(
+    fn initialize_clone_trait(
         &mut self,
         core_module_id: ID<Module>,
     ) -> ID<Trait> {
-        // initialize copy trait
+        // initialize clone trait
         let (trait_generic_declaration, type_parameter_id) = {
             let mut generic_declaration = GenericDeclaration::default();
 
@@ -671,9 +666,9 @@ impl<C: Container> Representation<C> {
             (generic_declaration, type_parameter_id)
         };
 
-        let Insertion { id: copy_trait_id, duplication } = self
+        let Insertion { id: clone_trait_id, duplication } = self
             .insert_member(
-                "Copy".to_string(),
+                "Clone".to_string(),
                 Accessibility::Public,
                 core_module_id,
                 None,
@@ -684,16 +679,16 @@ impl<C: Container> Representation<C> {
 
         assert!(duplication.is_none());
 
-        // the copy function
-        self.insert_copy_function::<_, TraitFunctionDefinition>(
-            copy_trait_id,
+        // the clone function
+        self.insert_clone_function::<_, TraitFunctionDefinition>(
+            clone_trait_id,
             Type::Parameter(MemberID {
-                parent: copy_trait_id.into(),
+                parent: clone_trait_id.into(),
                 id: type_parameter_id,
             }),
         );
 
-        copy_trait_id
+        clone_trait_id
     }
 }
 

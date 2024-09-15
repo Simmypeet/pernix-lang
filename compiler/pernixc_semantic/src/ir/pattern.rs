@@ -23,7 +23,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index},
-        Field, GlobalID, Struct, Variant,
+        AdtID, Field, GlobalID, Struct, Variant,
     },
     type_system::{
         environment::Environment,
@@ -36,7 +36,7 @@ use crate::{
         simplify,
         term::{
             self,
-            r#type::{self, Qualifier, Reference, SymbolID, Type},
+            r#type::{self, Qualifier, Reference, Type},
             Symbol,
         },
         LifetimeConstraint, Succeeded,
@@ -84,6 +84,10 @@ pub trait Pattern:
     /// - `referring_site`: The site where the pattern is being bound.
     /// - `environment`: The environment to get the required information from.
     /// - `handler`: The handler to report the errors to.
+    ///
+    /// # Errors
+    ///
+    /// See [`Error`] for the list of errors that can be returned.
     fn bind<M: Model, S: table::State>(
         syntax_tree: &Self::SyntaxTree,
         ty: &Type<M>,
@@ -162,7 +166,7 @@ impl Integer {
                 value = -value;
             }
 
-            Ok(Integer { value, span: Some(syntax_tree.span()) })
+            Ok(Self { value, span: Some(syntax_tree.span()) })
         } else {
             handler.receive(Box::new(MismatchedPatternBindingType {
                 expected_bindnig_type: PatternBindingType::Integer,
@@ -197,7 +201,7 @@ impl Boolean {
         ty = reduce_reference(ty);
 
         if matches!(ty, Type::Primitive(r#type::Primitive::Bool)) {
-            Ok(Boolean {
+            Ok(Self {
                 value: syntax_tree.is_true(),
                 span: Some(syntax_tree.span()),
             })
@@ -213,28 +217,18 @@ impl Boolean {
     }
 }
 
-/// The kind of binding for the [`Named`] binding.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
-)]
-pub enum BindingKind {
-    /// The value is bound by value.
-    ///
-    /// The boolean indicates whether the value is mutable or not.
-    Value(bool),
-
-    /// The value is bound by reference.
-    Reference(Qualifier),
-}
-
 /// A pattern where the value is bound to a name
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Named {
     /// The name of the pattern.
     pub name: String,
 
-    /// The binding kind of the name.
-    pub kind: BindingKind,
+    /// Whether the binding is mutable or not.
+    pub is_mutable: bool,
+
+    /// If `Some` the binding is a reference binding with the qualifier.
+    /// Otherwise, the binding is a value binding.
+    pub reference_binding: Option<Qualifier>,
 
     /// The span to the identifier of the name binding.
     pub span: Option<Span>,
@@ -242,27 +236,17 @@ pub struct Named {
 
 impl Named {
     fn bind(syntax_tree: &syntax_tree::pattern::Named) -> Self {
-        Named {
+        Self {
             name: syntax_tree.identifier().span.str().to_owned(),
-            kind: match syntax_tree.binding() {
-                syntax_tree::pattern::Binding::Ref(r) => {
-                    BindingKind::Reference(match r.qualifier() {
-                        Some(x) => match x {
-                            syntax_tree::Qualifier::Mutable(_) => {
-                                Qualifier::Mutable
-                            }
-                            syntax_tree::Qualifier::Unique(_) => {
-                                Qualifier::Unique
-                            }
-                        },
-                        None => Qualifier::Immutable,
-                    })
-                }
-                syntax_tree::pattern::Binding::Value { mutable_keyword } => {
-                    BindingKind::Value(mutable_keyword.is_some())
-                }
-            },
             span: Some(syntax_tree.identifier().span.clone()),
+            is_mutable: syntax_tree.mutable_keyword().is_some(),
+            reference_binding: syntax_tree.reference_of().as_ref().map(|x| {
+                if x.mutable_keyword().is_some() {
+                    Qualifier::Mutable
+                } else {
+                    Qualifier::Immutable
+                }
+            }),
         }
     }
 }
@@ -297,7 +281,7 @@ impl<T: Pattern> Enum<T> {
 
         // must be an enum type
         let Type::Symbol(Symbol {
-            id: SymbolID::Enum(enum_id),
+            id: AdtID::Enum(enum_id),
             generic_arguments,
         }) = ty
         else {
@@ -383,12 +367,12 @@ impl<T: Pattern> Enum<T> {
                 )?;
 
                 Ok(Succeeded::with_constraints(
-                    Enum { variant_id, pattern: Some(Box::new(pattern)) },
+                    Self { variant_id, pattern: Some(Box::new(pattern)) },
                     constraints,
                 ))
             }
             (None, None) => {
-                Ok(Succeeded::new(Enum { variant_id, pattern: None }))
+                Ok(Succeeded::new(Self { variant_id, pattern: None }))
             }
             (Some(_), None) => {
                 handler.receive(Box::new(ExpectAssociatedPattern {
@@ -421,14 +405,14 @@ pub struct TupleElement<T: Pattern> {
 impl<T: Pattern> TupleElement<T> {
     /// Creates a new **packed** tuple element.
     #[must_use]
-    pub fn new_packed(pattern: T) -> Self {
-        TupleElement { pattern, is_packed: true }
+    pub const fn new_packed(pattern: T) -> Self {
+        Self { pattern, is_packed: true }
     }
 
     /// Creates a new **non-packed** tuple element.
     #[must_use]
-    pub fn new_non_packed(pattern: T) -> Self {
-        TupleElement { pattern, is_packed: false }
+    pub const fn new_non_packed(pattern: T) -> Self {
+        Self { pattern, is_packed: false }
     }
 }
 
@@ -453,11 +437,12 @@ fn handle_binding_result<T: Pattern, M: Model>(
             Ok(v.result)
         }
         Err(Error::Semantic) => Ok(Wildcard { span: None }.into()),
-        Err(err) => return Err(err),
+        Err(err) => Err(err),
     }
 }
 
 impl<T: Pattern> Tuple<T> {
+    #[allow(clippy::too_many_lines)]
     fn bind<M: Model, S: table::State>(
         syntax_tree: &syntax_tree::pattern::Tuple<T::SyntaxTree>,
         mut ty: &Type<M>,
@@ -593,7 +578,7 @@ impl<T: Pattern> Tuple<T> {
 
             for (tuple_ty, tuple_pat) in tuple_ty.elements[start_range.clone()]
                 .iter()
-                .zip(&tuple_element_patterns[start_range.clone()])
+                .zip(&tuple_element_patterns[start_range])
             {
                 assert!(!tuple_ty.is_unpacked);
 
@@ -612,10 +597,7 @@ impl<T: Pattern> Tuple<T> {
             }
 
             let packed_type = Type::Tuple(term::Tuple {
-                elements: tuple_ty.elements[type_pack_range.clone()]
-                    .iter()
-                    .cloned()
-                    .collect(),
+                elements: tuple_ty.elements[type_pack_range].to_vec(),
             });
             elements.push(TupleElement::new_packed(handle_binding_result(
                 T::bind(
@@ -629,7 +611,7 @@ impl<T: Pattern> Tuple<T> {
                 &mut constraints,
             )?));
 
-            for (ty_elem, pat_elem) in tuple_ty.elements[type_end_range.clone()]
+            for (ty_elem, pat_elem) in tuple_ty.elements[type_end_range]
                 .iter()
                 .zip(&tuple_element_patterns[tuple_end_range])
             {
@@ -650,7 +632,7 @@ impl<T: Pattern> Tuple<T> {
             }
 
             Ok(Succeeded::with_constraints(
-                Tuple { elements, span: Some(syntax_tree.span()) },
+                Self { elements, span: Some(syntax_tree.span()) },
                 constraints,
             ))
         } else {
@@ -686,7 +668,7 @@ impl<T: Pattern> Tuple<T> {
                 elements.push(TupleElement::new_non_packed(
                     handle_binding_result(
                         T::bind(
-                            &tuple_pat.pattern(),
+                            tuple_pat.pattern(),
                             tuple_ty,
                             referring_site,
                             environment,
@@ -698,7 +680,7 @@ impl<T: Pattern> Tuple<T> {
             }
 
             Ok(Succeeded::with_constraints(
-                Tuple { elements, span: Some(syntax_tree.span()) },
+                Self { elements, span: Some(syntax_tree.span()) },
                 constraints,
             ))
         }
@@ -727,6 +709,7 @@ fn reduce_reference<M: Model>(mut ty: &Type<M>) -> &Type<M> {
 }
 
 impl<T: Pattern> Structural<T> {
+    #[allow(clippy::too_many_lines)]
     fn bind<M: Model, S: table::State>(
         syntax_tree: &syntax_tree::pattern::Structural<T::SyntaxTree>,
         mut ty: &Type<M>,
@@ -747,7 +730,7 @@ impl<T: Pattern> Structural<T> {
 
         // must be a struct type
         let Type::Symbol(Symbol {
-            id: SymbolID::Struct(struct_id),
+            id: AdtID::Struct(struct_id),
             generic_arguments,
         }) = ty
         else {
@@ -894,7 +877,7 @@ impl<T: Pattern> Structural<T> {
         }
 
         Ok(Succeeded::with_constraints(
-            Structural {
+            Self {
                 struct_id,
                 patterns_by_field_id,
                 span: Some(syntax_tree.span()),
@@ -913,7 +896,7 @@ pub struct Wildcard {
 
 impl Wildcard {
     fn bind(syntax_tree: &syntax_tree::pattern::Wildcard) -> Self {
-        Wildcard { span: Some(syntax_tree.span()) }
+        Self { span: Some(syntax_tree.span()) }
     }
 }
 
@@ -948,27 +931,27 @@ impl Pattern for Irrefutable {
         match syntax_tree {
             syntax_tree::pattern::Irrefutable::Structural(s) => {
                 Structural::bind(s, ty, referring_site, environment, handler)
-                    .map(|x| x.map(Irrefutable::Structural))
+                    .map(|x| x.map(Self::Structural))
             }
             syntax_tree::pattern::Irrefutable::Named(s) => {
-                Ok(Succeeded::new(Irrefutable::Named(Named::bind(s))))
+                Ok(Succeeded::new(Self::Named(Named::bind(s))))
             }
             syntax_tree::pattern::Irrefutable::Tuple(s) => {
                 Tuple::bind(s, ty, referring_site, environment, handler)
-                    .map(|x| x.map(Irrefutable::Tuple))
+                    .map(|x| x.map(Self::Tuple))
             }
             syntax_tree::pattern::Irrefutable::Wildcard(s) => {
-                Ok(Succeeded::new(Irrefutable::Wildcard(Wildcard::bind(s))))
+                Ok(Succeeded::new(Self::Wildcard(Wildcard::bind(s))))
             }
         }
     }
 
     fn span(&self) -> Option<&Span> {
         match self {
-            Irrefutable::Named(named) => named.span.as_ref(),
-            Irrefutable::Tuple(tuple) => tuple.span.as_ref(),
-            Irrefutable::Structural(structural) => structural.span.as_ref(),
-            Irrefutable::Wildcard(wildcard) => wildcard.span.as_ref(),
+            Self::Named(named) => named.span.as_ref(),
+            Self::Tuple(tuple) => tuple.span.as_ref(),
+            Self::Structural(structural) => structural.span.as_ref(),
+            Self::Wildcard(wildcard) => wildcard.span.as_ref(),
         }
     }
 }
@@ -1006,43 +989,43 @@ impl Pattern for Refutable {
     {
         match syntax_tree {
             syntax_tree::pattern::Refutable::Boolean(b) => Ok(Succeeded::new(
-                Refutable::Boolean(Boolean::bind(b, ty, handler)?),
+                Self::Boolean(Boolean::bind(b, ty, handler)?),
             )),
             syntax_tree::pattern::Refutable::Integer(n) => Ok(Succeeded::new(
-                Refutable::Integer(Integer::bind(n, ty, handler)?),
+                Self::Integer(Integer::bind(n, ty, handler)?),
             )),
             syntax_tree::pattern::Refutable::Named(n) => {
-                Ok(Succeeded::new(Refutable::Named(Named::bind(n))))
+                Ok(Succeeded::new(Self::Named(Named::bind(n))))
             }
             syntax_tree::pattern::Refutable::Enum(e) => {
                 Enum::bind(e, ty, referring_site, environment, handler)
-                    .map(|x| x.map(Refutable::Enum))
+                    .map(|x| x.map(Self::Enum))
             }
             syntax_tree::pattern::Refutable::Tuple(t) => {
                 Tuple::bind(t, ty, referring_site, environment, handler)
-                    .map(|x| x.map(Refutable::Tuple))
+                    .map(|x| x.map(Self::Tuple))
             }
             syntax_tree::pattern::Refutable::Structural(s) => {
                 Structural::bind(s, ty, referring_site, environment, handler)
-                    .map(|x| x.map(Refutable::Structural))
+                    .map(|x| x.map(Self::Structural))
             }
             syntax_tree::pattern::Refutable::Wildcard(w) => {
-                Ok(Succeeded::new(Refutable::Wildcard(Wildcard::bind(w))))
+                Ok(Succeeded::new(Self::Wildcard(Wildcard::bind(w))))
             }
         }
     }
 
     fn span(&self) -> Option<&Span> {
         match self {
-            Refutable::Boolean(boolean) => boolean.span.as_ref(),
-            Refutable::Integer(numeric) => numeric.span.as_ref(),
-            Refutable::Named(named) => named.span.as_ref(),
-            Refutable::Enum(r#enum) => {
+            Self::Boolean(boolean) => boolean.span.as_ref(),
+            Self::Integer(numeric) => numeric.span.as_ref(),
+            Self::Named(named) => named.span.as_ref(),
+            Self::Enum(r#enum) => {
                 r#enum.pattern.as_ref().and_then(|x| x.span())
             }
-            Refutable::Tuple(tuple) => tuple.span.as_ref(),
-            Refutable::Structural(structural) => structural.span.as_ref(),
-            Refutable::Wildcard(wildcard) => wildcard.span.as_ref(),
+            Self::Tuple(tuple) => tuple.span.as_ref(),
+            Self::Structural(structural) => structural.span.as_ref(),
+            Self::Wildcard(wildcard) => wildcard.span.as_ref(),
         }
     }
 }

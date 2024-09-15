@@ -793,6 +793,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             ($first_name:ident, $($names:ident),*) => {
                 build_id!($first_name)
                     $( .chain(build_id!($names)) )*
+                    .panic_fuse()
                     .for_each(|()| {})
             };
         }

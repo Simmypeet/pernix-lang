@@ -1,4 +1,4 @@
-use pernixc_base::handler::Handler;
+use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree;
 
 use super::{r#enum, r#struct};
@@ -72,15 +72,6 @@ impl Finalize for AdtImplementation {
                 let parent_adt_id =
                     table.get(symbol_id).unwrap().implemented_id;
 
-                let generic_identifier = syntax_tree
-                    .qualified_identifier()
-                    .rest()
-                    .last()
-                    .map_or_else(
-                        || syntax_tree.qualified_identifier().first(),
-                        |(_, ident)| ident,
-                    );
-
                 match parent_adt_id {
                     AdtID::Struct(struct_id) => {
                         table
@@ -92,7 +83,15 @@ impl Finalize for AdtImplementation {
                             symbol_id.into(),
                             struct_id,
                             r#struct::GENERIC_PARAMETER_STATE,
-                            generic_identifier,
+                            syntax_tree.generic_arguments().as_ref(),
+                            &syntax_tree
+                                .simple_path()
+                                .rest()
+                                .last()
+                                .map_or_else(
+                                    || syntax_tree.simple_path().root().span(),
+                                    |(_, ident)| ident.span.clone(),
+                                ),
                             argument_occurrences,
                             handler,
                         );
@@ -107,7 +106,15 @@ impl Finalize for AdtImplementation {
                             symbol_id.into(),
                             enum_id,
                             r#enum::GENERIC_PARAMETER_STATE,
-                            generic_identifier,
+                            syntax_tree.generic_arguments().as_ref(),
+                            &syntax_tree
+                                .simple_path()
+                                .rest()
+                                .last()
+                                .map_or_else(
+                                    || syntax_tree.simple_path().root().span(),
+                                    |(_, ident)| ident.span.clone(),
+                                ),
                             argument_occurrences,
                             handler,
                         );

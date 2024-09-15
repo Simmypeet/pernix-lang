@@ -1,7 +1,7 @@
 //! Contains the definition of [`Representation`] and methods.
 
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap},
     fmt::Debug,
     hash::Hash,
     ops::{Deref, DerefMut},
@@ -15,13 +15,15 @@ use pernixc_base::{
     handler::Handler,
     source_file::{SourceElement, Span},
 };
-use pernixc_syntax::syntax_tree::{target::Target, AccessModifier};
+use pernixc_syntax::syntax_tree::{
+    item::UsingKind, target::Target, AccessModifier, ConnectedList,
+};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{Building, State, Suboptimal, Success, Table};
 use crate::{
     arena::{Arena, ID},
-    error::{self, ExpectModule, SelfModuleUsing, UsingDuplication},
+    error::{self, ConflictingUsing, ExpectModule, SymbolNotFound},
     symbol::{
         self, Accessibility, Adt, AdtID, AdtImplementation,
         AdtImplementationFunction, Callable, CallableID, Constant, Enum,
@@ -1556,49 +1558,186 @@ fn transition_to_building(
         .flat_map(|(id, usings)| {
             usings.into_par_iter().map(move |using| (id, using))
         })
-        .for_each(|(current_module_id, using)| {
-            // resolve for the module
-            let Ok(found_id) = drafting_table.resolve_simple_path(
-                using.module_path().paths(),
-                current_module_id.into(),
-                true,
-                handler,
-            ) else {
-                return;
-            };
+        .for_each(|(current_module_id, using)| match using.kind() {
+            UsingKind::One(a) => {
+                let Ok(id) = drafting_table.representation.resolve_simple_path(
+                    a.simple_path(),
+                    current_module_id.into(),
+                    true,
+                    handler,
+                ) else {
+                    return;
+                };
 
-            //  must be a module
-            let GlobalID::Module(using_module_id) = found_id else {
-                handler.receive(Box::new(ExpectModule {
-                    module_path: using.module_path().span(),
-                    found_id,
-                }));
-                return;
-            };
+                let GlobalID::Module(id) = id else {
+                    handler.receive(Box::new(ExpectModule {
+                        module_path: a.simple_path().span(),
+                        found_id: id,
+                    }));
 
-            // can't use itself
-            if using_module_id == current_module_id {
-                handler.receive(Box::new(SelfModuleUsing {
-                    module_id: current_module_id,
-                    using_span: using.span(),
-                }));
+                    return;
+                };
+
+                let name = a.alias().as_ref().map_or_else(
+                    || {
+                        drafting_table
+                            .representation
+                            .get(id)
+                            .unwrap()
+                            .name()
+                            .to_owned()
+                    },
+                    |x| x.identifier().span.str().to_owned(),
+                );
+
+                let mut module = drafting_table
+                    .representation
+                    .modules
+                    .get(current_module_id)
+                    .unwrap()
+                    .write();
+
+                if let Some(existing) = module
+                    .member_ids_by_name
+                    .get(&name)
+                    .map(|x| {
+                        drafting_table
+                            .representation
+                            .get_global((*x).into())
+                            .unwrap()
+                            .span()
+                            .cloned()
+                            .unwrap()
+                    })
+                    .or_else(|| {
+                        module.imports.get(&name).map(|x| x.1.clone().unwrap())
+                    })
+                {
+                    handler.receive(Box::new(ConflictingUsing {
+                        using_span: a.alias().as_ref().map_or_else(
+                            || a.simple_path().span(),
+                            |x| x.span(),
+                        ),
+                        name: name.clone(),
+                        module_id: current_module_id,
+                        conflicting_span: existing,
+                    }));
+                } else {
+                    module.imports.insert(
+                        name,
+                        (
+                            id.into(),
+                            Some(a.alias().as_ref().map_or_else(
+                                || a.simple_path().span().clone(),
+                                |x| x.identifier().span().clone(),
+                            )),
+                        ),
+                    );
+                }
             }
 
-            // duplicate using
-            let mut modules = drafting_table
-                .representation
-                .modules
-                .get(current_module_id)
-                .unwrap()
-                .write();
-            let duplicated = !modules.usings.insert(using_module_id);
-            drop(modules);
+            UsingKind::From(a) => {
+                let Ok(from_id) =
+                    drafting_table.representation.resolve_simple_path(
+                        a.from().simple_path(),
+                        current_module_id.into(),
+                        true,
+                        handler,
+                    )
+                else {
+                    return;
+                };
 
-            if duplicated {
-                handler.receive(Box::new(UsingDuplication {
-                    already_used_module_id: using_module_id,
-                    using_span: using.span(),
-                }));
+                let GlobalID::Module(from_id) = from_id else {
+                    handler.receive(Box::new(ExpectModule {
+                        module_path: a.from().simple_path().span(),
+                        found_id: from_id,
+                    }));
+
+                    return;
+                };
+
+                for import in a
+                    .imports()
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(ConnectedList::elements)
+                {
+                    let Some(id) = drafting_table
+                        .representation
+                        .get(from_id)
+                        .unwrap()
+                        .member_ids_by_name
+                        .get(import.identifier().span.str())
+                        .copied()
+                    else {
+                        handler.receive(Box::new(SymbolNotFound {
+                            searched_global_id: Some(from_id.into()),
+                            resolution_span: import.identifier().span.clone(),
+                        }));
+                        continue;
+                    };
+
+                    let name = import.alias().as_ref().map_or_else(
+                        || {
+                            drafting_table
+                                .representation
+                                .get_global(id.into())
+                                .unwrap()
+                                .name()
+                                .to_owned()
+                        },
+                        |x| x.identifier().span.str().to_owned(),
+                    );
+
+                    let mut module = drafting_table
+                        .representation
+                        .modules
+                        .get(current_module_id)
+                        .unwrap()
+                        .write();
+
+                    if let Some(existing) = module
+                        .member_ids_by_name
+                        .get(&name)
+                        .map(|x| {
+                            drafting_table
+                                .representation
+                                .get_global((*x).into())
+                                .unwrap()
+                                .span()
+                                .cloned()
+                                .unwrap()
+                        })
+                        .or_else(|| {
+                            module
+                                .imports
+                                .get(&name)
+                                .map(|x| x.1.clone().unwrap())
+                        })
+                    {
+                        handler.receive(Box::new(ConflictingUsing {
+                            using_span: import.alias().as_ref().map_or_else(
+                                || import.identifier().span(),
+                                |x| x.span(),
+                            ),
+                            name: name.clone(),
+                            module_id: current_module_id,
+                            conflicting_span: existing,
+                        }));
+                    } else {
+                        module.imports.insert(
+                            name,
+                            (
+                                id,
+                                Some(import.alias().as_ref().map_or_else(
+                                    || import.identifier().span.clone(),
+                                    |x| x.identifier().span.clone(),
+                                )),
+                            ),
+                        );
+                    }
+                }
             }
         });
 
@@ -1801,7 +1940,7 @@ impl<T: Container> Representation<T> {
             parent_module_id: None,
             member_ids_by_name: HashMap::new(),
             span: None,
-            usings: HashSet::new(),
+            imports: HashMap::new(),
         }));
 
         let duplication = match self.root_module_ids_by_name.entry(name) {
@@ -1823,7 +1962,16 @@ impl<T: Container> Representation<T> {
     #[allow(private_bounds, clippy::type_complexity)]
     pub fn insert_implementation<
         Definition,
-        Implemented: symbol::ImplementedSealed + Element + Global,
+        ImplementationID: From<
+                ID<
+                    GenericTemplate<
+                        ID<Module>,
+                        ImplementationTemplate<ImplementedID, Definition>,
+                    >,
+                >,
+            > + Eq
+            + Hash,
+        Implemented: symbol::ImplementedMut<ImplementationID> + Element + Global,
         ImplementedID: Copy + From<ID<Implemented>>,
     >(
         &mut self,
@@ -1843,13 +1991,6 @@ impl<T: Container> Representation<T> {
         InsertImplementationError,
     >
     where
-        ID<
-            GenericTemplate<
-                ID<Module>,
-                ImplementationTemplate<ImplementedID, Definition>,
-            >,
-        >: Into<Implemented::ImplementationID>,
-
         GenericTemplate<
             ID<Module>,
             ImplementationTemplate<ImplementedID, Definition>,
@@ -2017,8 +2158,8 @@ impl<T: Container> Representation<T> {
             accessibility,
             parent_module_id: Some(parent_module_id),
             member_ids_by_name: HashMap::new(),
+            imports: HashMap::new(),
             span,
-            usings: HashSet::new(),
         }));
 
         // add the module member to the parent module

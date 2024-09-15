@@ -105,8 +105,6 @@ pub enum KeywordKind {
     Type,
     /// `static` keyword.
     Static,
-    /// `unique` keyword.
-    Unique,
     /// `where` keyword.
     Where,
     /// `trait` keyword.
@@ -131,8 +129,6 @@ pub enum KeywordKind {
     Case,
     /// `phantom` keyword
     Phantom,
-    /// `ref` keyword
-    Ref,
     /// `final` keyword
     Final,
     /// `extern` keyword
@@ -147,6 +143,14 @@ pub enum KeywordKind {
     With,
     /// `null` keyword.
     Null,
+    /// `super` keyword.
+    Super,
+    /// `target` keyword.
+    Target,
+    /// `this` keyword.
+    This,
+    /// `from` keyword.
+    From,
 }
 
 impl std::fmt::Display for KeywordKind {
@@ -228,7 +232,6 @@ impl KeywordKind {
             Self::Delete => "delete",
             Self::Type => "type",
             Self::Static => "static",
-            Self::Unique => "unique",
             Self::Where => "where",
             Self::Trait => "trait",
             Self::Using => "using",
@@ -239,7 +242,6 @@ impl KeywordKind {
             Self::Tuple => "tuple",
             Self::Case => "case",
             Self::Phantom => "phantom",
-            Self::Ref => "ref",
             Self::Final => "final",
             Self::Extern => "extern",
             Self::Effect => "effect",
@@ -247,6 +249,10 @@ impl KeywordKind {
             Self::Try => "try",
             Self::With => "with",
             Self::Null => "null",
+            Self::Super => "super",
+            Self::Target => "target",
+            Self::This => "this",
+            Self::From => "from",
         }
     }
 }

@@ -16,8 +16,8 @@ use pernixc_lexical::{
 
 use super::{
     expression::Expression, pattern, predicate::Predicate, r#type,
-    statement::Statement, AccessModifier, ConnectedList, LifetimeParameter,
-    QualifiedIdentifier, ScopeSeparator,
+    statement::Statement, AccessModifier, ConnectedList, GenericArguments,
+    LifetimeParameter, SimplePath,
 };
 use crate::{
     error::{Error, SyntaxKind},
@@ -28,39 +28,185 @@ pub mod strategy;
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ModulePath:
-///     Identifier ('::' Identifier)*
+/// Alias:
+///     'as' Identifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ModulePath {
+pub struct Alias {
     #[get = "pub"]
-    first: Identifier,
+    as_keyword: Keyword,
     #[get = "pub"]
-    rest: Vec<(ScopeSeparator, Identifier)>,
+    identifier: Identifier,
 }
 
-impl SourceElement for ModulePath {
+impl SourceElement for Alias {
     fn span(&self) -> Span {
-        let first = &self.first.span;
-        self.rest.last().map_or_else(
-            || first.clone(),
-            |last| first.join(&last.1.span).unwrap(),
-        )
+        self.as_keyword.span.join(&self.identifier.span).unwrap()
     }
 }
 
-impl ModulePath {
-    /// Returns an iterator over the path identifiers.
-    pub fn paths(&self) -> impl Iterator<Item = &Identifier> {
-        std::iter::once(&self.first).chain(self.rest.iter().map(|(_, id)| id))
+impl Alias {
+    /// Dissolves the [`Alias`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Keyword, Identifier) {
+        (self.as_keyword, self.identifier)
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Import:
+///     'import' SimplePath Alias?
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Import {
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    alias: Option<Alias>,
+}
+
+impl SourceElement for Import {
+    fn span(&self) -> Span {
+        self.alias
+            .as_ref()
+            .map_or_else(|| self.identifier.span.clone(), SourceElement::span)
+    }
+}
+
+impl Import {
+    /// Dissolves the [`Imported`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Identifier, Option<Alias>) {
+        (self.identifier, self.alias)
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// From:
+///     'from' SimplePath
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct From {
+    #[get = "pub"]
+    from_keyword: Keyword,
+    #[get = "pub"]
+    simple_path: SimplePath,
+}
+
+impl SourceElement for From {
+    fn span(&self) -> Span {
+        self.from_keyword.span.join(&self.simple_path.span()).unwrap()
+    }
+}
+
+impl From {
+    /// Dissolves the [`From`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Keyword, SimplePath) {
+        (self.from_keyword, self.simple_path)
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// UsingOne:
+///     SimplePath Alias?
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct UsingOne {
+    #[get = "pub"]
+    simple_path: SimplePath,
+    #[get = "pub"]
+    alias: Option<Alias>,
+}
+
+impl SourceElement for UsingOne {
+    fn span(&self) -> Span {
+        self.alias
+            .as_ref()
+            .map_or_else(|| self.simple_path.span(), SourceElement::span)
+    }
+}
+
+impl UsingOne {
+    /// Dissolves the [`UsingOne`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (SimplePath, Option<Alias>) {
+        (self.simple_path, self.alias)
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// UsingFrom:
+///     '{' (Import (',' Import)*)? '}' From
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct UsingFrom {
+    #[get = "pub"]
+    left_brace: Punctuation,
+    #[get = "pub"]
+    imports: Option<ConnectedList<Import, Punctuation>>,
+    #[get = "pub"]
+    right_brace: Punctuation,
+    #[get = "pub"]
+    from: From,
+}
+
+impl SourceElement for UsingFrom {
+    fn span(&self) -> Span {
+        self.left_brace.span.join(&self.from.span()).unwrap()
+    }
+}
+
+impl UsingFrom {
+    /// Dissolves the [`UsingFrom`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (
+        Punctuation,
+        Option<ConnectedList<Import, Punctuation>>,
+        Punctuation,
+        From,
+    ) {
+        (self.left_brace, self.imports, self.right_brace, self.from)
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// UsingKind:
+///     UsingOne
+///     | UsingFrom
+///     ;    
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum UsingKind {
+    One(UsingOne),
+    From(UsingFrom),
+}
+
+impl SourceElement for UsingKind {
+    fn span(&self) -> Span {
+        match self {
+            Self::One(one) => one.span(),
+            Self::From(from) => from.span(),
+        }
     }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
 /// Using:
-///     'using' ModulePath ';'
+///     'using' UsingKind ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -68,7 +214,7 @@ pub struct Using {
     #[get = "pub"]
     using_keyword: Keyword,
     #[get = "pub"]
-    module_path: ModulePath,
+    kind: UsingKind,
     #[get = "pub"]
     semicolon: Punctuation,
 }
@@ -1119,7 +1265,9 @@ pub struct ImplementationSignature {
     #[get = "pub"]
     const_keyword: Option<Keyword>,
     #[get = "pub"]
-    qualified_identifier: QualifiedIdentifier,
+    simple_path: SimplePath,
+    #[get = "pub"]
+    generic_arguments: Option<GenericArguments>,
     #[get = "pub"]
     where_clause: Option<WhereClause>,
 }
@@ -1134,7 +1282,8 @@ impl ImplementationSignature {
         Keyword,
         Option<GenericParameters>,
         Option<Keyword>,
-        QualifiedIdentifier,
+        SimplePath,
+        Option<GenericArguments>,
         Option<WhereClause>,
     ) {
         (
@@ -1142,7 +1291,8 @@ impl ImplementationSignature {
             self.implements_keyword,
             self.generic_parameters,
             self.const_keyword,
-            self.qualified_identifier,
+            self.simple_path,
+            self.generic_arguments,
             self.where_clause,
         )
     }
@@ -1150,17 +1300,22 @@ impl ImplementationSignature {
 
 impl SourceElement for ImplementationSignature {
     fn span(&self) -> Span {
-        self.final_keyword
-            .as_ref()
-            .map_or_else(
-                || self.implements_keyword.span.clone(),
-                SourceElement::span,
-            )
-            .join(&self.where_clause.as_ref().map_or_else(
-                || self.qualified_identifier.span(),
-                SourceElement::span,
-            ))
-            .unwrap()
+        let start = self.final_keyword.as_ref().map_or_else(
+            || self.implements_keyword.span.clone(),
+            |final_keyword| final_keyword.span.clone(),
+        );
+
+        let end = self.where_clause.as_ref().map_or_else(
+            || {
+                self.generic_arguments.as_ref().map_or_else(
+                    || self.simple_path.span(),
+                    |generic_arguments| generic_arguments.span(),
+                )
+            },
+            |where_clause| where_clause.span(),
+        );
+
+        start.join(&end).unwrap()
     }
 }
 
@@ -1661,20 +1816,23 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<Error>,
     ) -> Option<AccessModifier> {
-        match self.next_significant_token() {
+        match self.stop_at_significant() {
             Reading::Unit(Token::Keyword(k))
                 if k.kind == KeywordKind::Public =>
             {
+                self.forward();
                 Some(AccessModifier::Public(k))
             }
             Reading::Unit(Token::Keyword(k))
                 if k.kind == KeywordKind::Private =>
             {
+                self.forward();
                 Some(AccessModifier::Private(k))
             }
             Reading::Unit(Token::Keyword(k))
                 if k.kind == KeywordKind::Internal =>
             {
+                self.forward();
                 Some(AccessModifier::Internal(k))
             }
             found => {
@@ -1683,6 +1841,7 @@ impl<'a> Parser<'a> {
                     found: self.reading_to_found(found),
                     alternatives: Vec::new(),
                 });
+                self.forward();
                 None
             }
         }
@@ -1696,8 +1855,9 @@ impl<'a> Parser<'a> {
             Delimiter::Bracket,
             ',',
             |parser| {
-                match parser.next_significant_token() {
+                match parser.stop_at_significant() {
                     Reading::Unit(Token::Identifier(identifier)) => {
+                        parser.forward();
                         Some(GenericParameter::Type(TypeParameter {
                             identifier,
                             default: match parser.stop_at_significant() {
@@ -1722,6 +1882,7 @@ impl<'a> Parser<'a> {
                     Reading::Unit(Token::Punctuation(apostrophe))
                         if apostrophe.punctuation == '\'' =>
                     {
+                        parser.forward();
                         let identifier = parser.parse_identifier(handler)?;
 
                         Some(GenericParameter::Lifetime(LifetimeParameter {
@@ -1733,6 +1894,7 @@ impl<'a> Parser<'a> {
                     Reading::Unit(Token::Keyword(const_keyword))
                         if const_keyword.kind == KeywordKind::Const =>
                     {
+                        parser.forward();
                         let identifier = parser.parse_identifier(handler)?;
                         let colon =
                             parser.parse_punctuation(':', true, handler)?;
@@ -1769,6 +1931,7 @@ impl<'a> Parser<'a> {
                             alternatives: Vec::new(),
                             found: parser.reading_to_found(found),
                         });
+                        parser.forward();
                         None
                     }
                 }
@@ -2025,6 +2188,7 @@ impl<'a> Parser<'a> {
                             alternatives: vec![SyntaxKind::Identifier],
                             found: self.reading_to_found(found),
                         });
+                        self.forward();
                         None
                     }
                 }
@@ -2036,6 +2200,7 @@ impl<'a> Parser<'a> {
                     alternatives: vec![],
                     found: self.reading_to_found(found),
                 });
+                self.forward();
                 None
             }
         }
@@ -2110,7 +2275,17 @@ impl<'a> Parser<'a> {
             }
             _ => None,
         };
-        let qualified_identifier = self.parse_qualified_identifier(handler)?;
+
+        let simple_path = self.parse_simple_path(handler)?;
+        let generic_arguments =
+            if let Reading::IntoDelimited(Delimiter::Bracket, _) =
+                self.stop_at_significant()
+            {
+                Some(self.parse_generic_arguments(handler)?)
+            } else {
+                None
+            };
+
         let where_clause = self.try_parse_where_clause(handler)?;
 
         let kind = match self.stop_at_significant() {
@@ -2138,7 +2313,8 @@ impl<'a> Parser<'a> {
                 implements_keyword,
                 generic_parameters,
                 const_keyword,
-                qualified_identifier,
+                simple_path,
+                generic_arguments,
                 where_clause,
             },
             kind,
@@ -2225,12 +2401,12 @@ impl<'a> Parser<'a> {
             }
 
             found => {
-                self.forward();
                 handler.receive(Error {
                     expected: SyntaxKind::TraitMember,
                     alternatives: Vec::new(),
                     found: self.reading_to_found(found),
                 });
+                self.forward();
                 None
             }
         }
@@ -2409,31 +2585,69 @@ impl<'a> Parser<'a> {
         Some(ModuleSignature { module_keyword, identifier })
     }
 
-    /// Parses a [`ModulePath`]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_module_path(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<ModulePath> {
-        let first_identifier = self.parse_identifier(handler)?;
-        let mut rest = Vec::new();
-
-        while let Some(scope_separator) =
-            self.try_parse(|this| this.parse_scope_separator(&Dummy))
-        {
-            let identifier = self.parse_identifier(handler)?;
-            rest.push((scope_separator, identifier));
-        }
-
-        Some(ModulePath { first: first_identifier, rest })
-    }
-
     fn parse_using(&mut self, handler: &dyn Handler<Error>) -> Option<Using> {
         let using_keyword = self.parse_keyword(KeywordKind::Using, handler)?;
-        let module_path = self.parse_module_path(handler)?;
+        let kind = match self.stop_at_significant() {
+            Reading::IntoDelimited(Delimiter::Brace, _) => {
+                let tree = self.parse_delimited_list(
+                    Delimiter::Brace,
+                    ',',
+                    |parser| {
+                        let identifier = parser.parse_identifier(handler)?;
+                        let alias = if let Reading::Unit(Token::Keyword(
+                            as_keyword @ Keyword {
+                                kind: KeywordKind::As, ..
+                            },
+                        )) = parser.stop_at_significant()
+                        {
+                            // eat as keyword
+                            parser.forward();
+
+                            let identifier =
+                                parser.parse_identifier(handler)?;
+                            Some(Alias { as_keyword, identifier })
+                        } else {
+                            None
+                        };
+
+                        Some(Import { identifier, alias })
+                    },
+                    handler,
+                )?;
+
+                let from_keyword =
+                    self.parse_keyword(KeywordKind::From, handler)?;
+                let simple_path = self.parse_simple_path(handler)?;
+
+                UsingKind::From(UsingFrom {
+                    left_brace: tree.open,
+                    imports: tree.list,
+                    right_brace: tree.close,
+                    from: From { from_keyword, simple_path },
+                })
+            }
+
+            _ => {
+                let simple_path = self.parse_simple_path(handler)?;
+                let alias = if let Reading::Unit(Token::Keyword(
+                    as_keyword @ Keyword { kind: KeywordKind::As, .. },
+                )) = self.stop_at_significant()
+                {
+                    // eat as keyword
+                    self.forward();
+
+                    let identifier = self.parse_identifier(handler)?;
+                    Some(Alias { as_keyword, identifier })
+                } else {
+                    None
+                };
+
+                UsingKind::One(UsingOne { simple_path, alias })
+            }
+        };
         let semicolon = self.parse_punctuation(';', true, handler)?;
 
-        Some(Using { using_keyword, module_path, semicolon })
+        Some(Using { using_keyword, kind, semicolon })
     }
 
     /// Parses a [`ModuleContent`]
@@ -2505,33 +2719,22 @@ impl<'a> Parser<'a> {
                 let mut usings = Vec::new();
 
                 while !parser.is_exhausted() {
-                    match (items.is_empty(), parser.stop_at_significant()) {
-                        (
-                            true,
-                            Reading::Unit(Token::Keyword(using_keyword)),
-                        ) if using_keyword.kind == KeywordKind::Using => {
-                            // eat using keyword
-                            parser.forward();
-
-                            let module_path =
-                                parser.parse_module_path(handler)?;
-                            let semicolon =
-                                parser.parse_punctuation(';', true, handler)?;
-
-                            usings.push(Using {
-                                using_keyword,
-                                module_path,
-                                semicolon,
-                            });
+                    if let (
+                        true,
+                        Reading::Unit(Token::Keyword(Keyword {
+                            kind: KeywordKind::Using,
+                            ..
+                        })),
+                    ) = (items.is_empty(), parser.stop_at_significant())
+                    {
+                        if let Some(using) = parser.parse_using(handler) {
+                            usings.push(using);
                             continue;
                         }
-                        _ => {}
-                    }
-
-                    if let Some(item) = parser.parse_item(handler) {
+                    } else if let Some(item) = parser.parse_item(handler) {
                         items.push(item);
                         continue;
-                    };
+                    }
 
                     // try to stop at the next access modifier or usings keyword
                     parser.stop_at(|token| {
@@ -2662,7 +2865,6 @@ impl<'a> Parser<'a> {
                     }
 
                     found => {
-                        self.forward();
                         handler.receive(Error {
                             expected: SyntaxKind::Keyword(
                                 KeywordKind::Function,
@@ -2670,6 +2872,7 @@ impl<'a> Parser<'a> {
                             alternatives: vec![SyntaxKind::Identifier],
                             found: self.reading_to_found(found),
                         });
+                        self.forward();
                         None
                     }
                 }
@@ -2754,12 +2957,12 @@ impl<'a> Parser<'a> {
             }
 
             found => {
-                self.forward();
                 handler.receive(Error {
                     expected: SyntaxKind::Item,
                     alternatives: Vec::new(),
                     found: self.reading_to_found(found),
                 });
+                self.forward();
                 None
             }
         }
@@ -2854,12 +3057,12 @@ impl<'a> Parser<'a> {
             }
 
             found => {
-                self.forward();
                 handler.receive(Error {
                     expected: SyntaxKind::Item,
                     found: self.reading_to_found(found),
                     alternatives: Vec::new(),
                 });
+                self.forward();
                 None
             }
         }

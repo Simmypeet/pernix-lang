@@ -44,7 +44,7 @@ pub trait Observer<M: Model, T: State>: Sized {
 pub struct NoOp;
 
 /// The instance of [`NoOp`] observer.
-pub const NO_OP: &'static NoOp = &NoOp;
+pub const NO_OP: &NoOp = &NoOp;
 
 impl<M: Model, T: State> Observer<M, T> for NoOp {
     fn on_query(

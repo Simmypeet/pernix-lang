@@ -6,10 +6,10 @@ use proptest::{
     strategy::{BoxedStrategy, Just, Strategy},
 };
 
-use super::{Array, Pointer, Primitive, Qualifier, Reference, SymbolID, Type};
+use super::{Array, Pointer, Primitive, Qualifier, Reference, Type};
 use crate::{
     arena::ID,
-    symbol::TypeParameterID,
+    symbol::{AdtID, TypeParameterID},
     type_system::{
         model::Default,
         term::{
@@ -48,12 +48,7 @@ impl Arbitrary for Qualifier {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            Just(Self::Immutable),
-            Just(Self::Mutable),
-            Just(Self::Unique),
-        ]
-        .boxed()
+        prop_oneof![Just(Self::Immutable), Just(Self::Mutable)].boxed()
     }
 }
 
@@ -63,11 +58,8 @@ impl Arbitrary for Pointer<Default> {
 
     fn arbitrary_with(type_strategy: Self::Parameters) -> Self::Strategy {
         let type_strategy = type_strategy.unwrap_or_else(Type::arbitrary);
-        (type_strategy, Qualifier::arbitrary())
-            .prop_map(|(ty, qualifier)| Self {
-                pointee: Box::new(ty),
-                qualifier,
-            })
+        (type_strategy, proptest::bool::ANY)
+            .prop_map(|(ty, mutable)| Self { mutable, pointee: Box::new(ty) })
             .boxed()
     }
 }
@@ -95,7 +87,7 @@ impl Arbitrary for Reference<Default> {
     }
 }
 
-impl Arbitrary for SymbolID {
+impl Arbitrary for AdtID {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
