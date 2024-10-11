@@ -590,21 +590,23 @@ impl<
         let mut type_inferences = InferenceProvider::default();
         let mut constant_inferences = InferenceProvider::default();
 
-        let resolution = dbg!(self.table.resolve(
-            syntax_tree,
-            self.current_site,
-            resolution::Config {
-                elided_lifetime_provider: Some(
-                    &mut InferenceProvider::default(),
-                ),
-                elided_type_provider: Some(&mut type_inferences),
-                elided_constant_provider: Some(&mut constant_inferences),
-                observer: Some(&mut self.resolution_observer),
-                higher_ranked_lifetimes: None,
-            },
-            &handler,
-        ))
-        .ok()?;
+        let resolution = self
+            .table
+            .resolve(
+                syntax_tree,
+                self.current_site,
+                resolution::Config {
+                    elided_lifetime_provider: Some(
+                        &mut InferenceProvider::default(),
+                    ),
+                    elided_type_provider: Some(&mut type_inferences),
+                    elided_constant_provider: Some(&mut constant_inferences),
+                    observer: Some(&mut self.resolution_observer),
+                    higher_ranked_lifetimes: None,
+                },
+                &handler,
+            )
+            .ok()?;
 
         for inference in type_inferences.cerated_inferences {
             assert!(self.inference_context.register::<Type<_>>(
