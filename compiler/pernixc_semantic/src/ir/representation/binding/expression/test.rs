@@ -4,7 +4,7 @@ use super::Expression;
 use crate::{
     arena::ID,
     error::{
-        CannotDereference, CannotIndexPastUnpackedTuple,
+        AmbiguousMethodCall, CannotDereference, CannotIndexPastUnpackedTuple,
         DuplicatedFieldInitialization, Error, ExpectArray,
         ExpectAssociatedValue, ExpectLValue, ExpectStructType,
         ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
@@ -37,11 +37,12 @@ use crate::{
             representation::{Index, IndexMut, Insertion, RwLockContainer},
             resolution, Building, Table,
         },
-        Accessibility, AdtImplementationDefinition, AdtImplementationFunction,
-        AdtTemplate, CallableID, Enum, EnumDefinition, Field, Function,
-        FunctionDefinition, FunctionTemplate, GenericDeclaration, GenericID,
-        LifetimeParameter, LifetimeParameterID, Module, Parameter, Struct,
-        StructDefinition, TypeParameter, TypeParameterID, Variant,
+        Accessibility, AdtID, AdtImplementationDefinition,
+        AdtImplementationFunction, AdtTemplate, CallableID, Enum,
+        EnumDefinition, Field, Function, FunctionDefinition, FunctionTemplate,
+        GenericDeclaration, GenericID, LifetimeParameter, LifetimeParameterID,
+        Module, Parameter, Struct, StructDefinition, TraitDefinition,
+        TraitFunction, TypeParameter, TypeParameterID, Variant,
     },
     type_system::{
         self,
@@ -3891,5 +3892,382 @@ fn struct_method() {
             )
         },
         [get_x_check, get_ref_x_check, set_x_check],
+    )
+}
+
+/*
+public struct MyStruct {}
+
+public trait NoMethod {
+    public function method(self: MyStruct, myBoolean: bool);
+}
+
+public trait MethodWithBoolean[T] {
+    public function method(self: T, myBoolean: bool);
+}
+
+public trait MethodWithInt32[T] {
+    public function method(self: T, myInt32: int32);
+}
+
+public trait FirstAmbiguousMethod[T] {
+    public function ambiguous(self: T, first: int32);
+}
+
+public trait SecondAmbiguousMethod[T] {
+    public function ambiguous(self: T, second: int64);
+}
+
+public function main() {
+    let mutable myStruct = MyStruct {};
+
+    myStruct.method(true); // MethodWithBoolean[int32]::method
+    myStruct.method(0i32); // MethodWithInt32[int32]::method
+
+    myStruct.ambiguous(32); // ??? (ambiguous)
+}
+ */
+
+#[test]
+fn trait_method() {
+    let method_with_boolean = Check::new(
+        "myStruct.method(true)",
+        Config { target: Target::RValue },
+        |binder, exp, errors, (_, method_with_boolean_id, _, _, _, _)| {
+            assert!(errors.is_empty(), "{:?}", errors);
+
+            let call_register_id =
+                exp.unwrap().into_r_value().unwrap().into_register().unwrap();
+
+            let call = binder
+                .intermediate_representation
+                .registers
+                .get(call_register_id)
+                .unwrap()
+                .assignment
+                .as_function_call()
+                .unwrap();
+
+            assert_eq!(
+                call.callable_id,
+                CallableID::TraitFunction(*method_with_boolean_id)
+            );
+        },
+    );
+
+    let method_with_int32 = Check::new(
+        "myStruct.method(0i32)",
+        Config { target: Target::RValue },
+        |binder, exp, errors, (_, _, method_with_int32_id, _, _, _)| {
+            assert!(errors.is_empty(), "{:?}", errors);
+
+            let call_register_id =
+                exp.unwrap().into_r_value().unwrap().into_register().unwrap();
+
+            let call = binder
+                .intermediate_representation
+                .registers
+                .get(call_register_id)
+                .unwrap()
+                .assignment
+                .as_function_call()
+                .unwrap();
+
+            assert_eq!(
+                call.callable_id,
+                CallableID::TraitFunction(*method_with_int32_id)
+            );
+        },
+    );
+
+    let ambiguous_method = Check::new(
+        "myStruct.ambiguous(32)",
+        Config { target: Target::RValue },
+        |_, exp, errors, (_, _, _, first_amb, second_amb, _)| {
+            assert!(exp.is_err());
+            assert!(errors.len() == 1);
+
+            let error = errors[0]
+                .as_any()
+                .downcast_ref::<AmbiguousMethodCall>()
+                .unwrap();
+
+            assert_eq!(error.callable_candidates.len(), 2);
+
+            assert!(error
+                .callable_candidates
+                .contains(&CallableID::TraitFunction(*first_amb)));
+            assert!(error
+                .callable_candidates
+                .contains(&(CallableID::TraitFunction(*second_amb))));
+        },
+    );
+
+    setup_and_bind(
+        |test_template| {
+            // create struct MyStruct {}
+            let my_struct_id = test_template
+                .table
+                .insert_member(
+                    "MyStruct".to_string(),
+                    Accessibility::Public,
+                    test_template.test_module_id,
+                    None,
+                    GenericDeclaration::default(),
+                    AdtTemplate::<StructDefinition>::default(),
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+
+            // create trait NoMethod { ... }
+            let no_method_trait_id = test_template
+                .table
+                .insert_member(
+                    "NoMethod".to_string(),
+                    Accessibility::Public,
+                    test_template.test_module_id,
+                    None,
+                    GenericDeclaration::default(),
+                    TraitDefinition::default(),
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+
+            // create function method(self: MyStruct, myBoolean: bool);
+            let no_method_trait_method_id: ID<TraitFunction> = test_template
+                .table
+                .insert_member(
+                    "method".to_string(),
+                    Accessibility::Public,
+                    no_method_trait_id,
+                    None,
+                    GenericDeclaration::default(),
+                    FunctionTemplate::default(),
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+
+            let no_method_trait_method =
+                test_template.table.get_mut(no_method_trait_method_id).unwrap();
+
+            no_method_trait_method.insert_parameter(Parameter {
+                r#type: Type::Symbol(Symbol {
+                    id: AdtID::Struct(my_struct_id),
+                    generic_arguments: GenericArguments::default(),
+                }),
+                span: None,
+            });
+            no_method_trait_method.insert_parameter(Parameter {
+                r#type: Type::Primitive(Primitive::Bool),
+                span: None,
+            });
+
+            // create trait MethodWithBoolean[T] { ... }
+            let t_parameter_id;
+            let method_with_boolean_trait_id = test_template
+                .table
+                .insert_member(
+                    "MethodWithBoolean".to_string(),
+                    Accessibility::Public,
+                    test_template.test_module_id,
+                    None,
+                    {
+                        let mut generic = GenericDeclaration::default();
+                        t_parameter_id = generic
+                            .parameters
+                            .add_type_parameter(TypeParameter {
+                                name: None,
+                                span: None,
+                            })
+                            .unwrap();
+                        generic
+                    },
+                    TraitDefinition::default(),
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+            let t_parameter = Type::Parameter(TypeParameterID {
+                parent: method_with_boolean_trait_id.into(),
+                id: t_parameter_id,
+            });
+
+            // create function method(self: T, myBoolean: bool);
+            let method_with_boolean_trait_method_id: ID<TraitFunction> =
+                test_template
+                    .table
+                    .insert_member(
+                        "method".to_string(),
+                        Accessibility::Public,
+                        method_with_boolean_trait_id,
+                        None,
+                        GenericDeclaration::default(),
+                        FunctionTemplate::default(),
+                    )
+                    .unwrap()
+                    .unwrap_no_duplication();
+
+            let method_with_boolean_trait_method = test_template
+                .table
+                .get_mut(method_with_boolean_trait_method_id)
+                .unwrap();
+
+            method_with_boolean_trait_method.insert_parameter(Parameter {
+                r#type: t_parameter.clone(),
+                span: None,
+            });
+            method_with_boolean_trait_method.insert_parameter(Parameter {
+                r#type: Type::Primitive(Primitive::Bool),
+                span: None,
+            });
+
+            // create trait MethodWithInt32[T] { ... }
+            let t_parameter_id;
+            let method_with_int32_trait_id = test_template
+                .table
+                .insert_member(
+                    "MethodWithInt32".to_string(),
+                    Accessibility::Public,
+                    test_template.test_module_id,
+                    None,
+                    {
+                        let mut generic = GenericDeclaration::default();
+                        t_parameter_id = generic
+                            .parameters
+                            .add_type_parameter(TypeParameter {
+                                name: None,
+                                span: None,
+                            })
+                            .unwrap();
+                        generic
+                    },
+                    TraitDefinition::default(),
+                )
+                .unwrap()
+                .unwrap_no_duplication();
+            let t_parameter = Type::Parameter(TypeParameterID {
+                parent: method_with_int32_trait_id.into(),
+                id: t_parameter_id,
+            });
+
+            // create function method(self: T, myBoolean: bool);
+            let method_with_int32_trait_method_id: ID<TraitFunction> =
+                test_template
+                    .table
+                    .insert_member(
+                        "method".to_string(),
+                        Accessibility::Public,
+                        method_with_int32_trait_id,
+                        None,
+                        GenericDeclaration::default(),
+                        FunctionTemplate::default(),
+                    )
+                    .unwrap()
+                    .unwrap_no_duplication();
+
+            let method_with_boolean_trait_method = test_template
+                .table
+                .get_mut(method_with_int32_trait_method_id)
+                .unwrap();
+
+            method_with_boolean_trait_method.insert_parameter(Parameter {
+                r#type: t_parameter.clone(),
+                span: None,
+            });
+            method_with_boolean_trait_method.insert_parameter(Parameter {
+                r#type: Type::Primitive(Primitive::Int32),
+                span: None,
+            });
+
+            // create trait FirstAmbiguousMethod[T] { ... }
+            let mut ambiguous_methods = [
+                Type::Primitive(Primitive::Int32),
+                Type::Primitive(Primitive::Int64),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(i, x)| {
+                let t_parameter_id;
+                let trait_id = test_template
+                    .table
+                    .insert_member(
+                        format!("AmbiguousMethod{}", i),
+                        Accessibility::Public,
+                        test_template.test_module_id,
+                        None,
+                        {
+                            let mut generic = GenericDeclaration::default();
+                            t_parameter_id = generic
+                                .parameters
+                                .add_type_parameter(TypeParameter {
+                                    name: None,
+                                    span: None,
+                                })
+                                .unwrap();
+                            generic
+                        },
+                        TraitDefinition::default(),
+                    )
+                    .unwrap()
+                    .unwrap_no_duplication();
+
+                let t_parameter = Type::Parameter(TypeParameterID {
+                    parent: trait_id.into(),
+                    id: t_parameter_id,
+                });
+
+                let method_id = test_template
+                    .table
+                    .insert_member(
+                        "ambiguous".to_string(),
+                        Accessibility::Public,
+                        trait_id,
+                        None,
+                        GenericDeclaration::default(),
+                        FunctionTemplate::default(),
+                    )
+                    .unwrap()
+                    .unwrap_no_duplication();
+
+                let method = test_template.table.get_mut(method_id).unwrap();
+
+                method.insert_parameter(Parameter {
+                    r#type: t_parameter.clone(),
+                    span: None,
+                });
+
+                method.insert_parameter(Parameter {
+                    r#type: x.clone(),
+                    span: None,
+                });
+
+                method_id
+            });
+
+            let first_ambiguous_method_id = ambiguous_methods.next().unwrap();
+            let second_ambiguous_method_id = ambiguous_methods.next().unwrap();
+
+            let (mut binder, storage) = test_template.create_binder();
+            let statement = parse_statement("let myStruct = MyStruct {};");
+
+            let alloca_id = binder
+                .bind_variable_declaration(
+                    &statement.into_variable_declaration().unwrap(),
+                    &storage,
+                )
+                .unwrap();
+
+            (
+                binder,
+                (
+                    my_struct_id,
+                    method_with_boolean_trait_method_id,
+                    method_with_int32_trait_method_id,
+                    first_ambiguous_method_id,
+                    second_ambiguous_method_id,
+                    alloca_id,
+                ),
+            )
+        },
+        [method_with_boolean, method_with_int32, ambiguous_method],
     )
 }
