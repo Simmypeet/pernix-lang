@@ -38,8 +38,8 @@ impl<M: Model> unification::Predicate<Lifetime<M>> for DuductionPredicate {
         &self,
         _: &Lifetime<M>,
         _: &Lifetime<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
+        _: &[Log<M>],
+        _: &[Log<M>],
     ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         Ok(Some(Succeeded::satisfied()))
     }
@@ -50,8 +50,8 @@ impl<M: Model> unification::Predicate<Type<M>> for DuductionPredicate {
         &self,
         from: &Type<M>,
         _: &Type<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
+        _: &[Log<M>],
+        _: &[Log<M>],
     ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         Ok(matches!(from, Type::Parameter(_) | Type::TraitMember(_))
             .then_some(Succeeded::satisfied()))
@@ -63,8 +63,8 @@ impl<M: Model> unification::Predicate<Constant<M>> for DuductionPredicate {
         &self,
         from: &Constant<M>,
         _: &Constant<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
+        _: &[Log<M>],
+        _: &[Log<M>],
     ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         Ok(matches!(from, Constant::Parameter(_))
             .then_some(Succeeded::satisfied()))

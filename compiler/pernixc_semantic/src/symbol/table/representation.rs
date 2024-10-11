@@ -81,7 +81,10 @@ pub trait IndexMut<Idx: ?Sized> {
 }
 
 impl<T: Element, S: Container> Index<ID<T>> for Representation<S> {
-    type Output<'a> = S::Read<'a, T> where Self: 'a;
+    type Output<'a>
+        = S::Read<'a, T>
+    where
+        Self: 'a;
 
     fn get(&self, index: ID<T>) -> Option<Self::Output<'_>> {
         T::get_arena(self).get(index).map(|x| S::read(x))
@@ -89,7 +92,10 @@ impl<T: Element, S: Container> Index<ID<T>> for Representation<S> {
 }
 
 impl<T: Element, S: Container> IndexMut<ID<T>> for Representation<S> {
-    type Output<'a> = S::Write<'a, T> where Self: 'a;
+    type Output<'a>
+        = S::Write<'a, T>
+    where
+        Self: 'a;
 
     fn get_mut(&mut self, index: ID<T>) -> Option<Self::Output<'_>> {
         T::get_arena_mut(self).get_mut(index).map(|x| S::write(x))
@@ -1541,6 +1547,7 @@ impl<'a> Handler<Box<dyn error::Error>> for HandlerAdaptor<'a> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn transition_to_building(
     mut drafting_table: Table<
         Building<RwLockContainer, building::drafting::Drafter>,
@@ -1616,7 +1623,7 @@ fn transition_to_building(
                     handler.receive(Box::new(ConflictingUsing {
                         using_span: a.alias().as_ref().map_or_else(
                             || a.simple_path().span(),
-                            |x| x.span(),
+                            SourceElement::span,
                         ),
                         name: name.clone(),
                         module_id: current_module_id,
@@ -1628,8 +1635,8 @@ fn transition_to_building(
                         (
                             id.into(),
                             Some(a.alias().as_ref().map_or_else(
-                                || a.simple_path().span().clone(),
-                                |x| x.identifier().span().clone(),
+                                || a.simple_path().span(),
+                                |x| x.identifier().span(),
                             )),
                         ),
                     );
@@ -1719,7 +1726,7 @@ fn transition_to_building(
                         handler.receive(Box::new(ConflictingUsing {
                             using_span: import.alias().as_ref().map_or_else(
                                 || import.identifier().span(),
-                                |x| x.span(),
+                                SourceElement::span,
                             ),
                             name: name.clone(),
                             module_id: current_module_id,

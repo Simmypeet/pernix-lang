@@ -1,506 +1,111 @@
-use std::{cmp, fmt::Debug, sync::Arc};
-
-use proptest::{
-    arbitrary::Arbitrary,
-    prop_oneof, proptest,
-    strategy::{BoxedStrategy, Strategy},
-    test_runner::{Config, TestCaseError},
-};
-
-use super::{Order, OrderPredicate};
 use crate::{
+    arena::ID,
     symbol::{
-        table::{Building, Table},
-        TypeParameterID,
+        table::{representation::NoContainer, Building, Table},
+        GenericID, TypeParameterID,
     },
     type_system::{
+        environment::Environment,
         model::Default,
-        normalizer::NoOp,
+        order::Order,
         term::{
-            constant::Constant,
-            lifetime::Lifetime,
-            r#type::{self, Type},
-            GenericArguments, Symbol, Term,
+            r#type::{Primitive, Type},
+            GenericArguments,
         },
-        unification::Unification,
-        Compute, Environment, Premise,
+        Premise,
     },
 };
 
-/// Property checks for the order of terms.
-trait Property<T>: Debug + 'static {
-    /// Generates a pair of terms that will be used to compare the specificity.
-    fn generate(&self) -> (T, T);
+#[test]
+fn ambiguous() {
+    let t_parameter = Type::<Default>::Parameter(TypeParameterID {
+        parent: GenericID::Struct(ID::new(0)),
+        id: ID::new(0),
+    });
+    let u_parameter = Type::<Default>::Parameter(TypeParameterID {
+        parent: GenericID::Struct(ID::new(1)),
+        id: ID::new(0),
+    });
 
-    /// Returns a positive integer if the term has *one* more specialized term
-    /// than the other or returns a negative integer if the term
-    /// has *one* less specialized term than the other.
-    ///
-    /// Otherwise, returns 0 if both lhs and rhs are equally specialized.
-    ///
-    /// Returns `None` if the two terms are incompatible.
-    fn get_specialization_point(&self) -> Option<isize>;
+    let lhs = GenericArguments {
+        lifetimes: Vec::new(),
+        types: vec![Type::Primitive(Primitive::Int32), t_parameter],
+        constants: Vec::new(),
+    };
 
-    /// Returns the number of nodes in the term.
-    #[allow(dead_code)]
-    fn node_count(&self) -> usize;
-}
+    let rhs = GenericArguments {
+        lifetimes: Vec::new(),
+        types: vec![u_parameter, Type::Primitive(Primitive::Int32)],
+        constants: Vec::new(),
+    };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct Matching<T>(T);
+    let table = Table::<Building<NoContainer, ()>>::default();
 
-impl<T: Clone + Debug + 'static> Property<T> for Matching<T> {
-    fn generate(&self) -> (T, T) { (self.0.clone(), self.0.clone()) }
-
-    fn get_specialization_point(&self) -> Option<isize> { Some(0) }
-
-    fn node_count(&self) -> usize { 1 }
-}
-
-impl<T: Debug + Arbitrary<Strategy = BoxedStrategy<T>> + Term + 'static>
-    Arbitrary for Matching<T>
-{
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        T::arbitrary()
-            .prop_filter_map(
-                "filter out generic parameters and trait members",
-                |x| {
-                    if x.as_trait_member().is_some()
-                        || x.as_generic_parameter().is_some()
-                    {
-                        None
-                    } else {
-                        Some(Self(x))
-                    }
-                },
-            )
-            .boxed()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct Incompatible<T> {
-    lhs: T,
-    rhs: T,
-}
-
-impl<T: Clone + Debug + 'static> Property<T> for Incompatible<T> {
-    fn generate(&self) -> (T, T) { (self.lhs.clone(), self.rhs.clone()) }
-
-    fn get_specialization_point(&self) -> Option<isize> { None }
-
-    fn node_count(&self) -> usize { 1 }
-}
-
-impl<
-        T: Debug
-            + Arbitrary<Strategy = BoxedStrategy<T>>
-            + Term<Model = Default>
-            + 'static,
-    > Arbitrary for Incompatible<T>
-{
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (T::arbitrary(), T::arbitrary())
-            .prop_filter_map(
-                "filter out generic parameters, trait members, and trivially \
-                 equals terms",
-                |(lhs, rhs)| {
-                    let Ok(unification) = Unification::new(
-                        lhs.clone(),
-                        rhs.clone(),
-                        Arc::new(OrderPredicate),
-                    )
-                    .query(&Environment {
-                        table: &Table::<Building>::default(),
-                        premise: Premise::default(),
-                        normalizer: &NoOp,
-                    }) else {
-                        return None;
-                    };
-
-                    if unification.is_some() {
-                        return None;
-                    }
-
-                    Some(Self { lhs, rhs })
-                },
-            )
-            .boxed()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum Matchable<TParam, TTraitMember> {
-    Parameter(TParam),
-    TraitMember(TTraitMember),
-}
-
-impl<
-        TParam: Arbitrary<Strategy = BoxedStrategy<TParam>> + 'static,
-        TTraitMember: Debug + Arbitrary<Strategy = BoxedStrategy<TTraitMember>> + 'static,
-    > Arbitrary for Matchable<TParam, TTraitMember>
-{
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            TParam::arbitrary().prop_map(Matchable::Parameter),
-            TTraitMember::arbitrary().prop_map(Matchable::TraitMember),
-        ]
-        .boxed()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Unified<T, TParam, TTraitMember> {
-    matchable_at_lhs: bool,
-    matchable: Matchable<TParam, TTraitMember>,
-    non_matchable: T,
-}
-
-impl<
-        T: Term + From<TParam> + From<TTraitMember> + 'static,
-        TParam: Clone + Debug + 'static,
-        TTraitMember: Clone + Debug + 'static,
-    > Property<T> for Unified<T, TParam, TTraitMember>
-{
-    fn generate(&self) -> (T, T) {
-        let mut result = (
-            match self.matchable.clone() {
-                Matchable::Parameter(t) => t.into(),
-                Matchable::TraitMember(t) => t.into(),
-            },
-            self.non_matchable.clone(),
-        );
-
-        if !self.matchable_at_lhs {
-            std::mem::swap(&mut result.0, &mut result.1);
-        }
-
-        result
-    }
-
-    fn get_specialization_point(&self) -> Option<isize> {
-        if self.matchable_at_lhs {
-            Some(-1)
-        } else {
-            Some(1)
-        }
-    }
-
-    fn node_count(&self) -> usize { 1 }
-}
-
-impl<
-        T: Term + Arbitrary<Strategy = BoxedStrategy<T>> + 'static,
-        TParam: Debug + Arbitrary<Strategy = BoxedStrategy<TParam>> + 'static,
-        TTraitMember: Debug + Arbitrary<Strategy = BoxedStrategy<TTraitMember>> + 'static,
-    > Arbitrary for Unified<T, TParam, TTraitMember>
-{
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            proptest::bool::ANY,
-            Matchable::<TParam, TTraitMember>::arbitrary(),
-            T::arbitrary(),
-        )
-            .prop_filter_map(
-                "filter out trait member and generic parameter on non \
-                 matchable",
-                |(matchable_at_lhs, matchable, non_matchable)| {
-                    if non_matchable.as_trait_member().is_some()
-                        || non_matchable.as_generic_parameter().is_some()
-                    {
-                        return None;
-                    }
-
-                    Some(Self { matchable_at_lhs, matchable, non_matchable })
-                },
-            )
-            .boxed()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct Ambiguous<TParam, TTraitMember>(Matchable<TParam, TTraitMember>);
-
-impl<
-        T: Term + From<TParam> + From<TTraitMember>,
-        TParam: Clone + Debug + 'static,
-        TTraitMember: Clone + Debug + 'static,
-    > Property<T> for Ambiguous<TParam, TTraitMember>
-{
-    fn generate(&self) -> (T, T) {
-        let (lhs, rhs) = match self.0.clone() {
-            Matchable::Parameter(t) => (t.clone().into(), t.into()),
-            Matchable::TraitMember(t) => (t.clone().into(), t.into()),
-        };
-
-        (lhs, rhs)
-    }
-
-    fn get_specialization_point(&self) -> Option<isize> { Some(0) }
-
-    fn node_count(&self) -> usize { 1 }
-}
-
-impl<
-        TParam: Debug + Arbitrary<Strategy = BoxedStrategy<TParam>> + 'static,
-        TTraitMember: Debug + Arbitrary<Strategy = BoxedStrategy<TTraitMember>> + 'static,
-    > Arbitrary for Ambiguous<TParam, TTraitMember>
-{
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Matchable::<TParam, TTraitMember>::arbitrary()
-            .prop_map(Ambiguous)
-            .boxed()
-    }
-}
-
-impl Arbitrary for Box<dyn Property<Type<Default>>> {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            4 => Matching::<Type<_>>::arbitrary().prop_map(|x| Box::new(x) as _),
-            1 => Incompatible::<Type<_>>::arbitrary().prop_map(|x| Box::new(x) as _),
-            4 => Unified::<Type<_>, TypeParameterID, r#type::TraitMember<_>>::arbitrary()
-                .prop_map(|x| Box::new(x) as _),
-            4 => Ambiguous::<TypeParameterID, r#type::TraitMember<_>>::arbitrary().prop_map(|x| Box::new(x) as _),
-        ].prop_recursive(3, 12, 4, move |inner| {
-            Congruent::arbitrary_with((Some(inner), Some(Box::<dyn Property<Constant<_>>>::arbitrary()))).prop_map(|x| Box::new(x) as _)
-        })
-        .boxed()
-    }
-}
-
-impl Arbitrary for Box<dyn Property<Constant<Default>>> {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            4 => Matching::<Constant<_>>::arbitrary().prop_map(|x| Box::new(x) as _),
-            1 => Incompatible::<Constant<_>>::arbitrary().prop_map(|x| Box::new(x) as _),
-        ]
-        .boxed()
-    }
-}
-
-#[derive(Debug)]
-struct Congruent<ID> {
-    id: ID,
-    lifetimes: Vec<(Lifetime<Default>, Lifetime<Default>)>,
-    types: Vec<Box<dyn Property<Type<Default>>>>,
-    constants: Vec<Box<dyn Property<Constant<Default>>>>,
-}
-
-impl<
-        T: From<Symbol<Default, ID>> + 'static + Debug,
-        ID: Debug + Clone + 'static,
-    > Property<T> for Congruent<ID>
-{
-    fn generate(&self) -> (T, T) {
-        let mut lifetime_lhs = Vec::new();
-        let mut lifetime_rhs = Vec::new();
-
-        for (lhs, rhs) in &self.lifetimes {
-            lifetime_lhs.push(lhs.clone());
-            lifetime_rhs.push(rhs.clone());
-        }
-
-        let mut types_lhs = Vec::new();
-        let mut types_rhs = Vec::new();
-
-        for prop in &self.types {
-            let (lhs, rhs) = prop.generate();
-            types_lhs.push(lhs);
-            types_rhs.push(rhs);
-        }
-
-        let mut constants_lhs = Vec::new();
-        let mut constants_rhs = Vec::new();
-
-        for prop in &self.constants {
-            let (lhs, rhs) = prop.generate();
-            constants_lhs.push(lhs);
-            constants_rhs.push(rhs);
-        }
-
-        (
-            Symbol {
-                id: self.id.clone(),
-                generic_arguments: GenericArguments {
-                    lifetimes: lifetime_lhs,
-                    types: types_lhs,
-                    constants: constants_lhs,
-                },
-            }
-            .into(),
-            Symbol {
-                id: self.id.clone(),
-                generic_arguments: GenericArguments {
-                    lifetimes: lifetime_rhs,
-                    types: types_rhs,
-                    constants: constants_rhs,
-                },
-            }
-            .into(),
-        )
-    }
-
-    fn get_specialization_point(&self) -> Option<isize> {
-        let mut result = 0;
-
-        for prop in &self.types {
-            result += prop.get_specialization_point()?;
-        }
-
-        for prop in &self.constants {
-            result += prop.get_specialization_point()?;
-        }
-
-        Some(result)
-    }
-
-    fn node_count(&self) -> usize {
-        1 + self.types.iter().map(|prop| prop.node_count()).sum::<usize>()
-            + self.constants.iter().map(|prop| prop.node_count()).sum::<usize>()
-    }
-}
-
-impl<ID: Debug + Arbitrary<Strategy = BoxedStrategy<ID>> + 'static> Arbitrary
-    for Congruent<ID>
-{
-    type Strategy = BoxedStrategy<Self>;
-    type Parameters = (
-        Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Constant<Default>>>>>,
+    assert_eq!(
+        lhs.order(&rhs, &Environment::new(Premise::default(), &table).0)
+            .unwrap(),
+        Order::Ambiguous
     );
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let lifetimes = Lifetime::arbitrary();
-        let types =
-            args.0.unwrap_or_else(Box::<dyn Property<Type<_>>>::arbitrary);
-        let constants =
-            args.1.unwrap_or_else(Box::<dyn Property<Constant<_>>>::arbitrary);
-
-        (
-            ID::arbitrary(),
-            proptest::collection::vec((lifetimes.clone(), lifetimes), 0..=2),
-            proptest::collection::vec(types, 0..=2),
-            proptest::collection::vec(constants, 0..=2),
-        )
-            .prop_map(|(id, lifetimes, types, constants)| Self {
-                id,
-                lifetimes,
-                types,
-                constants,
-            })
-            .boxed()
-    }
 }
 
-proptest! {
-    #![proptest_config(Config {
-        max_shrink_iters: 100_000,
-        ..Config::default()
-    })]
-    #[test]
-    fn property_based_testing(
-        lifetimes in proptest::collection::vec((Lifetime::arbitrary(), Lifetime::arbitrary()), 0..=2),
-        types in proptest::collection::vec(Box::<dyn Property<Type<_>>>::arbitrary(), 0..=2),
-        constants in proptest::collection::vec(Box::<dyn Property<Constant<_>>>::arbitrary(), 0..=2),
-    ) {
-        let mut lifetime_lhs = Vec::new();
-        let mut lifetime_rhs = Vec::new();
+#[test]
+fn more_general() {
+    let t_parameter = Type::<Default>::Parameter(TypeParameterID {
+        parent: GenericID::Struct(ID::new(0)),
+        id: ID::new(0),
+    });
 
-        for (lhs, rhs) in &lifetimes {
-            lifetime_lhs.push(lhs.clone());
-            lifetime_rhs.push(rhs.clone());
-        }
+    let lhs = GenericArguments {
+        lifetimes: Vec::new(),
+        types: vec![Type::Primitive(Primitive::Int32), t_parameter.clone()],
+        constants: Vec::new(),
+    };
 
-        let mut types_lhs = Vec::new();
-        let mut types_rhs = Vec::new();
+    let rhs = GenericArguments {
+        lifetimes: Vec::new(),
+        types: vec![
+            Type::Primitive(Primitive::Int32),
+            Type::Primitive(Primitive::Int32),
+        ],
+        constants: Vec::new(),
+    };
 
-        for prop in &types {
-            let (lhs, rhs) = prop.generate();
-            types_lhs.push(lhs);
-            types_rhs.push(rhs);
-        }
+    let table = Table::<Building<NoContainer, ()>>::default();
 
-        let mut constants_lhs = Vec::new();
-        let mut constants_rhs = Vec::new();
+    assert_eq!(
+        lhs.order(&rhs, &Environment::new(Premise::default(), &table).0)
+            .unwrap(),
+        Order::MoreGeneral
+    );
+}
 
-        for prop in &constants {
-            let (lhs, rhs) = prop.generate();
-            constants_lhs.push(lhs);
-            constants_rhs.push(rhs);
-        }
+#[test]
+fn incompatible() {
+    let t_parameter = Type::<Default>::Parameter(TypeParameterID {
+        parent: GenericID::Struct(ID::new(0)),
+        id: ID::new(0),
+    });
 
-        let expected = (|| {
-            let mut result = 0;
+    let lhs = GenericArguments {
+        lifetimes: Vec::new(),
+        types: vec![Type::Primitive(Primitive::Int32), t_parameter.clone()],
+        constants: Vec::new(),
+    };
 
-            for prop in types {
-                result += prop.get_specialization_point()?;
-            }
+    let rhs = GenericArguments {
+        lifetimes: Vec::new(),
+        types: vec![
+            Type::Primitive(Primitive::Bool),
+            Type::Primitive(Primitive::Int32),
+        ],
+        constants: Vec::new(),
+    };
 
-            for prop in constants {
-                result += prop.get_specialization_point()?;
-            }
+    let table = Table::<Building<NoContainer, ()>>::default();
 
-            Some(result)
-        })();
-
-        let lhs = GenericArguments {
-            lifetimes: lifetime_lhs,
-            types: types_lhs,
-            constants: constants_lhs,
-        };
-
-        let rhs = GenericArguments {
-            lifetimes: lifetime_rhs,
-            types: types_rhs,
-            constants: constants_rhs,
-        };
-
-        let result = lhs.order(
-            &rhs,
-            &Environment {
-                table: &Table::<Building>::default(),
-                premise: Premise::default(),
-                normalizer: &NoOp,
-            }
-        )?;
-
-        match (result, expected) {
-            (Order::Incompatible, None) => {},
-
-            (order, Some(expected)) => match (expected.cmp(&0), order) {
-                (cmp::Ordering::Equal, Order::Ambiguous)
-                | (cmp::Ordering::Greater, Order::MoreSpecific)
-                | (cmp::Ordering::Less, Order::MoreGeneral) => {},
-
-                (_, order) => return Err(TestCaseError::fail(format!(
-                    "Got {order:?} but expected {expected:?}",
-                ))),
-            },
-
-            (result, expected) => return Err(TestCaseError::fail(format!(
-                "Got {result:?} but expected {expected:?}",
-            ))),
-        };
-    }
+    assert_eq!(
+        lhs.order(&rhs, &Environment::new(Premise::default(), &table).0)
+            .unwrap(),
+        Order::Incompatible
+    );
 }

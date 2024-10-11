@@ -54,7 +54,7 @@ impl<
         _: <Lifetime<M> as Element>::Location,
     ) -> bool {
         if self.constant_type.is_ok() {
-            self.constant_type = Ok(None)
+            self.constant_type = Ok(None);
         }
 
         false
@@ -97,8 +97,7 @@ impl<
                     }
                 }
             }
-            Ok(None) => false,
-            Err(_) => false,
+            Ok(None) | Err(_) => false,
         }
     }
 }
@@ -142,7 +141,7 @@ impl<M: Model> Compute for ConstantType<M> {
     type Error = OverflowError;
     type Parameter = ();
 
-    #[allow(private_bounds, private_interfaces)]
+    #[allow(private_bounds, private_interfaces, clippy::too_many_lines)]
     fn implementation<S: State>(
         &self,
         environment: &Environment<
@@ -209,25 +208,22 @@ impl<M: Model> Compute for ConstantType<M> {
             if let Some(mut result) = visitor.constant_type? {
                 // look for the fields of the term as well (if it's an ADT)
                 let mut found_error = false;
-                match self.0.get_adt_fields(environment.table) {
-                    Some(fields) => {
-                        for field in fields {
-                            let Some(new_result) = ConstantType(field.clone())
-                                .query_with_context_full(
-                                    environment,
-                                    context,
-                                    (),
-                                    QuerySource::Normal,
-                                )?
-                            else {
-                                found_error = true;
-                                break;
-                            };
+                if let Some(fields) = self.0.get_adt_fields(environment.table) {
+                    for field in fields {
+                        let Some(new_result) = Self(field.clone())
+                            .query_with_context_full(
+                                environment,
+                                context,
+                                (),
+                                QuerySource::Normal,
+                            )?
+                        else {
+                            found_error = true;
+                            break;
+                        };
 
-                            result.constraints.extend(new_result.constraints);
-                        }
+                        result.constraints.extend(new_result.constraints);
                     }
-                    None => {}
                 }
 
                 if !found_error {
@@ -264,14 +260,12 @@ impl<M: Model> Compute for ConstantType<M> {
         for Succeeded { result: eq, constraints } in
             get_equivalences_with_context(&self.0, environment, context)?
         {
-            if let Some(mut result) = ConstantType(eq.clone())
-                .query_with_context_full(
-                    environment,
-                    context,
-                    (),
-                    QuerySource::FromEquivalence,
-                )?
-            {
+            if let Some(mut result) = Self(eq.clone()).query_with_context_full(
+                environment,
+                context,
+                (),
+                QuerySource::FromEquivalence,
+            )? {
                 result.constraints.extend(constraints);
                 return Ok(Some(result));
             }
@@ -283,7 +277,7 @@ impl<M: Model> Compute for ConstantType<M> {
     #[allow(private_bounds, private_interfaces)]
     fn on_cyclic(
         &self,
-        _: Self::Parameter,
+        (): Self::Parameter,
         _: Self::InProgress,
         _: Self::InProgress,
         call_stacks: &[query::Record<Self::Model>],

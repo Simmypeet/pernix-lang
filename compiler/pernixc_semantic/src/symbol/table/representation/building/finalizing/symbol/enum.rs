@@ -110,8 +110,7 @@ impl Finalize for Enum {
                                     elided_type_provider: None,
                                     elided_constant_provider: None,
                                     observer: Some(
-                                        &mut (&mut builder::Resolution::basic(
-                                        ))
+                                        &mut builder::Resolution::basic()
                                             .chain(definition_occurrences),
                                     ),
                                     higher_ranked_lifetimes: None,
@@ -344,17 +343,17 @@ impl Finalize for Enum {
             CHECK_STATE => {
                 table.check_occurrences(
                     symbol_id.into(),
-                    &generic_parameter_occurrences,
+                    generic_parameter_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &where_caluse_occurrences,
+                    where_caluse_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &definition_occurrences,
+                    definition_occurrences,
                     handler,
                 );
                 table.check_where_clause(symbol_id.into(), handler);

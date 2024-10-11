@@ -83,7 +83,6 @@ pub enum Error<M: Model> {
 }
 
 fn check_definite_predicate<
-    'a,
     T: Clone + Into<Predicate<M>> + Debug,
     M: Model,
     S: State,
@@ -101,9 +100,7 @@ fn check_definite_predicate<
     ) -> Result<bool, super::OverflowError>,
 ) {
     // pick a predicate
-    'outer: for i in 0..predicates.len() {
-        let predicate_i = &predicates[i];
-
+    'outer: for predicate_i in predicates {
         // remove the predicate before checking
         if remove_on_check {
             assert!(environment
@@ -112,7 +109,7 @@ fn check_definite_predicate<
                 .remove(&predicate_i.clone().into()));
         }
 
-        match definite_check(predicate_i, &environment) {
+        match definite_check(predicate_i, environment) {
             Ok(true) => {
                 // add to the set
                 definite_predicates.push(predicate_i.clone().into());
@@ -156,7 +153,6 @@ fn check_definite_predicate<
 }
 
 fn check_ambiguous_predicates<
-    'a,
     T: Clone + Into<Predicate<M>> + Debug,
     M: Model,
     S: State,
@@ -175,9 +171,7 @@ fn check_ambiguous_predicates<
     ) -> Result<bool, super::OverflowError>,
 ) {
     // pick a predicate
-    'outer: for i in 0..predicates.len() {
-        let predicate_i = &predicates[i];
-
+    'outer: for (i, predicate_i) in predicates.iter().enumerate() {
         // remove the predicate before checking
         if remove_on_check {
             assert!(environment
@@ -228,9 +222,7 @@ fn check_ambiguous_predicates<
         }
 
         // create a new set
-        for j in i + 1..predicates.len() {
-            let predicate_j = &predicates[j];
-
+        for predicate_j in predicates.iter().skip(i + 1) {
             if remove_on_check {
                 assert!(environment
                     .premise
@@ -302,6 +294,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
     Environment<'a, M, T, N, O>
 {
     /// Looks for the errors in the environment and returns a vector of errors.
+    #[allow(clippy::too_many_lines)]
     pub fn diagnose(mut self) -> Vec<Error<M>> {
         let mut ambiguous_trait_predicates_set = Vec::new();
         let mut ambiguous_constant_type_predicates_set = Vec::new();
@@ -562,13 +555,12 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                 .query(&self)
                 {
                     Ok(Some(_)) => {
-                        if ambiguous_trait_type_equality_predicates_set
+                        if !ambiguous_trait_type_equality_predicates_set
                             .iter()
                             .flatten()
-                            .find(|x| {
-                                *x == equality.as_trait_type_equality().unwrap()
+                            .any(|x| {
+                                x == equality.as_trait_type_equality().unwrap()
                             })
-                            .is_none()
                         {
                             recursive_trait_type_equality_predicates.push(
                                 equality
@@ -652,40 +644,34 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
             self.premise.predicates.remove(&predicate_to_remove);
         }
 
-        let ambiguous_predicates_vecs: Vec<Vec<Predicate<M>>> =
-            ambiguous_trait_predicates_set
-                .into_iter()
-                .map(|x| x.into_iter().map(|x| x.into()).collect())
-                .chain(
-                    ambiguous_constant_type_predicates_set
-                        .into_iter()
-                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
-                )
-                .chain(
-                    ambiguous_tuple_type_predicates_set
-                        .into_iter()
-                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
-                )
-                .chain(
-                    ambiguous_tuple_constant_predicates_set
-                        .into_iter()
-                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
-                )
-                .chain(
-                    ambiguous_trait_type_equality_predicates_set
-                        .into_iter()
-                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
-                )
-                .collect();
+        let ambiguous_predicates_vecs = ambiguous_trait_predicates_set
+            .into_iter()
+            .map(|x| x.into_iter().map(Into::into).collect())
+            .chain(
+                ambiguous_constant_type_predicates_set
+                    .into_iter()
+                    .map(|x| x.into_iter().map(Into::into).collect()),
+            )
+            .chain(
+                ambiguous_tuple_type_predicates_set
+                    .into_iter()
+                    .map(|x| x.into_iter().map(Into::into).collect()),
+            )
+            .chain(
+                ambiguous_tuple_constant_predicates_set
+                    .into_iter()
+                    .map(|x| x.into_iter().map(Into::into).collect()),
+            )
+            .chain(
+                ambiguous_trait_type_equality_predicates_set
+                    .into_iter()
+                    .map(|x| x.into_iter().map(Into::into).collect()),
+            );
 
         overflow_predicates
             .into_iter()
             .map(|(predicate, error)| Error::Overflow(predicate, error))
-            .chain(
-                ambiguous_predicates_vecs
-                    .into_iter()
-                    .map(Error::AmbiguousPredicates),
-            )
+            .chain(ambiguous_predicates_vecs.map(Error::AmbiguousPredicates))
             .chain(
                 recursive_trait_type_equality_predicates
                     .into_iter()
@@ -698,7 +684,8 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
     /// Creates a new [`Environment`].
     ///
     /// The ambiguous predicates will be removed from the environment and is
-    /// extracted out to the vector of [`Error``].
+    /// extracted out to the vector of [`Error`].
+    #[allow(clippy::too_many_lines)]
     pub fn new_with(
         premise: Premise<M>,
         table: &'a Table<T>,
@@ -966,13 +953,12 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                 .query(&environment)
                 {
                     Ok(Some(_)) => {
-                        if ambiguous_trait_type_equality_predicates_set
+                        if !ambiguous_trait_type_equality_predicates_set
                             .iter()
                             .flatten()
-                            .find(|x| {
-                                *x == equality.as_trait_type_equality().unwrap()
+                            .any(|x| {
+                                x == equality.as_trait_type_equality().unwrap()
                             })
-                            .is_none()
                         {
                             recursive_trait_type_equality_predicates.push(
                                 equality
@@ -1056,40 +1042,34 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
             environment.premise.predicates.remove(&predicate_to_remove);
         }
 
-        let ambiguous_predicates_vecs: Vec<Vec<Predicate<M>>> =
-            ambiguous_trait_predicates_set
-                .into_iter()
-                .map(|x| x.into_iter().map(|x| x.into()).collect())
-                .chain(
-                    ambiguous_constant_type_predicates_set
-                        .into_iter()
-                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
-                )
-                .chain(
-                    ambiguous_tuple_type_predicates_set
-                        .into_iter()
-                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
-                )
-                .chain(
-                    ambiguous_tuple_constant_predicates_set
-                        .into_iter()
-                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
-                )
-                .chain(
-                    ambiguous_trait_type_equality_predicates_set
-                        .into_iter()
-                        .map(|x| x.into_iter().map(|x| x.into()).collect()),
-                )
-                .collect();
+        let ambiguous_predicates_vecs = ambiguous_trait_predicates_set
+            .into_iter()
+            .map(|x| x.into_iter().map(Into::into).collect())
+            .chain(
+                ambiguous_constant_type_predicates_set
+                    .into_iter()
+                    .map(|x| x.into_iter().map(Into::into).collect()),
+            )
+            .chain(
+                ambiguous_tuple_type_predicates_set
+                    .into_iter()
+                    .map(|x| x.into_iter().map(Into::into).collect()),
+            )
+            .chain(
+                ambiguous_tuple_constant_predicates_set
+                    .into_iter()
+                    .map(|x| x.into_iter().map(Into::into).collect()),
+            )
+            .chain(
+                ambiguous_trait_type_equality_predicates_set
+                    .into_iter()
+                    .map(|x| x.into_iter().map(Into::into).collect()),
+            );
 
         let errors = overflow_predicates
             .into_iter()
             .map(|(predicate, error)| Error::Overflow(predicate, error))
-            .chain(
-                ambiguous_predicates_vecs
-                    .into_iter()
-                    .map(Error::AmbiguousPredicates),
-            )
+            .chain(ambiguous_predicates_vecs.map(Error::AmbiguousPredicates))
             .chain(
                 recursive_trait_type_equality_predicates
                     .into_iter()
@@ -1108,7 +1088,7 @@ impl<'a, M: Model, S: State>
     /// Creates a new [`Environment`].
     ///
     /// The ambiguous predicates will be removed from the environment and is
-    /// extracted out to the vector of [`Error``].
+    /// extracted out to the vector of [`Error`].
     pub fn new(
         premise: Premise<M>,
         table: &'a Table<S>,

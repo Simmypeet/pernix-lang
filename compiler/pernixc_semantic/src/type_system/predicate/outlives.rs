@@ -29,7 +29,7 @@ pub struct Outlives<T: ModelOf> {
 impl<T: ModelOf> Outlives<T> {
     /// Creates a new outlives predicate.
     #[must_use]
-    pub fn new(operand: T, bound: Lifetime<T::Model>) -> Self {
+    pub const fn new(operand: T, bound: Lifetime<T::Model>) -> Self {
         Self { operand, bound }
     }
 }
@@ -116,7 +116,7 @@ impl<M: Model> LifetimeConstraint<M> {
         context: &mut Context<M>,
     ) -> Result<Option<Satisfied>, OverflowError> {
         match self {
-            LifetimeConstraint::LifetimeOutlives(outlives) => {
+            Self::LifetimeOutlives(outlives) => {
                 outlives.query_with_context(environment, context)
             }
         }
@@ -157,7 +157,7 @@ impl<T: Term> Compute for Outlives<T> {
 
             let _ = self.operand.accept_one_level(&mut visitor);
 
-            if let Some(Satisfied) = visitor.outlives? {
+            if visitor.outlives? == Some(Satisfied) {
                 return Ok(Some(Satisfied));
             }
         }
@@ -201,9 +201,9 @@ impl<T: Term> Compute for Outlives<T> {
             let mut next_bound = next_bound.clone();
             forall_lifetime_instantiations.instantiate(&mut next_bound);
 
-            if let Some(Satisfied) =
-                Outlives::new(next_bound, self.bound.clone())
-                    .query_with_context(environment, context)?
+            if Outlives::new(next_bound, self.bound.clone())
+                .query_with_context(environment, context)?
+                == Some(Satisfied)
             {
                 return Ok(Some(Satisfied));
             }
@@ -225,9 +225,9 @@ impl<T: Term> Compute for Outlives<T> {
                 };
             }
 
-            if let Some(Satisfied) =
-                Outlives::new(operand_eq, self.bound.clone())
-                    .query_with_context(environment, context)?
+            if Self::new(operand_eq, self.bound.clone())
+                .query_with_context(environment, context)?
+                == Some(Satisfied)
             {
                 return Ok(Some(Satisfied));
             }
@@ -246,9 +246,9 @@ impl<T: Term> Compute for Outlives<T> {
                 };
             }
 
-            if let Some(Satisfied) =
-                Outlives::new(self.operand.clone(), bound_eq)
-                    .query_with_context(environment, context)?
+            if Self::new(self.operand.clone(), bound_eq)
+                .query_with_context(environment, context)?
+                == Some(Satisfied)
             {
                 return Ok(Some(Satisfied));
             }

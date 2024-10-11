@@ -30,29 +30,29 @@ pub(super) trait Simplify: ModelOf + Sized {
 impl<M: Model> Simplify for Lifetime<M> {
     #[allow(private_interfaces)]
     fn simplified_mut(simplified: &mut Simplified<M>) -> &mut BTreeSet<Self> {
-        &mut simplified.simplified_lifetimes
+        &mut simplified.lifetimes
     }
 }
 
 impl<M: Model> Simplify for Type<M> {
     #[allow(private_interfaces)]
     fn simplified_mut(simplified: &mut Simplified<M>) -> &mut BTreeSet<Self> {
-        &mut simplified.simplified_types
+        &mut simplified.types
     }
 }
 
 impl<M: Model> Simplify for Constant<M> {
     #[allow(private_interfaces)]
     fn simplified_mut(simplified: &mut Simplified<M>) -> &mut BTreeSet<Self> {
-        &mut simplified.simplified_constants
+        &mut simplified.constants
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct Simplified<M: Model> {
-    simplified_lifetimes: BTreeSet<Lifetime<M>>,
-    simplified_types: BTreeSet<Type<M>>,
-    simplified_constants: BTreeSet<Constant<M>>,
+    lifetimes: BTreeSet<Lifetime<M>>,
+    types: BTreeSet<Type<M>>,
+    constants: BTreeSet<Constant<M>>,
 }
 
 struct Visitor<
@@ -79,7 +79,7 @@ impl<
 {
     fn visit(&mut self, term: &mut U, _: U::Location) -> bool {
         let Some(Succeeded { result, constraints }) =
-            simplify_internal(term, self.environment, &mut self.simplified)
+            simplify_internal(term, self.environment, self.simplified)
         else {
             return true;
         };
@@ -91,6 +91,7 @@ impl<
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn simplify_internal<T: Term, S: State>(
     term: &T,
     environment: &Environment<
@@ -150,7 +151,7 @@ fn simplify_internal<T: Term, S: State>(
             assert!(environment_cloned
                 .premise
                 .predicates
-                .remove(&trait_type_equality));
+                .remove(trait_type_equality));
 
             if let Ok(Some(Succeeded { result: unifier, mut constraints })) =
                 Unification::new(
@@ -299,10 +300,7 @@ fn simplify_internal<T: Term, S: State>(
     }
 
     assert!(T::simplified_mut(simplified).remove(term));
-    return Some(Succeeded {
-        result: new_term,
-        constraints: outside_constraints,
-    });
+    Some(Succeeded { result: new_term, constraints: outside_constraints })
 }
 
 /// Simplifies a term by recursively applying the normalization and trait member

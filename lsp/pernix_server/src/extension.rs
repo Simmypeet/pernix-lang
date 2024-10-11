@@ -64,10 +64,8 @@ impl DaignosticExt for pernixc_base::diagnostic::Diagnostic {
                 let result = related
                     .iter()
                     .filter_map(|x| {
-                        let to_absolute_path = std::fs::canonicalize(
-                            self.span.source_file().full_path(),
-                        )
-                        .ok()?;
+                        let to_absolute_path =
+                            std::fs::canonicalize(self.span.source_file().full_path()).ok()?;
                         let uri = Url::from_file_path(to_absolute_path).ok()?;
 
                         Some(tower_lsp::lsp_types::DiagnosticRelatedInformation {

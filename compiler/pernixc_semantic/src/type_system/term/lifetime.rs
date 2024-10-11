@@ -71,7 +71,7 @@ impl Eq for Forall {}
 
 impl PartialOrd for Forall {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.id.partial_cmp(&other.id)
+        Some(self.cmp(other))
     }
 }
 
@@ -285,7 +285,7 @@ where
 
     fn as_kind_mut(&mut self) -> KindMut<M> { KindMut::Lifetime(self) }
 
-    fn outlives_satisfiability(&self, other: &Lifetime<M>) -> Satisfiability {
+    fn outlives_satisfiability(&self, other: &Self) -> Satisfiability {
         if self == other {
             return Satisfiability::Satisfied;
         }

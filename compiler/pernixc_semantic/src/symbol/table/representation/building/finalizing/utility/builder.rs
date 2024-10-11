@@ -141,7 +141,7 @@ impl<'a, M: Model>
         };
 
         match build_result {
-            Ok(_) | Err(BuildSymbolError::EntryNotFound(_)) => Ok(()),
+            Ok(()) | Err(BuildSymbolError::EntryNotFound(_)) => Ok(()),
             Err(BuildSymbolError::CyclicDependency) => Err(OverflowError),
             Err(BuildSymbolError::InvalidStateFlag { .. }) => {
                 panic!("invalid state flag!")
@@ -174,7 +174,7 @@ impl<'a, M: Model>
         };
 
         match result {
-            Ok(_) | Err(BuildSymbolError::EntryNotFound(_)) => Ok(()),
+            Ok(()) | Err(BuildSymbolError::EntryNotFound(_)) => Ok(()),
             Err(BuildSymbolError::CyclicDependency) => Err(OverflowError),
             Err(BuildSymbolError::InvalidStateFlag { .. }) => {
                 panic!("invalid state flag!")
@@ -194,13 +194,13 @@ impl<'a, M: Model>
     ) -> Result<(), OverflowError> {
         let result = environment.table().build_to(
             trait_implementation_type,
-            Some(environment.observer().site.into()),
+            Some(environment.observer().site),
             trait_implementation_type::DEFINITION_STATE,
             environment.observer().handler,
         );
 
         match result {
-            Ok(_) | Err(BuildSymbolError::EntryNotFound(_)) => Ok(()),
+            Ok(()) | Err(BuildSymbolError::EntryNotFound(_)) => Ok(()),
             Err(BuildSymbolError::CyclicDependency) => Err(OverflowError),
             Err(BuildSymbolError::InvalidStateFlag { .. }) => {
                 panic!("invalid state flag!")
@@ -213,6 +213,7 @@ impl<'a, M: Model>
 /// symbols while resolving the symbols.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Resolution {
+    #[allow(clippy::type_complexity)]
     builder_function: for<'a, 'h> fn(
         &'a Table<Building<RwLockContainer, Finalizer>>,
         GlobalID,
@@ -316,6 +317,7 @@ impl<M: Model> resolution::Observer<Building<RwLockContainer, Finalizer>, M>
 }
 
 /// Build the symbol so that it has where clause predicates.
+#[allow(clippy::too_many_lines)]
 pub fn build_for_where_clause(
     table: &Table<Building<RwLockContainer, Finalizer>>,
     global_id: GlobalID,
@@ -364,8 +366,6 @@ pub fn build_for_where_clause(
             constant::WHERE_CLAUSE_STATE,
             handler,
         ),
-
-        GlobalID::Variant(_) => Ok(()),
 
         GlobalID::TraitFunction(id) => table.build_to(
             id,
@@ -437,12 +437,12 @@ pub fn build_for_where_clause(
             handler,
         ),
 
-        GlobalID::Module(_) => Ok(()),
+        GlobalID::Variant(_) | GlobalID::Module(_) => Ok(()),
     };
 
     match first_result {
         Ok(()) | Err(BuildSymbolError::EntryNotFound(_)) => Ok(()),
-        err @ Err(_) => return err,
+        err @ Err(_) => err,
     }
 }
 
@@ -452,6 +452,7 @@ pub fn build_for_where_clause(
 ///
 /// - Generic parameters are built.
 /// - Generic arguments are built for the implementation symbols.
+#[allow(clippy::too_many_lines)]
 pub fn build_for_basic_resolution(
     table: &Table<Building<RwLockContainer, Finalizer>>,
     global_id: GlobalID,
@@ -641,7 +642,7 @@ pub fn build_for_definition(
     )
 }
 
-#[allow(unused)]
+#[allow(clippy::too_many_lines)]
 fn build_for_definition_internal(
     table: &Table<Building<RwLockContainer, Finalizer>>,
     global_id: GlobalID,
@@ -767,7 +768,8 @@ fn build_for_definition_internal(
                 adt_implementation::ARGUMENT_STATE,
                 handler,
             );
-            let second = match table.get(id).unwrap().implemented_id {
+            let implemented_id = table.get(id).unwrap().implemented_id;
+            let second = match implemented_id {
                 AdtID::Struct(id) => build_for_definition_internal(
                     table,
                     id.into(),

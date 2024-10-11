@@ -213,43 +213,16 @@ trait GenericParameter<M: Model>: Sized + 'static {
     type SyntaxTree;
     type Argument: Term;
 
-    fn resolve<S: State>(
-        table: &Table<S>,
-        syntax_tree: &Self::SyntaxTree,
-        referring_site: GlobalID,
-        config: Config<S, M>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Self::Argument, Error>;
-
     fn generic_kind() -> GenericKind;
 
     fn get_ellided_term_provider<'a, S: State>(
         config: &'a mut Config<S, M>,
     ) -> Option<&'a mut dyn ElidedTermProvider<Self::Argument>>;
-
-    fn on_resolved<S: State>(
-        table: &Table<S>,
-        referring_site: GlobalID,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-        config: Config<S, M>,
-        resolved: &Self::Argument,
-        parameter: &Self::SyntaxTree,
-    );
 }
 
 impl<M: Model> GenericParameter<M> for LifetimeParameter {
     type SyntaxTree = syntax_tree::Lifetime;
     type Argument = Lifetime<M>;
-
-    fn resolve<S: State>(
-        table: &Table<S>,
-        syntax_tree: &Self::SyntaxTree,
-        referring_site: GlobalID,
-        config: Config<S, M>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Self::Argument, Error> {
-        table.resolve_lifetime(syntax_tree, referring_site, config, handler)
-    }
 
     fn get_ellided_term_provider<'a, S: State>(
         config: &'a mut Config<S, M>,
@@ -262,31 +235,11 @@ impl<M: Model> GenericParameter<M> for LifetimeParameter {
     }
 
     fn generic_kind() -> GenericKind { GenericKind::Lifetime }
-
-    fn on_resolved<S: State>(
-        _: &Table<S>,
-        _: GlobalID,
-        _: &dyn Handler<Box<dyn error::Error>>,
-        _: Config<S, M>,
-        _: &Self::Argument,
-        _: &Self::SyntaxTree,
-    ) {
-    }
 }
 
 impl<M: Model> GenericParameter<M> for TypeParameter {
     type SyntaxTree = syntax_tree::r#type::Type;
     type Argument = term::r#type::Type<M>;
-
-    fn resolve<S: State>(
-        table: &Table<S>,
-        syntax_tree: &Self::SyntaxTree,
-        referring_site: GlobalID,
-        config: Config<S, M>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Self::Argument, Error> {
-        table.resolve_type(syntax_tree, referring_site, config, handler)
-    }
 
     fn get_ellided_term_provider<'a, S: State>(
         config: &'a mut Config<S, M>,
@@ -299,56 +252,11 @@ impl<M: Model> GenericParameter<M> for TypeParameter {
     }
 
     fn generic_kind() -> GenericKind { GenericKind::Type }
-
-    fn on_resolved<S: State>(
-        _: &Table<S>,
-        _: GlobalID,
-        _: &dyn Handler<Box<dyn error::Error>>,
-        _: Config<S, M>,
-        _: &Self::Argument,
-        _: &Self::SyntaxTree,
-    ) {
-    }
 }
 
 impl<M: Model> GenericParameter<M> for ConstantParameter {
     type SyntaxTree = syntax_tree::Constant;
     type Argument = term::constant::Constant<M>;
-
-    fn resolve<S: State>(
-        table: &Table<S>,
-        syntax_tree: &Self::SyntaxTree,
-        referring_site: GlobalID,
-        config: Config<S, M>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Self::Argument, Error> {
-        match syntax_tree {
-            syntax_tree::Constant::Expression(expression) => {
-                match table.evaluate(&expression, referring_site, handler) {
-                    Ok(constant) => Ok(M::from_default_constant(constant)),
-                    Err(evaluate::Error::InvalidReferringSiteID) => {
-                        Err(Error::InvalidReferringSiteID)
-                    }
-
-                    Err(
-                        evaluate::Error::SemanticError
-                        | evaluate::Error::Suboptimal,
-                    ) => Ok(constant::Constant::Error(term::Error)),
-                }
-            }
-            syntax_tree::Constant::Elided(elided) => {
-                if let Some(provider) = config.elided_constant_provider {
-                    Ok(provider.create())
-                } else {
-                    handler.receive(Box::new(UnexpectedInference {
-                        unexpected_span: elided.span(),
-                        generic_kind: GenericKind::Constant,
-                    }));
-                    Ok(term::constant::Constant::Error(term::Error))
-                }
-            }
-        }
-    }
 
     fn get_ellided_term_provider<'a, S: State>(
         config: &'a mut Config<S, M>,
@@ -361,27 +269,6 @@ impl<M: Model> GenericParameter<M> for ConstantParameter {
     }
 
     fn generic_kind() -> GenericKind { GenericKind::Constant }
-
-    fn on_resolved<S: State>(
-        table: &Table<S>,
-        referring_site: GlobalID,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-        mut config: Config<S, M>,
-        constant: &Self::Argument,
-        syntax_tree: &Self::SyntaxTree,
-    ) {
-        if let Some(observer) = config.observer.as_mut() {
-            observer.on_constant_arguments_resolved(
-                table,
-                referring_site,
-                handler,
-                constant,
-                syntax_tree,
-            );
-        }
-
-        // TODO: check if the constant's type matches the expected type
-    }
 }
 
 /// Represents a resolution for a symbol.
@@ -411,12 +298,33 @@ impl<M: Model> Resolution<M> {
     }
 }
 
-/// An error that can occur when resolving a symbol.
+/// An error returned by [`Table::resolve_type`], [`Table::resolve_lifetime`],
+/// [`Table::resolve_generic_arguments`].
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
-pub enum Error {
+pub enum ResolveTermError {
+    #[error("the given `referring_site` id does not exist in the table")]
+    InvalidReferringSiteID,
+}
+
+impl From<ResolveTermError> for ResolveQualifiedIdentifierError {
+    fn from(value: ResolveTermError) -> Self {
+        match value {
+            ResolveTermError::InvalidReferringSiteID => {
+                Self::InvalidReferringSiteID
+            }
+        }
+    }
+}
+
+/// An error returned by [`Table::resolve`].
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[allow(missing_docs)]
+pub enum ResolveQualifiedIdentifierError {
     #[error("the given `referring_site` id does not exist in the table")]
     InvalidReferringSiteID,
 
@@ -439,7 +347,7 @@ pub enum ResolveSequenceError {
     EmptyIterator,
 
     #[error(transparent)]
-    ResolutionError(#[from] Error),
+    ResolutionError(#[from] ResolveQualifiedIdentifierError),
 }
 
 /// A trait for providing elided terms.
@@ -864,16 +772,20 @@ impl<'lp, 'tp, 'cp, 'ob, 'hrlt, S: State, M: Model>
 
 impl<S: Container> Representation<S> {
     /// Resolves a [`SimplePath`] as a [`GlobalID`].
+    ///
+    /// # Errors
+    ///
+    /// See [`ResolveQualifiedIdentifierError`] for more information.
     pub fn resolve_simple_path(
         &self,
         simple_path: &SimplePath,
         referring_site: GlobalID,
         start_from_root: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<GlobalID, Error> {
+    ) -> Result<GlobalID, ResolveQualifiedIdentifierError> {
         let root: GlobalID = match simple_path.root() {
             SimplePathRoot::Target(_) => {
-                self.get_root_module_id(referring_site.into()).unwrap().into()
+                self.get_root_module_id(referring_site).unwrap().into()
             }
             SimplePathRoot::Identifier(ident) => {
                 if start_from_root {
@@ -887,14 +799,16 @@ impl<S: Container> Representation<S> {
                             resolution_span: ident.span.clone(),
                         }));
 
-                        return Err(Error::SemanticError);
+                        return Err(
+                            ResolveQualifiedIdentifierError::SemanticError,
+                        );
                     };
 
                     id.into()
                 } else {
                     let closet_module_id = self
                         .get_closet_module_id(referring_site)
-                        .ok_or(Error::InvalidReferringSiteID)?;
+                        .ok_or(ResolveQualifiedIdentifierError::InvalidReferringSiteID)?;
 
                     let module = self.get(closet_module_id).unwrap();
 
@@ -911,7 +825,9 @@ impl<S: Container> Representation<S> {
                             resolution_span: ident.span.clone(),
                         }));
 
-                        return Err(Error::SemanticError);
+                        return Err(
+                            ResolveQualifiedIdentifierError::SemanticError,
+                        );
                     };
 
                     id.into()
@@ -922,18 +838,22 @@ impl<S: Container> Representation<S> {
         match self.resolve_sequence(
             simple_path.rest().iter().map(|x| &x.1),
             referring_site,
-            root.into(),
+            root,
             handler,
         ) {
             Ok(id) => Ok(id),
             Err(err) => match err {
-                ResolveSequenceError::EmptyIterator => Ok(root.into()),
+                ResolveSequenceError::EmptyIterator => Ok(root),
                 ResolveSequenceError::ResolutionError(err) => Err(err),
             },
         }
     }
 
     /// Resolves a sequence of identifier starting of from the given `root`.
+    ///
+    /// # Errors
+    ///
+    /// See [`ResolveSequenceError`] for more information.
     pub fn resolve_sequence<'a>(
         &self,
         simple_path: impl Iterator<Item = &'a Identifier>,
@@ -950,14 +870,13 @@ impl<S: Container> Representation<S> {
                         searched_global_id: Some(lastest_resolution),
                         resolution_span: identifier.span.clone(),
                     }));
-                    Error::SemanticError
+                    ResolveQualifiedIdentifierError::SemanticError
                 })?;
 
             // non-fatal error, no need to return early
-            if !self
-                .symbol_accessible(referring_site, new_id)
-                .ok_or(Error::InvalidReferringSiteID)?
-            {
+            if !self.symbol_accessible(referring_site, new_id).ok_or(
+                ResolveQualifiedIdentifierError::InvalidReferringSiteID,
+            )? {
                 handler.receive(Box::new(error::SymbolIsNotAccessible {
                     referring_site,
                     referred: new_id,
@@ -977,16 +896,16 @@ impl<S: State> Table<S> {
     ///
     /// # Errors
     ///
-    /// See [`Error`] for more information
+    /// See [`ResolveTermError`] for more information
     pub fn resolve_lifetime_parameter(
         &self,
         identifier: &Identifier,
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Option<LifetimeParameterID>, Error> {
+    ) -> Result<Option<LifetimeParameterID>, ResolveTermError> {
         for scope in self
             .scope_walker(referring_site)
-            .ok_or(Error::InvalidReferringSiteID)?
+            .ok_or(ResolveTermError::InvalidReferringSiteID)?
         {
             let Ok(generic_id) = symbol::GenericID::try_from(scope) else {
                 continue;
@@ -1020,14 +939,14 @@ impl<S: State> Table<S> {
     ///
     /// # Errors
     ///
-    /// See [`Error`] for more information.
+    /// See [`ResolveTermError`] for more information.
     pub fn resolve_lifetime<M: Model>(
         &self,
         lifetime_argument: &syntax_tree::Lifetime,
         referring_site: GlobalID,
         config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Lifetime<M>, Error> {
+    ) -> Result<Lifetime<M>, ResolveTermError> {
         let mut lifetime = match lifetime_argument.identifier() {
             LifetimeIdentifier::Static(..) => Lifetime::Static,
             LifetimeIdentifier::Identifier(ident) => {
@@ -1045,15 +964,16 @@ impl<S: State> Table<S> {
                     .map_or(Lifetime::Error(term::Error), Lifetime::Parameter)
             }
             LifetimeIdentifier::Elided(elided) => {
-                if let Some(provider) = config.elided_lifetime_provider {
-                    provider.create()
-                } else {
-                    handler.receive(Box::new(UnexpectedInference {
-                        unexpected_span: elided.span(),
-                        generic_kind: GenericKind::Lifetime,
-                    }));
-                    Lifetime::Error(term::Error)
-                }
+                config.elided_lifetime_provider.map_or_else(
+                    || {
+                        handler.receive(Box::new(UnexpectedInference {
+                            unexpected_span: elided.span(),
+                            generic_kind: GenericKind::Lifetime,
+                        }));
+                        Lifetime::Error(term::Error)
+                    },
+                    ElidedTermProvider::create,
+                )
             }
         };
 
@@ -1066,49 +986,36 @@ impl<S: State> Table<S> {
                     lifetime,
                     lifetime_argument,
                 )
-                .ok_or(Error::Abort)?;
+                .unwrap_or(Lifetime::Error(term::Error));
         }
 
         Ok(lifetime)
     }
 
     /// Resolves a [`GenericArguments`] from the given generic arguments syntax
-    /// tree
+    /// tree.
     ///
     /// # Errors
     ///
-    /// See [`Error`] for more information.
-    #[allow(clippy::too_many_lines)]
+    /// See [`ResolveTermError`] for more information.
     pub fn resolve_generic_arguments<M: Model>(
         &self,
-        generic_arguments: Option<&syntax_tree::GenericArguments>,
-        resolution_span: &Span,
+        generic_arguments: &syntax_tree::GenericArguments,
         referring_site: GlobalID,
-        resolved_id: GlobalID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Option<GenericArguments<M>>, Error> {
-        let Ok(generic_id) = symbol::GenericID::try_from(resolved_id) else {
-            if let Some(generic_arguments) = generic_arguments {
-                // non-fatal error, keep going
-                handler.receive(Box::new(NoGenericArgumentsRequired {
-                    global_id: resolved_id,
-                    generic_argument_span: generic_arguments.span(),
-                }));
-            }
-
-            return Ok(None);
-        };
-
+    ) -> Result<GenericArguments<M>, ResolveTermError> {
         let mut lifetime_argument_syns = Vec::new();
         let mut type_argument_syns = Vec::new();
         let mut constant_argument_syns = Vec::new();
 
         // extracts the generic arguments from the syntax tree to the list of
         // syntax trees
-        for generic_argument in generic_arguments.into_iter().flat_map(|x| {
-            x.argument_list().iter().flat_map(ConnectedList::elements)
-        }) {
+        for generic_argument in generic_arguments
+            .argument_list()
+            .iter()
+            .flat_map(ConnectedList::elements)
+        {
             let misordered = match generic_argument {
                 syntax_tree::GenericArgument::Constant(arg) => {
                     constant_argument_syns.push(arg.constant());
@@ -1146,6 +1053,76 @@ impl<S: State> Table<S> {
             }
         }
 
+        Ok(GenericArguments {
+            lifetimes: lifetime_argument_syns
+                .into_iter()
+                .map(|x| {
+                    self.resolve_lifetime(
+                        x,
+                        referring_site,
+                        config.reborrow(),
+                        handler,
+                    )
+                })
+                .collect::<Result<_, _>>()?,
+            types: type_argument_syns
+                .into_iter()
+                .map(|x| {
+                    self.resolve_type(
+                        x,
+                        referring_site,
+                        config.reborrow(),
+                        handler,
+                    )
+                })
+                .collect::<Result<_, _>>()?,
+            constants: constant_argument_syns
+                .into_iter()
+                .map(|x| match x {
+                    syntax_tree::Constant::Expression(expression) => match self
+                        .evaluate(expression, referring_site, handler)
+                    {
+                        Ok(value) => Ok(M::from_default_constant(value)),
+
+                        Err(evaluate::Error::InvalidReferringSiteID) => {
+                            Err(ResolveTermError::InvalidReferringSiteID)
+                        }
+
+                        Err(
+                            evaluate::Error::Suboptimal
+                            | evaluate::Error::SemanticError,
+                        ) => Ok(term::constant::Constant::Error(term::Error)),
+                    },
+                    syntax_tree::Constant::Elided(elided) => Ok(config
+                        .elided_constant_provider
+                        .as_mut()
+                        .map_or_else(
+                            || {
+                                handler.receive(Box::new(
+                                    UnexpectedInference {
+                                        unexpected_span: elided.span(),
+                                        generic_kind: GenericKind::Constant,
+                                    },
+                                ));
+                                term::constant::Constant::Error(term::Error)
+                            },
+                            |provider| provider.create(),
+                        )),
+                })
+                .collect::<Result<_, _>>()?,
+        })
+    }
+
+    /// Verifies that the given `generic_arguments` have the right amount of
+    /// arguments by supplying the default arguments if necessary.
+    pub fn verify_generic_arguments_for<M: Model>(
+        &self,
+        generic_arguments: GenericArguments<M>,
+        generic_id: symbol::GenericID,
+        generic_identifier_span: Span,
+        mut config: Config<S, M>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> GenericArguments<M> {
         let (
             lifetime_parameter_orders,
             type_parameter_orders,
@@ -1178,7 +1155,7 @@ impl<S: State> Table<S> {
                     .map(|(_, x)| x)
                     .cloned()
                     .collect::<Vec<_>>(),
-                constant_argument_syns.is_empty().then(|| {
+                generic_arguments.constants.is_empty().then(|| {
                     generic_declaration
                         .generic_declaration()
                         .parameters
@@ -1193,38 +1170,69 @@ impl<S: State> Table<S> {
             )
         };
 
-        Ok(Some(GenericArguments {
-            lifetimes: self.resolve_generic_arguments_kinds(
-                lifetime_argument_syns.into_iter(),
+        GenericArguments {
+            lifetimes: Self::resolve_generic_arguments_kinds(
+                generic_arguments.lifetimes.into_iter(),
                 lifetime_parameter_orders.iter(),
                 Option::<std::iter::Empty<_>>::None,
-                generic_arguments
-                    .map_or(resolution_span.clone(), SourceElement::span),
-                referring_site,
+                generic_identifier_span.clone(),
                 config.reborrow(),
                 handler,
-            )?,
-            types: self.resolve_generic_arguments_kinds(
-                type_argument_syns.into_iter(),
+            ),
+            types: Self::resolve_generic_arguments_kinds(
+                generic_arguments.types.into_iter(),
                 type_parameter_orders.iter(),
                 default_type_arguments.as_ref().map(|x| x.iter()),
-                generic_arguments
-                    .map_or(resolution_span.clone(), SourceElement::span),
+                generic_identifier_span.clone(),
+                config.reborrow(),
+                handler,
+            ),
+            constants: Self::resolve_generic_arguments_kinds(
+                generic_arguments.constants.into_iter(),
+                constant_parameter_ords.iter(),
+                Some(default_constant_arguments.iter()),
+                generic_identifier_span,
+                config,
+                handler,
+            ),
+        }
+    }
+
+    /// Resolves a [`GenericArguments`] for the `resolved_id` from the given
+    /// [`syntax_tree::GenericIdentifier`].
+    ///
+    /// # Errors
+    ///
+    /// See [`ResolveTermError`] for more information.
+    #[allow(clippy::too_many_lines)]
+    pub fn resolve_generic_arguments_for<M: Model>(
+        &self,
+        resolved_id: symbol::GenericID,
+        generic_identifier: &syntax_tree::GenericIdentifier,
+        referring_site: GlobalID,
+        mut config: Config<S, M>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<GenericArguments<M>, ResolveTermError> {
+        let generic_arguments = if let Some(generic_arguments) =
+            generic_identifier.generic_arguments().as_ref()
+        {
+            self.resolve_generic_arguments(
+                generic_arguments,
                 referring_site,
                 config.reborrow(),
                 handler,
-            )?,
-            constants: self.resolve_generic_arguments_kinds(
-                constant_argument_syns.into_iter(),
-                constant_parameter_ords.iter(),
-                Some(default_constant_arguments.iter()),
-                generic_arguments
-                    .map_or(resolution_span.clone(), SourceElement::span),
-                referring_site,
-                config,
-                handler,
-            )?,
-        }))
+            )?
+        } else {
+            GenericArguments::default()
+        };
+
+        Ok(self.verify_generic_arguments_for(
+            generic_arguments,
+            resolved_id,
+            generic_identifier.span(),
+            config,
+            handler,
+        ))
     }
 
     fn resolution_to_type<M: Model>(
@@ -1313,11 +1321,11 @@ impl<S: State> Table<S> {
         }
     }
 
-    /// Resolves a [`syntax_tree::r#type::Type`] to a [`r#type::Type`].
+    /// Resolves a [`syntax_tree::type::Type`] to a [`type::Type`].
     ///
     /// # Errors
     ///
-    /// See [`Error`] for more information.
+    /// See [`ResolveTermError`] for more information.
     #[allow(clippy::too_many_lines)]
     pub fn resolve_type<M: Model>(
         &self,
@@ -1325,7 +1333,7 @@ impl<S: State> Table<S> {
         referring_site: GlobalID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<r#type::Type<M>, Error> {
+    ) -> Result<r#type::Type<M>, ResolveTermError> {
         let mut ty = match syntax_tree {
             syntax_tree::r#type::Type::Primitive(primitive) => {
                 r#type::Type::Primitive(match primitive {
@@ -1506,12 +1514,14 @@ impl<S: State> Table<S> {
             syntax_tree::r#type::Type::Array(array) => {
                 let length = match array.constant() {
                     syntax_tree::Constant::Expression(expression) => match self
-                        .evaluate(&expression, referring_site, handler)
+                        .evaluate(expression, referring_site, handler)
                     {
                         Ok(value) => M::from_default_constant(value),
 
                         Err(evaluate::Error::InvalidReferringSiteID) => {
-                            return Err(Error::InvalidReferringSiteID);
+                            return Err(
+                                ResolveTermError::InvalidReferringSiteID,
+                            );
                         }
 
                         Err(
@@ -1520,17 +1530,18 @@ impl<S: State> Table<S> {
                         ) => constant::Constant::Error(term::Error),
                     },
                     syntax_tree::Constant::Elided(elided) => {
-                        if let Some(provider) =
-                            config.elided_constant_provider.as_mut()
-                        {
-                            provider.create()
-                        } else {
-                            handler.receive(Box::new(UnexpectedInference {
-                                unexpected_span: elided.span(),
-                                generic_kind: GenericKind::Constant,
-                            }));
-                            constant::Constant::Error(term::Error)
-                        }
+                        config.elided_constant_provider.as_mut().map_or_else(
+                            || {
+                                handler.receive(Box::new(
+                                    UnexpectedInference {
+                                        unexpected_span: elided.span(),
+                                        generic_kind: GenericKind::Constant,
+                                    },
+                                ));
+                                constant::Constant::Error(term::Error)
+                            },
+                            |x| x.create(),
+                        )
                     }
                 };
                 let element_ty = self.resolve_type(
@@ -1557,15 +1568,16 @@ impl<S: State> Table<S> {
                 r#type::Type::Phantom(r#type::Phantom(Box::new(ty)))
             }
             syntax_tree::r#type::Type::Elided(elided) => {
-                if let Some(provider) = config.elided_type_provider {
-                    provider.create()
-                } else {
-                    handler.receive(Box::new(UnexpectedInference {
-                        unexpected_span: elided.span(),
-                        generic_kind: GenericKind::Type,
-                    }));
-                    r#type::Type::Error(term::Error)
-                }
+                config.elided_type_provider.as_mut().map_or_else(
+                    || {
+                        handler.receive(Box::new(UnexpectedInference {
+                            unexpected_span: elided.span(),
+                            generic_kind: GenericKind::Type,
+                        }));
+                        r#type::Type::Error(term::Error)
+                    },
+                    |provider| provider.create(),
+                )
             }
         };
 
@@ -1578,7 +1590,7 @@ impl<S: State> Table<S> {
                     ty,
                     syntax_tree,
                 )
-                .ok_or(Error::Abort)?;
+                .unwrap_or(r#type::Type::Error(term::Error));
         }
 
         Ok(ty)
@@ -1590,7 +1602,7 @@ impl<S: State> Table<S> {
         referring_site: GlobalID,
         config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<r#type::Type<M>, Error> {
+    ) -> Result<r#type::Type<M>, ResolveTermError> {
         let is_simple_identifier = syntax_tree.rest().is_empty()
             && syntax_tree
                 .root()
@@ -1601,7 +1613,7 @@ impl<S: State> Table<S> {
         if is_simple_identifier {
             for global_id in self
                 .scope_walker(referring_site)
-                .ok_or(Error::InvalidReferringSiteID)?
+                .ok_or(ResolveTermError::InvalidReferringSiteID)?
             {
                 let Ok(generic_id) = symbol::GenericID::try_from(global_id)
                 else {
@@ -1637,11 +1649,16 @@ impl<S: State> Table<S> {
             match self.resolve(syntax_tree, referring_site, config, handler) {
                 Ok(resolution) => resolution,
 
-                Err(Error::InvalidReferringSiteID) => {
-                    return Err(Error::InvalidReferringSiteID);
+                Err(
+                    ResolveQualifiedIdentifierError::InvalidReferringSiteID,
+                ) => {
+                    return Err(ResolveTermError::InvalidReferringSiteID);
                 }
 
-                Err(Error::Abort | Error::SemanticError) => {
+                Err(
+                    ResolveQualifiedIdentifierError::Abort
+                    | ResolveQualifiedIdentifierError::SemanticError,
+                ) => {
                     return Ok(r#type::Type::Error(term::Error));
                 }
             };
@@ -1665,8 +1682,7 @@ impl<S: State> Table<S> {
         M: Model,
         G: GenericParameter<M> + std::fmt::Debug,
     >(
-        &self,
-        syntax_trees: impl ExactSizeIterator<Item = &'a G::SyntaxTree>,
+        generic_arguments: impl ExactSizeIterator<Item = G::Argument>,
         parameters: impl ExactSizeIterator<Item = &'a G>,
         defaults: Option<
             impl ExactSizeIterator<
@@ -1674,16 +1690,15 @@ impl<S: State> Table<S> {
             >,
         >,
         generic_identifier_span: Span,
-        referring_site: GlobalID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Vec<G::Argument>, Error>
+    ) -> Vec<G::Argument>
     where
         G::Argument: Clone,
     {
-        if syntax_trees.len() == 0 {
+        if generic_arguments.len() == 0 {
             if parameters.len() == 0 {
-                return Ok(Vec::new());
+                return Vec::new();
             }
 
             let Some(provider) = G::get_ellided_term_provider(&mut config)
@@ -1692,22 +1707,22 @@ impl<S: State> Table<S> {
                     generic_kind: G::generic_kind(),
                     generic_identifier_span,
                     expected_count: parameters.len(),
-                    supplied_count: syntax_trees.len(),
+                    supplied_count: generic_arguments.len(),
                 }));
 
                 // return the error terms
-                return Ok(parameters.map(|_| term::Error.into()).collect());
+                return parameters.map(|_| term::Error.into()).collect();
             };
 
-            Ok(parameters.map(|_| provider.create()).collect())
+            parameters.map(|_| provider.create()).collect()
         } else {
             let valid_count = defaults.as_ref().map_or_else(
-                || parameters.len() == syntax_trees.len(),
+                || parameters.len() == generic_arguments.len(),
                 |defaults| {
                     let expected_range =
                         (parameters.len() - defaults.len())..=parameters.len();
 
-                    expected_range.contains(&syntax_trees.len())
+                    expected_range.contains(&generic_arguments.len())
                 },
             );
 
@@ -1717,36 +1732,12 @@ impl<S: State> Table<S> {
                     generic_identifier_span,
                     generic_kind: G::generic_kind(),
                     expected_count: parameters.len(),
-                    supplied_count: syntax_trees.len(),
+                    supplied_count: generic_arguments.len(),
                 }));
             }
 
-            let mut arguments = syntax_trees
-                .take(parameters.len())
-                .map(|syntax_tree| {
-                    let resolved = G::resolve(
-                        self,
-                        syntax_tree,
-                        referring_site,
-                        config.reborrow(),
-                        handler,
-                    );
-
-                    // report the on resolved
-                    if let Ok(resolved) = &resolved {
-                        G::on_resolved(
-                            self,
-                            referring_site,
-                            handler,
-                            config.reborrow(),
-                            resolved,
-                            syntax_tree,
-                        );
-                    }
-
-                    resolved
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+            let mut arguments =
+                generic_arguments.take(parameters.len()).collect::<Vec<_>>();
 
             if valid_count {
                 if let Some(defaults) = defaults {
@@ -1779,12 +1770,11 @@ impl<S: State> Table<S> {
                 valid_count
             );
 
-            Ok(arguments)
+            arguments
         }
     }
 
     fn get_parent_generic_arguments_from_latest_resolution<M: Model>(
-        &self,
         latest_resolution: Resolution<M>,
     ) -> GenericArguments<M> {
         latest_resolution.into_generic().unwrap().generic_arguments
@@ -1792,7 +1782,6 @@ impl<S: State> Table<S> {
 
     #[allow(clippy::too_many_lines)]
     fn to_resolution<M: Model>(
-        &self,
         resolved_id: GlobalID,
         generic_arguments: Option<GenericArguments<M>>,
         latest_resolution: Resolution<M>,
@@ -1824,8 +1813,8 @@ impl<S: State> Table<S> {
                 generic_arguments: generic_arguments.unwrap(),
             }),
             GlobalID::Variant(id) => Resolution::Variant(Variant {
-                generic_arguments: self
-                    .get_parent_generic_arguments_from_latest_resolution(
+                generic_arguments:
+                    Self::get_parent_generic_arguments_from_latest_resolution(
                         latest_resolution,
                     ),
                 variant: id,
@@ -1922,19 +1911,24 @@ impl<S: State> Table<S> {
     }
 
     /// Resolves for the root of the qualified identifier.
+    ///
+    /// # Errors
+    ///
+    /// See [`ResolveQualifiedIdentifierError`] for more information.
+    #[allow(clippy::too_many_lines)]
     pub fn resolve_qualified_identifier_root<M: Model>(
         &self,
         root_syn: &QualifiedIdentifierRoot,
         referring_site: GlobalID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Resolution<M>, Error> {
+    ) -> Result<Resolution<M>, ResolveQualifiedIdentifierError> {
         let span = root_syn.span();
         match root_syn {
             QualifiedIdentifierRoot::Target(_) => {
-                let root = self
-                    .get_root_module_id(referring_site)
-                    .ok_or(Error::InvalidReferringSiteID)?;
+                let root = self.get_root_module_id(referring_site).ok_or(
+                    ResolveQualifiedIdentifierError::InvalidReferringSiteID,
+                )?;
 
                 if let Some(observer) = config.observer.as_mut() {
                     if !observer.on_global_id_resolved(
@@ -1944,7 +1938,7 @@ impl<S: State> Table<S> {
                         root.into(),
                         &span,
                     ) {
-                        return Err(Error::Abort);
+                        return Err(ResolveQualifiedIdentifierError::Abort);
                     }
                 }
 
@@ -1958,7 +1952,7 @@ impl<S: State> Table<S> {
                         &resolution,
                         &span,
                     ) {
-                        return Err(Error::Abort);
+                        return Err(ResolveQualifiedIdentifierError::Abort);
                     }
                 }
 
@@ -1967,7 +1961,9 @@ impl<S: State> Table<S> {
             QualifiedIdentifierRoot::This(this) => {
                 let found_this = self
                     .scope_walker(referring_site)
-                    .ok_or(Error::InvalidReferringSiteID)?
+                    .ok_or(
+                        ResolveQualifiedIdentifierError::InvalidReferringSiteID,
+                    )?
                     .find_map(|x| match x {
                         id @ (GlobalID::Trait(_)
                         | GlobalID::PositiveTraitImplementation(_)
@@ -1978,7 +1974,7 @@ impl<S: State> Table<S> {
                 let Some(this) = found_this else {
                     handler
                         .receive(Box::new(ThisNotFound { span: this.span() }));
-                    return Err(Error::SemanticError);
+                    return Err(ResolveQualifiedIdentifierError::SemanticError);
                 };
 
                 if let Some(observer) = config.observer.as_mut() {
@@ -1989,7 +1985,7 @@ impl<S: State> Table<S> {
                         this,
                         &span,
                     ) {
-                        return Err(Error::Abort);
+                        return Err(ResolveQualifiedIdentifierError::Abort);
                     }
                 }
 
@@ -2032,16 +2028,17 @@ impl<S: State> Table<S> {
                         &resolution,
                         &span,
                     ) {
-                        return Err(Error::Abort);
+                        return Err(ResolveQualifiedIdentifierError::Abort);
                     }
                 }
 
                 Ok(resolution)
             }
             QualifiedIdentifierRoot::GenericIdentifier(generic_identifier) => {
-                let current_module_id = self
-                    .get_closet_module_id(referring_site)
-                    .ok_or(Error::InvalidReferringSiteID)?;
+                let current_module_id =
+                    self.get_closet_module_id(referring_site).ok_or(
+                        ResolveQualifiedIdentifierError::InvalidReferringSiteID,
+                    )?;
                 let module = self.get(current_module_id).unwrap();
 
                 let id = module
@@ -2064,7 +2061,7 @@ impl<S: State> Table<S> {
                             .clone(),
                     }));
 
-                    return Err(Error::SemanticError);
+                    return Err(ResolveQualifiedIdentifierError::SemanticError);
                 };
 
                 if let Some(observer) = config.observer.as_mut() {
@@ -2075,18 +2072,32 @@ impl<S: State> Table<S> {
                         id.into(),
                         &generic_identifier.identifier().span,
                     ) {
-                        return Err(Error::Abort);
+                        return Err(ResolveQualifiedIdentifierError::Abort);
                     }
                 }
 
-                let generic_arguments = self.resolve_generic_arguments(
-                    generic_identifier.generic_arguments().as_ref(),
-                    &generic_identifier.identifier().span,
-                    referring_site,
-                    id.into(),
-                    config.reborrow(),
-                    handler,
-                )?;
+                let generic_arguments = if let Ok(generic_id) =
+                    symbol::GenericID::try_from(GlobalID::from(id))
+                {
+                    Some(self.resolve_generic_arguments_for(
+                        generic_id,
+                        generic_identifier,
+                        referring_site,
+                        config.reborrow(),
+                        handler,
+                    )?)
+                } else {
+                    if let Some(gen_args) =
+                        generic_identifier.generic_arguments().as_ref()
+                    {
+                        handler.receive(Box::new(NoGenericArgumentsRequired {
+                            global_id: id.into(),
+                            generic_argument_span: gen_args.span(),
+                        }));
+                    }
+
+                    None
+                };
 
                 let resolution = match id {
                     symbol::ModuleMemberID::Module(id) => {
@@ -2139,7 +2150,7 @@ impl<S: State> Table<S> {
                         &resolution,
                         &span,
                     ) {
-                        return Err(Error::Abort);
+                        return Err(ResolveQualifiedIdentifierError::Abort);
                     }
                 }
 
@@ -2153,10 +2164,10 @@ impl<S: State> Table<S> {
     /// # Parameters
     ///
     /// - `qualified_identifier`: The qualified identifier to resolve the symbol
-    ///  for.
+    ///   for.
     /// - `referring_site`: The global ID of the symbol that is referring to the
-    /// symbol to resolve.
-    /// - `config`:
+    ///   symbol to resolve.
+    /// - `config`: The configuration to used resolution.
     /// - `handler`: The handler for the diagnostics.
     ///
     /// # Errors
@@ -2168,11 +2179,12 @@ impl<S: State> Table<S> {
         referring_site: GlobalID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Resolution<M>, Error> {
+    ) -> Result<Resolution<M>, ResolveQualifiedIdentifierError> {
         // check if the given `referring_site` is a valid ID.
         drop(
-            self.get_global(referring_site)
-                .ok_or(Error::InvalidReferringSiteID)?,
+            self.get_global(referring_site).ok_or(
+                ResolveQualifiedIdentifierError::InvalidReferringSiteID,
+            )?,
         );
 
         // create the current root
@@ -2202,7 +2214,9 @@ impl<S: State> Table<S> {
                                 .clone(),
                         }));
 
-                        return Err(Error::SemanticError);
+                        return Err(
+                            ResolveQualifiedIdentifierError::SemanticError,
+                        );
                     }
                 },
             };
@@ -2216,20 +2230,34 @@ impl<S: State> Table<S> {
                     global_id,
                     &generic_identifier.identifier().span,
                 ) {
-                    return Err(Error::Abort);
+                    return Err(ResolveQualifiedIdentifierError::Abort);
                 }
             }
 
-            let generic_arguments = self.resolve_generic_arguments(
-                generic_identifier.generic_arguments().as_ref(),
-                &generic_identifier.identifier().span,
-                referring_site,
-                global_id,
-                config.reborrow(),
-                handler,
-            )?;
+            let generic_arguments = if let Ok(generic_id) =
+                symbol::GenericID::try_from(global_id)
+            {
+                Some(self.resolve_generic_arguments_for(
+                    generic_id,
+                    generic_identifier,
+                    referring_site,
+                    config.reborrow(),
+                    handler,
+                )?)
+            } else {
+                if let Some(gen_args) =
+                    generic_identifier.generic_arguments().as_ref()
+                {
+                    handler.receive(Box::new(NoGenericArgumentsRequired {
+                        global_id,
+                        generic_argument_span: gen_args.span(),
+                    }));
+                }
 
-            let next_resolution = self.to_resolution(
+                None
+            };
+
+            let next_resolution = Self::to_resolution(
                 global_id,
                 generic_arguments,
                 latest_resolution,
@@ -2243,7 +2271,7 @@ impl<S: State> Table<S> {
                     &next_resolution,
                     &generic_identifier.span(),
                 ) {
-                    return Err(Error::Abort);
+                    return Err(ResolveQualifiedIdentifierError::Abort);
                 }
             }
 

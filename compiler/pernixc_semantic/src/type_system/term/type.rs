@@ -553,6 +553,7 @@ impl<M: Model> SubTerm for Type<M> {
 }
 
 impl<M: Model> Match for Type<M> {
+    #[allow(clippy::too_many_lines)]
     fn substructural_match(
         &self,
         other: &Self,
@@ -1064,24 +1065,15 @@ where
 
                 let new_type = Self::Tuple(Tuple { elements: result });
 
-                if let Some(result) =
-                    Normalizer::normalize_type(&new_type, environment, context)?
-                {
-                    Ok(Some(result))
-                } else {
-                    Ok(Some(Succeeded::new(new_type)))
-                }
+                Normalizer::normalize_type(&new_type, environment, context)?
+                    .map_or_else(
+                        || Ok(Some(Succeeded::new(new_type))),
+                        |x| Ok(Some(x)),
+                    )
             }
 
-            _ => {
-                if let Some(result) =
-                    Normalizer::normalize_type(self, environment, context)?
-                {
-                    Ok(Some(result))
-                } else {
-                    Ok(None)
-                }
-            }
+            _ => Normalizer::normalize_type(self, environment, context)?
+                .map_or_else(|| Ok(None), |x| Ok(Some(x))),
         }
     }
 
@@ -1438,7 +1430,7 @@ where
                     display: &reference.lifetime
                 })?;
 
-                if let Qualifier::Mutable = reference.qualifier {
+                if Qualifier::Mutable == reference.qualifier {
                     write!(f, "mutable ")?;
                 }
 

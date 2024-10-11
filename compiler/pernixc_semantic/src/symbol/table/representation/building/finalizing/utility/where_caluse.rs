@@ -146,8 +146,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     elided_type_provider: None,
                     elided_constant_provider: None,
                     observer: Some(
-                        &mut (&mut builder::Resolution::basic())
-                            .chain(occurrences),
+                        &mut builder::Resolution::basic().chain(occurrences),
                     ),
                     higher_ranked_lifetimes: higher_ranked_lifetimes.as_ref(),
                 },
@@ -369,7 +368,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             elided_type_provider: None,
                             elided_constant_provider: None,
                             observer: Some(
-                                &mut (&mut builder::Resolution::basic())
+                                &mut builder::Resolution::basic()
                                     .chain(occurrences),
                             ),
                             higher_ranked_lifetimes: higher_ranked_lifetimes
@@ -396,7 +395,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 syntax_tree::predicate::TupleOperandKind::Constant(expr) => {
                     let Ok(constant) = (match expr.constant() {
                         syntax_tree::Constant::Expression(expression) => self
-                            .evaluate(&expression, generic_id.into(), handler),
+                            .evaluate(expression, generic_id.into(), handler),
                         syntax_tree::Constant::Elided(elided) => {
                             handler.receive(Box::new(UnexpectedInference {
                                 unexpected_span: elided.span(),

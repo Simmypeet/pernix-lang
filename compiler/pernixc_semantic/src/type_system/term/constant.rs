@@ -608,13 +608,8 @@ where
         >,
         context: &mut Context<M>,
     ) -> Result<Output<Self, M>, type_system::OverflowError> {
-        if let Some(result) =
-            Normalizer::normalize_constant(self, environment, context)?
-        {
-            Ok(Some(result))
-        } else {
-            Ok(None)
-        }
+        Normalizer::normalize_constant(self, environment, context)?
+            .map_or_else(|| Ok(None), |x| Ok(Some(x)))
     }
 
     fn as_kind(&self) -> Kind<M> { Kind::Constant(self) }

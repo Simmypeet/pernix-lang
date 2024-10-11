@@ -456,9 +456,9 @@ impl Workspace {
 
                     // is not a valid identifier
                     let target_name_value = match target_name_string.value {
-                        Some(string)
-                        if token::Identifier::is_valid_identifier_string(&string)
-                            => string,
+                        Some(string) if token::Identifier::is_valid_identifier_string(&string) => {
+                            string
+                        }
                         _ => {
                             error_collector.push(
                                 JsonConfigurationError::TargetNameIsNotIdentifier(
@@ -541,9 +541,9 @@ impl Workspace {
                             != Some("pnx")
                         {
                             error_collector.push(
-                                JsonConfigurationError::RootFilePathIsNotPnxFile{
+                                JsonConfigurationError::RootFilePathIsNotPnxFile {
                                     path,
-                                    string: path_string
+                                    string: path_string,
                                 },
                             );
                             continue;

@@ -443,8 +443,8 @@ impl<C: Container> Representation<C> {
                 )
                 .unwrap();
 
-            let clone_function_id =
-                self.insert_clone_function::<_, TraitImplementationFunctionDefinition>(
+            let clone_function_id = self
+                .insert_clone_function::<_, TraitImplementationFunctionDefinition>(
                     implementation_id,
                     Type::Tuple(Tuple { elements: Vec::new() }),
                 );

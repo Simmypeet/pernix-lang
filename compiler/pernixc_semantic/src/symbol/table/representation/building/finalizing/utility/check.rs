@@ -164,7 +164,7 @@ where
     /// - `resolution`: The resolution to check.
     /// - `resolution_span`: The span location of the `resolution`.
     /// - `do_outlives_check`: Determines if the outlives predicates should be
-    ///  checked.
+    ///   checked.
     /// - `session`: The session to use for caching and limiting the
     ///   computation.
     /// - `handler`: The handler to report the errors.
@@ -179,6 +179,7 @@ where
     ) {
         match resolution {
             resolution::Resolution::Module(_)
+            | resolution::Resolution::PositiveTraitImplementation(_)
             | resolution::Resolution::Variant(_) => {}
 
             resolution::Resolution::Generic(generic) => {
@@ -239,10 +240,13 @@ where
                         let adt_implementation =
                             self.table().get(adt_implementation_id).unwrap();
 
+                        let arguments = adt_implementation.arguments.clone();
+                        drop(adt_implementation);
+
                         let result = match GenericArguments::from_default_model(
-                        adt_implementation.arguments.clone(),
-                    )
-                    .deduce(&member_generic.parent_generic_arguments, self)
+                            arguments
+                        )
+                        .deduce(&member_generic.parent_generic_arguments, self)
                     {
                         Ok(deduced) => deduced,
 
@@ -270,7 +274,7 @@ where
                             handler.receive(Box::new(
                                 OverflowCalculatingRequirementForInstantiation {
                                     instantiation_span: resolution_span.clone(),
-                                }
+                                },
                             ));
 
                             return;
@@ -352,9 +356,6 @@ where
                     handler,
                 );
             }
-
-            // no need to check for `this` resolution since it's always valid
-            resolution::Resolution::PositiveTraitImplementation(_) => {}
         }
     }
 
@@ -412,11 +413,11 @@ where
     /// - `instantiated`: The [`GenericID`] of the instantiated symbol.
     /// - `instantiation`: The instantiation of the `instantiated`.
     /// - `instantiation_span`: The span location of the instantiation, used for
-    ///  error reporting
+    ///   error reporting
     /// - `do_outlives_check`: Determines if the outlives predicates should be
     ///   checked.
     /// - `session`: The session to use for caching and limiting the
-    ///  computation.
+    ///   computation.
     /// - `handler`: The handler to report the errors.
     pub(super) fn check_instantiation_predicates(
         &self,

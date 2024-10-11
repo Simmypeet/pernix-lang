@@ -471,9 +471,8 @@ impl Input<&super::QualifiedIdentifierRoot> for &QualifiedIdentifierRoot {
             (
                 QualifiedIdentifierRoot::This,
                 super::QualifiedIdentifierRoot::This(..),
-            ) => Ok(()),
-
-            (
+            )
+            | (
                 QualifiedIdentifierRoot::Target,
                 super::QualifiedIdentifierRoot::Target(..),
             ) => Ok(()),

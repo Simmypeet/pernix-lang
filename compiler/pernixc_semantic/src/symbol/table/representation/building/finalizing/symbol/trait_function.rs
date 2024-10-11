@@ -95,17 +95,17 @@ impl Finalize for TraitFunction {
 
                 table.check_occurrences(
                     symbol_id.into(),
-                    &generic_parameter_ocurrences,
+                    generic_parameter_ocurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &where_clause_ocurrences,
+                    where_clause_ocurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &definition_ocurrences,
+                    definition_ocurrences,
                     handler,
                 );
 

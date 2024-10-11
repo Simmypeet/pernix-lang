@@ -19,6 +19,10 @@ use crate::{
 /// the dependencies before the query is executed.
 pub trait Observer<M: Model, T: State>: Sized {
     /// Invoked before the query is executed.
+    ///
+    /// # Errors
+    ///
+    /// See [`OverflowError`] for more information.
     fn on_query(
         record: &Record<M>,
         environment: &Environment<M, T, impl Normalizer<M, T>, Self>,
@@ -26,12 +30,20 @@ pub trait Observer<M: Model, T: State>: Sized {
     ) -> Result<(), OverflowError>;
 
     /// Invoked when the variance is being retrieved for the ADT.
+    ///
+    /// # Errors
+    ///
+    /// See [`OverflowError`] for more information.
     fn on_retrieving_variance(
         adt_id: AdtID,
         environment: &Environment<M, T, impl Normalizer<M, T>, Self>,
     ) -> Result<(), OverflowError>;
 
     /// Invoked when trait implementation type is resolved during normalization
+    ///
+    /// # Errors
+    ///
+    /// See [`OverflowError`] for more information.
     fn on_trait_implementation_type_resolved(
         trait_implementation_type: ID<TraitImplementationType>,
         environment: &Environment<M, T, impl Normalizer<M, T>, Self>,

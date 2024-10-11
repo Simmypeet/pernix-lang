@@ -81,12 +81,12 @@ impl Finalize for TraitType {
 
                 table.check_occurrences(
                     symbol_id.into(),
-                    &generic_parameter_ocurrences,
+                    generic_parameter_ocurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &where_clause_ocurrences,
+                    where_clause_ocurrences,
                     handler,
                 );
 

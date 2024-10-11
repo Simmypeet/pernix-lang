@@ -143,6 +143,10 @@ impl<M: Model> GenericArguments<M> {
 
     /// Tries to convert a generic arguments with the model `U` into the model
     /// `M`.
+    ///
+    /// # Errors
+    /// 
+    /// Returns an error returned by the `TryFrom` implementation of the model. 
     pub fn try_from_other_model<U: Model, E>(
         term: GenericArguments<U>,
     ) -> Result<Self, E>
@@ -171,6 +175,7 @@ impl<M: Model> GenericArguments<M> {
     }
 
     /// Converts the generic arguments with the default model into the model `M`
+    #[must_use]
     pub fn from_default_model(
         generic_arguments: GenericArguments<Default>,
     ) -> Self {
@@ -222,6 +227,10 @@ impl<M: Model, ID> Symbol<M, ID> {
     }
 
     /// Tries to convert a symbol from model `U` to model `M`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error returned by the `TryFrom` implementation of the model.
     pub fn try_from_other_model<U: Model, E>(
         symbol: Symbol<U, ID>,
     ) -> Result<Self, E>
@@ -254,7 +263,7 @@ where
 
         write!(f, "{qualified_name}{}", DisplayObject {
             table,
-            display: &self.generic_arguments,
+            display: &self.generic_arguments
         })
     }
 }
@@ -295,6 +304,10 @@ impl<M: Model, ID> MemberSymbol<M, ID> {
     }
 
     /// Tries to convert a member symbol from model `U` to model `M`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error returned by the `TryFrom` implementation of the model.
     pub fn try_from_other_model<U: Model, E>(
         member_symbol: MemberSymbol<U, ID>,
     ) -> Result<Self, E>
@@ -332,12 +345,12 @@ where
 
         write!(f, "{parent_qualified_identifier}{}", DisplayObject {
             table,
-            display: &self.parent_generic_arguments,
+            display: &self.parent_generic_arguments
         })?;
 
         write!(f, "::{}{}", this_sym.name(), DisplayObject {
             table,
-            display: &self.member_generic_arguments,
+            display: &self.member_generic_arguments
         })
     }
 }
@@ -361,6 +374,7 @@ pub struct Tuple<Term: Clone> {
 
 impl<T: Term> Tuple<T> {
     /// Converts a tuple from model `U` to model `M`.
+    #[must_use]
     pub fn from_other_model<U: Model>(tuple: Tuple<T::Rebind<U>>) -> Self
     where
         <T::Model as Model>::LifetimeInference: From<U::LifetimeInference>,
@@ -380,6 +394,10 @@ impl<T: Term> Tuple<T> {
     }
 
     /// Tries to convert a tuple from model `U` to model `M`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error returned by the `TryFrom` implementation of the model.
     pub fn try_from_other_model<U: Model, E>(
         tuple: Tuple<T::Rebind<U>>,
     ) -> Result<Self, E>
@@ -440,6 +458,7 @@ impl<S: State, T: table::Display<S> + Clone> table::Display<S> for Tuple<T> {
 pub enum Never {}
 
 impl<T: State> table::Display<T> for Never {
+    #[allow(clippy::uninhabited_references)]
     fn fmt(
         &self,
         _: &Table<T>,
@@ -466,6 +485,7 @@ where
     Self: Into<T>,
 {
     /// Converts a local term from model `U` to model `M`.
+    #[must_use]
     pub fn from_other_model<U: Model>(local: Local<T::Rebind<U>>) -> Self
     where
         Local<T::Rebind<U>>: Into<T::Rebind<U>>,
@@ -478,6 +498,10 @@ where
     }
 
     /// Tries to convert a local term from model `U` to model `M`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error returned by the `TryFrom` implementation of the model.
     pub fn try_from_other_model<U: Model, E>(
         local: Local<T::Rebind<U>>,
     ) -> Result<Self, E>
@@ -553,6 +577,10 @@ pub trait Term:
         <Self::Model as Model>::ConstantInference: From<U::ConstantInference>;
 
     /// Tries to convert a term from another model to this model.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error returned by the `TryFrom` implementation of the model.
     fn try_from_other_model<U: Model, E>(
         term: Self::Rebind<U>,
     ) -> Result<Self, E>
@@ -740,7 +768,7 @@ impl<T: Term> Tuple<T>
 where
     Self: TryFrom<T, Error = T> + Into<T>,
 {
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::type_complexity)]
     fn substructural_match_internal<'a>(
         from: &'a Self,
         to: &'a Self,
@@ -936,6 +964,7 @@ where
         Some(existing)
     }
 
+    #[allow(clippy::type_complexity)]
     fn substructural_match<'a>(
         &'a self,
         to: &'a Self,
@@ -1058,7 +1087,7 @@ impl<M: Model> GenericArguments<M> {
     pub fn unify_as_mapping<S: State>(
         &self,
         other: &Self,
-        config: Arc<dyn PredicateA<M>>,
+        config: &Arc<dyn PredicateA<M>>,
         environment: &Environment<
             M,
             S,
@@ -1077,7 +1106,7 @@ impl<M: Model> GenericArguments<M> {
     pub(super) fn unify_as_mapping_with_context<S: State>(
         &self,
         other: &Self,
-        config: Arc<dyn PredicateA<M>>,
+        config: &Arc<dyn PredicateA<M>>,
         environment: &Environment<
             M,
             S,

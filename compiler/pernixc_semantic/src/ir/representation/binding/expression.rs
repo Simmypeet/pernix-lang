@@ -7,7 +7,7 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use pernixc_base::{
-    handler::Handler,
+    handler::{Dummy, Handler, Storage},
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::token;
@@ -26,18 +26,20 @@ use crate::{
     arena::ID,
     error::{
         self, AdtImplementationFunctionCannotBeUsedAsMethod,
-        BlockWithGivenLableNameNotFound, CannotDereference,
-        CannotIndexPastUnpackedTuple, DuplicatedFieldInitialization,
-        ExpectArray, ExpectLValue, ExpectStructType, ExpressOutsideBlock,
-        ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
+        AmbiguousMethodCall, BlockWithGivenLableNameNotFound,
+        CannotDereference, CannotIndexPastUnpackedTuple,
+        DuplicatedFieldInitialization, ExpectArray, ExpectLValue,
+        ExpectStructType, ExpressOutsideBlock, ExpressionIsNotCallable,
+        FieldIsNotAccessible, FieldNotFound,
         FloatingPointLiteralHasIntegralSuffix, InvalidCastType,
         InvalidNumericSuffix, InvalidRelationalOperation, LoopControlFlow,
         LoopControlFlowOutsideLoop, LoopWithGivenLabelNameNotFound,
-        MismatchedArgumentCount, MismatchedQualifierForReferenceOf,
+        MethodNotFound, MismatchedArgumentCount,
+        MismatchedQualifierForReferenceOf,
         MoreThanOneUnpackedInTupleExpression, NotAllFlowPathsExpressValue,
-        ReturnIsNotAllowed, SymbolIsNotCallable, SymbolNotFound,
-        TooLargeTupleIndex, TupleExpected, TupleIndexOutOfBOunds,
-        UnexpectedGenericArgumentsInField,
+        ReturnIsNotAllowed, SymbolIsNotAccessible, SymbolIsNotCallable,
+        SymbolNotFound, TooLargeTupleIndex, TupleExpected,
+        TupleIndexOutOfBOunds, UnexpectedGenericArgumentsInField,
     },
     ir::{
         address::{self, Address, Memory, ReferenceAddress},
@@ -69,8 +71,8 @@ use crate::{
             representation::Index,
             resolution::{self, MemberGenericID},
         },
-        AdtID, CallableID, ConstantParameterID, Field, LifetimeParameterID,
-        TypeParameterID,
+        AdtID, Callable, CallableID, ConstantParameterID, Field,
+        LifetimeParameterID, TraitMemberID, TypeParameterID,
     },
     type_system::{
         self,
@@ -404,9 +406,10 @@ impl<
                 // if required, type check the operand
                 if let Some(expected_type) = expected_type {
                     self.type_check(
-                        self.type_of_value(&operand)?,
+                        &self.type_of_value(&operand)?,
                         expected_type,
                         syntax_tree.span(),
+                        true,
                         handler,
                     )?;
                 }
@@ -449,7 +452,7 @@ impl<
                             expected_qualifier: qualifier,
                             is_behind_reference: lvalue.is_behind_reference,
                         },
-                    ))
+                    ));
                 }
 
                 let register_id = self.create_register_assignmnet(
@@ -553,9 +556,10 @@ impl<
                     let argument = arguments.into_iter().next().unwrap();
 
                     let _ = self.type_check(
-                        self.type_of_value(&argument.1)?,
+                        &self.type_of_value(&argument.1)?,
                         Expected::Known(variant_type),
                         argument.0,
+                        true,
                         &self.create_handler_wrapper(handler),
                     );
 
@@ -640,9 +644,10 @@ impl<
             instantiation::instantiate(&mut parameter_ty, &instantiation);
 
             let _ = self.type_check(
-                self.type_of_value(argument_value).unwrap(),
+                &self.type_of_value(argument_value).unwrap(),
                 Expected::Known(parameter_ty),
                 argument_span.clone(),
+                true,
                 handler,
             );
 
@@ -963,7 +968,7 @@ impl<
                         }
 
                         let _ = self.type_check(
-                            Type::Symbol(Symbol {
+                            &Type::Symbol(Symbol {
                                 id: adt_implementation.implemented_id(),
                                 generic_arguments: parent_generic_arguments,
                             }),
@@ -984,6 +989,7 @@ impl<
                                 },
                             })),
                             resolution_span,
+                            true,
                             handler,
                         );
 
@@ -1142,7 +1148,6 @@ impl<
     > Binder<'t, S, RO, TO>
 {
     fn is_method(
-        &self,
         first_parameter_type: &Type<model::Default>,
         implemented_type: &Type<model::Default>,
     ) -> Option<RecieverKind> {
@@ -1161,6 +1166,446 @@ impl<
         None
     }
 
+    #[allow(clippy::too_many_lines)]
+    fn search_trait_method_candidates(
+        &mut self,
+        method_ident: &syntax_tree::GenericIdentifier,
+        generic_arguments: &GenericArguments<infer::Model>,
+        access_type: &Type<infer::Model>,
+        arguments: &[(Span, Value<infer::Model>)],
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Vec<(
+        CallableID,
+        Instantiation<infer::Model>,
+        infer::Context,
+        RecieverKind,
+    )> {
+        let mut candidates = Vec::new();
+
+        let current_module_id =
+            self.table.get_closet_module_id(self.current_site).unwrap();
+        let current_module_sym = self.table.get(current_module_id).unwrap();
+
+        let visible_traits = current_module_sym
+            .imports()
+            .iter()
+            .filter_map(|(_, (id, _))| (*id).into_trait().ok())
+            .chain(
+                current_module_sym
+                    .member_ids_by_name()
+                    .values()
+                    .copied()
+                    .filter_map(|x| x.into_trait().ok()),
+            )
+            .chain(
+                self.premise
+                    .predicates
+                    .iter()
+                    .filter_map(|x| x.as_trait().map(|x| x.id)),
+            )
+            .collect::<Vec<_>>();
+
+        drop(current_module_sym);
+        let starting_inference_context = self.inference_context.clone();
+
+        'candidate: for trait_id in visible_traits {
+            // looking for a trait function
+            let Some(TraitMemberID::Function(trait_function_id)) = self
+                .table
+                .get(trait_id)
+                .unwrap()
+                .member_ids_by_name()
+                .get(method_ident.identifier().span.str())
+                .copied()
+            else {
+                continue;
+            };
+
+            // invoke the resolution observer
+            self.resolution_observer.on_global_id_resolved(
+                self.table,
+                self.current_site,
+                &self.create_handler_wrapper(handler),
+                trait_function_id.into(),
+                &method_ident.identifier().span,
+            );
+
+            let trait_function_sym = self.table.get(trait_function_id).unwrap();
+
+            // argument count mismatched, skip
+            if trait_function_sym.parameters().len() != arguments.len() + 1 {
+                continue;
+            }
+
+            // check accessibility, skip
+            if !self
+                .table
+                .is_accessible_from(
+                    self.current_site,
+                    self.table
+                        .get_accessibility(trait_function_id.into())
+                        .unwrap(),
+                )
+                .unwrap()
+            {
+                continue;
+            }
+
+            let trait_sym = self.table.get(trait_id).unwrap();
+
+            // trait must at least have one type parameter
+            let Some(first_ty_parameter_id) = trait_sym
+                .generic_declaration
+                .parameters
+                .type_parameters_as_order()
+                .next()
+                .map(|x| x.0)
+            else {
+                continue;
+            };
+
+            // check if it can be used as a method
+            let Some(kind) = Self::is_method(
+                &trait_function_sym
+                    .parameter_as_order()
+                    .next()
+                    .unwrap()
+                    .1
+                    .r#type,
+                &Type::Parameter(TypeParameterID {
+                    parent: trait_id.into(),
+                    id: first_ty_parameter_id,
+                }),
+            ) else {
+                continue;
+            };
+
+            drop(trait_function_sym);
+            drop(trait_sym);
+
+            self.inference_context = starting_inference_context.clone();
+
+            let storage = Storage::<Box<dyn error::Error>>::default();
+            let function_generic_arguments = self
+                .verify_generic_arguments_for_with_inference(
+                    generic_arguments.clone(),
+                    trait_function_id.into(),
+                    method_ident.span(),
+                    false,
+                    &storage,
+                );
+
+            if !storage.as_vec().is_empty() {
+                continue;
+            }
+
+            let trait_sym = self.table.get(trait_id).unwrap();
+
+            let trait_generic_arguments = GenericArguments {
+                lifetimes: trait_sym
+                    .generic_declaration
+                    .parameters
+                    .lifetime_order()
+                    .iter()
+                    .map(|_| Lifetime::Inference(Erased))
+                    .collect(),
+                types: trait_sym
+                    .generic_declaration
+                    .parameters
+                    .type_order()
+                    .iter()
+                    .enumerate()
+                    .map(|(order, _)| {
+                        if order == 0 {
+                            access_type.clone()
+                        } else {
+                            let inference_variable = InferenceVariable::new();
+
+                            assert!(self.inference_context.register(
+                                inference_variable,
+                                Constraint::All(false)
+                            ));
+                            Type::Inference(inference_variable)
+                        }
+                    })
+                    .collect(),
+                constants: {
+                    trait_sym
+                        .generic_declaration
+                        .parameters
+                        .constant_order()
+                        .iter()
+                        .map(|_| {
+                            let inference_variable = InferenceVariable::new();
+
+                            assert!(self
+                                .inference_context
+                                .register(inference_variable, NoConstraint));
+
+                            Constant::Inference(inference_variable)
+                        })
+                        .collect()
+                },
+            };
+
+            let trait_function_resolution =
+                resolution::Resolution::MemberGeneric(
+                    resolution::MemberGeneric {
+                        id: trait_function_id.into(),
+                        parent_generic_arguments: trait_generic_arguments,
+                        generic_arguments: function_generic_arguments,
+                    },
+                );
+
+            self.resolution_observer.on_resolution_resolved(
+                self.table,
+                self.current_site,
+                &self.create_handler_wrapper(handler),
+                &trait_function_resolution,
+                &method_ident.span(),
+            );
+
+            let resolution::Resolution::MemberGeneric(
+                resolution::MemberGeneric {
+                    id:
+                        resolution::MemberGenericID::TraitFunction(
+                            trait_function_id,
+                        ),
+                    parent_generic_arguments: trait_generic_arguments,
+                    generic_arguments: function_generic_arguments,
+                },
+            ) = trait_function_resolution
+            else {
+                unreachable!()
+            };
+
+            let mut instantiation = Instantiation::from_generic_arguments(
+                trait_generic_arguments.clone(),
+                trait_id.into(),
+                &trait_sym.generic_declaration.parameters,
+            )
+            .unwrap();
+            assert!(instantiation
+                .append_from_generic_arguments(
+                    function_generic_arguments,
+                    trait_function_id.into(),
+                    &self
+                        .table
+                        .get(trait_function_id)
+                        .unwrap()
+                        .generic_declaration
+                        .parameters
+                )
+                .unwrap()
+                .is_empty());
+
+            let trait_function_sym = self.table.get(trait_function_id).unwrap();
+
+            for ((argument_span, argument_value), parameter) in
+                arguments.iter().zip(
+                    trait_function_sym
+                        .parameter_as_order()
+                        .skip(1)
+                        .map(|x| x.1),
+                )
+            {
+                let mut parameter_ty =
+                    infer::Model::from_default_type(parameter.r#type.clone());
+
+                instantiation::instantiate(&mut parameter_ty, &instantiation);
+
+                if self
+                    .type_check(
+                        &self.type_of_value(argument_value).unwrap(),
+                        Expected::Known(parameter_ty),
+                        argument_span.clone(),
+                        false,
+                        &Dummy,
+                    )
+                    .is_err()
+                {
+                    continue 'candidate;
+                }
+            }
+
+            // check if trait is implemented
+            candidates.push((
+                CallableID::TraitFunction(trait_function_id),
+                instantiation,
+                self.inference_context.clone(),
+                kind,
+            ));
+        }
+
+        if !candidates.is_empty() {
+            self.inference_context = starting_inference_context;
+        }
+
+        candidates
+    }
+
+    fn bind_reciever_argument(
+        &mut self,
+        reciever: Expression,
+        reciever_kind: RecieverKind,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Value<infer::Model>, Error> {
+        match (reciever_kind, reciever) {
+            (RecieverKind::Value, Expression::RValue(value)) => Ok(value),
+            (
+                RecieverKind::Value,
+                Expression::LValue(LValue { address, span, .. }),
+            ) => {
+                let register_id = self.create_register_assignmnet(
+                    Assignment::Load(Load { address, kind: LoadKind::Move }),
+                    Some(span),
+                );
+
+                Ok(Value::Register(register_id))
+            }
+
+            (
+                RecieverKind::Reference(qualifieer),
+                Expression::RValue(value),
+            ) => {
+                let span = match &value {
+                    Value::Register(id) => self
+                        .intermediate_representation
+                        .registers
+                        .get(*id)
+                        .unwrap()
+                        .span
+                        .clone()
+                        .unwrap(),
+                    Value::Literal(literal) => literal.span().unwrap().clone(),
+                };
+                let type_of_value = self.type_of_value(&value)?;
+                let alloca_id =
+                    self.create_alloca(type_of_value, Some(span.clone()));
+
+                // initialize
+                let _ = self.current_block_mut().insert_instruction(
+                    Instruction::Store(Store {
+                        address: Address::Memory(Memory::Alloca(alloca_id)),
+                        value,
+                    }),
+                );
+
+                Ok(Value::Register(self.create_register_assignmnet(
+                    Assignment::ReferenceOf(ReferenceOf {
+                        address: address::Address::Memory(Memory::Alloca(
+                            alloca_id,
+                        )),
+                        qualifier: qualifieer,
+                        lifetime: Lifetime::Inference(Erased),
+                    }),
+                    Some(span),
+                )))
+            }
+
+            (
+                RecieverKind::Reference(qualifier),
+                Expression::LValue(address),
+            ) => {
+                if qualifier > address.qualifier {
+                    self.create_handler_wrapper(handler).receive(Box::new(
+                        MismatchedQualifierForReferenceOf {
+                            reference_of_span: address.span.clone(),
+                            found_qualifier: address.qualifier,
+                            expected_qualifier: qualifier,
+                            is_behind_reference: address.is_behind_reference,
+                        },
+                    ));
+                }
+
+                let reference_of = self.create_register_assignmnet(
+                    Assignment::ReferenceOf(ReferenceOf {
+                        address: address.address,
+                        qualifier,
+                        lifetime: Lifetime::Inference(Erased),
+                    }),
+                    Some(address.span),
+                );
+
+                Ok(Value::Register(reference_of))
+            }
+
+            (_, Expression::SideEffect) => unreachable!(),
+        }
+    }
+
+    fn on_binding_adt_method_error<
+        I: Iterator<Item = Box<dyn error::Error>>,
+    >(
+        &mut self,
+        method_call_span: Span,
+        reciever: Expression,
+        mut arguments: Vec<(Span, Value<infer::Model>)>,
+        trait_method_candidates: Vec<(
+            CallableID,
+            Instantiation<infer::Model>,
+            infer::Context,
+            RecieverKind,
+        )>,
+        error: impl FnOnce(&mut Self) -> I,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Value<infer::Model>, Error> {
+        if trait_method_candidates.len() == 1 {
+            let (callable_id, instantiation, inference_context, kind) =
+                trait_method_candidates.into_iter().next().unwrap();
+
+            let span = match &reciever {
+                Expression::RValue(Value::Register(register_id)) => self
+                    .intermediate_representation
+                    .registers
+                    .get(*register_id)
+                    .unwrap()
+                    .span
+                    .clone()
+                    .unwrap(),
+                Expression::RValue(Value::Literal(literal)) => {
+                    literal.span().unwrap().clone()
+                }
+                Expression::LValue(lvalue) => lvalue.span.clone(),
+                Expression::SideEffect => unreachable!(),
+            };
+            self.inference_context = inference_context;
+
+            let reciever_argument =
+                self.bind_reciever_argument(reciever, kind, handler)?;
+            arguments.insert(0, (span, reciever_argument));
+
+            return Ok(Value::Register(self.bind_function_call(
+                &arguments,
+                callable_id,
+                instantiation,
+                method_call_span,
+                handler,
+            )));
+        } else if trait_method_candidates.is_empty() {
+            let wrapper = self.create_handler_wrapper(handler);
+
+            for error in error(self) {
+                wrapper.receive(error);
+            }
+
+            return Err(Error::Semantic(SemanticError(method_call_span)));
+        }
+
+        self.create_handler_wrapper(handler).receive(Box::new(
+            AmbiguousMethodCall {
+                method_call_span: method_call_span.clone(),
+                callable_candidates: trait_method_candidates
+                    .into_iter()
+                    .map(|x| x.0)
+                    .collect(),
+            },
+        ));
+
+        Err(Error::Semantic(SemanticError(method_call_span)))
+    }
+
+    #[allow(clippy::too_many_lines)]
     fn bind_method_call(
         &mut self,
         postfix: &syntax_tree::expression::Postfix,
@@ -1175,7 +1620,7 @@ impl<
         let method_ident = access.kind().as_generic_identifier().unwrap();
         let is_arrow = access.operator().is_arrow();
 
-        let (value, access_type) = if is_arrow
+        let (reciever_expression, access_type) = if is_arrow
         // expect the lvalue address
         {
             let lvalue = self
@@ -1211,27 +1656,51 @@ impl<
             (value, ty)
         };
 
-        let (adt_id, adt_generic_arguments) = match access_type {
-            Type::Symbol(Symbol {
-                id,
-                generic_arguments: struct_generic_arguments,
-            }) => (id, struct_generic_arguments),
+        let mut arguments = call
+            .arguments()
+            .as_ref()
+            .into_iter()
+            .flat_map(ConnectedList::elements)
+            .map(|arg| {
+                self.bind_value_or_error(&**arg, handler)
+                    .map(|x| (arg.span(), x))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
-            found_type => {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    ExpectStructType {
-                        span: struct_expression.span(),
-                        r#type: self
-                            .inference_context
-                            .into_constraint_model(found_type)
-                            .unwrap(),
-                    },
-                ));
+        let generic_arguments = method_ident
+            .generic_arguments()
+            .as_ref()
+            .map_or_else(GenericArguments::default, |x| {
+                self.resolve_generic_arguments_with_inference(x, true, handler)
+                    .expect("should have no invalid referring site")
+            });
 
-                return Err(Error::Semantic(SemanticError(
-                    struct_expression.span(),
-                )));
-            }
+        let trait_method_candidates = self.search_trait_method_candidates(
+            method_ident,
+            &generic_arguments,
+            &access_type,
+            &arguments,
+            handler,
+        );
+
+        let Type::Symbol(Symbol {
+            id: adt_id,
+            generic_arguments: adt_generic_arguments,
+        }) = access_type
+        else {
+            return self.on_binding_adt_method_error(
+                postfix.span(),
+                reciever_expression,
+                arguments,
+                trait_method_candidates,
+                |_| {
+                    std::iter::once(Box::new(MethodNotFound {
+                        method_call_span: postfix.span(),
+                    })
+                        as Box<dyn error::Error>)
+                },
+                handler,
+            );
         };
 
         // find the method id
@@ -1250,14 +1719,20 @@ impl<
                     .copied()
             })
         else {
-            self.create_handler_wrapper(handler).receive(Box::new(
-                SymbolNotFound {
-                    searched_global_id: Some(adt_id.into()),
-                    resolution_span: method_ident.span(),
+            return self.on_binding_adt_method_error(
+                postfix.span(),
+                reciever_expression,
+                arguments,
+                trait_method_candidates,
+                |_| {
+                    std::iter::once(Box::new(SymbolNotFound {
+                        searched_global_id: Some(adt_id.into()),
+                        resolution_span: method_ident.span(),
+                    })
+                        as Box<dyn error::Error>)
                 },
-            ));
-
-            return Err(Error::Semantic(SemanticError(postfix.span())));
+                handler,
+            );
         };
 
         // this is considered as an global id resolution, notify the observer
@@ -1269,29 +1744,27 @@ impl<
             &method_ident.identifier().span,
         );
 
-        let mut type_inferences = InferenceProvider::default();
-        let mut constant_inferences = InferenceProvider::default();
-
-        let Ok(function_generic_arguments) =
-            self.table.resolve_generic_arguments(
-                method_ident.generic_arguments().as_ref(),
-                &method_ident.span(),
-                self.current_site,
+        let storage = Storage::<Box<dyn error::Error>>::default();
+        let function_generic_arguments = self
+            .verify_generic_arguments_for_with_inference(
+                generic_arguments,
                 adt_implementation_function_id.into(),
-                resolution::Config {
-                    elided_lifetime_provider: Some(
-                        &mut InferenceProvider::default(),
-                    ),
-                    elided_type_provider: Some(&mut type_inferences),
-                    elided_constant_provider: Some(&mut constant_inferences),
-                    observer: Some(&mut self.resolution_observer),
-                    higher_ranked_lifetimes: None,
-                },
+                method_ident.span(),
+                true,
                 handler,
-            )
-        else {
-            return Err(Error::Semantic(SemanticError(postfix.span())));
-        };
+            );
+
+        let storage = storage.into_vec();
+        if !storage.is_empty() {
+            return self.on_binding_adt_method_error(
+                postfix.span(),
+                reciever_expression,
+                arguments,
+                trait_method_candidates,
+                |_| storage.into_iter(),
+                handler,
+            );
+        }
 
         let adt_implementation_id =
             self.table.get(adt_implementation_function_id).unwrap().parent_id();
@@ -1359,7 +1832,7 @@ impl<
         }
 
         let _ = self.type_check(
-            Type::Symbol(Symbol {
+            &Type::Symbol(Symbol {
                 id: adt_implementation.implemented_id(),
                 generic_arguments: adt_generic_arguments.clone(),
             }),
@@ -1377,12 +1850,13 @@ impl<
                 },
             })),
             struct_expression_wth_access.postfixable().span(),
+            true,
             handler,
         );
 
         assert!(instantiation
             .append_from_generic_arguments(
-                function_generic_arguments.clone().unwrap_or_default(),
+                function_generic_arguments.clone(),
                 adt_implementation_function_id.into(),
                 &self
                     .table
@@ -1405,8 +1879,7 @@ impl<
                     adt_implementation_function_id,
                 ),
                 parent_generic_arguments: adt_generic_arguments,
-                generic_arguments: function_generic_arguments
-                    .unwrap_or_default(),
+                generic_arguments: function_generic_arguments,
             }),
             &method_ident.span(),
         );
@@ -1414,26 +1887,23 @@ impl<
         let adt_implementation_function =
             self.table.get(adt_implementation_function_id).unwrap();
 
-        let mut arguments = call
-            .arguments()
-            .as_ref()
-            .into_iter()
-            .flat_map(ConnectedList::elements)
-            .map(|arg| {
-                self.bind_value_or_error(&**arg, handler)
-                    .map(|x| (arg.span(), x))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        if adt_implementation_function.parameters().len() == 0 {
-            self.create_handler_wrapper(handler).receive(Box::new(
-                AdtImplementationFunctionCannotBeUsedAsMethod {
-                    adt_implementation_function_id,
-                    span: method_ident.span(),
+        if adt_implementation_function.parameters().is_empty() {
+            return self.on_binding_adt_method_error(
+                postfix.span(),
+                reciever_expression,
+                arguments,
+                trait_method_candidates,
+                |_| {
+                    std::iter::once(Box::new(
+                        AdtImplementationFunctionCannotBeUsedAsMethod {
+                            adt_implementation_function_id,
+                            span: method_ident.span(),
+                        },
+                    )
+                        as Box<dyn error::Error>)
                 },
-            ));
-
-            return Err(Error::Semantic(SemanticError(postfix.span())));
+                handler,
+            );
         }
 
         let implemented_type = Type::Symbol(Symbol {
@@ -1458,72 +1928,83 @@ impl<
             .r#type;
 
         let Some(reciever_kind) =
-            self.is_method(first_parameter_type, &implemented_type)
+            Self::is_method(first_parameter_type, &implemented_type)
         else {
+            return self.on_binding_adt_method_error(
+                postfix.span(),
+                reciever_expression,
+                arguments,
+                trait_method_candidates,
+                |_| {
+                    std::iter::once(Box::new(
+                        AdtImplementationFunctionCannotBeUsedAsMethod {
+                            adt_implementation_function_id,
+                            span: method_ident.span(),
+                        },
+                    )
+                        as Box<dyn error::Error>)
+                },
+                handler,
+            );
+        };
+
+        if adt_implementation_function.parameters().len() != arguments.len() + 1
+        {
+            let found_argument_count = arguments.len();
+            return self.on_binding_adt_method_error(
+                postfix.span(),
+                reciever_expression,
+                arguments,
+                trait_method_candidates,
+                |_| {
+                    std::iter::once(Box::new(MismatchedArgumentCount {
+                        called_id: adt_implementation_function_id.into(),
+                        expected_count: adt_implementation_function
+                            .parameters()
+                            .len()
+                            - 1,
+                        found_count: found_argument_count,
+                        span: call.span(),
+                    })
+                        as Box<dyn error::Error>)
+                },
+                handler,
+            );
+        }
+
+        if !self
+            .table
+            .is_accessible_from(
+                self.current_site,
+                self.table
+                    .get_accessibility(adt_implementation_function_id.into())
+                    .unwrap(),
+            )
+            .unwrap()
+        {
             self.create_handler_wrapper(handler).receive(Box::new(
-                AdtImplementationFunctionCannotBeUsedAsMethod {
-                    adt_implementation_function_id,
-                    span: method_ident.span(),
+                SymbolIsNotAccessible {
+                    referring_site: self.current_site,
+                    referred: adt_implementation_function_id.into(),
+                    referred_span: method_ident.span(),
                 },
             ));
+        }
 
-            return Err(Error::Semantic(SemanticError(postfix.span())));
-        };
+        let reciever_argument = self.bind_reciever_argument(
+            reciever_expression,
+            reciever_kind,
+            handler,
+        )?;
 
-        let inserting_argument = match (reciever_kind, value) {
-            (RecieverKind::Value, Expression::RValue(value)) => {
-                (struct_expression.span(), value)
-            }
-            (
-                RecieverKind::Value,
-                Expression::LValue(LValue { address, span, .. }),
-            ) => {
-                let register_id = self.create_register_assignmnet(
-                    Assignment::Load(Load { address, kind: LoadKind::Move }),
-                    Some(span.clone()),
-                );
-
-                (span, Value::Register(register_id))
-            }
-
-            (RecieverKind::Reference(_), Expression::RValue(_)) => todo!(),
-
-            (
-                RecieverKind::Reference(qualifier),
-                Expression::LValue(address),
-            ) => {
-                if qualifier > address.qualifier {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        MismatchedQualifierForReferenceOf {
-                            reference_of_span: struct_expression.span(),
-                            found_qualifier: address.qualifier,
-                            expected_qualifier: qualifier,
-                            is_behind_reference: address.is_behind_reference,
-                        },
-                    ))
-                }
-
-                let reference_of = self.create_register_assignmnet(
-                    Assignment::ReferenceOf(ReferenceOf {
-                        address: address.address,
-                        qualifier,
-                        lifetime: Lifetime::Inference(Erased),
-                    }),
-                    Some(address.span.clone()),
-                );
-
-                (address.span, Value::Register(reference_of))
-            }
-
-            _ => unreachable!(),
-        };
-
-        arguments.insert(0, inserting_argument);
+        arguments.insert(0, (struct_expression.span(), reciever_argument));
         drop(adt_implementation_function);
 
         Ok(Value::Register(self.bind_function_call(
             &arguments,
-            adt_implementation_function_id.into(),
+            CallableID::AdtImplementationFunction(
+                adt_implementation_function_id,
+            ),
             instantiation,
             postfix.span(),
             handler,
@@ -1684,9 +2165,10 @@ impl<
                 // type check the value
                 let type_of_value = self.type_of_value(&value)?;
                 let _ = self.type_check(
-                    type_of_value,
+                    &type_of_value,
                     Expected::Constraint(Constraint::Number),
                     syntax_tree.postfixable().span(),
+                    true,
                     handler,
                 );
 
@@ -1982,11 +2464,12 @@ impl<
                         // expected a `usize` type
                         let index_ty = self.type_of_value(&value)?;
                         let _ = self.type_check(
-                            index_ty,
+                            &index_ty,
                             Expected::Known(Type::Primitive(
                                 r#type::Primitive::Usize,
                             )),
                             index.expression().span(),
+                            true,
                             handler,
                         );
 
@@ -2113,14 +2596,12 @@ impl<
                             Qualifier::Immutable
                         };
 
-                        let (is_behind_reference, final_qualifier) =
-                            if let Some(ref_qualifier) =
-                                self.is_behind_reference(&name.load_address)
-                            {
-                                (true, ref_qualifier.min(name_qualifier))
-                            } else {
-                                (false, name_qualifier)
-                            };
+                        let (is_behind_reference, final_qualifier) = self
+                            .is_behind_reference(&name.load_address)
+                            .map_or_else(
+                                || (false, name_qualifier),
+                                |x| (true, x.min(name_qualifier)),
+                            );
 
                         return Ok(Expression::LValue(LValue {
                             address: name.load_address.clone(),
@@ -2319,9 +2800,10 @@ impl<
 
             // type check the field
             let _ = self.type_check(
-                self.type_of_value(&value)?,
+                &self.type_of_value(&value)?,
                 Expected::Known(field_ty),
                 field_syn.expression().span(),
+                true,
                 handler,
             );
 
@@ -2645,7 +3127,7 @@ impl<
             let element_ty = self.type_of_value(element)?;
 
             let _ = self.type_check(
-                element_ty,
+                &element_ty,
                 Expected::Known(first_ty.clone()),
                 match element {
                     Value::Register(register_id) => self
@@ -2658,6 +3140,7 @@ impl<
                         .unwrap(),
                     Value::Literal(literal) => literal.span().cloned().unwrap(),
                 },
+                true,
                 handler,
             );
         }
@@ -2947,9 +3430,10 @@ impl<
         let rhs_ty = self.type_of_value(&rhs_value)?;
 
         let _ = self.type_check(
-            rhs_ty,
+            &rhs_ty,
             Expected::Known(lhs_ty),
             tree.right.span(),
+            true,
             handler,
         );
 
@@ -2973,7 +3457,7 @@ impl<
             Target::RValue => {
                 let register_id = self.create_register_assignmnet(
                     Assignment::Load(Load {
-                        address: lhs_address.address.clone(),
+                        address: lhs_address.address,
                         kind: LoadKind::Move,
                     }),
                     Some(tree.span()),
@@ -3063,9 +3547,10 @@ impl<
             let rhs_register_ty = self.type_of_value(&rhs_value)?;
 
             let _ = self.type_check(
-                rhs_register_ty,
+                &rhs_register_ty,
                 Expected::Known(lhs_register_ty.clone()),
                 syntax_tree.right.span(),
+                true,
                 handler,
             );
         }
@@ -3082,9 +3567,10 @@ impl<
                 };
 
                 let _ = self.type_check(
-                    lhs_register_ty,
+                    &lhs_register_ty,
                     Expected::Constraint(expected_constraints),
                     syntax_tree.span(),
+                    true,
                     handler,
                 );
             }
@@ -3193,18 +3679,20 @@ impl<
                     let expected_constraints = r#type::Constraint::Integer;
 
                     let _ = self.type_check(
-                        lhs_register_ty,
+                        &lhs_register_ty,
                         Expected::Constraint(expected_constraints),
                         syntax_tree.left.span(),
+                        true,
                         handler,
                     );
 
                     let rhs_value_ty = self.type_of_value(&rhs_value)?;
 
                     let _ = self.type_check(
-                        rhs_value_ty,
+                        &rhs_value_ty,
                         Expected::Constraint(expected_constraints),
                         syntax_tree.right.span(),
+                        true,
                         handler,
                     );
                 }
@@ -3272,9 +3760,10 @@ impl<
                 // must be a boolean
                 let lhs_ty = self.type_of_value(&lhs)?;
                 let _ = self.type_check(
-                    lhs_ty,
+                    &lhs_ty,
                     Expected::Known(Type::Primitive(r#type::Primitive::Bool)),
                     syntax_tree.left.span(),
+                    true,
                     handler,
                 );
 
@@ -3341,11 +3830,12 @@ impl<
 
                         let rhs_ty = self.type_of_value(&rhs)?;
                         let _ = self.type_check(
-                            rhs_ty,
+                            &rhs_ty,
                             Expected::Known(Type::Primitive(
                                 r#type::Primitive::Bool,
                             )),
                             syntax_tree.right.span(),
+                            true,
                             handler,
                         );
 
@@ -3404,11 +3894,12 @@ impl<
 
                         let rhs_ty = self.type_of_value(&rhs)?;
                         let _ = self.type_check(
-                            rhs_ty,
+                            &rhs_ty,
                             Expected::Known(Type::Primitive(
                                 r#type::Primitive::Bool,
                             )),
                             syntax_tree.right.span(),
+                            true,
                             handler,
                         );
 
@@ -3599,9 +4090,10 @@ impl<
 
         // do type check
         let _ = self.type_check(
-            value_ty,
+            &value_ty,
             Expected::Known(return_type),
             syntax_tree.span(),
+            true,
             handler,
         );
 
@@ -3818,7 +4310,7 @@ impl<
             // can only be unit type
             LoopKind::While => {
                 let _ = self.type_check(
-                    value_type,
+                    &value_type,
                     Expected::Known(Type::Tuple(term::Tuple {
                         elements: Vec::new(),
                     })),
@@ -3826,6 +4318,7 @@ impl<
                         || syntax_tree.span(),
                         SourceElement::span,
                     ),
+                    true,
                     handler,
                 );
             }
@@ -3834,9 +4327,10 @@ impl<
             LoopKind::Loop { break_type, .. } => {
                 if let Some(break_type) = break_type {
                     let _ = self.type_check(
-                        value_type,
+                        &value_type,
                         Expected::Known(break_type.clone()),
                         syntax_tree.span(),
+                        true,
                         handler,
                     );
                 } else {
@@ -4030,9 +4524,10 @@ impl<
             &self.block_states_by_scope_id.get(&scope_id).unwrap().express_type
         {
             let _ = self.type_check(
-                value_type,
+                &value_type,
                 Expected::Known(express_type.clone()),
                 syntax_tree.span(),
+                true,
                 handler,
             );
         } else {
@@ -4127,9 +4622,10 @@ impl<
 
         // expect the type boolean
         let _ = self.type_check(
-            self.type_of_value(&condition)?,
+            &self.type_of_value(&condition)?,
             Expected::Known(Type::Primitive(r#type::Primitive::Bool)),
             syntax_tree.condition().span(),
+            true,
             handler,
         );
 
@@ -4300,19 +4796,21 @@ impl<
 
                 if syntax_tree.else_expression().is_some() {
                     let _ = self.type_check(
-                        else_type,
+                        &else_type,
                         Expected::Known(then_type.clone()),
                         syntax_tree
                             .else_expression()
                             .as_ref()
                             .map_or(syntax_tree.span(), SourceElement::span),
+                        true,
                         handler,
                     );
                 } else {
                     let _ = self.type_check(
-                        then_type.clone(),
+                        &then_type,
                         Expected::Known(else_type),
                         syntax_tree.span(),
+                        true,
                         handler,
                     );
                 }
@@ -4637,9 +5135,10 @@ impl<
         let condition =
             self.bind_value_or_error(&**syntax_tree.condition(), handler)?;
         let _ = self.type_check(
-            self.type_of_value(&condition)?,
+            &self.type_of_value(&condition)?,
             Expected::Known(Type::Primitive(r#type::Primitive::Bool)),
             syntax_tree.condition().span(),
+            true,
             handler,
         );
 

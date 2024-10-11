@@ -68,6 +68,7 @@ impl resolution::ElidedTermProvider<Lifetime<Default>>
 
 impl Table<Building<RwLockContainer, Finalizer>> {
     /// Builds the function parameters and return type
+    #[allow(clippy::too_many_lines)]
     pub fn build_function_signature<F: Callable + Element>(
         &self,
         function_id: ID<F>,
@@ -112,7 +113,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         elided_type_provider: None,
                         elided_constant_provider: None,
                         observer: Some(
-                            &mut (&mut builder::Resolution::basic())
+                            &mut builder::Resolution::basic()
                                 .chain(signature_occurrences),
                         ),
                         higher_ranked_lifetimes: None,
@@ -161,7 +162,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             elided_type_provider: None,
                             elided_constant_provider: None,
                             observer: Some(
-                                &mut (&mut builder::Resolution::basic())
+                                &mut builder::Resolution::basic()
                                     .chain(signature_occurrences),
                             ),
                             higher_ranked_lifetimes: None,

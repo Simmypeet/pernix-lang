@@ -2,6 +2,7 @@ use parking_lot::RwLockReadGuard;
 use pernixc_base::handler::Handler;
 use pernixc_syntax::syntax_tree;
 
+use super::{negative_trait_implementation, positive_trait_implementation};
 use crate::{
     arena::ID,
     error::{
@@ -44,10 +45,7 @@ impl Finalize for Trait {
         symbol_id: ID<Self>,
         state_flag: usize,
         syntax_tree: &Self::SyntaxTree,
-        (
-            generic_parameter_occurrences,
-            where_clause_occurrences,
-        ): &mut Self::Data,
+        (generic_parameter_occurrences, where_clause_occurrences): &mut Self::Data,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match state_flag {
@@ -72,12 +70,12 @@ impl Finalize for Trait {
             CHECK_STATE => {
                 table.check_occurrences(
                     symbol_id.into(),
-                    &generic_parameter_occurrences,
+                    generic_parameter_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &where_clause_occurrences,
+                    where_clause_occurrences,
                     handler,
                 );
 
@@ -85,13 +83,33 @@ impl Finalize for Trait {
 
                 // check for the ambiguous implementations
                 let implementation_ids = {
-                    let table_sym = table.get(symbol_id).unwrap();
+                    let mut implementation_ids = Vec::new();
+                    let trait_sym = table.get(symbol_id).unwrap();
 
-                    table_sym
-                        .implementations
-                        .iter()
-                        .copied()
-                        .collect::<Vec<_>>()
+                    for id in trait_sym.implementations.iter().copied() {
+                        match id {
+                            TraitImplementationID::Positive(id) => {
+                                let _ = table.build_to(
+                                    id,
+                                    Some(symbol_id.into()),
+                                    positive_trait_implementation::ARGUMENT_STATE,
+                                    handler,
+                                );
+                            }
+                            TraitImplementationID::Negative(id) => {
+                                let _ = table.build_to(
+                                    id,
+                                    Some(symbol_id.into()),
+                                    negative_trait_implementation::ARGUMENT_STATE,
+                                    handler,
+                                );
+                            }
+                        }
+
+                        implementation_ids.push(id);
+                    }
+
+                    implementation_ids
                 };
 
                 let trait_sym = table.get(symbol_id).unwrap();
@@ -108,21 +126,23 @@ impl Finalize for Trait {
 
                 for (i, lhs) in implementation_ids.iter().copied().enumerate() {
                     let (lhs_arguments, lhs_is_final) = match lhs {
-                        TraitImplementationID::Positive(id) => {
-                            let is_final = table.get(id).unwrap().is_final;
+                        TraitImplementationID::Positive(positive_id) => {
+                            let is_final =
+                                table.get(positive_id).unwrap().is_final;
                             (
                                 RwLockReadGuard::map(
-                                    table.get(id).unwrap(),
+                                    table.get(positive_id).unwrap(),
                                     |x| &x.arguments,
                                 ),
                                 is_final,
                             )
                         }
-                        TraitImplementationID::Negative(id) => {
-                            let is_final = table.get(id).unwrap().is_final;
+                        TraitImplementationID::Negative(negative_id) => {
+                            let is_final =
+                                table.get(negative_id).unwrap().is_final;
                             (
                                 RwLockReadGuard::map(
-                                    table.get(id).unwrap(),
+                                    table.get(negative_id).unwrap(),
                                     |x| &x.arguments,
                                 ),
                                 is_final,
@@ -224,7 +244,7 @@ impl Finalize for Trait {
                                     final_implementation_id: lhs,
                                     overriden_implementation_id: rhs,
                                 },
-                            ))
+                            ));
                         }
 
                         if rhs_is_final && result == order::Order::MoreSpecific
@@ -234,7 +254,7 @@ impl Finalize for Trait {
                                     final_implementation_id: rhs,
                                     overriden_implementation_id: lhs,
                                 },
-                            ))
+                            ));
                         }
                     }
                 }

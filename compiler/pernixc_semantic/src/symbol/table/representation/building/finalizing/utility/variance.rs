@@ -232,7 +232,6 @@ where
     let mut collector = TermCollector {
         target: target_term,
         locations: Vec::new(),
-
         environment,
     };
 

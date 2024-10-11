@@ -102,6 +102,7 @@ impl SourceElement for Reference {
 
 impl Reference {
     /// Destructs the `Reference` into its components.
+    #[must_use]
     pub fn destruct(
         self,
     ) -> (Punctuation, Option<Lifetime>, Option<Keyword>, Box<Type>) {

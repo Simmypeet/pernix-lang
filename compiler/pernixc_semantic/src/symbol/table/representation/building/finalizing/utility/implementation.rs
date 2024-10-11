@@ -1,6 +1,6 @@
 //! Contains code related to building the implementation symbols.
 
-use pernixc_base::{handler::Handler, source_file::Span};
+use pernixc_base::handler::Handler;
 use pernixc_syntax::syntax_tree;
 
 use super::{builder, occurrences::Occurrences};
@@ -34,8 +34,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         implementation_id: GenericID,
         implemented_id: ID<T>,
         implemented_id_generic_parameter_state: usize,
-        generic_arguments: Option<&syntax_tree::GenericArguments>,
-        resolution_span: &Span,
+        generic_identifier: &syntax_tree::GenericIdentifier,
         occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> term::GenericArguments<model::Default>
@@ -51,25 +50,22 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         );
 
         let generic_arguments = self
-            .resolve_generic_arguments(
-                generic_arguments,
-                resolution_span,
-                implementation_id.into(),
+            .resolve_generic_arguments_for(
                 implemented_id.into(),
+                generic_identifier,
+                implementation_id.into(),
                 resolution::Config {
                     elided_lifetime_provider: None,
                     elided_type_provider: None,
                     elided_constant_provider: None,
                     observer: Some(
-                        &mut (&mut builder::Resolution::basic())
-                            .chain(occurrences),
+                        &mut builder::Resolution::basic().chain(occurrences),
                     ),
                     higher_ranked_lifetimes: None,
                 },
                 handler,
             )
-            .expect("the referring site should be valid")
-            .expect("should have generic arguments");
+            .expect("the referring site should be valid");
 
         generic_arguments
     }

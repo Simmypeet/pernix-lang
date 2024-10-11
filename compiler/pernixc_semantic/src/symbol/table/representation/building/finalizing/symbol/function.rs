@@ -1,5 +1,5 @@
 use pernixc_base::handler::Handler;
-use pernixc_syntax::syntax_tree::ConnectedList;
+use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
 use crate::{
     arena::ID,
@@ -91,30 +91,31 @@ impl Finalize for Function {
                     syntax_tree.signature(),
                     signature_occurrences,
                     handler,
-                )
+                );
             }
 
             INTERMEDIATE_REPRESENTATION_AND_CHECK_STATE => {
                 // check all the occurrences
                 table.check_occurrences(
                     symbol_id.into(),
-                    &generic_parameter_occurrences,
+                    generic_parameter_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &where_clause_occurrences,
+                    where_clause_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &signature_occurrences,
+                    signature_occurrences,
                     handler,
                 );
                 table.check_where_clause(symbol_id.into(), handler);
 
                 // build the complete definition of the function
                 if let FunctionKind::Normal(syntax_tree) = syntax_tree {
+                    #[allow(clippy::needless_collect)]
                     let irrefutable_patterns = syntax_tree
                         .signature()
                         .parameters()
@@ -122,7 +123,7 @@ impl Finalize for Function {
                         .as_ref()
                         .into_iter()
                         .flat_map(ConnectedList::elements)
-                        .map(|x| x.irrefutable_pattern())
+                        .map(syntax_tree::item::Parameter::irrefutable_pattern)
                         .collect::<Vec<_>>();
 
                     let mut binder = Binder::new_function(

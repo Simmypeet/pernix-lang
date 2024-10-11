@@ -131,8 +131,7 @@ pub struct Representation {
 }
 
 impl Representation {
-    fn should_report_cyclic_error(
-        &self,
+    const fn should_report_cyclic_error(
         required_from: GlobalID,
         target_state_flag: Flag,
         dependency_stack: &[(GlobalID, Flag)],
@@ -595,7 +594,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     ///
     /// - `id`: The ID of the symbol to build.
     /// - `required_from`: The ID of the symbol that requires the symbol to be
-    ///  built to the specified state. This is used to detect cyclic dependency.
+    ///   built to the specified state. This is used to detect cyclic
+    ///   dependency.
     /// - `to_flag`: The state to build the symbol to.
     /// - `handler`: The handler to report the error to.
     ///
@@ -642,7 +642,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 if builder_write
                     .reported_cyclic_dependencies
                     .insert(std::iter::once(id.into()).collect())
-                    && builder_write.should_report_cyclic_error(
+                    && Representation::should_report_cyclic_error(
                         required_from,
                         to_flag,
                         &[(id.into(), to_flag)],
@@ -696,7 +696,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         .contains(&dependency_stack_set);
 
                     if !is_reported
-                        && builder_write.should_report_cyclic_error(
+                        && Representation::should_report_cyclic_error(
                             required_from,
                             to_flag,
                             &dependency_stack,

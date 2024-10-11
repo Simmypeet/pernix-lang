@@ -57,8 +57,8 @@ impl<M: Model> unification::Predicate<Lifetime<M>>
         &self,
         _: &Lifetime<M>,
         _: &Lifetime<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
+        _: &[Log<M>],
+        _: &[Log<M>],
     ) -> Result<Output<Satisfied, M>, OverflowError> {
         Ok(Some(Succeeded::satisfied()))
     }
@@ -69,8 +69,8 @@ impl<M: Model> unification::Predicate<Type<M>> for LifetimeUnifyingPredicate {
         &self,
         _: &Type<M>,
         _: &Type<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
+        _: &[Log<M>],
+        _: &[Log<M>],
     ) -> Result<Output<Satisfied, M>, OverflowError> {
         Ok(None)
     }
@@ -83,8 +83,8 @@ impl<M: Model> unification::Predicate<Constant<M>>
         &self,
         _: &Constant<M>,
         _: &Constant<M>,
-        _: &Vec<Log<M>>,
-        _: &Vec<Log<M>>,
+        _: &[Log<M>],
+        _: &[Log<M>],
     ) -> Result<Output<Satisfied, M>, OverflowError> {
         Ok(None)
     }

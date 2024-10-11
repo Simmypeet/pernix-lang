@@ -1,4 +1,4 @@
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_base::handler::Handler;
 use pernixc_syntax::syntax_tree;
 
 use super::r#trait;
@@ -82,11 +82,20 @@ impl Finalize for PositiveTraitImplementation {
                     symbol_id.into(),
                     parent_trait_id,
                     r#trait::GENERIC_PARAMETER_STATE,
-                    syntax_tree.generic_arguments().as_ref(),
-                    &syntax_tree.simple_path().rest().last().map_or_else(
-                        || syntax_tree.simple_path().root().span(),
-                        |(_, ident)| ident.span.clone(),
-                    ),
+                    syntax_tree
+                        .qualified_identifier()
+                        .rest()
+                        .last()
+                        .map_or_else(
+                            || {
+                                syntax_tree
+                                    .qualified_identifier()
+                                    .root()
+                                    .as_generic_identifier()
+                                    .unwrap()
+                            },
+                            |x| &x.1,
+                        ),
                     argument_occurrences,
                     handler,
                 );
@@ -105,17 +114,17 @@ impl Finalize for PositiveTraitImplementation {
 
                 table.check_occurrences(
                     symbol_id.into(),
-                    &generic_parameter_occurrences,
+                    generic_parameter_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &where_clause_occurrences,
+                    where_clause_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &argument_occurrences,
+                    argument_occurrences,
                     handler,
                 );
                 table.check_where_clause(symbol_id.into(), handler);

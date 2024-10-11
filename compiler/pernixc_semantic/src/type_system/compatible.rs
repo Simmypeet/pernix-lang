@@ -154,8 +154,8 @@ impl<M: Model> unification::Predicate<Lifetime<M>>
         &self,
         _: &Lifetime<M>,
         _: &Lifetime<M>,
-        from_logs: &Vec<unification::Log<M>>,
-        _: &Vec<unification::Log<M>>,
+        from_logs: &[unification::Log<M>],
+        _: &[unification::Log<M>],
     ) -> Result<Output<Satisfied, M>, OverflowError> {
         let mut current_from = self.from.clone();
 
@@ -202,8 +202,8 @@ impl<M: Model> unification::Predicate<Type<M>>
         &self,
         _: &Type<M>,
         _: &Type<M>,
-        _: &Vec<unification::Log<M>>,
-        _: &Vec<unification::Log<M>>,
+        _: &[unification::Log<M>],
+        _: &[unification::Log<M>],
     ) -> Result<Output<Satisfied, M>, OverflowError> {
         Ok(None)
     }
@@ -216,8 +216,8 @@ impl<M: Model> unification::Predicate<Constant<M>>
         &self,
         _: &Constant<M>,
         _: &Constant<M>,
-        _: &Vec<unification::Log<M>>,
-        _: &Vec<unification::Log<M>>,
+        _: &[unification::Log<M>],
+        _: &[unification::Log<M>],
     ) -> Result<Output<Satisfied, M>, OverflowError> {
         Ok(None)
     }
@@ -257,7 +257,7 @@ fn append_matchings_from_unification<M: Model, T: State>(
                             matching
                                 .entry(target_lt)
                                 .or_default()
-                                .push((self_lt, variance))
+                                .push((self_lt, variance));
                         }
                     }
 
@@ -270,15 +270,14 @@ fn append_matchings_from_unification<M: Model, T: State>(
 
             // look for matched types
             for (location, unification) in substructural.types {
-                let current_variance = match environment.get_variance_of(
+                let Ok(current_variance) = environment.get_variance_of(
                     &current_from,
                     parent_variance,
                     std::iter::once(TermLocation::Type(
                         SubTypeLocation::FromType(location),
                     )),
-                ) {
-                    Ok(current_variance) => current_variance,
-                    Err(_) => return false,
+                ) else {
+                    return false;
                 };
 
                 let new_from = location.get_sub_term(&current_from).unwrap();
@@ -312,6 +311,10 @@ pub trait Compatible: ModelOf {
     /// - `variance`: The variance to used for determining the constraint of the
     ///   lifetimes. For the most cases, the default should be
     ///   [`Variance::Covariant`]
+    ///
+    /// # Errors
+    ///
+    /// See [`OverflowError`] for more information.
     fn compatible_with_context<S: State>(
         &self,
         target: &Self,
@@ -328,6 +331,10 @@ pub trait Compatible: ModelOf {
 
     /// A delegate method for [`Compatible::compatible_with_context()`] with the
     /// default context.
+    ///
+    /// # Errors
+    ///
+    /// See [`OverflowError`] for more information.
     fn compatible<S: State>(
         &self,
         target: &Self,
@@ -368,7 +375,7 @@ impl<M: Model> Compatible for Lifetime<M> {
         }
 
         match (self, target) {
-            (self_lifetime, Lifetime::Forall(forall_target)) => {
+            (self_lifetime, Self::Forall(forall_target)) => {
                 let mut compatibility = Compatibility::default();
 
                 assert!(compatibility
@@ -381,7 +388,7 @@ impl<M: Model> Compatible for Lifetime<M> {
             }
 
             // target is not forall
-            (Lifetime::Forall(self_forall), target) => {
+            (Self::Forall(self_forall), target) => {
                 let error = ForallLifetimeError::NotGeneralEnoughLifetime(
                     NotGeneralEnoughLifetimeError {
                         forall_lifetime: self_forall.clone(),
@@ -433,13 +440,14 @@ impl<M: Model> Compatible for Lifetime<M> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn matching_to_compatiblity<M: Model>(
     matching: BTreeMap<Lifetime<M>, Vec<(Lifetime<M>, Variance)>>,
 ) -> Succeeded<Compatibility<M>, M> {
+    use ForallLifetimeError::ForallLifetimeMatchedMoreThanOnce as MoreThanOnceError;
+
     let mut compatibility = Compatibility::default();
     let mut constraints = BTreeSet::new();
-
-    use ForallLifetimeError::ForallLifetimeMatchedMoreThanOnce as MoreThanOnceError;
 
     for (target_lt, self_lts) in matching {
         for (self_lt, variance) in self_lts.iter().cloned() {
@@ -475,15 +483,13 @@ fn matching_to_compatiblity<M: Model>(
                                 // report to the error list
                                 if !error_reported {
                                     let error =
-                                        MoreThanOnceError(
-                                            ForallLifetimeMatchedMoreThanOnceError {
-                                                forall_lifetime: target_forall,
-                                                lifetimes:  self_lts
-                                                    .iter()
-                                                    .map(|(lifetime, _)| lifetime.clone())
-                                                    .collect()
-                                            },
-                                        );
+                                        MoreThanOnceError(ForallLifetimeMatchedMoreThanOnceError {
+                                            forall_lifetime: target_forall,
+                                            lifetimes: self_lts
+                                                .iter()
+                                                .map(|(lifetime, _)| lifetime.clone())
+                                                .collect(),
+                                        });
 
                                     compatibility
                                         .forall_lifetime_errors

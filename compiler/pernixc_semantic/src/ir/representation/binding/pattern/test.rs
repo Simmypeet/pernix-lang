@@ -1040,7 +1040,7 @@ fn more_packed_tuple() {
                     TupleElement {
                         term: Type::Parameter(MemberID {
                             parent: GenericID::Struct(ID::new(0)),
-                            id: ID::new(0),
+                            id: ID::new(0)
                         }),
                         is_unpacked: true
                     },

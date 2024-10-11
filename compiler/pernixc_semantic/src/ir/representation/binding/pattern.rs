@@ -85,9 +85,10 @@ impl<
                 address,
             },
             handler,
-        )
+        );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_reference_bound_named_pattern(
         &mut self,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
@@ -115,8 +116,7 @@ impl<
             pointee: Box::new(address_type),
         });
 
-        let alloca_id =
-            self.create_alloca(alloca_ty.clone(), Some(span.clone()));
+        let alloca_id = self.create_alloca(alloca_ty, Some(span.clone()));
 
         let _ = self.current_block_mut().insert_instruction(
             instruction::Instruction::Store(Store {
@@ -138,7 +138,7 @@ impl<
 
     fn reduce_reference<'a>(
         &mut self,
-        span: Span,
+        span: &Span,
         mut binding: Binding<'a>,
     ) -> Binding<'a> {
         loop {
@@ -172,14 +172,14 @@ impl<
         }
     }
 
-    fn convert_from_start_index_to_end_index(
-        &self,
+    const fn convert_from_start_index_to_end_index(
         start_index: usize,
         total_length: usize,
     ) -> usize {
         total_length - start_index - 1
     }
 
+    #[allow(clippy::too_many_lines)]
     fn insert_named_binding_point_tuple(
         &mut self,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
@@ -188,7 +188,7 @@ impl<
         handler: &dyn Handler<Box<dyn Error>>,
     ) {
         binding =
-            self.reduce_reference(tuple_pat.span.clone().unwrap(), binding);
+            self.reduce_reference(&tuple_pat.span.clone().unwrap(), binding);
 
         let Type::Tuple(tuple_ty) = binding.r#type else {
             panic!("unexpected type!");
@@ -214,7 +214,7 @@ impl<
                             .unwrap(),
                     ),
 
-                    count => panic!("unexpected unpacked count: {}", count),
+                    count => panic!("unexpected unpacked count: {count}"),
                 }
             };
 
@@ -239,7 +239,7 @@ impl<
             for (index, (tuple_ty, tuple_pat)) in tuple_ty.elements
                 [start_range.clone()]
             .iter()
-            .zip(&tuple_pat.elements[start_range.clone()])
+            .zip(&tuple_pat.elements[start_range])
             .enumerate()
             {
                 assert!(!tuple_ty.is_unpacked);
@@ -263,10 +263,7 @@ impl<
 
             // create a new alloca where all the elements will be stoered.
             let packed_type = Type::Tuple(term::Tuple {
-                elements: tuple_ty.elements[type_pack_range.clone()]
-                    .iter()
-                    .cloned()
-                    .collect(),
+                elements: tuple_ty.elements[type_pack_range.clone()].to_vec(),
             });
             let packed_alloca = self.create_alloca(
                 packed_type.clone(),
@@ -333,7 +330,7 @@ impl<
                             packed_alloca,
                         )),
                         tuple_address: binding.address.clone(),
-                        starting_offset: before_unpacked_range.clone().count(),
+                        starting_offset: before_unpacked_range.count(),
                         before_packed_element_count: unpacked_position_in_type,
                         after_packed_element_count: tuple_ty.elements.len()
                             - unpacked_position_in_type
@@ -352,7 +349,6 @@ impl<
                             tuple_address: Box::new(binding.address.clone()),
                             offset: address::Offset::FromEnd(
                                 Self::convert_from_start_index_to_end_index(
-                                    &self,
                                     index,
                                     tuple_ty.elements.len(),
                                 ),
@@ -393,7 +389,7 @@ impl<
                     );
                 }
             } else {
-                for (offset, index) in type_pack_range.clone().enumerate() {
+                for (offset, index) in type_pack_range.enumerate() {
                     let element_address =
                         Address::Tuple(crate::ir::address::Tuple {
                             tuple_address: Box::new(binding.address.clone()),
@@ -455,7 +451,6 @@ impl<
                     offset: if unpacked_position_in_type.is_some() {
                         address::Offset::FromEnd(
                             Self::convert_from_start_index_to_end_index(
-                                &self,
                                 ty_index,
                                 tuple_ty.elements.len(),
                             ),
@@ -516,7 +511,7 @@ impl<
         handler: &dyn Handler<Box<dyn Error>>,
     ) {
         binding =
-            self.reduce_reference(structural.span.clone().unwrap(), binding);
+            self.reduce_reference(&structural.span.clone().unwrap(), binding);
 
         // must be a struct type
         let Type::Symbol(Symbol {

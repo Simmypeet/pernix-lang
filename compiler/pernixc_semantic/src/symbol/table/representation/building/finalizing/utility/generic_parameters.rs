@@ -115,6 +115,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         }
 
         for lifetime_parameter_syn in lifetime_parameter_syns {
+            #[allow(clippy::significant_drop_in_scrutinee)]
             if let Err(existing) = T::get_arena(self)
                 .get(generic_id)
                 .unwrap()
@@ -148,6 +149,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         }
 
         for type_parameter_syn in type_parameter_syns {
+            #[allow(clippy::significant_drop_in_scrutinee)]
             if let Err(existing) = T::get_arena(self)
                 .get(generic_id)
                 .unwrap()
@@ -182,7 +184,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                             elided_type_provider: None,
                             elided_constant_provider: None,
                             observer: Some(
-                                &mut (&mut builder::Resolution::basic())
+                                &mut builder::Resolution::basic()
                                     .chain(occurrences),
                             ),
                             higher_ranked_lifetimes: None,
@@ -224,6 +226,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 }
             };
 
+            #[allow(clippy::significant_drop_in_scrutinee)]
             if let Err(existing) = T::get_arena(self)
                 .get(generic_id)
                 .unwrap()

@@ -31,6 +31,10 @@ impl<
     > Binder<'t, S, RO, TO>
 {
     /// Binds the given [`syntax_tree::statement::Statement`] to the IR.
+    ///
+    /// # Errors
+    ///
+    /// See [`InternalError`] for more information.
     pub fn bind_statement(
         &mut self,
         syntax_tree: &syntax_tree::statement::Statement,
@@ -86,6 +90,10 @@ impl<
 
     /// Binds the given [`syntax_tree::statement::VariableDeclaration`] to the
     /// IR.
+    ///
+    /// # Errors
+    ///
+    /// See [`InternalError`] for more information.
     pub fn bind_variable_declaration(
         &mut self,
         syntax_tree: &syntax_tree::statement::VariableDeclaration,
@@ -109,9 +117,10 @@ impl<
                     });
 
                 let _ = self.type_check(
-                    initialize_type,
+                    &initialize_type,
                     r#type::Expected::Known(type_annotation.clone()),
                     syntax_tree.expression().span(),
+                    true,
                     handler,
                 );
 
@@ -143,7 +152,7 @@ impl<
                 span: Some(syntax_tree.irrefutable_pattern().span()),
             }),
             Err(err) => {
-                panic!("unexpected error: {:#?}", err);
+                panic!("unexpected error: {err:#?}");
             }
         };
 

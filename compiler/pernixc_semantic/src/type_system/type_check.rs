@@ -39,7 +39,7 @@ pub struct TypeCheck<M: Model> {
 impl<M: Model> TypeCheck<M> {
     /// Creates a new type check query.
     #[must_use]
-    pub fn new(constant: Constant<M>, r#type: Type<M>) -> Self {
+    pub const fn new(constant: Constant<M>, r#type: Type<M>) -> Self {
         Self { constant, r#type }
     }
 }
@@ -160,15 +160,14 @@ where
 
     let head_range = 0..unpacked_position;
     let type_trail_range = (unpacked_position + 1)..this.elements.len();
-    let value_trail_range = (another.elements.len()
-        - type_trail_range.clone().len())
+    let value_trail_range = (another.elements.len() - type_trail_range.len())
         ..another.elements.len();
     let value_unpack_range = unpacked_position..value_trail_range.start;
 
     // check the head
     for (this, another) in this.elements[head_range.clone()]
         .iter()
-        .zip(&another.elements[head_range.clone()])
+        .zip(&another.elements[head_range])
     {
         // no unpacked
         if another.is_unpacked {
@@ -185,9 +184,9 @@ where
     }
 
     // check the trail
-    for (this, another) in this.elements[type_trail_range.clone()]
+    for (this, another) in this.elements[type_trail_range]
         .iter()
-        .zip(&another.elements[value_trail_range.clone()])
+        .zip(&another.elements[value_trail_range])
     {
         // no unpacked
         if another.is_unpacked {
@@ -204,13 +203,9 @@ where
     }
 
     // check the unpacked
-    let packed_another = Tuple {
-        elements: another.elements[value_unpack_range.clone()]
-            .iter()
-            .map(|value| value.clone())
-            .collect::<Vec<_>>(),
-    }
-    .into();
+    let packed_another =
+        Tuple { elements: another.elements[value_unpack_range].to_vec() }
+            .into();
 
     // check the unpacked
     let Some(result) = this
@@ -248,7 +243,7 @@ impl<M: Model> Compute for TypeCheck<M> {
     type Error = Error<M>;
     type Parameter = ();
 
-    #[allow(private_bounds, private_interfaces)]
+    #[allow(private_bounds, private_interfaces, clippy::too_many_lines)]
     fn implementation<S: State>(
         &self,
         environment: &Environment<
@@ -344,7 +339,7 @@ impl<M: Model> Compute for TypeCheck<M> {
                         );
 
                         let Some(result) =
-                            TypeCheck::new(field_value.clone(), field_type)
+                            Self::new(field_value.clone(), field_type)
                                 .query_with_context(environment, context)?
                         else {
                             return Ok(None);
@@ -397,7 +392,7 @@ impl<M: Model> Compute for TypeCheck<M> {
                                 &instantiation,
                             );
 
-                            TypeCheck::new((**value).clone(), associated_ty)
+                            Self::new((**value).clone(), associated_ty)
                                 .query_with_context(environment, context)
                         }
 
@@ -428,7 +423,7 @@ impl<M: Model> Compute for TypeCheck<M> {
 
                     // check the type of each element
                     for value in &array_value.elements {
-                        let Some(result) = TypeCheck::new(
+                        let Some(result) = Self::new(
                             value.clone(),
                             (*array_ty.r#type).clone(),
                         )
@@ -471,11 +466,8 @@ impl<M: Model> Compute for TypeCheck<M> {
 
                 // the local type and local constant
                 (Type::Local(local_type), Constant::Local(local_const)) => {
-                    TypeCheck::new(
-                        (*local_const.0).clone(),
-                        (*local_type.0).clone(),
-                    )
-                    .query_with_context(environment, context)
+                    Self::new((*local_const.0).clone(), (*local_type.0).clone())
+                        .query_with_context(environment, context)
                 }
 
                 (Type::Tuple(tuple_type), Constant::Tuple(tuple_const)) => {
@@ -496,7 +488,7 @@ impl<M: Model> Compute for TypeCheck<M> {
                                     break;
                                 }
 
-                                let Some(result) = TypeCheck::new(
+                                let Some(result) = Self::new(
                                     value.term.clone(),
                                     ty.term.clone(),
                                 )
@@ -559,7 +551,7 @@ impl<M: Model> Compute for TypeCheck<M> {
             get_equivalences_with_context(&self.constant, environment, context)?
         {
             if let Some(mut result) =
-                TypeCheck::new(constant_eq, self.r#type.clone())
+                Self::new(constant_eq, self.r#type.clone())
                     .query_with_context(environment, context)?
             {
                 result.constraints.extend(constraints);
@@ -571,9 +563,8 @@ impl<M: Model> Compute for TypeCheck<M> {
         for Succeeded { result: type_eq, constraints } in
             get_equivalences_with_context(&self.r#type, environment, context)?
         {
-            if let Some(mut result) =
-                TypeCheck::new(self.constant.clone(), type_eq)
-                    .query_with_context(environment, context)?
+            if let Some(mut result) = Self::new(self.constant.clone(), type_eq)
+                .query_with_context(environment, context)?
             {
                 result.constraints.extend(constraints);
 

@@ -42,6 +42,7 @@ impl Finalize for TraitImplementationFunction {
     const FINAL_STATE: usize = INTERMEDIATE_REPRESENTATION_AND_CEHCK_STATE;
     type Data = (Occurrences, Occurrences, Occurrences);
 
+    #[allow(clippy::too_many_lines)]
     fn finalize(
         table: &Table<Building<RwLockContainer, Finalizer>>,
         symbol_id: ID<Self>,
@@ -110,17 +111,17 @@ impl Finalize for TraitImplementationFunction {
 
                 table.check_occurrences(
                     symbol_id.into(),
-                    &generic_parameters_occurrences,
+                    generic_parameters_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &where_clause_occurrences,
+                    where_clause_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &signature_occurrences,
+                    signature_occurrences,
                     handler,
                 );
                 table.check_where_clause(symbol_id.into(), handler);
@@ -176,9 +177,11 @@ impl Finalize for TraitImplementationFunction {
                     handler,
                 );
 
+                drop(trait_sym);
                 drop(trait_implementation_function_sym);
                 drop(trait_implementation_sym);
 
+                #[allow(clippy::needless_collect)]
                 let irrefutable_patterns = syntax_tree
                     .signature()
                     .parameters()
@@ -186,7 +189,7 @@ impl Finalize for TraitImplementationFunction {
                     .as_ref()
                     .into_iter()
                     .flat_map(ConnectedList::elements)
-                    .map(|x| x.irrefutable_pattern())
+                    .map(syntax_tree::item::Parameter::irrefutable_pattern)
                     .collect::<Vec<_>>();
 
                 let mut binder = Binder::new_function(

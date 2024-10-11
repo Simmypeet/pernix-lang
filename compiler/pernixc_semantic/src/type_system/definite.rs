@@ -72,7 +72,7 @@ pub struct Definite<T>(pub T);
 impl<T> Definite<T> {
     /// Creates a new `Definite` query.
     #[must_use]
-    pub fn new(term: T) -> Self { Self(term) }
+    pub const fn new(term: T) -> Self { Self(term) }
 }
 
 impl<T: Term> Compute for Definite<T> {
@@ -119,7 +119,7 @@ impl<T: Term> Compute for Definite<T> {
             get_equivalences_with_context(&self.0, environment, context)?
         {
             if let Some(mut result) =
-                Definite(eq).query_with_context(environment, context)?
+                Self(eq).query_with_context(environment, context)?
             {
                 result.constraints.extend(constraints);
 

@@ -15,8 +15,8 @@ use crate::syntax_tree::{
     r#type,
     statement::strategy::Statement,
     strategy::{
-        AccessModifier, ConnectedList, ConstantPunctuation, GenericArguments,
-        Identifier, LifetimeParameter, SimplePath,
+        AccessModifier, ConnectedList, ConstantPunctuation, Identifier,
+        LifetimeParameter, QualifiedIdentifier, SimplePath,
     },
 };
 
@@ -1918,8 +1918,7 @@ pub struct ImplementationSignature {
     pub is_final: bool,
     pub generic_parameters: Option<GenericParameters>,
     pub is_const: bool,
-    pub simple_path: SimplePath,
-    pub generic_arguments: Option<GenericArguments>,
+    pub qualified_identifier: QualifiedIdentifier,
     pub where_clause: Option<WhereClause>,
 }
 
@@ -1929,10 +1928,7 @@ impl Input<&super::ImplementationSignature> for &ImplementationSignature {
         self.generic_parameters
             .as_ref()
             .assert(output.generic_parameters().as_ref())?;
-        self.simple_path.assert(output.simple_path())?;
-        self.generic_arguments
-            .as_ref()
-            .assert(output.generic_arguments().as_ref())?;
+        self.qualified_identifier.assert(output.qualified_identifier())?;
         prop_assert_eq!(self.is_const, output.const_keyword.is_some());
         self.where_clause.as_ref().assert(output.where_clause().as_ref())
     }
@@ -1946,8 +1942,7 @@ impl Arbitrary for ImplementationSignature {
         (
             proptest::bool::ANY,
             proptest::option::of(GenericParameters::arbitrary()),
-            SimplePath::arbitrary(),
-            proptest::option::of(GenericArguments::arbitrary()),
+            QualifiedIdentifier::arbitrary(),
             proptest::bool::ANY,
             proptest::option::of(WhereClause::arbitrary()),
         )
@@ -1955,19 +1950,15 @@ impl Arbitrary for ImplementationSignature {
                 |(
                     is_final,
                     generic_parameters,
-                    simple_path,
-                    generic_arguments,
+                    qualified_identifier,
                     is_const,
                     where_clause,
-                )| {
-                    Self {
-                        is_final,
-                        generic_parameters,
-                        is_const,
-                        simple_path,
-                        generic_arguments,
-                        where_clause,
-                    }
+                )| Self {
+                    is_final,
+                    generic_parameters,
+                    is_const,
+                    qualified_identifier,
+                    where_clause,
                 },
             )
             .boxed()
@@ -1990,11 +1981,7 @@ impl Display for ImplementationSignature {
             write!(f, " const")?;
         }
 
-        write!(f, " {}", self.simple_path)?;
-
-        if let Some(generic_arguments) = &self.generic_arguments {
-            Display::fmt(generic_arguments, f)?;
-        }
+        write!(f, " {}", self.qualified_identifier)?;
 
         if let Some(where_clause) = self.where_clause.as_ref() {
             write!(f, " {where_clause}")?;

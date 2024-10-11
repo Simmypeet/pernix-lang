@@ -109,7 +109,7 @@ fn simple_inferring_constraint() {
         r#type::Constraint::Floating,
     ));
     assert!(inference
-        .unify_type(&a, &b, active_premise.clone(), &table, observer::NO_OP)
+        .unify_type(&a, &b, &active_premise, &table, observer::NO_OP)
         .is_ok());
 
     inference
@@ -121,7 +121,7 @@ fn simple_inferring_constraint() {
         r#type::Constraint::Number,
     ));
     assert!(inference
-        .unify_type(&b, &c, active_premise.clone(), &table, observer::NO_OP)
+        .unify_type(&b, &c, &active_premise, &table, observer::NO_OP)
         .is_ok());
 
     inference
@@ -131,7 +131,7 @@ fn simple_inferring_constraint() {
         .unify_type(
             &c,
             &Type::Primitive(Primitive::Float64),
-            active_premise,
+            &active_premise,
             &table,
             observer::NO_OP
         )

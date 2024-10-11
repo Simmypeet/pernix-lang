@@ -147,7 +147,6 @@ impl<M: Model> Instantiation<M> {
     /// # Returns
     ///
     /// A list of collisions that occurred during the substitution.
-    #[must_use]
     pub fn append_from_generic_arguments(
         &mut self,
         generic_arguments: GenericArguments<M>,

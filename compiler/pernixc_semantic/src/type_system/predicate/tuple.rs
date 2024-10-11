@@ -89,7 +89,7 @@ impl<T: Term> Compute for Tuple<T> {
             get_equivalences_with_context(&self.0, environment, context)?
         {
             if let Some(mut result) =
-                Tuple(eq).query_with_context(environment, context)?
+                Self(eq).query_with_context(environment, context)?
             {
                 result.constraints.extend(constraints);
                 return Ok(Some(result));

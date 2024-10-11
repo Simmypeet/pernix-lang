@@ -268,8 +268,8 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
         leaf.prop_recursive(50, 100, 2, move |inner| {
-            let constant_strategy = Box::<dyn Property<Constant::<Default>>>::arbitrary();
-            let lifetime_strategy = Box::<dyn Property<Lifetime::<Default>>>::arbitrary();
+            let constant_strategy = Box::<dyn Property<Constant<Default>>>::arbitrary();
+            let lifetime_strategy = Box::<dyn Property<Lifetime<Default>>>::arbitrary();
 
             prop_oneof![
                 4 => Mapping::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),

@@ -97,7 +97,7 @@ impl Finalize for TraitImplementationType {
                             elided_type_provider: None,
                             elided_constant_provider: None,
                             observer: Some(
-                                &mut (&mut builder::Resolution::basic())
+                                &mut builder::Resolution::basic()
                                     .chain(definition_occurrences),
                             ),
                             higher_ranked_lifetimes: None,
@@ -162,17 +162,17 @@ impl Finalize for TraitImplementationType {
 
                 table.check_occurrences(
                     symbol_id.into(),
-                    &generic_parameters_occurrences,
+                    generic_parameters_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &where_clause_occurrences,
+                    where_clause_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &definition_occurrences,
+                    definition_occurrences,
                     handler,
                 );
                 table.check_where_clause(symbol_id.into(), handler);

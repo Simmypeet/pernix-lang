@@ -133,9 +133,8 @@ impl Arbitrary for Type<Default> {
         ];
 
         leaf.prop_recursive(8, 48, 6, move |inner| {
-            let lt_strat = param.0.clone().unwrap_or_else(|| {
-                Lifetime::arbitrary_with((Some(inner.clone()), param.1.clone()))
-            });
+            let lt_strat =
+                param.0.clone().unwrap_or_else(|| Lifetime::arbitrary_with((Some(inner.clone()), param.1.clone())));
             let const_strat = param.1.clone().unwrap_or_else(Constant::arbitrary);
 
             prop_oneof![

@@ -23,9 +23,10 @@ use super::finalizing::{self, Finalize, Finalizer};
 use crate::{
     arena::ID,
     error::{
-        self, GlobalRedifinition, InvalidSymbolInImplementation,
+        self, ExpectModule, GlobalRedifinition, InvalidSymbolInImplementation,
         MismatchedTraitMemberAndImplementationMember,
-        SymbolIsMoreAccessibleThanParent, UnexpectedAdtImplementationMember,
+        NoGenericArgumentsRequired, SymbolIsMoreAccessibleThanParent,
+        SymbolNotFound, ThisNotFound, UnexpectedAdtImplementationMember,
         UnimplementedTraitMembers, UnknownExternCallingConvention,
         UnknownTraitImplementationMember,
     },
@@ -70,7 +71,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
             .as_ref()
             .into_iter()
             .flat_map(ConnectedList::elements)
-            .map(|x| x.identifier())
+            .map(syntax_tree::item::Variant::identifier)
             .cloned()
             .collect::<Vec<_>>();
 
@@ -413,14 +414,10 @@ impl Table<Building<RwLockContainer, Drafter>> {
                         syn.dissolve();
 
                     // get the calling convention of this extern
-                    let calling_convention = match calling_convention
-                        .value
-                        .as_ref()
-                        .map(|x| x.as_str())
-                    {
-                        Some("C") => Extern::C,
-
-                        _ => {
+                    let calling_convention =
+                        if calling_convention.value.as_deref() == Some("C") {
+                            Extern::C
+                        } else {
                             handler.receive(Box::new(
                                 UnknownExternCallingConvention {
                                     span: calling_convention.span.clone(),
@@ -428,8 +425,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                             ));
 
                             Extern::Unknown
-                        }
-                    };
+                        };
 
                     for function in functions {
                         let accessibility = self
@@ -481,7 +477,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 trait_id,
                 declared_in,
                 GenericDeclaration::default(),
-                Some(implementation_signature.simple_path().span()),
+                Some(implementation_signature.qualified_identifier().span()),
                 GenericArguments::default(),
                 PositiveTraitImplementationDefinition {
                     is_const: implementation_signature
@@ -597,7 +593,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 | (
                     TraitMemberID::Constant(_),
                     TraitImplementationMemberID::Constant(_),
-                ) => { /*do nothing, correct implementation*/ }
+                ) => { /* do nothing, correct implementation */ }
 
                 _ => handler.receive(Box::new(
                     MismatchedTraitMemberAndImplementationMember {
@@ -663,7 +659,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
             ImplementationKind::Negative(_) => {
                 handler.receive(Box::new(error::NegativeImplementationOnAdt {
                     negative_implementation_span: signature
-                        .simple_path()
+                        .qualified_identifier()
                         .span(),
                     adt_id,
                 }));
@@ -679,7 +675,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 id,
                 declared_in,
                 GenericDeclaration::default(),
-                Some(signature.simple_path().span()),
+                Some(signature.qualified_identifier().span()),
                 GenericArguments::default(),
                 AdtImplementationDefinition::default(),
             ),
@@ -687,7 +683,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 id,
                 declared_in,
                 GenericDeclaration::default(),
-                Some(signature.simple_path().span()),
+                Some(signature.qualified_identifier().span()),
                 GenericArguments::default(),
                 AdtImplementationDefinition::default(),
             ),
@@ -784,7 +780,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                         trait_id,
                         declared_in,
                         GenericDeclaration::default(),
-                        Some(signature.simple_path().span()),
+                        Some(signature.qualified_identifier().span()),
                         GenericArguments::default(),
                         NegativeTraitImplementationDefinition {
                             is_final: signature.final_keyword().is_some(),
@@ -810,22 +806,130 @@ impl Table<Building<RwLockContainer, Drafter>> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(in crate::symbol::table::representation) fn draft_implementation(
         &mut self,
         implementation: syntax_tree::item::Implementation,
         defined_in_module_id: ID<Module>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        let Ok(id) = self.resolve_simple_path(
-            implementation.signature().simple_path(),
-            defined_in_module_id.into(),
-            false,
-            handler,
-        ) else {
-            return;
+        let mut current_id: GlobalID = match implementation
+            .signature()
+            .qualified_identifier()
+            .root()
+        {
+            syntax_tree::QualifiedIdentifierRoot::Target(_) => self
+                .get_root_module_id(defined_in_module_id.into())
+                .unwrap()
+                .into(),
+            syntax_tree::QualifiedIdentifierRoot::This(keyword) => {
+                handler
+                    .receive(Box::new(ThisNotFound { span: keyword.span() }));
+                return;
+            }
+            syntax_tree::QualifiedIdentifierRoot::GenericIdentifier(
+                generic_identifier,
+            ) => {
+                let Ok(id) = self.get_member_of(
+                    defined_in_module_id.into(),
+                    generic_identifier.identifier().span.str(),
+                ) else {
+                    handler.receive(Box::new(SymbolNotFound {
+                        searched_global_id: Some(defined_in_module_id.into()),
+                        resolution_span: generic_identifier
+                            .identifier()
+                            .span
+                            .clone(),
+                    }));
+                    return;
+                };
+
+                id
+            }
         };
 
-        match id {
+        if !implementation.signature().qualified_identifier().rest().is_empty()
+        {
+            if !current_id.is_module() {
+                handler.receive(Box::new(ExpectModule {
+                    module_path: implementation
+                        .signature()
+                        .qualified_identifier()
+                        .root()
+                        .span(),
+                    found_id: current_id,
+                }));
+                return;
+            }
+
+            if let Some(gen_args) = implementation
+                .signature()
+                .qualified_identifier()
+                .root()
+                .as_generic_identifier()
+                .and_then(|x| x.generic_arguments().as_ref())
+            {
+                handler.receive(Box::new(NoGenericArgumentsRequired {
+                    global_id: current_id,
+                    generic_argument_span: gen_args.span(),
+                }));
+            }
+        }
+
+        for (index, (_, generic_identifier)) in implementation
+            .signature()
+            .qualified_identifier()
+            .rest()
+            .iter()
+            .enumerate()
+        {
+            let Ok(next_id) = self.get_member_of(
+                current_id,
+                generic_identifier.identifier().span.str(),
+            ) else {
+                handler.receive(Box::new(SymbolNotFound {
+                    searched_global_id: Some(current_id),
+                    resolution_span: generic_identifier
+                        .identifier()
+                        .span
+                        .clone(),
+                }));
+                return;
+            };
+
+            if index
+                == implementation
+                    .signature()
+                    .qualified_identifier()
+                    .rest()
+                    .len()
+                    - 1
+            {
+                current_id = next_id;
+            } else {
+                if !next_id.is_module() {
+                    handler.receive(Box::new(ExpectModule {
+                        module_path: generic_identifier
+                            .identifier()
+                            .span
+                            .clone(),
+                        found_id: next_id,
+                    }));
+                    return;
+                }
+
+                if let Some(gen_args) =
+                    generic_identifier.generic_arguments().as_ref()
+                {
+                    handler.receive(Box::new(NoGenericArgumentsRequired {
+                        global_id: next_id,
+                        generic_argument_span: gen_args.span(),
+                    }));
+                }
+            }
+        }
+
+        match current_id {
             GlobalID::Trait(id) => self.draft_trait_implementation(
                 implementation,
                 defined_in_module_id,
@@ -852,7 +956,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                     invalid_global_id,
                     qualified_identifier_span: implementation
                         .signature()
-                        .simple_path()
+                        .qualified_identifier()
                         .span(),
                 }));
             }

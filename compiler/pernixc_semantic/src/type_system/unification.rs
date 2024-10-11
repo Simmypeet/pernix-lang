@@ -37,7 +37,7 @@ impl<T: ModelOf + PartialEq> PartialEq for Unification<T> {
     fn eq(&self, other: &Self) -> bool {
         self.from == other.from
             && self.to == other.to
-            && &*self.predicate == &*other.predicate
+            && *self.predicate == *other.predicate
     }
 }
 
@@ -113,11 +113,7 @@ impl<
     fn as_any(&self) -> &dyn std::any::Any { self }
 
     fn dyn_eq(&self, other: &dyn PredicateA<M>) -> bool {
-        if let Some(other) = other.as_any().downcast_ref::<T>() {
-            self == other
-        } else {
-            false
-        }
+        other.as_any().downcast_ref::<T>().map_or(false, |other| self == other)
     }
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) { self.hash(&mut state) }
@@ -152,7 +148,7 @@ impl<M: Model> Eq for dyn PredicateA<M> {}
 
 impl<M: Model> PartialOrd for dyn PredicateA<M> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.dyn_ord(other))
+        Some(std::cmp::Ord::cmp(self, other))
     }
 }
 
@@ -163,23 +159,31 @@ impl<M: Model> Ord for dyn PredicateA<M> {
 /// An object used for determining if two terms are unifiable.
 pub trait Predicate<T: Term> {
     /// Determines if the two given terms are unifiable.
+    ///
+    /// # Errors
+    ///
+    /// See [`OverflowError`] for more information.
     fn unifiable(
         &self,
         from: &T,
         to: &T,
-        from_logs: &Vec<Log<T::Model>>,
-        to_logs: &Vec<Log<T::Model>>,
+        from_logs: &[Log<T::Model>],
+        to_logs: &[Log<T::Model>],
     ) -> Result<Output<Satisfied, T::Model>, OverflowError>;
 }
 
 /// A trait implemented by terms that can be unified.
 pub trait Element: ModelOf {
     /// Accepts a configuration and returns `true` if the term is unifiable.
+    ///
+    /// # Errors
+    ///
+    /// See [`OverflowError`] for more information.
     fn unifiable(
         from: &Self,
         to: &Self,
-        from_logs: &Vec<Log<Self::Model>>,
-        to_logs: &Vec<Log<Self::Model>>,
+        from_logs: &[Log<Self::Model>],
+        to_logs: &[Log<Self::Model>],
         config: &dyn PredicateA<Self::Model>,
     ) -> Result<Output<Satisfied, Self::Model>, OverflowError>;
 
@@ -191,8 +195,8 @@ impl<M: Model> Element for Lifetime<M> {
     fn unifiable(
         from: &Self,
         to: &Self,
-        from_logs: &Vec<Log<M>>,
-        to_logs: &Vec<Log<M>>,
+        from_logs: &[Log<M>],
+        to_logs: &[Log<M>],
         config: &dyn PredicateA<M>,
     ) -> Result<Output<Satisfied, M>, OverflowError> {
         config.unifiable(from, to, from_logs, to_logs)
@@ -205,8 +209,8 @@ impl<M: Model> Element for Type<M> {
     fn unifiable(
         from: &Self,
         to: &Self,
-        from_logs: &Vec<Log<M>>,
-        to_logs: &Vec<Log<M>>,
+        from_logs: &[Log<M>],
+        to_logs: &[Log<M>],
         config: &dyn PredicateA<M>,
     ) -> Result<Output<Satisfied, M>, OverflowError> {
         config.unifiable(from, to, from_logs, to_logs)
@@ -219,8 +223,8 @@ impl<M: Model> Element for Constant<M> {
     fn unifiable(
         from: &Self,
         to: &Self,
-        from_logs: &Vec<Log<M>>,
-        to_logs: &Vec<Log<M>>,
+        from_logs: &[Log<M>],
+        to_logs: &[Log<M>],
         config: &dyn PredicateA<M>,
     ) -> Result<Output<Satisfied, M>, OverflowError> {
         config.unifiable(from, to, from_logs, to_logs)
@@ -323,9 +327,9 @@ impl<T: Term> Compute for Unification<T> {
         unify(
             &self.from,
             &self.to,
-            from_logs,
-            to_logs,
-            self.predicate.clone(),
+            &from_logs,
+            &to_logs,
+            &self.predicate,
             environment,
             context,
         )
@@ -335,9 +339,9 @@ impl<T: Term> Compute for Unification<T> {
 fn substructural_unify<T: Term, S: State>(
     from: &T,
     to: &T,
-    from_logs: Vec<Log<T::Model>>,
-    to_logs: Vec<Log<T::Model>>,
-    predicate: Arc<dyn PredicateA<T::Model>>,
+    from_logs: &[Log<T::Model>],
+    to_logs: &[Log<T::Model>],
+    predicate: &Arc<dyn PredicateA<T::Model>>,
     environment: &Environment<
         T::Model,
         S,
@@ -360,10 +364,10 @@ fn substructural_unify<T: Term, S: State>(
         rhs_location: to_location,
     } in substructural.lifetimes
     {
-        let mut from_logs = from_logs.clone();
+        let mut from_logs = from_logs.to_vec();
         from_logs.push(Log::Substructural(from_location.into()));
 
-        let mut to_logs = to_logs.clone();
+        let mut to_logs = to_logs.to_vec();
         to_logs.push(Log::Substructural(to_location.into()));
 
         let Some(new) =
@@ -389,10 +393,10 @@ fn substructural_unify<T: Term, S: State>(
         rhs_location: to_location,
     } in substructural.types
     {
-        let mut from_logs = from_logs.clone();
+        let mut from_logs = from_logs.to_vec();
         from_logs.push(Log::Substructural(from_location.into()));
 
-        let mut to_logs = to_logs.clone();
+        let mut to_logs = to_logs.to_vec();
         to_logs.push(Log::Substructural(to_location.into()));
 
         let Some(new) =
@@ -418,10 +422,10 @@ fn substructural_unify<T: Term, S: State>(
         rhs_location: to_location,
     } in substructural.constants
     {
-        let mut from_logs = from_logs.clone();
+        let mut from_logs = from_logs.to_vec();
         from_logs.push(Log::Substructural(from_location.into()));
 
-        let mut to_logs = to_logs.clone();
+        let mut to_logs = to_logs.to_vec();
         to_logs.push(Log::Substructural(to_location.into()));
 
         let Some(new) =
@@ -453,9 +457,9 @@ fn substructural_unify<T: Term, S: State>(
 pub(super) fn unify<T: Term, S: State>(
     from: &T,
     to: &T,
-    from_logs: Vec<Log<T::Model>>,
-    to_logs: Vec<Log<T::Model>>,
-    predicate: Arc<dyn PredicateA<T::Model>>,
+    from_logs: &[Log<T::Model>],
+    to_logs: &[Log<T::Model>],
+    predicate: &Arc<dyn PredicateA<T::Model>>,
     environment: &Environment<
         T::Model,
         S,
@@ -479,7 +483,7 @@ pub(super) fn unify<T: Term, S: State>(
 
     // check if the predicate can unify the two terms
     if let Some(constraint) =
-        T::unifiable(from, to, &from_logs, &to_logs, &*predicate)?
+        T::unifiable(from, to, &from_logs, &to_logs, &**predicate)?
     {
         return Ok(Some(Succeeded::with_constraints(
             Unifier {
@@ -494,9 +498,9 @@ pub(super) fn unify<T: Term, S: State>(
     if let Some(unification) = substructural_unify(
         from,
         to,
-        from_logs.clone(),
-        to_logs.clone(),
-        predicate.clone(),
+        from_logs,
+        to_logs,
+        predicate,
         environment,
         context,
     )? {
@@ -507,7 +511,7 @@ pub(super) fn unify<T: Term, S: State>(
     for Succeeded { result: eq_from, constraints } in
         get_equivalences_with_context(from, environment, context)?
     {
-        let mut from_logs = from_logs.clone();
+        let mut from_logs = from_logs.to_vec();
         from_logs.push(eq_from.clone().into_rewritten());
 
         if let Some(mut unification) =
@@ -515,7 +519,7 @@ pub(super) fn unify<T: Term, S: State>(
                 .query_with_context_full(
                     environment,
                     context,
-                    (from_logs, to_logs.clone()),
+                    (from_logs, to_logs.to_vec()),
                     (),
                 )?
         {
@@ -529,7 +533,7 @@ pub(super) fn unify<T: Term, S: State>(
     for Succeeded { result: eq_to, constraints } in
         get_equivalences_with_context(to, environment, context)?
     {
-        let mut to_logs = to_logs.clone();
+        let mut to_logs = to_logs.to_vec();
         to_logs.push(eq_to.clone().into_rewritten());
 
         if let Some(mut unification) =
@@ -537,7 +541,7 @@ pub(super) fn unify<T: Term, S: State>(
                 .query_with_context_full(
                     environment,
                     context,
-                    (from_logs.clone(), to_logs),
+                    (from_logs.to_vec(), to_logs),
                     (),
                 )?
         {

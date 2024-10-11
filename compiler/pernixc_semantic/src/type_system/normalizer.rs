@@ -13,6 +13,10 @@ use crate::symbol::table::State;
 pub trait Normalizer<M: Model, T: State>: Sized {
     /// Normalizes the type inference variable into the concrete type
     /// term.
+    ///
+    /// # Errors
+    ///
+    /// See [`OverflowError`] for more information.
     fn normalize_type(
         ty: &Type<M>,
         environment: &Environment<M, T, Self, impl Observer<M, T>>,
@@ -21,6 +25,10 @@ pub trait Normalizer<M: Model, T: State>: Sized {
 
     /// Normalizes the constant inference variable into the concrete constant
     /// term.
+    ///
+    /// # Errors
+    ///
+    /// See [`OverflowError`] for more information.
     fn normalize_constant(
         constant: &Constant<M>,
         environment: &Environment<M, T, Self, impl Observer<M, T>>,

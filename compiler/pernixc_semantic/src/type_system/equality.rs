@@ -18,7 +18,7 @@ pub struct Equality<T, U = T> {
 impl<T, U> Equality<T, U> {
     /// Creates a new equality query.
     #[must_use]
-    pub fn new(lhs: T, rhs: U) -> Self { Self { lhs, rhs } }
+    pub const fn new(lhs: T, rhs: U) -> Self { Self { lhs, rhs } }
 }
 
 impl<S: State, T: table::Display<S>, U: table::Display<S>> table::Display<S>
@@ -38,6 +38,7 @@ impl<S: State, T: table::Display<S>, U: table::Display<S>> table::Display<S>
     }
 }
 
+#[allow(clippy::mismatching_type_param_order)]
 impl<T: Term> Compute for Equality<T, T> {
     type Error = OverflowError;
     type Parameter = ();
@@ -82,7 +83,7 @@ impl<T: Term> Compute for Equality<T, T> {
                     environment,
                     context,
                 )? {
-                    if let Some(inner_result) = Equality::new(
+                    if let Some(inner_result) = Self::new(
                         equality_predicate.rhs.clone(),
                         self.rhs.clone(),
                     )
@@ -100,7 +101,7 @@ impl<T: Term> Compute for Equality<T, T> {
                     environment,
                     context,
                 )? {
-                    if let Some(inner_result) = Equality::new(
+                    if let Some(inner_result) = Self::new(
                         self.lhs.clone(),
                         equality_predicate.rhs.clone(),
                     )

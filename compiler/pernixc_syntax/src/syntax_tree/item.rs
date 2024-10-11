@@ -16,8 +16,8 @@ use pernixc_lexical::{
 
 use super::{
     expression::Expression, pattern, predicate::Predicate, r#type,
-    statement::Statement, AccessModifier, ConnectedList, GenericArguments,
-    LifetimeParameter, SimplePath,
+    statement::Statement, AccessModifier, ConnectedList, LifetimeParameter,
+    QualifiedIdentifier, SimplePath,
 };
 use crate::{
     error::{Error, SyntaxKind},
@@ -1251,7 +1251,12 @@ impl SourceElement for Field {
 /// Syntax Synopsis:
 /// ``` txt
 /// ImplementationSignature:
-///     'final'? 'implements' GenericParameters? const? QualifiedIdentifier WhereClause?
+///     'final'?
+///     'implements'
+///     GenericParameters?
+///     const?
+///     QualifiedIdentifier
+///     WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -1265,9 +1270,7 @@ pub struct ImplementationSignature {
     #[get = "pub"]
     const_keyword: Option<Keyword>,
     #[get = "pub"]
-    simple_path: SimplePath,
-    #[get = "pub"]
-    generic_arguments: Option<GenericArguments>,
+    qualified_identifier: QualifiedIdentifier,
     #[get = "pub"]
     where_clause: Option<WhereClause>,
 }
@@ -1275,6 +1278,7 @@ pub struct ImplementationSignature {
 impl ImplementationSignature {
     /// Dissolves the [`ImplementationSignature`] into a tuple of its fields.
     #[must_use]
+    #[allow(clippy::type_complexity)]
     pub fn dissolve(
         self,
     ) -> (
@@ -1282,8 +1286,7 @@ impl ImplementationSignature {
         Keyword,
         Option<GenericParameters>,
         Option<Keyword>,
-        SimplePath,
-        Option<GenericArguments>,
+        QualifiedIdentifier,
         Option<WhereClause>,
     ) {
         (
@@ -1291,8 +1294,7 @@ impl ImplementationSignature {
             self.implements_keyword,
             self.generic_parameters,
             self.const_keyword,
-            self.simple_path,
-            self.generic_arguments,
+            self.qualified_identifier,
             self.where_clause,
         )
     }
@@ -1302,17 +1304,12 @@ impl SourceElement for ImplementationSignature {
     fn span(&self) -> Span {
         let start = self.final_keyword.as_ref().map_or_else(
             || self.implements_keyword.span.clone(),
-            |final_keyword| final_keyword.span.clone(),
+            SourceElement::span,
         );
 
         let end = self.where_clause.as_ref().map_or_else(
-            || {
-                self.generic_arguments.as_ref().map_or_else(
-                    || self.simple_path.span(),
-                    |generic_arguments| generic_arguments.span(),
-                )
-            },
-            |where_clause| where_clause.span(),
+            || self.qualified_identifier.span(),
+            SourceElement::span,
         );
 
         start.join(&end).unwrap()
@@ -2276,16 +2273,7 @@ impl<'a> Parser<'a> {
             _ => None,
         };
 
-        let simple_path = self.parse_simple_path(handler)?;
-        let generic_arguments =
-            if let Reading::IntoDelimited(Delimiter::Bracket, _) =
-                self.stop_at_significant()
-            {
-                Some(self.parse_generic_arguments(handler)?)
-            } else {
-                None
-            };
-
+        let qualified_identifier = self.parse_qualified_identifier(handler)?;
         let where_clause = self.try_parse_where_clause(handler)?;
 
         let kind = match self.stop_at_significant() {
@@ -2313,8 +2301,7 @@ impl<'a> Parser<'a> {
                 implements_keyword,
                 generic_parameters,
                 const_keyword,
-                simple_path,
-                generic_arguments,
+                qualified_identifier,
                 where_clause,
             },
             kind,
@@ -2587,63 +2574,58 @@ impl<'a> Parser<'a> {
 
     fn parse_using(&mut self, handler: &dyn Handler<Error>) -> Option<Using> {
         let using_keyword = self.parse_keyword(KeywordKind::Using, handler)?;
-        let kind = match self.stop_at_significant() {
-            Reading::IntoDelimited(Delimiter::Brace, _) => {
-                let tree = self.parse_delimited_list(
-                    Delimiter::Brace,
-                    ',',
-                    |parser| {
+        let kind = if let Reading::IntoDelimited(Delimiter::Brace, _) =
+            self.stop_at_significant()
+        {
+            let tree = self.parse_delimited_list(
+                Delimiter::Brace,
+                ',',
+                |parser| {
+                    let identifier = parser.parse_identifier(handler)?;
+                    let alias = if let Reading::Unit(Token::Keyword(
+                        as_keyword @ Keyword { kind: KeywordKind::As, .. },
+                    )) = parser.stop_at_significant()
+                    {
+                        // eat as keyword
+                        parser.forward();
+
                         let identifier = parser.parse_identifier(handler)?;
-                        let alias = if let Reading::Unit(Token::Keyword(
-                            as_keyword @ Keyword {
-                                kind: KeywordKind::As, ..
-                            },
-                        )) = parser.stop_at_significant()
-                        {
-                            // eat as keyword
-                            parser.forward();
+                        Some(Alias { as_keyword, identifier })
+                    } else {
+                        None
+                    };
 
-                            let identifier =
-                                parser.parse_identifier(handler)?;
-                            Some(Alias { as_keyword, identifier })
-                        } else {
-                            None
-                        };
+                    Some(Import { identifier, alias })
+                },
+                handler,
+            )?;
 
-                        Some(Import { identifier, alias })
-                    },
-                    handler,
-                )?;
+            let from_keyword =
+                self.parse_keyword(KeywordKind::From, handler)?;
+            let simple_path = self.parse_simple_path(handler)?;
 
-                let from_keyword =
-                    self.parse_keyword(KeywordKind::From, handler)?;
-                let simple_path = self.parse_simple_path(handler)?;
+            UsingKind::From(UsingFrom {
+                left_brace: tree.open,
+                imports: tree.list,
+                right_brace: tree.close,
+                from: From { from_keyword, simple_path },
+            })
+        } else {
+            let simple_path = self.parse_simple_path(handler)?;
+            let alias = if let Reading::Unit(Token::Keyword(
+                as_keyword @ Keyword { kind: KeywordKind::As, .. },
+            )) = self.stop_at_significant()
+            {
+                // eat as keyword
+                self.forward();
 
-                UsingKind::From(UsingFrom {
-                    left_brace: tree.open,
-                    imports: tree.list,
-                    right_brace: tree.close,
-                    from: From { from_keyword, simple_path },
-                })
-            }
+                let identifier = self.parse_identifier(handler)?;
+                Some(Alias { as_keyword, identifier })
+            } else {
+                None
+            };
 
-            _ => {
-                let simple_path = self.parse_simple_path(handler)?;
-                let alias = if let Reading::Unit(Token::Keyword(
-                    as_keyword @ Keyword { kind: KeywordKind::As, .. },
-                )) = self.stop_at_significant()
-                {
-                    // eat as keyword
-                    self.forward();
-
-                    let identifier = self.parse_identifier(handler)?;
-                    Some(Alias { as_keyword, identifier })
-                } else {
-                    None
-                };
-
-                UsingKind::One(UsingOne { simple_path, alias })
-            }
+            UsingKind::One(UsingOne { simple_path, alias })
         };
         let semicolon = self.parse_punctuation(';', true, handler)?;
 
@@ -3010,7 +2992,6 @@ impl<'a> Parser<'a> {
                     // eat semicolon
                     parser.forward();
                 }
-
 
                 Some(functions)
             },

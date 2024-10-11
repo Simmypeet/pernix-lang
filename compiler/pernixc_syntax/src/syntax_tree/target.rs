@@ -262,115 +262,100 @@ impl Target {
         let module_contents_by_name =
             RwLock::new(HashMap::<String, ModuleTree>::new());
 
-        module_content
-            .items
-            .drain_filter(|x| x.is_module())
-            .par_bridge()
-            .for_each(|item| {
-                let submodule = item.into_module().unwrap();
+        module_content.items.drain_filter(|x| x.is_module()).par_bridge().for_each(|item| {
+            let submodule = item.into_module().unwrap();
 
-                // check for redefinitions
-                if let Some(existing) = module_contents_by_name
-                    .read()
-                    .get(submodule.signature().identifier().span.str())
-                {
-                    handler.receive(Error::ModuleRedefinition(ModuleRedefinition {
-                        existing_module_span: existing
-                            .signature()
-                            .as_ref()
-                            .unwrap()
+            // check for redefinitions
+            if let Some(existing) =
+                module_contents_by_name.read().get(submodule.signature().identifier().span.str())
+            {
+                handler.receive(Error::ModuleRedefinition(ModuleRedefinition {
+                    existing_module_span: existing
+                        .signature()
+                        .as_ref()
+                        .unwrap()
+                        .signature
+                        .identifier()
+                        .span
+                        .clone(),
+                    redefinition_submodule_span: submodule.signature().identifier().span.clone(),
+                }));
+                return;
+            }
+
+            let module_name = submodule.signature().identifier().span.str().to_owned();
+            let module_tree = if let ModuleKind::Inline(inline_module_content) = submodule.kind {
+                let signature_with_access_modifier = ModuleSignatureWithAccessModifier {
+                    access_modifier: submodule.access_modifier,
+                    signature: submodule.signature,
+                };
+                Self::parse_input(
+                    Input::Inline {
+                        module_content: inline_module_content.content,
+                        module_name: signature_with_access_modifier
                             .signature
                             .identifier()
                             .span
-                            .clone(),
-                        redefinition_submodule_span: submodule
-                            .signature()
-                            .identifier()
-                            .span
-                            .clone(),
-                    }));
-                    return;
-                }
-
-                let module_name = submodule.signature().identifier().span.str().to_owned();
-                let module_tree = if let ModuleKind::Inline(inline_module_content) = submodule.kind
-                {
-                    let signature_with_access_modifier = ModuleSignatureWithAccessModifier {
-                        access_modifier: submodule.access_modifier,
-                        signature: submodule.signature,
-                    };
-                    Self::parse_input(
-                        Input::Inline {
-                            module_content: inline_module_content.content,
-                            module_name: signature_with_access_modifier
-                                .signature
-                                .identifier()
-                                .span
-                                .str()
-                                .to_string(),
-                            signature: signature_with_access_modifier,
-                        },
-                        &submodule_current_directory,
-                        handler,
-                    )
-                } else {
-                    match &source_file {
-                        Some((true, source_file))
-                            if current_module_name
-                                == submodule.signature.identifier().span.str() =>
-                        {
-                            handler.receive(Error::RootSubmoduleConflict(RootSubmoduleConflict {
-                                root: source_file.clone(),
-                                submodule_span: submodule.signature.identifier().span.clone(),
-                            }));
-                            return;
-                        }
-                        _ => {
-                            let mut source_file_path = submodule_current_directory
-                                .join(submodule.signature.identifier().span.str());
-                            source_file_path.set_extension("pnx");
-
-                            // load the source file
-                            let source_file = match std::fs::File::open(&source_file_path)
-                                .map_err(Into::into)
-                                .and_then(|file| SourceFile::load(file, source_file_path.clone()))
-                            {
-                                Ok(source_file) => Arc::new(source_file),
-                                Err(source_error) => {
-                                    handler.receive(Error::SourceFileLoadFail(
-                                        SourceFileLoadFail {
-                                            source_error,
-                                            submodule,
-                                            path: source_file_path,
-                                        },
-                                    ));
-                                    return;
-                                }
-                            };
-
-                            let submodule_signature_with_access_modifier =
-                                ModuleSignatureWithAccessModifier {
-                                    access_modifier: submodule.access_modifier,
-                                    signature: submodule.signature,
-                                };
-                            let submodule_current_directory = &submodule_current_directory;
-
-                            Self::parse_input(
-                                Input::File {
-                                    source_file,
-                                    signature: Some(submodule_signature_with_access_modifier),
-                                },
-                                submodule_current_directory,
-                                handler,
-                            )
-                        }
+                            .str()
+                            .to_string(),
+                        signature: signature_with_access_modifier,
+                    },
+                    &submodule_current_directory,
+                    handler,
+                )
+            } else {
+                match &source_file {
+                    Some((true, source_file))
+                        if current_module_name == submodule.signature.identifier().span.str() =>
+                    {
+                        handler.receive(Error::RootSubmoduleConflict(RootSubmoduleConflict {
+                            root: source_file.clone(),
+                            submodule_span: submodule.signature.identifier().span.clone(),
+                        }));
+                        return;
                     }
-                };
+                    _ => {
+                        let mut source_file_path = submodule_current_directory
+                            .join(submodule.signature.identifier().span.str());
+                        source_file_path.set_extension("pnx");
 
-                module_contents_by_name
-                    .write()
-                    .insert(module_name, module_tree);
-            });
+                        // load the source file
+                        let source_file = match std::fs::File::open(&source_file_path)
+                            .map_err(Into::into)
+                            .and_then(|file| SourceFile::load(file, source_file_path.clone()))
+                        {
+                            Ok(source_file) => Arc::new(source_file),
+                            Err(source_error) => {
+                                handler.receive(Error::SourceFileLoadFail(SourceFileLoadFail {
+                                    source_error,
+                                    submodule,
+                                    path: source_file_path,
+                                }));
+                                return;
+                            }
+                        };
+
+                        let submodule_signature_with_access_modifier =
+                            ModuleSignatureWithAccessModifier {
+                                access_modifier: submodule.access_modifier,
+                                signature: submodule.signature,
+                            };
+                        let submodule_current_directory = &submodule_current_directory;
+
+                        Self::parse_input(
+                            Input::File {
+                                source_file,
+                                signature: Some(submodule_signature_with_access_modifier),
+                            },
+                            submodule_current_directory,
+                            handler,
+                        )
+                    }
+                }
+            };
+
+            module_contents_by_name.write().insert(module_name, module_tree);
+        });
 
         ModuleTree {
             signature,

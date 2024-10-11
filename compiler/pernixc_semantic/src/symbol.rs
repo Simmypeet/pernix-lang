@@ -1222,6 +1222,7 @@ pub struct AdtFunctionDefinition {
 
 /// Contains the data for the function declaration in the module level.
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
+#[allow(clippy::large_enum_variant)]
 pub enum FunctionDefinition {
     /// The function was defined regularly.
     Regular {

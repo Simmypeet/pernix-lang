@@ -21,8 +21,8 @@ use crate::{
             Suboptimal, Table,
         },
         Accessibility, AdtID, AdtImplementation, AdtImplementationFunction,
-        ConstantParameterID, Field, GenericID, GenericKind, GenericParameter,
-        GlobalID, LocalGenericParameterID, MemberID, Module,
+        CallableID, ConstantParameterID, Field, GenericID, GenericKind,
+        GenericParameter, GlobalID, LocalGenericParameterID, MemberID, Module,
         PositiveTraitImplementation, Struct, Trait, TraitImplementationID,
         TraitImplementationMemberID, TraitMemberID, Variant,
     },
@@ -440,6 +440,68 @@ impl Report<&Table<Suboptimal>> for ResolutionAmbiguity {
             span: self.resolution_span.clone(),
             message: format!(
                 "the resolution resulted into multiple candidates: {}",
+                candidates.join(", ")
+            ),
+            severity: Severity::Error,
+            help_message: Some(
+                "try using fully qualified name to solve the amguity"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        })
+    }
+}
+
+/// No method found for the given method call expression.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MethodNotFound {
+    /// The span where the method call was made.
+    pub method_call_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for MethodNotFound {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.method_call_span.clone(),
+            message: "no method found for the given method call expression"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The trait method call resolves into multiple candidates.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AmbiguousMethodCall {
+    /// The span where the method call was made.
+    pub method_call_span: Span,
+
+    /// The candidates that were found.
+    pub callable_candidates: Vec<CallableID>,
+}
+
+impl Report<&Table<Suboptimal>> for AmbiguousMethodCall {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let candidates = self
+            .callable_candidates
+            .iter()
+            .copied()
+            .map(|x| table.get_qualified_name(x.into()).ok_or(ReportError))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Diagnostic {
+            span: self.method_call_span.clone(),
+            message: format!(
+                "the method call resulted into multiple candidates: {}",
                 candidates.join(", ")
             ),
             severity: Severity::Error,
@@ -2566,9 +2628,9 @@ impl Report<&Table<Suboptimal>>
         Ok(Diagnostic {
             span: self.span.clone(),
             message: format!(
-                "the ADT implementation function `{}` cannot be used as a \
+                "the ADT implementation function \
+                 `{adt_implementation_function_symbol}` cannot be used as a \
                  method",
-                adt_implementation_function_symbol
             ),
             severity: Severity::Error,
             help_message: None,
@@ -3916,7 +3978,7 @@ impl<T: State> Display<T> for UnknownExternCallingConvention {
 
         write!(f, "\n{}", SourceCodeDisplay {
             span: &self.span,
-            help_display: Option::<i32>::None,
+            help_display: Option::<i32>::None
         })?;
 
         Ok(())

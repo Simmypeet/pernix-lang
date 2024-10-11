@@ -38,8 +38,8 @@ impl super::Predicate<Lifetime<Default>> for GenericParameterUnifyConfig {
         &self,
         from: &Lifetime<Default>,
         _: &Lifetime<Default>,
-        _: &Vec<Log<Default>>,
-        _: &Vec<Log<Default>>,
+        _: &[Log<Default>],
+        _: &[Log<Default>],
     ) -> Result<Output<Satisfied, Default>, OverflowError> {
         Ok(from.is_parameter().then_some(Succeeded::satisfied()))
     }
@@ -50,8 +50,8 @@ impl super::Predicate<Type<Default>> for GenericParameterUnifyConfig {
         &self,
         from: &Type<Default>,
         _: &Type<Default>,
-        _: &Vec<Log<Default>>,
-        _: &Vec<Log<Default>>,
+        _: &[Log<Default>],
+        _: &[Log<Default>],
     ) -> Result<Output<Satisfied, Default>, OverflowError> {
         Ok(from.is_parameter().then_some(Succeeded::satisfied()))
     }
@@ -62,8 +62,8 @@ impl super::Predicate<Constant<Default>> for GenericParameterUnifyConfig {
         &self,
         from: &Constant<Default>,
         _: &Constant<Default>,
-        _: &Vec<Log<Default>>,
-        _: &Vec<Log<Default>>,
+        _: &[Log<Default>],
+        _: &[Log<Default>],
     ) -> Result<Output<Satisfied, Default>, OverflowError> {
         Ok(from.is_parameter().then_some(Succeeded::satisfied()))
     }
@@ -155,7 +155,6 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
             .boxed();
 
         leaf.prop_recursive(6, 10, 60, move |inner| {
-
             prop_oneof![
                 6 => SymbolCongruence::arbitrary_with(
                     (

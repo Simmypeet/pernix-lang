@@ -40,7 +40,7 @@ use crate::{
             resolution::{self, ElidedTermProvider, Resolution},
             Table,
         },
-        FunctionTemplate, GenericTemplate, GlobalID,
+        FunctionTemplate, GenericID, GenericTemplate, GlobalID,
     },
     type_system::{
         self,
@@ -48,6 +48,7 @@ use crate::{
         model::Model,
         simplify::simplify,
         term::{
+            self,
             constant::Constant,
             lifetime::Lifetime,
             r#type::{self, Expected, Qualifier, Type},
@@ -255,7 +256,7 @@ impl<
                     })
                 }
                 Err(err) => {
-                    panic!("unexpected error: {:#?}", err);
+                    panic!("unexpected error: {err:#?}");
                 }
             };
 
@@ -266,7 +267,7 @@ impl<
                 &parameter_type,
                 Address::Memory(Memory::Parameter(parameter_id)),
                 &handler,
-            )
+            );
         }
 
         binder
@@ -322,7 +323,7 @@ pub enum Error {
 
 impl From<TypeOfError<infer::Model>> for Error {
     fn from(error: TypeOfError<infer::Model>) -> Self {
-        Error::Internal(InternalError::TypeOf(error))
+        Self::Internal(InternalError::TypeOf(error))
     }
 }
 
@@ -338,10 +339,6 @@ impl ElidedTermProvider<Lifetime<infer::Model>> for LifetimeInferenceProvider {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct InferenceProvider<T> {
     cerated_inferences: Vec<T>,
-}
-
-impl<T> InferenceProvider<T> {
-    pub fn new() -> Self { Self { cerated_inferences: Vec::new() } }
 }
 
 impl<T: Default + Clone, U: Term<InferenceVariable = T>> ElidedTermProvider<U>
@@ -499,6 +496,90 @@ impl<
         HandlerWrapper { handler, suboptimal: self.suboptimal.clone() }
     }
 
+    fn verify_generic_arguments_for_with_inference(
+        &mut self,
+        generic_arguments: term::GenericArguments<infer::Model>,
+        resolved_id: GenericID,
+        generic_identifier_span: Span,
+        include_suboptimal_flag: bool,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> term::GenericArguments<infer::Model> {
+        let handler_wrapper = self.create_handler_wrapper(handler);
+        let mut type_inferences = InferenceProvider::default();
+        let mut constant_inferences = InferenceProvider::default();
+
+        let generic_arguments = self.table.verify_generic_arguments_for(
+            generic_arguments,
+            resolved_id,
+            generic_identifier_span,
+            resolution::Config {
+                elided_lifetime_provider: Some(&mut LifetimeInferenceProvider),
+                elided_type_provider: Some(&mut type_inferences),
+                elided_constant_provider: Some(&mut constant_inferences),
+                observer: Some(&mut self.resolution_observer),
+                higher_ranked_lifetimes: None,
+            },
+            if include_suboptimal_flag { &handler_wrapper } else { handler },
+        );
+
+        for inference in type_inferences.cerated_inferences {
+            assert!(self.inference_context.register::<Type<_>>(
+                inference,
+                r#type::Constraint::All(false)
+            ));
+        }
+
+        for inference in constant_inferences.cerated_inferences {
+            assert!(self
+                .inference_context
+                .register::<Constant<_>>(inference, NoConstraint));
+        }
+
+        generic_arguments
+    }
+
+    fn resolve_generic_arguments_with_inference(
+        &mut self,
+        generic_arguments: &syntax_tree::GenericArguments,
+        include_suboptimal_flag: bool,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<
+        term::GenericArguments<infer::Model>,
+        resolution::ResolveTermError,
+    > {
+        let handler_wrapper = self.create_handler_wrapper(handler);
+        let mut type_inferences = InferenceProvider::default();
+        let mut constant_inferences = InferenceProvider::default();
+
+        let resolved_generic_arguments = self.table.resolve_generic_arguments(
+            generic_arguments,
+            self.current_site,
+            resolution::Config {
+                elided_lifetime_provider: Some(&mut LifetimeInferenceProvider),
+                elided_type_provider: Some(&mut type_inferences),
+                elided_constant_provider: Some(&mut constant_inferences),
+                observer: Some(&mut self.resolution_observer),
+                higher_ranked_lifetimes: None,
+            },
+            if include_suboptimal_flag { &handler_wrapper } else { handler },
+        )?;
+
+        for inference in type_inferences.cerated_inferences {
+            assert!(self.inference_context.register::<Type<_>>(
+                inference,
+                r#type::Constraint::All(false)
+            ));
+        }
+
+        for inference in constant_inferences.cerated_inferences {
+            assert!(self
+                .inference_context
+                .register::<Constant<_>>(inference, NoConstraint));
+        }
+
+        Ok(resolved_generic_arguments)
+    }
+
     fn resolve_with_inference(
         &mut self,
         syntax_tree: &syntax_tree::QualifiedIdentifier,
@@ -629,10 +710,7 @@ impl<
                 let ref_ty = match ty {
                     Type::Reference(ref_ty) => ref_ty,
                     found => {
-                        panic!(
-                            "expected a reference type, found: {:#?}",
-                            found
-                        );
+                        panic!("expected a reference type, found: {found:#?}",);
                     }
                 };
 
@@ -648,10 +726,7 @@ impl<
                 let ref_ty = match ty {
                     Type::Reference(ref_ty) => ref_ty,
                     found => {
-                        panic!(
-                            "expected a reference type, found: {:#?}",
-                            found
-                        );
+                        panic!("expected a reference type, found: {found:#?}",);
                     }
                 };
 
@@ -660,7 +735,7 @@ impl<
                 if let Some(inner_qual) =
                     self.is_behind_reference(&ad.reference_address)
                 {
-                    qualifier = qualifier.min(inner_qual)
+                    qualifier = qualifier.min(inner_qual);
                 }
 
                 Some(qualifier)
@@ -689,18 +764,18 @@ impl<
     ///
     /// If the type check fails, an error is returned with the span of
     /// `type_check_span`
-    #[must_use]
     fn type_check(
         &mut self,
-        ty: Type<infer::Model>,
+        ty: &Type<infer::Model>,
         expected_ty: Expected<infer::Model>,
         type_check_span: Span,
+        include_suboptimal_flag: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), SemanticError> {
         let environment = self.create_environment();
 
         // simplify the types
-        let simplified_ty = simplify(&ty, &environment).result;
+        let simplified_ty = simplify(ty, &environment).result;
 
         match expected_ty {
             Expected::Known(expected_ty) => {
@@ -710,7 +785,7 @@ impl<
                 let result = match self.inference_context.unify_type(
                     &simplified_ty,
                     &simplified_expected,
-                    self.premise.clone(),
+                    &self.premise,
                     self.table,
                     &self.type_system_observer,
                 ) {
@@ -734,19 +809,23 @@ impl<
                 if result {
                     Ok(())
                 } else {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        MismatchedType {
-                            expected_type: self
-                                .inference_context
-                                .into_constraint_model(simplified_expected)
-                                .unwrap(),
-                            found_type: self
-                                .inference_context
-                                .into_constraint_model(simplified_ty)
-                                .unwrap(),
-                            span: type_check_span.clone(),
-                        },
-                    ));
+                    let error = Box::new(MismatchedType {
+                        expected_type: self
+                            .inference_context
+                            .into_constraint_model(simplified_expected)
+                            .unwrap(),
+                        found_type: self
+                            .inference_context
+                            .into_constraint_model(simplified_ty)
+                            .unwrap(),
+                        span: type_check_span.clone(),
+                    });
+
+                    if include_suboptimal_flag {
+                        self.create_handler_wrapper(handler).receive(error);
+                    } else {
+                        handler.receive(error);
+                    }
 
                     Err(SemanticError(type_check_span))
                 }
@@ -765,16 +844,20 @@ impl<
                 if result {
                     Ok(())
                 } else {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        MismatchedType {
-                            expected_type: Type::Inference(constraint),
-                            found_type: self
-                                .inference_context
-                                .into_constraint_model(simplified_ty)
-                                .unwrap(),
-                            span: type_check_span.clone(),
-                        },
-                    ));
+                    let error = Box::new(MismatchedType {
+                        expected_type: Type::Inference(constraint),
+                        found_type: self
+                            .inference_context
+                            .into_constraint_model(simplified_ty)
+                            .unwrap(),
+                        span: type_check_span.clone(),
+                    });
+
+                    if include_suboptimal_flag {
+                        self.create_handler_wrapper(handler).receive(error);
+                    } else {
+                        handler.receive(error);
+                    }
 
                     Err(SemanticError(type_check_span))
                 }

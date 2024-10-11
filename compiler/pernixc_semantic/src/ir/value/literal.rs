@@ -140,14 +140,12 @@ impl<M: Model> Literal<M> {
     /// Returns the type of the literal value.
     pub fn r#type(&self) -> Type<M> {
         match self {
-            Literal::Numeric(n) => n.r#type.clone(),
-            Literal::Boolean(_) => Type::Primitive(Primitive::Bool),
-            Literal::Error(e) => e.r#type.clone(),
-            Literal::Unit(_) => {
-                Type::Tuple(term::Tuple { elements: Vec::new() })
-            }
+            Self::Numeric(n) => n.r#type.clone(),
+            Self::Boolean(_) => Type::Primitive(Primitive::Bool),
+            Self::Error(e) => e.r#type.clone(),
+            Self::Unit(_) => Type::Tuple(term::Tuple { elements: Vec::new() }),
             // &'static [uint8: len]
-            Literal::String(string) => Type::Reference(Reference {
+            Self::String(string) => Type::Reference(Reference {
                 qualifier: Qualifier::Immutable,
                 lifetime: Lifetime::Static,
                 pointee: Box::new(Type::Array(Array {
@@ -157,23 +155,23 @@ impl<M: Model> Literal<M> {
                     ),
                 })),
             }),
-            Literal::Character(c) => c.r#type.clone(),
-            Literal::Unreachable(u) => u.r#type.clone(),
-            Literal::Phantom(p) => p.r#type.clone(),
+            Self::Character(c) => c.r#type.clone(),
+            Self::Unreachable(u) => u.r#type.clone(),
+            Self::Phantom(p) => p.r#type.clone(),
         }
     }
 
     /// Returns the span location of the literal value.
-    pub fn span(&self) -> Option<&Span> {
+    pub const fn span(&self) -> Option<&Span> {
         match self {
-            Literal::Numeric(n) => n.span.as_ref(),
-            Literal::Boolean(b) => b.span.as_ref(),
-            Literal::Error(e) => e.span.as_ref(),
-            Literal::Unit(u) => u.span.as_ref(),
-            Literal::String(s) => s.span.as_ref(),
-            Literal::Character(c) => c.span.as_ref(),
-            Literal::Unreachable(u) => u.span.as_ref(),
-            Literal::Phantom(p) => p.span.as_ref(),
+            Self::Numeric(n) => n.span.as_ref(),
+            Self::Boolean(b) => b.span.as_ref(),
+            Self::Error(e) => e.span.as_ref(),
+            Self::Unit(u) => u.span.as_ref(),
+            Self::String(s) => s.span.as_ref(),
+            Self::Character(c) => c.span.as_ref(),
+            Self::Unreachable(u) => u.span.as_ref(),
+            Self::Phantom(p) => p.span.as_ref(),
         }
     }
 }

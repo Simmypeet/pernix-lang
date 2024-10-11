@@ -128,10 +128,11 @@ pub enum Predicate<M: Model> {
 
 impl<M: Model> Predicate<M> {
     /// Converts the [`Predicate`] with [`Default`] model to the model `M`.
+    #[must_use]
     pub fn from_default_model(predicate: Predicate<Default>) -> Self {
         match predicate {
             Predicate::TraitTypeEquality(x) => {
-                Predicate::TraitTypeEquality(Equality {
+                Self::TraitTypeEquality(Equality {
                     lhs: MemberSymbol {
                         id: x.lhs.id,
                         member_generic_arguments:
@@ -147,27 +148,25 @@ impl<M: Model> Predicate<M> {
                 })
             }
             Predicate::ConstantType(x) => {
-                Predicate::ConstantType(ConstantType(M::from_default_type(x.0)))
+                Self::ConstantType(ConstantType(M::from_default_type(x.0)))
             }
             Predicate::LifetimeOutlives(x) => {
-                Predicate::LifetimeOutlives(Outlives {
+                Self::LifetimeOutlives(Outlives {
                     operand: M::from_default_lifetime(x.operand),
                     bound: M::from_default_lifetime(x.bound),
                 })
             }
-            Predicate::TypeOutlives(x) => Predicate::TypeOutlives(Outlives {
+            Predicate::TypeOutlives(x) => Self::TypeOutlives(Outlives {
                 operand: M::from_default_type(x.operand),
                 bound: M::from_default_lifetime(x.bound),
             }),
             Predicate::TupleType(x) => {
-                Predicate::TupleType(Tuple(M::from_default_type(x.0)))
+                Self::TupleType(Tuple(M::from_default_type(x.0)))
             }
             Predicate::TupleConstant(x) => {
-                Predicate::TupleConstant(Tuple(M::from_default_constant(x.0)))
+                Self::TupleConstant(Tuple(M::from_default_constant(x.0)))
             }
-            Predicate::Trait(x) => {
-                Predicate::Trait(Trait::from_default_model(x))
-            }
+            Predicate::Trait(x) => Self::Trait(Trait::from_default_model(x)),
         }
     }
 }

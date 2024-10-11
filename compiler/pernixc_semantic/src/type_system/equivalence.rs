@@ -64,7 +64,7 @@ impl<M: Model> Equivalence for Type<M> {
             .iter()
             .filter_map(Predicate::as_trait_type_equality)
         {
-            let lhs = Type::TraitMember(equivalence.lhs.clone());
+            let lhs = Self::TraitMember(equivalence.lhs.clone());
             let lhs = &lhs;
             let rhs = &equivalence.rhs;
 
@@ -129,6 +129,10 @@ pub(super) fn get_equivalences_with_context<T: Term, S: State>(
 
 /// Retrieves the equivalences of the given term based on the equality premises
 /// and normalization.
+///
+/// # Errors
+///
+/// See [`OverflowError`] for more information.
 pub fn get_equivalences<T: Term, S: State>(
     term: &T,
     environment: &Environment<

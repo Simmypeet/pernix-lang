@@ -97,21 +97,22 @@ impl Finalize for AdtImplementationFunction {
                 // check all the occurrences
                 table.check_occurrences(
                     symbol_id.into(),
-                    &generic_parameter_occurrences,
+                    generic_parameter_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &where_clause_occurrences,
+                    where_clause_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &signature_occurrences,
+                    signature_occurrences,
                     handler,
                 );
                 table.check_where_clause(symbol_id.into(), handler);
 
+                #[allow(clippy::needless_collect)]
                 let irrefutable_patterns = syntax_tree
                     .signature()
                     .parameters()
@@ -119,7 +120,7 @@ impl Finalize for AdtImplementationFunction {
                     .as_ref()
                     .into_iter()
                     .flat_map(ConnectedList::elements)
-                    .map(|x| x.irrefutable_pattern())
+                    .map(syntax_tree::item::Parameter::irrefutable_pattern)
                     .collect::<Vec<_>>();
 
                 let type_system_observer =

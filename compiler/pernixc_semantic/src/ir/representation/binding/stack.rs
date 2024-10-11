@@ -63,6 +63,7 @@ pub struct Stack {
 
 impl Stack {
     /// Creates a new stack of scopes starting with the root scope.
+    #[must_use]
     pub fn new(root_scope_id: ID<scope::Scope>) -> Self {
         Self {
             scopes: vec![Scope {
@@ -103,9 +104,11 @@ impl Stack {
     }
 
     /// List of scopes in the stack.
+    #[must_use]
     pub fn scopes(&self) -> &[Scope] { &self.scopes }
 
     /// Searches for a named binding point in the stack.
+    #[must_use]
     pub fn search(&self, name: &str) -> Option<&NameBinding<infer::Model>> {
         for scope in self.scopes.iter().rev() {
             for name_binding_point in scope.named_binding_points.iter().rev() {

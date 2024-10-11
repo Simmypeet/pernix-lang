@@ -1,4 +1,4 @@
-//!
+//! Contains logic related to matching the term structurally.
 
 use super::{
     model::Model,
@@ -21,6 +21,7 @@ pub trait Match: Sized + SubTerm {
     /// # Returns
     ///
     /// Returns `None` if the terms cannot be substructurally matched.
+    #[allow(clippy::type_complexity)]
     fn substructural_match(
         &self,
         other: &Self,

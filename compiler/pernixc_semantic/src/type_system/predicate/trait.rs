@@ -59,8 +59,19 @@ pub struct Trait<M: Model> {
 }
 
 impl<M: Model> Trait<M> {
+    /// Creates a new [`Trait`] predicate.
+    #[must_use]
+    pub const fn new(
+        id: ID<symbol::Trait>,
+        is_const: bool,
+        generic_arguments: GenericArguments<M>,
+    ) -> Self {
+        Self { id, is_const, generic_arguments }
+    }
+
     /// Converts the [`Trait`] predicate from the [`Default`] model to the model
     /// `M`.
+    #[must_use]
     pub fn from_default_model(predicate: Trait<Default>) -> Self {
         Self {
             id: predicate.id,
@@ -194,9 +205,9 @@ impl<M: Model> Compute for Trait<M> {
 
     fn on_cyclic(
         &self,
-        _: Self::Parameter,
-        _: Self::InProgress,
-        _: Self::InProgress,
+        (): Self::Parameter,
+        (): Self::InProgress,
+        (): Self::InProgress,
         _: &[crate::type_system::query::Record<Self::Model>],
     ) -> Result<Option<Self::Result>, Self::Error> {
         Ok(Some(Succeeded::new(
@@ -285,6 +296,7 @@ pub fn resolve_implementation<M: Model, S: State>(
 /// - [`ResolveError::NotFound`]: If the trait implementation was not found.
 /// - [`ResolveError::Overflow`]: If the session limit was exceeded; see
 ///   [`OverflowError`] for more information.
+#[allow(clippy::too_many_lines)]
 pub fn resolve_implementation_with_context<M: Model, S: State>(
     trait_id: ID<symbol::Trait>,
     generic_arguments: &GenericArguments<M>,
@@ -558,8 +570,8 @@ fn is_in_active_trait_implementation<M: Model, S: State>(
                     }),
                     constraints: result.constraints,
                 })),
-                Err(deduction::Error::Overflow(err)) => return Err(err),
-                _ => return Ok(None),
+                Err(deduction::Error::Overflow(err)) => Err(err),
+                _ => Ok(None),
             }
         }
 
@@ -586,13 +598,13 @@ fn is_in_active_trait_implementation<M: Model, S: State>(
                 return Ok(None);
             };
 
-            if !compatiblity.result.forall_lifetime_errors.is_empty() {
-                Ok(None)
-            } else {
+            if compatiblity.result.forall_lifetime_errors.is_empty() {
                 Ok(Some(Succeeded::with_constraints(
                     Satisfied::ByTraitContext,
                     compatiblity.constraints,
                 )))
+            } else {
+                Ok(None)
             }
         }
 

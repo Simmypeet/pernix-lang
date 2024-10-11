@@ -79,7 +79,7 @@ impl Finalize for Type {
                             elided_type_provider: None,
                             elided_constant_provider: None,
                             observer: Some(
-                                &mut (&mut builder::Resolution::basic())
+                                &mut builder::Resolution::basic()
                                     .chain(definition_occurrences),
                             ),
                             higher_ranked_lifetimes: None,
@@ -126,17 +126,17 @@ impl Finalize for Type {
             CHECK_STATE => {
                 table.check_occurrences(
                     symbol_id.into(),
-                    &generic_parameter_occurrences,
+                    generic_parameter_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &where_clause_occurrences,
+                    where_clause_occurrences,
                     handler,
                 );
                 table.check_occurrences(
                     symbol_id.into(),
-                    &definition_occurrences,
+                    definition_occurrences,
                     handler,
                 );
 

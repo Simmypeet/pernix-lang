@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 //! Contains the definition of [`Query`] and [`Context`].
 
 use std::collections::{btree_map::Entry, BTreeMap};
@@ -42,7 +44,9 @@ pub struct Call<Q, I> {
 impl<Q, I> Call<Q, I> {
     /// Creates a new call.
     #[must_use]
-    pub fn new(query: Q, in_progress: I) -> Self { Self { query, in_progress } }
+    pub const fn new(query: Q, in_progress: I) -> Self {
+        Self { query, in_progress }
+    }
 }
 
 /// An enumeration of all kinds of queries in the type system.
@@ -193,7 +197,7 @@ impl<M: Model> Context<M> {
     ///
     /// Returns `None` if this query hasn't been stored before, otherwise
     /// returns the [`Cached`] value of the query.
-    #[allow(private_bounds, private_interfaces)]
+    #[allow(private_bounds, private_interfaces, clippy::type_complexity)]
     pub fn mark_as_in_progress<Q: Sealed<Model = M>, T: State>(
         &mut self,
         query: Q,
@@ -245,7 +249,10 @@ impl<M: Model> Context<M> {
             return false;
         }
 
-        Q::get_map_mut(self).get_mut(&query).map(|x| *x = Cached::Done(result));
+        if let Some(x) = Q::get_map_mut(self).get_mut(query) {
+            *x = Cached::Done(result);
+        }
+
         self.call_stack.pop();
 
         true
@@ -263,9 +270,7 @@ impl<M: Model> Context<M> {
         &mut self,
         query: &Q,
     ) -> Option<Cached<Q::InProgress, Q::Result>> {
-        let Some(last) = self.call_stack.last() else {
-            return None;
-        };
+        let last = self.call_stack.last()?;
 
         if Q::from_call(last).map(|x| &x.query) != Some(query) {
             return None;

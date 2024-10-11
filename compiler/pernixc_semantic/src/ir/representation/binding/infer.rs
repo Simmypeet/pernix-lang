@@ -413,10 +413,12 @@ impl<M: model::Model> Constraint<Type<M>> for r#type::Constraint {
                         | Primitive::Usize
                 )
             ),
-            Self::Floating => matches!(
-                term,
-                Type::Primitive(Primitive::Float32 | Primitive::Float64)
-            ),
+            Self::Floating => {
+                matches!(
+                    term,
+                    Type::Primitive(Primitive::Float32 | Primitive::Float64)
+                )
+            }
             Self::Integer => matches!(
                 term,
                 Type::Primitive(
@@ -711,8 +713,8 @@ impl unification::Predicate<Lifetime<Model>> for UnificationConfig {
         &self,
         _: &Lifetime<Model>,
         _: &Lifetime<Model>,
-        _: &Vec<Log<Model>>,
-        _: &Vec<Log<Model>>,
+        _: &[Log<Model>],
+        _: &[Log<Model>],
     ) -> Result<Output<Satisfied, Model>, OverflowError> {
         Ok(Some(Succeeded::satisfied()))
     }
@@ -723,8 +725,8 @@ impl unification::Predicate<Type<Model>> for UnificationConfig {
         &self,
         from: &Type<Model>,
         to: &Type<Model>,
-        _: &Vec<Log<Model>>,
-        _: &Vec<Log<Model>>,
+        _: &[Log<Model>],
+        _: &[Log<Model>],
     ) -> Result<Output<Satisfied, Model>, OverflowError> {
         Ok((from.is_inference() || to.is_inference())
             .then_some(Succeeded::satisfied()))
@@ -736,8 +738,8 @@ impl unification::Predicate<Constant<Model>> for UnificationConfig {
         &self,
         from: &Constant<Model>,
         to: &Constant<Model>,
-        _: &Vec<Log<Model>>,
-        _: &Vec<Log<Model>>,
+        _: &[Log<Model>],
+        _: &[Log<Model>],
     ) -> Result<Output<Satisfied, Model>, OverflowError> {
         Ok((from.is_inference() || to.is_inference())
             .then_some(Succeeded::satisfied()))
@@ -836,7 +838,7 @@ impl Context {
             &mut Self,
             &T,
             &T,
-            Premise<Model>,
+            &Premise<Model>,
             &Table<S>,
             &O,
         ) -> Result<(), UnifyError>,
@@ -870,11 +872,7 @@ impl Context {
                             Inference::Known(known_rhs),
                         ) => {
                             unify(
-                                self,
-                                &known_lhs,
-                                &known_rhs,
-                                premise.clone(),
-                                table,
+                                self, &known_lhs, &known_rhs, premise, table,
                                 observer,
                             )?;
                         }
@@ -978,7 +976,7 @@ impl Context {
                                 self,
                                 &known,
                                 another_known,
-                                premise.clone(),
+                                premise,
                                 table,
                                 observer,
                             )?;
@@ -1028,7 +1026,7 @@ impl Context {
         let mapping: Mapping<Model> = Mapping::from_unifier(unifier);
 
         self.handle_mapping(
-            &premise,
+            premise,
             table,
             observer,
             &mapping.types,
@@ -1039,7 +1037,7 @@ impl Context {
         )?;
 
         self.handle_mapping(
-            &premise,
+            premise,
             table,
             observer,
             &mapping.constants,
@@ -1061,7 +1059,7 @@ impl Context {
         &mut self,
         lhs: &Constant<Model>,
         rhs: &Constant<Model>,
-        premise: Premise<Model>,
+        premise: &Premise<Model>,
         table: &Table<S>,
         observer: &O,
     ) -> Result<(), UnifyError> {
@@ -1082,7 +1080,7 @@ impl Context {
             });
         };
 
-        self.handle_unifer(unifier, &premise, table, observer)
+        self.handle_unifer(unifier, premise, table, observer)
     }
 
     /// Unifies the two types and updates the inference context.
@@ -1094,7 +1092,7 @@ impl Context {
         &mut self,
         lhs: &Type<Model>,
         rhs: &Type<Model>,
-        premise: Premise<Model>,
+        premise: &Premise<Model>,
         table: &Table<S>,
         observer: &O,
     ) -> Result<(), UnifyError> {
@@ -1115,7 +1113,7 @@ impl Context {
             });
         };
 
-        self.handle_unifer(unifier, &premise, table, observer)
+        self.handle_unifer(unifier, premise, table, observer)
     }
 }
 
@@ -1143,6 +1141,7 @@ impl<T: table::State> table::Display<T> for NoConstraint {
 }
 
 impl<T: table::State> table::Display<T> for r#type::Constraint {
+    #[allow(clippy::enum_glob_use)]
     fn fmt(
         &self,
         _: &Table<T>,
@@ -1214,7 +1213,7 @@ impl<ID, C> From<Never> for InferenceOrConstraint<ID, C> {
 }
 
 impl From<InferenceVariable<Lifetime<Model>>> for NoConstraint {
-    fn from(_: InferenceVariable<Lifetime<Model>>) -> Self { NoConstraint }
+    fn from(_: InferenceVariable<Lifetime<Model>>) -> Self { Self }
 }
 
 impl From<InferenceVariable<Type<Model>>>
@@ -1224,7 +1223,7 @@ impl From<InferenceVariable<Type<Model>>>
     >
 {
     fn from(value: InferenceVariable<Type<Model>>) -> Self {
-        InferenceOrConstraint::InferenceID(value)
+        Self::InferenceID(value)
     }
 }
 
@@ -1232,7 +1231,7 @@ impl From<InferenceVariable<Constant<Model>>>
     for InferenceOrConstraint<InferenceVariable<Constant<Model>>, NoConstraint>
 {
     fn from(value: InferenceVariable<Constant<Model>>) -> Self {
-        InferenceOrConstraint::InferenceID(value)
+        Self::InferenceID(value)
     }
 }
 
@@ -1285,13 +1284,13 @@ impl<'a, S: table::State> Normalizer<IntermediaryModel, S>
         };
 
         match ty {
-            InferenceOrConstraint::InferenceID(inference_id) => {
-                match environment
-                    .normalizer()
-                    .context
-                    .get_inference(*inference_id)
-                {
-                    Some(inference) => match inference {
+            InferenceOrConstraint::InferenceID(inference_id) => environment
+                .normalizer()
+                .context
+                .get_inference(*inference_id)
+                .map_or_else(
+                    || Ok(Some(Succeeded::new(Type::Error(term::Error)))),
+                    |x| match x {
                         Inference::Known(known) => Ok(Some(Succeeded::new(
                             Type::from_other_model(known.clone()),
                         ))),
@@ -1309,9 +1308,7 @@ impl<'a, S: table::State> Normalizer<IntermediaryModel, S>
                             ))))
                         }
                     },
-                    None => Ok(Some(Succeeded::new(Type::Error(term::Error)))),
-                }
-            }
+                ),
             InferenceOrConstraint::Constraint(_) => Ok(None), /* no need to
                                                                * normalize */
         }
@@ -1335,13 +1332,13 @@ impl<'a, S: table::State> Normalizer<IntermediaryModel, S>
         };
 
         match constant {
-            InferenceOrConstraint::InferenceID(inference_id) => {
-                match environment
-                    .normalizer()
-                    .context
-                    .get_inference(*inference_id)
-                {
-                    Some(inference) => match inference {
+            InferenceOrConstraint::InferenceID(inference_id) => environment
+                .normalizer()
+                .context
+                .get_inference(*inference_id)
+                .map_or_else(
+                    || Ok(Some(Succeeded::new(Constant::Error(term::Error)))),
+                    |x| match x {
                         Inference::Known(known) => Ok(Some(Succeeded::new(
                             Constant::from_other_model(known.clone()),
                         ))),
@@ -1359,11 +1356,7 @@ impl<'a, S: table::State> Normalizer<IntermediaryModel, S>
                             ))))
                         }
                     },
-                    None => {
-                        Ok(Some(Succeeded::new(Constant::Error(term::Error))))
-                    }
-                }
-            }
+                ),
             InferenceOrConstraint::Constraint(_) => Ok(None), /* no need to
                                                                * normalize */
         }
@@ -1373,24 +1366,16 @@ impl<'a, S: table::State> Normalizer<IntermediaryModel, S>
 impl TryFrom<Erased> for NoConstraint {
     type Error = IntoConstraintModelError;
 
-    fn try_from(_: Erased) -> Result<Self, Self::Error> { Ok(NoConstraint) }
+    fn try_from(_: Erased) -> Result<Self, Self::Error> { Ok(Self) }
 }
 
-impl
-    TryFrom<
-        InferenceOrConstraint<
-            InferenceVariable<Type<Model>>,
-            r#type::Constraint,
-        >,
-    > for r#type::Constraint
+impl TryFrom<InferenceOrConstraint<InferenceVariable<Type<Model>>, Self>>
+    for r#type::Constraint
 {
     type Error = IntoConstraintModelError;
 
     fn try_from(
-        value: InferenceOrConstraint<
-            InferenceVariable<Type<Model>>,
-            r#type::Constraint,
-        >,
+        value: InferenceOrConstraint<InferenceVariable<Type<Model>>, Self>,
     ) -> Result<Self, Self::Error> {
         match value {
             InferenceOrConstraint::InferenceID(inference_id) => Err(
@@ -1403,18 +1388,13 @@ impl
     }
 }
 
-impl
-    TryFrom<
-        InferenceOrConstraint<InferenceVariable<Constant<Model>>, NoConstraint>,
-    > for NoConstraint
+impl TryFrom<InferenceOrConstraint<InferenceVariable<Constant<Model>>, Self>>
+    for NoConstraint
 {
     type Error = IntoConstraintModelError;
 
     fn try_from(
-        value: InferenceOrConstraint<
-            InferenceVariable<Constant<Model>>,
-            NoConstraint,
-        >,
+        value: InferenceOrConstraint<InferenceVariable<Constant<Model>>, Self>,
     ) -> Result<Self, Self::Error> {
         match value {
             InferenceOrConstraint::InferenceID(inference_id) => Err(
