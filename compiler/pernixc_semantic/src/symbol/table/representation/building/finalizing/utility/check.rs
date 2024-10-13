@@ -429,19 +429,21 @@ where
     ) {
         // convert the generic arguments to an instantiation and delegate the
         // check to the `check_instantiation_predicates` method
+        let instantiation = Instantiation::from_generic_arguments(
+            generic_arguments.clone(),
+            instantiated,
+            &self
+                .table()
+                .get_generic(instantiated)
+                .unwrap()
+                .generic_declaration()
+                .parameters,
+        )
+        .unwrap();
+
         self.check_instantiation_predicates(
             instantiated,
-            &Instantiation::from_generic_arguments(
-                generic_arguments,
-                instantiated,
-                &self
-                    .table()
-                    .get_generic(instantiated)
-                    .unwrap()
-                    .generic_declaration()
-                    .parameters,
-            )
-            .unwrap(),
+            &instantiation,
             instantiation_span,
             do_outlives_check,
             checking_site,
@@ -476,14 +478,14 @@ where
     {
         // get all the predicates and instantiate them with the given generic
         // arguments
-        let instantiated_sym = self.table().get_generic(instantiated).unwrap();
-
         let _ = builder::build_for_where_clause(
             self.table(),
             instantiated.into(),
             Some(checking_site),
             handler,
         );
+
+        let instantiated_sym = self.table().get_generic(instantiated).unwrap();
 
         #[allow(clippy::significant_drop_in_scrutinee)]
         for predicate_info in &instantiated_sym.generic_declaration().predicates
