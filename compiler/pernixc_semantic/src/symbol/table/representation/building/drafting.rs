@@ -34,8 +34,8 @@ use crate::{
         self,
         table::{
             representation::{
-                self, building::finalizing::FunctionKind, Index,
-                RwLockContainer,
+                self, building::finalizing::FunctionKind, GetMemberError,
+                Index, RwLockContainer,
             },
             Building, Table,
         },
@@ -830,10 +830,20 @@ impl Table<Building<RwLockContainer, Drafter>> {
             syntax_tree::QualifiedIdentifierRoot::GenericIdentifier(
                 generic_identifier,
             ) => {
-                let Ok(id) = self.get_member_of(
-                    defined_in_module_id.into(),
-                    generic_identifier.identifier().span.str(),
-                ) else {
+                let Ok(id) = self
+                    .get_member_of(
+                        defined_in_module_id.into(),
+                        generic_identifier.identifier().span.str(),
+                    )
+                    .or_else(|_| {
+                        self.get(defined_in_module_id)
+                            .unwrap()
+                            .imports
+                            .get(generic_identifier.identifier().span.str())
+                            .map(|x| x.0.into())
+                            .ok_or(GetMemberError::MemberNotFound)
+                    })
+                else {
                     handler.receive(Box::new(SymbolNotFound {
                         searched_global_id: Some(defined_in_module_id.into()),
                         resolution_span: generic_identifier
