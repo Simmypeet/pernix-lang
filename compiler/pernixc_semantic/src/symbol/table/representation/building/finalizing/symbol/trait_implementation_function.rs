@@ -49,7 +49,7 @@ impl Finalize for TraitImplementationFunction {
         state_flag: usize,
         syntax_tree: &Self::SyntaxTree,
         (
-            generic_parameters_occurrences,
+            generic_parameter_occurrences,
             where_clause_occurrences,
             signature_occurrences,
         ): &mut Self::Data,
@@ -74,7 +74,7 @@ impl Finalize for TraitImplementationFunction {
                 table.create_generic_parameters(
                     symbol_id,
                     syntax_tree.signature().generic_parameters().as_ref(),
-                    generic_parameters_occurrences,
+                    generic_parameter_occurrences,
                     handler,
                 );
             }
@@ -93,6 +93,21 @@ impl Finalize for TraitImplementationFunction {
                     signature_occurrences,
                     handler,
                 );
+
+                for global_id in generic_parameter_occurrences
+                    .resolutions()
+                    .iter()
+                    .chain(where_clause_occurrences.resolutions().iter())
+                    .chain(signature_occurrences.resolutions().iter())
+                    .map(|x| x.0.global_id())
+                {
+                    let _ = builder::build_for_definition(
+                        table,
+                        global_id,
+                        Some(symbol_id.into()),
+                        handler,
+                    );
+                }
             }
 
             INTERMEDIATE_REPRESENTATION_AND_CEHCK_STATE => {
@@ -111,7 +126,7 @@ impl Finalize for TraitImplementationFunction {
 
                 table.check_occurrences(
                     symbol_id.into(),
-                    generic_parameters_occurrences,
+                    generic_parameter_occurrences,
                     handler,
                 );
                 table.check_occurrences(

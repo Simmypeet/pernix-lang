@@ -78,12 +78,29 @@ impl Finalize for AdtImplementationFunction {
                 handler,
             ),
 
-            SIGNATURE_STATE => table.build_function_signature(
-                symbol_id,
-                syntax_tree.signature(),
-                signature_occurrences,
-                handler,
-            ),
+            SIGNATURE_STATE => {
+                table.build_function_signature(
+                    symbol_id,
+                    syntax_tree.signature(),
+                    signature_occurrences,
+                    handler,
+                );
+
+                for global_id in generic_parameter_occurrences
+                    .resolutions()
+                    .iter()
+                    .chain(where_clause_occurrences.resolutions().iter())
+                    .chain(signature_occurrences.resolutions().iter())
+                    .map(|x| x.0.global_id())
+                {
+                    let _ = builder::build_for_definition(
+                        table,
+                        global_id,
+                        Some(symbol_id.into()),
+                        handler,
+                    );
+                }
+            }
 
             INTERMEDIATE_REPRESENTATION_AND_CHECK_STATE => {
                 let parent_trait_id = table.get(symbol_id).unwrap().parent_id;
