@@ -58,6 +58,7 @@ impl Display for HigherRankedLifetimes {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitBound {
+    pub negation: bool,
     pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
     pub const_keyword: bool,
     pub qualified_identifier: QualifiedIdentifier,
@@ -65,6 +66,7 @@ pub struct TraitBound {
 
 impl Input<&super::TraitBound> for &TraitBound {
     fn assert(self, output: &super::TraitBound) -> TestCaseResult {
+        prop_assert_eq!(self.negation, output.negation.is_some());
         self.higher_ranked_lifetimes
             .as_ref()
             .assert(output.higher_rankded_lifetimes().as_ref())?;
@@ -79,16 +81,19 @@ impl Arbitrary for TraitBound {
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         (
+            proptest::bool::ANY,
             proptest::option::of(HigherRankedLifetimes::arbitrary()),
             proptest::bool::ANY,
             QualifiedIdentifier::arbitrary(),
         )
             .prop_map(
                 |(
+                    negation,
                     higher_ranked_lifetimes,
                     const_keyword,
                     qualified_identifier,
                 )| Self {
+                    negation,
                     higher_ranked_lifetimes,
                     const_keyword,
                     qualified_identifier,
@@ -100,6 +105,10 @@ impl Arbitrary for TraitBound {
 
 impl Display for TraitBound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.negation {
+            f.write_char('!')?;
+        }
+
         if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
             write!(f, "{higher_ranked_lifetimes} ")?;
         }

@@ -103,10 +103,13 @@ impl SourceElement for HigherRankedLifetimes {
 /// Syntax Synopsis:
 /// ```txt
 /// TraitBound:
-///     HigherRankedLifetimes? `const`? QualifiedIdentifier?
+///     '!'? HigherRankedLifetimes? `const`? QualifiedIdentifier?
+///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TraitBound {
+    #[get = "pub"]
+    negation: Option<Punctuation>,
     #[get = "pub"]
     higher_rankded_lifetimes: Option<HigherRankedLifetimes>,
     #[get = "pub"]
@@ -117,15 +120,18 @@ pub struct TraitBound {
 
 impl SourceElement for TraitBound {
     fn span(&self) -> Span {
-        let first = self.higher_rankded_lifetimes.as_ref().map_or_else(
-            || {
-                self.const_keyword.as_ref().map_or_else(
-                    || self.qualified_identifier.span(),
-                    |k| k.span.clone(),
-                )
-            },
-            SourceElement::span,
-        );
+        let first = match (
+            &self.negation,
+            &self.higher_rankded_lifetimes,
+            &self.const_keyword,
+        ) {
+            (Some(negation), _, _) => negation.span(),
+            (_, Some(higher_rankded_lifetimes), _) => {
+                higher_rankded_lifetimes.span()
+            }
+            (_, _, Some(const_keyword)) => const_keyword.span(),
+            (_, _, _) => self.qualified_identifier.span(),
+        };
 
         first.join(&self.qualified_identifier.span()).unwrap()
     }
@@ -491,6 +497,19 @@ impl<'a> Parser<'a> {
                 self.forward();
 
                 let bounds = self.parse_union_list(|parser| {
+                    let negation = match parser.stop_at_significant() {
+                        Reading::Unit(Token::Punctuation(
+                            negation @ Punctuation { punctuation: '!', .. },
+                        )) => {
+                            // eat negation
+                            parser.forward();
+
+                            Some(negation)
+                        }
+
+                        _ => None,
+                    };
+
                     let higher_rankded_lifetimes =
                         parser.try_parse_higher_ranked_lifetimes(handler)?;
 
@@ -514,6 +533,7 @@ impl<'a> Parser<'a> {
                         parser.parse_qualified_identifier(handler)?;
 
                     Some(TraitBound {
+                        negation,
                         higher_rankded_lifetimes,
                         const_keyword,
                         qualified_identifier,
