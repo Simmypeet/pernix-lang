@@ -2151,8 +2151,6 @@ fn compound_binary_operator() {
 
     assert_eq!(found_address, expected_address);
 
-    dbg!(&binder.intermediate_representation);
-
     assert!(binder.current_block().instructions().iter().any(|x| {
         let Instruction::Store(store) = x else {
             return false;

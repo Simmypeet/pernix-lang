@@ -22,7 +22,7 @@ use crate::{
         Accessibility, GenericDeclaration, GenericParameters,
         LifetimeParameter, MemberID, Module, PositiveTraitImplementation,
         PositiveTraitImplementationDefinition, Trait, TraitDefinition,
-        TypeParameter,
+        TraitImplementationID, TypeParameter,
     },
     type_system::{
         definite::Definite,
@@ -130,7 +130,10 @@ impl SingleImplementation {
 
         prop_assert!(constraints.is_empty());
 
-        prop_assert_eq!(result.id, self.target_implementation_id);
+        prop_assert_eq!(
+            result.id,
+            TraitImplementationID::Positive(self.target_implementation_id)
+        );
         prop_assert_eq!(&result.instantiation, &self.expected_instantiation);
 
         Ok(())
@@ -503,7 +506,10 @@ impl SpecializedImplementation {
             },
         )?;
 
-        prop_assert_eq!(result.id, self.specialized_implementation_id);
+        prop_assert_eq!(
+            result.id,
+            TraitImplementationID::Positive(self.specialized_implementation_id)
+        );
         prop_assert_eq!(
             &result.instantiation,
             &self.expected_specialized_instantitation
@@ -861,7 +867,10 @@ impl FallbackToGeneralImplementation {
             },
         )?;
 
-        prop_assert_eq!(result.id, self.0.general_implementation_id);
+        prop_assert_eq!(
+            result.id,
+            TraitImplementationID::Positive(self.0.general_implementation_id)
+        );
         prop_assert_eq!(
             &result.instantiation,
             &self.0.expected_general_instantitation
@@ -900,15 +909,17 @@ impl Arbitrary for FallbackToGeneralImplementation {
                     .unwrap()
                     .generic_declaration
                     .predicates = vec![symbol::Predicate {
-                    predicate: predicate::Predicate::Trait(predicate::Trait {
-                        id: constraint_trait_id,
-                        generic_arguments: GenericArguments {
-                            lifetimes: Vec::new(),
-                            types: Vec::new(),
-                            constants: Vec::new(),
+                    predicate: predicate::Predicate::PositiveTrait(
+                        predicate::PositiveTrait {
+                            id: constraint_trait_id,
+                            generic_arguments: GenericArguments {
+                                lifetimes: Vec::new(),
+                                types: Vec::new(),
+                                constants: Vec::new(),
+                            },
+                            is_const: false,
                         },
-                        is_const: false,
-                    }),
+                    ),
                     span: None,
                 }];
 

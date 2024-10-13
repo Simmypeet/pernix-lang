@@ -44,7 +44,7 @@ fn check_ambiguous_without_equality() {
 
     let generic_struct = GenericID::Struct(ID::new(0));
 
-    let first_trait = Predicate::Trait(predicate::Trait {
+    let first_trait = Predicate::PositiveTrait(predicate::PositiveTrait {
         id: ID::new(0),
         is_const: true,
         generic_arguments: GenericArguments {
@@ -63,7 +63,7 @@ fn check_ambiguous_without_equality() {
             constants: Vec::new(),
         },
     });
-    let second_trait = Predicate::Trait(predicate::Trait {
+    let second_trait = Predicate::PositiveTrait(predicate::PositiveTrait {
         id: ID::new(0),
         is_const: false,
         generic_arguments: GenericArguments {
@@ -79,7 +79,7 @@ fn check_ambiguous_without_equality() {
             constants: Vec::new(),
         },
     });
-    let third_trait = Predicate::Trait(predicate::Trait {
+    let third_trait = Predicate::PositiveTrait(predicate::PositiveTrait {
         id: ID::new(0),
         is_const: false,
         generic_arguments: GenericArguments {

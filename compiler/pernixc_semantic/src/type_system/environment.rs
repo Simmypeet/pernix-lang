@@ -309,7 +309,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
             .premise
             .predicates
             .iter()
-            .filter_map(Predicate::as_trait)
+            .filter_map(Predicate::as_positive_trait)
             .cloned()
             .collect::<Vec<_>>();
         let all_constant_type_predicates = self
@@ -603,7 +603,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                     .iter()
                     .flatten()
                     .cloned()
-                    .map(Predicate::Trait),
+                    .map(Predicate::PositiveTrait),
             )
             .chain(
                 ambiguous_constant_type_predicates_set
@@ -707,7 +707,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
             .premise
             .predicates
             .iter()
-            .filter_map(Predicate::as_trait)
+            .filter_map(Predicate::as_positive_trait)
             .cloned()
             .collect::<Vec<_>>();
         let all_constant_type_predicates = environment
@@ -1001,7 +1001,7 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                     .iter()
                     .flatten()
                     .cloned()
-                    .map(Predicate::Trait),
+                    .map(Predicate::PositiveTrait),
             )
             .chain(
                 ambiguous_constant_type_predicates_set

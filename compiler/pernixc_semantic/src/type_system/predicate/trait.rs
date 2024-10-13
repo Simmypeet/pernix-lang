@@ -29,25 +29,56 @@ use crate::{
     },
 };
 
-/// An enumeration of ways a trait predicate can be satisfied.
+/// An enumeration of ways a positive trait predicate can be satisfied.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum Satisfied<M: Model> {
+pub enum PositiveSatisfied<M: Model> {
     /// The trait predicate was proven to be satisfied by
     /// [`TraitContext::InTrait`] flag.
     ByTraitContext,
 
     /// The trait predicate was proven to be satisfied by searching for the
     /// matching trait implementation.
-    ByImplementation(Implementation<M>),
+    ByImplementation(
+        Implementation<ID<symbol::PositiveTraitImplementation>, M>,
+    ),
 
     /// The trait predicate was proven to be satisfied by the premise.
     ByPremise,
 }
 
+/// An enumeration of ways a negative trait predicate can be satisfied.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum NegativeSatisfied<M: Model> {
+    /// The trait predicate was proven to be satisfied by the premise.
+    ByPremise,
+
+    /// The trait predicate was proven to be satisfied by searching for the
+    /// matching trait implementation.
+    ByImplementation(
+        Implementation<ID<symbol::NegativeTraitImplementation>, M>,
+    ),
+
+    /// By proving that the positive trait predicate is not satisfied and the
+    /// generic arguments are definite.
+    ByUnsatisfiedPositive,
+}
+
+/// The kind of the trait predicate; either positive or negative.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum Kind {
+    Positive {
+        /// Whether the implementation is const.
+        is_const: bool,
+    },
+
+    Negative,
+}
+
 /// Represents a predicate stating that there exists an implementation for the
 /// given trait and generic arguments
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Trait<M: Model> {
+pub struct Positive<M: Model> {
     /// The trait to be implemented.
     pub id: ID<symbol::Trait>,
 
@@ -58,8 +89,8 @@ pub struct Trait<M: Model> {
     pub generic_arguments: GenericArguments<M>,
 }
 
-impl<M: Model> Trait<M> {
-    /// Creates a new [`Trait`] predicate.
+impl<M: Model> Positive<M> {
+    /// Creates a new [`Positive`] predicate.
     #[must_use]
     pub const fn new(
         id: ID<symbol::Trait>,
@@ -69,10 +100,10 @@ impl<M: Model> Trait<M> {
         Self { id, is_const, generic_arguments }
     }
 
-    /// Converts the [`Trait`] predicate from the [`Default`] model to the model
-    /// `M`.
+    /// Converts the [`Positive`] predicate from the [`Default`] model to the
+    /// model `M`.
     #[must_use]
-    pub fn from_default_model(predicate: Trait<Default>) -> Self {
+    pub fn from_default_model(predicate: Positive<Default>) -> Self {
         Self {
             id: predicate.id,
             is_const: predicate.is_const,
@@ -81,9 +112,22 @@ impl<M: Model> Trait<M> {
             ),
         }
     }
+
+    /// Checks if the trait contains a `forall` lifetime.
+    #[must_use]
+    pub fn contains_error(&self) -> bool {
+        self.generic_arguments.lifetimes.iter().any(Lifetime::is_error)
+            || self.generic_arguments.types.iter().any(contains_error)
+            || self.generic_arguments.constants.iter().any(contains_error)
+    }
+
+    /// Applies an instantiation to the generic arguments.
+    pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
+        self.generic_arguments.instantiate(instantiation);
+    }
 }
 
-impl<T: State, M: Model> table::Display<T> for Trait<M>
+impl<T: State, M: Model> table::Display<T> for Positive<M>
 where
     GenericArguments<M>: table::Display<T>,
 {
@@ -107,17 +151,7 @@ where
     }
 }
 
-impl<M: Model> Trait<M> {
-    /// Checks if the trait contains a `forall` lifetime.
-    #[must_use]
-    pub fn contains_error(&self) -> bool {
-        self.generic_arguments.lifetimes.iter().any(Lifetime::is_error)
-            || self.generic_arguments.types.iter().any(contains_error)
-            || self.generic_arguments.constants.iter().any(contains_error)
-    }
-}
-
-impl<M: Model> Compute for Trait<M> {
+impl<M: Model> Compute for Positive<M> {
     type Error = OverflowError;
     type Parameter = ();
 
@@ -153,10 +187,22 @@ impl<M: Model> Compute for Trait<M> {
             environment,
             context,
         ) {
-            Ok(implementation) => {
+            Ok(Succeeded {
+                result:
+                    Implementation {
+                        instantiation,
+                        id: TraitImplementationID::Positive(id),
+                        is_not_general_enough,
+                    },
+                constraints,
+            }) => {
                 return Ok(Some(Succeeded::with_constraints(
-                    Satisfied::ByImplementation(implementation.result),
-                    implementation.constraints,
+                    PositiveSatisfied::ByImplementation(Implementation {
+                        instantiation,
+                        id,
+                        is_not_general_enough,
+                    }),
+                    constraints,
                 )));
             }
 
@@ -164,7 +210,7 @@ impl<M: Model> Compute for Trait<M> {
                 return Err(exceed_limit_error);
             }
 
-            Err(_) => {}
+            Err(_) | Ok(_) => {}
         }
 
         // look for the premise that matches
@@ -172,7 +218,7 @@ impl<M: Model> Compute for Trait<M> {
             .premise
             .predicates
             .iter()
-            .filter_map(Predicate::as_trait)
+            .filter_map(Predicate::as_positive_trait)
         {
             // skip if the trait id is different
             if trait_premise.id != self.id {
@@ -195,7 +241,7 @@ impl<M: Model> Compute for Trait<M> {
             }
 
             return Ok(Some(Succeeded::with_constraints(
-                Satisfied::ByPremise,
+                PositiveSatisfied::ByPremise,
                 compatiblity.constraints,
             )));
         }
@@ -211,27 +257,190 @@ impl<M: Model> Compute for Trait<M> {
         _: &[crate::type_system::query::Record<Self::Model>],
     ) -> Result<Option<Self::Result>, Self::Error> {
         Ok(Some(Succeeded::new(
-            Satisfied::ByTraitContext, /* doesn't matter */
+            PositiveSatisfied::ByTraitContext, /* doesn't matter */
         )))
     }
 }
 
-impl<M: Model> Trait<M> {
+/// Represents a predicate stating that there exists no implementation for the
+/// given trait and generic arguments
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Negative<M: Model> {
+    /// The trait in question.
+    pub id: ID<symbol::Trait>,
+
+    /// The generic arguments supplied to the trait.
+    pub generic_arguments: GenericArguments<M>,
+}
+
+impl<M: Model> Negative<M> {
+    /// Creates a new [`Negative`] predicate.
+    #[must_use]
+    pub const fn new(
+        id: ID<symbol::Trait>,
+        generic_arguments: GenericArguments<M>,
+    ) -> Self {
+        Self { id, generic_arguments }
+    }
+
+    /// Converts the [`Negative`] predicate from the [`Default`] model to the
+    /// model `M`.
+    #[must_use]
+    pub fn from_default_model(predicate: Negative<Default>) -> Self {
+        Self {
+            id: predicate.id,
+            generic_arguments: GenericArguments::from_default_model(
+                predicate.generic_arguments,
+            ),
+        }
+    }
+
+    /// Checks if the trait contains a `forall` lifetime.
+    #[must_use]
+    pub fn contains_error(&self) -> bool {
+        self.generic_arguments.lifetimes.iter().any(Lifetime::is_error)
+            || self.generic_arguments.types.iter().any(contains_error)
+            || self.generic_arguments.constants.iter().any(contains_error)
+    }
+
     /// Applies an instantiation to the generic arguments.
     pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
         self.generic_arguments.instantiate(instantiation);
     }
 }
 
+impl<T: State, M: Model> table::Display<T> for Negative<M>
+where
+    GenericArguments<M>: table::Display<T>,
+{
+    fn fmt(
+        &self,
+        table: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "!trait ")?;
+
+        write!(
+            f,
+            "{}{}",
+            table.get_qualified_name(self.id.into()).ok_or(fmt::Error)?,
+            DisplayObject { display: &self.generic_arguments, table }
+        )
+    }
+}
+
+impl<M: Model> Compute for Negative<M> {
+    type Error = OverflowError;
+    type Parameter = ();
+
+    #[allow(private_bounds, private_interfaces)]
+    fn implementation<S: State>(
+        &self,
+        environment: &Environment<
+            Self::Model,
+            S,
+            impl Normalizer<Self::Model, S>,
+            impl Observer<Self::Model, S>,
+        >,
+        context: &mut Context<Self::Model>,
+        (): Self::Parameter,
+        (): Self::InProgress,
+    ) -> Result<Option<Self::Result>, Self::Error> {
+        // manually search for the trait implementation
+        match resolve_implementation_with_context(
+            self.id,
+            &self.generic_arguments,
+            environment,
+            context,
+        ) {
+            Ok(Succeeded {
+                result:
+                    Implementation {
+                        instantiation,
+                        id: TraitImplementationID::Negative(id),
+                        is_not_general_enough,
+                    },
+                constraints,
+            }) => {
+                return Ok(Some(Succeeded::with_constraints(
+                    NegativeSatisfied::ByImplementation(Implementation {
+                        instantiation,
+                        id,
+                        is_not_general_enough,
+                    }),
+                    constraints,
+                )));
+            }
+
+            Err(ResolveError::Overflow(exceed_limit_error)) => {
+                return Err(exceed_limit_error);
+            }
+
+            Err(_) | Ok(_) => {}
+        }
+
+        // look for the premise that matches
+        for trait_premise in environment
+            .premise
+            .predicates
+            .iter()
+            .filter_map(Predicate::as_negative_trait)
+        {
+            // skip if the trait id is different
+            if trait_premise.id != self.id {
+                continue;
+            }
+
+            let Some(compatiblity) =
+                self.generic_arguments.compatible_with_context(
+                    &trait_premise.generic_arguments,
+                    Variance::Invariant,
+                    environment,
+                    context,
+                )?
+            else {
+                continue;
+            };
+
+            if !compatiblity.result.forall_lifetime_errors.is_empty() {
+                continue;
+            }
+
+            return Ok(Some(Succeeded::with_constraints(
+                NegativeSatisfied::ByPremise,
+                compatiblity.constraints,
+            )));
+        }
+
+        // must be definite and failed to prove the positive trait
+        let Some(definition) = self
+            .generic_arguments
+            .definite_with_context(environment, context)?
+        else {
+            return Ok(None);
+        };
+
+        Ok(Positive::new(self.id, false, self.generic_arguments.clone())
+            .query_with_context(environment, context)?
+            .is_none()
+            .then(|| {
+                Succeeded::with_constraints(
+                    NegativeSatisfied::ByUnsatisfiedPositive,
+                    definition.constraints,
+                )
+            }))
+    }
+}
+
 /// A result of a trait implementation resolution query.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Implementation<M: Model> {
+pub struct Implementation<ID, M: Model> {
     /// The deduced substitution for the generic arguments of the trait
     /// implementation.
     pub instantiation: Instantiation<M>,
 
     /// The ID of the resolved trait implementation.
-    pub id: ID<symbol::PositiveTraitImplementation>,
+    pub id: ID,
 
     /// If `true`, the implementation is not general enough to accomodate the
     /// forall lifetime requirements.
@@ -274,7 +483,8 @@ pub fn resolve_implementation<M: Model, S: State>(
     trait_id: ID<symbol::Trait>,
     generic_arguments: &GenericArguments<M>,
     environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
-) -> Result<Succeeded<Implementation<M>, M>, ResolveError> {
+) -> Result<Succeeded<Implementation<TraitImplementationID, M>, M>, ResolveError>
+{
     resolve_implementation_with_context(
         trait_id,
         generic_arguments,
@@ -289,20 +499,18 @@ pub fn resolve_implementation<M: Model, S: State>(
 /// # Errors
 ///
 /// - [`ResolveError::InvalidID`]: If the `trait_id` is invalid.
-/// - [`ResolveError::NonDefiniteGenericArguments`]: If the `generic_arguments`
-///   are not definite.
 /// - [`ResolveError::AmbiguousTrait`]: If the trait defined in the table is
 ///   ambiguous (multiple trait implementation matches).
 /// - [`ResolveError::NotFound`]: If the trait implementation was not found.
 /// - [`ResolveError::Overflow`]: If the session limit was exceeded; see
-///   [`OverflowError`] for more information.
 #[allow(clippy::too_many_lines)]
 pub fn resolve_implementation_with_context<M: Model, S: State>(
     trait_id: ID<symbol::Trait>,
     generic_arguments: &GenericArguments<M>,
     environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
     context: &mut Context<M>,
-) -> Result<Succeeded<Implementation<M>, M>, ResolveError> {
+) -> Result<Succeeded<Implementation<TraitImplementationID, M>, M>, ResolveError>
+{
     let trait_symbol =
         environment.table.get(trait_id).ok_or(ResolveError::InvalidID)?;
 
@@ -313,12 +521,17 @@ pub fn resolve_implementation_with_context<M: Model, S: State>(
         environment,
         context,
     )? {
-        let Satisfied::ByImplementation(implementation) = result.result else {
+        let PositiveSatisfied::ByImplementation(implementation) = result.result
+        else {
             unreachable!()
         };
 
         return Ok(Succeeded::with_constraints(
-            implementation,
+            Implementation {
+                instantiation: implementation.instantiation,
+                id: implementation.id.into(),
+                is_not_general_enough: implementation.is_not_general_enough,
+            },
             result.constraints,
         ));
     }
@@ -447,11 +660,7 @@ pub fn resolve_implementation_with_context<M: Model, S: State>(
     }
 
     match candidate {
-        Some((
-            TraitImplementationID::Positive(id),
-            deduction,
-            mut lifetime_constraints,
-        )) => Ok(Succeeded {
+        Some((id, deduction, mut lifetime_constraints)) => Ok(Succeeded {
             result: Implementation {
                 instantiation: deduction.instantiation,
                 is_not_general_enough: deduction.is_not_general_enough,
@@ -464,9 +673,7 @@ pub fn resolve_implementation_with_context<M: Model, S: State>(
             },
         }),
 
-        None | Some((TraitImplementationID::Negative(_), _, _)) => {
-            Err(ResolveError::NotFound)
-        }
+        None => Err(ResolveError::NotFound),
     }
 }
 
@@ -496,6 +703,7 @@ fn predicate_satisfies<M: Model, S: State>(
                     )?
                     .is_some()
             }
+
             Predicate::ConstantType(constant_type) => constant_type
                 .query_with_context(environment, context)?
                 .is_some(),
@@ -508,7 +716,11 @@ fn predicate_satisfies<M: Model, S: State>(
                 .query_with_context(environment, context)?
                 .is_some(),
 
-            Predicate::Trait(tr) => {
+            Predicate::PositiveTrait(tr) => {
+                tr.query_with_context(environment, context)?.is_some()
+            }
+
+            Predicate::NegativeTrait(tr) => {
                 tr.query_with_context(environment, context)?.is_some()
             }
 
@@ -527,7 +739,7 @@ fn is_in_active_trait_implementation<M: Model, S: State>(
     generic_arguments: &GenericArguments<M>,
     environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
     context: &mut Context<M>,
-) -> Result<Output<Satisfied<M>, M>, OverflowError> {
+) -> Result<Output<PositiveSatisfied<M>, M>, OverflowError> {
     match environment.premise.trait_context {
         TraitContext::InTraitImplementation(trait_implementation) => {
             let Some(implementation) =
@@ -561,13 +773,15 @@ fn is_in_active_trait_implementation<M: Model, S: State>(
                 context,
             ) {
                 Ok(result) => Ok(Some(Succeeded {
-                    result: Satisfied::ByImplementation(Implementation {
-                        instantiation: result.result.instantiation,
-                        id: trait_implementation,
-                        is_not_general_enough: result
-                            .result
-                            .is_not_general_enough,
-                    }),
+                    result: PositiveSatisfied::ByImplementation(
+                        Implementation {
+                            instantiation: result.result.instantiation,
+                            id: trait_implementation,
+                            is_not_general_enough: result
+                                .result
+                                .is_not_general_enough,
+                        },
+                    ),
                     constraints: result.constraints,
                 })),
                 Err(deduction::Error::Overflow(err)) => Err(err),
@@ -600,7 +814,7 @@ fn is_in_active_trait_implementation<M: Model, S: State>(
 
             if compatiblity.result.forall_lifetime_errors.is_empty() {
                 Ok(Some(Succeeded::with_constraints(
-                    Satisfied::ByTraitContext,
+                    PositiveSatisfied::ByTraitContext,
                     compatiblity.constraints,
                 )))
             } else {

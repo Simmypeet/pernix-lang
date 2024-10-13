@@ -14,7 +14,10 @@ use super::{
     model::Model,
     normalizer::Normalizer,
     observer::Observer,
-    predicate::{self, ConstantTypeQuerySource, TraitSatisfied},
+    predicate::{
+        self, ConstantTypeQuerySource, NegativeTrait, NegativeTraitSatisfied,
+        PositiveTraitSatisfied,
+    },
     sub_term::SubTerm,
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     type_check::TypeCheck,
@@ -76,7 +79,9 @@ pub enum Record<M: Model> {
     ConstantType(Call<predicate::ConstantType<M>, ConstantTypeQuerySource>),
 
     #[from]
-    TraitSatisfiability(Call<predicate::Trait<M>, ()>),
+    PositiveTraitSatisfiability(Call<predicate::PositiveTrait<M>, ()>),
+    #[from]
+    NegativeTraitSatisfiability(Call<predicate::NegativeTrait<M>, ()>),
 
     #[from]
     TypeCheck(Call<TypeCheck<M>, ()>),
@@ -137,9 +142,13 @@ pub struct Context<M: Model> {
         Cached<ConstantTypeQuerySource, Succeeded<Satisfied, M>>,
     >,
 
-    trait_satisfiability: BTreeMap<
-        predicate::Trait<M>,
-        Cached<(), Succeeded<TraitSatisfied<M>, M>>,
+    positive_trait_satisfiability: BTreeMap<
+        predicate::PositiveTrait<M>,
+        Cached<(), Succeeded<PositiveTraitSatisfied<M>, M>>,
+    >,
+    negative_trait_satisfiability: BTreeMap<
+        predicate::NegativeTrait<M>,
+        Cached<(), Succeeded<NegativeTraitSatisfied<M>, M>>,
     >,
 
     type_check: BTreeMap<TypeCheck<M>, Cached<(), Succeeded<Satisfied, M>>>,
@@ -171,7 +180,8 @@ impl<M: Model> Default for Context<M> {
             type_outlives: BTreeMap::default(),
             constant_outlives: BTreeMap::default(),
             constant_type: BTreeMap::default(),
-            trait_satisfiability: BTreeMap::default(),
+            positive_trait_satisfiability: BTreeMap::default(),
+            negative_trait_satisfiability: BTreeMap::default(),
             type_check: BTreeMap::default(),
 
             call_stack: Vec::new(),
@@ -1009,36 +1019,69 @@ impl<M: Model> Sealed for predicate::ConstantType<M> {
     }
 }
 
-impl<M: Model> Query for predicate::Trait<M> {
+impl<M: Model> Query for predicate::PositiveTrait<M> {
     type Model = M;
     type InProgress = ();
-    type Result = Succeeded<TraitSatisfied<M>, M>;
+    type Result = Succeeded<PositiveTraitSatisfied<M>, M>;
 }
 
-impl<M: Model> Sealed for predicate::Trait<M> {
+impl<M: Model> Sealed for predicate::PositiveTrait<M> {
     fn get_map(
         context: &Context<Self::Model>,
     ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &context.trait_satisfiability
+        &context.positive_trait_satisfiability
     }
 
     fn get_map_mut(
         context: &mut Context<Self::Model>,
     ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &mut context.trait_satisfiability
+        &mut context.positive_trait_satisfiability
     }
 
     fn from_call(
         call: &Record<Self::Model>,
     ) -> Option<&Call<Self, Self::InProgress>> {
-        call.as_trait_satisfiability()
+        call.as_positive_trait_satisfiability()
     }
 
     fn into_query_call(
         query: Self,
         (): Self::InProgress,
     ) -> Record<Self::Model> {
-        Record::TraitSatisfiability(Call::new(query, ()))
+        Record::PositiveTraitSatisfiability(Call::new(query, ()))
+    }
+}
+
+impl<M: Model> Query for NegativeTrait<M> {
+    type Model = M;
+    type InProgress = ();
+    type Result = Succeeded<NegativeTraitSatisfied<M>, M>;
+}
+
+impl<M: Model> Sealed for NegativeTrait<M> {
+    fn get_map(
+        context: &Context<Self::Model>,
+    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
+        &context.negative_trait_satisfiability
+    }
+
+    fn get_map_mut(
+        context: &mut Context<Self::Model>,
+    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
+        &mut context.negative_trait_satisfiability
+    }
+
+    fn from_call(
+        call: &Record<Self::Model>,
+    ) -> Option<&Call<Self, Self::InProgress>> {
+        call.as_negative_trait_satisfiability()
+    }
+
+    fn into_query_call(
+        query: Self,
+        (): Self::InProgress,
+    ) -> Record<Self::Model> {
+        Record::NegativeTraitSatisfiability(Call::new(query, ()))
     }
 }
 

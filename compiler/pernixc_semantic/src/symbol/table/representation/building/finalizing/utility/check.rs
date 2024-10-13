@@ -24,19 +24,24 @@ use crate::{
         UnusedGenericParameterInImplementation,
     },
     symbol::{
+        self,
         table::{
             self,
             representation::{
                 building::finalizing::{
-                    symbol::positive_trait_implementation, Finalizer,
+                    symbol::{
+                        negative_trait_implementation,
+                        positive_trait_implementation,
+                    },
+                    Finalizer,
                 },
                 Element, Index, RwLockContainer,
             },
             resolution, Building, Table,
         },
-        ConstantParameter, ConstantParameterID, Generic, GenericID,
-        GenericParameter, GenericParameters, GenericTemplate, GlobalID,
-        ImplementationTemplate, LifetimeParameter, LifetimeParameterID,
+        ConstantParameter, ConstantParameterID, GenericID, GenericParameter,
+        GenericParameters, GenericTemplate, GlobalID, ImplementationTemplate,
+        LifetimeParameter, LifetimeParameterID, TraitImplementationID,
         TraitImplementationMemberID, TraitMemberID, TypeParameter,
         TypeParameterID,
     },
@@ -80,8 +85,10 @@ enum PredicateError<M: Model> {
     /// The solved trait implementation is not general enough for the forall
     /// lifetime requirements.
     TraitImplementationIsNotGeneralEnough {
-        required_trait_predicate: predicate::Trait<M>,
-        resolved_implementation: predicate::Implementation<M>,
+        resolved_implementation:
+            predicate::Implementation<TraitImplementationID, M>,
+        generic_arguments: GenericArguments<M>,
+        kind: predicate::TraitKind,
         predicate_declaration_span: Option<Span>,
     },
 }
@@ -121,21 +128,22 @@ where
             }
 
             Self::TraitImplementationIsNotGeneralEnough {
-                required_trait_predicate,
                 resolved_implementation,
                 predicate_declaration_span,
+                generic_arguments,
+                kind,
             } => {
-                if required_trait_predicate.contains_error() {
+                if generic_arguments.contains_error() {
                     return;
                 }
 
                 handler.receive(Box::new(
                     TraitImplementationIsNotGeneralEnough {
-                        positive_trait_implementation_id:
-                            resolved_implementation.id,
-                        required_trait_predicate,
+                        trait_implementation_id: resolved_implementation.id,
                         instantiation_span,
                         predicate_declaration_span,
+                        generic_arguments,
+                        kind,
                     },
                 ));
             }
@@ -156,6 +164,104 @@ where
     M::TypeInference: table::Display<table::Suboptimal>,
     M::ConstantInference: table::Display<table::Suboptimal>,
 {
+    fn create_instantiation_for_adt(
+        &self,
+        adt_implementation_id: ID<symbol::AdtImplementation>,
+        parent_generic_arguments: &GenericArguments<M>,
+        resolution_span: &Span,
+        do_outlives_check: bool,
+        checking_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Option<Instantiation<M>> {
+        // deduce the generic arguments
+        let adt_implementation =
+            self.table().get(adt_implementation_id).unwrap();
+
+        let arguments = adt_implementation.arguments.clone();
+        drop(adt_implementation);
+
+        let result = match GenericArguments::from_default_model(arguments)
+            .deduce(&parent_generic_arguments, self)
+        {
+            Ok(deduced) => deduced,
+
+            Err(deduction::Error::MismatchedGenericArgumentCount(_)) => {
+                unreachable!()
+            }
+
+            Err(deduction::Error::UnificationFailure(_)) => {
+                handler.receive(Box::new(MismatchedImplementationArguments {
+                    adt_implementation_id,
+                    found_generic_arguments: parent_generic_arguments.clone(),
+                    instantiation_span: resolution_span.clone(),
+                }));
+
+                return None; // can't continue
+            }
+
+            Err(deduction::Error::Overflow(_)) => {
+                handler.receive(Box::new(
+                    OverflowCalculatingRequirementForInstantiation {
+                        instantiation_span: resolution_span.clone(),
+                    },
+                ));
+
+                return None;
+            }
+        };
+
+        self.check_lifetime_constraints(
+            result.constraints,
+            resolution_span,
+            handler,
+        );
+
+        // check if the deduced generic arguments are correct
+        self.check_instantiation_predicates(
+            adt_implementation_id.into(),
+            &result.result.instantiation,
+            resolution_span,
+            do_outlives_check,
+            checking_site,
+            handler,
+        );
+
+        // the implementation is not general enough
+        if result.result.is_not_general_enough {
+            handler.receive(Box::new(AdtImplementationIsNotGeneralEnough {
+                adt_implementation_id,
+                generic_arguments: parent_generic_arguments.clone(),
+                instantiation_span: resolution_span.clone(),
+            }));
+        }
+
+        Some(result.result.instantiation)
+    }
+
+    fn check_trait_instantiation(
+        &self,
+        trait_id: ID<symbol::Trait>,
+        generic_arguments: GenericArguments<M>,
+        instantiation_span: &Span,
+        do_outlives_check: bool,
+        checking_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        for error in self.predicate_satisfied(
+            Predicate::PositiveTrait(predicate::PositiveTrait {
+                id: trait_id,
+                is_const: false,
+                generic_arguments,
+            }),
+            None,
+            do_outlives_check,
+            checking_site,
+            handler,
+        ) {
+            error.report(instantiation_span.clone(), handler);
+        }
+    }
+
     /// Checks if the given `resolution` is well-formed. The errors are reported
     /// to the `handler`.
     ///
@@ -183,30 +289,6 @@ where
             | resolution::Resolution::Variant(_) => {}
 
             resolution::Resolution::Generic(generic) => {
-                // check for trait predicates
-                if let resolution::GenericID::Trait(trait_id) = generic.id {
-                    let predicate =
-                        predicate::Predicate::Trait(predicate::Trait {
-                            id: trait_id,
-                            is_const: false,
-                            generic_arguments: generic
-                                .generic_arguments
-                                .clone(),
-                        });
-
-                    let errors = self.predicate_satisfied(
-                        predicate,
-                        None,
-                        do_outlives_check,
-                        checking_site,
-                        handler,
-                    );
-
-                    for error in errors {
-                        error.report(resolution_span.clone(), handler);
-                    }
-                }
-
                 self.check_instantiation_predicates_by_generic_arguments(
                     generic.id.into(),
                     generic.generic_arguments.clone(),
@@ -227,6 +309,30 @@ where
                         id,
                     ) => Some(self.table().get(id).unwrap().parent_id),
 
+                    id @ (resolution::MemberGenericID::TraitConstant(_)
+                    | resolution::MemberGenericID::TraitFunction(_)
+                    | resolution::MemberGenericID::TraitType(_)) => {
+                        let trait_id = self
+                            .table()
+                            .get_global(id.into())
+                            .unwrap()
+                            .parent_global_id()
+                            .expect("should have a parent")
+                            .into_trait()
+                            .expect("should've been a trait");
+
+                        self.check_trait_instantiation(
+                            trait_id,
+                            member_generic.parent_generic_arguments.clone(),
+                            resolution_span,
+                            do_outlives_check,
+                            checking_site,
+                            handler,
+                        );
+
+                        None
+                    }
+
                     _ => None,
                 };
 
@@ -235,91 +341,29 @@ where
                     if let Some(adt_implementation_id) =
                         adt_implementation_check
                     {
-                        // deduce the generic arguments
-
-                        let adt_implementation =
-                            self.table().get(adt_implementation_id).unwrap();
-
-                        let arguments = adt_implementation.arguments.clone();
-                        drop(adt_implementation);
-
-                        let result = match GenericArguments::from_default_model(
-                            arguments
-                        )
-                        .deduce(&member_generic.parent_generic_arguments, self)
-                    {
-                        Ok(deduced) => deduced,
-
-                        Err(
-                            deduction::Error::MismatchedGenericArgumentCount(_),
-                        ) => {
-                            unreachable!()
-                        }
-
-                        Err(deduction::Error::UnificationFailure(_)) => {
-                            handler.receive(Box::new(
-                                MismatchedImplementationArguments {
-                                    adt_implementation_id,
-                                    found_generic_arguments: member_generic
-                                        .parent_generic_arguments
-                                        .clone(),
-                                    instantiation_span: resolution_span.clone(),
-                                },
-                            ));
-
-                            return; // can't continue
-                        }
-
-                        Err(deduction::Error::Overflow(_)) => {
-                            handler.receive(Box::new(
-                                OverflowCalculatingRequirementForInstantiation {
-                                    instantiation_span: resolution_span.clone(),
-                                },
-                            ));
-
+                        let Some(instantiation) = self
+                            .create_instantiation_for_adt(
+                                adt_implementation_id,
+                                &member_generic.parent_generic_arguments,
+                                resolution_span,
+                                do_outlives_check,
+                                checking_site,
+                                handler,
+                            )
+                        else {
                             return;
-                        }
-                    };
+                        };
 
-                        self.check_lifetime_constraints(
-                            result.constraints,
-                            resolution_span,
-                            handler,
-                        );
-
-                        // check if the deduced generic arguments are correct
-                        self.check_instantiation_predicates(
-                            adt_implementation_id.into(),
-                            &result.result.instantiation,
-                            resolution_span,
-                            do_outlives_check,
-                            checking_site,
-                            handler,
-                        );
-
-                        // the implementation is not general enough
-                        if result.result.is_not_general_enough {
-                            handler.receive(Box::new(
-                                AdtImplementationIsNotGeneralEnough {
-                                    adt_implementation_id,
-                                    generic_arguments: member_generic
-                                        .parent_generic_arguments
-                                        .clone(),
-                                    instantiation_span: resolution_span.clone(),
-                                },
-                            ));
-                        }
-
-                        result.result.instantiation
+                        instantiation
                     } else {
                         let parent_id = GenericID::try_from(
                             self.table()
                                 .get_global(member_generic.id.into())
                                 .unwrap()
                                 .parent_global_id()
-                                .unwrap(), // should have parent
+                                .expect("should have a parent"),
                         )
-                        .unwrap(); // parent should be a generic
+                        .expect("parent should be a generic");
 
                         Instantiation::from_generic_arguments(
                             member_generic.parent_generic_arguments.clone(),
@@ -331,7 +375,7 @@ where
                                 .generic_declaration()
                                 .parameters,
                         )
-                        .unwrap() // should have no mismatched
+                        .expect("should have no mismatched")
                     };
 
                 parent_instantiation
@@ -463,6 +507,78 @@ where
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn check_implementation_satisfied(
+        &self,
+        id: TraitImplementationID,
+        instantiation: &Instantiation<M>,
+        generic_arguments: &GenericArguments<M>,
+        kind: predicate::TraitKind,
+        predicate_declaration_span: Option<Span>,
+        checking_site: GlobalID,
+        do_outlives_check: bool,
+        is_not_general_enough: bool,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Vec<PredicateError<M>> {
+        let mut errors = Vec::new();
+
+        if is_not_general_enough {
+            errors.push(
+                PredicateError::TraitImplementationIsNotGeneralEnough {
+                    resolved_implementation: predicate::Implementation {
+                        instantiation: instantiation.clone(),
+                        id,
+                        is_not_general_enough,
+                    },
+                    generic_arguments: generic_arguments.clone(),
+                    kind,
+                    predicate_declaration_span,
+                },
+            );
+        }
+
+        let _ = match id {
+            TraitImplementationID::Positive(id) => self.table().build_to(
+                id,
+                Some(checking_site),
+                positive_trait_implementation::WHERE_CLAUSE_STATE,
+                handler,
+            ),
+            TraitImplementationID::Negative(id) => self.table().build_to(
+                id,
+                Some(checking_site),
+                negative_trait_implementation::WHERE_CLAUSE_STATE,
+                handler,
+            ),
+        };
+
+        let predicates = self
+            .table()
+            .get_generic(id.into())
+            .unwrap()
+            .generic_declaration()
+            .predicates
+            .clone();
+
+        // check for each predicate in the implementation
+        for predicate in predicates {
+            let mut predicate_instantiated =
+                Predicate::from_default_model(predicate.predicate);
+
+            predicate_instantiated.instantiate(instantiation);
+
+            errors.extend(self.predicate_satisfied(
+                predicate_instantiated,
+                predicate.span,
+                do_outlives_check,
+                checking_site,
+                handler,
+            ));
+        }
+
+        errors
+    }
+
     #[allow(clippy::too_many_lines)]
     fn predicate_satisfied(
         &self,
@@ -552,67 +668,64 @@ where
             predicate::Predicate::TupleConstant(pred) => {
                 (pred.query(self), Vec::new())
             }
-            predicate::Predicate::Trait(pred) => match pred.query(self) {
+            predicate::Predicate::PositiveTrait(pred) => match pred.query(self)
+            {
                 Ok(None) => (Ok(None), Vec::new()),
                 Ok(Some(Succeeded { result, constraints })) => match result {
-                    predicate::TraitSatisfied::ByPremise
-                    | predicate::TraitSatisfied::ByTraitContext => (
+                    predicate::PositiveTraitSatisfied::ByPremise
+                    | predicate::PositiveTraitSatisfied::ByTraitContext => (
                         Ok(Some(Succeeded::satisfied_with(constraints))),
                         Vec::new(),
                     ),
 
-                    predicate::TraitSatisfied::ByImplementation(
+                    predicate::PositiveTraitSatisfied::ByImplementation(
                         implementation,
-                    ) => {
-                        let mut errors = Vec::new();
-
-                        if implementation.is_not_general_enough {
-                            errors.push(PredicateError::TraitImplementationIsNotGeneralEnough {
-                                required_trait_predicate: pred.clone(),
-                                resolved_implementation: implementation.clone(),
-                                predicate_declaration_span: predicate_declaration_span.clone(),
-                            });
-                        }
-
-                        let _ = self.table().build_to(
-                            implementation.id,
-                            Some(checking_site),
-                            positive_trait_implementation::WHERE_CLAUSE_STATE,
+                    ) => (
+                        Ok(Some(Succeeded::satisfied_with(constraints))),
+                        self.check_implementation_satisfied(
+                            implementation.id.into(),
+                            &implementation.instantiation,
+                            &pred.generic_arguments,
+                            predicate::TraitKind::Positive {
+                                is_const: pred.is_const,
+                            },
+                            predicate_declaration_span.clone(),
+                            checking_site,
+                            do_outlives_check,
+                            implementation.is_not_general_enough,
                             handler,
-                        );
+                        ),
+                    ),
+                },
+                Err(OverflowError) => (Err(OverflowError), Vec::new()),
+            },
 
-                        let predicates = self
-                            .table()
-                            .get(implementation.id)
-                            .unwrap()
-                            .generic_declaration()
-                            .predicates
-                            .clone();
+            predicate::Predicate::NegativeTrait(pred) => match pred.query(self)
+            {
+                Ok(None) => (Ok(None), Vec::new()),
+                Ok(Some(Succeeded { result, constraints })) => match result {
+                    predicate::NegativeTraitSatisfied::ByPremise
+                    | predicate::NegativeTraitSatisfied::ByUnsatisfiedPositive => (
+                        Ok(Some(Succeeded::satisfied_with(constraints))),
+                        Vec::new(),
+                    ),
 
-                        // check for each predicate in the implementation
-                        for predicate in predicates {
-                            let mut predicate_instantiated =
-                                Predicate::from_default_model(
-                                    predicate.predicate,
-                                );
-
-                            predicate_instantiated
-                                .instantiate(&implementation.instantiation);
-
-                            errors.extend(self.predicate_satisfied(
-                                predicate_instantiated,
-                                predicate.span,
-                                do_outlives_check,
-                                checking_site,
-                                handler,
-                            ));
-                        }
-
-                        (
-                            Ok(Some(Succeeded::satisfied_with(constraints))),
-                            errors,
-                        )
-                    }
+                    predicate::NegativeTraitSatisfied::ByImplementation(
+                        implementation,
+                    ) => (
+                        Ok(Some(Succeeded::satisfied_with(constraints))),
+                        self.check_implementation_satisfied(
+                            implementation.id.into(),
+                            &implementation.instantiation,
+                            &pred.generic_arguments,
+                            predicate::TraitKind::Negative,
+                            predicate_declaration_span.clone(),
+                            checking_site,
+                            do_outlives_check,
+                            implementation.is_not_general_enough,
+                            handler,
+                        ),
+                    ),
                 },
                 Err(OverflowError) => (Err(OverflowError), Vec::new()),
             },
@@ -1467,19 +1580,20 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     }
 
                     PredicateError::TraitImplementationIsNotGeneralEnough {
-                        required_trait_predicate,
                         resolved_implementation,
+                        generic_arguments,
+                        kind,
                         predicate_declaration_span,
                     } => handler.receive(Box::new(
                         TraitImplementationIsNotGeneralEnough {
-                            positive_trait_implementation_id:
-                                resolved_implementation.id,
-                            required_trait_predicate,
+                            trait_implementation_id: resolved_implementation.id,
                             instantiation_span: implementation_member_sym
                                 .span()
                                 .cloned()
                                 .unwrap(),
                             predicate_declaration_span,
+                            generic_arguments,
+                            kind,
                         },
                     )),
                 }

@@ -98,8 +98,10 @@ pub use constant_type::{ConstantType, QuerySource as ConstantTypeQuerySource};
 pub use outlives::Outlives;
 pub use r#trait::{
     resolve_implementation, resolve_implementation_with_context,
-    Implementation, ResolveError as TraitResolveError,
-    Satisfied as TraitSatisfied, Trait,
+    Implementation, Kind as TraitKind, Negative as NegativeTrait,
+    NegativeSatisfied as NegativeTraitSatisfied, Positive as PositiveTrait,
+    PositiveSatisfied as PositiveTraitSatisfied,
+    ResolveError as TraitResolveError,
 };
 pub use tuple::Tuple;
 
@@ -123,7 +125,8 @@ pub enum Predicate<M: Model> {
     TypeOutlives(Outlives<Type<M>>),
     TupleType(Tuple<Type<M>>),
     TupleConstant(Tuple<Constant<M>>),
-    Trait(Trait<M>),
+    PositiveTrait(PositiveTrait<M>),
+    NegativeTrait(NegativeTrait<M>),
 }
 
 impl<M: Model> Predicate<M> {
@@ -166,7 +169,12 @@ impl<M: Model> Predicate<M> {
             Predicate::TupleConstant(x) => {
                 Self::TupleConstant(Tuple(M::from_default_constant(x.0)))
             }
-            Predicate::Trait(x) => Self::Trait(Trait::from_default_model(x)),
+            Predicate::PositiveTrait(x) => {
+                Self::PositiveTrait(PositiveTrait::from_default_model(x))
+            }
+            Predicate::NegativeTrait(x) => {
+                Self::NegativeTrait(NegativeTrait::from_default_model(x))
+            }
         }
     }
 }
@@ -179,7 +187,8 @@ where
     Outlives<Type<M>>: table::Display<T>,
     Tuple<Type<M>>: table::Display<T>,
     Tuple<Constant<M>>: table::Display<T>,
-    Trait<M>: table::Display<T>,
+    PositiveTrait<M>: table::Display<T>,
+    NegativeTrait<M>: table::Display<T>,
 {
     fn fmt(
         &self,
@@ -193,7 +202,8 @@ where
             Self::TypeOutlives(outlives) => outlives.fmt(table, f),
             Self::TupleType(tuple) => tuple.fmt(table, f),
             Self::TupleConstant(tuple) => tuple.fmt(table, f),
-            Self::Trait(tr) => tr.fmt(table, f),
+            Self::PositiveTrait(tr) => tr.fmt(table, f),
+            Self::NegativeTrait(tr) => tr.fmt(table, f),
         }
     }
 }
@@ -209,7 +219,8 @@ impl<M: Model> Predicate<M> {
             Self::TypeOutlives(outlives) => outlives.contains_error(),
             Self::TupleType(tuple) => tuple.contains_error(),
             Self::TupleConstant(tuple) => tuple.contains_error(),
-            Self::Trait(tr) => tr.contains_error(),
+            Self::PositiveTrait(tr) => tr.contains_error(),
+            Self::NegativeTrait(tr) => tr.contains_error(),
         }
     }
 
@@ -228,7 +239,8 @@ impl<M: Model> Predicate<M> {
             Self::TypeOutlives(outlives) => outlives.instantiate(substitution),
             Self::TupleType(tuple) => tuple.instantiate(substitution),
             Self::TupleConstant(tuple) => tuple.instantiate(substitution),
-            Self::Trait(tr) => tr.instantiate(substitution),
+            Self::PositiveTrait(tr) => tr.instantiate(substitution),
+            Self::NegativeTrait(tr) => tr.instantiate(substitution),
         }
     }
 }

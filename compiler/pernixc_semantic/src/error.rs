@@ -4,7 +4,7 @@
 use std::{
     any::Any,
     collections::{BTreeSet, HashSet},
-    fmt::{self, Debug},
+    fmt::{self, Debug, Write},
 };
 
 use pernixc_base::{
@@ -3170,10 +3170,13 @@ where
 pub struct TraitImplementationIsNotGeneralEnough<M: Model> {
     /// The ID of the trait implementation where the trait predicate is not
     /// satisfied.
-    pub positive_trait_implementation_id: ID<PositiveTraitImplementation>,
+    pub trait_implementation_id: TraitImplementationID,
 
-    /// The required trait predicate that is not satisfied.
-    pub required_trait_predicate: predicate::Trait<M>,
+    /// The generic arguments required by the trait predicate.
+    pub generic_arguments: GenericArguments<M>,
+
+    /// The kind of trait predicate.
+    pub kind: predicate::TraitKind,
 
     /// The span where the trait predicate was declared.
     pub predicate_declaration_span: Option<Span>,
@@ -3193,27 +3196,64 @@ where
         &self,
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
-        let positive_trait_implementation_symbol = table
-            .get(self.positive_trait_implementation_id)
-            .ok_or(ReportError)?;
+        let trait_id = match self.trait_implementation_id {
+            TraitImplementationID::Positive(id) => {
+                table.get(id).unwrap().implemented_id()
+            }
+            TraitImplementationID::Negative(id) => {
+                table.get(id).unwrap().implemented_id()
+            }
+        };
 
-        let implemented_trait_qualified_name = table
-            .get_qualified_name(self.required_trait_predicate.id.into())
-            .ok_or(ReportError)?;
+        let trait_qualified_name =
+            table.get_qualified_name(trait_id.into()).ok_or(ReportError)?;
+
+        let trait_predicate_string = match self.kind {
+            predicate::TraitKind::Positive { is_const } => {
+                let mut string = "trait ".to_string();
+
+                if is_const {
+                    let _ = write!(string, "const ");
+                }
+
+                let _ = write!(
+                    string,
+                    "{}{}",
+                    trait_qualified_name,
+                    DisplayObject { table, display: &self.generic_arguments }
+                );
+
+                string
+            }
+            predicate::TraitKind::Negative => {
+                format!("!trait {}{}", trait_qualified_name, DisplayObject {
+                    table,
+                    display: &self.generic_arguments
+                })
+            }
+        };
+
+        let implementation_generic_arguments = table
+            .get_implementation(self.trait_implementation_id.into())
+            .ok_or(ReportError)?
+            .arguments();
 
         Ok(Diagnostic {
             span: self.instantiation_span.clone(),
             message: format!(
-                "the trait implementation is not general enough to satisfy \
-                 {}{}",
-                implemented_trait_qualified_name,
-                DisplayObject {
-                    table,
-                    display: &self.required_trait_predicate.generic_arguments
-                }
+                "the predicate `{trait_predicate_string}` requires an \
+                 implementation that has more general lifetime arguments",
             ),
             severity: Severity::Error,
-            help_message: None,
+            help_message: Some(format!(
+                "currently, the matched implementation has the following \
+                 signature `{}{}`, which is not general enough",
+                trait_qualified_name,
+                DisplayObject {
+                    table,
+                    display: implementation_generic_arguments
+                }
+            )),
             related: self
                 .predicate_declaration_span
                 .as_ref()
@@ -3222,15 +3262,6 @@ where
                     message: "the trait predicate is declared here".to_string(),
                 })
                 .into_iter()
-                .chain(
-                    positive_trait_implementation_symbol.span().as_ref().map(
-                        |span| Related {
-                            span: span.clone(),
-                            message: "the implementation is defined here"
-                                .to_string(),
-                        },
-                    ),
-                )
                 .collect(),
         })
     }

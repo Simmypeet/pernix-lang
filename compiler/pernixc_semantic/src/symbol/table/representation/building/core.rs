@@ -518,29 +518,33 @@ impl<C: Container> Representation<C> {
             // const trait Clone[T] + Clone[Rest]
             implementation.generic_declaration.predicates.push(
                 symbol::Predicate {
-                    predicate: predicate::Predicate::Trait(predicate::Trait {
-                        id: clone_trait_id,
-                        is_const: true,
-                        generic_arguments: GenericArguments {
-                            lifetimes: Vec::new(),
-                            types: vec![t_type],
-                            constants: Vec::new(),
+                    predicate: predicate::Predicate::PositiveTrait(
+                        predicate::PositiveTrait {
+                            id: clone_trait_id,
+                            is_const: true,
+                            generic_arguments: GenericArguments {
+                                lifetimes: Vec::new(),
+                                types: vec![t_type],
+                                constants: Vec::new(),
+                            },
                         },
-                    }),
+                    ),
                     span: None,
                 },
             );
             implementation.generic_declaration.predicates.push(
                 symbol::Predicate {
-                    predicate: predicate::Predicate::Trait(predicate::Trait {
-                        id: clone_trait_id,
-                        is_const: true,
-                        generic_arguments: GenericArguments {
-                            lifetimes: Vec::new(),
-                            types: vec![rest_type.clone()],
-                            constants: Vec::new(),
+                    predicate: predicate::Predicate::PositiveTrait(
+                        predicate::PositiveTrait {
+                            id: clone_trait_id,
+                            is_const: true,
+                            generic_arguments: GenericArguments {
+                                lifetimes: Vec::new(),
+                                types: vec![rest_type.clone()],
+                                constants: Vec::new(),
+                            },
                         },
-                    }),
+                    ),
                     span: None,
                 },
             );

@@ -1201,7 +1201,7 @@ impl<
                 self.premise
                     .predicates
                     .iter()
-                    .filter_map(|x| x.as_trait().map(|x| x.id)),
+                    .filter_map(|x| x.as_positive_trait().map(|x| x.id)),
             )
             .collect::<Vec<_>>();
 

@@ -972,8 +972,12 @@ where
                     .name()
                     .clone();
 
-                let Some(implementation_sym) =
-                    environment.table().get(resoltion.result.id)
+                let Some(implementation_sym) = resoltion
+                    .result
+                    .id
+                    .into_positive()
+                    .ok()
+                    .and_then(|x| environment.table().get(x))
                 else {
                     return Ok(None);
                 };

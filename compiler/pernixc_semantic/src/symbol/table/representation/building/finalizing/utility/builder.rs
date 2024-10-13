@@ -105,10 +105,17 @@ impl<'a, M: Model>
                 }
             }
 
-            Record::TraitSatisfiability(q) => {
+            q @ (Record::NegativeTraitSatisfiability(_)
+            | Record::PositiveTraitSatisfiability(_)) => {
+                let trait_id = match q {
+                    Record::NegativeTraitSatisfiability(q) => q.query.id,
+                    Record::PositiveTraitSatisfiability(q) => q.query.id,
+                    _ => unreachable!(),
+                };
+
                 let final_implementations = environment
                     .table()
-                    .get(q.query.id)
+                    .get(trait_id)
                     .unwrap()
                     .implementations
                     .iter()

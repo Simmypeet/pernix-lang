@@ -160,10 +160,21 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     id: resolution::GenericID::Trait(trait_id),
                     generic_arguments,
                 }) => {
-                    let trait_predicate = predicate::Trait {
-                        id: trait_id,
-                        is_const: trait_bound.const_keyword().is_some(),
-                        generic_arguments: generic_arguments.clone(),
+                    let predicate = if trait_bound.negation().is_none() {
+                        predicate::Predicate::PositiveTrait(
+                            predicate::PositiveTrait {
+                                id: trait_id,
+                                is_const: trait_bound.const_keyword().is_some(),
+                                generic_arguments,
+                            },
+                        )
+                    } else {
+                        predicate::Predicate::NegativeTrait(
+                            predicate::NegativeTrait {
+                                id: trait_id,
+                                generic_arguments,
+                            },
+                        )
                     };
 
                     T::get_arena(self)
@@ -173,9 +184,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         .generic_declaration_mut()
                         .predicates
                         .push(symbol::Predicate {
-                            predicate: predicate::Predicate::Trait(
-                                trait_predicate,
-                            ),
+                            predicate,
                             span: Some(trait_bound.span()),
                         });
                 }

@@ -78,7 +78,7 @@ fn check_primitives_tuple_cloneable_impl(
         observer::NO_OP,
     );
 
-    let trait_predicate = predicate::Trait {
+    let trait_predicate = predicate::PositiveTrait {
         id: clone_trait_id,
         is_const: true,
         generic_arguments: GenericArguments {

@@ -197,7 +197,7 @@ fn predicate_requirements() {
     };
 
     // Fizz['a, &'b float32]
-    let expected_fizz = Predicate::Trait(predicate::Trait {
+    let expected_fizz = Predicate::PositiveTrait(predicate::PositiveTrait {
         id: fizz_id,
         is_const: false,
         generic_arguments: GenericArguments {
@@ -355,21 +355,22 @@ fn trait_occurrence() {
         .copied()
         .unwrap();
 
-    let expected_predicate = Predicate::Trait(predicate::Trait {
-        id: foo_id,
-        is_const: false,
-        generic_arguments: GenericArguments {
-            lifetimes: vec![Lifetime::Parameter(LifetimeParameterID {
-                parent: bar_id.into(),
-                id: bar_a_param,
-            })],
-            types: vec![Type::Parameter(TypeParameterID {
-                parent: bar_id.into(),
-                id: bar_t_param,
-            })],
-            constants: Vec::new(),
-        },
-    });
+    let expected_predicate =
+        Predicate::PositiveTrait(predicate::PositiveTrait {
+            id: foo_id,
+            is_const: false,
+            generic_arguments: GenericArguments {
+                lifetimes: vec![Lifetime::Parameter(LifetimeParameterID {
+                    parent: bar_id.into(),
+                    id: bar_a_param,
+                })],
+                types: vec![Type::Parameter(TypeParameterID {
+                    parent: bar_id.into(),
+                    id: bar_t_param,
+                })],
+                constants: Vec::new(),
+            },
+        });
 
     assert!(errors.iter().any(|error| {
         let Some(error) = error
