@@ -66,7 +66,7 @@ impl<'a, M: Model>
         >,
         _: &mut Context<M>,
     ) -> Result<(), OverflowError> {
-        let build_result = match record {
+        match record {
             Record::LifetimeEquality(_)
             | Record::TypeEquality(_)
             | Record::ConstantEquality(_)
@@ -82,7 +82,9 @@ impl<'a, M: Model>
             | Record::LifetimeOutlives(_)
             | Record::TypeOutlives(_)
             | Record::ConstantOutlives(_)
-            | Record::TypeCheck(_) => Ok(()),
+            | Record::TypeCheck(_)
+            | Record::PositiveTraitSatisfiability(_)
+            | Record::NegativeTraitSatisfiability(_) => {}
 
             Record::ConstantType(q) => {
                 let Type::Symbol(Symbol { id, .. }) = &q.query.0 else {
@@ -90,70 +92,33 @@ impl<'a, M: Model>
                 };
 
                 match id {
-                    AdtID::Struct(id) => environment.table().build_to(
-                        *id,
-                        Some(environment.observer().site),
-                        r#struct::DEFINITION_STATE,
-                        environment.observer().handler,
-                    ),
-                    AdtID::Enum(id) => environment.table().build_to(
-                        *id,
-                        Some(environment.observer().site),
-                        r#enum::DEFINITION_STATE,
-                        environment.observer().handler,
-                    ),
-                }
-            }
-
-            q @ (Record::NegativeTraitSatisfiability(_)
-            | Record::PositiveTraitSatisfiability(_)) => {
-                let trait_id = match q {
-                    Record::NegativeTraitSatisfiability(q) => q.query.id,
-                    Record::PositiveTraitSatisfiability(q) => q.query.id,
-                    _ => unreachable!(),
-                };
-
-                let final_implementations = environment
-                    .table()
-                    .get(trait_id)
-                    .unwrap()
-                    .implementations
-                    .iter()
-                    .copied()
-                    .collect::<Vec<_>>();
-
-                for implementation_id in final_implementations {
-                    let _ = match implementation_id {
-                        TraitImplementationID::Positive(id) => {
-                            environment.table().build_to(
-                                id,
+                    AdtID::Struct(id) => {
+                        environment
+                            .table()
+                            .build_to(
+                                *id,
                                 Some(environment.observer().site),
-                                positive_trait_implementation::ARGUMENT_STATE,
+                                r#struct::DEFINITION_STATE,
                                 environment.observer().handler,
                             )
-                        }
-                        TraitImplementationID::Negative(id) => {
-                            environment.table().build_to(
-                                id,
+                            .map_err(|_| OverflowError)?;
+                    }
+                    AdtID::Enum(id) => {
+                        environment
+                            .table()
+                            .build_to(
+                                *id,
                                 Some(environment.observer().site),
-                                negative_trait_implementation::ARGUMENT_STATE,
+                                r#enum::DEFINITION_STATE,
                                 environment.observer().handler,
                             )
-                        }
-                    };
+                            .map_err(|_| OverflowError)?;
+                    }
                 }
-
-                Ok(())
-            }
-        };
-
-        match build_result {
-            Ok(()) | Err(BuildSymbolError::EntryNotFound(_)) => Ok(()),
-            Err(BuildSymbolError::CyclicDependency) => Err(OverflowError),
-            Err(BuildSymbolError::InvalidStateFlag { .. }) => {
-                panic!("invalid state flag!")
             }
         }
+
+        Ok(())
     }
 
     fn on_retrieving_variance(
@@ -186,6 +151,59 @@ impl<'a, M: Model>
             Err(BuildSymbolError::InvalidStateFlag { .. }) => {
                 panic!("invalid state flag!")
             }
+        }
+    }
+
+    fn on_resolving_trait_implementation(
+        trait_id: ID<crate::symbol::Trait>,
+        _: &term::GenericArguments<M>,
+        environment: &Environment<
+            M,
+            Building<RwLockContainer, Finalizer>,
+            impl Normalizer<M, Building<RwLockContainer, Finalizer>>,
+            Self,
+        >,
+    ) -> Result<(), OverflowError> {
+        let implementations = environment
+            .table()
+            .get(trait_id)
+            .unwrap()
+            .implementations
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+
+        let mut error = false;
+
+        for implementation_id in implementations {
+            if match implementation_id {
+                TraitImplementationID::Positive(id) => {
+                    environment.table().build_to(
+                        id,
+                        Some(environment.observer().site),
+                        positive_trait_implementation::ARGUMENT_STATE,
+                        environment.observer().handler,
+                    )
+                }
+                TraitImplementationID::Negative(id) => {
+                    environment.table().build_to(
+                        id,
+                        Some(environment.observer().site),
+                        negative_trait_implementation::ARGUMENT_STATE,
+                        environment.observer().handler,
+                    )
+                }
+            }
+            .is_err()
+            {
+                error = true;
+            }
+        }
+
+        if error {
+            Err(OverflowError)
+        } else {
+            Ok(())
         }
     }
 

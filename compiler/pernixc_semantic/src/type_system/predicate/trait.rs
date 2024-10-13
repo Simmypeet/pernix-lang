@@ -511,6 +511,12 @@ pub fn resolve_implementation_with_context<M: Model, S: State>(
     context: &mut Context<M>,
 ) -> Result<Succeeded<Implementation<TraitImplementationID, M>, M>, ResolveError>
 {
+    Observer::on_resolving_trait_implementation(
+        trait_id,
+        generic_arguments,
+        environment,
+    )?;
+
     let trait_symbol =
         environment.table.get(trait_id).ok_or(ResolveError::InvalidID)?;
 

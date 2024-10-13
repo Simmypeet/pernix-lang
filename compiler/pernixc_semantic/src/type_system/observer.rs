@@ -6,11 +6,12 @@ use super::{
     model::Model,
     normalizer::Normalizer,
     query::{Context, Record},
+    term::GenericArguments,
     OverflowError,
 };
 use crate::{
     arena::ID,
-    symbol::{table::State, AdtID, TraitImplementationType},
+    symbol::{self, table::State, AdtID, TraitImplementationType},
 };
 
 /// The observer trait that observes the record before the query is executed.
@@ -36,6 +37,17 @@ pub trait Observer<M: Model, T: State>: Sized {
     /// See [`OverflowError`] for more information.
     fn on_retrieving_variance(
         adt_id: AdtID,
+        environment: &Environment<M, T, impl Normalizer<M, T>, Self>,
+    ) -> Result<(), OverflowError>;
+
+    /// Invoked when the trait implementation is being resolved.
+    ///
+    /// # Errors
+    ///
+    /// See [`OverflowError`] for more information.
+    fn on_resolving_trait_implementation(
+        trait_id: ID<symbol::Trait>,
+        generic_arguments: &GenericArguments<M>,
         environment: &Environment<M, T, impl Normalizer<M, T>, Self>,
     ) -> Result<(), OverflowError>;
 
@@ -69,6 +81,14 @@ impl<M: Model, T: State> Observer<M, T> for NoOp {
 
     fn on_retrieving_variance(
         _: AdtID,
+        _: &Environment<M, T, impl Normalizer<M, T>, Self>,
+    ) -> Result<(), OverflowError> {
+        Ok(())
+    }
+
+    fn on_resolving_trait_implementation(
+        _: ID<symbol::Trait>,
+        _: &GenericArguments<M>,
         _: &Environment<M, T, impl Normalizer<M, T>, Self>,
     ) -> Result<(), OverflowError> {
         Ok(())

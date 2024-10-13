@@ -8,7 +8,10 @@ use pernixc_base::{
     source_file::{SourceElement, Span},
 };
 
-use super::{builder, occurrences::Occurrences};
+use super::{
+    builder::{self, TypeSystem},
+    occurrences::Occurrences,
+};
 use crate::{
     arena::ID,
     error::{
@@ -992,11 +995,12 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             return;
         };
 
+        let observer = TypeSystem::new(id, handler);
         let (_, environment_errors) = Environment::new_with(
             self.get_active_premise::<Default>(id).unwrap(),
             self,
             normalizer::NO_OP,
-            observer::NO_OP,
+            &observer,
         );
         let active_premise_with_span = self
             .get_active_premise_predicates_with_span::<Default>(id)
@@ -1070,11 +1074,12 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         let active_premise = self.get_active_premise(id).unwrap();
+        let observer = TypeSystem::new(id, handler);
         let (environment, _) = Environment::new_with(
             active_premise,
             self,
             normalizer::NO_OP,
-            observer::NO_OP,
+            &observer,
         );
 
         // check resolution occurrences

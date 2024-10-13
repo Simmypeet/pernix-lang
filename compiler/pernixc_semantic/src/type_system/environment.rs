@@ -24,7 +24,13 @@ use crate::{
 
 /// A structure that contains the environment of the semantic logic.
 #[derive(Debug, Getters, CopyGetters)]
-pub struct Environment<'a, M: Model, T: State, N: Normalizer<M, T>, O> {
+pub struct Environment<
+    'a,
+    M: Model,
+    T: State,
+    N: Normalizer<M, T>,
+    O: Observer<M, T>,
+> {
     /// The premise of the semantic logic.
     #[get = "pub"]
     pub(super) premise: Premise<M>,
