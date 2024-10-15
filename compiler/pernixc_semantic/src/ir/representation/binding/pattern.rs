@@ -16,7 +16,7 @@ use crate::{
             Tuple,
         },
         value::{
-            register::{Assignment, Load, LoadKind, ReferenceOf},
+            register::{Assignment, Load, ReferenceOf},
             Value,
         },
     },
@@ -147,7 +147,6 @@ impl<
                     let register = self.create_register_assignmnet(
                         Assignment::Load(Load {
                             address: binding.address.clone(),
-                            kind: LoadKind::Copy,
                         }),
                         Some(span.clone()),
                     );
@@ -294,10 +293,7 @@ impl<
                         });
 
                     let moved_reg = self.create_register_assignmnet(
-                        Assignment::Load(Load {
-                            address: element_address,
-                            kind: LoadKind::Move,
-                        }),
+                        Assignment::Load(Load { address: element_address }),
                         Some(
                             tuple_pat
                                 .elements
@@ -356,10 +352,7 @@ impl<
                         });
 
                     let moved_reg = self.create_register_assignmnet(
-                        Assignment::Load(Load {
-                            address: element_address,
-                            kind: LoadKind::Move,
-                        }),
+                        Assignment::Load(Load { address: element_address }),
                         Some(
                             tuple_pat
                                 .elements
@@ -397,10 +390,7 @@ impl<
                         });
 
                     let moved_reg = self.create_register_assignmnet(
-                        Assignment::Load(Load {
-                            address: element_address,
-                            kind: LoadKind::Move,
-                        }),
+                        Assignment::Load(Load { address: element_address }),
                         Some(
                             tuple_pat
                                 .elements

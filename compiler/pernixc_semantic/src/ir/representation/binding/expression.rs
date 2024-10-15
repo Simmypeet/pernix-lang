@@ -57,9 +57,8 @@ use crate::{
             literal::{self, Boolean, Literal, Numeric, Unit, Unreachable},
             register::{
                 self, ArithmeticOperator, Array, Assignment, Binary,
-                BinaryOperator, BitwiseOperator, Cast, FunctionCall, Load,
-                LoadKind, Phi, Prefix, PrefixOperator, ReferenceOf, Register,
-                Struct, Variant,
+                BinaryOperator, BitwiseOperator, Cast, FunctionCall, Load, Phi,
+                Prefix, PrefixOperator, ReferenceOf, Register, Struct, Variant,
             },
             Value,
         },
@@ -1103,10 +1102,7 @@ impl<
         match config.target {
             Target::RValue | Target::Statement => {
                 let register_id = self.create_register_assignmnet(
-                    Assignment::Load(Load {
-                        address: address(operand),
-                        kind: LoadKind::Copy,
-                    }),
+                    Assignment::Load(Load { address: address(operand) }),
                     Some(dereference.span()),
                 );
 
@@ -1457,7 +1453,7 @@ impl<
                 Expression::LValue(LValue { address, span, .. }),
             ) => {
                 let register_id = self.create_register_assignmnet(
-                    Assignment::Load(Load { address, kind: LoadKind::Move }),
+                    Assignment::Load(Load { address }),
                     Some(span),
                 );
 
@@ -2484,10 +2480,7 @@ impl<
                     Target::RValue => {
                         // will be optimized to move later
                         let register_id = self.create_register_assignmnet(
-                            Assignment::Load(Load {
-                                address,
-                                kind: LoadKind::Move,
-                            }),
+                            Assignment::Load(Load { address }),
                             Some(syntax_tree.span()),
                         );
 
@@ -2574,10 +2567,7 @@ impl<
                 match config.target {
                     Target::Statement | Target::RValue => {
                         let register_id = self.create_register_assignmnet(
-                            Assignment::Load(Load {
-                                address,
-                                kind: LoadKind::Move,
-                            }),
+                            Assignment::Load(Load { address }),
                             Some(syntax_tree.span()),
                         );
 
@@ -3456,10 +3446,7 @@ impl<
         Ok(match config.target {
             Target::RValue => {
                 let register_id = self.create_register_assignmnet(
-                    Assignment::Load(Load {
-                        address: lhs_address.address,
-                        kind: LoadKind::Move,
-                    }),
+                    Assignment::Load(Load { address: lhs_address.address }),
                     Some(tree.span()),
                 );
 
@@ -3520,7 +3507,6 @@ impl<
                 let lhs_register = self.create_register_assignmnet(
                     Assignment::Load(Load {
                         address: lhs_lvalue.address.clone(),
-                        kind: LoadKind::Move,
                     }),
                     Some(syntax_tree.left.span()),
                 );

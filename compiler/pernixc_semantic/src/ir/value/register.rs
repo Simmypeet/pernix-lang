@@ -97,25 +97,11 @@ impl<M: Model> Representation<M> {
     }
 }
 
-/// An enumeration of either moving or copying loads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum LoadKind {
-    /// The value is memcpy'd from the address and the value in the address is
-    /// invalidated.
-    Move,
-
-    /// The value is copied from the address via `Copy` trait.
-    Copy,
-}
-
-/// Represents a load/read from an address in memory.
+/// Represents a load/read from an address in memory. (The type must be Copy)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Load<M: Model> {
     /// The address where the value is stored and will be read from.
     pub address: Address<M>,
-
-    /// The kind of load.
-    pub kind: LoadKind,
 }
 
 impl<M: Model> Representation<M> {
