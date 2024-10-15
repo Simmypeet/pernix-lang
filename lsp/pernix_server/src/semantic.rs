@@ -125,6 +125,7 @@ impl Semantic {
             table::build(std::iter::once(target), &semantic_error_storage);
 
         info!("{:#?}", table);
+        info!("{:#?}", semantic_error_storage.as_vec());
 
         // group the diagnostics by source file
         let mut lsp_diagnostics_by_source_file = HashMap::<_, Vec<_>>::new();
