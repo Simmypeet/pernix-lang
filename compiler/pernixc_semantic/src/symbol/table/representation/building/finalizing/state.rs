@@ -460,7 +460,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         ID<T>: Into<GlobalID>,
     {
         let (synchronization, syntax_tree, data) = {
-            let builder_read = self.state.read();
+            let builder_read = self.state.read_recursive();
             let states = T::get_states(&builder_read);
             let state = states.get(&id).ok_or(EntryNotFoundError)?;
 
@@ -742,7 +742,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             ($field_name:ident) => {
                 paste! {
                      self.state
-                        .read()
+                        .read_recursive()
                         .[<$field_name:snake s>]
                         .keys()
                         .copied()

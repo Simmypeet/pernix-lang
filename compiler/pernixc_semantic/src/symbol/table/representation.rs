@@ -1878,7 +1878,7 @@ pub fn build(
             .root_module_ids_by_name,
     };
 
-    if *handler.received.read() {
+    if *handler.received.read_recursive() {
         Err(BuildTableError::Suboptimal(Table {
             representation,
             state: Suboptimal(()),
