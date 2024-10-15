@@ -32,6 +32,7 @@ use crate::{
             Never, Term,
         },
         unification::{self, Log, Unification},
+        visitor::RecursiveIterator,
         Compute, Output, OverflowError, Premise, Satisfied, Succeeded,
     },
 };
@@ -544,6 +545,13 @@ impl<T> Constraint<T> for NoConstraint {
 }
 
 #[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error("found an inference variable that exists both in the lhs and rhs")]
+#[allow(missing_docs)]
+pub struct CyclicInferenceError<T>(InferenceVariable<T>);
+
+#[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
@@ -579,6 +587,12 @@ pub enum UnifyError {
 
     #[error(transparent)]
     CombineConstraint(#[from] CombineConstraintError<r#type::Constraint>),
+
+    #[error(transparent)]
+    CyclicConstantInference(#[from] CyclicInferenceError<Constant<Model>>),
+
+    #[error(transparent)]
+    CyclicTypeInference(#[from] CyclicInferenceError<Type<Model>>),
 }
 
 /// The inference context storing the inference variables and constraints.
@@ -794,7 +808,7 @@ impl<S: table::State> Normalizer<Model, S> for Context {
 
 impl Context {
     fn handle_known_and_infer<
-        T: Term<Model = Model>,
+        T: Term<Model = Model, InferenceVariable = InferenceVariable<T>>,
         C: 'static + Constraint<T>,
     >(
         &mut self,
@@ -802,9 +816,31 @@ impl Context {
         known: &T,
         context: &impl Fn(&mut Self) -> &mut ContextImpl<T, C>,
         into_unify_error: &impl Fn(UnsatisfiedConstraintError<T, C>) -> UnifyError,
-    ) -> Result<(), UnifyError> {
-        // shouldn't be another inference variable
-        assert!(known.as_inference().is_none());
+    ) -> Result<(), UnifyError>
+    where
+        UnifyError: From<UnregisteredInferenceVariableError<InferenceVariable<T>>>
+            + From<CyclicInferenceError<T>>,
+    {
+        // check if there's a constraint with the given ID on the known
+        for (term, _) in RecursiveIterator::new(known) {
+            let Ok(Some(inference_variable)) =
+                T::try_from_kind(term).map(|x| x.as_inference())
+            else {
+                continue;
+            };
+
+            let Inference::Inferring(inference) = context(self)
+                .get_inference(*inference_variable)
+                .ok_or(UnregisteredInferenceVariableError(*inference_variable))?
+                .clone()
+            else {
+                continue;
+            };
+
+            if inference == inferring {
+                return Err(CyclicInferenceError(*inference_variable).into());
+            }
+        }
 
         match context(self).assign_infer_to_known(inferring, known.clone()) {
             Ok(()) => Ok(()),
@@ -846,8 +882,8 @@ impl Context {
         combine_constraint_error: &impl Fn(CombineConstraintError<C>) -> UnifyError,
     ) -> Result<(), UnifyError>
     where
-        UnifyError:
-            From<UnregisteredInferenceVariableError<InferenceVariable<T>>>,
+        UnifyError: From<UnregisteredInferenceVariableError<InferenceVariable<T>>>
+            + From<CyclicInferenceError<T>>,
     {
         for (lhs, rhs) in mapping
             .iter()

@@ -18,7 +18,7 @@ use stack::Stack;
 use super::Representation;
 use crate::{
     arena::ID,
-    error::{self, MismatchedType},
+    error::{self, CyclicInference, MismatchedType},
     ir::{
         self,
         address::{Address, Memory},
@@ -784,14 +784,16 @@ impl<
                 let simplified_expected =
                     simplify(&expected_ty, &environment).result;
 
-                let result = match self.inference_context.unify_type(
-                    &simplified_ty,
-                    &simplified_expected,
-                    &self.premise,
-                    self.table,
-                    &self.type_system_observer,
-                ) {
-                    Ok(()) => true,
+                let error: Option<Box<dyn error::Error>> = match self
+                    .inference_context
+                    .unify_type(
+                        &simplified_ty,
+                        &simplified_expected,
+                        &self.premise,
+                        self.table,
+                        &self.type_system_observer,
+                    ) {
+                    Ok(()) => None,
 
                     Err(
                         UnifyError::UnregisteredConstantInferenceVariable(_)
@@ -799,19 +801,27 @@ impl<
                     ) => panic!("unregistered inference variable"),
 
                     Err(
+                        UnifyError::CyclicTypeInference(_)
+                        | UnifyError::CyclicConstantInference(_),
+                    ) => Some(Box::new(CyclicInference {
+                        first: self
+                            .inference_context
+                            .into_constraint_model(simplified_ty)
+                            .unwrap(),
+                        second: self
+                            .inference_context
+                            .into_constraint_model(simplified_expected)
+                            .unwrap(),
+                        span: type_check_span.clone(),
+                    })),
+
+                    Err(
                         UnifyError::IncompatibleTypes { .. }
                         | UnifyError::IncompatibleConstants { .. }
                         | UnifyError::ExceedLimitError(_)
                         | UnifyError::UnsatisfiedConstraint(_)
                         | UnifyError::CombineConstraint(_),
-                    ) => false,
-                };
-
-                // report the error
-                if result {
-                    Ok(())
-                } else {
-                    let error = Box::new(MismatchedType {
+                    ) => Some(Box::new(MismatchedType {
                         expected_type: self
                             .inference_context
                             .into_constraint_model(simplified_expected)
@@ -821,8 +831,11 @@ impl<
                             .into_constraint_model(simplified_ty)
                             .unwrap(),
                         span: type_check_span.clone(),
-                    });
+                    })),
+                };
 
+                // report the error
+                if let Some(error) = error {
                     if include_suboptimal_flag {
                         self.create_handler_wrapper(handler).receive(error);
                     } else {
@@ -830,6 +843,8 @@ impl<
                     }
 
                     Err(SemanticError(type_check_span))
+                } else {
+                    Ok(())
                 }
             }
             Expected::Constraint(constraint) => {

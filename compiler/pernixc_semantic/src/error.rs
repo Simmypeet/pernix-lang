@@ -2836,6 +2836,43 @@ impl Report<&Table<Suboptimal>> for SymbolIsNotCallable {
     }
 }
 
+/// Found a cyclic inference in the type checking.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CyclicInference<M: Model> {
+    /// The type that is involved in the cyclic inference.
+    pub first: Type<M>,
+
+    /// The type that is involved in the cyclic inference.
+    pub second: Type<M>,
+
+    /// The sapn where the type check occurred.
+    pub span: Span,
+}
+
+impl<M: Model> Report<&Table<Suboptimal>> for CyclicInference<M>
+where
+    Type<M>: Display<Suboptimal>,
+{
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "found a cyclic inference: `{}` and `{}`",
+                DisplayObject { display: &self.first, table },
+                DisplayObject { display: &self.second, table }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
 /// Mismatched type error.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MismatchedType<M: Model> {
