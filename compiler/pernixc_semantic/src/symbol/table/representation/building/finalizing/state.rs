@@ -478,15 +478,17 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         loop {
             // if the symbol is already finalized beyond the given flag, then we
             // can just return.
-            if synchronization.state_flag.lock().map_or(false, |x| x >= to_flag)
-            {
+            let flag_lock = synchronization.state_flag.lock();
+
+            if flag_lock.map_or(false, |x| x >= to_flag) {
                 synchronization.building.store(false, atomic::Ordering::SeqCst);
                 synchronization.notify.notify_all();
+
                 return Ok(());
             }
 
-            let next_flag =
-                synchronization.state_flag.lock().map_or(0, |x| x + 1);
+            let next_flag = flag_lock.map_or(0, |x| x + 1);
+            drop(flag_lock);
 
             T::finalize(
                 self,
@@ -501,8 +503,10 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             let mut builder_write = self.state.write();
             let states = T::get_states_mut(&mut builder_write);
 
+            let mut flag = synchronization.state_flag.lock();
+
             // update the state of the symbol
-            synchronization.state_flag.lock().replace(next_flag);
+            flag.replace(next_flag);
 
             let dependants = states
                 .get_mut(&id)
@@ -524,6 +528,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             }
 
             drop(builder_write);
+            drop(flag);
+
             synchronization.notify.notify_all();
         }
     }
@@ -538,7 +544,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         ID<T>: Into<GlobalID>,
     {
         loop {
-            let synchronization = T::get_states(&self.state.read())
+            let synchronization = T::get_states(&self.state.read_recursive())
                 .get(&id)
                 .ok_or(EntryNotFoundError)?
                 .synchronization
@@ -548,17 +554,13 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             // will wait until the other thread finishes building
             // the symbol. Otherwise, this thread will build the
             // symbol.
-
-            if synchronization
-                .building
-                .compare_exchange(
-                    false,
-                    true,
-                    atomic::Ordering::SeqCst,
-                    atomic::Ordering::SeqCst,
-                )
-                .is_ok()
-            {
+            if let Ok(result) = synchronization.building.compare_exchange(
+                false,
+                true,
+                atomic::Ordering::SeqCst,
+                atomic::Ordering::SeqCst,
+            ) {
+                assert!(!result, "building flag should be false");
                 return self.build_loop(id, to_flag, handler);
             }
 
