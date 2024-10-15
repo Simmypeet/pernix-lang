@@ -58,12 +58,8 @@ impl Finalize for TraitImplementationFunction {
         match state_flag {
             GENERIC_PARAMETER_STATE => {
                 // build the parent trait implementation's generic parameters
-                let parent_implementation_id = table
-                    .trait_implementation_functions
-                    .get(symbol_id)
-                    .unwrap()
-                    .read()
-                    .parent_id;
+                let parent_implementation_id =
+                    table.get(symbol_id).unwrap().parent_id;
                 let _ = table.build_to(
                     parent_implementation_id,
                     Some(symbol_id.into()),
@@ -111,12 +107,8 @@ impl Finalize for TraitImplementationFunction {
             }
 
             INTERMEDIATE_REPRESENTATION_AND_CEHCK_STATE => {
-                let parent_implementation_id = table
-                    .trait_implementation_functions
-                    .get(symbol_id)
-                    .unwrap()
-                    .read()
-                    .parent_id;
+                let parent_implementation_id =
+                    table.get(symbol_id).unwrap().parent_id;
                 let _ = table.build_to(
                     parent_implementation_id,
                     Some(symbol_id.into()),
@@ -151,17 +143,12 @@ impl Finalize for TraitImplementationFunction {
                     trait_implementation_sym.implemented_id
                 };
 
-                let trait_implementation_function_sym = table
-                    .trait_implementation_functions
-                    .get(symbol_id)
-                    .unwrap()
-                    .read();
+                let trait_implementation_function_sym =
+                    table.get(symbol_id).unwrap();
                 let trait_implementation_sym = table
-                    .positive_trait_implementations
                     .get(trait_implementation_function_sym.parent_id)
-                    .unwrap()
-                    .read();
-                let trait_sym = table.traits.get(trait_id).unwrap().read();
+                    .unwrap();
+                let trait_sym = table.get(trait_id).unwrap();
 
                 // get the trait type id equivalent
                 let Some(trait_function_id) = trait_sym
