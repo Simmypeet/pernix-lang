@@ -616,6 +616,24 @@ where
 
     fn as_kind_mut(&mut self) -> KindMut<M> { KindMut::Constant(self) }
 
+    fn try_from_kind(
+        kind: Kind<Self::Model>,
+    ) -> Result<&Self, Kind<Self::Model>> {
+        match kind {
+            Kind::Constant(constant) => Ok(constant),
+            _ => Err(kind),
+        }
+    }
+
+    fn try_from_kind_mut(
+        kind: KindMut<Self::Model>,
+    ) -> Result<&mut Self, KindMut<Self::Model>> {
+        match kind {
+            KindMut::Constant(constant) => Ok(constant),
+            _ => Err(kind),
+        }
+    }
+
     #[allow(private_bounds, private_interfaces)]
     fn outlives_satisfiability(&self, _: &Lifetime<M>) -> Satisfiability {
         // constants value do not have lifetimes

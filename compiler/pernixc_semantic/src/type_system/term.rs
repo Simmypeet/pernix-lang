@@ -629,6 +629,16 @@ pub trait Term:
     fn as_kind_mut(&mut self) -> KindMut<Self::Model>;
 
     #[doc(hidden)]
+    fn try_from_kind(
+        kind: Kind<Self::Model>,
+    ) -> Result<&Self, Kind<Self::Model>>;
+
+    #[doc(hidden)]
+    fn try_from_kind_mut(
+        kind: KindMut<Self::Model>,
+    ) -> Result<&mut Self, KindMut<Self::Model>>;
+
+    #[doc(hidden)]
     fn outlives_satisfiability(
         &self,
         lifetime: &Lifetime<Self::Model>,

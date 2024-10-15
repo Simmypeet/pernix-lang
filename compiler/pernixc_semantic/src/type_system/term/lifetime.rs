@@ -285,6 +285,24 @@ where
 
     fn as_kind_mut(&mut self) -> KindMut<M> { KindMut::Lifetime(self) }
 
+    fn try_from_kind(
+        kind: Kind<Self::Model>,
+    ) -> Result<&Self, Kind<Self::Model>> {
+        match kind {
+            Kind::Lifetime(lifetime) => Ok(lifetime),
+            _ => Err(kind),
+        }
+    }
+
+    fn try_from_kind_mut(
+        kind: KindMut<Self::Model>,
+    ) -> Result<&mut Self, KindMut<Self::Model>> {
+        match kind {
+            KindMut::Lifetime(lifetime) => Ok(lifetime),
+            _ => Err(kind),
+        }
+    }
+
     fn outlives_satisfiability(&self, other: &Self) -> Satisfiability {
         if self == other {
             return Satisfiability::Satisfied;
