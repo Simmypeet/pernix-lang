@@ -184,7 +184,7 @@ where
         drop(adt_implementation);
 
         let result = match GenericArguments::from_default_model(arguments)
-            .deduce(&parent_generic_arguments, self)
+            .deduce(parent_generic_arguments, self)
         {
             Ok(deduced) => deduced,
 
@@ -433,7 +433,7 @@ where
         // convert the generic arguments to an instantiation and delegate the
         // check to the `check_instantiation_predicates` method
         let instantiation = Instantiation::from_generic_arguments(
-            generic_arguments.clone(),
+            generic_arguments,
             instantiated,
             &self
                 .table()
@@ -678,7 +678,7 @@ where
                 Ok(None) => (Ok(None), Vec::new()),
                 Ok(Some(Succeeded { result, constraints })) => match result {
                     predicate::PositiveTraitSatisfied::ByPremise
-                    | predicate::PositiveTraitSatisfied::ByTraitContext => (
+                    | predicate::PositiveTraitSatisfied::ByEnvironment => (
                         Ok(Some(Succeeded::satisfied_with(constraints))),
                         Vec::new(),
                     ),
@@ -1520,8 +1520,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             let stub = self.get_active_premise(trait_member_id.into()).unwrap();
 
             Premise {
-                trait_context: implementation_member_active_premise
-                    .trait_context,
+                query_site: implementation_member_active_premise.query_site,
                 predicates: stub
                     .predicates
                     .into_iter()

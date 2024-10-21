@@ -15,7 +15,7 @@ use crate::{
             r#type::{self, Primitive, Qualifier, Reference, Type},
             GenericArguments,
         },
-        Premise, TraitContext,
+        Premise,
     },
 };
 
@@ -147,7 +147,7 @@ fn check_ambiguous_without_equality() {
         ]
         .into_iter()
         .collect(),
-        trait_context: TraitContext::Normal,
+        query_site: None,
     };
 
     let table = &Table::<Building>::default();
@@ -240,7 +240,7 @@ fn check_non_ambiguous_equality() {
         ]
         .into_iter()
         .collect(),
-        trait_context: TraitContext::Normal,
+        query_site: None,
     };
 
     let table = Table::<Building>::default();
@@ -328,7 +328,7 @@ fn check_ambiguous_equality() {
         ]
         .into_iter()
         .collect(),
-        trait_context: TraitContext::Normal,
+        query_site: None,
     };
 
     let table = Table::<Building>::default();
@@ -410,7 +410,7 @@ fn check_recursive_equality() {
         ]
         .into_iter()
         .collect(),
-        trait_context: TraitContext::Normal,
+        query_site: None,
     };
 
     let table = Table::<Building>::default();

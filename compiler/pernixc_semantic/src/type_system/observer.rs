@@ -11,7 +11,9 @@ use super::{
 };
 use crate::{
     arena::ID,
-    symbol::{self, table::State, AdtID, TraitImplementationType},
+    symbol::{
+        table::State, AdtID, ResolvableImplementedID, TraitImplementationType,
+    },
 };
 
 /// The observer trait that observes the record before the query is executed.
@@ -40,13 +42,13 @@ pub trait Observer<M: Model, T: State>: Sized {
         environment: &Environment<M, T, impl Normalizer<M, T>, Self>,
     ) -> Result<(), OverflowError>;
 
-    /// Invoked when the trait implementation is being resolved.
+    /// Invoked when the trait/marker  is being resolved.
     ///
     /// # Errors
     ///
     /// See [`OverflowError`] for more information.
-    fn on_resolving_trait_implementation(
-        trait_id: ID<symbol::Trait>,
+    fn on_resolving_implementation(
+        resolvable_implemented_id: ResolvableImplementedID,
         generic_arguments: &GenericArguments<M>,
         environment: &Environment<M, T, impl Normalizer<M, T>, Self>,
     ) -> Result<(), OverflowError>;
@@ -86,8 +88,8 @@ impl<M: Model, T: State> Observer<M, T> for NoOp {
         Ok(())
     }
 
-    fn on_resolving_trait_implementation(
-        _: ID<symbol::Trait>,
+    fn on_resolving_implementation(
+        _: ResolvableImplementedID,
         _: &GenericArguments<M>,
         _: &Environment<M, T, impl Normalizer<M, T>, Self>,
     ) -> Result<(), OverflowError> {

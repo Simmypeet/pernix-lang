@@ -277,6 +277,13 @@ impl GlobalID {
             Self::NegativeTraitImplementation(_) => "negative implementation",
             Self::AdtImplementation(_) => "implementation",
             Self::AdtImplementationFunction(_) => "implementation function",
+            Self::Marker(_) => "marker",
+            Self::PositiveMarkerImplementation(_) => {
+                "positive marker implementation"
+            }
+            Self::NegativeMarkerImplementation(_) => {
+                "negative marker implementation"
+            }
         }
     }
 }

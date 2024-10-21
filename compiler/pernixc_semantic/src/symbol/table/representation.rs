@@ -1,7 +1,7 @@
 //! Contains the definition of [`Representation`] and methods.
 
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, BTreeSet, HashMap},
     fmt::Debug,
     hash::Hash,
     ops::{Deref, DerefMut},
@@ -29,17 +29,20 @@ use crate::{
         AdtImplementationFunction, Callable, CallableID, Constant, Enum,
         Function, Generic, GenericDeclaration, GenericID, GenericTemplate,
         Global, GlobalID, HierarchyRelationship, Implementation,
-        ImplementationID, ImplementationTemplate, Module, ModuleMemberID,
-        NegativeTraitImplementation, PositiveTraitImplementation, Struct,
-        Trait, TraitConstant, TraitFunction, TraitImplementationConstant,
-        TraitImplementationFunction, TraitImplementationType, TraitType, Type,
+        ImplementationID, ImplementationTemplate, Marker,
+        MarkerImplementationID, Module, ModuleMemberID,
+        NegativeMarkerImplementation, NegativeTraitImplementation,
+        PositiveMarkerImplementation, PositiveTraitImplementation,
+        ResolvableImplementation, Struct, Trait, TraitConstant, TraitFunction,
+        TraitImplementationConstant, TraitImplementationFunction,
+        TraitImplementationID, TraitImplementationType, TraitType, Type,
         Variant,
     },
     type_system::{
         model::{Default, Model},
         predicate::Predicate,
         term::{constant, lifetime::Lifetime, r#type, GenericArguments},
-        Premise, TraitContext,
+        Premise,
     },
 };
 
@@ -249,82 +252,59 @@ impl Container for NoContainer {
 /// The representation of the table without any state information.
 #[derive(Debug, Getters)]
 pub struct Representation<T: Container> {
-    /// The modules defined in the table.
-    #[get = "pub"]
     modules: Arena<T::Wrap<Module>, ID<Module>>,
-    /// The structs defined in the table.
-    #[get = "pub"]
     structs: Arena<T::Wrap<Struct>, ID<Struct>>,
-    /// The enums defined in the table.
-    #[get = "pub"]
     enums: Arena<T::Wrap<Enum>, ID<Enum>>,
-    /// The variants defined in the table.
-    #[get = "pub"]
     variants: Arena<T::Wrap<Variant>, ID<Variant>>,
-    /// The types defined in the table.
-    #[get = "pub"]
     types: Arena<T::Wrap<Type>, ID<Type>>,
-    /// The functions defined in the table.
-    #[get = "pub"]
     functions: Arena<T::Wrap<Function>, ID<Function>>,
-    /// The constants defined in the table.
-    #[get = "pub"]
     constants: Arena<T::Wrap<Constant>, ID<Constant>>,
 
-    /// The traits defined in the table.
-    #[get = "pub"]
     traits: Arena<T::Wrap<Trait>, ID<Trait>>,
-    /// The trait types defined in the table.
-    #[get = "pub"]
     trait_types: Arena<T::Wrap<TraitType>, ID<TraitType>>,
-    /// The trait functions defined in the table.
-    #[get = "pub"]
     trait_functions: Arena<T::Wrap<TraitFunction>, ID<TraitFunction>>,
-    /// The trait constants defined in the table.
-    #[get = "pub"]
     trait_constants: Arena<T::Wrap<TraitConstant>, ID<TraitConstant>>,
 
-    /// The trait implementations defined in the table.
-    #[get = "pub"]
     positive_trait_implementations: Arena<
         T::Wrap<PositiveTraitImplementation>,
         ID<PositiveTraitImplementation>,
     >,
-    /// The negative trait implementations defined in the table.
-    #[get = "pub"]
     negative_trait_implementations: Arena<
         T::Wrap<NegativeTraitImplementation>,
         ID<NegativeTraitImplementation>,
     >,
 
-    /// The trait implementation types defined in the table.
-    #[get = "pub"]
     trait_implementation_types:
         Arena<T::Wrap<TraitImplementationType>, ID<TraitImplementationType>>,
-    /// The trait implementation functions defined in the table.
-    #[get = "pub"]
     trait_implementation_functions: Arena<
         T::Wrap<TraitImplementationFunction>,
         ID<TraitImplementationFunction>,
     >,
-    /// The trait implementation constants defined in the table.
-    #[get = "pub"]
     trait_implementation_constants: Arena<
         T::Wrap<TraitImplementationConstant>,
         ID<TraitImplementationConstant>,
     >,
 
-    /// The ADT implementations defined in the table.
-    #[get = "pub"]
     adt_implementations:
         Arena<T::Wrap<AdtImplementation>, ID<AdtImplementation>>,
 
-    /// The ADT implementation functions defined in the table.
-    #[get = "pub"]
     adt_implementation_functions: Arena<
         T::Wrap<AdtImplementationFunction>,
         ID<AdtImplementationFunction>,
     >,
+
+    markers: Arena<T::Wrap<Marker>, ID<Marker>>,
+
+    positive_marker_implementations: Arena<
+        T::Wrap<PositiveMarkerImplementation>,
+        ID<PositiveMarkerImplementation>,
+    >,
+
+    negative_marker_implementations: Arena<
+        T::Wrap<NegativeMarkerImplementation>,
+        ID<NegativeMarkerImplementation>,
+    >,
+
     /// Maps the root module (target) names to their IDs.
     #[get = "pub"]
     root_module_ids_by_name: HashMap<String, ID<Module>>,
@@ -351,6 +331,9 @@ impl<T: Container> std::default::Default for Representation<T> {
             trait_implementation_constants: Arena::default(),
             adt_implementations: Arena::default(),
             adt_implementation_functions: Arena::default(),
+            markers: Arena::default(),
+            positive_marker_implementations: Arena::default(),
+            negative_marker_implementations: Arena::default(),
             root_module_ids_by_name: HashMap::default(),
         }
     }
@@ -399,6 +382,9 @@ implements_element!(TraitImplementationConstant);
 implements_element!(TraitImplementationFunction);
 implements_element!(AdtImplementation);
 implements_element!(AdtImplementationFunction);
+implements_element!(Marker);
+implements_element!(PositiveMarkerImplementation);
+implements_element!(NegativeMarkerImplementation);
 
 macro_rules! get {
     ($self:ident, $id:ident, $kind:ident, $($field:ident),*) => {
@@ -729,7 +715,10 @@ impl<T: Container> Representation<T> {
             | GlobalID::TraitType(_)
             | GlobalID::TraitFunction(_)
             | GlobalID::TraitConstant(_)
-            | GlobalID::AdtImplementationFunction(_) => None,
+            | GlobalID::AdtImplementationFunction(_)
+            | GlobalID::Marker(_)
+            | GlobalID::PositiveMarkerImplementation(_)
+            | GlobalID::NegativeMarkerImplementation(_) => None,
         }
         .ok_or(GetMemberError::MemberNotFound)
     }
@@ -1214,26 +1203,15 @@ impl<T: Container> Representation<T> {
         &self,
         global_id: GlobalID,
     ) -> Option<Premise<M>> {
-        let mut premise = Premise::default();
+        let mut premise = Premise {
+            predicates: BTreeSet::new(),
+            query_site: Some(global_id),
+        };
 
         for global_id in self.scope_walker(global_id)? {
             let Ok(generic_id) = GenericID::try_from(global_id) else {
                 continue;
             };
-
-            // assign environment
-            match generic_id {
-                GenericID::Trait(id) => {
-                    premise.trait_context = TraitContext::InTrait(id);
-                }
-
-                GenericID::PositiveTraitImplementation(id) => {
-                    premise.trait_context =
-                        TraitContext::InTraitImplementation(id);
-                }
-
-                _ => {}
-            }
 
             let generic = self.get_generic(generic_id)?;
 
@@ -1353,6 +1331,19 @@ impl<T: Container> Representation<T> {
                     T::read(global_id).implemented_id.into()
                 )
             ),
+            (Marker),
+            (
+                PositiveMarkerImplementation,
+                self.get_accessibility(
+                    T::read(global_id).implemented_id.into()
+                )
+            ),
+            (
+                NegativeMarkerImplementation,
+                self.get_accessibility(
+                    T::read(global_id).implemented_id.into()
+                )
+            ),
             (TraitImplementationType),
             (TraitImplementationFunction),
             (TraitImplementationConstant),
@@ -1384,6 +1375,8 @@ impl<T: Container> Representation<T> {
             ImplementationID,
             PositiveTrait,
             NegativeTrait,
+            NegativeMarker,
+            PositiveMarker,
             Adt
         )
     }
@@ -1413,7 +1406,10 @@ impl<T: Container> Representation<T> {
             TraitImplementationFunction,
             NegativeTraitImplementation,
             AdtImplementation,
-            AdtImplementationFunction
+            AdtImplementationFunction,
+            Marker,
+            PositiveMarkerImplementation,
+            NegativeMarkerImplementation
         )
     }
 
@@ -1477,7 +1473,10 @@ impl<T: Container> Representation<T> {
             TraitImplementationConstant,
             NegativeTraitImplementation,
             AdtImplementation,
-            AdtImplementationFunction
+            AdtImplementationFunction,
+            Marker,
+            PositiveMarkerImplementation,
+            NegativeMarkerImplementation
         )
     }
 }
@@ -1873,6 +1872,13 @@ pub fn build(
         adt_implementation_functions: convert_rw_locked_arena(
             building_table.representation.adt_implementation_functions,
         ),
+        markers: convert_rw_locked_arena(building_table.representation.markers),
+        positive_marker_implementations: convert_rw_locked_arena(
+            building_table.representation.positive_marker_implementations,
+        ),
+        negative_marker_implementations: convert_rw_locked_arena(
+            building_table.representation.negative_marker_implementations,
+        ),
         root_module_ids_by_name: building_table
             .representation
             .root_module_ids_by_name,
@@ -2181,6 +2187,38 @@ impl<T: Container> Representation<T> {
         };
 
         Some(Insertion { id: member_id, duplication })
+    }
+}
+
+impl<T: Container> Index<TraitImplementationID> for Representation<T> {
+    type Output<'a> =
+        T::MappedRead<'a, dyn ResolvableImplementation<ID<Trait>>>;
+
+    fn get(&self, index: TraitImplementationID) -> Option<Self::Output<'_>> {
+        match index {
+            TraitImplementationID::Positive(id) => {
+                self.get(id).map(|x| T::map_read(x, |x| x as _))
+            }
+            TraitImplementationID::Negative(id) => {
+                self.get(id).map(|x| T::map_read(x, |x| x as _))
+            }
+        }
+    }
+}
+
+impl<T: Container> Index<MarkerImplementationID> for Representation<T> {
+    type Output<'a> =
+        T::MappedRead<'a, dyn ResolvableImplementation<ID<Marker>>>;
+
+    fn get(&self, index: MarkerImplementationID) -> Option<Self::Output<'_>> {
+        match index {
+            MarkerImplementationID::Positive(id) => {
+                self.get(id).map(|x| T::map_read(x, |x| x as _))
+            }
+            MarkerImplementationID::Negative(id) => {
+                self.get(id).map(|x| T::map_read(x, |x| x as _))
+            }
+        }
     }
 }
 

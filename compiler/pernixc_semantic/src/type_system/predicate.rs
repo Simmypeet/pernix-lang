@@ -2,6 +2,7 @@
 
 mod constant_type;
 mod outlives;
+mod resolution;
 mod r#trait;
 mod tuple;
 
@@ -97,11 +98,14 @@ pub enum Satisfiability {
 pub use constant_type::{ConstantType, QuerySource as ConstantTypeQuerySource};
 pub use outlives::Outlives;
 pub use r#trait::{
-    resolve_implementation, resolve_implementation_with_context,
-    Implementation, Kind as TraitKind, Negative as NegativeTrait,
+    Kind as TraitKind, Negative as NegativeTrait,
     NegativeSatisfied as NegativeTraitSatisfied, Positive as PositiveTrait,
     PositiveSatisfied as PositiveTraitSatisfied,
     ResolveError as TraitResolveError,
+};
+pub use resolution::{
+    resolve_implementation, resolve_implementation_with_context,
+    Error as ResolutionError, Implementation,
 };
 pub use tuple::Tuple;
 

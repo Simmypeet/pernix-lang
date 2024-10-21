@@ -21,10 +21,11 @@ use crate::{
     symbol::{
         table::{representation::RwLockContainer, Building, Table},
         AdtImplementation, AdtImplementationFunction, Constant, Enum, Function,
-        GlobalID, NegativeTraitImplementation, PositiveTraitImplementation,
-        Struct, Trait, TraitConstant, TraitFunction,
-        TraitImplementationConstant, TraitImplementationFunction,
-        TraitImplementationType, TraitType, Type,
+        GlobalID, Marker, NegativeMarkerImplementation,
+        NegativeTraitImplementation, PositiveMarkerImplementation,
+        PositiveTraitImplementation, Struct, Trait, TraitConstant,
+        TraitFunction, TraitImplementationConstant,
+        TraitImplementationFunction, TraitImplementationType, TraitType, Type,
     },
 };
 
@@ -125,6 +126,16 @@ pub struct Representation {
     trait_types: HashMap<ID<TraitType>, State<TraitType>>,
     traits: HashMap<ID<Trait>, State<Trait>>,
     types: HashMap<ID<Type>, State<Type>>,
+
+    markers: HashMap<ID<Marker>, State<Marker>>,
+    positive_marker_implementations: HashMap<
+        ID<PositiveMarkerImplementation>,
+        State<PositiveMarkerImplementation>,
+    >,
+    negative_marker_implementations: HashMap<
+        ID<NegativeMarkerImplementation>,
+        State<NegativeMarkerImplementation>,
+    >,
 
     dependencies_by_dependant: HashMap<GlobalID, GlobalID>,
     reported_cyclic_dependencies: HashSet<BTreeSet<GlobalID>>,
@@ -239,6 +250,17 @@ impl Representation {
             GlobalID::TraitType(id) => {
                 self.trait_types.get(&id).map(|x| &x.dependants_by_flag)
             }
+            GlobalID::Marker(id) => {
+                self.markers.get(&id).map(|x| &x.dependants_by_flag)
+            }
+            GlobalID::PositiveMarkerImplementation(id) => self
+                .positive_marker_implementations
+                .get(&id)
+                .map(|x| &x.dependants_by_flag),
+            GlobalID::NegativeMarkerImplementation(id) => self
+                .negative_marker_implementations
+                .get(&id)
+                .map(|x| &x.dependants_by_flag),
 
             GlobalID::Variant(_) | GlobalID::Module(_) => None,
         }
@@ -337,6 +359,23 @@ impl Representation {
             GlobalID::TraitType(id) => self.trait_types.get(&id).map(|x| {
                 x.dependants_by_flag.values().any(|x| x.contains(&dependent))
             }),
+            GlobalID::Marker(id) => self.markers.get(&id).map(|x| {
+                x.dependants_by_flag.values().any(|x| x.contains(&dependent))
+            }),
+            GlobalID::PositiveMarkerImplementation(id) => {
+                self.positive_marker_implementations.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
+            GlobalID::NegativeMarkerImplementation(id) => {
+                self.negative_marker_implementations.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
 
             GlobalID::Variant(_) | GlobalID::Module(_) => None,
         }
@@ -392,6 +431,9 @@ implements_element!(NegativeTraitImplementation);
 implements_element!(TraitType);
 implements_element!(Trait);
 implements_element!(Type);
+implements_element!(Marker);
+implements_element!(PositiveMarkerImplementation);
+implements_element!(NegativeMarkerImplementation);
 
 impl Finalizer {
     /// Adds a new symbol to the builder and sets its state to drafting.

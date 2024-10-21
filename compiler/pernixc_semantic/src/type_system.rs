@@ -2,7 +2,6 @@
 
 use std::collections::BTreeSet;
 
-use enum_as_inner::EnumAsInner;
 use environment::Environment;
 use observer::Observer;
 use predicate::Outlives;
@@ -16,10 +15,7 @@ use self::{
     predicate::Predicate,
     term::{lifetime::Lifetime, r#type::Type},
 };
-use crate::{
-    arena::ID,
-    symbol::{table::State, PositiveTraitImplementation, Trait},
-};
+use crate::symbol::{table::State, GlobalID};
 
 pub mod compatible;
 pub mod deduction;
@@ -196,33 +192,12 @@ pub struct Premise<M: Model> {
     /// List of predicates that will be considered as facts.
     pub predicates: BTreeSet<Predicate<M>>,
 
-    /// The extra trait context that has a particular effect on the semantic.
-    pub trait_context: TraitContext,
-}
-
-/// Extra environment content that has a particular effect on the semantic
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Default,
-    EnumAsInner,
-)]
-pub enum TraitContext {
-    /// The semantic logic is currently taking place in a trait implementation.
-    InTraitImplementation(ID<PositiveTraitImplementation>),
-
-    /// The semantic logic is currently taking place in a trait.
-    InTrait(ID<Trait>),
-
-    /// The semantic logic is currently taking place in other than the above.
-    #[default]
-    Normal,
+    /// An optional [`GlobalID`] specifying the site where the queries will be
+    /// taking place in.
+    ///
+    /// This can influence the result of resoliving the trait/marker
+    /// implementations.
+    pub query_site: Option<GlobalID>,
 }
 
 /// A trait used for computing the result of the query.

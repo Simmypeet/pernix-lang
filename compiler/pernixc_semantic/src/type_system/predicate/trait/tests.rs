@@ -30,7 +30,7 @@ use crate::{
         model::Default,
         normalizer, observer,
         order::Order,
-        predicate,
+        predicate::{self, resolve_implementation},
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments, Kind,
@@ -117,7 +117,7 @@ impl SingleImplementation {
     fn assert(&self) -> TestCaseResult {
         let premise = Premise::default();
 
-        let Succeeded { result, constraints } = super::resolve_implementation(
+        let Succeeded { result, constraints } = resolve_implementation(
             self.trait_id,
             &self.generic_arguments,
             &Environment {
@@ -495,7 +495,7 @@ pub struct SpecializedImplementation {
 impl SpecializedImplementation {
     fn assert(&self) -> TestCaseResult {
         // should match to the specialized implementation
-        let Succeeded { result, constraints } = super::resolve_implementation(
+        let Succeeded { result, constraints } = resolve_implementation(
             self.trait_id,
             &self.generic_arguments,
             &Environment {
@@ -856,7 +856,7 @@ pub struct FallbackToGeneralImplementation(SpecializedImplementation);
 impl FallbackToGeneralImplementation {
     fn assert(&self) -> TestCaseResult {
         // should match to the general implementation
-        let Succeeded { result, constraints } = super::resolve_implementation(
+        let Succeeded { result, constraints } = resolve_implementation(
             self.0.trait_id,
             &self.0.generic_arguments,
             &Environment {

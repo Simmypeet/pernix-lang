@@ -3,7 +3,10 @@ pub(in crate::symbol::table::representation::building) mod adt_implementation_fu
 pub(in crate::symbol::table::representation::building) mod constant;
 pub(in crate::symbol::table::representation::building) mod r#enum;
 pub(in crate::symbol::table::representation::building) mod function;
+pub(in crate::symbol::table::representation::building) mod marker;
+pub(in crate::symbol::table::representation::building) mod negative_marker_implementation;
 pub(in crate::symbol::table::representation::building) mod negative_trait_implementation;
+pub(in crate::symbol::table::representation::building) mod positive_marker_implementation;
 pub(in crate::symbol::table::representation::building) mod positive_trait_implementation;
 pub(in crate::symbol::table::representation::building) mod r#struct;
 pub(in crate::symbol::table::representation::building) mod r#trait;

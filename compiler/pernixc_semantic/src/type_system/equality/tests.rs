@@ -669,7 +669,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
 
         let mut modified_premise = Premise::default();
         modified_premise.predicates = predicates_cloned;
-        modified_premise.trait_context = premise.trait_context.clone();
+        modified_premise.query_site = premise.query_site.clone();
 
         let modified_environment = &Environment {
             premise: modified_premise,

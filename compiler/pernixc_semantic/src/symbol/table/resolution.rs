@@ -29,11 +29,11 @@ use crate::{
     symbol::{
         self, AdtID, AdtImplementationFunction, Constant, ConstantParameter,
         Enum, Function, GenericKind, GlobalID, LifetimeParameter,
-        LifetimeParameterID, MemberID, Module, PositiveTraitImplementation,
-        Struct, Trait, TraitConstant, TraitFunction,
-        TraitImplementationConstant, TraitImplementationFunction,
-        TraitImplementationType, TraitType, Type, TypeParameter,
-        TypeParameterID,
+        LifetimeParameterID, Marker, MemberID, Module,
+        PositiveTraitImplementation, Struct, Trait, TraitConstant,
+        TraitFunction, TraitImplementationConstant,
+        TraitImplementationFunction, TraitImplementationType, TraitType, Type,
+        TypeParameter, TypeParameterID,
     },
     type_system::{
         instantiation::{self, Instantiation},
@@ -69,6 +69,7 @@ pub enum GenericID {
     Trait(ID<Trait>),
     Constant(ID<Constant>),
     Type(ID<Type>),
+    Marker(ID<Marker>),
 
     /*
     Trait implementations are included here instead of in the `MemberGenericID`
@@ -89,6 +90,7 @@ impl From<GenericID> for GlobalID {
             GenericID::Trait(id) => Self::Trait(id),
             GenericID::Constant(id) => Self::Constant(id),
             GenericID::Type(id) => Self::Type(id),
+            GenericID::Marker(id) => Self::Marker(id),
 
             GenericID::TraitImplementationFunction(id) => {
                 Self::TraitImplementationFunction(id)
@@ -112,6 +114,7 @@ impl From<GenericID> for symbol::GenericID {
             GenericID::Trait(id) => Self::Trait(id),
             GenericID::Constant(id) => Self::Constant(id),
             GenericID::Type(id) => Self::Type(id),
+            GenericID::Marker(id) => Self::Marker(id),
 
             GenericID::TraitImplementationFunction(id) => {
                 Self::TraitImplementationFunction(id)
@@ -1819,6 +1822,10 @@ impl<S: State> Table<S> {
                     ),
                 variant: id,
             }),
+            GlobalID::Marker(id) => Resolution::Generic(Generic {
+                id: id.into(),
+                generic_arguments: generic_arguments.unwrap(),
+            }),
             GlobalID::TraitType(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
@@ -1852,7 +1859,9 @@ impl<S: State> Table<S> {
 
             GlobalID::AdtImplementation(_)
             | GlobalID::NegativeTraitImplementation(_)
-            | GlobalID::PositiveTraitImplementation(_) => {
+            | GlobalID::PositiveTraitImplementation(_)
+            | GlobalID::PositiveMarkerImplementation(_)
+            | GlobalID::NegativeMarkerImplementation(_) => {
                 unreachable!("impossible to refer to a trait implementation")
             }
 
@@ -2140,6 +2149,12 @@ impl<S: State> Table<S> {
                             generic_arguments: generic_arguments.unwrap(),
                         })
                     }
+                    symbol::ModuleMemberID::Marker(id) => {
+                        Resolution::Generic(Generic {
+                            id: id.into(),
+                            generic_arguments: generic_arguments.unwrap(),
+                        })
+                    }
                 };
 
                 if let Some(observer) = config.observer.as_mut() {
@@ -2172,7 +2187,7 @@ impl<S: State> Table<S> {
     ///
     /// # Errors
     ///
-    /// See [`Error`] for more information
+    /// See [`ResolveQualifiedIdentifierError`] for more information
     pub fn resolve<M: Model>(
         &self,
         qualified_identifier: &QualifiedIdentifier,

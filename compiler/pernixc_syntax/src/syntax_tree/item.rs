@@ -657,6 +657,119 @@ impl SourceElement for TraitBody {
 }
 
 /// Syntax Synopsis:
+/// ```txt
+/// MarkerKind:
+///     'and'
+///     | 'or'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum MarkerKind {
+    And(Keyword),
+    Or(Keyword),
+}
+
+impl MarkerKind {
+    /// Returns the [`Keyword`] of the [`MarkerKind`].
+    #[must_use]
+    pub const fn keyword(&self) -> &Keyword {
+        match self {
+            Self::And(keyword) | Self::Or(keyword) => keyword,
+        }
+    }
+}
+
+/// Syntax Synopsis:
+/// ```txt
+/// MarkerSignature:
+///     'marker' MarkerKind Identifier GenericParameters? WhereClause?
+///     '
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct MarkerSignature {
+    #[get = "pub"]
+    marker_keyword: Keyword,
+    #[get = "pub"]
+    kind: MarkerKind,
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    generic_parameters: Option<GenericParameters>,
+    #[get = "pub"]
+    where_clause: Option<WhereClause>,
+}
+
+impl MarkerSignature {
+    /// Dissolves the [`MarkerSignature`] into a tuple of its fields.
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn dissolve(
+        self,
+    ) -> (
+        Keyword,
+        MarkerKind,
+        Identifier,
+        Option<GenericParameters>,
+        Option<WhereClause>,
+    ) {
+        (
+            self.marker_keyword,
+            self.kind,
+            self.identifier,
+            self.generic_parameters,
+            self.where_clause,
+        )
+    }
+}
+
+impl SourceElement for MarkerSignature {
+    fn span(&self) -> Span {
+        let start = &self.marker_keyword.span;
+        self.where_clause.as_ref().map_or_else(
+            || {
+                self.generic_parameters.as_ref().map_or_else(
+                    || start.join(&self.identifier.span).unwrap(),
+                    |generic_parameters| {
+                        start.join(&generic_parameters.span()).unwrap()
+                    },
+                )
+            },
+            |where_clause| start.join(&where_clause.span()).unwrap(),
+        )
+    }
+}
+
+/// Syntax Synopsis:
+/// ```txt
+/// Marker:
+///     AccessModifier MarkerSignature ';'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Marker {
+    #[get = "pub"]
+    access_modifier: AccessModifier,
+    #[get = "pub"]
+    signature: MarkerSignature,
+    #[get = "pub"]
+    semicolon: Punctuation,
+}
+
+impl Marker {
+    /// Dissolves the [`Marker`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (AccessModifier, MarkerSignature, Punctuation) {
+        (self.access_modifier, self.signature, self.semicolon)
+    }
+}
+
+impl SourceElement for Marker {
+    fn span(&self) -> Span {
+        self.access_modifier.span().join(&self.semicolon.span).unwrap()
+    }
+}
+
+/// Syntax Synopsis:
 /// ``` txt
 /// Trait:
 ///     AccessModifier TraitSignature TraitBody
@@ -1400,12 +1513,14 @@ impl SourceElement for ImplementationBody {
 /// ImplementationKind:
 ///     NegativeImplementation
 ///     | ImplementationBody
+///     | ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum ImplementationKind {
     Negative(NegativeImplementation),
     Positive(ImplementationBody),
+    Empty(Punctuation),
 }
 
 impl SourceElement for ImplementationKind {
@@ -1413,6 +1528,7 @@ impl SourceElement for ImplementationKind {
         match self {
             Self::Negative(negative) => negative.span(),
             Self::Positive(positive) => positive.span(),
+            Self::Empty(empty) => empty.span.clone(),
         }
     }
 }
@@ -1787,6 +1903,7 @@ pub enum Item {
     Enum(Enum),
     Module(Module),
     Constant(Constant),
+    Marker(Marker),
     Extern(Extern),
 }
 
@@ -1801,6 +1918,7 @@ impl SourceElement for Item {
             Self::Implementation(i) => i.span(),
             Self::Enum(e) => e.span(),
             Self::Constant(c) => c.span(),
+            Self::Marker(m) => m.span(),
             Self::Extern(e) => e.span(),
         }
     }
@@ -2290,6 +2408,16 @@ impl<'a> Parser<'a> {
                     semicolon,
                 })
             }
+
+            Reading::Unit(Token::Punctuation(
+                semicolon @ Punctuation { punctuation: ';', .. },
+            )) => {
+                // eat semicolon
+                self.forward();
+
+                ImplementationKind::Empty(semicolon)
+            }
+
             _ => ImplementationKind::Positive(
                 self.parse_implements_body(handler)?,
             ),
@@ -2786,6 +2914,50 @@ impl<'a> Parser<'a> {
         Some(ConstantDefinition { equals, expression, where_clause, semicolon })
     }
 
+    fn parse_marker_signature(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<MarkerSignature> {
+        let marker_keyword =
+            self.parse_keyword(KeywordKind::Marker, handler)?;
+        let kind = match self.stop_at_significant() {
+            Reading::Unit(Token::Keyword(
+                keyword @ Keyword { kind: KeywordKind::And, .. },
+            )) => {
+                self.forward();
+
+                MarkerKind::And(keyword)
+            }
+            Reading::Unit(Token::Keyword(
+                keyword @ Keyword { kind: KeywordKind::Or, .. },
+            )) => {
+                self.forward();
+
+                MarkerKind::Or(keyword)
+            }
+            found => {
+                handler.receive(Error {
+                    expected: SyntaxKind::Keyword(KeywordKind::And),
+                    alternatives: vec![SyntaxKind::Keyword(KeywordKind::Or)],
+                    found: self.reading_to_found(found),
+                });
+                self.forward();
+                return None;
+            }
+        };
+        let identifier = self.parse_identifier(handler)?;
+        let generic_parameters = self.try_parse_generic_parameters(handler)?;
+        let where_clause = self.try_parse_where_clause(handler)?;
+
+        Some(MarkerSignature {
+            marker_keyword,
+            kind,
+            identifier,
+            generic_parameters,
+            where_clause,
+        })
+    }
+
     #[allow(clippy::too_many_lines)]
     fn parse_item_with_access_modifier(
         &mut self,
@@ -2807,6 +2979,21 @@ impl<'a> Parser<'a> {
                     const_keyword: None,
                     signature: function_signature,
                     body: function_body,
+                }))
+            }
+
+            Reading::Unit(Token::Keyword(Keyword {
+                kind: KeywordKind::Marker,
+                ..
+            })) => {
+                let marker_signature = self.parse_marker_signature(handler)?;
+
+                let semicolon = self.parse_punctuation(';', true, handler)?;
+
+                Some(Item::Marker(Marker {
+                    access_modifier,
+                    signature: marker_signature,
+                    semicolon,
                 }))
             }
 

@@ -135,7 +135,7 @@ impl Finalize for TraitImplementationType {
                 }
 
                 table
-                    .trait_implementation_types()
+                    .trait_implementation_types
                     .get(symbol_id)
                     .unwrap()
                     .write()

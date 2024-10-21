@@ -42,8 +42,8 @@ use crate::{
         Accessibility, AdtID, AdtImplementationDefinition,
         AdtImplementationFunction, Constant, Enum, Extern, Function,
         FunctionDefinition, FunctionTemplate, GenericDeclaration,
-        GenericTemplate, GlobalID, HierarchyRelationship, Module,
-        ModuleMemberID, NegativeTraitImplementationDefinition,
+        GenericTemplate, GlobalID, HierarchyRelationship, Marker, MarkerKind,
+        Module, ModuleMemberID, NegativeTraitImplementationDefinition,
         PositiveTraitImplementationDefinition, Struct, Trait,
         TraitImplementationMemberID, TraitMemberID, Type, Variant,
     },
@@ -452,6 +452,31 @@ impl Table<Building<RwLockContainer, Drafter>> {
                             FunctionDefinition::Extern(calling_convention);
                     }
                 }
+                syntax_tree::item::Item::Marker(syn) => {
+                    let accessibility = self
+                        .create_accessibility(
+                            module_id.into(),
+                            syn.access_modifier(),
+                        )
+                        .unwrap();
+
+                    let kind = match syn.signature().kind() {
+                        syntax_tree::item::MarkerKind::And(_) => {
+                            MarkerKind::And
+                        }
+                        syntax_tree::item::MarkerKind::Or(_) => MarkerKind::Or,
+                    };
+
+                    let id: ID<Marker> = self.draft_member(
+                        syn,
+                        module_id,
+                        |syn| syn.signature().identifier(),
+                        accessibility,
+                        handler,
+                    );
+
+                    self.markers.get_mut(id).unwrap().get_mut().kind = kind;
+                }
             };
         }
 
@@ -666,6 +691,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 return;
             }
             ImplementationKind::Positive(body) => body,
+            ImplementationKind::Empty(_) => todo!("report error"),
         };
         let (_, members, _) = implementation_body.dissolve();
 
@@ -803,6 +829,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                     handler,
                 );
             }
+            ImplementationKind::Empty(_) => {}
         }
     }
 

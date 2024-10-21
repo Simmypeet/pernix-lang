@@ -68,6 +68,9 @@ pub enum GenericID {
     TraitImplementationConstant(ID<TraitImplementationConstant>),
     AdtImplementation(ID<AdtImplementation>),
     AdtImplementationFunction(ID<AdtImplementationFunction>),
+    Marker(ID<Marker>),
+    PositiveMarkerImplementation(ID<PositiveMarkerImplementation>),
+    NegativeMarkerImplementation(ID<NegativeMarkerImplementation>),
 }
 
 macro_rules! from_ids {
@@ -102,7 +105,10 @@ from_ids!(
     (TraitImplementationType, TraitImplementationType),
     (TraitImplementationConstant, TraitImplementationConstant),
     (AdtImplementation, AdtImplementation),
-    (AdtImplementationFunction, AdtImplementationFunction)
+    (AdtImplementationFunction, AdtImplementationFunction),
+    (Marker, Marker),
+    (PositiveMarkerImplementation, PositiveMarkerImplementation),
+    (NegativeMarkerImplementation, NegativeMarkerImplementation)
 );
 
 macro_rules! try_from_ids {
@@ -141,7 +147,10 @@ try_from_ids!(
     (TraitImplementationFunction, TraitImplementationFunction),
     (TraitImplementationConstant, TraitImplementationConstant),
     (AdtImplementation, AdtImplementation),
-    (AdtImplementationFunction, AdtImplementationFunction)
+    (AdtImplementationFunction, AdtImplementationFunction),
+    (Marker, Marker),
+    (PositiveMarkerImplementation, PositiveMarkerImplementation),
+    (NegativeMarkerImplementation, NegativeMarkerImplementation)
 );
 
 /// Represents a kind of symbol that accepts generic arguments.
@@ -300,6 +309,9 @@ pub enum GlobalID {
     TraitImplementationConstant(ID<TraitImplementationConstant>),
     AdtImplementation(ID<AdtImplementation>),
     AdtImplementationFunction(ID<AdtImplementationFunction>),
+    Marker(ID<Marker>),
+    PositiveMarkerImplementation(ID<PositiveMarkerImplementation>),
+    NegativeMarkerImplementation(ID<NegativeMarkerImplementation>),
 }
 
 /// The private trait that is implemented by all symbols that can be implemented
@@ -374,6 +386,7 @@ pub enum ModuleMemberID {
     Type(ID<Type>),
     Function(ID<Function>),
     Constant(ID<Constant>),
+    Marker(ID<Marker>),
 }
 
 /// A template for defining a global symbol with generic declaration.
@@ -463,7 +476,8 @@ from_ids!(
     (Trait, Trait),
     (Type, Type),
     (Function, Function),
-    (Constant, Constant)
+    (Constant, Constant),
+    (Marker, Marker)
 );
 
 /// Represents a module declaration.
@@ -1361,6 +1375,12 @@ pub type NegativeTraitImplementation = GenericTemplate<
     ImplementationTemplate<ID<Trait>, NegativeTraitImplementationDefinition>,
 >;
 
+impl ResolvableImplementation<ID<Trait>> for NegativeTraitImplementation {
+    fn implemented_id(&self) -> ID<Trait> { self.implemented_id }
+
+    fn is_final(&self) -> bool { self.is_final }
+}
+
 /// Contains the data for the trait implementation function declaration.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TraitImplementationFunctionDefinition {
@@ -1437,6 +1457,12 @@ pub type PositiveTraitImplementation = GenericTemplate<
     ID<Module>,
     ImplementationTemplate<ID<Trait>, PositiveTraitImplementationDefinition>,
 >;
+
+impl ResolvableImplementation<ID<Trait>> for PositiveTraitImplementation {
+    fn implemented_id(&self) -> ID<Trait> { self.implemented_id }
+
+    fn is_final(&self) -> bool { self.is_final }
+}
 
 impl Parent for PositiveTraitImplementation {
     type MemberID = TraitImplementationMemberID;
@@ -1619,7 +1645,84 @@ pub struct TraitDefinition {
     implementations: HashSet<TraitImplementationID>,
 }
 
-/// Enumeration of all kinds of generic parameters.
+/// The kind of marker; either 'and' or 'or'.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum MarkerKind {
+    /// All the fields must be satisfied to satisfy the marker.
+    #[default]
+    And,
+
+    /// At least one of the fields must be satisfied to satisfy the marker.
+    Or,
+}
+
+/// Contains the definition of the marker.
+#[derive(Debug, Clone, PartialEq, Eq, Getters, Default)]
+pub struct MarkerDefinition {
+    /// The kind of the marker.
+    pub kind: MarkerKind,
+
+    /// All the implementations that implemented this marker.
+    #[get = "pub"]
+    implementations: HashSet<MarkerImplementationID>,
+}
+
+/// Represents a marker declaration, denoted by `marker NAME;` syntax.
+pub type Marker = GenericTemplate<ID<Module>, MarkerDefinition>;
+
+/// The definition of the positive marker implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PositiveMarkerImplementationDefinition;
+
+/// The definition of the negative marker implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NegativeMarkerImplementationDefinition;
+
+/// Represents a positive marker implementation, denoted by `implements[PARAM]
+/// MARKER[PARAM];`.
+pub type PositiveMarkerImplementation = GenericTemplate<
+    ID<Module>,
+    ImplementationTemplate<ID<Marker>, PositiveMarkerImplementationDefinition>,
+>;
+
+impl ResolvableImplementation<ID<Marker>> for PositiveMarkerImplementation {
+    fn implemented_id(&self) -> ID<Marker> { self.implemented_id }
+
+    fn is_final(&self) -> bool { true }
+}
+
+/// Represents a negative marker implementation, denoted by `implements[PARAM]
+/// MARKER[PARAM] delete;`.
+pub type NegativeMarkerImplementation = GenericTemplate<
+    ID<Module>,
+    ImplementationTemplate<ID<Marker>, NegativeMarkerImplementationDefinition>,
+>;
+
+impl ResolvableImplementation<ID<Marker>> for NegativeMarkerImplementation {
+    fn implemented_id(&self) -> ID<Marker> { self.implemented_id }
+
+    fn is_final(&self) -> bool { true }
+}
+
+/// Enumeration of both positive and negative marker implementation ids.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum MarkerImplementationID {
+    Positive(ID<PositiveMarkerImplementation>),
+    Negative(ID<NegativeMarkerImplementation>),
+}
+
+try_from_ids!(
+    GlobalID,
+    MarkerImplementationID,
+    (PositiveMarkerImplementation, Positive),
+    (NegativeMarkerImplementation, Negative)
+);
+
+/// Enumerations of all kinds of generic parameter ids. This requires the parent
+/// [`GenericID`] as a context to know which generic parameter it is.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
 )]
@@ -1663,10 +1766,95 @@ from_ids!(
     (Negative, NegativeTraitImplementation)
 );
 
+try_from_ids!(
+    GlobalID,
+    TraitImplementationID,
+    (PositiveTraitImplementation, Positive),
+    (NegativeTraitImplementation, Negative)
+);
+
 /// The trait implemented by the implementation symbols.
 pub trait Implementation: Generic {
     /// The generic arguments supplied to the implemented symbol.
     fn arguments(&self) -> &GenericArguments<Default>;
+}
+
+/// The trait implemented by the resolvable implementation symbols.
+pub trait ResolvableImplementation<ImplementedID>: Implementation {
+    /// The ID of the symbol that is being implemented by this implementation.
+    fn implemented_id(&self) -> ImplementedID;
+
+    /// Specifies whether the implementation is final or not.
+    fn is_final(&self) -> bool;
+}
+
+/// An enumeration of either a trait or marker id.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum ResolvableImplementedID {
+    Trait(ID<Trait>),
+    Marker(ID<Marker>),
+}
+
+/// Enumeration of all kinds of resolvable implementation symbol IDs.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum ResolvableImplementationID {
+    PositiveTrait(ID<PositiveTraitImplementation>),
+    NegativeTrait(ID<NegativeTraitImplementation>),
+    PositiveMarker(ID<PositiveMarkerImplementation>),
+    NegativeMarker(ID<NegativeMarkerImplementation>),
+}
+
+impl From<ResolvableImplementationID> for GlobalID {
+    fn from(value: ResolvableImplementationID) -> Self {
+        match value {
+            ResolvableImplementationID::PositiveTrait(id) => {
+                Self::PositiveTraitImplementation(id)
+            }
+            ResolvableImplementationID::NegativeTrait(id) => {
+                Self::NegativeTraitImplementation(id)
+            }
+            ResolvableImplementationID::PositiveMarker(id) => {
+                Self::PositiveMarkerImplementation(id)
+            }
+            ResolvableImplementationID::NegativeMarker(id) => {
+                Self::NegativeMarkerImplementation(id)
+            }
+        }
+    }
+}
+
+impl From<ResolvableImplementationID> for GenericID {
+    fn from(value: ResolvableImplementationID) -> Self {
+        match value {
+            ResolvableImplementationID::PositiveTrait(id) => {
+                Self::PositiveTraitImplementation(id)
+            }
+            ResolvableImplementationID::NegativeTrait(id) => {
+                Self::NegativeTraitImplementation(id)
+            }
+            ResolvableImplementationID::PositiveMarker(id) => {
+                Self::PositiveMarkerImplementation(id)
+            }
+            ResolvableImplementationID::NegativeMarker(id) => {
+                Self::NegativeMarkerImplementation(id)
+            }
+        }
+    }
+}
+
+impl From<TraitImplementationID> for ResolvableImplementationID {
+    fn from(value: TraitImplementationID) -> Self {
+        match value {
+            TraitImplementationID::Positive(id) => Self::PositiveTrait(id),
+            TraitImplementationID::Negative(id) => Self::NegativeTrait(id),
+        }
+    }
 }
 
 /// Enumeration of all kinds of implementation symbol IDs.
@@ -1677,6 +1865,8 @@ pub trait Implementation: Generic {
 pub enum ImplementationID {
     PositiveTrait(ID<PositiveTraitImplementation>),
     NegativeTrait(ID<NegativeTraitImplementation>),
+    PositiveMarker(ID<PositiveMarkerImplementation>),
+    NegativeMarker(ID<NegativeMarkerImplementation>),
     Adt(ID<AdtImplementation>),
 }
 
@@ -1688,6 +1878,12 @@ impl From<ImplementationID> for GlobalID {
             }
             ImplementationID::NegativeTrait(id) => {
                 Self::NegativeTraitImplementation(id)
+            }
+            ImplementationID::PositiveMarker(id) => {
+                Self::PositiveMarkerImplementation(id)
+            }
+            ImplementationID::NegativeMarker(id) => {
+                Self::NegativeMarkerImplementation(id)
             }
             ImplementationID::Adt(id) => Self::AdtImplementation(id),
         }
@@ -1702,6 +1898,12 @@ impl From<ImplementationID> for GenericID {
             }
             ImplementationID::NegativeTrait(id) => {
                 Self::NegativeTraitImplementation(id)
+            }
+            ImplementationID::PositiveMarker(id) => {
+                Self::PositiveMarkerImplementation(id)
+            }
+            ImplementationID::NegativeMarker(id) => {
+                Self::NegativeMarkerImplementation(id)
             }
             ImplementationID::Adt(id) => Self::AdtImplementation(id),
         }

@@ -1,40 +1,38 @@
 use core::fmt;
-use std::collections::BTreeSet;
 
 use enum_as_inner::EnumAsInner;
 use thiserror::Error;
 
-use super::contains_error;
+use super::{
+    contains_error, resolve_implementation_with_context, Implementation,
+    ResolutionError,
+};
 use crate::{
     arena::ID,
     symbol::{
         self,
         table::{self, representation::Index, DisplayObject, State, Table},
-        Generic, TraitImplementationID,
+        Generic, GlobalID, TraitImplementationID,
     },
     type_system::{
-        compatible::Compatible,
-        deduction::{self, Deduction},
         instantiation::Instantiation,
         model::{Default, Model},
         normalizer::Normalizer,
         observer::Observer,
-        order,
         predicate::Predicate,
         query::Context,
-        term::{lifetime::Lifetime, r#type::Type, GenericArguments},
+        term::{lifetime::Lifetime, GenericArguments},
         variance::Variance,
-        Compute, Environment, LifetimeConstraint, Output, OverflowError,
-        Premise, Succeeded, TraitContext,
+        Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
     },
 };
 
 /// An enumeration of ways a positive trait predicate can be satisfied.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum PositiveSatisfied<M: Model> {
-    /// The trait predicate was proven to be satisfied by
-    /// [`TraitContext::InTrait`] flag.
-    ByTraitContext,
+    /// The trait predicate was proven to be satisfied by the fact that the
+    /// query was made inside the trait that is being queried.
+    ByEnvironment,
 
     /// The trait predicate was proven to be satisfied by searching for the
     /// matching trait implementation.
@@ -170,14 +168,13 @@ impl<M: Model> Compute for Positive<M> {
     ) -> Result<Option<Self::Result>, Self::Error> {
         // if this query was made in some trait implementation or trait, then
         // check if the trait implementation is the same as the query one.
-        if let Some(result) = is_in_active_trait_implementation(
-            self.id,
-            false,
-            &self.generic_arguments,
-            environment,
-            context,
-        )? {
-            return Ok(Some(result));
+        if let Some(result) =
+            is_in_trait(self.id, &self.generic_arguments, environment, context)?
+        {
+            return Ok(Some(Succeeded::with_constraints(
+                PositiveSatisfied::ByEnvironment,
+                result.constraints,
+            )));
         }
 
         // manually search for the trait implementation
@@ -206,7 +203,7 @@ impl<M: Model> Compute for Positive<M> {
                 )));
             }
 
-            Err(ResolveError::Overflow(exceed_limit_error)) => {
+            Err(ResolutionError::Overflow(exceed_limit_error)) => {
                 return Err(exceed_limit_error);
             }
 
@@ -257,7 +254,7 @@ impl<M: Model> Compute for Positive<M> {
         _: &[crate::type_system::query::Record<Self::Model>],
     ) -> Result<Option<Self::Result>, Self::Error> {
         Ok(Some(Succeeded::new(
-            PositiveSatisfied::ByTraitContext, /* doesn't matter */
+            PositiveSatisfied::ByEnvironment, /* doesn't matter */
         )))
     }
 }
@@ -372,7 +369,7 @@ impl<M: Model> Compute for Negative<M> {
                 )));
             }
 
-            Err(ResolveError::Overflow(exceed_limit_error)) => {
+            Err(ResolutionError::Overflow(exceed_limit_error)) => {
                 return Err(exceed_limit_error);
             }
 
@@ -432,21 +429,6 @@ impl<M: Model> Compute for Negative<M> {
     }
 }
 
-/// A result of a trait implementation resolution query.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Implementation<ID, M: Model> {
-    /// The deduced substitution for the generic arguments of the trait
-    /// implementation.
-    pub instantiation: Instantiation<M>,
-
-    /// The ID of the resolved trait implementation.
-    pub id: ID,
-
-    /// If `true`, the implementation is not general enough to accomodate the
-    /// forall lifetime requirements.
-    pub is_not_general_enough: bool,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
 #[allow(missing_docs)]
 pub enum ResolveError {
@@ -465,371 +447,57 @@ pub enum ResolveError {
     AmbiguousTerm,
 }
 
-/// Resolves for the trait implementation for the given trait and generic
-/// arguments.
-///
-/// # Errors
-///
-/// - [`ResolveError::InvalidID`]: If the `trait_id` is invalid.
-/// - [`ResolveError::NonDefiniteGenericArguments`]: If the `generic_arguments`
-///   are not definite.
-/// - [`ResolveError::AmbiguousTrait`]: If the trait defined in the table is
-///   ambiguous (multiple trait implementation matches).
-/// - [`ResolveError::NotFound`]: If the trait implementation was not found.
-/// - [`ResolveError::Overflow`]: If the session limit was exceeded; see
-///   [`OverflowError`] for more information.
-#[allow(clippy::too_many_lines)]
-pub fn resolve_implementation<M: Model, S: State>(
-    trait_id: ID<symbol::Trait>,
-    generic_arguments: &GenericArguments<M>,
-    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
-) -> Result<Succeeded<Implementation<TraitImplementationID, M>, M>, ResolveError>
-{
-    resolve_implementation_with_context(
-        trait_id,
-        generic_arguments,
-        environment,
-        &mut Context::new(),
-    )
-}
-
-/// Resolves for the trait implementation for the given trait and generic
-/// arguments.
-///
-/// # Errors
-///
-/// - [`ResolveError::InvalidID`]: If the `trait_id` is invalid.
-/// - [`ResolveError::AmbiguousTrait`]: If the trait defined in the table is
-///   ambiguous (multiple trait implementation matches).
-/// - [`ResolveError::NotFound`]: If the trait implementation was not found.
-/// - [`ResolveError::Overflow`]: If the session limit was exceeded; see
-#[allow(clippy::too_many_lines)]
-pub fn resolve_implementation_with_context<M: Model, S: State>(
+fn is_in_trait<M: Model, S: State>(
     trait_id: ID<symbol::Trait>,
     generic_arguments: &GenericArguments<M>,
     environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
     context: &mut Context<M>,
-) -> Result<Succeeded<Implementation<TraitImplementationID, M>, M>, ResolveError>
-{
-    Observer::on_resolving_trait_implementation(
-        trait_id,
-        generic_arguments,
-        environment,
-    )?;
+) -> Result<Output<Satisfied, M>, OverflowError> {
+    let Some(query_site) = environment.premise.query_site else {
+        return Ok(None);
+    };
 
-    let trait_symbol =
-        environment.table.get(trait_id).ok_or(ResolveError::InvalidID)?;
-
-    if let Some(result) = is_in_active_trait_implementation(
-        trait_id,
-        true,
-        generic_arguments,
-        environment,
-        context,
-    )? {
-        let PositiveSatisfied::ByImplementation(implementation) = result.result
-        else {
-            unreachable!()
+    for global_id in
+        if let Some(iter) = environment.table.scope_walker(query_site) {
+            iter
+        } else {
+            return Ok(None);
+        }
+    {
+        let GlobalID::Trait(env_trait_id) = global_id else {
+            continue;
         };
 
-        return Ok(Succeeded::with_constraints(
-            Implementation {
-                instantiation: implementation.instantiation,
-                id: implementation.id.into(),
-                is_not_general_enough: implementation.is_not_general_enough,
-            },
-            result.constraints,
-        ));
-    }
-
-    let definite =
-        generic_arguments.definite_with_context(environment, context)?;
-
-    let (default_environment, _) =
-        Environment::<M, _, _, _>::new(Premise::default(), environment.table());
-
-    let mut candidate: Option<(
-        TraitImplementationID,
-        Deduction<M>,
-        BTreeSet<LifetimeConstraint<M>>,
-    )> = None;
-
-    for (key, arguments, is_final) in
-        trait_symbol.implementations().iter().copied().map(|k| {
-            (
-                k,
-                GenericArguments::from_default_model(
-                    environment
-                        .table
-                        .get_implementation(k.into())
-                        .unwrap()
-                        .arguments()
-                        .clone(),
-                ),
-                match k {
-                    TraitImplementationID::Positive(id) => {
-                        environment.table().get(id).unwrap().is_final
-                    }
-                    TraitImplementationID::Negative(id) => {
-                        environment.table().get(id).unwrap().is_final
-                    }
-                },
-            )
-        })
-    {
-        // builds the unification
-        let Succeeded { result: deduction, constraints: lifetime_constraints } =
-            match arguments.deduce_with_context(
-                generic_arguments,
-                environment,
-                context,
-            ) {
-                Ok(unification) => unification,
-
-                Err(deduction::Error::Overflow(overflow)) => {
-                    return Err(overflow.into())
-                }
-
-                Err(
-                    deduction::Error::MismatchedGenericArgumentCount(_)
-                    | deduction::Error::UnificationFailure(_),
-                ) => continue,
-            };
-
-        // the trait implementation is not final and requires the term to be
-        // definite to check.
-        if !is_final && definite.is_none() {
-            continue;
+        // must be the same id
+        if env_trait_id != trait_id {
+            return Ok(None);
         }
 
-        // check if satisfies all the predicate
-        if !is_final {
-            let generic_symbol =
-                environment.table.get_generic(key.into()).unwrap();
+        let trait_symbol = environment.table.get(trait_id).unwrap();
 
-            if !predicate_satisfies(
-                &*generic_symbol,
-                &deduction.instantiation,
-                environment,
-                context,
-            )? {
-                continue;
-            }
-        }
+        let trait_generic_arguments = trait_symbol
+            .generic_declaration()
+            .parameters
+            .create_identity_generic_arguments(env_trait_id.into());
 
-        // assign the candidate
-        match &mut candidate {
-            Some((
-                candidate_id,
-                candidate_instantiation,
-                candidate_lifetime_constraints,
-            )) => {
-                // check which one is more specific
-                match GenericArguments::from_default_model(
-                    environment
-                        .table
-                        .get_implementation(key.into())
-                        .unwrap()
-                        .arguments()
-                        .clone(),
-                )
-                .order(
-                    &GenericArguments::from_default_model(
-                        environment
-                            .table
-                            .get_implementation((*candidate_id).into())
-                            .unwrap()
-                            .arguments()
-                            .clone(),
-                    ),
-                    &default_environment,
-                )? {
-                    order::Order::Incompatible => {
-                        return Err(ResolveError::AmbiguousTerm)
-                    }
-                    order::Order::MoreGeneral => {}
-                    order::Order::MoreSpecific => {
-                        *candidate_id = key;
-                        *candidate_instantiation = deduction;
-                        *candidate_lifetime_constraints = lifetime_constraints;
-                    }
-                    order::Order::Ambiguous => {
-                        return Err(ResolveError::AmbiguousTrait)
-                    }
-                }
-            }
+        let Some(compatiblity) = generic_arguments.compatible_with_context(
+            &trait_generic_arguments,
+            Variance::Invariant,
+            environment,
+            context,
+        )?
+        else {
+            return Ok(None);
+        };
 
-            candidate @ None => {
-                *candidate = Some((key, deduction, lifetime_constraints));
-            }
+        if compatiblity.result.forall_lifetime_errors.is_empty() {
+            return Ok(Some(Succeeded::satisfied_with(
+                compatiblity.constraints,
+            )));
         }
     }
 
-    match candidate {
-        Some((id, deduction, mut lifetime_constraints)) => Ok(Succeeded {
-            result: Implementation {
-                instantiation: deduction.instantiation,
-                is_not_general_enough: deduction.is_not_general_enough,
-                id,
-            },
-            constraints: {
-                lifetime_constraints
-                    .extend(definite.into_iter().flat_map(|x| x.constraints));
-                lifetime_constraints
-            },
-        }),
-
-        None => Err(ResolveError::NotFound),
-    }
-}
-
-fn predicate_satisfies<M: Model, S: State>(
-    generic_symbol: &dyn Generic,
-    substitution: &Instantiation<M>,
-    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
-    context: &mut Context<M>,
-) -> Result<bool, OverflowError> {
-    // check if satisfies all the predicate
-    for mut predicate in generic_symbol
-        .generic_declaration()
-        .predicates
-        .iter()
-        .map(|x| Predicate::from_default_model(x.predicate.clone()))
-    {
-        predicate.instantiate(substitution);
-
-        if !match predicate {
-            Predicate::TraitTypeEquality(equality) => {
-                Type::TraitMember(equality.lhs)
-                    .compatible_with_context(
-                        &equality.rhs,
-                        Variance::Covariant,
-                        environment,
-                        context,
-                    )?
-                    .is_some()
-            }
-
-            Predicate::ConstantType(constant_type) => constant_type
-                .query_with_context(environment, context)?
-                .is_some(),
-
-            Predicate::TupleType(tuple_type) => {
-                tuple_type.query_with_context(environment, context)?.is_some()
-            }
-
-            Predicate::TupleConstant(tuple_constant) => tuple_constant
-                .query_with_context(environment, context)?
-                .is_some(),
-
-            Predicate::PositiveTrait(tr) => {
-                tr.query_with_context(environment, context)?.is_some()
-            }
-
-            Predicate::NegativeTrait(tr) => {
-                tr.query_with_context(environment, context)?.is_some()
-            }
-
-            Predicate::TypeOutlives(_) | Predicate::LifetimeOutlives(_) => true,
-        } {
-            return Ok(false);
-        }
-    }
-
-    Ok(true)
-}
-
-fn is_in_active_trait_implementation<M: Model, S: State>(
-    trait_id: ID<symbol::Trait>,
-    need_implementation: bool,
-    generic_arguments: &GenericArguments<M>,
-    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
-    context: &mut Context<M>,
-) -> Result<Output<PositiveSatisfied<M>, M>, OverflowError> {
-    match environment.premise.trait_context {
-        TraitContext::InTraitImplementation(trait_implementation) => {
-            let Some(implementation) =
-                environment.table.get(trait_implementation)
-            else {
-                return Ok(None);
-            };
-
-            // check if the trait id is the same
-            if implementation.implemented_id() != trait_id {
-                return Ok(None);
-            }
-
-            let Some(_) = generic_arguments.compatible_with_context(
-                &GenericArguments::from_default_model(
-                    implementation.arguments.clone(),
-                ),
-                Variance::Invariant,
-                environment,
-                context,
-            )?
-            else {
-                return Ok(None);
-            };
-
-            match generic_arguments.deduce_with_context(
-                &GenericArguments::from_default_model(
-                    implementation.arguments.clone(),
-                ),
-                environment,
-                context,
-            ) {
-                Ok(result) => Ok(Some(Succeeded {
-                    result: PositiveSatisfied::ByImplementation(
-                        Implementation {
-                            instantiation: result.result.instantiation,
-                            id: trait_implementation,
-                            is_not_general_enough: result
-                                .result
-                                .is_not_general_enough,
-                        },
-                    ),
-                    constraints: result.constraints,
-                })),
-                Err(deduction::Error::Overflow(err)) => Err(err),
-                _ => Ok(None),
-            }
-        }
-
-        TraitContext::InTrait(env_trait_id) => {
-            if need_implementation || env_trait_id != trait_id {
-                return Ok(None);
-            }
-
-            let trait_symbol = environment.table.get(trait_id).unwrap();
-
-            let trait_generic_arguments = trait_symbol
-                .generic_declaration()
-                .parameters
-                .create_identity_generic_arguments(env_trait_id.into());
-
-            let Some(compatiblity) = generic_arguments
-                .compatible_with_context(
-                    &trait_generic_arguments,
-                    Variance::Invariant,
-                    environment,
-                    context,
-                )?
-            else {
-                return Ok(None);
-            };
-
-            if compatiblity.result.forall_lifetime_errors.is_empty() {
-                Ok(Some(Succeeded::with_constraints(
-                    PositiveSatisfied::ByTraitContext,
-                    compatiblity.constraints,
-                )))
-            } else {
-                Ok(None)
-            }
-        }
-
-        TraitContext::Normal => Ok(None),
-    }
+    Ok(None)
 }
 
 #[cfg(test)]

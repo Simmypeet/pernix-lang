@@ -32,7 +32,7 @@ use crate::{
         observer::Observer,
         predicate::{
             self, resolve_implementation_with_context, Outlives, Predicate,
-            Satisfiability, TraitResolveError,
+            ResolutionError, Satisfiability,
         },
         query::Context,
         sub_term::{
@@ -958,7 +958,7 @@ where
                 ) {
                     Ok(resolution) => resolution,
 
-                    Err(TraitResolveError::Overflow(error)) => {
+                    Err(ResolutionError::Overflow(error)) => {
                         return Err(error);
                     }
 

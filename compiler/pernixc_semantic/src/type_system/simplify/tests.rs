@@ -15,7 +15,7 @@ use crate::{
             r#type::{self, Primitive, TraitMember, Type},
             GenericArguments, Symbol,
         },
-        Environment, LifetimeConstraint, Premise, Succeeded, TraitContext,
+        Environment, LifetimeConstraint, Premise, Succeeded,
     },
 };
 
@@ -297,7 +297,7 @@ fn transitive() {
         ]
         .into_iter()
         .collect(),
-        trait_context: TraitContext::Normal,
+        query_site: None,
     };
 
     let environment = Environment {

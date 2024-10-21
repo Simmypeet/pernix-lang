@@ -10,7 +10,9 @@ use crate::{
                     state::BuildSymbolError,
                     symbol::{
                         adt_implementation, adt_implementation_function,
-                        constant, function, negative_trait_implementation,
+                        constant, function, marker,
+                        negative_trait_implementation,
+                        positive_marker_implementation,
                         positive_trait_implementation, r#enum, r#struct,
                         r#trait, r#type, trait_constant, trait_function,
                         trait_implementation_constant,
@@ -23,7 +25,8 @@ use crate::{
             },
             resolution, Building, Table,
         },
-        AdtID, GlobalID, TraitImplementationID, TraitImplementationType,
+        AdtID, GlobalID, ResolvableImplementedID, TraitImplementationID,
+        TraitImplementationType,
     },
     type_system::{
         self,
@@ -154,8 +157,8 @@ impl<'a, M: Model>
         }
     }
 
-    fn on_resolving_trait_implementation(
-        trait_id: ID<crate::symbol::Trait>,
+    fn on_resolving_implementation(
+        id: ResolvableImplementedID,
         _: &term::GenericArguments<M>,
         environment: &Environment<
             M,
@@ -164,46 +167,51 @@ impl<'a, M: Model>
             Self,
         >,
     ) -> Result<(), OverflowError> {
-        let implementations = environment
-            .table()
-            .get(trait_id)
-            .unwrap()
-            .implementations
-            .iter()
-            .copied()
-            .collect::<Vec<_>>();
+        match id {
+            ResolvableImplementedID::Trait(id) => {
+                let implementations = environment
+                    .table()
+                    .get(id)
+                    .unwrap()
+                    .implementations
+                    .iter()
+                    .copied()
+                    .collect::<Vec<_>>();
 
-        let mut error = false;
+                let mut error = false;
 
-        for implementation_id in implementations {
-            if match implementation_id {
-                TraitImplementationID::Positive(id) => {
-                    environment.table().build_to(
-                        id,
-                        Some(environment.observer().site),
-                        positive_trait_implementation::ARGUMENT_STATE,
-                        environment.observer().handler,
-                    )
+                for implementation_id in implementations {
+                    if match implementation_id {
+                        TraitImplementationID::Positive(id) => {
+                            environment.table().build_to(
+                                id,
+                                Some(environment.observer().site),
+                                positive_trait_implementation::ARGUMENT_STATE,
+                                environment.observer().handler,
+                            )
+                        }
+                        TraitImplementationID::Negative(id) => {
+                            environment.table().build_to(
+                                id,
+                                Some(environment.observer().site),
+                                negative_trait_implementation::ARGUMENT_STATE,
+                                environment.observer().handler,
+                            )
+                        }
+                    }
+                    .is_err()
+                    {
+                        error = true;
+                    }
                 }
-                TraitImplementationID::Negative(id) => {
-                    environment.table().build_to(
-                        id,
-                        Some(environment.observer().site),
-                        negative_trait_implementation::ARGUMENT_STATE,
-                        environment.observer().handler,
-                    )
+
+                if error {
+                    Err(OverflowError)
+                } else {
+                    Ok(())
                 }
             }
-            .is_err()
-            {
-                error = true;
-            }
-        }
-
-        if error {
-            Err(OverflowError)
-        } else {
-            Ok(())
+            ResolvableImplementedID::Marker(_) => todo!(),
         }
     }
 
@@ -462,6 +470,27 @@ pub fn build_for_where_clause(
             handler,
         ),
 
+        GlobalID::Marker(id) => table.build_to(
+            id,
+            required_from,
+            marker::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
+        GlobalID::PositiveMarkerImplementation(id) => table.build_to(
+            id,
+            required_from,
+            positive_marker_implementation::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
+        GlobalID::NegativeMarkerImplementation(id) => table.build_to(
+            id,
+            required_from,
+            negative_trait_implementation::WHERE_CLAUSE_STATE,
+            handler,
+        ),
+
         GlobalID::Variant(_) | GlobalID::Module(_) => Ok(()),
     };
 
@@ -591,6 +620,27 @@ pub fn build_for_basic_resolution(
             id,
             required_from,
             adt_implementation::ARGUMENT_STATE,
+            handler,
+        ),
+
+        GlobalID::Marker(id) => table.build_to(
+            id,
+            required_from,
+            marker::GENERIC_PARAMETER_STATE,
+            handler,
+        ),
+
+        GlobalID::PositiveMarkerImplementation(id) => table.build_to(
+            id,
+            required_from,
+            positive_marker_implementation::ARGUMENT_STATE,
+            handler,
+        ),
+
+        GlobalID::NegativeMarkerImplementation(id) => table.build_to(
+            id,
+            required_from,
+            negative_trait_implementation::ARGUMENT_STATE,
             handler,
         ),
 
@@ -780,6 +830,27 @@ fn build_for_definition_internal(
         ),
 
         GlobalID::NegativeTraitImplementation(id) => table.build_to(
+            id,
+            required_from,
+            negative_trait_implementation::ARGUMENT_STATE,
+            handler,
+        ),
+
+        GlobalID::Marker(id) => table.build_to(
+            id,
+            required_from,
+            marker::GENERIC_PARAMETER_STATE,
+            handler,
+        ),
+
+        GlobalID::PositiveMarkerImplementation(id) => table.build_to(
+            id,
+            required_from,
+            positive_marker_implementation::ARGUMENT_STATE,
+            handler,
+        ),
+
+        GlobalID::NegativeMarkerImplementation(id) => table.build_to(
             id,
             required_from,
             negative_trait_implementation::ARGUMENT_STATE,

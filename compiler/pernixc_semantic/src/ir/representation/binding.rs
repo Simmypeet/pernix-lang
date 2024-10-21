@@ -835,17 +835,18 @@ impl<
                 };
 
                 // report the error
-                if let Some(error) = error {
-                    if include_suboptimal_flag {
-                        self.create_handler_wrapper(handler).receive(error);
-                    } else {
-                        handler.receive(error);
-                    }
+                error.map_or_else(
+                    || Ok(()),
+                    |error| {
+                        if include_suboptimal_flag {
+                            self.create_handler_wrapper(handler).receive(error);
+                        } else {
+                            handler.receive(error);
+                        }
 
-                    Err(SemanticError(type_check_span))
-                } else {
-                    Ok(())
-                }
+                        Err(SemanticError(type_check_span))
+                    },
+                )
             }
             Expected::Constraint(constraint) => {
                 let result =

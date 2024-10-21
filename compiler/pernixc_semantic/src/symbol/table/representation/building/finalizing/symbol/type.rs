@@ -120,7 +120,7 @@ impl Finalize for Type {
                     ));
                 }
 
-                table.types().get(symbol_id).unwrap().write().r#type = ty;
+                table.types.get(symbol_id).unwrap().write().r#type = ty;
             }
 
             CHECK_STATE => {

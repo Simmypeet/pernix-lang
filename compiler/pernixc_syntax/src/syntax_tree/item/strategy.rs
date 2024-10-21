@@ -978,6 +978,129 @@ impl Display for Constant {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MarkerKind {
+    And,
+    Or,
+}
+
+impl Input<&super::MarkerKind> for &MarkerKind {
+    fn assert(self, output: &super::MarkerKind) -> TestCaseResult {
+        match (self, output) {
+            (MarkerKind::And, super::MarkerKind::And(_))
+            | (MarkerKind::Or, super::MarkerKind::Or(_)) => Ok(()),
+
+            _ => Err(TestCaseError::fail(format!(
+                "Expected {self:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for MarkerKind {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![Just(Self::And), Just(Self::Or)].boxed()
+    }
+}
+
+impl Display for MarkerKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::And => write!(f, "and"),
+            Self::Or => write!(f, "or"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MarkerSignature {
+    pub kind: MarkerKind,
+    pub identifier: Identifier,
+    pub generic_parameters: Option<GenericParameters>,
+    pub where_clause: Option<WhereClause>,
+}
+
+impl Input<&super::MarkerSignature> for &MarkerSignature {
+    fn assert(self, output: &super::MarkerSignature) -> TestCaseResult {
+        self.kind.assert(output.kind())?;
+        self.identifier.assert(output.identifier())?;
+        self.generic_parameters
+            .as_ref()
+            .assert(output.generic_parameters().as_ref())?;
+        self.where_clause.as_ref().assert(output.where_clause().as_ref())
+    }
+}
+
+impl Arbitrary for MarkerSignature {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            MarkerKind::arbitrary(),
+            Identifier::arbitrary(),
+            proptest::option::of(GenericParameters::arbitrary()),
+            proptest::option::of(WhereClause::arbitrary()),
+        )
+            .prop_map(|(kind, identifier, generic_parameters, where_clause)| {
+                Self { kind, identifier, generic_parameters, where_clause }
+            })
+            .boxed()
+    }
+}
+
+impl Display for MarkerSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "marker {} {}", self.kind, self.identifier)?;
+
+        if let Some(generic_parameters) = &self.generic_parameters {
+            Display::fmt(generic_parameters, f)?;
+        }
+
+        if let Some(where_clause) = &self.where_clause {
+            write!(f, " {where_clause}")?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Marker {
+    pub access_modifier: AccessModifier,
+    pub signature: MarkerSignature,
+}
+
+impl Input<&super::Marker> for &Marker {
+    fn assert(self, output: &super::Marker) -> TestCaseResult {
+        self.access_modifier.assert(output.access_modifier())?;
+        self.signature.assert(output.signature())
+    }
+}
+
+impl Arbitrary for Marker {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (AccessModifier::arbitrary(), MarkerSignature::arbitrary())
+            .prop_map(|(access_modifier, signature)| Self {
+                access_modifier,
+                signature,
+            })
+            .boxed()
+    }
+}
+
+impl Display for Marker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {};", self.access_modifier, self.signature)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Item {
     Function(Function),
@@ -988,6 +1111,7 @@ pub enum Item {
     Enum(Enum),
     Implementation(Implementation),
     Constant(Constant),
+    Marker(Marker),
 }
 
 impl Input<&super::Item> for &Item {
@@ -1003,6 +1127,7 @@ impl Input<&super::Item> for &Item {
             }
             (Item::Module(i), super::Item::Module(o)) => i.assert(o),
             (Item::Constant(i), super::Item::Constant(o)) => i.assert(o),
+            (Item::Marker(i), super::Item::Marker(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}",
             ))),
@@ -1023,6 +1148,7 @@ impl Arbitrary for Item {
             Enum::arbitrary().prop_map(Self::Enum),
             Implementation::arbitrary().prop_map(Self::Implementation),
             Constant::arbitrary().prop_map(Self::Constant),
+            Marker::arbitrary().prop_map(Self::Marker),
         ];
 
         if avoid_module {
@@ -1047,6 +1173,7 @@ impl Display for Item {
             Self::Implementation(i) => Display::fmt(i, formatter),
             Self::Module(m) => Display::fmt(m, formatter),
             Self::Constant(c) => Display::fmt(c, formatter),
+            Self::Marker(m) => Display::fmt(m, formatter),
         }
     }
 }
@@ -1995,6 +2122,7 @@ impl Display for ImplementationSignature {
 pub enum ImplementationKind {
     Negative,
     Positive(ImplementationBody),
+    Empty,
 }
 
 impl Input<&super::ImplementationKind> for &ImplementationKind {
@@ -2003,11 +2131,17 @@ impl Input<&super::ImplementationKind> for &ImplementationKind {
             (
                 ImplementationKind::Negative,
                 super::ImplementationKind::Negative(..),
+            )
+            | (
+                ImplementationKind::Empty,
+                super::ImplementationKind::Empty(_),
             ) => Ok(()),
+
             (
                 ImplementationKind::Positive(input),
                 super::ImplementationKind::Positive(output),
             ) => input.assert(output),
+
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -2023,6 +2157,7 @@ impl Arbitrary for ImplementationKind {
         prop_oneof![
             Just(Self::Negative),
             ImplementationBody::arbitrary().prop_map(Self::Positive),
+            Just(Self::Empty),
         ]
         .boxed()
     }
@@ -2033,6 +2168,7 @@ impl Display for ImplementationKind {
         match self {
             Self::Negative => write!(f, " delete;"),
             Self::Positive(body) => Display::fmt(body, f),
+            Self::Empty => write!(f, ";"),
         }
     }
 }
