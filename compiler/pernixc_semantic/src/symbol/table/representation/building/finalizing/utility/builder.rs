@@ -11,6 +11,7 @@ use crate::{
                     symbol::{
                         adt_implementation, adt_implementation_function,
                         constant, function, marker,
+                        negative_marker_implementation,
                         negative_trait_implementation,
                         positive_marker_implementation,
                         positive_trait_implementation, r#enum, r#struct,
@@ -25,8 +26,8 @@ use crate::{
             },
             resolution, Building, Table,
         },
-        AdtID, GlobalID, ResolvableImplementedID, TraitImplementationID,
-        TraitImplementationType,
+        AdtID, GlobalID, MarkerImplementationID, ResolvableImplementedID,
+        TraitImplementationID, TraitImplementationType,
     },
     type_system::{
         self,
@@ -211,7 +212,49 @@ impl<'a, M: Model>
                     Ok(())
                 }
             }
-            ResolvableImplementedID::Marker(_) => todo!(),
+            ResolvableImplementedID::Marker(id) => {
+                let implementations = environment
+                    .table()
+                    .get(id)
+                    .unwrap()
+                    .implementations
+                    .iter()
+                    .copied()
+                    .collect::<Vec<_>>();
+
+                let mut error = false;
+
+                for implementation_id in implementations {
+                    if match implementation_id {
+                        MarkerImplementationID::Positive(id) => {
+                            environment.table().build_to(
+                                id,
+                                Some(environment.observer().site),
+                                positive_marker_implementation::ARGUMENT_STATE,
+                                environment.observer().handler,
+                            )
+                        }
+                        MarkerImplementationID::Negative(id) => {
+                            environment.table().build_to(
+                                id,
+                                Some(environment.observer().site),
+                                negative_marker_implementation::ARGUMENT_STATE,
+                                environment.observer().handler,
+                            )
+                        }
+                    }
+                    .is_err()
+                    {
+                        error = true;
+                    }
+                }
+
+                if error {
+                    Err(OverflowError)
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
 
