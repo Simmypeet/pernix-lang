@@ -685,6 +685,11 @@
 					"match": "\\b(trait)\\b"
 				},
 				{
+					"comment": "marker keyword",
+					"name": "keyword.declaration.marker.pernix storage.type.pernix",
+					"match": "\\b(marker)\\b"
+				},
+				{
 					"comment": "struct keyword",
 					"name": "keyword.declaration.struct.pernix storage.type.pernix",
 					"match": "\\b(struct)\\b"
