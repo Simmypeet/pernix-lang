@@ -816,6 +816,11 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let adt_implementation_ids = make_ids!(AdtImplementation);
         let adt_implementation_function_ids =
             make_ids!(AdtImplementationFunction);
+        let marker_ids = make_ids!(Marker);
+        let positive_marker_implementation_ids =
+            make_ids!(PositiveMarkerImplementation);
+        let negative_marker_implementation_ids =
+            make_ids!(NegativeMarkerImplementation);
 
         macro_rules! build_id {
             ($field_name:ident) => {
@@ -858,7 +863,10 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             TraitImplementationConstant,
             TraitImplementationType,
             AdtImplementation,
-            AdtImplementationFunction
+            AdtImplementationFunction,
+            Marker,
+            PositiveMarkerImplementation,
+            NegativeMarkerImplementation
         );
     }
 }
