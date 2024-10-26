@@ -23,7 +23,9 @@ use super::finalizing::{self, Finalize, Finalizer};
 use crate::{
     arena::ID,
     error::{
-        self, ExpectModule, GlobalRedifinition, InvalidSymbolInImplementation,
+        self, ExpectModule, ExpectedImplementationWithBodyForAdt,
+        FoundEmptyImplementationOnTrait, FoundImplementationWithBodyOnMarker,
+        GlobalRedifinition, InvalidSymbolInImplementation,
         MismatchedTraitMemberAndImplementationMember,
         NoGenericArgumentsRequired, SymbolIsMoreAccessibleThanParent,
         SymbolNotFound, ThisNotFound, UnexpectedAdtImplementationMember,
@@ -43,7 +45,9 @@ use crate::{
         AdtImplementationFunction, Constant, Enum, Extern, Function,
         FunctionDefinition, FunctionTemplate, GenericDeclaration,
         GenericTemplate, GlobalID, HierarchyRelationship, Marker, Module,
-        ModuleMemberID, NegativeTraitImplementationDefinition,
+        ModuleMemberID, NegativeMarkerImplementationDefinition,
+        NegativeTraitImplementationDefinition,
+        PositiveMarkerImplementationDefinition,
         PositiveTraitImplementationDefinition, Struct, Trait,
         TraitImplementationMemberID, TraitMemberID, Type, Variant,
     },
@@ -672,17 +676,16 @@ impl Table<Building<RwLockContainer, Drafter>> {
     ) {
         let (signature, kind) = implementation.dissolve();
         let implementation_body = match kind {
-            ImplementationKind::Negative(_) => {
-                handler.receive(Box::new(error::NegativeImplementationOnAdt {
-                    negative_implementation_span: signature
-                        .qualified_identifier()
-                        .span(),
-                    adt_id,
-                }));
+            ImplementationKind::Empty(_) | ImplementationKind::Negative(_) => {
+                handler.receive(Box::new(
+                    ExpectedImplementationWithBodyForAdt {
+                        invalid_implementation_span: signature.span(),
+                    },
+                ));
+
                 return;
             }
             ImplementationKind::Positive(body) => body,
-            ImplementationKind::Empty(_) => todo!("report error"),
         };
         let (_, members, _) = implementation_body.dissolve();
 
@@ -781,6 +784,64 @@ impl Table<Building<RwLockContainer, Drafter>> {
         }
     }
 
+    fn draft_marker_implementation(
+        &mut self,
+        implementation: syntax_tree::item::Implementation,
+        declared_in: ID<Module>,
+        marker_id: ID<Marker>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        let (signature, kind) = implementation.dissolve();
+
+        match kind {
+            ImplementationKind::Negative(..) => {
+                let negative_marker_id = self
+                    .insert_implementation(
+                        marker_id,
+                        declared_in,
+                        GenericDeclaration::default(),
+                        Some(signature.qualified_identifier().span()),
+                        GenericArguments::default(),
+                        NegativeMarkerImplementationDefinition,
+                    )
+                    .unwrap();
+
+                // draft the symbol
+                assert!(self
+                    .state
+                    .finalizer
+                    .draft_symbol(negative_marker_id, signature));
+            }
+
+            ImplementationKind::Empty(_) => {
+                let positive_marker_id = self
+                    .insert_implementation(
+                        marker_id,
+                        declared_in,
+                        GenericDeclaration::default(),
+                        Some(signature.qualified_identifier().span()),
+                        GenericArguments::default(),
+                        PositiveMarkerImplementationDefinition,
+                    )
+                    .unwrap();
+
+                // draft the symbol
+                assert!(self
+                    .state
+                    .finalizer
+                    .draft_symbol(positive_marker_id, signature));
+            }
+
+            ImplementationKind::Positive(_) => {
+                handler.receive(Box::new(
+                    FoundImplementationWithBodyOnMarker {
+                        implementation_span: signature.span(),
+                    },
+                ));
+            }
+        }
+    }
+
     fn draft_trait_implementation(
         &mut self,
         implementation: syntax_tree::item::Implementation,
@@ -820,7 +881,11 @@ impl Table<Building<RwLockContainer, Drafter>> {
                     handler,
                 );
             }
-            ImplementationKind::Empty(_) => {}
+            ImplementationKind::Empty(_) => {
+                handler.receive(Box::new(FoundEmptyImplementationOnTrait {
+                    empty_implementation_signature_span: signature.span(),
+                }));
+            }
         }
     }
 
@@ -977,6 +1042,13 @@ impl Table<Building<RwLockContainer, Drafter>> {
                     handler,
                 );
             }
+
+            GlobalID::Marker(id) => self.draft_marker_implementation(
+                implementation,
+                defined_in_module_id,
+                id,
+                handler,
+            ),
 
             // invalid id
             invalid_global_id => {

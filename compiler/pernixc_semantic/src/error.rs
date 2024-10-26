@@ -231,7 +231,8 @@ impl Report<&Table<Suboptimal>> for InvalidSymbolInImplementation {
         Ok(Diagnostic {
             span: self.qualified_identifier_span.clone(),
             message: format!(
-                "the symbol `{qualified_name}` is not a trait, struct, or enum"
+                "the symbol `{qualified_name}` is not a trait, marker, \
+                 struct, or enum"
             ),
             severity: Severity::Error,
             help_message: None,
@@ -339,6 +340,27 @@ impl Report<&Table<Suboptimal>> for SelfModuleUsing {
                 "the module `{module_qualified_name}` was found to have a \
                  `using` statement that uses itself",
             ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The marker implementation must be final.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MarkerImplementationMustBeFinal {
+    /// The span where the marker implementation was found.
+    pub marker_signature_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for MarkerImplementationMustBeFinal {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.marker_signature_span.clone(),
+            message: "the marker implementation must be final".to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
@@ -761,32 +783,69 @@ impl Report<&Table<Suboptimal>> for MisorderedGenericArgument {
     }
 }
 
-/// The negative implementation was used on the ADT.
+/// Implementation with body found on a marker.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NegativeImplementationOnAdt {
-    /// The span where the negative implementation was used.
-    pub negative_implementation_span: Span,
-
-    /// The ID of the ADT where the negative implementation was used.
-    pub adt_id: AdtID,
+pub struct FoundImplementationWithBodyOnMarker {
+    /// The span where the implementation was found.
+    pub implementation_span: Span,
 }
 
-impl Report<&Table<Suboptimal>> for NegativeImplementationOnAdt {
+impl Report<&Table<Suboptimal>> for FoundImplementationWithBodyOnMarker {
     type Error = ReportError;
 
-    fn report(
-        &self,
-        table: &Table<Suboptimal>,
-    ) -> Result<Diagnostic, Self::Error> {
-        let adt_qualified_name =
-            table.get_qualified_name(self.adt_id.into()).ok_or(ReportError)?;
-
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
-            span: self.negative_implementation_span.clone(),
-            message: format!(
-                "negative implementation is not allowed here because \
-                 `{adt_qualified_name}` is not a trait",
-            ),
+            span: self.implementation_span.clone(),
+            message: "implementation with body found on a marker; expected an \
+                      implementation with `delete` keyword or empty \
+                      (delimited with semicolon)"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// Empty implementation found on a trait implementation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FoundEmptyImplementationOnTrait {
+    /// The span where the empty implementation was found.
+    pub empty_implementation_signature_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for FoundEmptyImplementationOnTrait {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.empty_implementation_signature_span.clone(),
+            message: "empty implementation found on a trait; expected an \
+                      implementation with body or `delete` keyword"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The adt implementation expects an implementation with a body.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectedImplementationWithBodyForAdt {
+    /// The implementation that was found to be invalid.
+    pub invalid_implementation_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for ExpectedImplementationWithBodyForAdt {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.invalid_implementation_span.clone(),
+            message: "implementation on struct or enum expects an \
+                      implementation with a body"
+                .to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
