@@ -658,29 +658,6 @@ impl SourceElement for TraitBody {
 
 /// Syntax Synopsis:
 /// ```txt
-/// MarkerKind:
-///     'and'
-///     | 'or'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum MarkerKind {
-    And(Keyword),
-    Or(Keyword),
-}
-
-impl MarkerKind {
-    /// Returns the [`Keyword`] of the [`MarkerKind`].
-    #[must_use]
-    pub const fn keyword(&self) -> &Keyword {
-        match self {
-            Self::And(keyword) | Self::Or(keyword) => keyword,
-        }
-    }
-}
-
-/// Syntax Synopsis:
-/// ```txt
 /// MarkerSignature:
 ///     'marker' MarkerKind Identifier GenericParameters? WhereClause?
 ///     '
@@ -689,8 +666,6 @@ impl MarkerKind {
 pub struct MarkerSignature {
     #[get = "pub"]
     marker_keyword: Keyword,
-    #[get = "pub"]
-    kind: MarkerKind,
     #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
@@ -705,16 +680,10 @@ impl MarkerSignature {
     #[allow(clippy::type_complexity)]
     pub fn dissolve(
         self,
-    ) -> (
-        Keyword,
-        MarkerKind,
-        Identifier,
-        Option<GenericParameters>,
-        Option<WhereClause>,
-    ) {
+    ) -> (Keyword, Identifier, Option<GenericParameters>, Option<WhereClause>)
+    {
         (
             self.marker_keyword,
-            self.kind,
             self.identifier,
             self.generic_parameters,
             self.where_clause,
@@ -2920,38 +2889,12 @@ impl<'a> Parser<'a> {
     ) -> Option<MarkerSignature> {
         let marker_keyword =
             self.parse_keyword(KeywordKind::Marker, handler)?;
-        let kind = match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(
-                keyword @ Keyword { kind: KeywordKind::And, .. },
-            )) => {
-                self.forward();
-
-                MarkerKind::And(keyword)
-            }
-            Reading::Unit(Token::Keyword(
-                keyword @ Keyword { kind: KeywordKind::Or, .. },
-            )) => {
-                self.forward();
-
-                MarkerKind::Or(keyword)
-            }
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::Keyword(KeywordKind::And),
-                    alternatives: vec![SyntaxKind::Keyword(KeywordKind::Or)],
-                    found: self.reading_to_found(found),
-                });
-                self.forward();
-                return None;
-            }
-        };
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
         let where_clause = self.try_parse_where_clause(handler)?;
 
         Some(MarkerSignature {
             marker_keyword,
-            kind,
             identifier,
             generic_parameters,
             where_clause,

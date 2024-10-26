@@ -117,7 +117,7 @@ impl<
         _: &Constant<M>,
         _: <Constant<M> as Element>::Location,
     ) -> bool {
-        false
+        true
     }
 }
 
@@ -203,7 +203,7 @@ impl<M: Model> Compute for ConstantType<M> {
                 context,
             };
 
-            let _ = self.0.accept_one_level(&mut visitor);
+            assert!(self.0.accept_one_level(&mut visitor).is_ok());
 
             if let Some(mut result) = visitor.constant_type? {
                 // look for the fields of the term as well (if it's an ADT)

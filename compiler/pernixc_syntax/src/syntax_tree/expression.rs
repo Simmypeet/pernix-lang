@@ -212,7 +212,7 @@ impl SourceElement for Block {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
+#[allow(missing_docs, clippy::large_enum_variant /*false positive*/)]
 pub enum BlockOrIfElse {
     Block(Block),
     IfElse(IfElse),

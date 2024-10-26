@@ -182,7 +182,7 @@ impl Finalize for Enum {
                         .find_map(|x| {
                             (&x.identifier().span
                                 == variant.span.as_ref().unwrap())
-                            .then_some(x.association().as_ref().unwrap())
+                            .then(|| x.association().as_ref().unwrap())
                         })
                         .unwrap();
                     drop(variant);

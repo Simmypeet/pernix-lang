@@ -111,7 +111,7 @@ pub struct TraitBound {
     #[get = "pub"]
     negation: Option<Punctuation>,
     #[get = "pub"]
-    higher_rankded_lifetimes: Option<HigherRankedLifetimes>,
+    higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
     #[get = "pub"]
     const_keyword: Option<Keyword>,
     #[get = "pub"]
@@ -122,7 +122,7 @@ impl SourceElement for TraitBound {
     fn span(&self) -> Span {
         let first = match (
             &self.negation,
-            &self.higher_rankded_lifetimes,
+            &self.higher_ranked_lifetimes,
             &self.const_keyword,
         ) {
             (Some(negation), _, _) => negation.span(),
@@ -145,7 +145,7 @@ impl TraitBound {
     ) -> (Option<HigherRankedLifetimes>, Option<Keyword>, QualifiedIdentifier)
     {
         (
-            self.higher_rankded_lifetimes,
+            self.higher_ranked_lifetimes,
             self.const_keyword,
             self.qualified_identifier,
         )
@@ -177,6 +177,75 @@ impl Trait {
 impl SourceElement for Trait {
     fn span(&self) -> Span {
         self.trait_keyword.span.join(&self.bounds.span()).unwrap()
+    }
+}
+
+/// ```txt
+/// MarkerBound:
+///     '!'? HigherRankedLifetimes? QualifiedIdentifier
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct MarkerBound {
+    #[get = "pub"]
+    negation: Option<Punctuation>,
+    #[get = "pub"]
+    higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
+    #[get = "pub"]
+    qualified_identifier: QualifiedIdentifier,
+}
+
+impl SourceElement for MarkerBound {
+    fn span(&self) -> Span {
+        let begin = self.negation.as_ref().map_or_else(
+            || {
+                self.higher_ranked_lifetimes.as_ref().map_or_else(
+                    || self.qualified_identifier.span(),
+                    SourceElement::span,
+                )
+            },
+            SourceElement::span,
+        );
+
+        begin.join(&self.qualified_identifier.span()).unwrap()
+    }
+}
+
+impl MarkerBound {
+    /// Dissolves the [`MarkerBound`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (Option<Punctuation>, Option<HigherRankedLifetimes>, QualifiedIdentifier)
+    {
+        (self.negation, self.higher_ranked_lifetimes, self.qualified_identifier)
+    }
+}
+
+/// ``` txt
+/// Marker:
+///     'marker' MarkerBound ('+' MarkerBound)*
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Marker {
+    #[get = "pub"]
+    marker_keyword: Keyword,
+    #[get = "pub"]
+    bounds: UnionList<MarkerBound>,
+}
+
+impl SourceElement for Marker {
+    fn span(&self) -> Span {
+        self.marker_keyword.span.join(&self.bounds.span()).unwrap()
+    }
+}
+
+impl Marker {
+    /// Dissolves the [`Marker`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Keyword, UnionList<MarkerBound>) {
+        (self.marker_keyword, self.bounds)
     }
 }
 
@@ -255,6 +324,7 @@ pub enum Predicate {
     Outlives(Outlives),
     ConstantType(ConstantType),
     Tuple(Tuple),
+    Marker(Marker),
 }
 
 /// Syntax Synopsis:
@@ -389,6 +459,7 @@ impl SourceElement for Predicate {
             Self::Outlives(s) => s.span(),
             Self::ConstantType(s) => s.span(),
             Self::Tuple(s) => s.span(),
+            Self::Marker(s) => s.span(),
         }
     }
 }
@@ -460,6 +531,43 @@ impl<'a> Parser<'a> {
                     const_keyword,
                     bounds,
                 }))
+            }
+
+            // parse marker predicate
+            Reading::Unit(Token::Keyword(
+                marker_keyword @ Keyword { kind: KeywordKind::Marker, .. },
+            )) => {
+                // eat marker keyword
+                self.forward();
+
+                let bounds = self.parse_union_list(|parser| {
+                    let negation = match parser.stop_at_significant() {
+                        Reading::Unit(Token::Punctuation(
+                            negation @ Punctuation { punctuation: '!', .. },
+                        )) => {
+                            // eat negation
+                            parser.forward();
+
+                            Some(negation)
+                        }
+
+                        _ => None,
+                    };
+
+                    let higher_ranked_lifetimes =
+                        parser.try_parse_higher_ranked_lifetimes(handler)?;
+
+                    let qualified_identifier =
+                        parser.parse_qualified_identifier(handler)?;
+
+                    Some(MarkerBound {
+                        negation,
+                        higher_ranked_lifetimes,
+                        qualified_identifier,
+                    })
+                })?;
+
+                Some(Predicate::Marker(Marker { marker_keyword, bounds }))
             }
 
             // parse tuple predicate
@@ -534,7 +642,7 @@ impl<'a> Parser<'a> {
 
                     Some(TraitBound {
                         negation,
-                        higher_rankded_lifetimes,
+                        higher_ranked_lifetimes: higher_rankded_lifetimes,
                         const_keyword,
                         qualified_identifier,
                     })

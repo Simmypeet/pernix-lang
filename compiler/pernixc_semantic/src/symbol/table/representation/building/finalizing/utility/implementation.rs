@@ -9,6 +9,7 @@ use crate::{
     error::Error,
     symbol::{
         table::{
+            self,
             representation::{
                 building::finalizing::{self, Finalize, Finalizer},
                 RwLockContainer,
@@ -16,7 +17,7 @@ use crate::{
             resolution::{self, Observer},
             Building, Table,
         },
-        GenericID, GlobalID,
+        GenericID, GenericTemplate, GlobalID, ImplementationTemplate,
     },
     type_system::{
         model::{self},
@@ -29,7 +30,9 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     ///
     /// The generic arguments are not assigned to the implementation symbol
     /// here.
-    pub fn create_implementation_arguments<T: Finalize + finalizing::Element>(
+    pub(in super::super) fn create_implementation_arguments<
+        T: Finalize + finalizing::Element,
+    >(
         &self,
         implementation_id: GenericID,
         implemented_id: ID<T>,
@@ -68,5 +71,125 @@ impl Table<Building<RwLockContainer, Finalizer>> {
             .expect("the referring site should be valid");
 
         generic_arguments
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(in super::super) fn build_implementation<
+        ParentID: Copy + Into<GlobalID>,
+        Implemented: Finalize + finalizing::Element,
+        Definition: 'static,
+    >(
+        &self,
+        symbol_id: ID<
+            GenericTemplate<
+                ParentID,
+                ImplementationTemplate<ID<Implemented>, Definition>,
+            >,
+        >,
+        state_flag: usize,
+        generic_parameter_state: usize,
+        where_clause_state: usize,
+        arguments_state: usize,
+        check_state: usize,
+        generic_parameters_syn: Option<&syntax_tree::item::GenericParameters>,
+        where_caluse_syn: Option<&syntax_tree::item::WhereClause>,
+        qualified_identifier: &syntax_tree::QualifiedIdentifier,
+        generic_parameter_occurrences: &mut Occurrences,
+        where_clause_occurrences: &mut Occurrences,
+        argument_occurrences: &mut Occurrences,
+        implemented_generic_parameter_state: usize,
+        implemented_where_clause_state: usize,
+        handler: &dyn Handler<Box<dyn Error>>,
+    ) where
+        GenericTemplate<
+            ParentID,
+            ImplementationTemplate<ID<Implemented>, Definition>,
+        >: table::representation::Element + finalizing::Element,
+        ID<
+            GenericTemplate<
+                ParentID,
+                ImplementationTemplate<ID<Implemented>, Definition>,
+            >,
+        >: Into<GlobalID> + Into<GenericID>,
+        ID<Implemented>: Into<GlobalID> + Into<GenericID>,
+    {
+        if state_flag == generic_parameter_state {
+            self.create_generic_parameters(
+                symbol_id,
+                generic_parameters_syn,
+                generic_parameter_occurrences,
+                handler,
+            );
+        } else if state_flag == where_clause_state {
+            self.create_where_clause(
+                symbol_id,
+                where_caluse_syn,
+                where_clause_occurrences,
+                handler,
+            );
+        } else if state_flag == arguments_state {
+            let implemented_id =
+                table::representation::Element::get_arena(&**self)
+                    .get(symbol_id)
+                    .unwrap()
+                    .read()
+                    .implemented_id;
+
+            table::representation::Element::get_arena(&**self)
+                .get(symbol_id)
+                .unwrap()
+                .write()
+                .arguments = self.create_implementation_arguments(
+                symbol_id.into(),
+                implemented_id,
+                implemented_generic_parameter_state,
+                qualified_identifier.rest().last().map_or_else(
+                    || {
+                        qualified_identifier
+                            .root()
+                            .as_generic_identifier()
+                            .unwrap()
+                    },
+                    |x| &x.1,
+                ),
+                argument_occurrences,
+                handler,
+            );
+        } else if state_flag == check_state {
+            // make sure the implemented trait has the where clause
+            let implemented_id =
+                table::representation::Element::get_arena(&**self)
+                    .get(symbol_id)
+                    .unwrap()
+                    .read()
+                    .implemented_id;
+
+            let _ = self.build_to(
+                implemented_id,
+                Some(symbol_id.into()),
+                implemented_where_clause_state,
+                handler,
+            );
+
+            self.check_occurrences(
+                symbol_id.into(),
+                generic_parameter_occurrences,
+                handler,
+            );
+            self.check_occurrences(
+                symbol_id.into(),
+                where_clause_occurrences,
+                handler,
+            );
+            self.check_occurrences(
+                symbol_id.into(),
+                argument_occurrences,
+                handler,
+            );
+            self.check_where_clause(symbol_id.into(), handler);
+            self.implementation_signature_check(symbol_id, handler);
+        } else {
+            panic!("invalid state flag");
+        }
     }
 }

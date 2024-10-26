@@ -533,9 +533,7 @@ fn matching_to_compatiblity<M: Model>(
                     );
 
                     // add to the error
-                    if !compatibility.forall_lifetime_errors.contains(&error) {
-                        compatibility.forall_lifetime_errors.insert(error);
-                    }
+                    compatibility.forall_lifetime_errors.insert(error);
                 }
 
                 (self_lt, target_lt) => match variance {

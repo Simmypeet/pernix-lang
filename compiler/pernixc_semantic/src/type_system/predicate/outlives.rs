@@ -155,7 +155,7 @@ impl<T: Term> Compute for Outlives<T> {
                 context,
             };
 
-            let _ = self.operand.accept_one_level(&mut visitor);
+            assert!(self.operand.accept_one_level(&mut visitor).is_ok());
 
             if visitor.outlives? == Some(Satisfied) {
                 return Ok(Some(Satisfied));

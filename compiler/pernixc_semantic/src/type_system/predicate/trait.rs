@@ -1,7 +1,6 @@
 use core::fmt;
 
 use enum_as_inner::EnumAsInner;
-use thiserror::Error;
 
 use super::{
     contains_error, resolve_implementation_with_context, Implementation,
@@ -42,6 +41,11 @@ pub enum PositiveSatisfied<M: Model> {
 
     /// The trait predicate was proven to be satisfied by the premise.
     ByPremise,
+
+    /// The trait predicate satsifiability is co-inductive. This means that the
+    /// trait predicate is satisfied by the cyclic nature of the trait
+    /// predicates.
+    ByCyclic,
 }
 
 /// An enumeration of ways a negative trait predicate can be satisfied.
@@ -254,7 +258,7 @@ impl<M: Model> Compute for Positive<M> {
         _: &[crate::type_system::query::Record<Self::Model>],
     ) -> Result<Option<Self::Result>, Self::Error> {
         Ok(Some(Succeeded::new(
-            PositiveSatisfied::ByEnvironment, /* doesn't matter */
+            PositiveSatisfied::ByCyclic, /* doesn't matter */
         )))
     }
 }
@@ -427,24 +431,6 @@ impl<M: Model> Compute for Negative<M> {
                 )
             }))
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
-#[allow(missing_docs)]
-pub enum ResolveError {
-    #[error("the trait id was invalid")]
-    InvalidID,
-    #[error("the trait was ambiguous")]
-    AmbiguousTrait,
-    #[error(transparent)]
-    Overflow(#[from] OverflowError),
-    #[error("the trait implementation was not found")]
-    NotFound,
-    #[error(
-        "the generic arguments contained a term that can be rewritten in \
-         multiple ways and caused an ambiguity in trait resolution"
-    )]
-    AmbiguousTerm,
 }
 
 fn is_in_trait<M: Model, S: State>(

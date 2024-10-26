@@ -1238,6 +1238,7 @@ impl<S: State> Table<S> {
         ))
     }
 
+    #[allow(clippy::result_large_err)]
     fn resolution_to_type<M: Model>(
         &self,
         resolution: Resolution<M>,

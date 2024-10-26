@@ -6,8 +6,8 @@ use pernixc_syntax::syntax_tree::target::{self, Target};
 use crate::{
     error::{
         AdtImplementationIsNotGeneralEnough, Error,
-        MismatchedImplementationArguments,
-        TraitImplementationIsNotGeneralEnough, UnsatisifedPredicate,
+        ImplementationIsNotGeneralEnough, MismatchedImplementationArguments,
+        UnsatisifedPredicate,
     },
     symbol::{
         table::{self, representation::Index, Suboptimal, Success, Table},
@@ -504,7 +504,7 @@ fn trait_implementation_is_not_general_enough() {
     errors.iter().any(|error| {
         error
             .as_any()
-            .downcast_ref::<TraitImplementationIsNotGeneralEnough<model::Default>>()
+            .downcast_ref::<ImplementationIsNotGeneralEnough<model::Default>>()
             .is_some()
     });
 }

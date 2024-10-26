@@ -429,6 +429,14 @@ fn predicate_satisfies<'a, M: Model, S: State>(
                 tr.query_with_context(environment, context)?.is_some()
             }
 
+            Predicate::PositiveMarker(tr) => {
+                tr.query_with_context(environment, context)?.is_some()
+            }
+
+            Predicate::NegativeMarker(tr) => {
+                tr.query_with_context(environment, context)?.is_some()
+            }
+
             Predicate::TypeOutlives(_) | Predicate::LifetimeOutlives(_) => true,
         } {
             return Ok(false);

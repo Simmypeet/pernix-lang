@@ -107,7 +107,7 @@ impl<T: Term> Compute for Definite<T> {
                 context,
             };
 
-            let _ = self.0.accept_one_level(&mut visitor);
+            assert!(self.0.accept_one_level(&mut visitor).is_ok());
 
             if let Some(result) = visitor.definite? {
                 return Ok(Some(result));

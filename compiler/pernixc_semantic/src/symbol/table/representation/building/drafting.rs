@@ -42,8 +42,8 @@ use crate::{
         Accessibility, AdtID, AdtImplementationDefinition,
         AdtImplementationFunction, Constant, Enum, Extern, Function,
         FunctionDefinition, FunctionTemplate, GenericDeclaration,
-        GenericTemplate, GlobalID, HierarchyRelationship, Marker, MarkerKind,
-        Module, ModuleMemberID, NegativeTraitImplementationDefinition,
+        GenericTemplate, GlobalID, HierarchyRelationship, Marker, Module,
+        ModuleMemberID, NegativeTraitImplementationDefinition,
         PositiveTraitImplementationDefinition, Struct, Trait,
         TraitImplementationMemberID, TraitMemberID, Type, Variant,
     },
@@ -460,22 +460,13 @@ impl Table<Building<RwLockContainer, Drafter>> {
                         )
                         .unwrap();
 
-                    let kind = match syn.signature().kind() {
-                        syntax_tree::item::MarkerKind::And(_) => {
-                            MarkerKind::And
-                        }
-                        syntax_tree::item::MarkerKind::Or(_) => MarkerKind::Or,
-                    };
-
-                    let id: ID<Marker> = self.draft_member(
+                    let _: ID<Marker> = self.draft_member(
                         syn,
                         module_id,
                         |syn| syn.signature().identifier(),
                         accessibility,
                         handler,
                     );
-
-                    self.markers.get_mut(id).unwrap().get_mut().kind = kind;
                 }
             };
         }

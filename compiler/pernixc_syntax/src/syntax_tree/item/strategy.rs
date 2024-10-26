@@ -978,46 +978,8 @@ impl Display for Constant {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum MarkerKind {
-    And,
-    Or,
-}
-
-impl Input<&super::MarkerKind> for &MarkerKind {
-    fn assert(self, output: &super::MarkerKind) -> TestCaseResult {
-        match (self, output) {
-            (MarkerKind::And, super::MarkerKind::And(_))
-            | (MarkerKind::Or, super::MarkerKind::Or(_)) => Ok(()),
-
-            _ => Err(TestCaseError::fail(format!(
-                "Expected {self:?}, got {output:?}",
-            ))),
-        }
-    }
-}
-
-impl Arbitrary for MarkerKind {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![Just(Self::And), Just(Self::Or)].boxed()
-    }
-}
-
-impl Display for MarkerKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::And => write!(f, "and"),
-            Self::Or => write!(f, "or"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MarkerSignature {
-    pub kind: MarkerKind,
     pub identifier: Identifier,
     pub generic_parameters: Option<GenericParameters>,
     pub where_clause: Option<WhereClause>,
@@ -1025,7 +987,6 @@ pub struct MarkerSignature {
 
 impl Input<&super::MarkerSignature> for &MarkerSignature {
     fn assert(self, output: &super::MarkerSignature) -> TestCaseResult {
-        self.kind.assert(output.kind())?;
         self.identifier.assert(output.identifier())?;
         self.generic_parameters
             .as_ref()
@@ -1040,13 +1001,14 @@ impl Arbitrary for MarkerSignature {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            MarkerKind::arbitrary(),
             Identifier::arbitrary(),
             proptest::option::of(GenericParameters::arbitrary()),
             proptest::option::of(WhereClause::arbitrary()),
         )
-            .prop_map(|(kind, identifier, generic_parameters, where_clause)| {
-                Self { kind, identifier, generic_parameters, where_clause }
+            .prop_map(|(identifier, generic_parameters, where_clause)| Self {
+                identifier,
+                generic_parameters,
+                where_clause,
             })
             .boxed()
     }
@@ -1054,7 +1016,7 @@ impl Arbitrary for MarkerSignature {
 
 impl Display for MarkerSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "marker {} {}", self.kind, self.identifier)?;
+        write!(f, "marker {}", self.identifier)?;
 
         if let Some(generic_parameters) = &self.generic_parameters {
             Display::fmt(generic_parameters, f)?;

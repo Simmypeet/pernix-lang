@@ -1171,29 +1171,6 @@ impl<Definition> FunctionTemplate<Definition> {
     }
 }
 
-/// An enumeration of all compiler intrinsics functions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Intrinsic {
-    /// `memcpy` from the reference stored im the first parameter and returns
-    /// it.
-    ///
-    /// This primarily used for `core::Clone` trait implementation for
-    /// primitive types.
-    Memcpy,
-
-    /// Invokes each `core::Clone` trait implementation for each element in the
-    /// array and returns the copied array.
-    ///
-    /// This is used for `core::Clone` trait implementation for array types.
-    ArrayClone,
-
-    /// Invokes each `core::Clone` trait implementation for each element in
-    /// the tuple and returns the copied tuple.
-    ///
-    /// This is used for `core::Clone` trait implementation for tuple types.
-    TupleClone,
-}
-
 /// Represents the external linkage of the function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Extern {
@@ -1215,9 +1192,6 @@ pub enum FunctionIR {
     /// The function contains a semantic error, which causes the function may
     /// not be able to be compiled to its correct meaning.
     Suboptimal(ir::IR<Suboptimal>),
-
-    /// The funcrion is an intrinsic function.
-    Intrinsic(Intrinsic),
 }
 
 impl std::default::Default for FunctionIR {
@@ -1645,23 +1619,9 @@ pub struct TraitDefinition {
     implementations: HashSet<TraitImplementationID>,
 }
 
-/// The kind of marker; either 'and' or 'or'.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub enum MarkerKind {
-    /// All the fields must be satisfied to satisfy the marker.
-    #[default]
-    And,
-
-    /// At least one of the fields must be satisfied to satisfy the marker.
-    Or,
-}
-
 /// Contains the definition of the marker.
 #[derive(Debug, Clone, PartialEq, Eq, Getters, Default)]
 pub struct MarkerDefinition {
-    /// The kind of the marker.
-    pub kind: MarkerKind,
-
     /// All the implementations that implemented this marker.
     #[get = "pub"]
     implementations: HashSet<MarkerImplementationID>,
@@ -1669,6 +1629,18 @@ pub struct MarkerDefinition {
 
 /// Represents a marker declaration, denoted by `marker NAME;` syntax.
 pub type Marker = GenericTemplate<ID<Module>, MarkerDefinition>;
+
+impl Implemented<MarkerImplementationID> for Marker {
+    fn implementations(&self) -> &HashSet<MarkerImplementationID> {
+        &self.implementations
+    }
+}
+
+impl ImplementedMut<MarkerImplementationID> for Marker {
+    fn implementations_mut(&mut self) -> &mut HashSet<MarkerImplementationID> {
+        &mut self.implementations
+    }
+}
 
 /// The definition of the positive marker implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1719,6 +1691,13 @@ try_from_ids!(
     MarkerImplementationID,
     (PositiveMarkerImplementation, Positive),
     (NegativeMarkerImplementation, Negative)
+);
+
+from_ids!(
+    MarkerImplementationID,
+    ResolvableImplementationID,
+    (Positive, PositiveMarker),
+    (Negative, NegativeMarker)
 );
 
 /// Enumerations of all kinds of generic parameter ids. This requires the parent
@@ -1868,6 +1847,25 @@ pub enum ImplementationID {
     PositiveMarker(ID<PositiveMarkerImplementation>),
     NegativeMarker(ID<NegativeMarkerImplementation>),
     Adt(ID<AdtImplementation>),
+}
+
+impl From<ResolvableImplementationID> for ImplementationID {
+    fn from(value: ResolvableImplementationID) -> Self {
+        match value {
+            ResolvableImplementationID::PositiveTrait(id) => {
+                Self::PositiveTrait(id)
+            }
+            ResolvableImplementationID::NegativeTrait(id) => {
+                Self::NegativeTrait(id)
+            }
+            ResolvableImplementationID::PositiveMarker(id) => {
+                Self::PositiveMarker(id)
+            }
+            ResolvableImplementationID::NegativeMarker(id) => {
+                Self::NegativeMarker(id)
+            }
+        }
+    }
 }
 
 impl From<ImplementationID> for GlobalID {

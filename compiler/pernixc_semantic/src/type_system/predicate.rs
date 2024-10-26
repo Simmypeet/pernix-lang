@@ -1,6 +1,7 @@
 //! Contains various definition of predicates.
 
 mod constant_type;
+mod marker;
 mod outlives;
 mod resolution;
 mod r#trait;
@@ -96,12 +97,15 @@ pub enum Satisfiability {
 }
 
 pub use constant_type::{ConstantType, QuerySource as ConstantTypeQuerySource};
+pub use marker::{
+    Negative as NegativeMarker, NegativeSatisfied as NegativeMarkerSatisfied,
+    Positive as PositiveMarker, PositiveSatisfied as PositiveMarkerSatisfied,
+};
 pub use outlives::Outlives;
 pub use r#trait::{
     Kind as TraitKind, Negative as NegativeTrait,
     NegativeSatisfied as NegativeTraitSatisfied, Positive as PositiveTrait,
     PositiveSatisfied as PositiveTraitSatisfied,
-    ResolveError as TraitResolveError,
 };
 pub use resolution::{
     resolve_implementation, resolve_implementation_with_context,
@@ -131,6 +135,8 @@ pub enum Predicate<M: Model> {
     TupleConstant(Tuple<Constant<M>>),
     PositiveTrait(PositiveTrait<M>),
     NegativeTrait(NegativeTrait<M>),
+    PositiveMarker(PositiveMarker<M>),
+    NegativeMarker(NegativeMarker<M>),
 }
 
 impl<M: Model> Predicate<M> {
@@ -179,6 +185,12 @@ impl<M: Model> Predicate<M> {
             Predicate::NegativeTrait(x) => {
                 Self::NegativeTrait(NegativeTrait::from_default_model(x))
             }
+            Predicate::PositiveMarker(positive) => Self::PositiveMarker(
+                PositiveMarker::from_default_model(positive),
+            ),
+            Predicate::NegativeMarker(negative) => Self::NegativeMarker(
+                NegativeMarker::from_default_model(negative),
+            ),
         }
     }
 }
@@ -193,6 +205,8 @@ where
     Tuple<Constant<M>>: table::Display<T>,
     PositiveTrait<M>: table::Display<T>,
     NegativeTrait<M>: table::Display<T>,
+    PositiveMarker<M>: table::Display<T>,
+    NegativeMarker<M>: table::Display<T>,
 {
     fn fmt(
         &self,
@@ -208,6 +222,8 @@ where
             Self::TupleConstant(tuple) => tuple.fmt(table, f),
             Self::PositiveTrait(tr) => tr.fmt(table, f),
             Self::NegativeTrait(tr) => tr.fmt(table, f),
+            Self::PositiveMarker(marker) => marker.fmt(table, f),
+            Self::NegativeMarker(marker) => marker.fmt(table, f),
         }
     }
 }
@@ -225,6 +241,8 @@ impl<M: Model> Predicate<M> {
             Self::TupleConstant(tuple) => tuple.contains_error(),
             Self::PositiveTrait(tr) => tr.contains_error(),
             Self::NegativeTrait(tr) => tr.contains_error(),
+            Self::PositiveMarker(marker) => marker.contains_error(),
+            Self::NegativeMarker(marker) => marker.contains_error(),
         }
     }
 
@@ -245,6 +263,8 @@ impl<M: Model> Predicate<M> {
             Self::TupleConstant(tuple) => tuple.instantiate(substitution),
             Self::PositiveTrait(tr) => tr.instantiate(substitution),
             Self::NegativeTrait(tr) => tr.instantiate(substitution),
+            Self::PositiveMarker(marker) => marker.instantiate(substitution),
+            Self::NegativeMarker(marker) => marker.instantiate(substitution),
         }
     }
 }

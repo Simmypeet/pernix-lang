@@ -9,8 +9,8 @@ use super::{builder, occurrences::Occurrences};
 use crate::{
     arena::ID,
     error::{
-        self, ExpectTrait, ExpectTraitMember, HigherRankedLifetimeRedefinition,
-        UnexpectedInference,
+        self, ExpectTrait, ExpectTraitMember, ExpectedMarker,
+        HigherRankedLifetimeRedefinition, UnexpectedInference,
     },
     symbol::{
         self,
@@ -121,7 +121,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn create_trait_bound_predicates<
+    fn create_trait_predicates<
         T: Generic + table::representation::Element + finalizing::Element,
     >(
         &self,
@@ -132,14 +132,14 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
     {
-        for trait_bound in syntax_tree.bounds().elements() {
-            let higher_ranked_lifetimes = trait_bound
-                .higher_rankded_lifetimes()
+        for marker_bound in syntax_tree.bounds().elements() {
+            let higher_ranked_lifetimes = marker_bound
+                .higher_ranked_lifetimes()
                 .as_ref()
                 .map(|x| Self::create_higher_ranked_lifetimes(x, handler));
 
             let Ok(resolution) = self.resolve(
-                trait_bound.qualified_identifier(),
+                marker_bound.qualified_identifier(),
                 generic_id.into(),
                 resolution::Config {
                     elided_lifetime_provider: None,
@@ -160,11 +160,13 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     id: resolution::GenericID::Trait(trait_id),
                     generic_arguments,
                 }) => {
-                    let predicate = if trait_bound.negation().is_none() {
+                    let predicate = if marker_bound.negation().is_none() {
                         predicate::Predicate::PositiveTrait(
                             predicate::PositiveTrait {
                                 id: trait_id,
-                                is_const: trait_bound.const_keyword().is_some(),
+                                is_const: marker_bound
+                                    .const_keyword()
+                                    .is_some(),
                                 generic_arguments,
                             },
                         )
@@ -185,13 +187,13 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                         .predicates
                         .push(symbol::Predicate {
                             predicate,
-                            span: Some(trait_bound.span()),
+                            span: Some(marker_bound.span()),
                         });
                 }
 
-                resolution => handler.receive(Box::new(ExpectTrait {
+                resolution => handler.receive(Box::new(ExpectedMarker {
                     found_id: resolution.global_id(),
-                    trait_path: trait_bound.span(),
+                    marker_path: marker_bound.span(),
                 })),
             }
         }
@@ -352,6 +354,81 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
     // create a constant type predicate
     #[allow(clippy::too_many_lines)]
+    fn create_marker_predicate<T: Generic + Element>(
+        &self,
+        generic_id: ID<T>,
+        syntax_tree: &syntax_tree::predicate::Marker,
+        occurrences: &mut Occurrences,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) where
+        ID<T>: Into<GlobalID> + Into<GenericID>,
+    {
+        for marker_bound in syntax_tree.bounds().elements() {
+            let higher_ranked_lifetimes = marker_bound
+                .higher_ranked_lifetimes()
+                .as_ref()
+                .map(|x| Self::create_higher_ranked_lifetimes(x, handler));
+
+            let Ok(resolution) = self.resolve(
+                marker_bound.qualified_identifier(),
+                generic_id.into(),
+                resolution::Config {
+                    elided_lifetime_provider: None,
+                    elided_type_provider: None,
+                    elided_constant_provider: None,
+                    observer: Some(
+                        &mut builder::Resolution::basic().chain(occurrences),
+                    ),
+                    higher_ranked_lifetimes: higher_ranked_lifetimes.as_ref(),
+                },
+                handler,
+            ) else {
+                return;
+            };
+
+            match resolution {
+                Resolution::Generic(resolution::Generic {
+                    id: resolution::GenericID::Marker(marker_id),
+                    generic_arguments,
+                }) => {
+                    let predicate = if marker_bound.negation().is_none() {
+                        predicate::Predicate::PositiveMarker(
+                            predicate::PositiveMarker {
+                                id: marker_id,
+                                generic_arguments,
+                            },
+                        )
+                    } else {
+                        predicate::Predicate::NegativeMarker(
+                            predicate::NegativeMarker {
+                                id: marker_id,
+                                generic_arguments,
+                            },
+                        )
+                    };
+
+                    T::get_arena(self)
+                        .get(generic_id)
+                        .unwrap()
+                        .write()
+                        .generic_declaration_mut()
+                        .predicates
+                        .push(symbol::Predicate {
+                            predicate,
+                            span: Some(marker_bound.span()),
+                        });
+                }
+
+                resolution => handler.receive(Box::new(ExpectTrait {
+                    found_id: resolution.global_id(),
+                    trait_path: marker_bound.span(),
+                })),
+            }
+        }
+    }
+
+    // create a constant type predicate
+    #[allow(clippy::too_many_lines)]
     fn create_tuple_predicates<T: Generic + Element>(
         &self,
         generic_id: ID<T>,
@@ -495,7 +572,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 }
 
                 syntax_tree::predicate::Predicate::Trait(tr) => {
-                    self.create_trait_bound_predicates(
+                    self.create_trait_predicates(
                         generic_id,
                         tr,
                         occurrences,
@@ -529,6 +606,15 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                     self.create_tuple_predicates(
                         generic_id,
                         tuple,
+                        occurrences,
+                        handler,
+                    );
+                }
+
+                syntax_tree::predicate::Predicate::Marker(marker) => {
+                    self.create_marker_predicate(
+                        generic_id,
+                        marker,
                         occurrences,
                         handler,
                     );

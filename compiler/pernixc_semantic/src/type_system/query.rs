@@ -15,7 +15,8 @@ use super::{
     normalizer::Normalizer,
     observer::Observer,
     predicate::{
-        self, ConstantTypeQuerySource, NegativeTrait, NegativeTraitSatisfied,
+        self, ConstantTypeQuerySource, NegativeMarkerSatisfied, NegativeTrait,
+        NegativeTraitSatisfied, PositiveMarkerSatisfied,
         PositiveTraitSatisfied,
     },
     sub_term::SubTerm,
@@ -82,6 +83,11 @@ pub enum Record<M: Model> {
     PositiveTraitSatisfiability(Call<predicate::PositiveTrait<M>, ()>),
     #[from]
     NegativeTraitSatisfiability(Call<predicate::NegativeTrait<M>, ()>),
+
+    #[from]
+    PositiveMarkerSatisfiability(Call<predicate::PositiveMarker<M>, ()>),
+    #[from]
+    NegativeMarkerSatisfiability(Call<predicate::NegativeMarker<M>, ()>),
 
     #[from]
     TypeCheck(Call<TypeCheck<M>, ()>),
@@ -151,6 +157,15 @@ pub struct Context<M: Model> {
         Cached<(), Succeeded<NegativeTraitSatisfied<M>, M>>,
     >,
 
+    positive_marker_satisfiability: BTreeMap<
+        predicate::PositiveMarker<M>,
+        Cached<(), Succeeded<PositiveMarkerSatisfied<M>, M>>,
+    >,
+    negative_marker_satisfiability: BTreeMap<
+        predicate::NegativeMarker<M>,
+        Cached<(), Succeeded<NegativeMarkerSatisfied<M>, M>>,
+    >,
+
     type_check: BTreeMap<TypeCheck<M>, Cached<(), Succeeded<Satisfied, M>>>,
 
     /// The call stack of the queries.
@@ -182,6 +197,8 @@ impl<M: Model> Default for Context<M> {
             constant_type: BTreeMap::default(),
             positive_trait_satisfiability: BTreeMap::default(),
             negative_trait_satisfiability: BTreeMap::default(),
+            negative_marker_satisfiability: BTreeMap::default(),
+            positive_marker_satisfiability: BTreeMap::default(),
             type_check: BTreeMap::default(),
 
             call_stack: Vec::new(),
@@ -1082,6 +1099,72 @@ impl<M: Model> Sealed for NegativeTrait<M> {
         (): Self::InProgress,
     ) -> Record<Self::Model> {
         Record::NegativeTraitSatisfiability(Call::new(query, ()))
+    }
+}
+
+impl<M: Model> Query for predicate::PositiveMarker<M> {
+    type Model = M;
+    type InProgress = ();
+    type Result = Succeeded<PositiveMarkerSatisfied<M>, M>;
+}
+
+impl<M: Model> Sealed for predicate::PositiveMarker<M> {
+    fn get_map(
+        context: &Context<Self::Model>,
+    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
+        &context.positive_marker_satisfiability
+    }
+
+    fn get_map_mut(
+        context: &mut Context<Self::Model>,
+    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
+        &mut context.positive_marker_satisfiability
+    }
+
+    fn from_call(
+        call: &Record<Self::Model>,
+    ) -> Option<&Call<Self, Self::InProgress>> {
+        call.as_positive_marker_satisfiability()
+    }
+
+    fn into_query_call(
+        query: Self,
+        in_progress: Self::InProgress,
+    ) -> Record<Self::Model> {
+        Record::PositiveMarkerSatisfiability(Call::new(query, in_progress))
+    }
+}
+
+impl<M: Model> Query for predicate::NegativeMarker<M> {
+    type Model = M;
+    type InProgress = ();
+    type Result = Succeeded<NegativeMarkerSatisfied<M>, M>;
+}
+
+impl<M: Model> Sealed for predicate::NegativeMarker<M> {
+    fn get_map(
+        context: &Context<Self::Model>,
+    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
+        &context.negative_marker_satisfiability
+    }
+
+    fn get_map_mut(
+        context: &mut Context<Self::Model>,
+    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
+        &mut context.negative_marker_satisfiability
+    }
+
+    fn from_call(
+        call: &Record<Self::Model>,
+    ) -> Option<&Call<Self, Self::InProgress>> {
+        call.as_negative_marker_satisfiability()
+    }
+
+    fn into_query_call(
+        query: Self,
+        (): Self::InProgress,
+    ) -> Record<Self::Model> {
+        Record::NegativeMarkerSatisfiability(Call::new(query, ()))
     }
 }
 

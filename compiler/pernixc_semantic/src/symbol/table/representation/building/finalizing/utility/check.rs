@@ -1,7 +1,10 @@
 //! Contains code related to well-formedness checking of each instantiation of
 //! symbols and types.
 
-use std::{collections::HashSet, ops::Deref};
+use std::{
+    collections::{BTreeSet, HashSet},
+    ops::Deref,
+};
 
 use pernixc_base::{
     handler::Handler,
@@ -17,13 +20,12 @@ use crate::{
     error::{
         self, AdtImplementationIsNotGeneralEnough, AmbiguousPredicates,
         ConstantArgumentTypeMismatched, DefinitePremisePredicate, Error,
-        ExtraneousTraitMemberPredicate,
+        ImplementationIsNotGeneralEnough,
         MismatchedGenericParameterCountInImplementation,
         MismatchedImplementationArguments,
         MismatchedImplementationConstantTypeParameter,
         OverflowCalculatingRequirementForInstantiation,
-        RecursiveTraitTypeEquality, TraitImplementationIsNotGeneralEnough,
-        UndecidablePredicate, UnsatisifedPredicate,
+        RecursiveTraitTypeEquality, UndecidablePredicate, UnsatisifedPredicate,
         UnusedGenericParameterInImplementation,
     },
     symbol::{
@@ -44,7 +46,7 @@ use crate::{
         },
         ConstantParameter, ConstantParameterID, GenericID, GenericParameter,
         GenericParameters, GenericTemplate, GlobalID, ImplementationTemplate,
-        LifetimeParameter, LifetimeParameterID, TraitImplementationID,
+        LifetimeParameter, LifetimeParameterID, ResolvableImplementationID,
         TraitImplementationMemberID, TraitMemberID, TypeParameter,
         TypeParameterID,
     },
@@ -56,7 +58,10 @@ use crate::{
         model::{Default, Model},
         normalizer::{self, Normalizer},
         observer::{self, Observer},
-        predicate::{self, Outlives, Predicate, Tuple},
+        predicate::{
+            self, NegativeMarkerSatisfied, NegativeTraitSatisfied, Outlives,
+            PositiveMarkerSatisfied, PositiveTraitSatisfied, Predicate, Tuple,
+        },
         simplify,
         term::{
             self, constant,
@@ -85,13 +90,12 @@ enum PredicateError<M: Model> {
         predicate_declaration_span: Option<Span>,
     },
 
-    /// The solved trait implementation is not general enough for the forall
-    /// lifetime requirements.
-    TraitImplementationIsNotGeneralEnough {
+    /// The solved trait/marker implementation is not general enough for the
+    /// forall lifetime requirements.
+    ImplementationIsNotGeneralEnough {
         resolved_implementation:
-            predicate::Implementation<TraitImplementationID, M>,
+            predicate::Implementation<ResolvableImplementationID, M>,
         generic_arguments: GenericArguments<M>,
-        kind: predicate::TraitKind,
         predicate_declaration_span: Option<Span>,
     },
 }
@@ -130,25 +134,21 @@ where
                 }));
             }
 
-            Self::TraitImplementationIsNotGeneralEnough {
+            Self::ImplementationIsNotGeneralEnough {
                 resolved_implementation,
                 predicate_declaration_span,
                 generic_arguments,
-                kind,
             } => {
                 if generic_arguments.contains_error() {
                     return;
                 }
 
-                handler.receive(Box::new(
-                    TraitImplementationIsNotGeneralEnough {
-                        trait_implementation_id: resolved_implementation.id,
-                        instantiation_span,
-                        predicate_declaration_span,
-                        generic_arguments,
-                        kind,
-                    },
-                ));
+                handler.receive(Box::new(ImplementationIsNotGeneralEnough {
+                    resolvable_implementation_id: resolved_implementation.id,
+                    instantiation_span,
+                    predicate_declaration_span,
+                    generic_arguments,
+                }));
             }
         }
     }
@@ -515,10 +515,9 @@ where
     #[allow(clippy::too_many_arguments)]
     fn check_implementation_satisfied(
         &self,
-        id: TraitImplementationID,
+        id: ResolvableImplementationID,
         instantiation: &Instantiation<M>,
         generic_arguments: &GenericArguments<M>,
-        kind: predicate::TraitKind,
         predicate_declaration_span: Option<Span>,
         checking_site: GlobalID,
         do_outlives_check: bool,
@@ -528,33 +527,50 @@ where
         let mut errors = Vec::new();
 
         if is_not_general_enough {
-            errors.push(
-                PredicateError::TraitImplementationIsNotGeneralEnough {
-                    resolved_implementation: predicate::Implementation {
-                        instantiation: instantiation.clone(),
-                        id,
-                        is_not_general_enough,
-                    },
-                    generic_arguments: generic_arguments.clone(),
-                    kind,
-                    predicate_declaration_span,
+            errors.push(PredicateError::ImplementationIsNotGeneralEnough {
+                resolved_implementation: predicate::Implementation {
+                    instantiation: instantiation.clone(),
+                    id,
+                    is_not_general_enough,
                 },
-            );
+                generic_arguments: generic_arguments.clone(),
+                predicate_declaration_span,
+            });
         }
 
         let _ = match id {
-            TraitImplementationID::Positive(id) => self.table().build_to(
-                id,
-                Some(checking_site),
-                positive_trait_implementation::WHERE_CLAUSE_STATE,
-                handler,
-            ),
-            TraitImplementationID::Negative(id) => self.table().build_to(
-                id,
-                Some(checking_site),
-                negative_trait_implementation::WHERE_CLAUSE_STATE,
-                handler,
-            ),
+            ResolvableImplementationID::PositiveTrait(id) => {
+                self.table().build_to(
+                    id,
+                    Some(checking_site),
+                    positive_trait_implementation::WHERE_CLAUSE_STATE,
+                    handler,
+                )
+            }
+            ResolvableImplementationID::NegativeTrait(id) => {
+                self.table().build_to(
+                    id,
+                    Some(checking_site),
+                    negative_trait_implementation::WHERE_CLAUSE_STATE,
+                    handler,
+                )
+            }
+            ResolvableImplementationID::PositiveMarker(id) => {
+                self.table().build_to(
+                    id,
+                    Some(checking_site),
+                    positive_trait_implementation::WHERE_CLAUSE_STATE,
+                    handler,
+                )
+            }
+            ResolvableImplementationID::NegativeMarker(id) => {
+                self.table().build_to(
+                    id,
+                    Some(checking_site),
+                    negative_trait_implementation::WHERE_CLAUSE_STATE,
+                    handler,
+                )
+            }
         };
 
         let predicates = self
@@ -584,6 +600,62 @@ where
         errors
     }
 
+    fn handle_positive_marker_satisfied(
+        &self,
+        result: PositiveMarkerSatisfied<M>,
+        pred_generic_arguments: &GenericArguments<M>,
+        predicate_declaration_span: Option<Span>,
+        do_outlives_check: bool,
+        checking_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> (BTreeSet<LifetimeConstraint<M>>, Vec<PredicateError<M>>) {
+        match result {
+            PositiveMarkerSatisfied::ByPremise
+            | PositiveMarkerSatisfied::ByEnvironment
+            | PositiveMarkerSatisfied::ByCyclic => {
+                (BTreeSet::new(), Vec::new())
+            }
+
+            PositiveMarkerSatisfied::ByImplementation(implementation) => (
+                BTreeSet::new(),
+                self.check_implementation_satisfied(
+                    implementation.id.into(),
+                    &implementation.instantiation,
+                    pred_generic_arguments,
+                    predicate_declaration_span,
+                    checking_site,
+                    do_outlives_check,
+                    implementation.is_not_general_enough,
+                    handler,
+                ),
+            ),
+
+            PositiveMarkerSatisfied::ByCongruence(btree_map) => {
+                let mut constraints = BTreeSet::new();
+                let mut pred_errors = Vec::new();
+
+                for (_, result) in btree_map {
+                    constraints.extend(result.constraints);
+
+                    let (new_constraints, new_pred_errors) = self
+                        .handle_positive_marker_satisfied(
+                            result.result,
+                            pred_generic_arguments,
+                            predicate_declaration_span.clone(),
+                            do_outlives_check,
+                            checking_site,
+                            handler,
+                        );
+
+                    constraints.extend(new_constraints);
+                    pred_errors.extend(new_pred_errors);
+                }
+
+                (constraints, pred_errors)
+            }
+        }
+    }
+
     #[allow(clippy::too_many_lines)]
     fn predicate_satisfied(
         &self,
@@ -594,7 +666,7 @@ where
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Vec<PredicateError<M>> {
         let (result, mut extra_predicate_error) = match &predicate {
-            predicate::Predicate::TraitTypeEquality(eq) => {
+            Predicate::TraitTypeEquality(eq) => {
                 let result = r#type::Type::TraitMember(eq.lhs.clone())
                     .compatible(&eq.rhs, Variance::Covariant, self);
 
@@ -618,10 +690,8 @@ where
                     Vec::new(),
                 )
             }
-            predicate::Predicate::ConstantType(pred) => {
-                (pred.query(self), Vec::new())
-            }
-            predicate::Predicate::LifetimeOutlives(pred) => {
+            Predicate::ConstantType(pred) => (pred.query(self), Vec::new()),
+            Predicate::LifetimeOutlives(pred) => {
                 if !do_outlives_check {
                     return Vec::new();
                 }
@@ -644,7 +714,7 @@ where
                     }
                 };
             }
-            predicate::Predicate::TypeOutlives(pred) => {
+            Predicate::TypeOutlives(pred) => {
                 if !do_outlives_check {
                     return Vec::new();
                 }
@@ -667,23 +737,43 @@ where
                     }
                 };
             }
-            predicate::Predicate::TupleType(pred) => {
-                (pred.query(self), Vec::new())
-            }
-            predicate::Predicate::TupleConstant(pred) => {
-                (pred.query(self), Vec::new())
-            }
-            predicate::Predicate::PositiveTrait(pred) => match pred.query(self)
-            {
+            Predicate::TupleType(pred) => (pred.query(self), Vec::new()),
+            Predicate::TupleConstant(pred) => (pred.query(self), Vec::new()),
+            Predicate::PositiveMarker(pred) => match pred.query(self) {
+                Ok(None) => (Ok(None), Vec::new()),
+
+                Ok(Some(Succeeded { result, mut constraints })) => {
+                    let (new_constraints, pred_errors) = self
+                        .handle_positive_marker_satisfied(
+                            result,
+                            &pred.generic_arguments,
+                            predicate_declaration_span.clone(),
+                            do_outlives_check,
+                            checking_site,
+                            handler,
+                        );
+
+                    constraints.extend(new_constraints);
+
+                    (
+                        Ok(Some(Succeeded::satisfied_with(constraints))),
+                        pred_errors,
+                    )
+                }
+
+                Err(OverflowError) => (Err(OverflowError), Vec::new()),
+            },
+            Predicate::PositiveTrait(pred) => match pred.query(self) {
                 Ok(None) => (Ok(None), Vec::new()),
                 Ok(Some(Succeeded { result, constraints })) => match result {
-                    predicate::PositiveTraitSatisfied::ByPremise
-                    | predicate::PositiveTraitSatisfied::ByEnvironment => (
+                    PositiveTraitSatisfied::ByCyclic
+                    | PositiveTraitSatisfied::ByPremise
+                    | PositiveTraitSatisfied::ByEnvironment => (
                         Ok(Some(Succeeded::satisfied_with(constraints))),
                         Vec::new(),
                     ),
 
-                    predicate::PositiveTraitSatisfied::ByImplementation(
+                    PositiveTraitSatisfied::ByImplementation(
                         implementation,
                     ) => (
                         Ok(Some(Succeeded::satisfied_with(constraints))),
@@ -691,9 +781,6 @@ where
                             implementation.id.into(),
                             &implementation.instantiation,
                             &pred.generic_arguments,
-                            predicate::TraitKind::Positive {
-                                is_const: pred.is_const,
-                            },
                             predicate_declaration_span.clone(),
                             checking_site,
                             do_outlives_check,
@@ -705,17 +792,16 @@ where
                 Err(OverflowError) => (Err(OverflowError), Vec::new()),
             },
 
-            predicate::Predicate::NegativeTrait(pred) => match pred.query(self)
-            {
+            Predicate::NegativeTrait(pred) => match pred.query(self) {
                 Ok(None) => (Ok(None), Vec::new()),
                 Ok(Some(Succeeded { result, constraints })) => match result {
-                    predicate::NegativeTraitSatisfied::ByPremise
-                    | predicate::NegativeTraitSatisfied::ByUnsatisfiedPositive => (
+                    NegativeTraitSatisfied::ByPremise
+                    | NegativeTraitSatisfied::ByUnsatisfiedPositive => (
                         Ok(Some(Succeeded::satisfied_with(constraints))),
                         Vec::new(),
                     ),
 
-                    predicate::NegativeTraitSatisfied::ByImplementation(
+                    NegativeTraitSatisfied::ByImplementation(
                         implementation,
                     ) => (
                         Ok(Some(Succeeded::satisfied_with(constraints))),
@@ -723,7 +809,6 @@ where
                             implementation.id.into(),
                             &implementation.instantiation,
                             &pred.generic_arguments,
-                            predicate::TraitKind::Negative,
                             predicate_declaration_span.clone(),
                             checking_site,
                             do_outlives_check,
@@ -732,6 +817,33 @@ where
                         ),
                     ),
                 },
+                Err(OverflowError) => (Err(OverflowError), Vec::new()),
+            },
+            Predicate::NegativeMarker(negative) => match negative.query(self) {
+                Ok(Some(Succeeded { result, constraints })) => match result {
+                    NegativeMarkerSatisfied::ByUnsatisfiedPositive
+                    | NegativeMarkerSatisfied::ByPremise => (
+                        Ok(Some(Succeeded::satisfied_with(constraints))),
+                        Vec::new(),
+                    ),
+
+                    NegativeMarkerSatisfied::ByImplementation(
+                        implementation,
+                    ) => (
+                        Ok(Some(Succeeded::satisfied_with(constraints))),
+                        self.check_implementation_satisfied(
+                            implementation.id.into(),
+                            &implementation.instantiation,
+                            &negative.generic_arguments,
+                            predicate_declaration_span.clone(),
+                            checking_site,
+                            do_outlives_check,
+                            implementation.is_not_general_enough,
+                            handler,
+                        ),
+                    ),
+                },
+                Ok(None) => (Ok(None), Vec::new()),
                 Err(OverflowError) => (Err(OverflowError), Vec::new()),
             },
         };
@@ -1551,58 +1663,10 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 trait_member_id.into(),
                 handler,
             ) {
-                match error {
-                    PredicateError::Undecidable { predicate, .. } => {
-                        if predicate.contains_error() {
-                            continue;
-                        }
-
-                        handler.receive(Box::new(UndecidablePredicate {
-                            instantiation_span: implementation_member_sym
-                                .span()
-                                .cloned()
-                                .unwrap(),
-                            predicate,
-                            predicate_declaration_span: None,
-                        }));
-                    }
-
-                    PredicateError::Unsatisfied {
-                        predicate,
-                        predicate_declaration_span,
-                    } => {
-                        if predicate.contains_error() {
-                            continue;
-                        }
-
-                        handler.receive(Box::new(
-                            ExtraneousTraitMemberPredicate {
-                                trait_implementation_member_id:
-                                    implementation_member_id,
-                                predicate,
-                                predicate_span: predicate_declaration_span,
-                            },
-                        ));
-                    }
-
-                    PredicateError::TraitImplementationIsNotGeneralEnough {
-                        resolved_implementation,
-                        generic_arguments,
-                        kind,
-                        predicate_declaration_span,
-                    } => handler.receive(Box::new(
-                        TraitImplementationIsNotGeneralEnough {
-                            trait_implementation_id: resolved_implementation.id,
-                            instantiation_span: implementation_member_sym
-                                .span()
-                                .cloned()
-                                .unwrap(),
-                            predicate_declaration_span,
-                            generic_arguments,
-                            kind,
-                        },
-                    )),
-                }
+                error.report(
+                    implementation_member_sym.span().cloned().unwrap(),
+                    handler,
+                );
             }
         }
     }

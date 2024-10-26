@@ -87,6 +87,8 @@ impl<'a, M: Model>
             | Record::TypeOutlives(_)
             | Record::ConstantOutlives(_)
             | Record::TypeCheck(_)
+            | Record::PositiveMarkerSatisfiability(_)
+            | Record::NegativeMarkerSatisfiability(_)
             | Record::PositiveTraitSatisfiability(_)
             | Record::NegativeTraitSatisfiability(_) => {}
 
@@ -95,29 +97,22 @@ impl<'a, M: Model>
                     return Ok(());
                 };
 
-                match id {
-                    AdtID::Struct(id) => {
-                        environment
-                            .table()
-                            .build_to(
-                                *id,
-                                Some(environment.observer().site),
-                                r#struct::DEFINITION_STATE,
-                                environment.observer().handler,
-                            )
-                            .map_err(|_| OverflowError)?;
-                    }
-                    AdtID::Enum(id) => {
-                        environment
-                            .table()
-                            .build_to(
-                                *id,
-                                Some(environment.observer().site),
-                                r#enum::DEFINITION_STATE,
-                                environment.observer().handler,
-                            )
-                            .map_err(|_| OverflowError)?;
-                    }
+                if match id {
+                    AdtID::Struct(id) => environment.table().build_to(
+                        *id,
+                        Some(environment.observer().site),
+                        r#struct::DEFINITION_STATE,
+                        environment.observer().handler,
+                    ),
+                    AdtID::Enum(id) => environment.table().build_to(
+                        *id,
+                        Some(environment.observer().site),
+                        r#enum::DEFINITION_STATE,
+                        environment.observer().handler,
+                    ),
+                } == Err(BuildSymbolError::CyclicDependency)
+                {
+                    return Err(OverflowError);
                 }
             }
         }
@@ -199,8 +194,7 @@ impl<'a, M: Model>
                                 environment.observer().handler,
                             )
                         }
-                    }
-                    .is_err()
+                    } == Err(BuildSymbolError::CyclicDependency)
                     {
                         error = true;
                     }
@@ -242,8 +236,7 @@ impl<'a, M: Model>
                                 environment.observer().handler,
                             )
                         }
-                    }
-                    .is_err()
+                    } == Err(BuildSymbolError::CyclicDependency)
                     {
                         error = true;
                     }
@@ -368,7 +361,6 @@ impl<M: Model> resolution::Observer<Building<RwLockContainer, Finalizer>, M>
         _: &term::constant::Constant<M>,
         _: &pernixc_syntax::syntax_tree::Constant,
     ) {
-        todo!()
     }
 
     fn on_unpacked_type_resolved(

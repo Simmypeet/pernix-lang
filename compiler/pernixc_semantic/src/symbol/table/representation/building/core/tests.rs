@@ -40,7 +40,6 @@ impl PrimitivesTuple {
         })
     }
 }
-
 impl Arbitrary for PrimitivesTuple {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
@@ -54,17 +53,17 @@ impl Arbitrary for PrimitivesTuple {
     }
 }
 
-fn check_primitives_tuple_cloneable_impl(
+fn check_primitives_tuple_copyable_impl(
     tuple: &PrimitivesTuple,
 ) -> TestCaseResult {
     let table = Table::<Building>::default();
 
     let core_module_id =
         table.root_module_ids_by_name.get("core").copied().unwrap();
-    let clone_trait_id = table
-        .get_by_qualified_name(["core", "Clone"].into_iter())
+    let copy_marker_id = table
+        .get_by_qualified_name(["core", "Copy"].into_iter())
         .unwrap()
-        .into_trait()
+        .into_marker()
         .unwrap();
 
     let tuple_type = tuple.create_tuple_type::<Default>();
@@ -78,9 +77,8 @@ fn check_primitives_tuple_cloneable_impl(
         observer::NO_OP,
     );
 
-    let trait_predicate = predicate::PositiveTrait {
-        id: clone_trait_id,
-        is_const: true,
+    let marker_predicate = predicate::PositiveMarker {
+        id: copy_marker_id,
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![tuple_type],
@@ -88,7 +86,7 @@ fn check_primitives_tuple_cloneable_impl(
         },
     };
 
-    let satisfiability = trait_predicate.query(&environment)?;
+    let satisfiability = marker_predicate.query(&environment)?;
 
     let Some(satisfiability) = satisfiability else {
         return Err(TestCaseError::fail("unsatisfied"));
@@ -101,9 +99,9 @@ fn check_primitives_tuple_cloneable_impl(
 
 proptest! {
     #[test]
-    fn check_primitives_tuple_cloneable(
+    fn check_primitives_tuple_copyable(
         tuple in PrimitivesTuple::arbitrary()
     ) {
-        check_primitives_tuple_cloneable_impl(&tuple)?;
+        check_primitives_tuple_copyable_impl(&tuple)?;
    }
 }

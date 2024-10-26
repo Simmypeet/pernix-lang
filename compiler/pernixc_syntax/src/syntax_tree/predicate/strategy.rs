@@ -69,7 +69,7 @@ impl Input<&super::TraitBound> for &TraitBound {
         prop_assert_eq!(self.negation, output.negation.is_some());
         self.higher_ranked_lifetimes
             .as_ref()
-            .assert(output.higher_rankded_lifetimes().as_ref())?;
+            .assert(output.higher_ranked_lifetimes().as_ref())?;
         prop_assert_eq!(self.const_keyword, output.const_keyword().is_some());
         self.qualified_identifier.assert(output.qualified_identifier())
     }
@@ -118,6 +118,88 @@ impl Display for TraitBound {
         }
 
         Display::fmt(&self.qualified_identifier, f)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MarkerBound {
+    pub negation: bool,
+    pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
+    pub qualified_identifier: QualifiedIdentifier,
+}
+
+impl Input<&super::MarkerBound> for &MarkerBound {
+    fn assert(self, output: &super::MarkerBound) -> TestCaseResult {
+        prop_assert_eq!(self.negation, output.negation.is_some());
+        self.higher_ranked_lifetimes
+            .as_ref()
+            .assert(output.higher_ranked_lifetimes().as_ref())?;
+        self.qualified_identifier.assert(output.qualified_identifier())
+    }
+}
+
+impl Arbitrary for MarkerBound {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        (
+            proptest::bool::ANY,
+            proptest::option::of(HigherRankedLifetimes::arbitrary()),
+            QualifiedIdentifier::arbitrary(),
+        )
+            .prop_map(
+                |(negation, higher_ranked_lifetimes, qualified_identifier)| {
+                    Self {
+                        negation,
+                        higher_ranked_lifetimes,
+                        qualified_identifier,
+                    }
+                },
+            )
+            .boxed()
+    }
+}
+
+impl Display for MarkerBound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.negation {
+            f.write_char('!')?;
+        }
+
+        if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
+            write!(f, "{higher_ranked_lifetimes} ")?;
+        }
+
+        Display::fmt(&self.qualified_identifier, f)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Marker {
+    pub bounds: BoundList<MarkerBound>,
+}
+
+impl Input<&super::Marker> for &Marker {
+    fn assert(self, output: &super::Marker) -> TestCaseResult {
+        self.bounds.assert(&output.bounds)
+    }
+}
+
+impl Arbitrary for Marker {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        BoundList::arbitrary_with(MarkerBound::arbitrary())
+            .prop_map(|bounds| Self { bounds })
+            .boxed()
+    }
+}
+
+impl Display for Marker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "marker {}", self.bounds)
     }
 }
 
@@ -526,6 +608,7 @@ pub enum Predicate {
     Outlives(Outlives),
     ConstantType(ConstantType),
     Tuple(Tuple),
+    Marker(Marker),
 }
 
 impl Input<&super::Predicate> for &Predicate {
@@ -548,6 +631,8 @@ impl Input<&super::Predicate> for &Predicate {
 
             (Predicate::Tuple(a), super::Predicate::Tuple(b)) => a.assert(b),
 
+            (Predicate::Marker(a), super::Predicate::Marker(b)) => a.assert(b),
+
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -567,6 +652,7 @@ impl Arbitrary for Predicate {
             Outlives::arbitrary().prop_map(Predicate::Outlives),
             ConstantType::arbitrary().prop_map(Predicate::ConstantType),
             Tuple::arbitrary().prop_map(Predicate::Tuple),
+            Marker::arbitrary().prop_map(Predicate::Marker),
         ]
         .boxed()
     }
@@ -583,6 +669,7 @@ impl Display for Predicate {
             Self::Outlives(outlives) => Display::fmt(outlives, f),
             Self::ConstantType(constant_type) => Display::fmt(constant_type, f),
             Self::Tuple(tuple) => Display::fmt(tuple, f),
+            Self::Marker(marker) => Display::fmt(marker, f),
         }
     }
 }

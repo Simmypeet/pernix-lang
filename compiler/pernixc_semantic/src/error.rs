@@ -4,7 +4,7 @@
 use std::{
     any::Any,
     collections::{BTreeSet, HashSet},
-    fmt::{self, Debug, Write},
+    fmt::{self, Debug},
 };
 
 use pernixc_base::{
@@ -23,13 +23,13 @@ use crate::{
         Accessibility, AdtID, AdtImplementation, AdtImplementationFunction,
         CallableID, ConstantParameterID, Field, GenericID, GenericKind,
         GenericParameter, GlobalID, LocalGenericParameterID, MemberID, Module,
-        PositiveTraitImplementation, Struct, Trait, TraitImplementationID,
+        PositiveTraitImplementation, ResolvableImplementationID, Struct, Trait,
         TraitImplementationMemberID, TraitMemberID, Variant,
     },
     type_system::{
         equality,
         model::Model,
-        predicate::{self, Predicate},
+        predicate::Predicate,
         term::{
             constant,
             r#type::{self, Qualifier, Type},
@@ -595,6 +595,40 @@ impl Report<&Table<Suboptimal>> for NoGenericArgumentsRequired {
             message: format!(
                 "the symbol `{qualified_name}` doesn't require any generic \
                  arguments"
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// Expects a marker symbol but found other kind of symbol.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectedMarker {
+    /// The ID of the symbol that was not a marker.
+    pub found_id: GlobalID,
+
+    /// The span of the marker path.
+    pub marker_path: Span,
+}
+
+impl Report<&Table<Suboptimal>> for ExpectedMarker {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let found_symbol_qualified_name =
+            table.get_qualified_name(self.found_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.marker_path.clone(),
+            message: format!(
+                "expect a marker in the path, but found `{} {}`",
+                self.found_id.kind_str(),
+                found_symbol_qualified_name
             ),
             severity: Severity::Error,
             help_message: None,
@@ -1334,10 +1368,10 @@ impl Report<&Table<Suboptimal>> for UnusedGenericParameterInImplementation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AmbiguousImplementation {
     /// The ID of the first implementation.
-    pub first_implementation_id: TraitImplementationID,
+    pub first_implementation_id: ResolvableImplementationID,
 
     /// The ID of the second implementation.
-    pub second_implementation_id: TraitImplementationID,
+    pub second_implementation_id: ResolvableImplementationID,
 }
 
 impl Report<&Table<Suboptimal>> for AmbiguousImplementation {
@@ -1347,7 +1381,7 @@ impl Report<&Table<Suboptimal>> for AmbiguousImplementation {
         &self,
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
-        let trait_name = table
+        let name = table
             .get_qualified_name(self.first_implementation_id.into())
             .ok_or(ReportError)?;
 
@@ -1359,7 +1393,7 @@ impl Report<&Table<Suboptimal>> for AmbiguousImplementation {
                 .ok_or(ReportError)?
                 .clone(),
             message: format!(
-                "the implementations of the trait `{trait_name}` are ambiguous",
+                "the implementations of the `{name}` are ambiguous",
             ),
             severity: Severity::Error,
             help_message: None,
@@ -1372,7 +1406,7 @@ impl Report<&Table<Suboptimal>> for AmbiguousImplementation {
                         .ok_or(ReportError)?
                         .clone(),
                     message: format!(
-                        "the first implementation of the trait `{trait_name}`",
+                        "the first implementation of the trait `{name}`",
                     ),
                 },
                 Related {
@@ -1383,7 +1417,7 @@ impl Report<&Table<Suboptimal>> for AmbiguousImplementation {
                         .ok_or(ReportError)?
                         .clone(),
                     message: format!(
-                        "the second implementation of the trait `{trait_name}`",
+                        "the second implementation of the trait `{name}`",
                     ),
                 },
             ],
@@ -3208,19 +3242,15 @@ where
     }
 }
 
-/// The trait implementation is not general enough to satisfy the required
-/// trait predicate's forall lifetimes.
+/// The implementation is not general enough to satisfy the required
+/// predicate's forall lifetimes.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitImplementationIsNotGeneralEnough<M: Model> {
-    /// The ID of the trait implementation where the trait predicate is not
-    /// satisfied.
-    pub trait_implementation_id: TraitImplementationID,
+pub struct ImplementationIsNotGeneralEnough<M: Model> {
+    /// The ID of the implementation where the predicate is not satisfied.
+    pub resolvable_implementation_id: ResolvableImplementationID,
 
     /// The generic arguments required by the trait predicate.
     pub generic_arguments: GenericArguments<M>,
-
-    /// The kind of trait predicate.
-    pub kind: predicate::TraitKind,
 
     /// The span where the trait predicate was declared.
     pub predicate_declaration_span: Option<Span>,
@@ -3230,7 +3260,7 @@ pub struct TraitImplementationIsNotGeneralEnough<M: Model> {
 }
 
 impl<M: Model> Report<&Table<Suboptimal>>
-    for TraitImplementationIsNotGeneralEnough<M>
+    for ImplementationIsNotGeneralEnough<M>
 where
     GenericArguments<M>: table::Display<Suboptimal>,
 {
@@ -3240,72 +3270,34 @@ where
         &self,
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
-        let trait_id = match self.trait_implementation_id {
-            TraitImplementationID::Positive(id) => {
-                table.get(id).unwrap().implemented_id()
-            }
-            TraitImplementationID::Negative(id) => {
-                table.get(id).unwrap().implemented_id()
-            }
-        };
-
-        let trait_qualified_name =
-            table.get_qualified_name(trait_id.into()).ok_or(ReportError)?;
-
-        let trait_predicate_string = match self.kind {
-            predicate::TraitKind::Positive { is_const } => {
-                let mut string = "trait ".to_string();
-
-                if is_const {
-                    let _ = write!(string, "const ");
-                }
-
-                let _ = write!(
-                    string,
-                    "{}{}",
-                    trait_qualified_name,
-                    DisplayObject { table, display: &self.generic_arguments }
-                );
-
-                string
-            }
-            predicate::TraitKind::Negative => {
-                format!("!trait {}{}", trait_qualified_name, DisplayObject {
-                    table,
-                    display: &self.generic_arguments
-                })
-            }
-        };
-
-        let implementation_generic_arguments = table
-            .get_implementation(self.trait_implementation_id.into())
-            .ok_or(ReportError)?
-            .arguments();
+        let resolvable_implementation_symbol = table
+            .get_global(self.resolvable_implementation_id.into())
+            .ok_or(ReportError)?;
 
         Ok(Diagnostic {
             span: self.instantiation_span.clone(),
             message: format!(
-                "the predicate `{trait_predicate_string}` requires an \
-                 implementation that has more general lifetime arguments",
+                "the implementation is not general enough to satisfy the \
+                 required forall lifetimes in the generic arguments: {}",
+                DisplayObject { table, display: &self.generic_arguments }
             ),
             severity: Severity::Error,
-            help_message: Some(format!(
-                "currently, the matched implementation has the following \
-                 signature `{}{}`, which is not general enough",
-                trait_qualified_name,
-                DisplayObject {
-                    table,
-                    display: implementation_generic_arguments
-                }
-            )),
+            help_message: None,
             related: self
                 .predicate_declaration_span
                 .as_ref()
                 .map(|span| Related {
                     span: span.clone(),
-                    message: "the trait predicate is declared here".to_string(),
+                    message: "the predicate is declared here".to_string(),
                 })
                 .into_iter()
+                .chain(resolvable_implementation_symbol.span().map(|span| {
+                    Related {
+                        span: span.clone(),
+                        message: "the implementation is defined here"
+                            .to_string(),
+                    }
+                }))
                 .collect(),
         })
     }
@@ -3486,15 +3478,15 @@ impl Report<&Table<Suboptimal>> for NotAllFlowPathsExpressValue {
     }
 }
 
-/// The trait implementation is final but it is overriden by another
+/// The implementation is final but it is overriden by another
 /// implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FinalImplementationCannotBeOverriden {
     /// The ID of the final implementation that is overriden.
-    pub final_implementation_id: TraitImplementationID,
+    pub final_implementation_id: ResolvableImplementationID,
 
     /// The ID of the implementation that overrides the final implementation.
-    pub overriden_implementation_id: TraitImplementationID,
+    pub overriden_implementation_id: ResolvableImplementationID,
 }
 
 impl Report<&Table<Suboptimal>> for FinalImplementationCannotBeOverriden {
@@ -3527,8 +3519,8 @@ impl Report<&Table<Suboptimal>> for FinalImplementationCannotBeOverriden {
                 .ok_or(ReportError)?
                 .clone(),
             message: format!(
-                "the trait implementation `{}{}` overrides the trait \
-                 implementation `{}{}`, which is final",
+                "the implementation `{}{}` overrides the implementation \
+                 `{}{}`, which is final",
                 impl_qual_name,
                 DisplayObject {
                     table,

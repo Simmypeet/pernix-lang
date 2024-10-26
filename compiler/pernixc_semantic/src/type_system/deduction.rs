@@ -254,7 +254,7 @@ impl<M: Model> GenericArguments<M> {
     ///
     /// # Errors
     ///
-    /// See [`OverflowError`] for more information.
+    /// See [`Error`] for more information.
     pub fn deduce<S: State>(
         &self,
         target: &Self,
