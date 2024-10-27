@@ -695,7 +695,7 @@ fn named_load() {
         .into_variable_declaration()
         .unwrap();
 
-    let alloca_id = binder
+    let (variable_address, _) = binder
         .bind_variable_declaration(&variable_declaration, &storage)
         .unwrap();
 
@@ -719,21 +719,18 @@ fn named_load() {
         .into_register()
         .unwrap();
 
-    let load_alloca_id = *binder
-        .intermediate_representation
-        .registers
-        .get(register_id)
-        .unwrap()
-        .assignment
-        .as_load()
-        .unwrap()
-        .address
-        .as_memory()
-        .unwrap()
-        .as_alloca()
-        .unwrap();
-
-    assert_eq!(load_alloca_id, alloca_id);
+    assert_eq!(
+        binder
+            .intermediate_representation
+            .registers
+            .get(register_id)
+            .unwrap()
+            .assignment
+            .as_load()
+            .unwrap()
+            .address,
+        variable_address
+    );
 
     let as_address = binder
         .bind(&named_load, Config { target: Target::LValue }, &storage)
@@ -744,10 +741,7 @@ fn named_load() {
 
     assert!(storage.as_vec().is_empty());
 
-    assert_eq!(
-        *as_address.as_memory().unwrap().as_alloca().unwrap(),
-        alloca_id
-    );
+    assert_eq!(as_address, variable_address);
 }
 
 #[test]
@@ -763,7 +757,7 @@ fn reference_of() {
         .into_variable_declaration()
         .unwrap();
 
-    let alloca_id = binder
+    let (variable_address, _) = binder
         .bind_variable_declaration(&variable_declaration, &storage)
         .unwrap();
 
@@ -818,10 +812,7 @@ fn reference_of() {
                 .as_reference_of()
                 .unwrap();
 
-            assert_eq!(
-                *reference_of.address.as_memory().unwrap().as_alloca().unwrap(),
-                alloca_id
-            );
+            assert_eq!(reference_of.address, variable_address);
             assert_eq!(reference_of.qualifier, qualifier);
         };
 
@@ -896,7 +887,7 @@ fn dereference_as_value() {
             .into_variable_declaration()
             .unwrap();
 
-    let reference_alloca_id = binder
+    let (reference_variable_address, _) = binder
         .bind_variable_declaration(&reference_variable_declaration, &storage)
         .unwrap();
 
@@ -925,7 +916,7 @@ fn dereference_as_value() {
 
     assert_eq!(
         *dereference.address.as_reference_address().unwrap().reference_address,
-        Address::Memory(Memory::Alloca(reference_alloca_id))
+        reference_variable_address
     );
 }
 
@@ -951,7 +942,7 @@ fn dereference_as_address() {
             .into_variable_declaration()
             .unwrap();
 
-    let reference_alloca_id = binder
+    let (reference_variable_address, _) = binder
         .bind_variable_declaration(&reference_variable_declaration, &storage)
         .unwrap();
 
@@ -974,7 +965,7 @@ fn dereference_as_address() {
 
     assert_eq!(
         *address.as_reference_address().unwrap().reference_address,
-        Address::Memory(Memory::Alloca(reference_alloca_id))
+        reference_variable_address
     );
 }
 
@@ -1987,7 +1978,7 @@ fn assignment() {
     let declaration =
         parse_statement(DECLARATION).into_variable_declaration().unwrap();
 
-    let alloca_id =
+    let (variable_address, _) =
         binder.bind_variable_declaration(&declaration, &storage).unwrap();
 
     assert!(storage.as_vec().is_empty());
@@ -2003,16 +1994,14 @@ fn assignment() {
 
     assert!(storage.as_vec().is_empty());
 
-    let expected_address = Address::Memory(Memory::Alloca(alloca_id));
-
-    assert_eq!(found_address, expected_address);
+    assert_eq!(found_address, variable_address);
 
     assert!(binder.current_block().instructions().iter().any(|x| {
         let Instruction::Store(store) = x else {
             return false;
         };
 
-        let correct_address = store.address == expected_address;
+        let correct_address = store.address == variable_address;
 
         let Some(numeric_literal) =
             store.value.as_literal().and_then(|x| x.as_numeric())
@@ -2045,7 +2034,7 @@ fn assignment() {
         .as_load()
         .unwrap();
 
-    assert_eq!(register.address, expected_address);
+    assert_eq!(register.address, variable_address);
 }
 
 #[test]
@@ -2131,7 +2120,7 @@ fn compound_binary_operator() {
     let declaration =
         parse_statement(DECLARATION).into_variable_declaration().unwrap();
 
-    let alloca_id =
+    let (variable_address, _) =
         binder.bind_variable_declaration(&declaration, &storage).unwrap();
 
     assert!(storage.as_vec().is_empty());
@@ -2147,9 +2136,7 @@ fn compound_binary_operator() {
 
     assert!(storage.as_vec().is_empty());
 
-    let expected_address = Address::Memory(Memory::Alloca(alloca_id));
-
-    assert_eq!(found_address, expected_address);
+    assert_eq!(found_address, variable_address);
 
     assert!(binder.current_block().instructions().iter().any(|x| {
         let Instruction::Store(store) = x else {
@@ -2160,7 +2147,7 @@ fn compound_binary_operator() {
             return false;
         };
 
-        if store.address != expected_address {
+        if store.address != variable_address {
             return false;
         }
 
@@ -2195,7 +2182,7 @@ fn compound_binary_operator() {
             return false;
         };
 
-        if load.address != expected_address {
+        if load.address != variable_address {
             return false;
         }
 
@@ -3052,15 +3039,18 @@ fn struct_access() {
         |_binder,
          exp,
          errors,
-         (_struct_id, x_field_id, _y_field_id, alloca_id)| {
+         (_struct_id, x_field_id, _y_field_id, variable_address): &(
+            _,
+            _,
+            _,
+            Address<_>,
+        )| {
             assert!(errors.is_empty());
 
             let address = exp.unwrap().into_l_value().unwrap().address;
 
             let expected_address = Address::Field(address::Field {
-                struct_address: Box::new(Address::Memory(Memory::Alloca(
-                    *alloca_id,
-                ))),
+                struct_address: Box::new((*variable_address).clone()),
                 id: *x_field_id,
             });
 
@@ -3074,7 +3064,7 @@ fn struct_access() {
         |_binder,
          exp,
          errors,
-         (struct_id, _x_field_id, _y_field_id, _alloca_id)| {
+         (struct_id, _x_field_id, _y_field_id, _variable_address)| {
             assert!(exp.is_err());
 
             assert!(errors.iter().any(|x| {
@@ -3095,7 +3085,7 @@ fn struct_access() {
         |binder,
          _exp,
          errors,
-         (struct_id, _x_field_id, _y_field_id, _alloca_id)| {
+         (struct_id, _x_field_id, _y_field_id, _variable_address)| {
             assert!(errors.iter().any(|x| {
                 let Some(error) =
                     x.as_any().downcast_ref::<FieldIsNotAccessible>()
@@ -3116,7 +3106,7 @@ fn struct_access() {
         |_binder,
          _exp,
          errors,
-         (_struct_id, _x_field_id, _y_field_id, _alloca_id)| {
+         (_struct_id, _x_field_id, _y_field_id, _variable_address)| {
             assert!(errors.iter().any(|x| {
                 let Some(error) = x
                     .as_any()
@@ -3129,6 +3119,7 @@ fn struct_access() {
             }));
         },
     );
+
     setup_and_bind(
         |test_template| {
             let inner_module_id = test_template
@@ -3155,14 +3146,14 @@ fn struct_access() {
                 "let vector2 = inner::Vector2 { x: 32, y: 64 };",
             );
 
-            let alloca_id = binder
+            let (variable_address, _) = binder
                 .bind_variable_declaration(
                     &statement.into_variable_declaration().unwrap(),
                     &storage,
                 )
                 .unwrap();
 
-            (binder, (struct_id, x_field_id, y_field_id, alloca_id))
+            (binder, (struct_id, x_field_id, y_field_id, variable_address))
         },
         [
             normal_check,
@@ -3178,15 +3169,13 @@ fn tuple_access() {
     let normal_from_start = Check::new(
         "myTuple.0",
         Config { target: Target::LValue },
-        |_binder, exp, errors, alloca_id| {
+        |_binder, exp, errors, variable_address: &Address<_>| {
             assert!(errors.is_empty());
 
             let address = exp.unwrap().into_l_value().unwrap().address;
 
             let expected_address = Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Memory(Memory::Alloca(
-                    *alloca_id,
-                ))),
+                tuple_address: Box::new(variable_address.clone()),
                 offset: address::Offset::FromStart(0),
             });
 
@@ -3197,15 +3186,13 @@ fn tuple_access() {
     let normal_from_end = Check::new(
         "myTuple.-1",
         Config { target: Target::LValue },
-        |_binder, exp, errors, alloca_id| {
+        |_binder, exp, errors, variable_address: &Address<_>| {
             assert!(errors.is_empty());
 
             let address = exp.unwrap().into_l_value().unwrap().address;
 
             let expected_address = Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Memory(Memory::Alloca(
-                    *alloca_id,
-                ))),
+                tuple_address: Box::new(variable_address.clone()),
                 offset: address::Offset::FromEnd(1),
             });
 
@@ -3216,7 +3203,7 @@ fn tuple_access() {
     let out_of_bounds = Check::new(
         "myTuple.10",
         Config { target: Target::RValue },
-        |_binder, exp, errors, _alloca_id| {
+        |_binder, exp, errors, _variable_address| {
             assert!(exp.is_err());
 
             assert!(errors.iter().any(|x| {
@@ -3235,7 +3222,7 @@ fn tuple_access() {
     let index_past_unpacked_from_start = Check::new(
         "myTuple.3",
         Config { target: Target::RValue },
-        |_binder, exp, errors, _alloca_id| {
+        |_binder, exp, errors, _variable_address| {
             assert!(exp.is_err());
 
             assert!(errors.iter().any(|x| {
@@ -3247,7 +3234,7 @@ fn tuple_access() {
     let index_past_unpacked_from_end = Check::new(
         "myTuple.-3",
         Config { target: Target::RValue },
-        |_binder, exp, errors, _alloca_id| {
+        |_binder, exp, errors, _variable_address| {
             assert!(exp.is_err());
 
             assert!(errors.iter().any(|x| {
@@ -3259,7 +3246,7 @@ fn tuple_access() {
     let tuple_expected = Check::new(
         "32i32.0",
         Config { target: Target::RValue },
-        |_binder, exp, errors, _alloca_id| {
+        |_binder, exp, errors, _variable_address| {
             assert!(exp.is_err());
 
             assert!(errors.iter().any(|x| {
@@ -3277,7 +3264,7 @@ fn tuple_access() {
     let tuple_index_too_large = Check::new(
         "myTuple.123456789123456789123456789",
         Config { target: Target::RValue },
-        |_binder, exp, errors, _alloca_id| {
+        |_binder, exp, errors, _variable_address| {
             assert!(exp.is_err());
 
             assert!(errors.iter().any(|x| {
@@ -3294,14 +3281,14 @@ fn tuple_access() {
                 "let myTuple = (32i64, true, ...3us, false, 64i32);",
             );
 
-            let alloca_id = binder
+            let (variable_address, _) = binder
                 .bind_variable_declaration(
                     &statement.into_variable_declaration().unwrap(),
                     &storage,
                 )
                 .unwrap();
 
-            (binder, alloca_id)
+            (binder, variable_address)
         },
         [
             normal_from_start,
@@ -3320,7 +3307,7 @@ fn array_access() {
     let normal = Check::new(
         "myArray.[3]",
         Config { target: Target::LValue },
-        |_binder, exp, errors, alloca_id| {
+        |_binder, exp, errors, variable_address| {
             assert!(errors.is_empty());
 
             let index_address = exp
@@ -3331,10 +3318,7 @@ fn array_access() {
                 .into_index()
                 .unwrap();
 
-            assert_eq!(
-                *index_address.array_address,
-                Address::Memory(Memory::Alloca(*alloca_id))
-            );
+            assert_eq!(*index_address.array_address, *variable_address);
 
             let numeric_value = index_address
                 .indexing_value
@@ -3351,7 +3335,7 @@ fn array_access() {
     let usize_expected = Check::new(
         "myArray.[3f64]",
         Config { target: Target::RValue },
-        |_binder, _exp, errors, _alloca_id| {
+        |_binder, _exp, errors, _variable_address| {
             assert!(errors.iter().any(|x| {
                 let Some(error) = x
                     .as_any()
@@ -3369,7 +3353,7 @@ fn array_access() {
     let array_expected = Check::new(
         "32i32.[3]",
         Config { target: Target::RValue },
-        |_binder, _exp, errors, _alloca_id| {
+        |_binder, _exp, errors, _variable_address| {
             assert!(errors.iter().any(|x| {
                 let Some(error) =
                     x.as_any().downcast_ref::<ExpectArray<ConstraintModel>>()
@@ -3390,14 +3374,14 @@ fn array_access() {
                 "let myArray = [1i32, 2, 4, 8, 16, 32, 64, 128];",
             );
 
-            let alloca_id = binder
+            let (variable_address, _) = binder
                 .bind_variable_declaration(
                     &statement.into_variable_declaration().unwrap(),
                     &storage,
                 )
                 .unwrap();
 
-            (binder, alloca_id)
+            (binder, variable_address)
         },
         [normal, usize_expected, array_expected],
     );
@@ -3408,7 +3392,7 @@ fn arrow_access() {
     let norml_check = Check::new(
         "(&mutable myTuple)->0",
         Config { target: Target::LValue },
-        |binder, exp, errors, my_tuple_alloca_id| {
+        |binder, exp, errors, variable_address| {
             assert!(errors.is_empty());
 
             let address = exp
@@ -3437,10 +3421,7 @@ fn arrow_access() {
                 .as_reference_of()
                 .unwrap();
 
-            assert_eq!(
-                reference_of.address,
-                Address::Memory(Memory::Alloca(*my_tuple_alloca_id))
-            );
+            assert_eq!(reference_of.address, *variable_address);
 
             assert_eq!(address.offset, address::Offset::FromStart(0));
         },
@@ -3448,7 +3429,7 @@ fn arrow_access() {
     let reference_type_expected = Check::new(
         "myTuple->0",
         Config { target: Target::RValue },
-        |_binder, _exp, errors, _my_tuple_alloca_id| {
+        |_binder, _exp, errors, _variable_address| {
             assert!(errors.iter().any(|x| {
                 x.as_any()
                     .downcast_ref::<CannotDereference<ConstraintModel>>()
@@ -3465,14 +3446,14 @@ fn arrow_access() {
                 "let mutable myTuple = (1i8, 2i16, 3i32, 4i64);",
             );
 
-            let my_tuple_alloca_id = binder
+            let (variable_address, _) = binder
                 .bind_variable_declaration(
                     &statement.into_variable_declaration().unwrap(),
                     &storage,
                 )
                 .unwrap();
 
-            (binder, my_tuple_alloca_id)
+            (binder, variable_address)
         },
         [norml_check, reference_type_expected],
     );
@@ -3483,7 +3464,7 @@ fn struct_method() {
     let get_x_check = Check::new(
         "vector2.getX()",
         Config { target: Target::RValue },
-        |binder, exp, errors, (_, get_x_id, _, _, alloca_id, _)| {
+        |binder, exp, errors, (_, get_x_id, _, _, variable_address, _)| {
             assert!(errors.is_empty(), "{:?}", errors);
 
             let call_register_id =
@@ -3516,10 +3497,7 @@ fn struct_method() {
                 .as_load()
                 .unwrap();
 
-            assert_eq!(
-                load.address,
-                Address::Memory(Memory::Alloca(*alloca_id))
-            );
+            assert_eq!(load.address, *variable_address);
 
             assert!(Equality::new(
                 Type::Primitive(Primitive::Int32),
@@ -3534,7 +3512,7 @@ fn struct_method() {
     let get_ref_x_check = Check::new(
         "vector2.getRefX()",
         Config { target: Target::RValue },
-        |binder, exp, errors, (_, _, get_ref_x_id, _, alloca_id, _)| {
+        |binder, exp, errors, (_, _, get_ref_x_id, _, variable_address, _)| {
             assert!(errors.is_empty(), "{:?}", errors);
 
             let call_register_id =
@@ -3567,10 +3545,7 @@ fn struct_method() {
                 .as_reference_of()
                 .unwrap();
 
-            assert_eq!(
-                reference_of.address,
-                Address::Memory(Memory::Alloca(*alloca_id))
-            );
+            assert_eq!(reference_of.address, *variable_address);
             assert_eq!(reference_of.qualifier, Qualifier::Immutable);
             assert_eq!(reference_of.lifetime, Lifetime::Inference(Erased));
 
@@ -3591,7 +3566,10 @@ fn struct_method() {
     let set_x_check = Check::new(
         "vector2Mutable.setX(0)",
         Config { target: Target::RValue },
-        |binder, exp, errors, (_, _, _, set_x_id, _, alloca_id)| {
+        |binder,
+         exp,
+         errors,
+         (_, _, _, set_x_id, _, mutable_variable_address)| {
             assert!(errors.is_empty(), "{:?}", errors);
 
             let call_register_id =
@@ -3624,10 +3602,7 @@ fn struct_method() {
                 .as_reference_of()
                 .unwrap();
 
-            assert_eq!(
-                reference_of.address,
-                Address::Memory(Memory::Alloca(*alloca_id))
-            );
+            assert_eq!(reference_of.address, *mutable_variable_address);
             assert_eq!(reference_of.qualifier, Qualifier::Mutable);
             assert_eq!(reference_of.lifetime, Lifetime::Inference(Erased));
 
@@ -3859,7 +3834,7 @@ fn struct_method() {
                 "let vector2 = Vector2[int32] { x: 32, y: 64 };",
             );
 
-            let alloca_id = binder
+            let (variable_address, _) = binder
                 .bind_variable_declaration(
                     &statement.into_variable_declaration().unwrap(),
                     &storage,
@@ -3870,7 +3845,7 @@ fn struct_method() {
                 "let mutable vector2Mutable = Vector2[int32] { x: 32, y: 64 };",
             );
 
-            let mutable_alloca_id = binder
+            let (mutable_variable_address, _) = binder
                 .bind_variable_declaration(
                     &statement.into_variable_declaration().unwrap(),
                     &storage,
@@ -3884,8 +3859,8 @@ fn struct_method() {
                     get_x_id,
                     get_ref_x_id,
                     set_x_id,
-                    alloca_id,
-                    mutable_alloca_id,
+                    variable_address,
+                    mutable_variable_address,
                 ),
             )
         },

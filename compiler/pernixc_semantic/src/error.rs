@@ -20,7 +20,7 @@ use crate::{
             self, representation::Index, Display, DisplayObject, State,
             Suboptimal, Table,
         },
-        Accessibility, AdtID, AdtImplementation, AdtImplementationFunction,
+        Accessibility, AdtImplementation, AdtImplementationFunction,
         CallableID, ConstantParameterID, Field, GenericID, GenericKind,
         GenericParameter, GlobalID, LocalGenericParameterID, MemberID, Module,
         PositiveTraitImplementation, ResolvableImplementationID, Struct, Trait,

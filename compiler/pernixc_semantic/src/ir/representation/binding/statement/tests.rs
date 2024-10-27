@@ -11,20 +11,12 @@ fn variable_declaration_with_type_annotation() {
     let statement =
         parse_statement(SOURCE).into_variable_declaration().unwrap();
 
-    let alloca_id =
+    let (new_alloca_id, _) =
         binder.bind_variable_declaration(&statement, &storage).unwrap();
 
     let named = binder.stack.search("x").unwrap();
 
-    assert_eq!(
-        named
-            .load_address
-            .clone()
-            .into_memory()
-            .unwrap()
-            .into_alloca()
-            .unwrap(),
-        alloca_id
-    );
+    assert_eq!(new_alloca_id, named.load_address);
+
     assert!(named.mutable);
 }

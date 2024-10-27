@@ -266,6 +266,8 @@ impl<
                 &pattern,
                 &parameter_type,
                 Address::Memory(Memory::Parameter(parameter_id)),
+                Qualifier::Mutable,
+                false,
                 &handler,
             );
         }
@@ -382,6 +384,37 @@ impl<
             });
 
         self.stack.current_scope_mut().add_variable_declaration(alloca_id);
+
+        alloca_id
+    }
+
+    /// Creates a new alloca and adds it to the current scope. The type and span
+    /// of the alloca is dedcued from the value.
+    fn create_alloca_with_value(
+        &mut self,
+        value: Value<infer::Model>,
+    ) -> ID<Alloca<infer::Model>> {
+        let ty = self.type_of_value(&value).unwrap();
+        let span = match &value {
+            Value::Register(id) => self
+                .intermediate_representation
+                .registers
+                .get(*id)
+                .unwrap()
+                .span
+                .clone(),
+            Value::Literal(literal) => literal.span().cloned(),
+        };
+
+        let alloca_id = self.create_alloca(ty, span);
+        let alloca_address = Address::Memory(Memory::Alloca(alloca_id));
+
+        let _ = self.current_block_mut().insert_instruction(
+            instruction::Instruction::Store(instruction::Store {
+                address: alloca_address,
+                value,
+            }),
+        );
 
         alloca_id
     }
@@ -700,7 +733,29 @@ impl<
         Some(ty)
     }
 
-    fn is_behind_reference(
+    fn is_behind_reference(&self, address: &Address<infer::Model>) -> bool {
+        match address {
+            Address::Memory(Memory::Alloca(_) | Memory::Parameter(_)) => false,
+
+            Address::Field(field) => {
+                self.is_behind_reference(&field.struct_address)
+            }
+            Address::Tuple(tuple) => {
+                self.is_behind_reference(&tuple.tuple_address)
+            }
+            Address::Index(index) => {
+                self.is_behind_reference(&index.array_address)
+            }
+            Address::Variant(variant) => {
+                self.is_behind_reference(&variant.enum_address)
+            }
+
+            Address::Memory(Memory::ReferenceValue(_))
+            | Address::ReferenceAddress(_) => true,
+        }
+    }
+
+    fn get_behind_reference_qualifier(
         &self,
         address: &Address<infer::Model>,
     ) -> Option<Qualifier> {
@@ -719,10 +774,18 @@ impl<
                 Some(ref_ty.qualifier)
             }
 
-            Address::Field(ad) => self.is_behind_reference(&ad.struct_address),
-            Address::Tuple(ad) => self.is_behind_reference(&ad.tuple_address),
-            Address::Index(ad) => self.is_behind_reference(&ad.array_address),
-            Address::Variant(ad) => self.is_behind_reference(&ad.enum_address),
+            Address::Field(ad) => {
+                self.get_behind_reference_qualifier(&ad.struct_address)
+            }
+            Address::Tuple(ad) => {
+                self.get_behind_reference_qualifier(&ad.tuple_address)
+            }
+            Address::Index(ad) => {
+                self.get_behind_reference_qualifier(&ad.array_address)
+            }
+            Address::Variant(ad) => {
+                self.get_behind_reference_qualifier(&ad.enum_address)
+            }
             Address::ReferenceAddress(ad) => {
                 let ty = self.type_of_address(&ad.reference_address).unwrap();
                 let ref_ty = match ty {
@@ -735,7 +798,7 @@ impl<
                 let mut qualifier = ref_ty.qualifier;
 
                 if let Some(inner_qual) =
-                    self.is_behind_reference(&ad.reference_address)
+                    self.get_behind_reference_qualifier(&ad.reference_address)
                 {
                     qualifier = qualifier.min(inner_qual);
                 }

@@ -127,9 +127,6 @@ pub struct LValue {
 
     /// The qualifier of the l-value.
     pub qualifier: Qualifier,
-
-    /// Determines whether the l-value originates from a reference.
-    pub is_behind_reference: bool,
 }
 
 /// The result of binding the expression syntax tree.
@@ -320,7 +317,6 @@ impl<
                         address: Address::Memory(Memory::Alloca(alloca_id)),
                         span: syntax_tree.span(),
                         qualifier: Qualifier::Mutable,
-                        is_behind_reference: false,
                     })
                 } else {
                     handler.receive(Box::new(ExpectLValue {
@@ -443,7 +439,8 @@ impl<
                             reference_of_span: syntax_tree.span(),
                             found_qualifier: lvalue.qualifier,
                             expected_qualifier: qualifier,
-                            is_behind_reference: lvalue.is_behind_reference,
+                            is_behind_reference: self
+                                .is_behind_reference(&lvalue.address),
                         },
                     ));
                 }
@@ -1105,7 +1102,7 @@ impl<
             Target::LValue => {
                 let new_qualifier = reference_type.qualifier.min(
                     operand.as_l_value().map_or(Qualifier::Mutable, |lvalue| {
-                        if lvalue.is_behind_reference {
+                        if self.is_behind_reference(&lvalue.address) {
                             lvalue.qualifier
                         } else {
                             Qualifier::Mutable
@@ -1117,7 +1114,6 @@ impl<
                     address: address(operand),
                     span: final_span,
                     qualifier: new_qualifier,
-                    is_behind_reference: true,
                 }))
             }
         }
@@ -1503,7 +1499,8 @@ impl<
                             reference_of_span: address.span.clone(),
                             found_qualifier: address.qualifier,
                             expected_qualifier: qualifier,
-                            is_behind_reference: address.is_behind_reference,
+                            is_behind_reference: self
+                                .is_behind_reference(&address.address),
                         },
                     ));
                 }
@@ -2486,7 +2483,6 @@ impl<
                         address,
                         span: syntax_tree.span(),
                         qualifier: lvalue.qualifier,
-                        is_behind_reference: lvalue.is_behind_reference,
                     })),
 
                     Target::Statement => Ok(Expression::SideEffect),
@@ -2580,18 +2576,14 @@ impl<
                             Qualifier::Immutable
                         };
 
-                        let (is_behind_reference, final_qualifier) = self
-                            .is_behind_reference(&name.load_address)
-                            .map_or_else(
-                                || (false, name_qualifier),
-                                |x| (true, x.min(name_qualifier)),
-                            );
+                        let final_qualifier = self
+                            .get_behind_reference_qualifier(&name.load_address)
+                            .map_or(name_qualifier, |x| x.min(name_qualifier));
 
                         return Ok(Expression::LValue(LValue {
                             address: name.load_address.clone(),
                             span: syntax_tree.span(),
                             qualifier: final_qualifier,
-                            is_behind_reference,
                         }));
                     }
                 }
@@ -3453,7 +3445,6 @@ impl<
                 address: lhs_address.address,
                 span: tree.span(),
                 qualifier: lhs_address.qualifier,
-                is_behind_reference: lhs_address.is_behind_reference,
             }),
 
             Target::Statement => Expression::SideEffect,

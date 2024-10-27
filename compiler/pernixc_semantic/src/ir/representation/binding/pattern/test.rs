@@ -203,6 +203,8 @@ impl<
             &irrefutable.result,
             ty,
             address,
+            Qualifier::Mutable,
+            false,
             &storage,
         );
 
@@ -520,29 +522,12 @@ fn reference_bound_struct() {
         panic!("Expected a named pattern")
     };
 
-    let load_address_register = binder
-        .intermediate_representation
-        .registers
-        .iter()
-        .find_map(|(idx, i)| {
-            let Assignment::Load(load) = &i.assignment else {
-                return None;
-            };
-
-            if load.address == Address::Memory(Memory::Alloca(struct_alloca_id))
-                && binder.type_of_register(idx).unwrap()
-                    == Type::Reference(Reference {
-                        qualifier: Qualifier::Immutable,
-                        lifetime: Lifetime::Static,
-                        pointee: Box::new(struct_ty.clone()),
-                    })
-            {
-                Some(idx)
-            } else {
-                None
-            }
-        })
-        .unwrap();
+    let base_struct_address =
+        Address::ReferenceAddress(address::ReferenceAddress {
+            reference_address: Box::new(Address::Memory(Memory::Alloca(
+                struct_alloca_id,
+            ))),
+        });
 
     // ref a field check
     {
@@ -557,11 +542,7 @@ fn reference_bound_struct() {
             &binding_point,
             "a",
             &Address::Field(Field {
-                struct_address: Box::new(Address::Memory(
-                    Memory::ReferenceValue(Value::Register(
-                        load_address_register,
-                    )),
-                )),
+                struct_address: Box::new(base_struct_address.clone()),
                 id: a_field_id,
             }),
             Qualifier::Immutable,
@@ -582,11 +563,7 @@ fn reference_bound_struct() {
             &binding_point,
             "b",
             &Address::Field(Field {
-                struct_address: Box::new(Address::Memory(
-                    Memory::ReferenceValue(Value::Register(
-                        load_address_register,
-                    )),
-                )),
+                struct_address: Box::new(base_struct_address),
                 id: b_field_id,
             }),
             Qualifier::Immutable,
@@ -744,29 +721,12 @@ fn reference_bound_tuple() {
         panic!("Expected a named pattern")
     };
 
-    let load_address_register = binder
-        .intermediate_representation
-        .registers
-        .iter()
-        .find_map(|(idx, i)| {
-            let Assignment::Load(load) = &i.assignment else {
-                return None;
-            };
-
-            if load.address == Address::Memory(Memory::Alloca(tuple_alloca_id))
-                && binder.type_of_register(idx).unwrap()
-                    == Type::Reference(Reference {
-                        qualifier: Qualifier::Mutable,
-                        lifetime: Lifetime::Static,
-                        pointee: Box::new(tuple_ty.clone()),
-                    })
-            {
-                Some(idx)
-            } else {
-                None
-            }
-        })
-        .unwrap();
+    let base_tuple_address =
+        Address::ReferenceAddress(address::ReferenceAddress {
+            reference_address: Box::new(Address::Memory(Memory::Alloca(
+                tuple_alloca_id,
+            ))),
+        });
 
     // ref a tuple check
     {
@@ -783,14 +743,10 @@ fn reference_bound_tuple() {
             &binding_point,
             "a",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Memory(
-                    Memory::ReferenceValue(Value::Register(
-                        load_address_register,
-                    )),
-                )),
+                tuple_address: Box::new(base_tuple_address.clone()),
                 offset: address::Offset::FromStart(0),
             }),
-            Qualifier::Mutable,
+            Qualifier::Immutable,
             &Type::Primitive(Primitive::Bool),
         );
     }
@@ -810,11 +766,7 @@ fn reference_bound_tuple() {
             &binding_point,
             "b",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(Address::Memory(
-                    Memory::ReferenceValue(Value::Register(
-                        load_address_register,
-                    )),
-                )),
+                tuple_address: Box::new(base_tuple_address.clone()),
                 offset: address::Offset::FromStart(1),
             }),
             Qualifier::Mutable,

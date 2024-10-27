@@ -7,9 +7,12 @@ use super::{
     Binder,
 };
 use crate::{
-    error::{Error, FoundPackTuplePatternInReferenceBoundTupleType},
+    error::{
+        Error, FoundPackTuplePatternInReferenceBoundTupleType,
+        MismatchedQualifierForReferenceOf,
+    },
     ir::{
-        address::{self, Address, Memory},
+        address::{self, Address, Memory, ReferenceAddress},
         instruction::{self, Instruction, Store, TuplePack},
         pattern::{
             Irrefutable, NameBinding, NameBindingPoint, Pattern, Structural,
@@ -41,7 +44,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum BindingKind {
     Value,
-    Reference(Qualifier),
+    Reference,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -49,6 +52,7 @@ struct Binding<'a> {
     kind: BindingKind,
     r#type: &'a Type<infer::Model>,
     address: Address<infer::Model>,
+    qualifier: Qualifier,
 }
 
 impl<
@@ -74,6 +78,8 @@ impl<
         irreftuable: &Irrefutable,
         simplified_type: &Type<infer::Model>,
         address: Address<infer::Model>,
+        qualifier: Qualifier,
+        must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
     ) {
         self.insert_named_binding_point_internal(
@@ -82,8 +88,10 @@ impl<
             Binding {
                 kind: BindingKind::Value,
                 r#type: simplified_type,
+                qualifier,
                 address,
             },
+            must_copy,
             handler,
         );
     }
@@ -136,34 +144,26 @@ impl<
         );
     }
 
-    fn reduce_reference<'a>(
-        &mut self,
-        span: &Span,
-        mut binding: Binding<'a>,
-    ) -> Binding<'a> {
+    fn reduce_reference<'a>(&self, mut binding: Binding<'a>) -> Binding<'a> {
         loop {
             match binding.r#type {
                 Type::Reference(reference) => {
-                    let register = self.create_register_assignmnet(
-                        Assignment::Load(Load {
-                            address: binding.address.clone(),
-                        }),
-                        Some(span.clone()),
-                    );
-
                     // update the address, reference binding
                     // info, and binding ty
-                    binding.address = Address::Memory(Memory::ReferenceValue(
-                        Value::Register(register),
-                    ));
-                    binding.kind = BindingKind::Reference(match binding.kind {
-                        BindingKind::Reference(current_qualifier) => {
-                            current_qualifier.min(reference.qualifier)
-                        }
-
-                        BindingKind::Value => reference.qualifier,
-                    });
-                    binding.r#type = reference.pointee.as_ref();
+                    binding = Binding {
+                        kind: BindingKind::Reference,
+                        r#type: &*reference.pointee,
+                        qualifier: reference.qualifier.min(
+                            if self.is_behind_reference(&binding.address) {
+                                binding.qualifier
+                            } else {
+                                Qualifier::Mutable
+                            },
+                        ),
+                        address: Address::ReferenceAddress(ReferenceAddress {
+                            reference_address: Box::new(binding.address),
+                        }),
+                    };
                 }
 
                 _ => break binding,
@@ -184,10 +184,10 @@ impl<
         name_binding_point: &mut NameBindingPoint<infer::Model>,
         tuple_pat: &Tuple<Irrefutable>,
         mut binding: Binding,
+        must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
     ) {
-        binding =
-            self.reduce_reference(&tuple_pat.span.clone().unwrap(), binding);
+        binding = self.reduce_reference(binding);
 
         let Type::Tuple(tuple_ty) = binding.r#type else {
             panic!("unexpected type!");
@@ -218,7 +218,7 @@ impl<
             };
 
             // can't be reference bound
-            if matches!(binding.kind, BindingKind::Reference(_)) {
+            if matches!(binding.kind, BindingKind::Reference) {
                 handler.receive(Box::new(
                     FoundPackTuplePatternInReferenceBoundTupleType {
                         pattern_span: tuple_pat.span.clone().unwrap(),
@@ -255,7 +255,9 @@ impl<
                         kind: binding.kind,
                         r#type: &tuple_ty.term,
                         address: element_address,
+                        qualifier: binding.qualifier,
                     },
+                    must_copy,
                     handler,
                 );
             }
@@ -424,7 +426,9 @@ impl<
                     kind: binding.kind,
                     r#type: &packed_type,
                     address: Address::Memory(Memory::Alloca(packed_alloca)),
+                    qualifier: Qualifier::Mutable,
                 },
+                false,
                 handler,
             );
 
@@ -457,7 +461,9 @@ impl<
                         kind: binding.kind,
                         r#type: &ty_elem.term,
                         address: element_address,
+                        qualifier: binding.qualifier,
                     },
+                    must_copy,
                     handler,
                 );
             }
@@ -486,7 +492,9 @@ impl<
                         kind: binding.kind,
                         r#type: tuple_ty,
                         address: element_address,
+                        qualifier: binding.qualifier,
                     },
+                    must_copy,
                     handler,
                 );
             }
@@ -498,10 +506,10 @@ impl<
         name_binding_point: &mut NameBindingPoint<infer::Model>,
         structural: &Structural<Irrefutable>,
         mut binding: Binding,
+        must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
     ) {
-        binding =
-            self.reduce_reference(&structural.span.clone().unwrap(), binding);
+        binding = self.reduce_reference(binding);
 
         // must be a struct type
         let Type::Symbol(Symbol {
@@ -549,6 +557,7 @@ impl<
                 name_binding_point,
                 structural.patterns_by_field_id.get(&field_id).unwrap(),
                 binding_cloned,
+                must_copy,
                 handler,
             );
         }
@@ -559,14 +568,33 @@ impl<
         name_binding_point: &mut NameBindingPoint<infer::Model>,
         irreftuable: &Irrefutable,
         binding: Binding,
+        must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
     ) {
         match irreftuable {
             Irrefutable::Named(pat) => {
                 match (pat.reference_binding, binding.kind) {
                     // obtains the reference of the value.
-                    (Some(qualifier), BindingKind::Value) => self
-                        .create_reference_bound_named_pattern(
+                    (
+                        Some(qualifier),
+                        BindingKind::Value | BindingKind::Reference,
+                    ) => {
+                        if qualifier > binding.qualifier {
+                            handler.receive(Box::new(
+                                MismatchedQualifierForReferenceOf {
+                                    reference_of_span: pat
+                                        .span
+                                        .clone()
+                                        .unwrap(),
+                                    found_qualifier: binding.qualifier,
+                                    expected_qualifier: qualifier,
+                                    is_behind_reference: self
+                                        .is_behind_reference(&binding.address),
+                                },
+                            ));
+                        }
+
+                        self.create_reference_bound_named_pattern(
                             name_binding_point,
                             binding.r#type.clone(),
                             qualifier,
@@ -575,26 +603,59 @@ impl<
                             pat.name.clone(),
                             pat.is_mutable,
                             handler,
-                        ),
+                        )
+                    }
 
                     // normal value binding
                     (None, BindingKind::Value) => {
+                        let load_address = if must_copy {
+                            let alloca_id = self.create_alloca(
+                                binding.r#type.clone(),
+                                Some(pat.span.clone().unwrap()),
+                            );
+
+                            // copy/move the value from the given address
+                            let load_value = Value::Register(
+                                self.create_register_assignmnet(
+                                    Assignment::Load(Load {
+                                        address: binding.address,
+                                    }),
+                                    Some(pat.span.clone().unwrap()),
+                                ),
+                            );
+
+                            // store the value to the alloca
+                            let _ =
+                                self.current_block_mut().insert_instruction(
+                                    Instruction::Store(Store {
+                                        address: Address::Memory(
+                                            Memory::Alloca(alloca_id),
+                                        ),
+                                        value: load_value,
+                                    }),
+                                );
+
+                            Address::Memory(Memory::Alloca(alloca_id))
+                        } else {
+                            binding.address
+                        };
+
                         let _ = name_binding_point.insert(
                             pat.name.clone(),
                             NameBinding {
                                 mutable: pat.is_mutable,
-                                load_address: binding.address.clone(),
+                                load_address,
                                 span: Some(pat.span.clone().unwrap()),
                             },
                             handler,
                         );
                     }
 
-                    (_, BindingKind::Reference(qualifier)) => {
+                    (None, BindingKind::Reference) => {
                         self.create_reference_bound_named_pattern(
                             name_binding_point,
                             binding.r#type.clone(),
-                            qualifier,
+                            binding.qualifier,
                             binding.address,
                             pat.span.clone().unwrap(),
                             pat.name.clone(),
@@ -610,6 +671,7 @@ impl<
                     name_binding_point,
                     pat,
                     binding,
+                    must_copy,
                     handler,
                 );
             }
@@ -619,6 +681,7 @@ impl<
                     name_binding_point,
                     pat,
                     binding,
+                    must_copy,
                     handler,
                 );
             }

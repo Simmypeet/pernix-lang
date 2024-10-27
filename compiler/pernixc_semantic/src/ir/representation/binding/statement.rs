@@ -1,25 +1,26 @@
 //! Contains the logic to bind a statement syntax tree to the IR.
 
 use pernixc_base::{handler::Handler, source_file::SourceElement};
-use pernixc_syntax::syntax_tree;
+use pernixc_syntax::syntax_tree::{self};
 
 use super::{
-    expression::{Bind, Config, Target},
-    infer, Binder, InternalError,
+    expression::{Bind, Config, Expression, Target},
+    infer, Binder, Error, InternalError,
 };
 use crate::{
-    arena::ID,
     error,
     ir::{
         address::{Address, Memory},
-        alloca::Alloca,
-        instruction::{Instruction, Store},
         pattern::{self, Irrefutable, NameBindingPoint, Pattern, Wildcard},
+        value::{
+            literal::{self, Literal},
+            Value,
+        },
     },
     symbol::table::{self, resolution},
     type_system::{
         self, simplify,
-        term::r#type::{self, Type},
+        term::r#type::{self, Qualifier, Type},
     },
 };
 
@@ -81,8 +82,8 @@ impl<
                 self.pop_scope(scope_id);
 
                 match result {
-                    Ok(_) | Err(super::Error::Semantic(_)) => Ok(()),
-                    Err(super::Error::Internal(err)) => Err(err),
+                    Ok(_) | Err(Error::Semantic(_)) => Ok(()),
+                    Err(Error::Internal(err)) => Err(err),
                 }
             }
         }
@@ -94,55 +95,91 @@ impl<
     /// # Errors
     ///
     /// See [`InternalError`] for more information.
+    ///
+    /// # Returns
+    ///
+    /// An `Ok` of tuple address where the initializer value is stored and a
+    /// boolean indicating if the address is from the l-value or is newly
+    /// created to store the r-value.
     pub fn bind_variable_declaration(
         &mut self,
         syntax_tree: &syntax_tree::statement::VariableDeclaration,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<ID<Alloca<infer::Model>>, InternalError> {
+    ) -> Result<(Address<infer::Model>, bool), InternalError> {
         let scope_id = self.push_scope();
-        let initializer =
-            self.bind_value_or_error(syntax_tree.expression(), handler)?;
+        let (address, qualifier, from_lvalue) = match self.bind(
+            syntax_tree.expression(),
+            Config { target: Target::LValue },
+            handler,
+        ) {
+            Ok(Expression::LValue(lvalue)) => {
+                (lvalue.address, lvalue.qualifier, true)
+            }
+
+            Ok(Expression::RValue(value)) => {
+                (
+                    Address::Memory(Memory::Alloca(
+                        self.create_alloca_with_value(value),
+                    )),
+                    Qualifier::Mutable, /* has the highest mutability */
+                    false,
+                )
+            }
+
+            Err(err) => match err {
+                Error::Semantic(semantic_error) => {
+                    (
+                        Address::Memory(Memory::Alloca({
+                            let ty_inference = self.create_type_inference(
+                                r#type::Constraint::All(false),
+                            );
+                            self.create_alloca_with_value(Value::Literal(
+                                Literal::Error(literal::Error {
+                                    r#type: Type::Inference(ty_inference),
+                                    span: Some(semantic_error.0),
+                                }),
+                            ))
+                        })),
+                        Qualifier::Mutable, /* has the highest mutability */
+                        false,
+                    )
+                }
+                Error::Internal(internal_error) => return Err(internal_error),
+            },
+
+            Ok(Expression::SideEffect) => unreachable!(),
+        };
         self.pop_scope(scope_id);
 
-        let initialize_type = self.type_of_value(&initializer)?;
+        let type_of_address = self.type_of_address(&address)?;
 
-        let variable_type = match syntax_tree.type_annotation().as_ref() {
-            Some(type_syn) => {
-                let type_annotation = self
-                    .resolve_type_with_inference(type_syn.ty(), handler)
-                    .unwrap_or_else(|| {
-                        Type::Inference(self.create_type_inference(
-                            r#type::Constraint::All(false),
-                        ))
-                    });
+        if let Some(type_annotation) = syntax_tree.type_annotation() {
+            let type_annotation = self
+                .resolve_type_with_inference(type_annotation.r#type(), handler)
+                .unwrap_or_else(|| {
+                    Type::Inference(
+                        self.create_type_inference(r#type::Constraint::All(
+                            false,
+                        )),
+                    )
+                });
 
-                let _ = self.type_check(
-                    &initialize_type,
-                    r#type::Expected::Known(type_annotation.clone()),
-                    syntax_tree.expression().span(),
-                    true,
-                    handler,
-                );
-
-                simplify::simplify(&type_annotation, &self.create_environment())
-                    .result
-            }
-            None => initialize_type,
+            let _ = self.type_check(
+                &type_of_address,
+                r#type::Expected::Known(type_annotation.clone()),
+                syntax_tree.expression().span(),
+                true,
+                handler,
+            );
         };
 
-        let alloca_id =
-            self.create_alloca(variable_type.clone(), Some(syntax_tree.span()));
-
-        let _ = self.current_block_mut().insert_instruction(
-            Instruction::Store(Store {
-                address: Address::Memory(Memory::Alloca(alloca_id)),
-                value: initializer,
-            }),
-        );
+        let type_of_address =
+            simplify::simplify(&type_of_address, &self.create_environment())
+                .result;
 
         let pattern = match Irrefutable::bind(
             syntax_tree.irrefutable_pattern(),
-            &variable_type,
+            &type_of_address,
             self.current_site,
             &self.create_environment(),
             handler,
@@ -160,8 +197,10 @@ impl<
         self.insert_named_binding_point(
             &mut name_binding_point,
             &pattern,
-            &variable_type,
-            Address::Memory(Memory::Alloca(alloca_id)),
+            &type_of_address,
+            address.clone(),
+            qualifier,
+            from_lvalue,
             &self.create_handler_wrapper(handler),
         );
 
@@ -170,7 +209,7 @@ impl<
             .current_scope_mut()
             .add_named_binding_point(name_binding_point);
 
-        Ok(alloca_id)
+        Ok((address, from_lvalue))
     }
 }
 
