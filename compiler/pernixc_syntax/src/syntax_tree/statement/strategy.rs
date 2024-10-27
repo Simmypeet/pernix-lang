@@ -74,7 +74,7 @@ impl Input<&super::VariableDeclaration> for &VariableDeclaration {
         self.irrefutable_pattern.assert(output.irrefutable_pattern())?;
         self.ty
             .as_ref()
-            .assert(output.type_annotation.as_ref().map(|x| &x.ty))?;
+            .assert(output.type_annotation.as_ref().map(|x| &x.r#type))?;
         self.expression.assert(output.expression())
     }
 }

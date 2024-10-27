@@ -137,12 +137,12 @@ pub struct MatchArm {
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
-    block: Block,
+    expression: Box<Expression>,
 }
 
 impl SourceElement for MatchArm {
     fn span(&self) -> Span {
-        self.refutable_pattern.span().join(&self.block.span()).unwrap()
+        self.refutable_pattern.span().join(&self.expression.span()).unwrap()
     }
 }
 
@@ -1335,9 +1335,9 @@ impl Parser<'_> {
         let refutable_pattern = self.parse_refutable_pattern(handler)?;
 
         let colon = self.parse_punctuation(':', true, handler)?;
-        let block = self.parse_block(handler)?;
+        let expression = Box::new(self.parse_expression(handler)?);
 
-        Some(MatchArm { refutable_pattern, colon, block })
+        Some(MatchArm { refutable_pattern, colon, expression })
     }
 
     fn parse_match(&mut self, handler: &dyn Handler<Error>) -> Option<Match> {

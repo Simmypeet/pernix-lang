@@ -58,11 +58,13 @@ pub struct TypeAnnotation {
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
-    ty: Type,
+    r#type: Type,
 }
 
 impl SourceElement for TypeAnnotation {
-    fn span(&self) -> Span { self.colon.span().join(&self.ty.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.colon.span().join(&self.r#type.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -216,7 +218,7 @@ impl<'a> Parser<'a> {
             {
                 self.forward();
                 let ty = self.parse_type(handler)?;
-                Some(TypeAnnotation { colon, ty })
+                Some(TypeAnnotation { colon, r#type: ty })
             }
             _ => None,
         };

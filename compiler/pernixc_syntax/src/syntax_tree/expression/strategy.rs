@@ -423,23 +423,18 @@ impl Arbitrary for MatchArmGuard {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MatchArm {
     pub refutable_pattern: Refutable,
-    pub block: Block,
+    pub expression: Box<Expression>,
 }
 
 impl Arbitrary for MatchArm {
-    type Parameters = (
-        Option<BoxedStrategy<Expression>>,
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<QualifiedIdentifier>>,
-        Option<BoxedStrategy<Statement>>,
-    );
+    type Parameters = Option<BoxedStrategy<Expression>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        (Refutable::arbitrary(), Block::arbitrary_with(args))
-            .prop_map(|(pattern, block)| Self {
+        (Refutable::arbitrary(), args.unwrap_or_else(Expression::arbitrary))
+            .prop_map(|(pattern, expression)| Self {
                 refutable_pattern: pattern,
-                block,
+                expression: Box::new(expression),
             })
             .boxed()
     }
@@ -448,14 +443,14 @@ impl Arbitrary for MatchArm {
 impl Input<&super::MatchArm> for &MatchArm {
     fn assert(self, output: &super::MatchArm) -> TestCaseResult {
         self.refutable_pattern.assert(output.refutable_pattern())?;
-        self.block.assert(output.block())
+        self.expression.assert(output.expression())
     }
 }
 
 impl Display for MatchArm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.refutable_pattern)?;
-        write!(f, ": {}", self.block)
+        write!(f, ": {}", self.expression)
     }
 }
 
@@ -473,16 +468,11 @@ impl Input<&super::Match> for &Match {
 }
 
 impl Arbitrary for Match {
-    type Parameters = (
-        Option<BoxedStrategy<Expression>>,
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<QualifiedIdentifier>>,
-        Option<BoxedStrategy<Statement>>,
-    );
+    type Parameters = Option<BoxedStrategy<Expression>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let parenthesized = Parenthesized::arbitrary_with(args.0.clone());
+        let parenthesized = Parenthesized::arbitrary_with(args.clone());
         (
             parenthesized,
             proptest::option::of(ConnectedList::arbitrary_with(
@@ -601,7 +591,7 @@ impl Arbitrary for Brace {
             Loop::arbitrary_with(args.clone()).prop_map(Brace::Loop),
             IfElse::arbitrary_with(args.clone()).prop_map(Brace::IfElse),
             While::arbitrary_with(args.clone()).prop_map(Brace::While),
-            Match::arbitrary_with(args).prop_map(Brace::Match),
+            Match::arbitrary_with(args.0).prop_map(Brace::Match),
         ]
         .boxed()
     }
