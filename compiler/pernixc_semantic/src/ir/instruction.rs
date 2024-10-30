@@ -1,5 +1,7 @@
 //! Contains the definition of [`Instruction`] and its variants.
 
+use std::collections::HashMap;
+
 use super::{
     address::Address,
     alloca::Alloca,
@@ -45,12 +47,27 @@ pub struct ConditionalJump<M: Model> {
     pub false_target: ID<Block<M>>,
 }
 
+/// Represents a jump to another block based on a the matching of an integer
+/// value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectJump<M: Model> {
+    /// The integer value to match.
+    pub integer: Value<M>,
+
+    /// Mapping of the integer value to the target block to jump to.
+    pub branches: HashMap<i128, ID<Block<M>>>,
+
+    /// If none of the branches match, jump to this block.
+    pub otherwise: Option<ID<Block<M>>>,
+}
+
 /// An enumeration containing all kinds of jump instructions.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub enum Jump<M: Model> {
     Unconditional(UnconditionalJump<M>),
     Conditional(ConditionalJump<M>),
+    Select(SelectJump<M>),
 }
 
 /// Represents a return instruction.
@@ -145,7 +162,7 @@ pub enum Instruction<M: Model> {
 ///
 /// Terminators are instructions that change the control flow of the program.
 /// Either they move to another block or they return from the function.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub enum Terminator<M: Model> {
     Jump(Jump<M>),

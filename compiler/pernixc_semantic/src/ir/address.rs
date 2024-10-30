@@ -121,9 +121,6 @@ pub enum Memory<M: Model> {
 }
 
 /// Represents an address to a particular location in memory.
-///
-/// The type parameter `B` represents the base or starting address where the
-/// rest of projections are based on.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Address<M: Model> {

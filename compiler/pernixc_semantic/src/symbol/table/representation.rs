@@ -2102,7 +2102,7 @@ impl<T: Container> Representation<T> {
     #[allow(private_bounds)]
     pub fn insert_member<
         Definition,
-        Parent: symbol::ParentSealed + Element,
+        Parent: symbol::ParentMut + Element,
         ParentID: Copy + From<ID<Parent>>,
     >(
         &mut self,

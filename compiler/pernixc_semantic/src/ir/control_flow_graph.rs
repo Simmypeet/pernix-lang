@@ -188,6 +188,28 @@ impl<M: Model> ControlFlowGraph<M> {
                     Some(Terminator::Jump(Jump::Conditional(jump)));
             }
 
+            Terminator::Jump(Jump::Select(select)) => {
+                for target in
+                    select.branches.values().copied().chain(select.otherwise)
+                {
+                    let _ = self
+                        .get_block(target)
+                        .ok_or(InsertTerminatorError::InvalidBlockID(target))?;
+                }
+
+                for target in
+                    select.branches.values().copied().chain(select.otherwise)
+                {
+                    self.get_block_mut(target)
+                        .unwrap()
+                        .predecessors
+                        .insert(block_id);
+                }
+
+                self.get_block_mut(block_id).unwrap().terminator =
+                    Some(Terminator::Jump(Jump::Select(select)));
+            }
+
             Terminator::Return(ret) => {
                 self.get_block_mut(block_id).unwrap().terminator =
                     Some(Terminator::Return(ret));

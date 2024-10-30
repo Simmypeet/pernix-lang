@@ -223,7 +223,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
     fn draft_member<
         S,
         Definition: std::default::Default,
-        Parent: symbol::ParentSealed + representation::Element,
+        Parent: symbol::ParentMut + representation::Element,
         ParentID: Copy + From<ID<Parent>>,
     >(
         &mut self,

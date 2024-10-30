@@ -7,6 +7,7 @@ use super::{
     Binder,
 };
 use crate::{
+    arena::ID,
     error::{
         Error, FoundPackTuplePatternInReferenceBoundTupleType,
         MismatchedQualifierForReferenceOf,
@@ -25,7 +26,7 @@ use crate::{
     },
     symbol::{
         table::{self, representation::Index, resolution},
-        AdtID,
+        AdtID, Field, Variant,
     },
     type_system::{
         self,
@@ -689,6 +690,32 @@ impl<
             Irrefutable::Wildcard(_) => {}
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct FieldPath {
+    pub(super) field_id: ID<Field>,
+    pub(super) struct_path: Box<Path>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct TupleElementPath {
+    pub(super) index: usize,
+    pub(super) tuple_path: Box<Path>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct VariantPath {
+    pub(super) variant_id: ID<Variant>,
+    pub(super) enum_path: Box<Path>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) enum Path {
+    Base,
+    Field(FieldPath),
+    TupleElement(TupleElementPath),
+    Variant(VariantPath),
 }
 
 #[cfg(test)]

@@ -48,6 +48,7 @@ use crate::{
             self, Instruction, Jump, ScopePop, ScopePush, Store, Terminator,
             UnconditionalJump,
         },
+        pattern::{self, Pattern, Refutable, Wildcard},
         representation::binding::{
             infer::{InferenceVariable, NoConstraint},
             BlockState, LoopState,
@@ -5233,8 +5234,39 @@ impl<
         let successor_block_id =
             self.intermediate_representation.control_flow_graph.new_block();
 
-        let _address =
+        let address =
             self.bind_as_lvalue(syntax_tree.parenthesized(), true, handler)?;
+        let ty = simplify::simplify(
+            &self.type_of_address(&address.address)?,
+            &self.create_environment(),
+        )
+        .result;
+
+        let refutable_patterns = syntax_tree
+            .arms()
+            .as_ref()
+            .into_iter()
+            .flat_map(ConnectedList::elements)
+            .map(|x| {
+                Refutable::bind(
+                    x.refutable_pattern(),
+                    &ty,
+                    self.current_site,
+                    &self.create_environment(),
+                    &self.create_handler_wrapper(handler),
+                )
+                .map_or_else(
+                    |err| {
+                        assert_eq!(err, pattern::Error::Semantic);
+
+                        Refutable::Wildcard(Wildcard {
+                            span: Some(x.refutable_pattern().span()),
+                        })
+                    },
+                    |x| x.result,
+                )
+            })
+            .collect::<Vec<_>>();
 
         self.current_block_id = successor_block_id;
 

@@ -340,7 +340,7 @@ pub trait Parent {
         + std::hash::Hash;
 }
 
-trait ParentSealed: Parent {
+trait ParentMut: Parent {
     /// Maps the name of the member to its ID.
     #[allow(unused)]
     fn member_ids_by_name(&self) -> &HashMap<String, Self::MemberID>;
@@ -514,7 +514,7 @@ impl Parent for Module {
     type MemberID = ModuleMemberID;
 }
 
-impl ParentSealed for Module {
+impl ParentMut for Module {
     fn member_ids_by_name(&self) -> &HashMap<String, Self::MemberID> {
         &self.member_ids_by_name
     }
@@ -1051,7 +1051,7 @@ impl Parent for Enum {
     type MemberID = ID<Variant>;
 }
 
-impl ParentSealed for Enum {
+impl ParentMut for Enum {
     fn member_ids_by_name(&self) -> &HashMap<String, Self::MemberID> {
         &self.variant_ids_by_name
     }
@@ -1323,7 +1323,7 @@ impl Parent for AdtImplementation {
     type MemberID = ID<AdtImplementationFunction>;
 }
 
-impl ParentSealed for AdtImplementation {
+impl ParentMut for AdtImplementation {
     fn member_ids_by_name(&self) -> &HashMap<String, Self::MemberID> {
         &self.member_ids_by_name
     }
@@ -1442,7 +1442,7 @@ impl Parent for PositiveTraitImplementation {
     type MemberID = TraitImplementationMemberID;
 }
 
-impl ParentSealed for PositiveTraitImplementation {
+impl ParentMut for PositiveTraitImplementation {
     fn member_ids_by_name(&self) -> &HashMap<String, Self::MemberID> {
         &self.member_ids_by_name
     }
@@ -1595,7 +1595,7 @@ impl Parent for Trait {
     type MemberID = TraitMemberID;
 }
 
-impl ParentSealed for Trait {
+impl ParentMut for Trait {
     fn member_ids_by_name(&self) -> &HashMap<String, Self::MemberID> {
         &self.member_ids_by_name
     }
