@@ -1,4 +1,6 @@
-//! Contains the code related to the basic functionality of the Pernix compiler.
+//! This crate provides the foundational modules for the Pernix language
+//! compiler. It includes modules for diagnostics, handling, logging, and source
+//! file management.
 
 pub mod diagnostic;
 pub mod handler;

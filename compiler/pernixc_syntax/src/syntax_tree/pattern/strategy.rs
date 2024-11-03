@@ -377,16 +377,13 @@ impl Display for Irrefutable {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Enum<Pattern> {
+pub struct Enum {
     pub identifier: Identifier,
-    pub association: Option<Box<Pattern>>,
+    pub association: Option<Box<Refutable>>,
 }
 
-impl<I: Debug, O: Debug> Input<&super::Enum<O>> for &Enum<I>
-where
-    for<'i, 'o> &'i I: Input<&'o O>,
-{
-    fn assert(self, output: &super::Enum<O>) -> TestCaseResult {
+impl Input<&super::Enum> for &Enum {
+    fn assert(self, output: &super::Enum) -> TestCaseResult {
         (&self.identifier).assert(&output.identifier)?;
         self.association
             .as_ref()
@@ -394,16 +391,14 @@ where
     }
 }
 
-impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
-    for Enum<Pattern>
-{
-    type Parameters = Option<BoxedStrategy<Pattern>>;
+impl Arbitrary for Enum {
+    type Parameters = Option<BoxedStrategy<Refutable>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
-            proptest::option::of(args.unwrap_or_else(Pattern::arbitrary)),
+            proptest::option::of(args.unwrap_or_else(Refutable::arbitrary)),
         )
             .prop_map(|(identifier, pattern)| Self {
                 identifier,
@@ -413,7 +408,7 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
     }
 }
 
-impl<Pattern: Display> Display for Enum<Pattern> {
+impl Display for Enum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "case {}", self.identifier)?;
 
@@ -465,7 +460,7 @@ pub enum Refutable {
     Integer(Integer),
     Structural(Structural<Self>),
     Tuple(Tuple<Self>),
-    Enum(Enum<Self>),
+    Enum(Enum),
     Named(Named),
     Wildcard(Wildcard),
 }

@@ -133,6 +133,28 @@ pub enum Address<M: Model> {
     ReferenceAddress(ReferenceAddress<M>),
 }
 
+impl<M: Model> Address<M> {
+    /// Checks if the address has a root that is a reference.
+    ///
+    /// The root is either from [`Memory::ReferenceValue`] or
+    /// [`Self::ReferenceAddress`].
+    pub fn is_behind_reference(&self) -> bool {
+        match self {
+            Self::Memory(Memory::Alloca(_) | Memory::Parameter(_)) => false,
+
+            Self::Field(field) => field.struct_address.is_behind_reference(),
+            Self::Tuple(tuple) => tuple.tuple_address.is_behind_reference(),
+            Self::Index(index) => index.array_address.is_behind_reference(),
+            Self::Variant(variant) => {
+                variant.enum_address.is_behind_reference()
+            }
+
+            Self::Memory(Memory::ReferenceValue(_))
+            | Self::ReferenceAddress(_) => true,
+        }
+    }
+}
+
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]

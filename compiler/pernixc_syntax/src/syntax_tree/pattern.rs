@@ -122,16 +122,16 @@ impl<Pattern> SourceElement for EnumAssociation<Pattern> {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Enum<Pattern> {
+pub struct Enum {
     #[get = "pub"]
     case_keyword: Keyword,
     #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
-    association: Option<EnumAssociation<Pattern>>,
+    association: Option<EnumAssociation<Refutable>>,
 }
 
-impl<Pattern> SourceElement for Enum<Pattern> {
+impl SourceElement for Enum {
     fn span(&self) -> Span {
         self.association.as_ref().map_or_else(
             || self.case_keyword.span().join(&self.identifier.span()).unwrap(),
@@ -293,7 +293,7 @@ pub enum Refutable {
     Boolean(Boolean),
     Integer(Integer),
     Structural(Structural<Self>),
-    Enum(Enum<Self>),
+    Enum(Enum),
     Named(Named),
     Tuple(Tuple<Self>),
     Wildcard(Wildcard),

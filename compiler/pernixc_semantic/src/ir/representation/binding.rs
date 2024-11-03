@@ -5,7 +5,8 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use infer::{
-    Constraint, Context, Erased, InferenceVariable, NoConstraint, UnifyError,
+    Constraint as _, Context, Erased, InferenceVariable, NoConstraint,
+    UnifyError,
 };
 use parking_lot::RwLock;
 use pernixc_base::{
@@ -20,14 +21,14 @@ use crate::{
     arena::ID,
     error::{self, CyclicInference, MismatchedType},
     ir::{
-        self,
         address::{Address, Memory},
         alloca::Alloca,
         control_flow_graph::Block,
         instruction::{self, Instruction, ScopePop, ScopePush},
-        pattern::{Irrefutable, NameBindingPoint, Pattern, Wildcard},
+        pattern::{NameBindingPoint, Wildcard},
         scope::{self, Scope},
         value::{
+            literal::{Literal, Unreachable},
             register::{Assignment, Register},
             Value,
         },
@@ -51,7 +52,7 @@ use crate::{
             self,
             constant::Constant,
             lifetime::Lifetime,
-            r#type::{self, Expected, Qualifier, Type},
+            r#type::{self, Constraint, Expected, Qualifier, Type},
             Term,
         },
         Premise,
@@ -242,26 +243,14 @@ impl<
             let parameter_type =
                 infer::Model::from_default_type(parameter_sym.r#type.clone());
 
-            let pattern = match Irrefutable::bind(
-                syntax_tree,
-                &parameter_type,
-                binder.current_site,
-                &binder.create_environment(),
-                &handler,
-            ) {
-                Ok(v) => v.result,
-                Err(ir::pattern::Error::Semantic) => {
-                    Irrefutable::Wildcard(Wildcard {
-                        span: Some(syntax_tree.span()),
-                    })
-                }
-                Err(err) => {
-                    panic!("unexpected error: {err:#?}");
-                }
-            };
+            let pattern = binder
+                .bind_pattern(&parameter_type, syntax_tree, &handler)
+                .unwrap_or_else(|| {
+                    Wildcard { span: syntax_tree.span() }.into()
+                });
 
             // add the binding point
-            binder.insert_named_binding_point(
+            binder.insert_irrefutable_named_binding_point(
                 &mut parameter_name_binding_point,
                 &pattern,
                 &parameter_type,
@@ -362,6 +351,24 @@ impl<
         TO: type_system::observer::Observer<infer::Model, S>,
     > Binder<'t, S, RO, TO>
 {
+    fn create_unreachable(
+        &mut self,
+        span: Option<Span>,
+    ) -> Literal<infer::Model> {
+        Literal::Unreachable(Unreachable {
+            r#type: {
+                let inference = InferenceVariable::<Type<_>>::new();
+
+                assert!(self
+                    .inference_context
+                    .register(inference, Constraint::All(true)));
+
+                Type::Inference(inference)
+            },
+            span,
+        })
+    }
+
     /// Creates a new alloca and adds it to the current scope.
     fn create_alloca(
         &mut self,
@@ -731,28 +738,6 @@ impl<
         }
 
         Some(ty)
-    }
-
-    fn is_behind_reference(&self, address: &Address<infer::Model>) -> bool {
-        match address {
-            Address::Memory(Memory::Alloca(_) | Memory::Parameter(_)) => false,
-
-            Address::Field(field) => {
-                self.is_behind_reference(&field.struct_address)
-            }
-            Address::Tuple(tuple) => {
-                self.is_behind_reference(&tuple.tuple_address)
-            }
-            Address::Index(index) => {
-                self.is_behind_reference(&index.array_address)
-            }
-            Address::Variant(variant) => {
-                self.is_behind_reference(&variant.enum_address)
-            }
-
-            Address::Memory(Memory::ReferenceValue(_))
-            | Address::ReferenceAddress(_) => true,
-        }
     }
 
     fn get_behind_reference_qualifier(

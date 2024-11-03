@@ -460,6 +460,19 @@ pub struct Cast<M: Model> {
     pub r#type: Type<M>,
 }
 
+/// Returns the variant number of the given address to the enum.
+///
+/// The variant number is supposed to be a unique identifier specifying which
+/// variant is active in the enum. The number should correspond to the
+/// declration order of it in the enum.
+///
+/// This is primarily used in the pattern matching.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct VariantNumber<M: Model> {
+    /// Address to the num to get the variant number of.
+    pub address: Address<M>,
+}
+
 /// An enumeration of the different kinds of values that can be assigned in the
 /// register.
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
@@ -476,6 +489,7 @@ pub enum Assignment<M: Model> {
     Array(Array<M>),
     Phi(Phi<M>),
     Cast(Cast<M>),
+    VariantNumber(VariantNumber<M>),
 }
 
 /// Represents a register in the SSA from.
@@ -566,6 +580,9 @@ impl<M: Model> Representation<M> {
                 )),
             })),
             Assignment::Cast(cast) => Ok(cast.r#type.clone()),
+            Assignment::VariantNumber(_) => {
+                Ok(Type::Primitive(r#type::Primitive::Usize))
+            }
         }?;
 
         Ok(simplify::simplify(&ty, environment))

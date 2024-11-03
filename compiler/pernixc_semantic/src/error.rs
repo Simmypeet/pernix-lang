@@ -4068,6 +4068,27 @@ where
     }
 }
 
+/// The reftuable pattern is found in a packed tuple.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReftuablePatternFoundInPackedTuple {
+    /// The span of the reftuable pattern.
+    pub reftuable_pattern_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for ReftuablePatternFoundInPackedTuple {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.reftuable_pattern_span.clone(),
+            message: "reftuable pattern found in a packed tuple".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
 /// The calling convention is an `extern` block is invalid.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnknownExternCallingConvention {

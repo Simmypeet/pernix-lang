@@ -13,7 +13,7 @@ use crate::{
     ir::{
         address::{self, Address, Field, Memory},
         instruction::Instruction,
-        pattern::{Irrefutable, NameBindingPoint, Named, Pattern},
+        pattern::{Irrefutable, NameBindingPoint, Named},
         representation::{
             binding::{
                 infer::{self, Erased},
@@ -182,14 +182,8 @@ impl<
 
         let storage = Storage::<Box<dyn error::Error>>::default();
 
-        let irrefutable = Irrefutable::bind(
-            &pattern_syn,
-            ty,
-            self.current_site,
-            &self.create_environment(),
-            &storage,
-        )
-        .unwrap();
+        let irrefutable =
+            self.bind_pattern(ty, &pattern_syn, &storage).unwrap();
 
         let storage = storage.into_vec();
         assert!(storage.is_empty(), "{storage:?}");
@@ -198,9 +192,9 @@ impl<
 
         let storage = Storage::<Box<dyn error::Error>>::default();
 
-        self.insert_named_binding_point(
+        self.insert_irrefutable_named_binding_point(
             &mut binding_point,
-            &irrefutable.result,
+            &irrefutable,
             ty,
             address,
             Qualifier::Mutable,
@@ -211,7 +205,7 @@ impl<
         let storage = storage.into_vec();
         assert!(storage.is_empty(), "{storage:?}");
 
-        (irrefutable.result, binding_point)
+        (irrefutable, binding_point)
     }
 }
 

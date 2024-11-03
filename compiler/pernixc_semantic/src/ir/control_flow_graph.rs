@@ -214,6 +214,11 @@ impl<M: Model> ControlFlowGraph<M> {
                 self.get_block_mut(block_id).unwrap().terminator =
                     Some(Terminator::Return(ret));
             }
+
+            Terminator::Panic => {
+                self.get_block_mut(block_id).unwrap().terminator =
+                    Some(Terminator::Panic);
+            }
         }
 
         Ok(())

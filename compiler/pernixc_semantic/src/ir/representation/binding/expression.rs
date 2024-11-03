@@ -19,6 +19,7 @@ use pernixc_syntax::syntax_tree::{
 
 use super::{
     infer::{self, Erased},
+    pattern::Path,
     stack::Scope,
     Binder, Error, InferenceProvider, InternalError, LoopKind, SemanticError,
 };
@@ -48,7 +49,6 @@ use crate::{
             self, Instruction, Jump, ScopePop, ScopePush, Store, Terminator,
             UnconditionalJump,
         },
-        pattern::{self, Pattern, Refutable, Wildcard},
         representation::binding::{
             infer::{InferenceVariable, NoConstraint},
             BlockState, LoopState,
@@ -88,6 +88,8 @@ use crate::{
         },
     },
 };
+
+mod r#match;
 
 /// An enumeration describes the intended purpose of binding the expression.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -440,8 +442,9 @@ impl<
                             reference_of_span: syntax_tree.span(),
                             found_qualifier: lvalue.qualifier,
                             expected_qualifier: qualifier,
-                            is_behind_reference: self
-                                .is_behind_reference(&lvalue.address),
+                            is_behind_reference: lvalue
+                                .address
+                                .is_behind_reference(),
                         },
                     ));
                 }
@@ -1103,7 +1106,7 @@ impl<
             Target::LValue => {
                 let new_qualifier = reference_type.qualifier.min(
                     operand.as_l_value().map_or(Qualifier::Mutable, |lvalue| {
-                        if self.is_behind_reference(&lvalue.address) {
+                        if lvalue.address.is_behind_reference() {
                             lvalue.qualifier
                         } else {
                             Qualifier::Mutable
@@ -1500,8 +1503,9 @@ impl<
                             reference_of_span: address.span.clone(),
                             found_qualifier: address.qualifier,
                             expected_qualifier: qualifier,
-                            is_behind_reference: self
-                                .is_behind_reference(&address.address),
+                            is_behind_reference: address
+                                .address
+                                .is_behind_reference(),
                         },
                     ));
                 }
@@ -5215,75 +5219,6 @@ impl<
         };
 
         Ok(Expression::RValue(value))
-    }
-}
-
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
-    > Bind<&syntax_tree::expression::Match> for Binder<'t, S, RO, TO>
-{
-    fn bind(
-        &mut self,
-        syntax_tree: &syntax_tree::expression::Match,
-        _config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Expression, Error> {
-        let successor_block_id =
-            self.intermediate_representation.control_flow_graph.new_block();
-
-        let address =
-            self.bind_as_lvalue(syntax_tree.parenthesized(), true, handler)?;
-        let ty = simplify::simplify(
-            &self.type_of_address(&address.address)?,
-            &self.create_environment(),
-        )
-        .result;
-
-        let refutable_patterns = syntax_tree
-            .arms()
-            .as_ref()
-            .into_iter()
-            .flat_map(ConnectedList::elements)
-            .map(|x| {
-                Refutable::bind(
-                    x.refutable_pattern(),
-                    &ty,
-                    self.current_site,
-                    &self.create_environment(),
-                    &self.create_handler_wrapper(handler),
-                )
-                .map_or_else(
-                    |err| {
-                        assert_eq!(err, pattern::Error::Semantic);
-
-                        Refutable::Wildcard(Wildcard {
-                            span: Some(x.refutable_pattern().span()),
-                        })
-                    },
-                    |x| x.result,
-                )
-            })
-            .collect::<Vec<_>>();
-
-        self.current_block_id = successor_block_id;
-
-        Ok(Expression::RValue(Value::Literal(Literal::Unreachable(
-            Unreachable {
-                r#type: {
-                    let inference = InferenceVariable::<Type<_>>::new();
-
-                    assert!(self
-                        .inference_context
-                        .register(inference, Constraint::All(true)));
-
-                    Type::Inference(inference)
-                },
-                span: Some(syntax_tree.span()),
-            },
-        ))))
     }
 }
 

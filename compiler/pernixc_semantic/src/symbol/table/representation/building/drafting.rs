@@ -122,6 +122,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(variant_id);
+                    enum_sym.variant_declaration_order.push(variant_id);
                 }
             }
         }

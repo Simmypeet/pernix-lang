@@ -11,7 +11,7 @@ use crate::{
     error,
     ir::{
         address::{Address, Memory},
-        pattern::{self, Irrefutable, NameBindingPoint, Pattern, Wildcard},
+        pattern::{NameBindingPoint, Wildcard},
         value::{
             literal::{self, Literal},
             Value,
@@ -166,7 +166,7 @@ impl<
 
             let _ = self.type_check(
                 &type_of_address,
-                r#type::Expected::Known(type_annotation.clone()),
+                r#type::Expected::Known(type_annotation),
                 syntax_tree.expression().span(),
                 true,
                 handler,
@@ -177,24 +177,19 @@ impl<
             simplify::simplify(&type_of_address, &self.create_environment())
                 .result;
 
-        let pattern = match Irrefutable::bind(
-            syntax_tree.irrefutable_pattern(),
-            &type_of_address,
-            self.current_site,
-            &self.create_environment(),
-            handler,
-        ) {
-            Ok(v) => v.result,
-            Err(pattern::Error::Semantic) => Irrefutable::Wildcard(Wildcard {
-                span: Some(syntax_tree.irrefutable_pattern().span()),
-            }),
-            Err(err) => {
-                panic!("unexpected error: {err:#?}");
-            }
-        };
+        let pattern = self
+            .bind_pattern(
+                &type_of_address,
+                syntax_tree.irrefutable_pattern(),
+                &self.create_handler_wrapper(handler),
+            )
+            .unwrap_or_else(|| {
+                Wildcard { span: syntax_tree.irrefutable_pattern().span() }
+                    .into()
+            });
 
         let mut name_binding_point = NameBindingPoint::default();
-        self.insert_named_binding_point(
+        self.insert_irrefutable_named_binding_point(
             &mut name_binding_point,
             &pattern,
             &type_of_address,

@@ -167,4 +167,7 @@ pub enum Instruction<M: Model> {
 pub enum Terminator<M: Model> {
     Jump(Jump<M>),
     Return(Return<M>),
+
+    /// Aborts the program.
+    Panic,
 }
