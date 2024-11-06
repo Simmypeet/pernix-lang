@@ -1,0 +1,2 @@
+# always use LF line endings in git
+* text-eol=lf
