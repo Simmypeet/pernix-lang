@@ -5,21 +5,16 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_base::{
-    handler::Handler,
-    source_file::{SourceElement, Span},
-};
-use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation, Token};
+use pernixc_base::source_file::{SourceElement, Span};
+use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
 
 use super::{
     expression::{Binary, Brace, Expression, Terminator},
     pattern::Irrefutable,
     r#type::Type,
+    Parse,
 };
-use crate::{
-    error::Error,
-    parser::{Parser, Reading},
-};
+use crate::parser::Syntax;
 
 pub mod strategy;
 
@@ -36,6 +31,34 @@ pub mod strategy;
 pub enum Statement {
     VariableDeclaration(VariableDeclaration),
     Expressive(Expressive),
+}
+
+impl Parse for Statement {
+    fn syntax() -> impl Syntax<Output = Self> {
+        VariableDeclaration::syntax()
+            .map(Statement::VariableDeclaration)
+            .or_else(Expression::syntax().then_do(|parser, x, handler| {
+                let semi_expression = match x {
+                    Expression::Binary(binary) => {
+                        SemiExpression::Binary(binary)
+                    }
+                    Expression::Terminator(terminator) => {
+                        SemiExpression::Terminator(terminator)
+                    }
+
+                    Expression::Brace(brace) => {
+                        return Ok(Statement::Expressive(Expressive::Brace(
+                            brace,
+                        )))
+                    }
+                };
+
+                Ok(Statement::Expressive(Expressive::Semi(Semi {
+                    expression: semi_expression,
+                    semicolon: parser.parse(';', handler)?,
+                })))
+            }))
+    }
 }
 
 impl SourceElement for Statement {
@@ -59,6 +82,12 @@ pub struct TypeAnnotation {
     colon: Punctuation,
     #[get = "pub"]
     r#type: Type,
+}
+
+impl Parse for TypeAnnotation {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (':', Type::syntax()).map(|(colon, r#type)| Self { colon, r#type })
+    }
 }
 
 impl SourceElement for TypeAnnotation {
@@ -88,6 +117,38 @@ pub struct VariableDeclaration {
     expression: Expression,
     #[get = "pub"]
     semicolon: Punctuation,
+}
+
+impl Parse for VariableDeclaration {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (
+            KeywordKind::Let,
+            Irrefutable::syntax(),
+            TypeAnnotation::syntax().or_none(),
+            '=',
+            Expression::syntax(),
+            ';',
+        )
+            .map(
+                |(
+                    let_keyword,
+                    irrefutable_pattern,
+                    type_annotation,
+                    equals,
+                    expression,
+                    semicolon,
+                )| {
+                    Self {
+                        let_keyword,
+                        irrefutable_pattern,
+                        type_annotation,
+                        equals,
+                        expression,
+                        semicolon,
+                    }
+                },
+            )
+    }
 }
 
 impl SourceElement for VariableDeclaration {
@@ -164,78 +225,6 @@ pub struct Semi {
 impl SourceElement for Semi {
     fn span(&self) -> Span {
         self.expression.span().join(&self.semicolon.span).unwrap()
-    }
-}
-
-impl<'a> Parser<'a> {
-    /// Parses a [`Statement`]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_statement(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Statement> {
-        if matches!(
-            self.stop_at_significant(),
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Let
-        ) {
-            self.parse_variable_declaration(handler)
-                .map(Statement::VariableDeclaration)
-        } else {
-            let semi_expression = match self.parse_expression(handler)? {
-                Expression::Brace(brace) => {
-                    return Some(Statement::Expressive(Expressive::Brace(
-                        brace,
-                    )));
-                }
-                Expression::Binary(binary) => SemiExpression::Binary(binary),
-                Expression::Terminator(terminator) => {
-                    SemiExpression::Terminator(terminator)
-                }
-            };
-
-            let semicolon = self.parse_punctuation(';', true, handler)?;
-            Some(Statement::Expressive(Expressive::Semi(Semi {
-                expression: semi_expression,
-                semicolon,
-            })))
-        }
-    }
-
-    /// Parses a [`VariableDeclaration`]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_variable_declaration(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<VariableDeclaration> {
-        let let_keyword = self.parse_keyword(KeywordKind::Let, handler)?;
-
-        let irrefutable_pattern = self.parse_irrefutable_pattern(handler)?;
-
-        // parse optional type annotation
-        let type_annotation = match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(colon))
-                if colon.punctuation == ':' =>
-            {
-                self.forward();
-                let ty = self.parse_type(handler)?;
-                Some(TypeAnnotation { colon, r#type: ty })
-            }
-            _ => None,
-        };
-
-        let equals = self.parse_punctuation('=', true, handler)?;
-        let expression = self.parse_expression(handler)?;
-
-        let semicolon = self.parse_punctuation(';', true, handler)?;
-
-        Some(VariableDeclaration {
-            let_keyword,
-            irrefutable_pattern,
-            type_annotation,
-            equals,
-            expression,
-            semicolon,
-        })
     }
 }
 

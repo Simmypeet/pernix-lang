@@ -7,4 +7,4 @@
 
 pub mod error;
 pub mod parser;
-pub mod syntax_tree;
+ pub mod syntax_tree;

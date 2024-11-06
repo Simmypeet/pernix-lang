@@ -3,26 +3,50 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_base::{
-    handler::Handler,
-    source_file::{SourceElement, Span},
-};
+use pernixc_base::source_file::{SourceElement, Span};
 use pernixc_lexical::{
-    token::{Keyword, KeywordKind, Punctuation, Token},
+    token::{Keyword, KeywordKind, Punctuation},
     token_stream::Delimiter,
 };
 
 use super::{
-    r#type, ConnectedList, ConstantArgument, DelimitedList, Lifetime,
-    LifetimeParameter, QualifiedIdentifier, UnionList,
+    delimited_list, r#type, DelimitedList, Lifetime, LifetimeParameter, Parse,
+    QualifiedIdentifier, UnionList,
 };
-use crate::{
-    error::Error,
-    parser::{Parser, Reading},
-};
+use crate::parser::Syntax;
 
 pub mod strategy;
 
+/// Syntax Synopsis:
+/// ``` txt
+/// HigherRankedLifetimes:
+///     'for' '[' (LifetimeParameter (',' LifetimeParameter)* ','?)? ']'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct HigherRankedLifetimes {
+    #[get = "pub"]
+    for_keyword: Keyword,
+    #[get = "pub"]
+    lifetime_parameters: DelimitedList<LifetimeParameter>,
+}
+
+impl Parse for HigherRankedLifetimes {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (KeywordKind::For, delimited_list(Delimiter::Bracket, ',')).map(
+            |(for_keyword, lifetime_parameters)| HigherRankedLifetimes {
+                for_keyword,
+                lifetime_parameters,
+            },
+        )
+    }
+}
+
+impl SourceElement for HigherRankedLifetimes {
+    fn span(&self) -> Span {
+        self.for_keyword.span.join(&self.lifetime_parameters.span()).unwrap()
+    }
+}
 /// Syntax Synopsis:
 /// ``` txt
 /// TraitTypeEquality:
@@ -61,6 +85,30 @@ impl TraitTypeEquality {
     }
 }
 
+impl Parse for TraitTypeEquality {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (
+            HigherRankedLifetimes::syntax().or_none(),
+            QualifiedIdentifier::syntax(),
+            '=',
+            r#type::Type::syntax(),
+        )
+            .map(
+                |(
+                    higher_ranked_lifetimes,
+                    qualified_identifier,
+                    equals,
+                    r#type,
+                )| TraitTypeEquality {
+                    higher_ranked_lifetimes,
+                    qualified_identifier,
+                    equals,
+                    r#type,
+                },
+            )
+    }
+}
+
 impl SourceElement for TraitTypeEquality {
     fn span(&self) -> Span {
         self.higher_ranked_lifetimes.as_ref().map_or_else(
@@ -72,31 +120,6 @@ impl SourceElement for TraitTypeEquality {
             },
             |h| h.span().join(&self.r#type.span()).unwrap(),
         )
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// HigherRankedLifetimes:
-///     'for' '[' (LifetimeParameter (',' LifetimeParameter)* ','?)? ']'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct HigherRankedLifetimes {
-    #[get = "pub"]
-    for_keyword: Keyword,
-    #[get = "pub"]
-    left_bracket: Punctuation,
-    #[get = "pub"]
-    lifetime_parameter_list:
-        Option<ConnectedList<LifetimeParameter, Punctuation>>,
-    #[get = "pub"]
-    right_bracket: Punctuation,
-}
-
-impl SourceElement for HigherRankedLifetimes {
-    fn span(&self) -> Span {
-        self.for_keyword.span.join(&self.right_bracket.span).unwrap()
     }
 }
 
@@ -116,6 +139,32 @@ pub struct TraitBound {
     const_keyword: Option<Keyword>,
     #[get = "pub"]
     qualified_identifier: QualifiedIdentifier,
+}
+
+impl Parse for TraitBound {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (
+            '!'.or_none(),
+            HigherRankedLifetimes::syntax().or_none(),
+            KeywordKind::Const.or_none(),
+            QualifiedIdentifier::syntax(),
+        )
+            .map(
+                |(
+                    negation,
+                    higher_ranked_lifetimes,
+                    const_keyword,
+                    qualified_identifier,
+                )| {
+                    TraitBound {
+                        negation,
+                        higher_ranked_lifetimes,
+                        const_keyword,
+                        qualified_identifier,
+                    }
+                },
+            )
+    }
 }
 
 impl SourceElement for TraitBound {
@@ -166,6 +215,13 @@ pub struct Trait {
     bounds: UnionList<TraitBound>,
 }
 
+impl Parse for Trait {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (KeywordKind::Trait, UnionList::syntax())
+            .map(|(trait_keyword, bounds)| Trait { trait_keyword, bounds })
+    }
+}
+
 impl Trait {
     /// Dissolves the [`Trait`] into a tuple of its fields.
     #[must_use]
@@ -193,6 +249,25 @@ pub struct MarkerBound {
     higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
     #[get = "pub"]
     qualified_identifier: QualifiedIdentifier,
+}
+
+impl Parse for MarkerBound {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (
+            '!'.or_none(),
+            HigherRankedLifetimes::syntax().or_none(),
+            QualifiedIdentifier::syntax(),
+        )
+            .map(
+                |(negation, higher_ranked_lifetimes, qualified_identifier)| {
+                    MarkerBound {
+                        negation,
+                        higher_ranked_lifetimes,
+                        qualified_identifier,
+                    }
+                },
+            )
+    }
 }
 
 impl SourceElement for MarkerBound {
@@ -235,6 +310,13 @@ pub struct Marker {
     bounds: UnionList<MarkerBound>,
 }
 
+impl Parse for Marker {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (KeywordKind::Marker, UnionList::syntax())
+            .map(|(marker_keyword, bounds)| Marker { marker_keyword, bounds })
+    }
+}
+
 impl SourceElement for Marker {
     fn span(&self) -> Span {
         self.marker_keyword.span.join(&self.bounds.span()).unwrap()
@@ -263,6 +345,13 @@ pub struct Outlives {
     colon: Punctuation,
     #[get = "pub"]
     bounds: UnionList<Lifetime>,
+}
+
+impl Parse for Outlives {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (OutlivesOperand::syntax(), ':', UnionList::syntax())
+            .map(|(operand, colon, bounds)| Outlives { operand, colon, bounds })
+    }
 }
 
 impl Outlives {
@@ -294,6 +383,14 @@ pub enum OutlivesOperand {
     Type(r#type::Type),
 }
 
+impl Parse for OutlivesOperand {
+    fn syntax() -> impl Syntax<Output = Self> {
+        LifetimeParameter::syntax()
+            .map(OutlivesOperand::LifetimeParameter)
+            .or_else(r#type::Type::syntax().map(OutlivesOperand::Type))
+    }
+}
+
 impl SourceElement for OutlivesOperand {
     fn span(&self) -> Span {
         match self {
@@ -303,28 +400,6 @@ impl SourceElement for OutlivesOperand {
             Self::Type(ty) => ty.span(),
         }
     }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Predicate:
-///     TraitTypeEquality
-///     | Trait
-///     | Outlives
-///     | ConstantType
-///     | Tuple
-///     ;
-/// ```
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
-)]
-pub enum Predicate {
-    TraitTypeEquality(TraitTypeEquality),
-    Trait(Trait),
-    Outlives(Outlives),
-    ConstantType(ConstantType),
-    Tuple(Tuple),
-    Marker(Marker),
 }
 
 /// Syntax Synopsis:
@@ -339,6 +414,17 @@ pub struct ConstantTypeBound {
     higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
     #[get = "pub"]
     r#type: r#type::Type,
+}
+
+impl Parse for ConstantTypeBound {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (HigherRankedLifetimes::syntax().or_none(), r#type::Type::syntax()).map(
+            |(higher_ranked_lifetimes, r#type)| ConstantTypeBound {
+                higher_ranked_lifetimes,
+                r#type,
+            },
+        )
+    }
 }
 
 impl SourceElement for ConstantTypeBound {
@@ -364,31 +450,17 @@ pub struct ConstantType {
     bounds: UnionList<ConstantTypeBound>,
 }
 
-impl SourceElement for ConstantType {
-    fn span(&self) -> Span {
-        self.const_keyword.span.join(&self.bounds.span()).unwrap()
+impl Parse for ConstantType {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (KeywordKind::Const, UnionList::syntax()).map(
+            |(const_keyword, bounds)| ConstantType { const_keyword, bounds },
+        )
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// TupleOperandKind:
-///     Type
-///     | ConstantArgument
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum TupleOperandKind {
-    Type(r#type::Type),
-    Constant(ConstantArgument),
-}
-
-impl SourceElement for TupleOperandKind {
+impl SourceElement for ConstantType {
     fn span(&self) -> Span {
-        match self {
-            Self::Type(ty) => ty.span(),
-            Self::Constant(c) => c.span(),
-        }
+        self.const_keyword.span.join(&self.bounds.span()).unwrap()
     }
 }
 
@@ -403,14 +475,25 @@ pub struct TupleOperand {
     #[get = "pub"]
     higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
     #[get = "pub"]
-    kind: TupleOperandKind,
+    r#type: r#type::Type,
+}
+
+impl Parse for TupleOperand {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (HigherRankedLifetimes::syntax().or_none(), r#type::Type::syntax()).map(
+            |(higher_ranked_lifetimes, r#type)| TupleOperand {
+                higher_ranked_lifetimes,
+                r#type,
+            },
+        )
+    }
 }
 
 impl SourceElement for TupleOperand {
     fn span(&self) -> Span {
         self.higher_ranked_lifetimes.as_ref().map_or_else(
-            || self.kind.span(),
-            |h| h.span().join(&self.kind.span()).unwrap(),
+            || self.r#type.span(),
+            |h| h.span().join(&self.r#type.span()).unwrap(),
         )
     }
 }
@@ -418,8 +501,8 @@ impl SourceElement for TupleOperand {
 impl TupleOperand {
     /// Dissolves the [`TupleOperand`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Option<HigherRankedLifetimes>, TupleOperandKind) {
-        (self.higher_ranked_lifetimes, self.kind)
+    pub fn dissolve(self) -> (Option<HigherRankedLifetimes>, r#type::Type) {
+        (self.higher_ranked_lifetimes, self.r#type)
     }
 }
 
@@ -437,6 +520,13 @@ pub struct Tuple {
     pub(super) operands: UnionList<TupleOperand>,
 }
 
+impl Parse for Tuple {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (KeywordKind::Tuple, UnionList::syntax())
+            .map(|(tuple_keyword, operands)| Tuple { tuple_keyword, operands })
+    }
+}
+
 impl SourceElement for Tuple {
     fn span(&self) -> Span {
         self.tuple_keyword.span.join(&self.operands.span()).unwrap()
@@ -451,6 +541,40 @@ impl Tuple {
     }
 }
 
+/// Syntax Synopsis:
+/// ``` txt
+/// Predicate:
+///     TraitTypeEquality
+///     | Trait
+///     | Outlives
+///     | ConstantType
+///     | Tuple
+///     ;
+/// ```
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
+pub enum Predicate {
+    TraitTypeEquality(TraitTypeEquality),
+    Trait(Trait),
+    Outlives(Outlives),
+    ConstantType(ConstantType),
+    Tuple(Tuple),
+    Marker(Marker),
+}
+
+impl Parse for Predicate {
+    fn syntax() -> impl Syntax<Output = Self> {
+        TraitTypeEquality::syntax()
+            .map(Predicate::TraitTypeEquality)
+            .or_else(Trait::syntax().map(Predicate::Trait))
+            .or_else(Outlives::syntax().map(Predicate::Outlives))
+            .or_else(ConstantType::syntax().map(Predicate::ConstantType))
+            .or_else(Tuple::syntax().map(Predicate::Tuple))
+            .or_else(Marker::syntax().map(Predicate::Marker))
+    }
+}
+
 impl SourceElement for Predicate {
     fn span(&self) -> Span {
         match self {
@@ -460,274 +584,6 @@ impl SourceElement for Predicate {
             Self::ConstantType(s) => s.span(),
             Self::Tuple(s) => s.span(),
             Self::Marker(s) => s.span(),
-        }
-    }
-}
-
-impl<'a> Parser<'a> {
-    #[allow(clippy::option_option)]
-    fn try_parse_higher_ranked_lifetimes(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Option<HigherRankedLifetimes>> {
-        if let Reading::Unit(Token::Keyword(
-            for_keyword @ Keyword { kind: KeywordKind::For, .. },
-        )) = self.stop_at_significant()
-        {
-            // eat for keyword
-            self.forward();
-
-            let DelimitedList {
-                open: left_bracket,
-                list: lifetime_parameter_list,
-                close: right_bracket,
-            } = self.parse_delimited_list(
-                Delimiter::Bracket,
-                ',',
-                |parser| {
-                    let apostrophe =
-                        parser.parse_punctuation('\'', true, handler)?;
-                    let identifier = parser.parse_identifier(handler)?;
-
-                    Some(LifetimeParameter { apostrophe, identifier })
-                },
-                handler,
-            )?;
-
-            Some(Some(HigherRankedLifetimes {
-                for_keyword,
-                left_bracket,
-                lifetime_parameter_list,
-                right_bracket,
-            }))
-        } else {
-            Some(None)
-        }
-    }
-
-    /// Parses a [`Predicate`]
-    #[allow(clippy::too_many_lines)]
-    pub fn parse_predicate(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Predicate> {
-        match self.stop_at_significant() {
-            // parse constant type predicate
-            Reading::Unit(Token::Keyword(
-                const_keyword @ Keyword { kind: KeywordKind::Const, .. },
-            )) => {
-                // eat const keyword
-                self.forward();
-
-                let bounds = self.parse_union_list(|parser| {
-                    let higher_ranked_lifetimes =
-                        parser.try_parse_higher_ranked_lifetimes(handler)?;
-                    let r#type = parser.parse_type(handler)?;
-
-                    Some(ConstantTypeBound { higher_ranked_lifetimes, r#type })
-                })?;
-
-                Some(Predicate::ConstantType(ConstantType {
-                    const_keyword,
-                    bounds,
-                }))
-            }
-
-            // parse marker predicate
-            Reading::Unit(Token::Keyword(
-                marker_keyword @ Keyword { kind: KeywordKind::Marker, .. },
-            )) => {
-                // eat marker keyword
-                self.forward();
-
-                let bounds = self.parse_union_list(|parser| {
-                    let negation = match parser.stop_at_significant() {
-                        Reading::Unit(Token::Punctuation(
-                            negation @ Punctuation { punctuation: '!', .. },
-                        )) => {
-                            // eat negation
-                            parser.forward();
-
-                            Some(negation)
-                        }
-
-                        _ => None,
-                    };
-
-                    let higher_ranked_lifetimes =
-                        parser.try_parse_higher_ranked_lifetimes(handler)?;
-
-                    let qualified_identifier =
-                        parser.parse_qualified_identifier(handler)?;
-
-                    Some(MarkerBound {
-                        negation,
-                        higher_ranked_lifetimes,
-                        qualified_identifier,
-                    })
-                })?;
-
-                Some(Predicate::Marker(Marker { marker_keyword, bounds }))
-            }
-
-            // parse tuple predicate
-            Reading::Unit(Token::Keyword(
-                tuple_keyword @ Keyword { kind: KeywordKind::Tuple, .. },
-            )) => {
-                // eat tuple keyword
-                self.forward();
-
-                let operands = self.parse_union_list(|parser| {
-                    let higher_ranked_lifetimes =
-                        parser.try_parse_higher_ranked_lifetimes(handler)?;
-
-                    let kind = match parser.stop_at_significant() {
-                        Reading::IntoDelimited(Delimiter::Brace, _) => parser
-                            .parse_constant_argument(handler)
-                            .map(TupleOperandKind::Constant)?,
-
-                        _ => parser
-                            .parse_type(handler)
-                            .map(TupleOperandKind::Type)?,
-                    };
-
-                    Some(TupleOperand { higher_ranked_lifetimes, kind })
-                })?;
-
-                Some(Predicate::Tuple(Tuple { tuple_keyword, operands }))
-            }
-
-            // parse trait predicate
-            Reading::Unit(Token::Keyword(
-                trait_keyword @ Keyword { kind: KeywordKind::Trait, .. },
-            )) => {
-                // eat trait keyword
-                self.forward();
-
-                let bounds = self.parse_union_list(|parser| {
-                    let negation = match parser.stop_at_significant() {
-                        Reading::Unit(Token::Punctuation(
-                            negation @ Punctuation { punctuation: '!', .. },
-                        )) => {
-                            // eat negation
-                            parser.forward();
-
-                            Some(negation)
-                        }
-
-                        _ => None,
-                    };
-
-                    let higher_rankded_lifetimes =
-                        parser.try_parse_higher_ranked_lifetimes(handler)?;
-
-                    let const_keyword = match parser.stop_at_significant() {
-                        Reading::Unit(Token::Keyword(
-                            const_keyword @ Keyword {
-                                kind: KeywordKind::Const,
-                                ..
-                            },
-                        )) => {
-                            // eat const keyword
-                            parser.forward();
-
-                            Some(const_keyword)
-                        }
-
-                        _ => None,
-                    };
-
-                    let qualified_identifier =
-                        parser.parse_qualified_identifier(handler)?;
-
-                    Some(TraitBound {
-                        negation,
-                        higher_ranked_lifetimes: higher_rankded_lifetimes,
-                        const_keyword,
-                        qualified_identifier,
-                    })
-                })?;
-
-                Some(Predicate::Trait(Trait { trait_keyword, bounds }))
-            }
-
-            // parse outlives predicate starting with lifetime
-            Reading::Unit(Token::Punctuation(Punctuation {
-                punctuation: '\'',
-                ..
-            })) => {
-                let lifetime = self.parse_lifetime_parameter(handler)?;
-
-                let colon = self.parse_punctuation(':', true, handler)?;
-                let bounds = self.parse_union_list(|parser| {
-                    parser.parse_lifetime(handler)
-                })?;
-
-                Some(Predicate::Outlives(Outlives {
-                    operand: OutlivesOperand::LifetimeParameter(lifetime),
-                    colon,
-                    bounds,
-                }))
-            }
-
-            // parse trait type equality starting with for all lifetimes
-            Reading::Unit(Token::Keyword(Keyword {
-                kind: KeywordKind::For,
-                ..
-            })) => {
-                let higher_ranked_lifetimes =
-                    self.try_parse_higher_ranked_lifetimes(handler)?;
-
-                let qualified_identifier =
-                    self.parse_qualified_identifier(handler)?;
-
-                let equals = self.parse_punctuation('=', true, handler)?;
-                let ty = self.parse_type(handler)?;
-
-                Some(Predicate::TraitTypeEquality(TraitTypeEquality {
-                    higher_ranked_lifetimes,
-                    qualified_identifier,
-                    equals,
-                    r#type: ty,
-                }))
-            }
-
-            _ => {
-                let first_ty = self.parse_type(handler)?;
-
-                match (first_ty, self.stop_at_significant()) {
-                    // parse member constraint
-                    (
-                        r#type::Type::QualifiedIdentifier(qualified_identifier),
-                        Reading::Unit(Token::Punctuation(equals)),
-                    ) if equals.punctuation == '=' => {
-                        // eat equals
-                        self.forward();
-                        let ty = self.parse_type(handler)?;
-
-                        Some(Predicate::TraitTypeEquality(TraitTypeEquality {
-                            higher_ranked_lifetimes: None,
-                            qualified_identifier,
-                            equals,
-                            r#type: ty,
-                        }))
-                    }
-
-                    (first_ty, _) => {
-                        let colon =
-                            self.parse_punctuation(':', true, handler)?;
-                        let bounds = self.parse_union_list(|parser| {
-                            parser.parse_lifetime(handler)
-                        })?;
-
-                        Some(Predicate::Outlives(Outlives {
-                            operand: OutlivesOperand::Type(first_ty),
-                            colon,
-                            bounds,
-                        }))
-                    }
-                }
-            }
         }
     }
 }

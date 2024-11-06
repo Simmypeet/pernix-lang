@@ -4,20 +4,17 @@
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_base::{
-    handler::Handler,
-    source_file::{SourceElement, Span},
-};
+use pernixc_base::source_file::{SourceElement, Span};
 use pernixc_lexical::{
-    token::{Keyword, KeywordKind, Punctuation, Token},
+    token::{Keyword, KeywordKind, Punctuation},
     token_stream::Delimiter,
 };
 
-use super::{ConnectedList, Constant, Elided, Lifetime, QualifiedIdentifier};
-use crate::{
-    error::{Error, SyntaxKind},
-    parser::{Parser, Reading},
+use super::{
+    delimited_list, Constant, DelimitedList, Elided, Lifetime, Parse,
+    QualifiedIdentifier,
 };
+use crate::parser::{expect::Expect, StepIntoTree, Syntax};
 
 pub mod strategy;
 
@@ -53,6 +50,25 @@ pub enum Primitive {
     Uint64(Keyword),
     Usize(Keyword),
     Isize(Keyword),
+}
+
+impl Parse for Primitive {
+    fn syntax() -> impl Syntax<Output = Self> {
+        KeywordKind::Bool
+            .map(Primitive::Bool)
+            .or_else(KeywordKind::Float32.map(Primitive::Float32))
+            .or_else(KeywordKind::Float64.map(Primitive::Float64))
+            .or_else(KeywordKind::Int8.map(Primitive::Int8))
+            .or_else(KeywordKind::Int16.map(Primitive::Int16))
+            .or_else(KeywordKind::Int32.map(Primitive::Int32))
+            .or_else(KeywordKind::Int64.map(Primitive::Int64))
+            .or_else(KeywordKind::Uint8.map(Primitive::Uint8))
+            .or_else(KeywordKind::Uint16.map(Primitive::Uint16))
+            .or_else(KeywordKind::Uint32.map(Primitive::Uint32))
+            .or_else(KeywordKind::Uint64.map(Primitive::Uint64))
+            .or_else(KeywordKind::Usize.map(Primitive::Usize))
+            .or_else(KeywordKind::Isize.map(Primitive::Isize))
+    }
 }
 
 impl SourceElement for Primitive {
@@ -94,6 +110,22 @@ pub struct Reference {
     operand: Box<Type>,
 }
 
+impl Parse for Reference {
+    fn syntax() -> impl Syntax<Output = Self> {
+        ('&', Lifetime::syntax().or_none(), KeywordKind::Mutable.or_none())
+            .then_do(
+                |parser, (ampersand, lifetime, mutable_keyword), handler| {
+                    Ok(Reference {
+                        ampersand,
+                        lifetime,
+                        mutable_keyword,
+                        operand: parser.parse_syntax_tree(handler)?,
+                    })
+                },
+            )
+    }
+}
+
 impl SourceElement for Reference {
     fn span(&self) -> Span {
         self.ampersand.span().join(&self.operand.span()).unwrap()
@@ -112,11 +144,43 @@ impl Reference {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// UnpackableList:
-///     Unpackable (',' Unpackable)* ','?
+/// Unpackable:
+///     '...'? Type
 ///     ;
 /// ```
-pub type UnpackableList = ConnectedList<Unpackable, Punctuation>;
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Unpackable {
+    #[get = "pub"]
+    pub(super) ellipsis: Option<(Punctuation, Punctuation, Punctuation)>,
+    #[get = "pub"]
+    pub(super) r#type: Box<Type>,
+}
+
+impl Parse for Unpackable {
+    fn syntax() -> impl Syntax<Output = Self> {
+        (
+            '.'.then_do(|parser, f, handler| {
+                Ok((
+                    f,
+                    parser.parse_dont_skip('.', handler)?,
+                    parser.parse_dont_skip('.', handler)?,
+                ))
+            })
+            .or_none(),
+            Type::syntax().map(Box::new),
+        )
+            .map(|(ellipsis, r#type)| Self { ellipsis, r#type })
+    }
+}
+
+impl SourceElement for Unpackable {
+    fn span(&self) -> Span {
+        match &self.ellipsis {
+            Some((left, ..)) => left.span.join(&self.r#type.span()).unwrap(),
+            None => self.r#type.span(),
+        }
+    }
+}
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -124,19 +188,11 @@ pub type UnpackableList = ConnectedList<Unpackable, Punctuation>;
 ///     '(' UnpackableList? ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Tuple {
-    #[get = "pub"]
-    pub(super) left_paren: Punctuation,
-    #[get = "pub"]
-    pub(super) unpackable_list: Option<UnpackableList>,
-    #[get = "pub"]
-    pub(super) right_paren: Punctuation,
-}
+pub type Tuple = DelimitedList<Unpackable>;
 
-impl SourceElement for Tuple {
-    fn span(&self) -> Span {
-        self.left_paren.span.join(&self.right_paren.span).unwrap()
+impl Parse for Tuple {
+    fn syntax() -> impl Syntax<Output = Self> {
+        delimited_list(Delimiter::Parenthesis, ',')
     }
 }
 
@@ -158,6 +214,34 @@ pub struct Array {
     constant: Constant,
     #[get = "pub"]
     right_bracket: Punctuation,
+}
+
+impl Parse for Array {
+    fn syntax() -> impl Syntax<Output = Self> {
+        '['.verify_then_do(|parser, handler| {
+            let StepIntoTree { open, tree, close } = parser.step_into(
+                Delimiter::Bracket,
+                |parser| {
+                    Ok((
+                        parser.parse_syntax_tree(handler)?,
+                        parser.parse(':', handler)?,
+                        parser.parse_syntax_tree(handler)?,
+                    ))
+                },
+                handler,
+            )?;
+
+            let tree = tree?;
+
+            Ok(Array {
+                left_bracket: open,
+                operand: tree.0,
+                colon: tree.1,
+                constant: tree.2,
+                right_bracket: close,
+            })
+        })
+    }
 }
 
 impl SourceElement for Array {
@@ -182,6 +266,19 @@ pub struct Pointer {
     operand: Box<Type>,
 }
 
+impl Parse for Pointer {
+    fn syntax() -> impl Syntax<Output = Self> {
+        '*'.then_do(|parser, asterisk, handler| {
+            Ok(Pointer {
+                asterisk,
+                mutable_keyword: parser
+                    .parse(KeywordKind::Mutable.or_none(), handler)?,
+                operand: parser.parse_syntax_tree(handler)?,
+            })
+        })
+    }
+}
+
 impl SourceElement for Pointer {
     fn span(&self) -> Span {
         self.asterisk.span.join(&self.operand.span()).unwrap()
@@ -203,6 +300,17 @@ pub struct Phantom {
     r#type: Box<Type>,
 }
 
+impl Parse for Phantom {
+    fn syntax() -> impl Syntax<Output = Self> {
+        KeywordKind::Phantom.then_do(|parser, phantom_keyword, handler| {
+            Ok(Phantom {
+                phantom_keyword,
+                r#type: parser.parse_syntax_tree(handler)?,
+            })
+        })
+    }
+}
+
 impl SourceElement for Phantom {
     fn span(&self) -> Span {
         self.phantom_keyword.span.join(&self.r#type.span()).unwrap()
@@ -221,12 +329,23 @@ pub struct Local {
     #[get = "pub"]
     local_keyword: Keyword,
     #[get = "pub"]
-    ty: Box<Type>,
+    r#type: Box<Type>,
+}
+
+impl Parse for Local {
+    fn syntax() -> impl Syntax<Output = Self> {
+        KeywordKind::Local.then_do(|parser, local_keyword, handler| {
+            Ok(Local {
+                local_keyword,
+                r#type: parser.parse_syntax_tree(handler)?,
+            })
+        })
+    }
 }
 
 impl SourceElement for Local {
     fn span(&self) -> Span {
-        self.local_keyword.span.join(&self.ty.span()).unwrap()
+        self.local_keyword.span.join(&self.r#type.span()).unwrap()
     }
 }
 
@@ -268,6 +387,23 @@ pub enum Type {
     Elided(Elided),
 }
 
+impl Parse for Type {
+    fn syntax() -> impl Syntax<Output = Self> {
+        Primitive::syntax()
+            .map(Type::Primitive)
+            .or_else(
+                QualifiedIdentifier::syntax().map(Type::QualifiedIdentifier),
+            )
+            .or_else(Reference::syntax().map(Type::Reference))
+            .or_else(Pointer::syntax().map(Type::Pointer))
+            .or_else(Tuple::syntax().map(Type::Tuple))
+            .or_else(Local::syntax().map(Type::Local))
+            .or_else(Array::syntax().map(Type::Array))
+            .or_else(Phantom::syntax().map(Type::Phantom))
+            .or_else(Elided::syntax().map(Type::Elided))
+    }
+}
+
 impl SourceElement for Type {
     fn span(&self) -> Span {
         match self {
@@ -280,327 +416,6 @@ impl SourceElement for Type {
             Self::Array(array) => array.span(),
             Self::Phantom(phantom) => phantom.span(),
             Self::Elided(elided) => elided.span(),
-        }
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Unpackable:
-///     '...'? Type
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Unpackable {
-    #[get = "pub"]
-    pub(super) ellipsis: Option<(Punctuation, Punctuation, Punctuation)>,
-    #[get = "pub"]
-    pub(super) ty: Box<Type>,
-}
-
-impl SourceElement for Unpackable {
-    fn span(&self) -> Span {
-        match &self.ellipsis {
-            Some((left, ..)) => left.span.join(&self.ty.span()).unwrap(),
-            None => self.ty.span(),
-        }
-    }
-}
-
-impl<'a> Parser<'a> {
-    fn parse_reference_type(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Reference> {
-        match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(
-                ampersand @ Punctuation { punctuation: '&', .. },
-            )) => {
-                // eat the ampersand
-                self.forward();
-
-                let lifetime = self.try_parse_lifetime(handler)?;
-                let mutable = if let Reading::Unit(Token::Keyword(
-                    mutable_keyowrd @ Keyword {
-                        kind: KeywordKind::Mutable, ..
-                    },
-                )) = self.stop_at_significant()
-                {
-                    self.forward();
-                    Some(mutable_keyowrd)
-                } else {
-                    None
-                };
-
-                let operand = Box::new(self.parse_type(handler)?);
-
-                Some(Reference {
-                    ampersand,
-                    lifetime,
-                    mutable_keyword: mutable,
-                    operand,
-                })
-            }
-
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::Punctuation('&'),
-                    alternatives: Vec::new(),
-                    found: self.reading_to_found(found),
-                });
-
-                // eat the current token / make progress
-                self.forward();
-
-                None
-            }
-        }
-    }
-
-    fn parse_pointer_type(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Pointer> {
-        let asterisk = self.parse_punctuation('*', true, handler)?;
-
-        let mutable_keyword = match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Mutable =>
-            {
-                self.forward();
-                Some(k)
-            }
-
-            _ => None,
-        };
-
-        let operand_type = Box::new(self.parse_type(handler)?);
-
-        Some(Pointer { asterisk, mutable_keyword, operand: operand_type })
-    }
-
-    fn parse_array_type(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Array> {
-        let delimited_tree = self.step_into(
-            Delimiter::Bracket,
-            |parser| {
-                let ty = parser.parse_type(handler)?;
-                let colon = parser.parse_punctuation(':', true, handler)?;
-                let expression = match parser.stop_at_significant() {
-                    Reading::Unit(Token::Punctuation(
-                        first_dot @ Punctuation { punctuation: '.', .. },
-                    )) => {
-                        // eat the first dot
-                        parser.forward();
-
-                        let second_dot =
-                            parser.parse_punctuation('.', false, handler)?;
-
-                        Constant::Elided(Elided { first_dot, second_dot })
-                    }
-
-                    _ => parser
-                        .parse_expression(handler)
-                        .map(|x| Constant::Expression(Box::new(x)))?,
-                };
-                Some((ty, colon, expression))
-            },
-            handler,
-        )?;
-
-        let tree = delimited_tree.tree?;
-
-        Some(Array {
-            left_bracket: delimited_tree.open,
-            operand: Box::new(tree.0),
-            colon: tree.1,
-            constant: tree.2,
-            right_bracket: delimited_tree.close,
-        })
-    }
-
-    fn parse_tuple_type(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Tuple> {
-        let type_specifiers = self.parse_delimited_list(
-            Delimiter::Parenthesis,
-            ',',
-            |parser| {
-                // stop at significant token
-                parser.stop_at_significant();
-
-                let ellipsis = match (
-                    parser.peek(),
-                    parser.peek_offset(1),
-                    parser.peek_offset(2),
-                ) {
-                    (
-                        Reading::Unit(Token::Punctuation(p1)),
-                        Some(Reading::Unit(Token::Punctuation(p2))),
-                        Some(Reading::Unit(Token::Punctuation(p3))),
-                    ) if p1.punctuation == '.'
-                        && p2.punctuation == '.'
-                        && p3.punctuation == '.' =>
-                    {
-                        // eat three dots (ellipsis)
-                        parser.forward();
-                        parser.forward();
-                        parser.forward();
-
-                        Some((p1, p2, p3))
-                    }
-
-                    _ => None,
-                };
-
-                let ty = parser.parse_type(handler)?;
-
-                Some(Unpackable { ellipsis, ty: Box::new(ty) })
-            },
-            handler,
-        )?;
-
-        Some(Tuple {
-            left_paren: type_specifiers.open,
-            unpackable_list: type_specifiers.list,
-            right_paren: type_specifiers.close,
-        })
-    }
-
-    /// Parses a [`Type`]
-    #[allow(clippy::missing_errors_doc, clippy::too_many_lines)]
-    pub fn parse_type(&mut self, handler: &dyn Handler<Error>) -> Option<Type> {
-        match self.stop_at_significant() {
-            // parse elided type
-            Reading::Unit(Token::Punctuation(
-                first_dot @ Punctuation { punctuation: '.', .. },
-            )) => {
-                // eat the first dot
-                self.forward();
-
-                let second_dot = self.parse_punctuation('.', false, handler)?;
-
-                Some(Type::Elided(Elided { first_dot, second_dot }))
-            }
-
-            // parse local type
-            Reading::Unit(Token::Keyword(keyword))
-                if keyword.kind == KeywordKind::Local =>
-            {
-                // eat local keyword
-                self.forward();
-
-                let identifier = self.parse_type(handler)?;
-
-                Some(Type::Local(Local {
-                    local_keyword: keyword,
-                    ty: Box::new(identifier),
-                }))
-            }
-
-            // parse qualified identifier
-            Reading::Unit(
-                Token::Identifier(..)
-                | Token::Keyword(Keyword {
-                    kind:
-                        KeywordKind::This | KeywordKind::Super | KeywordKind::Target,
-                    ..
-                }),
-            ) => Some(Type::QualifiedIdentifier(
-                self.parse_qualified_identifier(handler)?,
-            )),
-
-            // parse pointer type
-            Reading::Unit(Token::Punctuation(p)) if p.punctuation == '*' => {
-                self.parse_pointer_type(handler).map(Type::Pointer)
-            }
-
-            // parse reference
-            Reading::Unit(Token::Punctuation(Punctuation {
-                punctuation: '&' | '@',
-                ..
-            })) => self.parse_reference_type(handler).map(Type::Reference),
-
-            // parse array type
-            Reading::IntoDelimited(Delimiter::Bracket, _) => {
-                self.parse_array_type(handler).map(Type::Array)
-            }
-
-            // parse tuple type
-            Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
-                self.parse_tuple_type(handler).map(Type::Tuple)
-            }
-
-            Reading::Unit(Token::Keyword(phantom_keyword))
-                if phantom_keyword.kind == KeywordKind::Phantom =>
-            {
-                // eat phantom keyword
-                self.forward();
-
-                let ty = self.parse_type(handler)?;
-
-                Some(Type::Phantom(Phantom {
-                    phantom_keyword,
-                    r#type: Box::new(ty),
-                }))
-            }
-
-            // primitive type
-            Reading::Unit(Token::Keyword(keyword))
-                if matches!(
-                    keyword.kind,
-                    KeywordKind::Int8
-                        | KeywordKind::Int16
-                        | KeywordKind::Int32
-                        | KeywordKind::Int64
-                        | KeywordKind::Uint8
-                        | KeywordKind::Uint16
-                        | KeywordKind::Uint32
-                        | KeywordKind::Uint64
-                        | KeywordKind::Usize
-                        | KeywordKind::Isize
-                        | KeywordKind::Float32
-                        | KeywordKind::Float64
-                        | KeywordKind::Bool
-                ) =>
-            {
-                // eat primitive type token
-                self.forward();
-
-                let primitive_type = match keyword.kind {
-                    KeywordKind::Bool => Primitive::Bool(keyword),
-                    KeywordKind::Int8 => Primitive::Int8(keyword),
-                    KeywordKind::Int16 => Primitive::Int16(keyword),
-                    KeywordKind::Int32 => Primitive::Int32(keyword),
-                    KeywordKind::Int64 => Primitive::Int64(keyword),
-                    KeywordKind::Uint8 => Primitive::Uint8(keyword),
-                    KeywordKind::Uint16 => Primitive::Uint16(keyword),
-                    KeywordKind::Uint32 => Primitive::Uint32(keyword),
-                    KeywordKind::Uint64 => Primitive::Uint64(keyword),
-                    KeywordKind::Float32 => Primitive::Float32(keyword),
-                    KeywordKind::Float64 => Primitive::Float64(keyword),
-                    KeywordKind::Usize => Primitive::Usize(keyword),
-                    KeywordKind::Isize => Primitive::Isize(keyword),
-                    _ => unreachable!(),
-                };
-
-                Some(Type::Primitive(primitive_type))
-            }
-
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::TypeSpecifier,
-                    alternatives: Vec::new(),
-                    found: self.reading_to_found(found),
-                });
-                // eat the current token / make progress
-                self.forward();
-
-                None
-            }
         }
     }
 }

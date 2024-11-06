@@ -13,10 +13,10 @@ use pernixc_lexical::{
     token_stream::Delimiter,
 };
 
-use super::{expression::Boolean, ConnectedList, ReferenceOf};
+use super::{expression::Boolean, ConnectedList, Parse, ReferenceOf};
 use crate::{
     error::{self, Error, SyntaxKind},
-    parser::{Parser, Reading},
+    parser::{Parser, Reading, Syntax},
 };
 
 pub mod strategy;
@@ -338,6 +338,10 @@ pub enum Irrefutable {
     Named(Named),
     Tuple(Tuple<Self>),
     Wildcard(Wildcard),
+}
+
+impl Parse for Irrefutable {
+    fn syntax() -> impl Syntax<Output = Self> { todo!() }
 }
 
 impl Irrefutable {

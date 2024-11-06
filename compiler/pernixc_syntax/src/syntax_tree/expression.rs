@@ -17,11 +17,11 @@ use pernixc_lexical::{
 
 use super::{
     pattern::Refutable, r#type::Type, statement::Statement, ConnectedList,
-    GenericIdentifier, Label, QualifiedIdentifier, ReferenceOf,
+    GenericIdentifier, Label, Parse, QualifiedIdentifier, ReferenceOf,
 };
 use crate::{
     error::{Error, SyntaxKind},
-    parser::{Parser, Reading},
+    parser::{self, Parser, Reading, Syntax},
 };
 
 pub mod strategy;
@@ -40,6 +40,10 @@ pub enum Expression {
     Binary(Binary),
     Terminator(Terminator),
     Brace(Brace),
+}
+
+impl Parse for Expression {
+    fn syntax() -> impl Syntax<Output = Self> { todo!() }
 }
 
 impl SourceElement for Expression {
@@ -1365,7 +1369,7 @@ impl Parser<'_> {
     pub fn parse_expression(
         &mut self,
         handler: &dyn Handler<Error>,
-    ) -> Option<Expression> {
+    ) -> Result<Expression, parser::Error> {
         match self.stop_at_significant() {
             // parse continue
             Reading::Unit(Token::Keyword(continue_keyword))

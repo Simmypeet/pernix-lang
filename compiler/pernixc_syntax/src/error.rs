@@ -18,6 +18,7 @@ use pernixc_lexical::token::{KeywordKind, Token};
 pub enum SyntaxKind {
     RefutablePattern,
     IrrefutablePattern,
+    GenericArgument,
     GenericParameter,
     HigherRankedBound,
     Identifier,
@@ -34,6 +35,7 @@ pub enum SyntaxKind {
     Predicate,
     String,
     JsonValue,
+    Character,
 }
 
 impl SyntaxKind {
@@ -65,6 +67,8 @@ impl SyntaxKind {
             Self::Numeric => "a numeric token".to_string(),
             Self::String => "a string literal".to_string(),
             Self::JsonValue => "a JSON value syntax".to_string(),
+            Self::Character => "a character literal".to_string(),
+            Self::GenericArgument => "a generic argument syntax".to_string(),
         }
     }
 }
@@ -119,10 +123,7 @@ impl Found {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Error {
     /// The kind of syntax that was expected.
-    pub expected: SyntaxKind,
-
-    /// The alternative syntax that can be used other than the expected one.
-    pub alternatives: Vec<SyntaxKind>,
+    pub expected_syntaxes: Vec<SyntaxKind>,
 
     /// The invalid token that was found.
     pub found: Found,
@@ -130,26 +131,23 @@ pub struct Error {
 
 impl Error {
     fn get_expected_string(&self) -> String {
-        match self.alternatives.len() {
-            0 => self.expected.get_expected_string(),
-            1 => {
-                format!(
-                    "{} or {}",
-                    self.expected.get_expected_string(),
-                    self.alternatives[0].get_expected_string()
-                )
-            }
+        match self.expected_syntaxes.len() {
+            0 => panic!("empty"),
+            1 => self.expected_syntaxes[0].get_expected_string(),
             _ => {
-                format!(
-                    "{}, or {}",
-                    self.alternatives
-                        .iter()
-                        .copied()
-                        .map(SyntaxKind::get_expected_string)
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    self.expected.get_expected_string()
-                )
+                let mut expected_string = String::new();
+                for (index, syntax) in self.expected_syntaxes.iter().enumerate()
+                {
+                    if index == self.expected_syntaxes.len() - 1 {
+                        expected_string.push_str(" or ");
+                    } else if index != 0 {
+                        expected_string.push_str(", ");
+                    }
+
+                    expected_string.push_str(&syntax.get_expected_string());
+                }
+
+                expected_string
             }
         }
     }
@@ -165,45 +163,51 @@ impl Report<()> for Error {
             Found::Unexpected(Unexpected {
                 unexpected: Token::Comment(..),
                 ..
-            }) => "a comment token".to_string(),
+            }) => "comment token".to_string(),
             Found::Unexpected(Unexpected {
                 unexpected: Token::Identifier(..),
                 ..
-            }) => "an identifier token".to_string(),
+            }) => "identifier token".to_string(),
             Found::Unexpected(Unexpected {
                 unexpected: Token::Keyword(keyword),
                 ..
             }) => {
-                format!("a keyword token `{}`", keyword.kind.as_str())
+                format!("keyword token `{}`", keyword.kind.as_str())
             }
             Found::Unexpected(Unexpected {
                 unexpected: Token::WhiteSpaces(..),
                 ..
-            }) => "a white spaces token".to_string(),
+            }) => "white spaces token".to_string(),
             Found::Unexpected(Unexpected {
                 unexpected: Token::Punctuation(punctuation),
                 ..
             }) => {
-                format!("a punctuation token `{}`", punctuation.punctuation)
+                format!("punctuation token `{}`", punctuation.punctuation)
             }
             Found::Unexpected(Unexpected {
                 unexpected: Token::Numeric(..),
                 ..
-            }) => "a numeric token".to_string(),
+            }) => "numeric token".to_string(),
             Found::Unexpected(Unexpected {
                 unexpected: Token::Character(..),
                 ..
-            }) => "a character literal token".to_string(),
+            }) => "character literal token".to_string(),
             Found::Unexpected(Unexpected {
                 unexpected: Token::String(..),
                 ..
-            }) => "a string literal token".to_string(),
+            }) => "string literal token".to_string(),
 
             Found::EndOfFile(_) => "EOF".to_string(),
         };
 
-        let message =
-            format!("expected {expected_string}, but found {found_string}");
+        let message = if self.expected_syntaxes.is_empty() {
+            format!(
+                "expected {}, but found an unexpected {found_string}",
+                expected_string
+            )
+        } else {
+            format!("found an unexpected {found_string}")
+        };
 
         Ok(Diagnostic {
             span: self.found.span(),

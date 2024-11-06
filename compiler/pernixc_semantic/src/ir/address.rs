@@ -136,7 +136,7 @@ pub enum Address<M: Model> {
 impl<M: Model> Address<M> {
     /// Checks if the address has a root that is a reference.
     ///
-    /// The root is either from [`Memory::ReferenceValue`] or
+    /// jhe root is either from [`Memory::ReferenceValue`] or
     /// [`Self::ReferenceAddress`].
     pub fn is_behind_reference(&self) -> bool {
         match self {
