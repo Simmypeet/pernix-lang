@@ -1,132 +1,20 @@
 //! Contains the definition of [`Error`]
 
-use std::{convert::Infallible, sync::Arc};
+use std::convert::Infallible;
 
-use enum_as_inner::EnumAsInner;
 use pernixc_base::{
     diagnostic::{Diagnostic, Report},
     log::Severity,
-    source_file::{SourceFile, Span},
 };
-use pernixc_lexical::token::{KeywordKind, Token};
+use pernixc_lexical::{token::Token, token_stream::TokenKind};
 
-/// Enumeration of all possible syntax kinds.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
-)]
-#[allow(missing_docs)]
-pub enum SyntaxKind {
-    RefutablePattern,
-    IrrefutablePattern,
-    GenericArgument,
-    GenericParameter,
-    HigherRankedBound,
-    Identifier,
-    TypeSpecifier,
-    Expression,
-    StructMember,
-    Item,
-    AccessModifier,
-    Punctuation(char),
-    Keyword(KeywordKind),
-    TraitMember,
-    ImplementationMember,
-    Numeric,
-    Predicate,
-    String,
-    JsonValue,
-    Character,
-}
+use crate::{expect::Expected, state_machine::parse::Unexpected};
 
-impl SyntaxKind {
-    fn get_expected_string(self) -> String {
-        match self {
-            Self::IrrefutablePattern => {
-                "an irrefutable pattern syntax".to_string()
-            }
-            Self::HigherRankedBound => {
-                "a higher ranked bound syntax".to_string()
-            }
-            Self::GenericParameter => "a generic parameter syntax".to_string(),
-            Self::Identifier => "an identifier token".to_string(),
-            Self::Predicate => "a predicate syntax".to_string(),
-            Self::TypeSpecifier => "a type specifier syntax".to_string(),
-            Self::Expression => "an expression syntax".to_string(),
-            Self::StructMember => "a struct member syntax".to_string(),
-            Self::Item => "an item syntax".to_string(),
-            Self::AccessModifier => "an access modifier syntax".to_string(),
-            Self::Punctuation(char) => format!("a punctuation token `{char}`"),
-            Self::Keyword(keyword) => {
-                format!("a keyword token `{}`", keyword.as_str())
-            }
-            Self::TraitMember => "a trait member syntax".to_string(),
-            Self::ImplementationMember => {
-                "an implements member syntax".to_string()
-            }
-            Self::RefutablePattern => "a refutable pattern syntax".to_string(),
-            Self::Numeric => "a numeric token".to_string(),
-            Self::String => "a string literal".to_string(),
-            Self::JsonValue => "a JSON value syntax".to_string(),
-            Self::Character => "a character literal".to_string(),
-            Self::GenericArgument => "a generic argument syntax".to_string(),
-        }
-    }
-}
-
-///A token was found unexpectedly.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Unexpected {
-    /// The insignificant token that was found before the unexpected token.
-    ///
-    /// This is used for providing a better error message.
-    pub(crate) prior_insignificant: Option<Token>,
-
-    /// The unexpected token that was found.
-    pub(crate) unexpected: Token,
-}
-
-/// What was found in place of the expected syntax kind.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum Found {
-    Unexpected(Unexpected),
-    EndOfFile(Arc<SourceFile>),
-}
-
-impl Found {
-    /// Gets the span of the found token.
-    #[must_use]
-    pub fn span(&self) -> Span {
-        match self {
-            Self::Unexpected(unexpected) => {
-                unexpected.prior_insignificant.as_ref().map_or_else(
-                    || unexpected.unexpected.span().clone(),
-                    |x| x.span().join(unexpected.unexpected.span()).unwrap(),
-                )
-            }
-            Self::EndOfFile(source_file) => {
-                let last_byte = source_file.content().len();
-                let mut char_boundary = last_byte - 1;
-
-                while !source_file.content().is_char_boundary(char_boundary) {
-                    char_boundary -= 1;
-                }
-
-                Span::new(source_file.clone(), char_boundary, last_byte)
-                    .unwrap()
-            }
-        }
-    }
-}
-
-/// A syntax/token is expected but found an other invalid token.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Error {
-    /// The kind of syntax that was expected.
-    pub expected_syntaxes: Vec<SyntaxKind>,
-
-    /// The invalid token that was found.
-    pub found: Found,
+pub struct Error<'a> {
+    pub found: Option<(&'a TokenKind, usize)>,
+    pub node_index: usize,
+    pub expected: Vec<Expected>,
 }
 
 impl Error {

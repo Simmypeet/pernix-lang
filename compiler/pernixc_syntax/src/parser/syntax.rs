@@ -160,11 +160,11 @@ macro_rules! expect_implements_syntax {
                 let (reading, position) = parser.peek_significant();
 
                 let Ok(result) = self.expect(reading) else {
-                    return Err(Error::ConditionNotMet(
-                        position,
-                        std::iter::once(self.into()),
-                    ));
-                };
+                            return Err(Error::ConditionNotMet(
+                                position,
+                                std::iter::once(self.into()),
+                            ));
+                        };
 
                 parser.current_index = position;
                 parser.forward();

@@ -126,11 +126,11 @@ impl Display for TokenTree {
     }
 }
 
-impl Input<&super::TokenTree> for &TokenTree {
-    fn assert(self, output: &super::TokenTree) -> TestCaseResult {
+impl Input<&super::TokenKind> for &TokenTree {
+    fn assert(self, output: &super::TokenKind) -> TestCaseResult {
         match (self, output) {
-            (TokenTree::Token(i), super::TokenTree::Token(o)) => i.assert(o)?,
-            (TokenTree::Delimited(i), super::TokenTree::Delimited(o)) => {
+            (TokenTree::Token(i), super::TokenKind::Token(o)) => i.assert(o)?,
+            (TokenTree::Delimited(i), super::TokenKind::Delimited(o)) => {
                 i.assert(o)?;
             }
             _ => {
@@ -311,6 +311,6 @@ impl Display for TokenStream {
 
 impl Input<&super::TokenStream> for &TokenStream {
     fn assert(self, output: &super::TokenStream) -> TestCaseResult {
-        self.token_trees.assert(&output.token_trees)
+        self.token_trees.assert(&output.tokens)
     }
 }

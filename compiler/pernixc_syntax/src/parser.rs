@@ -11,7 +11,7 @@ use pernixc_base::{
 };
 use pernixc_lexical::{
     token::{Punctuation, Token},
-    token_stream::{Delimited, Delimiter, TokenStream, TokenTree},
+    token_stream::{Delimited, Delimiter, TokenKind, TokenStream},
 };
 use syntax::Syntax;
 
@@ -114,7 +114,7 @@ impl<'a> Frame<'a> {
         for i in self.current_index..self.token_provider.token_stream().len() {
             if !matches!(
                 token_stream.get(i),
-                Some(TokenTree::Token(
+                Some(TokenKind::Token(
                     Token::WhiteSpaces(..) | Token::Comment(..)
                 ))
             ) {
@@ -131,7 +131,7 @@ impl<'a> Frame<'a> {
         self.current_index >= self.token_provider.token_stream().len()
     }
 
-    fn get_reading(&self, token: Option<&TokenTree>) -> Reading {
+    fn get_reading(&self, token: Option<&TokenKind>) -> Reading {
         token.map_or_else(
             || {
                 match self.token_provider {
@@ -146,8 +146,8 @@ impl<'a> Frame<'a> {
                 }
             },
             |token| match token {
-                TokenTree::Token(token) => Reading::Unit(token.clone()),
-                TokenTree::Delimited(delimited) => Reading::IntoDelimited(
+                TokenKind::Token(token) => Reading::Unit(token.clone()),
+                TokenKind::Delimited(delimited) => Reading::IntoDelimited(
                     delimited.delimiter,
                     delimited.open.clone(),
                 ),
@@ -420,7 +420,7 @@ impl<'a> Parser<'a> {
 
         let delimited_stream = if let Some(token_tree) = raw_token_tree {
             match token_tree {
-                TokenTree::Delimited(delimited_tree)
+                TokenKind::Delimited(delimited_tree)
                     if delimited_tree.delimiter == delimiter =>
                 {
                     delimited_tree
@@ -431,7 +431,7 @@ impl<'a> Parser<'a> {
                             expected,
                         )],
                         found: match found {
-                            TokenTree::Token(token) => {
+                            TokenKind::Token(token) => {
                                 Found::Unexpected(Unexpected {
                                     prior_insignificant: self
                                         .peek_offset(-1)
@@ -440,7 +440,7 @@ impl<'a> Parser<'a> {
                                     unexpected: token.clone(),
                                 })
                             }
-                            TokenTree::Delimited(delimited_tree) => {
+                            TokenKind::Delimited(delimited_tree) => {
                                 Found::Unexpected(Unexpected {
                                     prior_insignificant: self
                                         .peek_offset(-1)
