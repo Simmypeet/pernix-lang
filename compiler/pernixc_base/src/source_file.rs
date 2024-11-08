@@ -99,17 +99,6 @@ impl SourceFile {
     }
 
     /// Translates a location to a byte index. This includes the ending byte.
-    ///
-    /// ```rust
-    /// use pernixc_base::source_file::{Location, SourceFile};
-    ///
-    /// let source_file = SourceFile::new_inline("".into(), "Hello".into());
-    ///
-    /// assert_eq!(
-    ///     source_file.into_byte_index_include_ending(Location::new(0, 5)),
-    ///     Some(5)
-    /// );
-    /// ```
     #[must_use]
     pub fn into_byte_index_include_ending(
         &self,

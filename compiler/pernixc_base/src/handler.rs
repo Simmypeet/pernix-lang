@@ -91,3 +91,13 @@ impl<T> Handler<T> for Counter {
         self.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
+
+/// Handles a diagnostic by panicking and printing the error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Panic;
+
+impl<T: std::fmt::Debug> Handler<T> for Panic {
+    fn receive(&self, error: T) {
+        panic!("{:?}", error);
+    }
+}

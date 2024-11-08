@@ -1,5 +1,7 @@
 //! Contains the definition of [`Syntax`] trait and its implementations and
 //! combinators.
+//!
+//! This makes the writing of the parser more declarative and easier to read.
 
 use pernixc_base::handler::Handler;
 use pernixc_lexical::{token::Punctuation, token_stream::Delimiter};
@@ -116,6 +118,28 @@ pub trait Syntax {
     {
         While { syntax: self }
     }
+
+    /// Continues the parsing with the closure after the syntax is parsed.
+    fn and_then_do<F, O>(self, then: F) -> AndThenDo<Self, F>
+    where
+        Self: Sized,
+        F: FnOnce(
+            &mut Parser,
+            Self::Output,
+            &dyn Handler<error::Error>,
+        ) -> Result<O, super::Error>,
+        AndThenDo<Self, F>: Syntax,
+    {
+        AndThenDo { syntax: self, then }
+    }
+
+    /// Returns [`None`] if the condition of the syntax is not met.
+    fn or_none(self) -> OrNone<Self>
+    where
+        Self: Sized,
+    {
+        OrNone(self)
+    }
 }
 
 macro_rules! expect_implements_syntax {
@@ -136,7 +160,10 @@ macro_rules! expect_implements_syntax {
                 let (reading, position) = parser.peek_significant();
 
                 let Ok(result) = self.expect(reading) else {
-                    return Err(Error::ConditionNotMet(position, std::iter::once(self.into())));
+                    return Err(Error::ConditionNotMet(
+                        position,
+                        std::iter::once(self.into()),
+                    ));
                 };
 
                 parser.current_index = position;
@@ -192,6 +219,34 @@ expect_implements_syntax!(expect::Numeric);
 expect_implements_syntax!(expect::String);
 expect_implements_syntax!(expect::Punctuation);
 expect_implements_syntax!(expect::IntoDelimited);
+
+/// Returns [`None`] if the condition of the syntax is not met.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct OrNone<S>(pub S);
+
+impl<S: Syntax> Syntax for OrNone<S> {
+    type Output = Option<S::Output>;
+
+    type Iter = std::iter::Empty<SyntaxKind>;
+
+    const HAS_CONDITION: bool = false;
+
+    fn step(
+        self,
+        parser: &mut Parser,
+        handler: &dyn Handler<error::Error>,
+    ) -> Result<Self::Output, Error<Self::Iter>> {
+        match self.0.step(parser, handler) {
+            Ok(output) => Ok(Some(output)),
+
+            // already commited
+            Err(Error::Commited(_)) => Err(Error::Commited(super::Error)),
+
+            // not-comitted, just return None
+            Err(Error::ConditionNotMet(..)) => Ok(None),
+        }
+    }
+}
 
 /// An or-else combinator for choosing the alternate syntax
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -431,12 +486,57 @@ where
         let position = parser.current_index;
 
         let Ok(result) = self.0.expect(reading) else {
-            return Err(Error::ConditionNotMet(position, std::iter::once(self.0.into())));
+            return Err(Error::ConditionNotMet(
+                position,
+                std::iter::once(self.0.into()),
+            ));
         };
 
         parser.forward();
 
         Ok(result)
+    }
+}
+
+/// Continuing the parsing with the closure after the syntax is parsed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AndThenDo<S, F> {
+    syntax: S,
+    then: F,
+}
+
+impl<
+        S: Syntax,
+        F: FnOnce(
+            &mut Parser,
+            S::Output,
+            &dyn Handler<error::Error>,
+        ) -> Result<O, super::Error>,
+        O,
+    > Syntax for AndThenDo<S, F>
+{
+    type Output = O;
+
+    type Iter = S::Iter;
+
+    const HAS_CONDITION: bool = S::HAS_CONDITION;
+
+    fn step(
+        self,
+        parser: &mut Parser,
+        handler: &dyn Handler<error::Error>,
+    ) -> Result<Self::Output, Error<Self::Iter>> {
+        const {
+            // If this assert error is triggered, make sure that the you
+            // don't use `and_then_do` following after the combinators that
+            // don't have any conditions (always success) such as `or_none`,
+            // `loop_while`, etc.
+            assert!(S::HAS_CONDITION, "the syntax must have a condition");
+        }
+
+        let result = self.syntax.step(parser, handler)?;
+
+        Ok((self.then)(parser, result, handler)?)
     }
 }
 
@@ -471,7 +571,10 @@ impl<
         let (reading, position) = parser.peek_significant();
 
         let Ok(result) = self.expect.expect(reading) else {
-            return Err(Error::ConditionNotMet(position, std::iter::once(self.expect.into())));
+            return Err(Error::ConditionNotMet(
+                position,
+                std::iter::once(self.expect.into()),
+            ));
         };
 
         parser.current_index = position;
@@ -524,11 +627,14 @@ impl<S: Syntax> Syntax for StepInto<S> {
         let (open, position) = parser.peek_significant();
 
         let Ok(_) = self.delimiter.expect(open) else {
-            return Err(Error::ConditionNotMet(position, std::iter::once(match self.delimiter {
-                Delimiter::Parenthesis => SyntaxKind::Punctuation('('),
-                Delimiter::Brace => SyntaxKind::Punctuation('{'),
-                Delimiter::Bracket => SyntaxKind::Punctuation('['),
-            })));
+            return Err(Error::ConditionNotMet(
+                position,
+                std::iter::once(match self.delimiter {
+                    Delimiter::Parenthesis => SyntaxKind::Punctuation('('),
+                    Delimiter::Brace => SyntaxKind::Punctuation('{'),
+                    Delimiter::Bracket => SyntaxKind::Punctuation('['),
+                }),
+            ));
         };
 
         parser.current_index = position;
@@ -544,3 +650,6 @@ impl<S: Syntax> Syntax for StepInto<S> {
         Ok(DelimitedTree { open, tree: tree?, close })
     }
 }
+
+#[cfg(test)]
+mod tests;
