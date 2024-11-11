@@ -9,4 +9,4 @@ pub mod error;
 pub mod expect;
 // pub mod parser;
 pub mod state_machine;
-// pub mod syntax_tree;
+pub mod syntax_tree;

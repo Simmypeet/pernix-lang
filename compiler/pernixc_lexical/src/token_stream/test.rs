@@ -17,7 +17,7 @@ proptest! {
 
         let storage: Storage<Error> = Storage::new();
         let token_stream =
-            super::TokenStream::tokenize(&source_file, &storage);
+            super::TokenStream::tokenize(source_file, &storage);
 
         input.assert(&token_stream)?;
     }

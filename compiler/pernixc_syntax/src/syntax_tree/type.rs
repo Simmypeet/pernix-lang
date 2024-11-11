@@ -4,17 +4,23 @@
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_base::source_file::{SourceElement, Span};
+use pernixc_base::{
+    handler::Handler,
+    source_file::{SourceElement, Span},
+};
 use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation},
     token_stream::Delimiter,
 };
 
-use super::{
-    delimited_list, Constant, DelimitedList, Elided, Lifetime, Parse,
-    QualifiedIdentifier,
+use super::{Elided, Lifetime, Parse};
+use crate::{
+    error,
+    state_machine::{
+        parse::{self, ExpectedIterator},
+        StateMachine,
+    },
 };
-use crate::parser::{expect::Expect, StepIntoTree, Syntax};
 
 pub mod strategy;
 
@@ -51,23 +57,27 @@ pub enum Primitive {
     Usize(Keyword),
     Isize(Keyword),
 }
-
-impl Parse for Primitive {
-    fn syntax() -> impl Syntax<Output = Self> {
+impl Primitive {
+    pub fn parse<'a>(
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
         KeywordKind::Bool
+            .to_owned()
             .map(Primitive::Bool)
-            .or_else(KeywordKind::Float32.map(Primitive::Float32))
-            .or_else(KeywordKind::Float64.map(Primitive::Float64))
-            .or_else(KeywordKind::Int8.map(Primitive::Int8))
-            .or_else(KeywordKind::Int16.map(Primitive::Int16))
-            .or_else(KeywordKind::Int32.map(Primitive::Int32))
-            .or_else(KeywordKind::Int64.map(Primitive::Int64))
-            .or_else(KeywordKind::Uint8.map(Primitive::Uint8))
-            .or_else(KeywordKind::Uint16.map(Primitive::Uint16))
-            .or_else(KeywordKind::Uint32.map(Primitive::Uint32))
-            .or_else(KeywordKind::Uint64.map(Primitive::Uint64))
-            .or_else(KeywordKind::Usize.map(Primitive::Usize))
-            .or_else(KeywordKind::Isize.map(Primitive::Isize))
+            .or_else(KeywordKind::Float32.to_owned().map(Primitive::Float32))
+            .or_else(KeywordKind::Float64.to_owned().map(Primitive::Float64))
+            .or_else(KeywordKind::Int8.to_owned().map(Primitive::Int8))
+            .or_else(KeywordKind::Int16.to_owned().map(Primitive::Int16))
+            .or_else(KeywordKind::Int32.to_owned().map(Primitive::Int32))
+            .or_else(KeywordKind::Int64.to_owned().map(Primitive::Int64))
+            .or_else(KeywordKind::Uint8.to_owned().map(Primitive::Uint8))
+            .or_else(KeywordKind::Uint16.to_owned().map(Primitive::Uint16))
+            .or_else(KeywordKind::Uint32.to_owned().map(Primitive::Uint32))
+            .or_else(KeywordKind::Uint64.to_owned().map(Primitive::Uint64))
+            .or_else(KeywordKind::Usize.to_owned().map(Primitive::Usize))
+            .or_else(KeywordKind::Isize.to_owned().map(Primitive::Isize))
+            .parse(state_machine, handler)
     }
 }
 
@@ -110,22 +120,6 @@ pub struct Reference {
     operand: Box<Type>,
 }
 
-impl Parse for Reference {
-    fn syntax() -> impl Syntax<Output = Self> {
-        ('&', Lifetime::syntax().or_none(), KeywordKind::Mutable.or_none())
-            .then_do(
-                |parser, (ampersand, lifetime, mutable_keyword), handler| {
-                    Ok(Reference {
-                        ampersand,
-                        lifetime,
-                        mutable_keyword,
-                        operand: parser.parse_syntax_tree(handler)?,
-                    })
-                },
-            )
-    }
-}
-
 impl SourceElement for Reference {
     fn span(&self) -> Span {
         self.ampersand.span().join(&self.operand.span()).unwrap()
@@ -133,6 +127,24 @@ impl SourceElement for Reference {
 }
 
 impl Reference {
+    pub fn parse<'a>(
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
+        (
+            '&'.to_owned(),
+            Lifetime::parse.or_none(),
+            KeywordKind::Mutable.to_owned().or_none(),
+            Type::parse.boxed().map(Box::new),
+        )
+            .map(|(ampersand, lifetime, mutable_keyword, operand)| Self {
+                ampersand,
+                lifetime,
+                mutable_keyword,
+                operand,
+            })
+            .parse(state_machine, handler)
+    }
     /// Destructs the `Reference` into its components.
     #[must_use]
     pub fn destruct(
@@ -155,7 +167,6 @@ pub struct Unpackable {
     #[get = "pub"]
     pub(super) r#type: Box<Type>,
 }
-
 impl Parse for Unpackable {
     fn syntax() -> impl Syntax<Output = Self> {
         (
@@ -385,6 +396,15 @@ pub enum Type {
     Array(Array),
     Phantom(Phantom),
     Elided(Elided),
+}
+
+impl Type {
+    pub fn parse<'a>(
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
+        Primitive::parse.map(Self::Primitive).parse(state_machine, handler)
+    }
 }
 
 impl Parse for Type {

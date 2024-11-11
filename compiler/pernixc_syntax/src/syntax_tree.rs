@@ -2,75 +2,219 @@
 
 #![allow(missing_docs)]
 
-use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_base::{
     handler::Handler,
     source_file::{SourceElement, Span},
 };
-use pernixc_lexical::{
-    token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
-    token_stream::Delimiter,
-};
+use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation};
 
-use self::{expression::Expression, r#type::Type};
 use crate::{
-    error,
-    parser::{
-        self, delimited_tree, expect::Expect, DelimitedTree, ExpectIdentifier,
-        Parser, Reading, Syntax,
+    error, expect,
+    state_machine::{
+        parse::{self, ExpectExt, ExpectedIterator, Parse},
+        StateMachine,
     },
 };
 
-pub mod expression;
-pub mod item;
-pub mod json;
-pub mod pattern;
-pub mod predicate;
-pub mod statement;
-pub mod strategy;
-pub mod target;
-pub mod r#type;
+// pub mod expression;
+// pub mod item;
+// pub mod json;
+// pub mod pattern;
+// pub mod predicate;
+// pub mod statement;
+// pub mod strategy;
+// pub mod target;
+// pub mod r#type;
 
-/// Allows to create a [`Syntax`] from a syntax tree node.
-pub trait Parse {
-    /// Creates a [`Syntax`] from the syntax tree node.
-    fn syntax() -> impl Syntax<Output = Self>;
+/// Syntax Synopsis:
+/// ``` txt
+/// AccessModifier:
+///     'public'
+///      | 'private'
+///      | 'internal'
+///      ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum AccessModifier {
+    Public(Keyword),
+    Private(Keyword),
+    Internal(Keyword),
 }
 
-impl<'a> Parser<'a> {
-    /// Parses the given syntax tree at the current parser position.
-    pub fn parse_syntax_tree<P: Parse>(
-        &mut self,
+impl AccessModifier {
+    pub fn parse<'a>(
+        state_machine: &mut StateMachine<'a>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<P, parser::Error> {
-        self.parse(P::syntax(), handler)
+    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
+        KeywordKind::Public
+            .to_owned()
+            .map(AccessModifier::Public)
+            .or_else(
+                KeywordKind::Private.to_owned().map(AccessModifier::Private),
+            )
+            .or_else(
+                KeywordKind::Internal.to_owned().map(AccessModifier::Internal),
+            )
+            .parse(state_machine, handler)
     }
+}
 
-    /// Parses the given syntax tree at the current parser position without
-    pub fn parse_syntax_tree_dont_skip<S: Parse>(
-        &mut self,
-        handler: &dyn Handler<error::Error>,
-    ) -> Result<S, parser::Error> {
-        self.parse_dont_skip(S::syntax(), handler)
+impl SourceElement for AccessModifier {
+    fn span(&self) -> Span {
+        match self {
+            Self::Public(k) | Self::Private(k) | Self::Internal(k) => {
+                k.span.clone()
+            }
+        }
     }
 }
 
-impl<T: Parse> Parse for Box<T> {
-    fn syntax() -> impl Syntax<Output = Self> { T::syntax().map(Box::new) }
-}
-
-impl<T: Parse> Parse for Option<T> {
-    fn syntax() -> impl Syntax<Output = Self> { T::syntax().or_none() }
-}
-
-impl Parse for Identifier {
-    fn syntax() -> impl Syntax<Output = Self> { ExpectIdentifier }
-}
-
-/// Represents a syntax tree node with a pattern of syntax tree nodes separated
+/// Represents a syntax tree node of two consecutive colon tokens.
 ///
+/// This syntax tree is used to represent the scope separator `::` in the
+/// qualified identifier syntax
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[allow(missing_docs)]
+pub struct ScopeSeparator {
+    #[get = "pub"]
+    first: Punctuation,
+    #[get = "pub"]
+    second: Punctuation,
+}
+
+impl ScopeSeparator {
+    pub fn parse<'a>(
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
+        (':'.to_owned(), ':'.no_skip().to_owned())
+            .map(|(first, second)| ScopeSeparator { first, second })
+            .parse(state_machine, handler)
+    }
+}
+
+impl SourceElement for ScopeSeparator {
+    fn span(&self) -> Span { self.first.span.join(&self.second.span) }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Elided:
+///     '..'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Elided {
+    #[get = "pub"]
+    first_dot: Punctuation,
+    #[get = "pub"]
+    second_dot: Punctuation,
+}
+
+impl Elided {
+    pub fn parse<'a>(
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
+        ('.'.to_owned(), '.'.no_skip().to_owned())
+            .map(|(first_dot, second_dot)| Elided { first_dot, second_dot })
+            .parse(state_machine, handler)
+    }
+}
+
+impl SourceElement for Elided {
+    fn span(&self) -> Span { self.first_dot.span.join(&self.second_dot.span) }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// LifetimeIdentifier:
+///     Identifier
+///     | 'static'
+///     | '..'
+///     ;
+/// ```
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum LifetimeIdentifier {
+    Identifier(Identifier),
+    Static(Keyword),
+    Elided(Elided),
+}
+
+impl SourceElement for LifetimeIdentifier {
+    fn span(&self) -> Span {
+        match self {
+            Self::Identifier(ident) => ident.span.clone(),
+            Self::Static(keyword) => keyword.span.clone(),
+            Self::Elided(elided) => elided.span(),
+        }
+    }
+}
+
+impl LifetimeIdentifier {
+    pub fn parse<'a>(
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
+        expect::Identifier
+            .to_owned()
+            .map(LifetimeIdentifier::Identifier)
+            .or_else(
+                KeywordKind::Static.to_owned().map(LifetimeIdentifier::Static),
+            )
+            .or_else(Elided::parse.map(LifetimeIdentifier::Elided))
+            .parse(state_machine, handler)
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Lifetime:
+///     '/'' LifetimeIdentifier
+///     ;
+/// ``
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[allow(missing_docs)]
+pub struct Lifetime {
+    #[get = "pub"]
+    apostrophe: Punctuation,
+    #[get = "pub"]
+    identifier: LifetimeIdentifier,
+}
+
+impl SourceElement for Lifetime {
+    fn span(&self) -> Span {
+        self.apostrophe.span.join(&self.identifier.span())
+    }
+}
+
+impl Lifetime {
+    pub fn parse<'a>(
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
+        ('/'.to_owned(), LifetimeIdentifier::parse)
+            .map(|(apostrophe, identifier)| Lifetime { apostrophe, identifier })
+            .parse(state_machine, handler)
+    }
+}
+
+/*
+/// Represents a syntax tree node with a pattern of syntax tree nodes separated
 /// by a separator.
 ///
 /// This struct is useful for representing syntax tree nodes that are separated
@@ -227,142 +371,6 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
     pub const fn is_empty(&self) -> bool { false }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// AccessModifier:
-///     'public'
-///      | 'private'
-///      | 'internal'
-///      ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum AccessModifier {
-    Public(Keyword),
-    Private(Keyword),
-    Internal(Keyword),
-}
-
-impl Parse for AccessModifier {
-    fn syntax() -> impl Syntax<Output = Self> {
-        KeywordKind::Public
-            .map(AccessModifier::Public)
-            .or_else(KeywordKind::Private.map(AccessModifier::Private))
-            .or_else(KeywordKind::Internal.map(AccessModifier::Internal))
-    }
-}
-
-impl SourceElement for AccessModifier {
-    fn span(&self) -> Span {
-        match self {
-            Self::Public(k) | Self::Private(k) | Self::Internal(k) => {
-                k.span.clone()
-            }
-        }
-    }
-}
-
-/// Represents a syntax tree node of two consecutive colon tokens.
-///
-/// This syntax tree is used to represent the scope separator `::` in the
-/// qualified identifier syntax
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
-pub struct ScopeSeparator {
-    #[get = "pub"]
-    first: Punctuation,
-    #[get = "pub"]
-    second: Punctuation,
-}
-
-impl Parse for ScopeSeparator {
-    fn syntax() -> impl Syntax<Output = Self> {
-        ':'.then_do(|parser, first, handler| {
-            Ok(ScopeSeparator {
-                first,
-                second: parser.parse_dont_skip(':', handler)?,
-            })
-        })
-    }
-}
-
-impl SourceElement for ScopeSeparator {
-    fn span(&self) -> Span { self.first.span.join(&self.second.span).unwrap() }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// LifetimeIdentifier:
-///     Identifier
-///     | 'static'
-///     | '..'
-///     ;
-/// ```
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
-)]
-#[allow(missing_docs)]
-pub enum LifetimeIdentifier {
-    Identifier(Identifier),
-    Static(Keyword),
-    Elided(Elided),
-}
-
-impl SourceElement for LifetimeIdentifier {
-    fn span(&self) -> Span {
-        match self {
-            Self::Identifier(ident) => ident.span.clone(),
-            Self::Static(keyword) => keyword.span.clone(),
-            Self::Elided(elided) => elided.span(),
-        }
-    }
-}
-
-impl Parse for LifetimeIdentifier {
-    fn syntax() -> impl Syntax<Output = Self> {
-        ExpectIdentifier
-            .map(LifetimeIdentifier::Identifier)
-            .or_else(KeywordKind::Static.map(LifetimeIdentifier::Static))
-            .or_else('.'.then_do(|parser, first, handler| {
-                Ok(LifetimeIdentifier::Elided(Elided {
-                    first_dot: first,
-                    second_dot: parser.parse_dont_skip('.', handler)?,
-                }))
-            }))
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Lifetime:
-///     '/'' LifetimeIdentifier
-///     ;
-/// ``
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
-pub struct Lifetime {
-    #[get = "pub"]
-    apostrophe: Punctuation,
-    #[get = "pub"]
-    identifier: LifetimeIdentifier,
-}
-
-impl SourceElement for Lifetime {
-    fn span(&self) -> Span {
-        self.apostrophe.span.join(&self.identifier.span()).unwrap()
-    }
-}
-
-impl Parse for Lifetime {
-    fn syntax() -> impl Syntax<Output = Self> {
-        '\''.then_do(|parser, apostrophe, handler| {
-            Ok(Lifetime {
-                apostrophe,
-                identifier: parser.parse_syntax_tree(handler)?,
-            })
-        })
-    }
-}
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -406,37 +414,6 @@ pub type ConstantArgument = DelimitedTree<Constant>;
 impl Parse for ConstantArgument {
     fn syntax() -> impl Syntax<Output = Self> {
         delimited_tree(Delimiter::Brace, Constant::syntax())
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Elided:
-///     '..'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Elided {
-    #[get = "pub"]
-    first_dot: Punctuation,
-    #[get = "pub"]
-    second_dot: Punctuation,
-}
-
-impl Parse for Elided {
-    fn syntax() -> impl Syntax<Output = Self> {
-        '.'.then_do(|parser, f, handler| {
-            Ok(Elided {
-                first_dot: f,
-                second_dot: parser.parse_dont_skip('.', handler)?,
-            })
-        })
-    }
-}
-
-impl SourceElement for Elided {
-    fn span(&self) -> Span {
-        self.first_dot.span.join(&self.second_dot.span).unwrap()
     }
 }
 
@@ -823,3 +800,4 @@ impl<T: SourceElement> SourceElement for UnionList<T> {
 
 #[cfg(test)]
 mod test;
+*/

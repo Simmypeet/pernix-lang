@@ -4,6 +4,7 @@ use std::{collections::HashMap, ops::Index, sync::Arc};
 
 use derive_more::{Deref, From};
 use enum_as_inner::EnumAsInner;
+use getset::Getters;
 use pernixc_base::{handler::Handler, source_file::SourceFile};
 
 use crate::{
@@ -57,10 +58,16 @@ pub enum TokenKind {
 ///
 /// This struct is the final output of the lexical analysis phase and is meant
 /// to be used by the next stage of the compilation process.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, Getters,
+)]
 pub struct TokenStream {
     #[deref]
     tokens: Vec<TokenKind>,
+
+    /// The source file used to generate the tokens.
+    #[get = "pub"]
+    source_file: Arc<SourceFile>,
 }
 
 impl TokenStream {
@@ -78,7 +85,7 @@ impl TokenStream {
     /// list of lexical errors encountered during tokenization.
     #[must_use]
     pub fn tokenize(
-        source_file: &Arc<SourceFile>,
+        source_file: Arc<SourceFile>,
         handler: &dyn Handler<error::Error>,
     ) -> Self {
         // list of tokens to return
@@ -102,39 +109,58 @@ impl TokenStream {
 
         // structure the tokens into a token stream
         let mut token_trees = Vec::new();
-        while let Some(token_tree) = Self::handle_token(&mut tokens, handler) {
+        while let Some(token_tree) =
+            Self::handle_token(&mut tokens, &source_file, handler)
+        {
             token_trees.push(token_tree);
         }
 
-        Self { tokens: token_trees }
+        Self { tokens: token_trees, source_file: source_file.clone() }
     }
 
     fn handle_token(
         tokens: &mut Vec<Token>,
+        source_file: &Arc<SourceFile>,
         handler: &dyn Handler<error::Error>,
     ) -> Option<TokenKind> {
-        tokens.pop().and_then(|x| Self::handle_popped_token(tokens, x, handler))
+        tokens.pop().and_then(|x| {
+            Self::handle_popped_token(tokens, x, source_file, handler)
+        })
     }
 
     fn handle_popped_token(
         tokens: &mut Vec<Token>,
         popped_token: Token,
+        source_file: &Arc<SourceFile>,
         handler: &dyn Handler<error::Error>,
     ) -> Option<TokenKind> {
         match popped_token {
             Token::Punctuation(pun) if pun.punctuation == '{' => {
-                Self::handle_delimited(tokens, pun, Delimiter::Brace, handler)
-                    .map(TokenKind::Delimited)
+                Self::handle_delimited(
+                    tokens,
+                    pun,
+                    Delimiter::Brace,
+                    source_file,
+                    handler,
+                )
+                .map(TokenKind::Delimited)
             }
             Token::Punctuation(pun) if pun.punctuation == '[' => {
-                Self::handle_delimited(tokens, pun, Delimiter::Bracket, handler)
-                    .map(TokenKind::Delimited)
+                Self::handle_delimited(
+                    tokens,
+                    pun,
+                    Delimiter::Bracket,
+                    source_file,
+                    handler,
+                )
+                .map(TokenKind::Delimited)
             }
             Token::Punctuation(pun) if pun.punctuation == '(' => {
                 Self::handle_delimited(
                     tokens,
                     pun,
                     Delimiter::Parenthesis,
+                    source_file,
                     handler,
                 )
                 .map(TokenKind::Delimited)
@@ -147,6 +173,7 @@ impl TokenStream {
         tokens: &mut Vec<Token>,
         open: Punctuation,
         delimiter: Delimiter,
+        source_file: &Arc<SourceFile>,
         handler: &dyn Handler<error::Error>,
     ) -> Option<Delimited> {
         let mut token_trees = Vec::new();
@@ -158,7 +185,10 @@ impl TokenStream {
                 {
                     return Some(Delimited {
                         open,
-                        token_stream: Self { tokens: token_trees },
+                        token_stream: Self {
+                            tokens: token_trees,
+                            source_file: source_file.clone(),
+                        },
                         close,
                         delimiter,
                     })
@@ -168,7 +198,10 @@ impl TokenStream {
                 {
                     return Some(Delimited {
                         open,
-                        token_stream: Self { tokens: token_trees },
+                        token_stream: Self {
+                            tokens: token_trees,
+                            source_file: source_file.clone(),
+                        },
                         close,
                         delimiter,
                     })
@@ -178,15 +211,21 @@ impl TokenStream {
                 {
                     return Some(Delimited {
                         open,
-                        token_stream: Self { tokens: token_trees },
+                        token_stream: Self {
+                            tokens: token_trees,
+                            source_file: source_file.clone(),
+                        },
                         close,
                         delimiter,
                     })
                 }
                 (token, _) => {
-                    let Some(token_tree) =
-                        Self::handle_popped_token(tokens, token, handler)
-                    else {
+                    let Some(token_tree) = Self::handle_popped_token(
+                        tokens,
+                        token,
+                        source_file,
+                        handler,
+                    ) else {
                         break;
                     };
 
@@ -315,7 +354,9 @@ impl<'a> Tree<'a> {
 
     fn add(&mut self, token_stream: &'a TokenStream, node_index: usize) {
         for (tok_index, tree) in token_stream.iter().enumerate() {
-            let TokenKind::Delimited(delimited) = tree else { continue; };
+            let TokenKind::Delimited(delimited) = tree else {
+                continue;
+            };
 
             let child_index = self.nodes.len();
             self.nodes.push(Node {
@@ -361,7 +402,7 @@ impl<'a> Tree<'a> {
     ///
     /// The location of the token in the tree. [`None`] if the
     /// [Location::token_index] is out of bounds.
-    pub fn get_token(&self, location: &Location) -> Option<&TokenKind> {
+    pub fn get_token(&self, location: &Location) -> Option<&'a TokenKind> {
         let node = self.get_node(location.node_index);
         let token_stream = node.kind.token_stream();
 

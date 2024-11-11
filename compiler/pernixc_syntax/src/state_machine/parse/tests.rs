@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use pernixc_base::{
-    handler::{Handler, Panic},
+    handler::{Handler, Panic, Storage},
     source_file::SourceFile,
 };
 use pernixc_lexical::{
-    token::{Keyword, KeywordKind, Punctuation},
-    token_stream::{TokenStream, Tree},
+    token::{Keyword, KeywordKind, Punctuation, Token},
+    token_stream::{Delimiter, TokenStream, Tree},
 };
 
 use super::ExpectExt;
 use crate::{
-    error,
+    error::{self, Found},
     state_machine::{
         parse::{self, ExpectedIterator, Parse},
         StateMachine,
@@ -20,7 +20,7 @@ use crate::{
 
 fn create_token_stream(source: String) -> (TokenStream, Arc<SourceFile>) {
     let source_file = Arc::new(SourceFile::new(source, "test".into()));
-    let token_stream = TokenStream::tokenize(&source_file, &Panic);
+    let token_stream = TokenStream::tokenize(source_file.clone(), &Panic);
 
     (token_stream, source_file)
 }
@@ -44,7 +44,7 @@ fn cons_list_syntax<'a>(
     state_machine: &mut StateMachine<'a>,
     handler: &dyn Handler<error::Error>,
 ) -> parse::Result<'a, ConsList, impl ExpectedIterator> {
-    (KeywordKind::Continue.to_owned(), cons_list_syntax.map(Box::new))
+    (KeywordKind::Continue.to_owned(), cons_list_syntax.map(Box::new).boxed())
         .map(|(keyword, list)| ConsList::Cons(keyword, list))
         .or_else(';'.to_owned().map(ConsList::Nil))
         .parse(state_machine, handler)
@@ -109,4 +109,79 @@ fn keep_take_no_skip() {
         '+'.no_skip().keep_take().parse(&mut state_machine, &Panic).unwrap();
 
     assert_eq!(pluses.len(), 3);
+}
+
+#[test]
+fn step_into() {
+    let (token_stream, _) =
+        create_token_stream("[continue continue continue]".to_string());
+
+    let tree = Tree::new(&token_stream);
+    let mut state_machine = StateMachine::new(&tree);
+
+    let (open, continues, close) = KeywordKind::Continue
+        .keep_take()
+        .step_into(Delimiter::Bracket)
+        .parse(&mut state_machine, &Panic)
+        .unwrap();
+
+    assert_eq!(open.punctuation, '[');
+    assert_eq!(continues.len(), 3);
+    assert_eq!(close.punctuation, ']');
+}
+
+#[test]
+fn step_into_mismatched_delimiter() {
+    let (token_stream, _) =
+        create_token_stream("[continue continue continue]".to_string());
+
+    let tree = Tree::new(&token_stream);
+    let mut state_machine = StateMachine::new(&tree);
+
+    let result = KeywordKind::Continue
+        .keep_take()
+        .step_into(Delimiter::Brace)
+        .parse(&mut state_machine, &Panic);
+
+    let error = result.unwrap_err();
+
+    let expected = error.expected.collect::<Vec<_>>();
+    assert_eq!(expected.len(), 1);
+    assert!(expected.contains(&Delimiter::Brace.into()))
+}
+
+#[test]
+fn step_into_dont_take_all() {
+    let (token_stream, _) =
+        create_token_stream("[continue continue continue;]".to_string());
+
+    let tree = Tree::new(&token_stream);
+    let mut state_machine = StateMachine::new(&tree);
+
+    let storage = Storage::<error::Error>::new();
+
+    let (open, continues, close) = KeywordKind::Continue
+        .keep_take()
+        .step_into(Delimiter::Bracket)
+        .parse(&mut state_machine, &storage)
+        .unwrap();
+
+    assert_eq!(open.punctuation, '[');
+    assert_eq!(continues.len(), 3);
+    assert_eq!(close.punctuation, ']');
+
+    let errors = storage.into_vec();
+
+    assert_eq!(errors.len(), 1);
+    let error = errors.first().unwrap();
+
+    assert_eq!(error.expected().len(), 1);
+    let expected = error.expected().first().unwrap();
+
+    assert!(matches!(
+        error.found(),
+        Found::Token(Token::Punctuation(Punctuation { punctuation: ';', .. }))
+    ));
+
+    assert_eq!(*expected, ']'.into());
 }

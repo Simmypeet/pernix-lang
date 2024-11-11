@@ -1,8 +1,30 @@
 //! Contains the definition of [`StateMachine`] and its implementation.
 
+use parse::Parse;
+use pernixc_base::handler::Handler;
 use pernixc_lexical::token_stream::{Location, Node, TokenKind, Tree};
 
+use crate::error;
+
 pub mod parse;
+
+/**
+Encounters a fatal syntax error while parsing the syntax tree. The error
+diagnostics are reported to the handler.
+ */
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    thiserror::Error,
+    displaydoc::Display,
+)]
+pub struct Error;
 
 /// Represents the state machine used to scan the token stream input and produce
 /// a syntax tree.
@@ -195,5 +217,22 @@ impl<'a> StateMachine<'a> {
     /// Gets the current [TokenStream::Node] that the state machine is at.
     pub fn current_node(&self) -> &'a Node<'a> {
         self.tree.get_node(self.location.node_index)
+    }
+
+    pub fn parse_and_report<P: Parse>(
+        &mut self,
+        parser: P,
+        handler: &dyn Handler<error::Error>,
+    ) -> Result<P::Output<'a>, Error> {
+        match parser.parse(self, handler) {
+            Ok(a) => Ok(a),
+            Err(unexpected) => {
+                handler.receive(error::Error::from_unexpected(
+                    self.tree, unexpected,
+                ));
+
+                Err(Error)
+            }
+        }
     }
 }
