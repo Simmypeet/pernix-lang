@@ -39,7 +39,7 @@ impl Arbitrary for Primitive {
             Just(Self::Usize),
             Just(Self::Isize)
         ]
-        .boxed()
+        
     }
 }
 
@@ -48,7 +48,7 @@ impl Arbitrary for Qualifier {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![Just(Self::Immutable), Just(Self::Mutable)].boxed()
+        prop_oneof![Just(Self::Immutable), Just(Self::Mutable)]
     }
 }
 
@@ -60,7 +60,7 @@ impl Arbitrary for Pointer<Default> {
         let type_strategy = type_strategy.unwrap_or_else(Type::arbitrary);
         (type_strategy, proptest::bool::ANY)
             .prop_map(|(ty, mutable)| Self { mutable, pointee: Box::new(ty) })
-            .boxed()
+            
     }
 }
 
@@ -83,7 +83,7 @@ impl Arbitrary for Reference<Default> {
                 lifetime,
                 qualifier,
             })
-            .boxed()
+            
     }
 }
 
@@ -96,7 +96,7 @@ impl Arbitrary for AdtID {
             proptest::num::usize::ANY.prop_map(|x| Self::Struct(ID::new(x))),
             proptest::num::usize::ANY.prop_map(|x| Self::Enum(ID::new(x))),
         ]
-        .boxed()
+        
     }
 }
 
@@ -115,7 +115,7 @@ impl Arbitrary for Array<Default> {
 
         (ty_strat, const_strat)
             .prop_map(|(ty, length)| Self { r#type: Box::new(ty), length })
-            .boxed()
+            
     }
 }
 
@@ -153,6 +153,6 @@ impl Arbitrary for Type<Default> {
                 2 => Array::arbitrary_with((Some(inner), Some(const_strat))).prop_map(Self::Array),
             ]
         })
-        .boxed()
+        
     }
 }

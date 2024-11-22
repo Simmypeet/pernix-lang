@@ -12,6 +12,7 @@ use crate::syntax_tree::{
     expression::strategy::{Binary, Brace, Expression, Terminator},
     pattern::strategy::Irrefutable,
     r#type::strategy::Type,
+    strategy::QualifiedIdentifier,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -49,7 +50,6 @@ impl Arbitrary for Statement {
             VariableDeclaration::arbitrary_with(args)
                 .prop_map(Self::VariableDeclaration),
         ]
-        .boxed()
     }
 }
 
@@ -101,7 +101,6 @@ impl Arbitrary for VariableDeclaration {
                 ty,
                 expression,
             })
-            .boxed()
     }
 }
 
@@ -150,17 +149,15 @@ impl Arbitrary for Expressive {
             Expression::arbitrary_with((args.1, None, None))
         });
 
-        expr_strategy
-            .prop_map(|x| match x {
-                Expression::Binary(x) => {
-                    Self::Semi(Semi { expression: SemiExpression::Binary(x) })
-                }
-                Expression::Terminator(x) => Self::Semi(Semi {
-                    expression: SemiExpression::Terminator(x),
-                }),
-                Expression::Brace(x) => Self::Brace(x),
-            })
-            .boxed()
+        expr_strategy.prop_map(|x| match x {
+            Expression::Binary(x) => {
+                Self::Semi(Semi { expression: SemiExpression::Binary(x) })
+            }
+            Expression::Terminator(x) => {
+                Self::Semi(Semi { expression: SemiExpression::Terminator(x) })
+            }
+            Expression::Brace(x) => Self::Brace(x),
+        })
     }
 }
 
@@ -221,5 +218,45 @@ impl Display for Semi {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.expression, f)?;
         f.write_str(";")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Statements {
+    pub statements: Vec<Statement>,
+}
+
+impl Input<&super::Statements> for &Statements {
+    fn assert(self, output: &super::Statements) -> TestCaseResult {
+        self.statements.assert(output.statements())
+    }
+}
+
+impl Arbitrary for Statements {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let statement = args
+            .3
+            .unwrap_or_else(|| Statement::arbitrary_with((args.0, args.1)));
+
+        proptest::collection::vec(statement, 0..=6)
+            .prop_map(|statements| Self { statements })
+    }
+}
+
+impl Display for Statements {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('{')?;
+        for statement in &self.statements {
+            Display::fmt(statement, f)?;
+        }
+        f.write_char('}')
     }
 }

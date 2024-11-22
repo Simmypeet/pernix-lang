@@ -21,7 +21,7 @@ impl<T: 'static> Arbitrary for ID<T> {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        proptest::num::usize::ANY.prop_map(Self::new).boxed()
+        proptest::num::usize::ANY.prop_map(Self::new)
     }
 }
 
@@ -37,7 +37,7 @@ where
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (ChildID::arbitrary(), ParentID::arbitrary())
             .prop_map(|(id, parent)| Self { parent, id })
-            .boxed()
+            
     }
 }
 
@@ -64,7 +64,7 @@ impl Arbitrary for GenericID {
             ID::arbitrary().prop_map(Self::AdtImplementation),
             ID::arbitrary().prop_map(Self::AdtImplementationFunction),
         ]
-        .boxed()
+        
     }
 }
 
@@ -100,7 +100,7 @@ where
                     constants,
                 },
             })
-            .boxed()
+            
     }
 }
 
@@ -115,7 +115,7 @@ where
     fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
         let strat = strat.unwrap_or_else(T::arbitrary);
 
-        (strat).prop_map(|x| Self(Box::new(x))).boxed()
+        (strat).prop_map(|x| Self(Box::new(x)))
     }
 }
 
@@ -156,7 +156,7 @@ where
                     constants: consts1,
                 },
             })
-            .boxed()
+            
     }
 }
 
@@ -181,7 +181,7 @@ where
                     })
                     .collect(),
             })
-            .boxed()
+            
     }
 }
 
@@ -208,6 +208,6 @@ impl Arbitrary for GenericArguments<Default> {
                 types,
                 constants,
             })
-            .boxed()
+            
     }
 }

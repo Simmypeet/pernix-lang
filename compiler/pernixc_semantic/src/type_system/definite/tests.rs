@@ -57,7 +57,7 @@ where
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        T::arbitrary().prop_map(TriviallySatisfiable).boxed()
+        T::arbitrary().prop_map(TriviallySatisfiable)
     }
 }
 
@@ -112,7 +112,7 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Copy>
                 constant_strategies,
                 id,
             })
-            .boxed()
+            
     }
 }
 
@@ -176,7 +176,7 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
                 )).prop_map(|x| Box::new(x) as _),
             ]
         })
-        .boxed()
+        
     }
 }
 
@@ -187,7 +187,7 @@ impl Arbitrary for Box<dyn Property<Constant<Default>>> {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![TriviallySatisfiable::<constant::Primitive>::arbitrary()
             .prop_map(|x| Box::new(x) as _),]
-        .boxed()
+        
     }
 }
 

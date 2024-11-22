@@ -1,39 +1,31 @@
 use std::sync::Arc;
 
-use pernixc_base::{handler::Storage, source_file::SourceFile};
-use pernixc_lexical::token_stream::TokenStream;
-use pernixc_tests::input::Input;
-use proptest::{
-    prelude::{Arbitrary, TestCaseError},
-    proptest,
+use pernixc_base::{
+    handler::{Panic, Storage},
+    source_file::SourceFile,
 };
+use pernixc_lexical::{
+    token::KeywordKind,
+    token_stream::{Delimiter, TokenStream, Tree},
+};
+use proptest::{prelude::TestCaseError, proptest};
 
+use super::SyntaxTree;
 use crate::{
-    error, parser::Parser, syntax_tree::strategy::QualifiedIdentifier,
+    error,
+    state_machine::{parse::Parse, StateMachine},
+    syntax_tree::{
+        strategy::QualifiedIdentifier, EnclosedConnectedList, ParseExt,
+    },
 };
 
-pub fn parse<T, F>(source: &str, f: F) -> Result<T, TestCaseError>
-where
-    F: FnOnce(&mut Parser, &Storage<error::Error>) -> Option<T>,
-{
-    let source_file =
-        Arc::new(SourceFile::new(source.to_string(), "test".into()));
+pub fn parse<T, S: SyntaxTree>(source: &str) -> Result<T, TestCaseError> {
+    let (token_stream, _) = create_token_stream("[]".to_string());
 
-    let storage: Storage<pernixc_lexical::error::Error> = Storage::new();
-
-    let token_stream = TokenStream::tokenize(&source_file, &storage);
-
-    if !storage.as_vec().is_empty() {
-        return Err(TestCaseError::reject(format!(
-            "found lexical error(s): {:#?};\nsource: {source}",
-            storage.as_vec(),
-        )));
-    }
-
-    let mut parser = Parser::new(&token_stream, source_file.clone());
-
+    let tree = Tree::new(&token_stream);
     let storage: Storage<error::Error> = Storage::new();
-    let output = f(&mut parser, &storage);
+
+    let output = S::parse.parse_syntax(&tree, &storage);
 
     if !storage.as_vec().is_empty() {
         return Err(TestCaseError::fail(format!(
@@ -59,11 +51,101 @@ proptest! {
         qualified_identifier_input in QualifiedIdentifier::arbitrary(),
     ) {
         let source = qualified_identifier_input.to_string();
-        let qualified_identifier = parse(
-            &source,
-            |parser, handler| parser.parse_qualified_identifier(handler)
-        )?;
+        let qualified_identifier = parse(&source)?;
 
         qualified_identifier_input.assert(&qualified_identifier)?;
     }
+}
+
+#[test]
+fn empty_enclosed_connected_list() {
+    let (token_stream, _) = create_token_stream("[]".to_string());
+
+    let tree = Tree::new(&token_stream);
+    let mut state_machine = StateMachine::new(&tree);
+
+    let EnclosedConnectedList { open, connected_list, close } =
+        KeywordKind::Continue
+            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .parse(&mut state_machine, &Panic)
+            .unwrap();
+
+    assert_eq!(open.punctuation, '[');
+    assert_eq!(connected_list, None);
+    assert_eq!(close.punctuation, ']');
+}
+
+#[test]
+fn single_trailing_separator_enclosed_connected_list() {
+    let (token_stream, _) = create_token_stream("[continue,]".to_string());
+
+    let tree = Tree::new(&token_stream);
+    let mut state_machine = StateMachine::new(&tree);
+
+    let EnclosedConnectedList { open, connected_list, close } =
+        KeywordKind::Continue
+            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .parse(&mut state_machine, &Panic)
+            .unwrap();
+
+    let connected_list = connected_list.unwrap();
+
+    assert_eq!(open.punctuation, '[');
+    assert_eq!(connected_list.first.kind, KeywordKind::Continue);
+    assert_eq!(connected_list.rest.len(), 0);
+    assert!(connected_list.trailing_separator.is_some());
+    assert_eq!(close.punctuation, ']');
+}
+
+#[test]
+fn multiple_elements_enclosed_connected_list() {
+    let (token_stream, _) =
+        create_token_stream("[continue, continue, continue]".to_string());
+
+    let tree = Tree::new(&token_stream);
+    let mut state_machine = StateMachine::new(&tree);
+
+    let EnclosedConnectedList { open, connected_list, close } =
+        KeywordKind::Continue
+            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .parse(&mut state_machine, &Panic)
+            .unwrap();
+
+    let connected_list = connected_list.unwrap();
+
+    assert_eq!(open.punctuation, '[');
+    assert_eq!(connected_list.first.kind, KeywordKind::Continue);
+    assert_eq!(connected_list.rest.len(), 2);
+    assert!(connected_list.trailing_separator.is_none());
+    assert_eq!(close.punctuation, ']');
+}
+
+fn create_token_stream(source: String) -> (TokenStream, Arc<SourceFile>) {
+    let source_file = Arc::new(SourceFile::new(source, "test".into()));
+    let token_stream = TokenStream::tokenize(source_file.clone(), &Panic);
+
+    (token_stream, source_file)
+}
+
+#[test]
+fn multiple_elements_with_trailing_separator_enclosed_connected_list() {
+    let (token_stream, _) =
+        create_token_stream("[continue, continue, continue,]".to_string());
+
+    let tree = Tree::new(&token_stream);
+    let mut state_machine = StateMachine::new(&tree);
+
+    let EnclosedConnectedList { open, connected_list, close } =
+        KeywordKind::Continue
+            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .parse(&mut state_machine, &Panic)
+            .unwrap();
+
+    let connected_list = connected_list.unwrap();
+
+    assert_eq!(open.punctuation, '[');
+    assert_eq!(connected_list.first.kind, KeywordKind::Continue);
+    assert_eq!(connected_list.rest.len(), 2);
+    assert!(connected_list.trailing_separator.is_some());
+    assert_eq!(close.punctuation, ']');
 }

@@ -98,6 +98,6 @@ pub struct Panic;
 
 impl<T: std::fmt::Debug> Handler<T> for Panic {
     fn receive(&self, error: T) {
-        panic!("{:?}", error);
+        panic!("{error:?}");
     }
 }

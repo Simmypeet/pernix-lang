@@ -34,7 +34,6 @@ impl Arbitrary for Identifier {
                     Some(x)
                 }
             })
-            .boxed()
     }
 }
 
@@ -72,7 +71,6 @@ impl Arbitrary for LifetimeIdentifier {
             Identifier::arbitrary().prop_map(Self::Identifier),
             Just(Self::Elided)
         ]
-        .boxed()
     }
 }
 impl Display for LifetimeIdentifier {
@@ -121,7 +119,6 @@ impl Arbitrary for Lifetime {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         LifetimeIdentifier::arbitrary()
             .prop_map(|identifier| Self { identifier })
-            .boxed()
     }
 }
 
@@ -242,7 +239,6 @@ impl Arbitrary for Constant {
             strat.prop_map(|x| Self::Expression(Box::new(x))),
             Just(Self::Elided),
         ]
-        .boxed()
     }
 }
 
@@ -279,9 +275,7 @@ impl Arbitrary for ConstantArgument {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        Constant::arbitrary_with(args)
-            .prop_map(|constant| Self { constant })
-            .boxed()
+        Constant::arbitrary_with(args).prop_map(|constant| Self { constant })
     }
 }
 
@@ -323,7 +317,6 @@ impl Arbitrary for GenericArgument {
                 .prop_map(|x| Self::Type(Box::new(x))),
             ConstantArgument::arbitrary_with(expr_arg).prop_map(Self::Constant)
         ]
-        .boxed()
     }
 }
 
@@ -374,7 +367,6 @@ impl Arbitrary for GenericArguments {
             ConstantPunctuation::<','>::arbitrary(),
         ))
         .prop_map(move |argument_list| Self { argument_list })
-        .boxed()
     }
 }
 
@@ -418,7 +410,6 @@ impl Arbitrary for GenericIdentifier {
                 identifier,
                 generic_arguments,
             })
-            .boxed()
     }
 }
 
@@ -461,7 +452,6 @@ impl Arbitrary for QualifiedIdentifierRoot {
             args.unwrap_or_else(GenericIdentifier::arbitrary)
                 .prop_map(Self::GenericIdentifier),
         ]
-        .boxed()
     }
 }
 
@@ -515,7 +505,7 @@ impl Arbitrary for ReferenceOf {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        proptest::bool::ANY.prop_map(|is_mutable| Self { is_mutable }).boxed()
+        proptest::bool::ANY.prop_map(|is_mutable| Self { is_mutable })
     }
 }
 
@@ -537,7 +527,7 @@ impl Arbitrary for QualifiedIdentifier {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let generic_identifier_strategy =
-            GenericIdentifier::arbitrary_with(args).boxed();
+            GenericIdentifier::arbitrary_with(args);
         (
             QualifiedIdentifierRoot::arbitrary_with(Some(
                 generic_identifier_strategy.clone(),
@@ -545,7 +535,6 @@ impl Arbitrary for QualifiedIdentifier {
             proptest::collection::vec(generic_identifier_strategy, 0..=6),
         )
             .prop_map(|(root, rest)| Self { root, rest })
-            .boxed()
     }
 }
 
@@ -607,7 +596,6 @@ impl Arbitrary for SimplePathRoot {
             Just(Self::Target),
             Identifier::arbitrary().prop_map(Self::Identifier),
         ]
-        .boxed()
     }
 }
 
@@ -649,7 +637,6 @@ impl Arbitrary for SimplePath {
             proptest::collection::vec(Identifier::arbitrary(), 0..=6),
         )
             .prop_map(|(root, rest)| Self { root, rest })
-            .boxed()
     }
 }
 
@@ -715,7 +702,6 @@ impl Arbitrary for AccessModifier {
             Just(Self::Private),
             Just(Self::Internal),
         ]
-        .boxed()
     }
 }
 
@@ -745,9 +731,7 @@ impl Arbitrary for Label {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        Identifier::arbitrary()
-            .prop_map(|identifier| Self { identifier })
-            .boxed()
+        Identifier::arbitrary().prop_map(|identifier| Self { identifier })
     }
 }
 
@@ -783,7 +767,7 @@ impl Arbitrary for Numeric {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        proptest::num::u64::ANY.prop_map(|integer| Self { integer }).boxed()
+        proptest::num::u64::ANY.prop_map(|integer| Self { integer })
     }
 }
 
@@ -809,9 +793,7 @@ impl Arbitrary for LifetimeParameter {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        Identifier::arbitrary()
-            .prop_map(|identifier| Self { identifier })
-            .boxed()
+        Identifier::arbitrary().prop_map(|identifier| Self { identifier })
     }
 }
 

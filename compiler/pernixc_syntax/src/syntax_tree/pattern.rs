@@ -9,17 +9,23 @@ use pernixc_base::{
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::{
-    token::{self, Identifier, Keyword, KeywordKind, Punctuation, Token},
+    token::{self, Identifier, Keyword, KeywordKind, Punctuation},
     token_stream::Delimiter,
 };
 
-use super::{expression::Boolean, ConnectedList, Parse, ReferenceOf};
+use super::{
+    expression::Boolean, ConnectedList, EnclosedConnectedList, EnclosedTree,
+    Parse, ParseExt, ReferenceOf, SyntaxTree,
+};
 use crate::{
-    error::{self, Error, SyntaxKind},
-    parser::{Parser, Reading, Syntax},
+    error, expect,
+    state_machine::{
+        parse::{self, ExpectExt},
+        StateMachine,
+    },
 };
 
-pub mod strategy;
+// pub mod strategy;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -35,6 +41,25 @@ pub struct FieldAssociation<Pattern> {
     colon: Punctuation,
     #[get = "pub"]
     pattern: Box<Pattern>,
+}
+
+impl<Pattern: SyntaxTree + 'static> SyntaxTree for FieldAssociation<Pattern> {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            expect::Identifier.to_owned(),
+            ':'.to_owned(),
+            Pattern::parse.map(Box::new),
+        )
+            .map(|(identifier, colon, pattern)| Self {
+                identifier,
+                colon,
+                pattern,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl<Pattern: SourceElement> SourceElement for FieldAssociation<Pattern> {
@@ -54,6 +79,18 @@ impl<Pattern: SourceElement> SourceElement for FieldAssociation<Pattern> {
 pub enum Field<Pattern> {
     Association(FieldAssociation<Pattern>),
     Named(Named),
+}
+
+impl<Pattern: SyntaxTree + 'static> SyntaxTree for Field<Pattern> {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        FieldAssociation::parse
+            .map(Self::Association)
+            .or_else(Named::parse.map(Self::Named))
+            .parse(state_machine, handler)
+    }
 }
 
 impl<Pattern: SourceElement> SourceElement for Field<Pattern> {
@@ -87,6 +124,23 @@ pub struct Structural<Pattern> {
     right_brace: Punctuation,
 }
 
+impl<Pattern: SyntaxTree + 'static> SyntaxTree for Structural<Pattern> {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (Field::parse.connected_list(','.to_owned()), Wildcard::parse.or_none())
+            .step_into(Delimiter::Brace)
+            .map(|(open, (fields, wildcard), close)| Self {
+                left_brace: open.clone(),
+                fields,
+                wildcard,
+                right_brace: close.clone(),
+            })
+            .parse(state_machine, handler)
+    }
+}
+
 impl<Pattern> SourceElement for Structural<Pattern> {
     fn span(&self) -> Span {
         self.left_brace.span.join(&self.right_brace.span).unwrap()
@@ -99,19 +153,17 @@ impl<Pattern> SourceElement for Structural<Pattern> {
 ///     '(' Pattern ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct EnumAssociation<Pattern> {
-    #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    pattern: Box<Pattern>,
-    #[get = "pub"]
-    right_paren: Punctuation,
-}
+pub type EnumAssociation = EnclosedTree<Box<Refutable>>;
 
-impl<Pattern> SourceElement for EnumAssociation<Pattern> {
-    fn span(&self) -> Span {
-        self.left_paren.span.join(&self.right_paren.span).unwrap()
+impl SyntaxTree for EnumAssociation {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Refutable::parse
+            .map(Box::new)
+            .enclosed_tree(Delimiter::Parenthesis)
+            .parse(state_machine, handler)
     }
 }
 
@@ -128,7 +180,26 @@ pub struct Enum {
     #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
-    association: Option<EnumAssociation<Refutable>>,
+    association: Option<EnumAssociation>,
+}
+
+impl SyntaxTree for Enum {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Case.to_owned(),
+            expect::Identifier.to_owned(),
+            EnumAssociation::parse.or_none(),
+        )
+            .map(|(case_keyword, identifier, association)| Self {
+                case_keyword,
+                identifier,
+                association,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Enum {
@@ -151,6 +222,17 @@ impl SourceElement for Enum {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Wildcard(Punctuation, Punctuation);
 
+impl SyntaxTree for Wildcard {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('.'.to_owned(), '.'.no_skip().to_owned())
+            .map(|(f, s)| Self(f, s))
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Wildcard {
     fn span(&self) -> Span { self.0.span.join(&self.1.span).unwrap() }
 }
@@ -167,6 +249,25 @@ pub struct TupleElement<Pattern> {
     ellipsis: Option<(Punctuation, Punctuation, Punctuation)>,
     #[get = "pub"]
     pattern: Box<Pattern>,
+}
+
+impl<Pattern: SyntaxTree + 'static> SyntaxTree for TupleElement<Pattern> {
+    fn parse(
+        parser: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            (
+                '.'.to_owned(),
+                '.'.no_skip().to_owned(),
+                '.'.no_skip().to_owned(),
+            )
+                .or_none(),
+            Pattern::parse.map(Box::new),
+        )
+            .map(|(ellipsis, pattern)| Self { ellipsis, pattern })
+            .parse(parser, handler)
+    }
 }
 
 impl<Pattern: SourceElement> SourceElement for TupleElement<Pattern> {
@@ -194,19 +295,17 @@ impl<Pattern> TupleElement<Pattern> {
 ///     '(' (TupleElement (',' TupleElement)* ','?)? ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Tuple<Pattern> {
-    #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    patterns: Option<ConnectedList<TupleElement<Pattern>, Punctuation>>,
-    #[get = "pub"]
-    right_paren: Punctuation,
-}
+pub type Tuple<Pattern> =
+    EnclosedConnectedList<TupleElement<Pattern>, Punctuation>;
 
-impl<Pattern> SourceElement for Tuple<Pattern> {
-    fn span(&self) -> Span {
-        self.left_paren.span.join(&self.right_paren.span).unwrap()
+impl<Pattern: SyntaxTree + 'static> SyntaxTree for Tuple<Pattern> {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        TupleElement::parse
+            .enclosed_connected_list(','.to_owned(), Delimiter::Parenthesis)
+            .parse(state_machine, handler)
     }
 }
 
@@ -224,6 +323,25 @@ pub struct Named {
     reference_of: Option<ReferenceOf>,
     #[get = "pub"]
     identifier: Identifier,
+}
+
+impl SyntaxTree for Named {
+    fn parse(
+        parser: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Mutable.to_owned().or_none(),
+            ReferenceOf::parse.or_none(),
+            expect::Identifier.to_owned(),
+        )
+            .map(|(mutable_keyword, reference_of, identifier)| Self {
+                mutable_keyword,
+                reference_of,
+                identifier,
+            })
+            .parse(parser, handler)
+    }
 }
 
 impl SourceElement for Named {
@@ -257,6 +375,17 @@ pub struct Integer {
     minus: Option<Punctuation>,
     #[get = "pub"]
     numeric: token::Numeric,
+}
+
+impl SyntaxTree for Integer {
+    fn parse(
+        parser: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('-'.to_owned().or_none(), expect::Numeric.to_owned())
+            .map(|(minus, numeric)| Self { minus, numeric })
+            .parse(parser, handler)
+    }
 }
 
 impl SourceElement for Integer {
@@ -297,6 +426,23 @@ pub enum Refutable {
     Named(Named),
     Tuple(Tuple<Self>),
     Wildcard(Wildcard),
+}
+
+impl SyntaxTree for Refutable {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Boolean::parse
+            .map(Self::Boolean)
+            .or_else(Integer::parse.map(Self::Integer))
+            .or_else(Structural::parse.map(Self::Structural))
+            .or_else(Enum::parse.map(Self::Enum))
+            .or_else(Named::parse.map(Self::Named))
+            .or_else(Tuple::parse.map(Self::Tuple))
+            .or_else(Wildcard::parse.map(Self::Wildcard))
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Refutable {
@@ -340,10 +486,19 @@ pub enum Irrefutable {
     Wildcard(Wildcard),
 }
 
-impl Parse for Irrefutable {
-    fn syntax() -> impl Syntax<Output = Self> { todo!() }
+impl SyntaxTree for Irrefutable {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Structural::parse
+            .map(Self::Structural)
+            .or_else(Named::parse.map(Self::Named))
+            .or_else(Tuple::parse.map(Self::Tuple))
+            .or_else(Wildcard::parse.map(Self::Wildcard))
+            .parse(state_machine, handler)
+    }
 }
-
 impl Irrefutable {
     /// Returns `true` if the pattern contains a named pattern.
     pub fn contains_named(&self) -> bool {
@@ -360,8 +515,9 @@ impl Irrefutable {
             }
             Self::Named(_) => true,
             Self::Tuple(tuple) => tuple
-                .patterns
-                .iter()
+                .connected_list
+                .as_ref()
+                .into_iter()
                 .flat_map(ConnectedList::elements)
                 .any(|x| x.pattern.contains_named()),
             Self::Wildcard(_) => false,
@@ -377,512 +533,6 @@ impl SourceElement for Irrefutable {
             Self::Tuple(tuple_pattern) => tuple_pattern.span(),
             Self::Wildcard(wildcard) => wildcard.span(),
         }
-    }
-}
-
-trait Pattern {
-    fn parse(
-        parser: &mut Parser,
-        handler: &dyn Handler<error::Error>,
-    ) -> Option<Self>
-    where
-        Self: Sized;
-}
-
-impl<'a> Parser<'a> {
-    fn parse_named_pattern(
-        &mut self,
-        handler: &dyn Handler<error::Error>,
-    ) -> Option<Named> {
-        match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(
-                mutable_keyword @ Keyword { kind: KeywordKind::Mutable, .. },
-            )) => {
-                // eat the mutable keyword
-                self.forward();
-
-                let reference_of = if let Reading::Unit(Token::Punctuation(
-                    ampersand @ Punctuation { punctuation: '&', .. },
-                )) = self.stop_at_significant()
-                {
-                    self.forward();
-
-                    let mutable_keyword =
-                        if let Reading::Unit(Token::Keyword(
-                            mutable @ Keyword {
-                                kind: KeywordKind::Mutable, ..
-                            },
-                        )) = self.stop_at_significant()
-                        {
-                            self.forward();
-                            Some(mutable)
-                        } else {
-                            None
-                        };
-
-                    Some(ReferenceOf { ampersand, mutable_keyword })
-                } else {
-                    None
-                };
-
-                let identifier = self.parse_identifier(handler)?;
-
-                Some(Named {
-                    mutable_keyword: Some(mutable_keyword),
-                    reference_of,
-                    identifier,
-                })
-            }
-
-            Reading::Unit(Token::Identifier(identifier)) => {
-                self.forward();
-
-                Some(Named {
-                    mutable_keyword: None,
-                    reference_of: None,
-                    identifier,
-                })
-            }
-
-            Reading::Unit(Token::Punctuation(
-                ampersand @ Punctuation { punctuation: '&', .. },
-            )) => {
-                self.forward();
-
-                let mutable_keyword = if let Reading::Unit(Token::Keyword(
-                    mutable @ Keyword { kind: KeywordKind::Mutable, .. },
-                )) = self.stop_at_significant()
-                {
-                    self.forward();
-                    Some(mutable)
-                } else {
-                    None
-                };
-                let identifier = self.parse_identifier(handler)?;
-
-                Some(Named {
-                    mutable_keyword: None,
-                    reference_of: Some(ReferenceOf {
-                        ampersand,
-                        mutable_keyword,
-                    }),
-                    identifier,
-                })
-            }
-
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::Identifier,
-                    alternatives: vec![
-                        SyntaxKind::Keyword(KeywordKind::Mutable),
-                        SyntaxKind::Punctuation('@'),
-                        SyntaxKind::Punctuation('&'),
-                    ],
-                    found: self.reading_to_found(found),
-                });
-
-                // make progress
-                self.forward();
-
-                None
-            }
-        }
-    }
-
-    fn parse_field<T: Pattern + Debug>(
-        &mut self,
-        handler: &dyn Handler<error::Error>,
-    ) -> Option<Field<T>> {
-        let named_pattern = self.parse_named_pattern(handler)?;
-
-        // can accept a nested pattern
-        if named_pattern.mutable_keyword.is_none()
-            && named_pattern.reference_of.is_none()
-            && matches!(
-                self.stop_at_significant(),
-                Reading::Unit(Token::Punctuation(punc))
-                if punc.punctuation == ':'
-            )
-        {
-            let colon = self.parse_punctuation(':', true, handler)?;
-            let pattern = T::parse(self, handler)?;
-
-            Some(Field::Association(FieldAssociation {
-                identifier: named_pattern.identifier,
-                colon,
-                pattern: Box::new(pattern),
-            }))
-        } else {
-            Some(Field::Named(named_pattern))
-        }
-    }
-
-    #[allow(clippy::too_many_lines)]
-    fn parse_structural_pattern<T: Pattern + Debug>(
-        &mut self,
-        handler: &dyn Handler<error::Error>,
-    ) -> Option<Structural<T>> {
-        fn skip_to_next_separator(
-            this: &mut Parser,
-            separator: char,
-        ) -> Option<Punctuation> {
-            if let Reading::Unit(Token::Punctuation(pun)) =
-                this.stop_at(|token| {
-                    matches!(
-                        token, Reading::Unit(Token::Punctuation(pun))
-                        if pun.punctuation == separator
-                    )
-                })
-            {
-                this.forward();
-                Some(pun)
-            } else {
-                None
-            }
-        }
-        let tree = self.step_into(
-            Delimiter::Brace,
-            |parser| {
-                let mut first = None;
-                let mut rest = Vec::new();
-                let mut trailing_separator: Option<Punctuation> = None;
-                let mut wildcard = None;
-
-                while !parser.is_exhausted() && wildcard.is_none() {
-                    if let (
-                        Reading::Unit(Token::Punctuation(
-                            first_dot @ Punctuation { punctuation: '.', .. },
-                        )),
-                        Some(Reading::Unit(Token::Punctuation(
-                            second_dot @ Punctuation {
-                                punctuation: '.', ..
-                            },
-                        ))),
-                    ) = (parser.stop_at_significant(), parser.peek_offset(1))
-                    {
-                        // eat the first dot
-                        parser.forward();
-                        parser.forward();
-
-                        wildcard = Some(Wildcard(first_dot, second_dot));
-                        break;
-                    }
-
-                    let Some(element) = parser.parse_field(handler) else {
-                        skip_to_next_separator(parser, ',');
-                        continue;
-                    };
-
-                    // adds new element
-                    match (&first, &trailing_separator) {
-                        (None, None) => {
-                            first = Some(element);
-                        }
-                        (Some(_), Some(separator)) => {
-                            rest.push((separator.clone(), element));
-                            trailing_separator = None;
-                        }
-                        (first, trailing_separator) => {
-                            unreachable!("{first:?} {trailing_separator:?}")
-                        }
-                    }
-
-                    // expect separator if not exhausted
-                    if !parser.is_exhausted() {
-                        if let (
-                            Reading::Unit(Token::Punctuation(
-                                first_dot @ Punctuation {
-                                    punctuation: '.', ..
-                                },
-                            )),
-                            Some(Reading::Unit(Token::Punctuation(
-                                second_dot @ Punctuation {
-                                    punctuation: '.',
-                                    ..
-                                },
-                            ))),
-                        ) = (
-                            parser.stop_at_significant(),
-                            parser.peek_offset(1),
-                        ) {
-                            // eat the first dot
-                            parser.forward();
-                            parser.forward();
-
-                            wildcard = Some(Wildcard(first_dot, second_dot));
-                            break;
-                        }
-
-                        let Some(separator) =
-                            parser.parse_punctuation(',', true, handler)
-                        else {
-                            if let Some(punctuation) =
-                                skip_to_next_separator(parser, ',')
-                            {
-                                trailing_separator = Some(punctuation);
-                            }
-
-                            continue;
-                        };
-
-                        trailing_separator = Some(separator);
-                    }
-                }
-
-                Some((
-                    first.map(|first| ConnectedList {
-                        first,
-                        rest,
-                        trailing_separator,
-                    }),
-                    wildcard,
-                ))
-            },
-            handler,
-        )?;
-
-        let inner_tree = tree.tree?;
-        Some(Structural {
-            left_brace: tree.open,
-            fields: inner_tree.0,
-            wildcard: inner_tree.1,
-            right_brace: tree.close,
-        })
-    }
-
-    fn parse_tuple_pattern<T: Pattern + Debug>(
-        &mut self,
-        handler: &dyn Handler<error::Error>,
-    ) -> Option<Tuple<T>> {
-        let enclosed_tree = self.parse_delimited_list(
-            Delimiter::Parenthesis,
-            ',',
-            |parser| {
-                let ellipsis = if parser
-                    .stop_at_significant()
-                    .into_token()
-                    .and_then(|x| x.into_punctuation().ok())
-                    .map_or(false, |x| x.punctuation == '.')
-                    && parser
-                        .peek_offset(1)
-                        .and_then(Reading::into_token)
-                        .and_then(|x| x.into_punctuation().ok())
-                        .map_or(false, |x| x.punctuation == '.')
-                    && parser
-                        .peek_offset(2)
-                        .and_then(Reading::into_token)
-                        .and_then(|x| x.into_punctuation().ok())
-                        .map_or(false, |x| x.punctuation == '.')
-                {
-                    let first_punc =
-                        parser.parse_punctuation('.', false, handler)?;
-                    let second_punc =
-                        parser.parse_punctuation('.', false, handler)?;
-                    let third_punc =
-                        parser.parse_punctuation('.', false, handler)?;
-
-                    Some((first_punc, second_punc, third_punc))
-                } else {
-                    None
-                };
-
-                let pattern = Box::new(T::parse(parser, handler)?);
-
-                Some(TupleElement { ellipsis, pattern })
-            },
-            handler,
-        )?;
-
-        Some(Tuple {
-            left_paren: enclosed_tree.open,
-            patterns: enclosed_tree.list,
-            right_paren: enclosed_tree.close,
-        })
-    }
-}
-
-impl Pattern for Irrefutable {
-    fn parse(
-        parser: &mut Parser,
-        handler: &dyn Handler<error::Error>,
-    ) -> Option<Self> {
-        match parser.stop_at_significant() {
-            // parse wildcard pattern
-            Reading::Unit(Token::Punctuation(punc))
-                if punc.punctuation == '.' =>
-            {
-                parser.forward();
-
-                let second_punc =
-                    parser.parse_punctuation('.', false, handler)?;
-
-                Some(Self::Wildcard(Wildcard(punc, second_punc)))
-            }
-
-            // parse named pattern
-            Reading::Unit(
-                Token::Keyword(Keyword { kind: KeywordKind::Mutable, .. })
-                | Token::Identifier(_)
-                | Token::Punctuation(Punctuation {
-                    punctuation: '&' | '@', ..
-                }),
-            ) => parser.parse_named_pattern(handler).map(Self::Named),
-
-            // parse tuple pattern
-            Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
-                parser.parse_tuple_pattern(handler).map(Self::Tuple)
-            }
-
-            // parse structural pattern
-            Reading::IntoDelimited(Delimiter::Brace, _) => {
-                parser.parse_structural_pattern(handler).map(Self::Structural)
-            }
-
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::IrrefutablePattern,
-                    alternatives: Vec::new(),
-                    found: parser.reading_to_found(found),
-                });
-
-                // make progress
-                parser.forward();
-
-                None
-            }
-        }
-    }
-}
-
-impl Pattern for Refutable {
-    fn parse(
-        parser: &mut Parser,
-        handler: &dyn Handler<error::Error>,
-    ) -> Option<Self> {
-        match parser.stop_at_significant() {
-            // parse wildcard pattern
-            Reading::Unit(Token::Punctuation(punc))
-                if punc.punctuation == '.' =>
-            {
-                parser.forward();
-
-                let second_punc =
-                    parser.parse_punctuation('.', false, handler)?;
-
-                Some(Self::Wildcard(Wildcard(punc, second_punc)))
-            }
-
-            // parse named pattern
-            Reading::Unit(
-                Token::Keyword(Keyword { kind: KeywordKind::Mutable, .. })
-                | Token::Identifier(_)
-                | Token::Punctuation(Punctuation {
-                    punctuation: '&' | '@', ..
-                }),
-            ) => parser.parse_named_pattern(handler).map(Self::Named),
-
-            Reading::Unit(Token::Keyword(case_keyword))
-                if case_keyword.kind == KeywordKind::Case =>
-            {
-                // eat the case keyword
-                parser.forward();
-
-                let identifier = parser.parse_identifier(handler)?;
-
-                let association = if matches!(
-                    parser.stop_at_significant(),
-                    Reading::IntoDelimited(Delimiter::Parenthesis, _)
-                ) {
-                    let tree = parser.step_into(
-                        Delimiter::Parenthesis,
-                        |parser| parser.parse_refutable_pattern(handler),
-                        handler,
-                    )?;
-
-                    Some(EnumAssociation {
-                        left_paren: tree.open,
-                        pattern: Box::new(tree.tree?),
-                        right_paren: tree.close,
-                    })
-                } else {
-                    None
-                };
-
-                Some(Self::Enum(Enum { case_keyword, identifier, association }))
-            }
-
-            // parse tuple pattern
-            Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
-                parser.parse_tuple_pattern(handler).map(Self::Tuple)
-            }
-
-            // parse structural pattern
-            Reading::IntoDelimited(Delimiter::Brace, _) => {
-                parser.parse_structural_pattern(handler).map(Self::Structural)
-            }
-
-            // parse integer literal pattern
-            Reading::Unit(Token::Numeric(numeric)) => {
-                parser.forward();
-
-                Some(Self::Integer(Integer { minus: None, numeric }))
-            }
-
-            // parse integer literal pattern with minus sign
-            Reading::Unit(Token::Punctuation(
-                punc @ Punctuation { punctuation: '-', .. },
-            )) => {
-                parser.forward();
-
-                let numeric = parser.parse_numeric(handler)?;
-
-                Some(Self::Integer(Integer { minus: Some(punc), numeric }))
-            }
-
-            // parse boolean literal pattern
-            Reading::Unit(Token::Keyword(boolean_keyword))
-                if matches!(
-                    boolean_keyword.kind,
-                    KeywordKind::True | KeywordKind::False
-                ) =>
-            {
-                parser.forward();
-                let constructor = match boolean_keyword.kind {
-                    KeywordKind::True => Boolean::True,
-                    KeywordKind::False => Boolean::False,
-                    _ => unreachable!(),
-                };
-                Some(Self::Boolean(constructor(boolean_keyword)))
-            }
-
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::RefutablePattern,
-                    alternatives: Vec::new(),
-                    found: parser.reading_to_found(found),
-                });
-                parser.forward();
-                None
-            }
-        }
-    }
-}
-
-impl<'a> Parser<'a> {
-    /// Parses an [`Irrefutable`] pattern.
-    pub fn parse_irrefutable_pattern(
-        &mut self,
-        handler: &dyn Handler<error::Error>,
-    ) -> Option<Irrefutable> {
-        Irrefutable::parse(self, handler)
-    }
-
-    /// Parses a [`Refutable`] pattern.
-    pub fn parse_refutable_pattern(
-        &mut self,
-        handler: &dyn Handler<error::Error>,
-    ) -> Option<Refutable> {
-        Refutable::parse(self, handler)
     }
 }
 

@@ -1,17 +1,37 @@
 //! Contains the definition of [`StateMachine`] and its implementation.
 
-use parse::Parse;
-use pernixc_base::handler::Handler;
+use getset::CopyGetters;
 use pernixc_lexical::token_stream::{Location, Node, TokenKind, Tree};
 
-use crate::error;
+use crate::expect::Expected;
 
 pub mod parse;
 
-/**
-Encounters a fatal syntax error while parsing the syntax tree. The error
-diagnostics are reported to the handler.
- */
+/// Represents the state machine used to scan the token stream input and produce
+/// a syntax tree.
+///
+/// By default, all of the progression methods will skip insignificant tokens.
+/// To include insignificant tokens, use the `_no_skip` variants of the methods.
+#[derive(Debug, Clone, PartialEq, Eq, CopyGetters)]
+pub struct StateMachine<'a> {
+    /// The tree of tokens to scan.
+    #[get_copy = "pub"]
+    tree: &'a Tree<'a>,
+
+    /// The location that the state machine is currently at
+    #[get_copy = "pub"]
+    location: Location,
+
+    /// Represents the number of tokens that have been choosen by the parser.
+    ///
+    /// This is useful when branching and backtracking.
+    #[get_copy = "pub"]
+    eaten_tokens: usize,
+
+    expected: Vec<Expected>,
+}
+
+/// An error that occurs when trying to step into a delimited token stream.
 #[derive(
     Debug,
     Clone,
@@ -24,36 +44,25 @@ diagnostics are reported to the handler.
     thiserror::Error,
     displaydoc::Display,
 )]
-pub struct Error;
+pub enum StepIntoError {
+    /// Thetoken is not [`Delimited`] and cannot be stepped into.
+    NotDelimited,
 
-/// Represents the state machine used to scan the token stream input and produce
-/// a syntax tree.
-///
-/// By default, all of the progression methods will skip insignificant tokens.
-/// To include insignificant tokens, use the `_no_skip` variants of the methods.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StateMachine<'a> {
-    /// The tree of tokens to scan.
-    tree: &'a Tree<'a>,
-
-    /// The location that the state machine is currently at
-    location: Location,
-
-    /// Represents the number of tokens that have been choosen by the parser.
-    ///
-    /// This is useful when branching and backtracking.
-    eaten_tokens: usize,
+    /// The token stream has reached the end of the stream.
+    EndOfStream,
 }
 
 impl<'a> StateMachine<'a> {
     /// Creates a new token stream state machine.
     #[must_use]
-    pub fn new(tree: &'a Tree<'a>) -> Self {
-        Self { tree, location: Location::new(0, 0), eaten_tokens: 0 }
+    pub const fn new(tree: &'a Tree<'a>) -> Self {
+        Self {
+            tree,
+            location: Location::new(0, 0),
+            eaten_tokens: 0,
+            expected: Vec::new(),
+        }
     }
-
-    /// Gets the tree of tokens that the state machine is scanning.
-    pub fn tree(&self) -> &'a Tree<'a> { self.tree }
 
     /// Finds the nearest **significant** token in the token stream and returns
     /// it along with its index.
@@ -76,7 +85,7 @@ impl<'a> StateMachine<'a> {
                     return Some((token, current_tok_index));
                 }
 
-                _ => {
+                TokenKind::Token(_) => {
                     current_tok_index += 1;
                 }
             }
@@ -85,47 +94,15 @@ impl<'a> StateMachine<'a> {
 
     /// Gets the current token in the token stream. If there are no more tokens,
     /// the function returns `None`.
+    #[must_use]
     pub fn peek_no_skip(&self) -> Option<&'a TokenKind> {
         self.tree.get_token(&self.location)
-    }
-
-    /// If the nearest **significant** token is a [TokenKind::Delimited], steps
-    /// into this node and invokes the given function.
-    ///
-    /// # Returns
-    ///
-    /// Returns `true` if the current location is pointing to a
-    /// [TokenKind::Delimited]. and the function was invoked. Otherwise,
-    /// returns `false`.
-    pub fn peek_into(
-        &self,
-        f: impl FnOnce(StateMachine<'a>, Location),
-    ) -> bool {
-        if let Some((TokenKind::Delimited(_), tok_index)) = self.peek() {
-            let delimited_node_index = self
-                .tree
-                .get_node(self.location.node_index)
-                .child_ids_by_token_index[&tok_index];
-
-            f(
-                Self {
-                    tree: self.tree,
-                    location: Location::new(delimited_node_index, 0),
-                    eaten_tokens: 0,
-                },
-                Location::new(self.location.node_index, tok_index),
-            );
-
-            true
-        } else {
-            false
-        }
     }
 
     /// Consumes the current token and moves to the next token.
     ///
     /// This counts as a token that has been choosen by the parser; therefore,
-    /// the [Self::eaten_tokens] is incremented.
+    /// the [`Self::eaten_tokens`] is incremented.
     pub fn next_no_skip(&mut self) -> Option<&'a TokenKind> {
         // counts as eaten no matter what
         self.eaten_tokens += 1;
@@ -140,12 +117,13 @@ impl<'a> StateMachine<'a> {
     /// to the next token.
     ///
     /// This counts as a token that has been choosen by the parser; therefore,
-    /// the [Self::eaten_tokens] is incremented.
+    /// the [`Self::eaten_tokens`] is incremented.
     ///
     /// # Returns
     ///
     /// Returns `Some` with the token and its index if successful. Otherwise,
     /// returns `None`.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<(&'a TokenKind, usize)> {
         // counts as eaten no matter what
         self.eaten_tokens += 1;
@@ -157,35 +135,42 @@ impl<'a> StateMachine<'a> {
         Some((token, tok_index))
     }
 
-    /// Steps into the nearest **significant** [TokenKind::Delimited] token in
-    /// the token stream and invokes the given function.
+    /// Steps into the nearest **significant** [`TokenKind::Delimited`] token
+    /// in the token stream and invokes the given function.
     ///
     /// This counts as a token that has been choosen by the parser; therefore,
-    /// the [Self::eaten_tokens] is incremented.
+    /// the [`Self::eaten_tokens`] is incremented.
     ///
     /// # Returns
     ///
     /// Returns `Some` with the result of the closure if successful. Otherwise,
     /// returns `None`.
+    ///
+    /// # Errors
+    ///
+    /// See [`StepIntoError`] for more information.
     pub fn next_step_into<O>(
         &mut self,
-        f: impl FnOnce(&mut StateMachine<'a>, Location) -> O,
-    ) -> Option<O> {
+        f: impl FnOnce(&mut Self, Location) -> O,
+    ) -> Result<O, StepIntoError> {
         // counts as eaten no matter what
         self.eaten_tokens += 1;
 
-        let (token, tok_index) = self.peek()?;
+        let (token, tok_index) =
+            self.peek().ok_or(StepIntoError::EndOfStream)?;
 
         let result = if let TokenKind::Delimited(_) = token {
             let delimited_node_index = self
                 .tree
                 .get_node(self.location.node_index)
+                .unwrap()
                 .child_ids_by_token_index[&tok_index];
 
             let mut step_state_machine = Self {
                 tree: self.tree,
                 location: Location::new(delimited_node_index, 0),
                 eaten_tokens: 0,
+                expected: self.take_expected(),
             };
 
             let result = f(
@@ -193,12 +178,14 @@ impl<'a> StateMachine<'a> {
                 Location::new(self.location.node_index, tok_index),
             );
 
+            self.expected = step_state_machine.expected;
+
             // accumulates the step state machine's eaten tokens
             self.eaten_tokens += step_state_machine.eaten_tokens;
 
-            Some(result)
+            Ok(result)
         } else {
-            None
+            return Err(StepIntoError::NotDelimited);
         };
 
         self.location.token_index = tok_index + 1;
@@ -208,31 +195,25 @@ impl<'a> StateMachine<'a> {
 
     /// Returns the current node index of the state machine.
     #[must_use]
-    pub fn current_node_index(&self) -> usize { self.location.node_index }
+    pub const fn current_node_index(&self) -> usize { self.location.node_index }
 
     /// Returns the current token index of the state machine.
     #[must_use]
-    pub fn current_token_index(&self) -> usize { self.location.token_index }
-
-    /// Gets the current [TokenStream::Node] that the state machine is at.
-    pub fn current_node(&self) -> &'a Node<'a> {
-        self.tree.get_node(self.location.node_index)
+    pub const fn current_token_index(&self) -> usize {
+        self.location.token_index
     }
 
-    pub fn parse_and_report<P: Parse>(
-        &mut self,
-        parser: P,
-        handler: &dyn Handler<error::Error>,
-    ) -> Result<P::Output<'a>, Error> {
-        match parser.parse(self, handler) {
-            Ok(a) => Ok(a),
-            Err(unexpected) => {
-                handler.receive(error::Error::from_unexpected(
-                    self.tree, unexpected,
-                ));
+    /// Gets the current [`Node`] that the state machine is at.
+    #[must_use]
+    pub fn current_node(&self) -> &'a Node<'a> {
+        self.tree.get_node(self.location.node_index).unwrap()
+    }
 
-                Err(Error)
-            }
-        }
+    /// Gets the length of expected tokens.
+    pub fn expected_len(&self) -> usize { self.expected.len() }
+
+    /// Takes the expected vector and returns it.
+    pub fn take_expected(&mut self) -> Vec<Expected> {
+        std::mem::take(&mut self.expected)
     }
 }

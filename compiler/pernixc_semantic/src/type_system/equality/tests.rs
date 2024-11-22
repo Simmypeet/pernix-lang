@@ -282,7 +282,7 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
                 1 => LocalCongruence::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
             ]
         })
-        .boxed()
+        
     }
 }
 
@@ -291,7 +291,7 @@ impl Arbitrary for Box<dyn Property<Lifetime<Default>>> {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Identity::arbitrary().prop_map(|x| Box::new(x) as _).boxed()
+        Identity::arbitrary().prop_map(|x| Box::new(x) as _)
     }
 }
 
@@ -307,7 +307,7 @@ impl Arbitrary for Box<dyn Property<Constant<Default>>> {
                 1 => LocalCongruence::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _),
             ]
         })
-        .boxed()
+        
     }
 }
 
@@ -324,7 +324,7 @@ where
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        T::arbitrary().prop_map(|term| Self { term }).boxed()
+        T::arbitrary().prop_map(|term| Self { term })
     }
 }
 
@@ -367,7 +367,7 @@ where
                 target_trait_member,
                 map_at_lhs: target_at_lhs,
             })
-            .boxed()
+            
     }
 }
 
@@ -453,7 +453,7 @@ where
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let strategy = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
 
-        strategy.prop_map(|strategy| Self { strategy }).boxed()
+        strategy.prop_map(|strategy| Self { strategy })
     }
 }
 
@@ -529,7 +529,7 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Copy>
                     id,
                 },
             )
-            .boxed()
+            
     }
 }
 
@@ -761,7 +761,7 @@ impl Arbitrary for Decoy {
 
         proptest::collection::vec(equality, 0..=4)
             .prop_map(|types| Self { types })
-            .boxed()
+            
     }
 }
 

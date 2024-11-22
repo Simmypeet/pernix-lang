@@ -13,7 +13,7 @@ use crate::syntax_tree::{
     self,
     pattern::strategy::Refutable,
     r#type::strategy::Type,
-    statement::strategy::Statement,
+    statement::strategy::{Statement, Statements},
     strategy::{
         ConnectedList, ConstantPunctuation, GenericIdentifier, Identifier,
         Label, QualifiedIdentifier, ReferenceOf,
@@ -140,47 +140,6 @@ impl Display for LabelSpecifier {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Statements {
-    pub statements: Vec<Statement>,
-}
-
-impl Input<&super::Statements> for &Statements {
-    fn assert(self, output: &super::Statements) -> TestCaseResult {
-        self.statements.assert(output.statements())
-    }
-}
-
-impl Arbitrary for Statements {
-    type Parameters = (
-        Option<BoxedStrategy<Expression>>,
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<QualifiedIdentifier>>,
-        Option<BoxedStrategy<Statement>>,
-    );
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let statement = args
-            .3
-            .unwrap_or_else(|| Statement::arbitrary_with((args.0, args.1)));
-
-        proptest::collection::vec(statement, 0..=6)
-            .prop_map(|statements| Self { statements })
-            .boxed()
-    }
-}
-
-impl Display for Statements {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_char('{')?;
-        for statement in &self.statements {
-            Display::fmt(statement, f)?;
-        }
-        f.write_char('}')
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Block {
     pub label_specifier: Option<LabelSpecifier>,
     pub is_unsafe: bool,
@@ -270,7 +229,7 @@ impl Display for Loop {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IfElse {
-    pub condition: Box<Expression>,
+    pub parenthesized: Parenthesized,
     pub then_expression: Block,
     pub else_expression: Option<Else>,
 }
@@ -285,24 +244,17 @@ impl Arbitrary for IfElse {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression = args.0.clone().unwrap_or_else(|| {
-            Expression::arbitrary_with((
-                args.1.clone(),
-                args.2.clone(),
-                args.3.clone(),
-            ))
-        });
-
-        let leaf = (expression.clone(), Block::arbitrary_with(args.clone()))
-            .prop_map(|(condition, then_expression)| Self {
-                condition: Box::new(condition),
+        let parenthesized = Parenthesized::arbitrary_with(args.0.clone());
+        let leaf = (parenthesized.clone(), Block::arbitrary_with(args.clone()))
+            .prop_map(|(parenthesized, then_expression)| Self {
+                parenthesized,
                 then_expression,
                 else_expression: None,
             });
 
         leaf.prop_recursive(4, 24, 6, move |inner| {
             (
-                expression.clone(),
+                parenthesized,
                 Block::arbitrary_with(args.clone()),
                 proptest::option::of(prop_oneof![
                     Block::arbitrary_with(args.clone()).prop_map(|x| {
@@ -314,8 +266,8 @@ impl Arbitrary for IfElse {
                 ]),
             )
                 .prop_map(
-                    |(condition, then_expression, else_expression)| Self {
-                        condition: Box::new(condition),
+                    |(parenthesized, then_expression, else_expression)| Self {
+                        parenthesized,
                         then_expression,
                         else_expression,
                     },
@@ -327,7 +279,7 @@ impl Arbitrary for IfElse {
 
 impl Input<&super::IfElse> for &IfElse {
     fn assert(self, output: &super::IfElse) -> TestCaseResult {
-        self.condition.assert(output.condition())?;
+        self.parenthesized.assert(output.parenthesized())?;
         self.then_expression.assert(output.then_expression())?;
         self.else_expression.as_ref().assert(output.else_expression().as_ref())
     }
@@ -335,7 +287,7 @@ impl Input<&super::IfElse> for &IfElse {
 
 impl Display for IfElse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "if ({}) {}", self.condition, self.then_expression)?;
+        write!(f, "if {} {}", self.parenthesized, self.then_expression)?;
 
         if let Some(else_expression) = &self.else_expression {
             write!(f, " {else_expression}")?;
@@ -463,7 +415,7 @@ pub struct Match {
 impl Input<&super::Match> for &Match {
     fn assert(self, output: &super::Match) -> TestCaseResult {
         self.parenthesized.assert(output.parenthesized())?;
-        self.arms.as_ref().assert(output.arms().as_ref())
+        self.arms.as_ref().assert(output.arms().connected_list.as_ref())
     }
 }
 
@@ -497,7 +449,7 @@ impl Display for Match {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct While {
-    pub condition: Box<Expression>,
+    pub parenthesized: Parenthesized,
     pub block: Block,
 }
 
@@ -511,33 +463,24 @@ impl Arbitrary for While {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression = args.0.clone().unwrap_or_else(|| {
-            Expression::arbitrary_with((
-                args.1.clone(),
-                args.2.clone(),
-                args.3.clone(),
-            ))
-        });
+        let parenthesized = Parenthesized::arbitrary_with(args.0.clone());
 
-        (expression, Block::arbitrary_with(args))
-            .prop_map(|(condition, block)| Self {
-                condition: Box::new(condition),
-                block,
-            })
+        (parenthesized, Block::arbitrary_with(args))
+            .prop_map(|(parenthesized, block)| Self { parenthesized, block })
             .boxed()
     }
 }
 
 impl Input<&super::While> for &While {
     fn assert(self, output: &super::While) -> TestCaseResult {
-        self.condition.assert(output.condition())?;
+        self.parenthesized.assert(output.parenthesized())?;
         self.block.assert(output.block())
     }
 }
 
 impl Display for While {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "while ({}) {}", self.condition, self.block)
+        write!(f, "while {} {}", self.parenthesized, self.block)
     }
 }
 
@@ -994,7 +937,7 @@ pub struct Parenthesized {
 
 impl Input<&super::Parenthesized> for &Parenthesized {
     fn assert(self, output: &super::Parenthesized) -> TestCaseResult {
-        self.expressions.as_ref().assert(output.expression().as_ref())
+        self.expressions.as_ref().assert(output.connected_list.as_ref())
     }
 }
 
@@ -1071,7 +1014,7 @@ impl Input<&super::Struct> for &Struct {
         self.qualified_identifier.assert(output.qualified_identifier())?;
         self.field_initializers
             .as_ref()
-            .assert(output.field_initializers().as_ref())
+            .assert(output.field_initializers().connected_list.as_ref())
     }
 }
 
@@ -1126,7 +1069,9 @@ pub struct Array {
 
 impl Input<&super::Array> for &Array {
     fn assert(self, output: &super::Array) -> TestCaseResult {
-        self.expressions.as_ref().assert(output.arguments().as_ref())
+        self.expressions
+            .as_ref()
+            .assert(output.arguments().connected_list.as_ref())
     }
 }
 
@@ -1291,7 +1236,9 @@ pub struct Call {
 
 impl Input<&super::Call> for &Call {
     fn assert(self, output: &super::Call) -> TestCaseResult {
-        self.arguments.as_ref().assert(output.arguments().as_ref())
+        self.arguments
+            .as_ref()
+            .assert(output.arguments().connected_list.as_ref())
     }
 }
 
@@ -1419,7 +1366,7 @@ impl Input<&super::AccessKind> for &AccessKind {
             }
 
             (AccessKind::Index(input), super::AccessKind::Index(output)) => {
-                input.assert(&output.expression)
+                input.assert(&output.expression.tree)
             }
 
             (input, output) => Err(TestCaseError::fail(format!(

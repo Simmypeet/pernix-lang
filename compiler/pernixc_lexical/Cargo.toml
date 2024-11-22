@@ -21,6 +21,7 @@ derive-new = { workspace = true }
 bimap = { workspace = true }
 pernixc_tests = { path = "../pernixc_tests" }
 proptest = { workspace = true }
+displaydoc = { workspace = true }
 
 [lints]
 workspace = true

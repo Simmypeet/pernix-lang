@@ -27,9 +27,9 @@ use super::{
     item::{Module, ModuleContent, ModuleSignature},
     AccessModifier,
 };
-use crate::{error, parser::Parser, syntax_tree::item::ModuleKind};
+use crate::{error, parse::Parser, syntax_tree::item::ModuleKind};
 
-pub mod strategy;
+// // pub mod strategy;
 
 /// Contains both the access modifier and the module signature.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -366,7 +366,7 @@ impl Target {
 
     /// Parses the whole module tree for the target program from the given root
     /// source file.
-    pub fn parse<
+    pub fn parse<'a><
         T: Handler<error::Error>
             + Handler<pernixc_lexical::error::Error>
             + Handler<Error>
@@ -393,5 +393,5 @@ impl Target {
     }
 }
 
-#[cfg(test)]
-mod test;
+// #[cfg(test)]
+// mod test;

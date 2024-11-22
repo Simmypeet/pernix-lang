@@ -3,217 +3,156 @@
 #![allow(missing_docs)]
 
 use enum_as_inner::EnumAsInner;
+use expression::Expression;
 use getset::Getters;
 use pernixc_base::{
     handler::Handler,
     source_file::{SourceElement, Span},
 };
-use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation};
+use pernixc_lexical::{
+    token::{Identifier, Keyword, KeywordKind, Punctuation},
+    token_stream::Delimiter,
+};
+use r#type::Type;
 
 use crate::{
-    error, expect,
+    error,
+    expect::{self, Expected},
     state_machine::{
-        parse::{self, ExpectExt, ExpectedIterator, Parse},
+        parse::{self, ExpectExt, Parse, StepInto},
         StateMachine,
     },
 };
 
-// pub mod expression;
-// pub mod item;
-// pub mod json;
-// pub mod pattern;
-// pub mod predicate;
-// pub mod statement;
+pub mod expression;
+pub mod item;
+pub mod json;
+pub mod pattern;
+pub mod predicate;
+pub mod statement;
 // pub mod strategy;
 // pub mod target;
-// pub mod r#type;
+pub mod r#type;
 
-/// Syntax Synopsis:
-/// ``` txt
-/// AccessModifier:
-///     'public'
-///      | 'private'
-///      | 'internal'
-///      ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum AccessModifier {
-    Public(Keyword),
-    Private(Keyword),
-    Internal(Keyword),
-}
-
-impl AccessModifier {
-    pub fn parse<'a>(
-        state_machine: &mut StateMachine<'a>,
-        handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
-        KeywordKind::Public
-            .to_owned()
-            .map(AccessModifier::Public)
-            .or_else(
-                KeywordKind::Private.to_owned().map(AccessModifier::Private),
-            )
-            .or_else(
-                KeywordKind::Internal.to_owned().map(AccessModifier::Internal),
-            )
-            .parse(state_machine, handler)
+/// An extension trait for the [`Parse`] trait allowing for more complex parsing
+/// operations.
+pub trait ParseExt<'a>: Parse<'a> {
+    /// Parses a syntax tree node enclosed within a pair of delimiter tokens.
+    #[allow(clippy::type_complexity)]
+    fn enclosed_tree(
+        self,
+        delimiter: Delimiter,
+    ) -> parse::Map<
+        StepInto<Self>,
+        fn(
+            (&'a Punctuation, Self::Output, &'a Punctuation),
+        ) -> EnclosedTree<Self::Output>,
+    >
+    where
+        Self: Sized,
+    {
+        self.step_into(delimiter).map(|(open, tree, close)| EnclosedTree {
+            open: open.clone(),
+            tree,
+            close: close.clone(),
+        })
     }
-}
 
-impl SourceElement for AccessModifier {
-    fn span(&self) -> Span {
-        match self {
-            Self::Public(k) | Self::Private(k) | Self::Internal(k) => {
-                k.span.clone()
-            }
+    /// Parses a syntax tree node for [`EnclosedConnectedList`]. The parser
+    /// will keep parsing elements until it reaches the closing delimiter.
+    fn enclosed_connected_list<SeparatorParser>(
+        self,
+        separator_parser: SeparatorParser,
+        delimiter: Delimiter,
+    ) -> EnclosedConnectedListParser<Self, SeparatorParser>
+    where
+        Self: Sized,
+        SeparatorParser: Parse<'a>,
+    {
+        EnclosedConnectedListParser {
+            delimiter,
+            element_parser: self,
+            separator_parser,
         }
     }
-}
 
-/// Represents a syntax tree node of two consecutive colon tokens.
-///
-/// This syntax tree is used to represent the scope separator `::` in the
-/// qualified identifier syntax
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
-pub struct ScopeSeparator {
-    #[get = "pub"]
-    first: Punctuation,
-    #[get = "pub"]
-    second: Punctuation,
-}
+    /// Parses a syntax tree node for [`ConnectedList`]. The parser will keep
+    /// trying to parse elements until it no longer can parse any more elements
+    /// without encountering an error.
+    fn connected_list<SeparatorParser>(
+        self,
+        separator_parser: SeparatorParser,
+    ) -> ConnectedListParser<Self, SeparatorParser>
+    where
+        Self: Sized,
+        SeparatorParser: Parse<'a>,
+    {
+        ConnectedListParser { element_parser: self, separator_parser }
+    }
 
-impl ScopeSeparator {
-    pub fn parse<'a>(
-        state_machine: &mut StateMachine<'a>,
-        handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
-        (':'.to_owned(), ':'.no_skip().to_owned())
-            .map(|(first, second)| ScopeSeparator { first, second })
-            .parse(state_machine, handler)
+    /// Parses a syntax tree node for [`UnionList`]. The parser will keep trying
+    /// to parse elements until it no longer can parse any more elements without
+    /// encountering an error.
+    #[allow(clippy::type_complexity)]
+    fn union_list(
+        self,
+    ) -> parse::Map<
+        (Self, parse::KeepTake<(parse::ToOwned<char>, Self)>),
+        fn(
+            (Self::Output, Vec<(Punctuation, Self::Output)>),
+        ) -> UnionList<Self::Output>,
+    >
+    where
+        Self: Sized + Clone,
+    {
+        (self.clone(), ('+'.to_owned(), self).keep_take())
+            .map(|(first, rest)| UnionList { first, rest })
     }
 }
 
-impl SourceElement for ScopeSeparator {
-    fn span(&self) -> Span { self.first.span.join(&self.second.span) }
-}
+impl<'a, T: Parse<'a>> ParseExt<'a> for T {}
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Elided:
-///     '..'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Elided {
-    #[get = "pub"]
-    first_dot: Punctuation,
-    #[get = "pub"]
-    second_dot: Punctuation,
-}
-
-impl Elided {
-    pub fn parse<'a>(
-        state_machine: &mut StateMachine<'a>,
+/// Represents a syntax tree that can be parsed.
+pub trait SyntaxTree {
+    /// Parses the syntax tree at the current state
+    #[allow(clippy::missing_errors_doc)]
+    fn parse(
+        state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
-        ('.'.to_owned(), '.'.no_skip().to_owned())
-            .map(|(first_dot, second_dot)| Elided { first_dot, second_dot })
-            .parse(state_machine, handler)
+    ) -> parse::Result<Self>
+    where
+        Self: Sized;
+}
+
+/// Represents a syntax tree node with a pattern of syntax tree node enclosed
+/// within a pair of delimiter tokens.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct EnclosedTree<T> {
+    /// The opening delimiter token.
+    #[get = "pub"]
+    open: Punctuation,
+    /// The enclosed syntax tree node.
+    #[get = "pub"]
+    tree: T,
+    /// The closing delimiter token.
+    #[get = "pub"]
+    close: Punctuation,
+}
+
+impl<T> EnclosedTree<T> {
+    /// Destructs the [`EnclosedTree`] into its components.
+    #[must_use]
+    pub fn destruct(self) -> (Punctuation, T, Punctuation) {
+        (self.open, self.tree, self.close)
     }
 }
 
-impl SourceElement for Elided {
-    fn span(&self) -> Span { self.first_dot.span.join(&self.second_dot.span) }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// LifetimeIdentifier:
-///     Identifier
-///     | 'static'
-///     | '..'
-///     ;
-/// ```
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    EnumAsInner,
-    derive_more::From,
-)]
-#[allow(missing_docs)]
-pub enum LifetimeIdentifier {
-    Identifier(Identifier),
-    Static(Keyword),
-    Elided(Elided),
-}
-
-impl SourceElement for LifetimeIdentifier {
+impl<T> SourceElement for EnclosedTree<T> {
     fn span(&self) -> Span {
-        match self {
-            Self::Identifier(ident) => ident.span.clone(),
-            Self::Static(keyword) => keyword.span.clone(),
-            Self::Elided(elided) => elided.span(),
-        }
+        self.open.span().join(&self.close.span()).unwrap()
     }
 }
 
-impl LifetimeIdentifier {
-    pub fn parse<'a>(
-        state_machine: &mut StateMachine<'a>,
-        handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
-        expect::Identifier
-            .to_owned()
-            .map(LifetimeIdentifier::Identifier)
-            .or_else(
-                KeywordKind::Static.to_owned().map(LifetimeIdentifier::Static),
-            )
-            .or_else(Elided::parse.map(LifetimeIdentifier::Elided))
-            .parse(state_machine, handler)
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Lifetime:
-///     '/'' LifetimeIdentifier
-///     ;
-/// ``
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
-pub struct Lifetime {
-    #[get = "pub"]
-    apostrophe: Punctuation,
-    #[get = "pub"]
-    identifier: LifetimeIdentifier,
-}
-
-impl SourceElement for Lifetime {
-    fn span(&self) -> Span {
-        self.apostrophe.span.join(&self.identifier.span())
-    }
-}
-
-impl Lifetime {
-    pub fn parse<'a>(
-        state_machine: &mut StateMachine<'a>,
-        handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
-        ('/'.to_owned(), LifetimeIdentifier::parse)
-            .map(|(apostrophe, identifier)| Lifetime { apostrophe, identifier })
-            .parse(state_machine, handler)
-    }
-}
-
-/*
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated
 /// by a separator.
 ///
@@ -238,97 +177,6 @@ pub struct ConnectedList<Element, Separator> {
     /// The trailing separator of the list.
     #[get = "pub"]
     trailing_separator: Option<Separator>,
-}
-
-/// Represents a syntax tree pattern of a list of elements enclosed by a pair of
-/// delimiters.
-pub type DelimitedList<T> =
-    DelimitedTree<Option<ConnectedList<T, Punctuation>>>;
-
-/// Parses a list of elements enclosed by a pair of delimiters, separated by a
-/// separator.
-pub fn delimited_list<T: Parse>(
-    delimiter: Delimiter,
-    separator: char,
-) -> impl Syntax<Output = DelimitedList<T>> {
-    delimiter.verify_then_do(move |parser, handler| {
-        fn skip_to_next_separator(
-            this: &mut Parser,
-            separator: char,
-        ) -> Option<Punctuation> {
-            if let Reading::Unit(Token::Punctuation(pun)) =
-                this.stop_at(|token| {
-                    matches!(
-                        token, Reading::Unit(Token::Punctuation(pun))
-                        if pun.punctuation == separator
-                    )
-                })
-            {
-                this.forward();
-                Some(pun)
-            } else {
-                None
-            }
-        }
-
-        let delimited_tree = parser.step_into(
-            delimiter,
-            |parser| {
-                let mut first = None;
-                let mut rest = Vec::new();
-                let mut trailing_separator: Option<Punctuation> = None;
-
-                while !parser.is_exhausted() {
-                    let Ok(element) = parser.parse_syntax_tree::<T>(handler)
-                    else {
-                        skip_to_next_separator(parser, separator);
-                        continue;
-                    };
-
-                    // adds new element
-                    match (&first, &trailing_separator) {
-                        (None, None) => {
-                            first = Some(element);
-                        }
-                        (Some(_), Some(separator)) => {
-                            rest.push((separator.clone(), element));
-                            trailing_separator = None;
-                        }
-                        _ => unreachable!(),
-                    }
-
-                    // expect separator if not exhausted
-                    if !parser.is_exhausted() {
-                        let Ok(separator) = parser.parse(separator, handler)
-                        else {
-                            if let Some(punctuation) =
-                                skip_to_next_separator(parser, separator)
-                            {
-                                trailing_separator = Some(punctuation);
-                            }
-
-                            continue;
-                        };
-
-                        trailing_separator = Some(separator);
-                    }
-                }
-
-                Ok(first.map(|first| ConnectedList {
-                    first,
-                    rest,
-                    trailing_separator,
-                }))
-            },
-            handler,
-        )?;
-
-        Ok(DelimitedList {
-            open: delimited_tree.open,
-            tree: delimited_tree.tree.unwrap(),
-            close: delimited_tree.close,
-        })
-    })
 }
 
 impl<Element: SourceElement, Separator: SourceElement> SourceElement
@@ -369,8 +217,467 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
     ///
     /// The function will never return `false`.
     pub const fn is_empty(&self) -> bool { false }
+
+    /// Destructs the [`ConnectedList`] into its components.
+    #[must_use]
+    pub fn destruct(
+        self,
+    ) -> (Element, Vec<(Separator, Element)>, Option<Separator>) {
+        (self.first, self.rest, self.trailing_separator)
+    }
 }
 
+/// Created by the [`ParseExt::connected_list`] method.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConnectedListParser<Element, Separator> {
+    element_parser: Element,
+    separator_parser: Separator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ConnectedListExpectedIter<Element, Separator> {
+    Element(Element),
+    Separator(Separator),
+}
+
+impl<
+        Element: Iterator<Item = Expected>,
+        Separator: Iterator<Item = Expected>,
+    > Iterator for ConnectedListExpectedIter<Element, Separator>
+{
+    type Item = Expected;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Element(iter) => iter.next(),
+            Self::Separator(iter) => iter.next(),
+        }
+    }
+}
+
+impl<'a, Element: Parse<'a> + Clone, Separator: Parse<'a> + Clone> Parse<'a>
+    for ConnectedListParser<Element, Separator>
+{
+    type Output = Option<ConnectedList<Element::Output, Separator::Output>>;
+
+    fn parse(
+        self,
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self::Output> {
+        let mut first = None;
+        let mut rest = Vec::new();
+        let mut trailing_separator = None;
+
+        loop {
+            let element = if let Some(element) = self
+                .element_parser
+                .clone()
+                .or_none()
+                .parse(state_machine, handler)?
+            {
+                element
+            } else {
+                break;
+            };
+
+            match self
+                .separator_parser
+                .clone()
+                .or_none()
+                .parse(state_machine, handler)?
+            {
+                Some(separator) => {
+                    if first.is_none() {
+                        first = Some(element);
+                        trailing_separator = Some(separator);
+                    } else {
+                        rest.push((
+                            trailing_separator.replace(separator).expect(
+                                "should have a separator from previous \
+                                 iteration",
+                            ),
+                            element,
+                        ));
+                    }
+                }
+
+                None => {
+                    if first.is_none() {
+                        first = Some(element);
+                    } else {
+                        rest.push((
+                            std::mem::take(&mut trailing_separator).expect(
+                                "should have a separator from previous \
+                                 iteration",
+                            ),
+                            element,
+                        ));
+                    }
+
+                    break;
+                }
+            };
+        }
+
+        Ok(first.map(|first| ConnectedList { first, rest, trailing_separator }))
+    }
+}
+
+/// Represents a pattern of [`ConnectedList`] enclosed within a pair of
+/// delimiter tokens. For example, `(1, 2, 3)`
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct EnclosedConnectedList<Element, Separator> {
+    /// The open delimiter of the list.
+    #[get = "pub"]
+    open: Punctuation,
+
+    /// The inner list of elements. If `None` then the list is empty
+    /// (immediately closed with the close delimiter).
+    #[get = "pub"]
+    connected_list: Option<ConnectedList<Element, Separator>>,
+
+    /// The close delimiter of the list.
+    #[get = "pub"]
+    close: Punctuation,
+}
+
+impl<Element, Separator> SourceElement
+    for EnclosedConnectedList<Element, Separator>
+{
+    fn span(&self) -> Span {
+        self.open.span().join(&self.close.span()).unwrap()
+    }
+}
+
+impl<Element, Separator> EnclosedConnectedList<Element, Separator> {
+    /// Destructs the [`EnclosedConnectedList`] into its components.
+    #[must_use]
+    pub fn destruct(
+        self,
+    ) -> (Punctuation, Option<ConnectedList<Element, Separator>>, Punctuation)
+    {
+        (self.open, self.connected_list, self.close)
+    }
+}
+
+/// Created by the [`ParseExt::enclosed_connected_list`] method.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EnclosedConnectedListParser<Element, Separator> {
+    delimiter: Delimiter,
+    element_parser: Element,
+    separator_parser: Separator,
+}
+
+impl<'a, Element: Parse<'a> + Clone, Separator: Parse<'a> + Clone> Parse<'a>
+    for EnclosedConnectedListParser<Element, Separator>
+{
+    type Output = EnclosedConnectedList<Element::Output, Separator::Output>;
+
+    #[allow(clippy::too_many_lines)]
+    fn parse(
+        self,
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self::Output> {
+        let inner_connected_list =
+            |state_machine: &mut StateMachine<'a>,
+             handler: &dyn Handler<error::Error>| {
+                let mut first = None;
+                let mut rest = Vec::new();
+                let mut trailing_separator = None;
+
+                let find_closet_separator =
+                    |state_machine: &mut StateMachine<'a>,
+                     handler: &dyn Handler<error::Error>| {
+                        loop {
+                            // no more tokens
+                            if state_machine.peek().is_none() {
+                                return false;
+                            }
+
+                            // find the next separator
+                            if self
+                                .separator_parser
+                                .clone()
+                                .parse_and_drain(state_machine, handler)
+                                .is_ok()
+                            {
+                                return true;
+                            }
+                        }
+                    };
+
+                // keep parse until we hit the end
+                while state_machine.peek().is_some() {
+                    let element = if let Some(element) = self
+                        .element_parser
+                        .clone()
+                        .parse_and_report(state_machine, handler)
+                    {
+                        element
+                    } else {
+                        // error recovery, find the closest separator and
+                        // start from there
+                        if !find_closet_separator(state_machine, handler) {
+                            continue;
+                        }
+
+                        break;
+                    };
+
+                    // parse the separator
+                    let separator = if state_machine.peek().is_some() {
+                        if let Some(separator) = self
+                            .separator_parser
+                            .clone()
+                            .parse_and_report(state_machine, handler)
+                        {
+                            separator
+                        } else {
+                            // error recovery, find the closest separator
+                            // and start from there
+                            if find_closet_separator(state_machine, handler) {
+                                continue;
+                            }
+
+                            break;
+                        }
+                    } else {
+                        if first.is_none() {
+                            first = Some(element);
+                        } else {
+                            rest.push((
+                                std::mem::take(&mut trailing_separator).expect(
+                                    "should have a separator from previous \
+                                     iteration",
+                                ),
+                                element,
+                            ));
+                        }
+
+                        break;
+                    };
+
+                    // assign the value
+                    if first.is_none() {
+                        first = Some(element);
+                        trailing_separator = Some(separator);
+                    } else {
+                        rest.push((
+                            trailing_separator.replace(separator).expect(
+                                "should have a separator from previous \
+                                 iteration",
+                            ),
+                            element,
+                        ));
+                    }
+                }
+
+                Ok(first.map(|first| ConnectedList {
+                    first,
+                    rest,
+                    trailing_separator,
+                }))
+            };
+
+        inner_connected_list
+            .step_into(self.delimiter)
+            .map(|(open, tree, close)| EnclosedConnectedList {
+                open: open.clone(),
+                connected_list: tree,
+                close: close.clone(),
+            })
+            .parse(state_machine, handler)
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// AccessModifier:
+///     'public'
+///      | 'private'
+///      | 'internal'
+///      ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum AccessModifier {
+    Public(Keyword),
+    Private(Keyword),
+    Internal(Keyword),
+}
+
+impl SyntaxTree for AccessModifier {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        KeywordKind::Public
+            .to_owned()
+            .map(AccessModifier::Public)
+            .or_else(
+                KeywordKind::Private.to_owned().map(AccessModifier::Private),
+            )
+            .or_else(
+                KeywordKind::Internal.to_owned().map(AccessModifier::Internal),
+            )
+            .parse(state_machine, handler)
+    }
+}
+
+impl SourceElement for AccessModifier {
+    fn span(&self) -> Span {
+        match self {
+            Self::Public(k) | Self::Private(k) | Self::Internal(k) => {
+                k.span.clone()
+            }
+        }
+    }
+}
+
+/// Represents a syntax tree node of two consecutive colon tokens.
+///
+/// This syntax tree is used to represent the scope separator `::` in the
+/// qualified identifier syntax
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[allow(missing_docs)]
+pub struct ScopeSeparator {
+    #[get = "pub"]
+    first: Punctuation,
+    #[get = "pub"]
+    second: Punctuation,
+}
+
+impl SyntaxTree for ScopeSeparator {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (':'.to_owned(), ':'.no_skip().to_owned())
+            .map(|(first, second)| Self { first, second })
+            .parse(state_machine, handler)
+    }
+}
+
+impl SourceElement for ScopeSeparator {
+    fn span(&self) -> Span { self.first.span.join(&self.second.span).unwrap() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Elided:
+///     '..'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Elided {
+    #[get = "pub"]
+    first_dot: Punctuation,
+    #[get = "pub"]
+    second_dot: Punctuation,
+}
+
+impl SyntaxTree for Elided {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('.'.to_owned(), '.'.no_skip().to_owned())
+            .map(|(first_dot, second_dot)| Self { first_dot, second_dot })
+            .parse(state_machine, handler)
+    }
+}
+
+impl SourceElement for Elided {
+    fn span(&self) -> Span {
+        self.first_dot.span.join(&self.second_dot.span).unwrap()
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// LifetimeIdentifier:
+///     Identifier
+///     | 'static'
+///     | '..'
+///     ;
+/// ```
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum LifetimeIdentifier {
+    Identifier(Identifier),
+    Static(Keyword),
+    Elided(Elided),
+}
+
+impl SourceElement for LifetimeIdentifier {
+    fn span(&self) -> Span {
+        match self {
+            Self::Identifier(ident) => ident.span.clone(),
+            Self::Static(keyword) => keyword.span.clone(),
+            Self::Elided(elided) => elided.span(),
+        }
+    }
+}
+
+impl SyntaxTree for LifetimeIdentifier {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        expect::Identifier
+            .to_owned()
+            .map(LifetimeIdentifier::Identifier)
+            .or_else(
+                KeywordKind::Static.to_owned().map(LifetimeIdentifier::Static),
+            )
+            .or_else(Elided::parse.map(LifetimeIdentifier::Elided))
+            .parse(state_machine, handler)
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Lifetime:
+///     '/'' LifetimeIdentifier
+///     ;
+/// ``
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[allow(missing_docs)]
+pub struct Lifetime {
+    #[get = "pub"]
+    apostrophe: Punctuation,
+    #[get = "pub"]
+    identifier: LifetimeIdentifier,
+}
+
+impl SourceElement for Lifetime {
+    fn span(&self) -> Span {
+        self.apostrophe.span.join(&self.identifier.span()).unwrap()
+    }
+}
+
+impl SyntaxTree for Lifetime {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('/'.to_owned(), LifetimeIdentifier::parse)
+            .map(|(apostrophe, identifier)| Self { apostrophe, identifier })
+            .parse(state_machine, handler)
+    }
+}
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -385,12 +692,16 @@ pub enum Constant {
     Elided(Elided),
 }
 
-impl Parse for Constant {
-    fn syntax() -> impl Syntax<Output = Self> {
-        Expression::syntax()
+impl SyntaxTree for Constant {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Expression::parse
             .map(Box::new)
-            .map(Constant::Expression)
-            .or_else(Elided::syntax().map(Constant::Elided))
+            .map(Self::Expression)
+            .or_else(Elided::parse.map(Constant::Elided))
+            .parse(state_machine, handler)
     }
 }
 
@@ -409,11 +720,16 @@ impl SourceElement for Constant {
 ///     '{' Constant '}'
 ///     ;
 /// ```
-pub type ConstantArgument = DelimitedTree<Constant>;
+pub type ConstantArgument = EnclosedTree<Constant>;
 
-impl Parse for ConstantArgument {
-    fn syntax() -> impl Syntax<Output = Self> {
-        delimited_tree(Delimiter::Brace, Constant::syntax())
+impl SyntaxTree for ConstantArgument {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Constant::parse
+            .enclosed_tree(Delimiter::Brace)
+            .parse(state_machine, handler)
     }
 }
 
@@ -426,7 +742,15 @@ impl Parse for ConstantArgument {
 ///     ;
 /// ```
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
 )]
 #[allow(missing_docs)]
 pub enum GenericArgument {
@@ -435,13 +759,17 @@ pub enum GenericArgument {
     Lifetime(Lifetime),
 }
 
-impl Parse for GenericArgument {
-    fn syntax() -> impl Syntax<Output = Self> {
-        Type::syntax()
+impl SyntaxTree for GenericArgument {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Type::parse
             .map(Box::new)
             .map(GenericArgument::Type)
-            .or_else(ConstantArgument::syntax().map(GenericArgument::Constant))
-            .or_else(Lifetime::syntax().map(GenericArgument::Lifetime))
+            .or_else(ConstantArgument::parse.map(GenericArgument::Constant))
+            .or_else(Lifetime::parse.map(GenericArgument::Lifetime))
+            .parse(state_machine, handler)
     }
 }
 
@@ -461,11 +789,16 @@ impl SourceElement for GenericArgument {
 ///     '[' (GenericArgument (',' GenericArgument)*)? ']'
 ///     ;
 /// ```
-pub type GenericArguments = DelimitedList<GenericArgument>;
+pub type GenericArguments = EnclosedConnectedList<GenericArgument, Punctuation>;
 
-impl Parse for GenericArguments {
-    fn syntax() -> impl Syntax<Output = Self> {
-        delimited_list(Delimiter::Bracket, ',')
+impl SyntaxTree for GenericArguments {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        GenericArgument::parse
+            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .parse(state_machine, handler)
     }
 }
 
@@ -484,14 +817,17 @@ pub struct GenericIdentifier {
     generic_arguments: Option<GenericArguments>,
 }
 
-impl Parse for GenericIdentifier {
-    fn syntax() -> impl Syntax<Output = Self> {
-        ExpectIdentifier.then_do(|parser, identifier, handler| {
-            Ok(GenericIdentifier {
+impl SyntaxTree for GenericIdentifier {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (expect::Identifier.to_owned(), GenericArguments::parse.or_none())
+            .map(|(identifier, generic_arguments)| Self {
                 identifier,
-                generic_arguments: parser.parse_syntax_tree(handler)?,
+                generic_arguments,
             })
-        })
+            .parse(state_machine, handler)
     }
 }
 
@@ -520,14 +856,14 @@ pub struct LifetimeParameter {
     identifier: Identifier,
 }
 
-impl Parse for LifetimeParameter {
-    fn syntax() -> impl Syntax<Output = Self> {
-        '\''.then_do(|parser, apostrophe, handler| {
-            Ok(LifetimeParameter {
-                apostrophe,
-                identifier: parser.parse_syntax_tree(handler)?,
-            })
-        })
+impl SyntaxTree for LifetimeParameter {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('\''.to_owned(), expect::Identifier.to_owned())
+            .map(|(apostrophe, identifier)| Self { apostrophe, identifier })
+            .parse(state_machine, handler)
     }
 }
 
@@ -550,11 +886,18 @@ pub enum SimplePathRoot {
     Identifier(Identifier),
 }
 
-impl Parse for SimplePathRoot {
-    fn syntax() -> impl Syntax<Output = Self> {
+impl SyntaxTree for SimplePathRoot {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
         KeywordKind::Target
+            .to_owned()
             .map(SimplePathRoot::Target)
-            .or_else(ExpectIdentifier.map(SimplePathRoot::Identifier))
+            .or_else(
+                expect::Identifier.to_owned().map(SimplePathRoot::Identifier),
+            )
+            .parse(state_machine, handler)
     }
 }
 
@@ -581,17 +924,17 @@ pub struct SimplePath {
     rest: Vec<(ScopeSeparator, Identifier)>,
 }
 
-impl Parse for SimplePath {
-    fn syntax() -> impl Syntax<Output = Self> {
-        SimplePathRoot::syntax().then_do(|parser, root, handler| {
-            let mut rest = Vec::new();
-
-            while let Some(separator) = parser.parse_syntax_tree(handler)? {
-                rest.push((separator, parser.parse_syntax_tree(handler)?));
-            }
-
-            Ok(SimplePath { root, rest })
-        })
+impl SyntaxTree for SimplePath {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            SimplePathRoot::parse,
+            (ScopeSeparator::parse, expect::Identifier.to_owned()).keep_take(),
+        )
+            .map(|(root, rest)| Self { root, rest })
+            .parse(state_machine, handler)
     }
 }
 
@@ -620,15 +963,22 @@ pub enum QualifiedIdentifierRoot {
     GenericIdentifier(GenericIdentifier),
 }
 
-impl Parse for QualifiedIdentifierRoot {
-    fn syntax() -> impl Syntax<Output = Self> {
+impl SyntaxTree for QualifiedIdentifierRoot {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
         KeywordKind::Target
+            .to_owned()
             .map(QualifiedIdentifierRoot::Target)
-            .or_else(KeywordKind::This.map(QualifiedIdentifierRoot::This))
             .or_else(
-                GenericIdentifier::syntax()
+                KeywordKind::This.to_owned().map(QualifiedIdentifierRoot::This),
+            )
+            .or_else(
+                GenericIdentifier::parse
                     .map(QualifiedIdentifierRoot::GenericIdentifier),
             )
+            .parse(state_machine, handler)
     }
 }
 
@@ -656,17 +1006,17 @@ pub struct QualifiedIdentifier {
     rest: Vec<(ScopeSeparator, GenericIdentifier)>,
 }
 
-impl Parse for QualifiedIdentifier {
-    fn syntax() -> impl Syntax<Output = Self> {
-        QualifiedIdentifierRoot::syntax().then_do(|parser, root, handler| {
-            let mut rest = Vec::new();
-
-            while let Some(separator) = parser.parse_syntax_tree(handler)? {
-                rest.push((separator, parser.parse_syntax_tree(handler)?));
-            }
-
-            Ok(QualifiedIdentifier { root, rest })
-        })
+impl SyntaxTree for QualifiedIdentifier {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            QualifiedIdentifierRoot::parse,
+            (ScopeSeparator::parse, GenericIdentifier::parse).keep_take(),
+        )
+            .map(|(root, rest)| Self { root, rest })
+            .parse(state_machine, handler)
     }
 }
 
@@ -696,14 +1046,14 @@ pub struct Label {
     identifier: Identifier,
 }
 
-impl Parse for Label {
-    fn syntax() -> impl Syntax<Output = Self> {
-        '\''.then_do(|parser, apostrophe, handler| {
-            Ok(Label {
-                apostrophe,
-                identifier: parser.parse_syntax_tree(handler)?,
-            })
-        })
+impl SyntaxTree for Label {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('\''.to_owned(), expect::Identifier.to_owned())
+            .map(|(apostrophe, identifier)| Self { apostrophe, identifier })
+            .parse(state_machine, handler)
     }
 }
 
@@ -728,15 +1078,17 @@ pub struct ReferenceOf {
     mutable_keyword: Option<Keyword>,
 }
 
-impl Parse for ReferenceOf {
-    fn syntax() -> impl Syntax<Output = Self> {
-        '&'.then_do(|parser, ampersand, handler| {
-            Ok(ReferenceOf {
+impl SyntaxTree for ReferenceOf {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('&'.to_owned(), KeywordKind::Mutable.to_owned().or_none())
+            .map(|(ampersand, mutable_keyword)| Self {
                 ampersand,
-                mutable_keyword: parser
-                    .parse(KeywordKind::Mutable.or_none(), handler)?,
+                mutable_keyword,
             })
-        })
+            .parse(state_machine, handler)
     }
 }
 
@@ -760,20 +1112,6 @@ pub struct UnionList<T> {
     /// The rest of the elements of the list.
     #[get = "pub"]
     rest: Vec<(Punctuation, T)>,
-}
-
-impl<T: Parse> Parse for UnionList<T> {
-    fn syntax() -> impl Syntax<Output = Self> {
-        T::syntax().then_do(|parser, first, handler| {
-            let mut rest = Vec::new();
-
-            while let Some(plus) = parser.parse('+'.or_none(), handler)? {
-                rest.push((plus, parser.parse_syntax_tree(handler)?));
-            }
-
-            Ok(UnionList { first, rest })
-        })
-    }
 }
 
 impl<T> UnionList<T> {
@@ -800,4 +1138,3 @@ impl<T: SourceElement> SourceElement for UnionList<T> {
 
 #[cfg(test)]
 mod test;
-*/

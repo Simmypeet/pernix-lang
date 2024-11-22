@@ -127,7 +127,7 @@ impl<
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (Param::arbitrary(), T::arbitrary())
             .prop_map(|(parameter, rhs)| Self { parameter, rhs })
-            .boxed()
+            
     }
 }
 
@@ -141,7 +141,7 @@ impl Arbitrary for Box<dyn Property<Lifetime<Default>>> {
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         Basic::<LifetimeParameterID, Lifetime<_>>::arbitrary()
             .prop_map(|x| Box::new(x) as _)
-            .boxed()
+            
     }
 }
 
@@ -152,7 +152,7 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         let leaf = Basic::<TypeParameterID, Type<_>>::arbitrary()
             .prop_map(|x| Box::new(x) as _)
-            .boxed();
+            ;
 
         leaf.prop_recursive(6, 10, 60, move |inner| {
             prop_oneof![
@@ -167,7 +167,7 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
                 4 => TupleCongruence::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _),
             ]
         })
-        .boxed()
+        
     }
 }
 
@@ -178,7 +178,7 @@ impl Arbitrary for Box<dyn Property<Constant<Default>>> {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         let leaf = Basic::<ConstantParameterID, Constant<_>>::arbitrary()
             .prop_map(|x| Box::new(x) as _)
-            .boxed();
+            ;
 
         leaf.prop_recursive(6, 24, 4, move |inner| {
             prop_oneof![
@@ -186,7 +186,7 @@ impl Arbitrary for Box<dyn Property<Constant<Default>>> {
                     .prop_map(|x| Box::new(x) as _),
             ]
         })
-        .boxed()
+        
     }
 }
 
@@ -240,7 +240,7 @@ where
 
         proptest::collection::vec(strategy, 1..=4)
             .prop_map(|terms| Self { terms })
-            .boxed()
+            
     }
 }
 
@@ -357,7 +357,7 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
                 constant_properties,
                 id,
             })
-            .boxed()
+            
     }
 }
 
@@ -414,7 +414,7 @@ impl Arbitrary for Mapping {
                 property,
                 trait_member,
             })
-            .boxed()
+            
     }
 }
 

@@ -115,7 +115,7 @@ impl TokenStream {
             token_trees.push(token_tree);
         }
 
-        Self { tokens: token_trees, source_file: source_file.clone() }
+        Self { tokens: token_trees, source_file }
     }
 
     fn handle_token(
@@ -274,7 +274,8 @@ pub enum NodeKind<'a> {
 impl<'a> NodeKind<'a> {
     /// Gets the index of the parent node. Returns `None` if the node is the
     /// root node.
-    pub fn get_parent(&self) -> Option<usize> {
+    #[must_use]
+    pub const fn get_parent(&self) -> Option<usize> {
         match &self {
             NodeKind::Root(_) => None,
             NodeKind::Delimited { parent, .. } => Some(*parent),
@@ -282,7 +283,8 @@ impl<'a> NodeKind<'a> {
     }
 
     /// Gets the token stream of the node.
-    pub fn token_stream(&self) -> &'a TokenStream {
+    #[must_use]
+    pub const fn token_stream(&self) -> &'a TokenStream {
         match &self {
             NodeKind::Root(token_stream) => token_stream,
             NodeKind::Delimited { delimited, .. } => &delimited.token_stream,
@@ -302,7 +304,8 @@ pub struct Location {
 
 impl Location {
     /// Constructs a new location.
-    pub fn new(node_index: usize, token_index: usize) -> Self {
+    #[must_use]
+    pub const fn new(node_index: usize, token_index: usize) -> Self {
         Self { node_index, token_index }
     }
 }
@@ -375,35 +378,42 @@ impl<'a> Tree<'a> {
 
     /// Returns the node at the given index.
     ///
-    /// # Panics
+    /// # Returns
     ///
-    /// Panics if the index is out of bounds.
+    /// The node at the given index. [`None`] if the index is out of bounds.
     #[must_use]
-    pub fn get_node(&self, index: usize) -> &Node<'a> { &self.nodes[index] }
+    pub fn get_node(&self, index: usize) -> Option<&Node<'a>> {
+        self.nodes.get(index)
+    }
 
     /// Returns the number of nodes in the tree.
+    #[must_use]
     pub fn len(&self) -> usize { self.nodes.len() }
 
+    /// Returns `true` if the tree is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.nodes.is_empty() }
+
     /// Returns the root node of the tree.
+    #[must_use]
     pub fn root_node(&self) -> &Node<'a> { &self.nodes[0] }
 
     /// Returns the [`TokenStream`] of the root node.
+    #[must_use]
     pub fn root_token_stream(&self) -> &'a TokenStream {
         self.root_node().kind.token_stream()
     }
 
     /// Returns the location of the given token in the tree.
     ///
-    /// # Panics
-    ///
-    /// If the [Location::token_stream_node_index] is out of bounds.
-    ///
     /// # Returns
     ///
     /// The location of the token in the tree. [`None`] if the
-    /// [Location::token_index] is out of bounds.
+    /// [`Location::token_index`] is out of bounds or if the
+    /// [`Location::node_index`] is out of bounds.
+    #[must_use]
     pub fn get_token(&self, location: &Location) -> Option<&'a TokenKind> {
-        let node = self.get_node(location.node_index);
+        let node = self.get_node(location.node_index)?;
         let token_stream = node.kind.token_stream();
 
         token_stream.get(location.token_index)

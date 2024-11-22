@@ -13,7 +13,7 @@ use super::ExpectExt;
 use crate::{
     error::{self, Found},
     state_machine::{
-        parse::{self, ExpectedIterator, Parse},
+        parse::{self, Parse},
         StateMachine,
     },
 };
@@ -43,8 +43,8 @@ impl ConsList {
 fn cons_list_syntax<'a>(
     state_machine: &mut StateMachine<'a>,
     handler: &dyn Handler<error::Error>,
-) -> parse::Result<'a, ConsList, impl ExpectedIterator> {
-    (KeywordKind::Continue.to_owned(), cons_list_syntax.map(Box::new).boxed())
+) -> parse::Result<ConsList> {
+    (KeywordKind::Continue.to_owned(), cons_list_syntax.map(Box::new))
         .map(|(keyword, list)| ConsList::Cons(keyword, list))
         .or_else(';'.to_owned().map(ConsList::Nil))
         .parse(state_machine, handler)
@@ -56,9 +56,8 @@ fn cons_list() {
         create_token_stream("continue continue continue ;".to_string());
 
     let tree = Tree::new(&token_stream);
-    let mut state_machine = StateMachine::new(&tree);
 
-    let cons_list = cons_list_syntax(&mut state_machine, &Panic).unwrap();
+    let cons_list = cons_list_syntax.parse_syntax(&tree, &Panic).unwrap();
 
     assert_eq!(cons_list.count(), 3);
 }
@@ -69,18 +68,20 @@ fn cons_list_missing_semi_colon() {
         create_token_stream("continue continue continue".to_string());
 
     let tree = Tree::new(&token_stream);
-    let mut state_machine = StateMachine::new(&tree);
 
-    let cons_list = cons_list_syntax(&mut state_machine, &Panic);
-    let error = cons_list.unwrap_err();
+    let storage = Storage::<error::Error>::new();
+    let cons_list = cons_list_syntax.parse_syntax(&tree, &storage);
 
-    assert!(error.found.is_none());
+    assert!(cons_list.is_none());
 
-    let expecteds = error.expected.collect::<Vec<_>>();
+    let mut errors = storage.into_vec();
+    assert_eq!(errors.len(), 1);
 
-    assert_eq!(expecteds.len(), 2);
-    assert!(expecteds.contains(&';'.into()));
-    assert!(expecteds.contains(&KeywordKind::Continue.into()));
+    let error = errors.pop().unwrap();
+
+    assert_eq!(error.expected().len(), 2);
+    assert!(error.expected().contains(&';'.into()));
+    assert!(error.expected().contains(&KeywordKind::Continue.into()));
 }
 
 #[test]
@@ -89,10 +90,9 @@ fn keepe_take() {
         create_token_stream("continue continue continue ;".to_string());
 
     let tree = Tree::new(&token_stream);
-    let mut state_machine = StateMachine::new(&tree);
 
     let (continues, _) = (KeywordKind::Continue.keep_take(), ';')
-        .parse(&mut state_machine, &Panic)
+        .parse_syntax(&tree, &Panic)
         .unwrap();
 
     assert_eq!(continues.len(), 3);
@@ -103,10 +103,8 @@ fn keep_take_no_skip() {
     let (token_stream, _) = create_token_stream("+++ ++".to_string());
 
     let tree = Tree::new(&token_stream);
-    let mut state_machine = StateMachine::new(&tree);
 
-    let pluses =
-        '+'.no_skip().keep_take().parse(&mut state_machine, &Panic).unwrap();
+    let pluses = '+'.no_skip().keep_take().parse_syntax(&tree, &Panic).unwrap();
 
     assert_eq!(pluses.len(), 3);
 }
@@ -117,12 +115,11 @@ fn step_into() {
         create_token_stream("[continue continue continue]".to_string());
 
     let tree = Tree::new(&token_stream);
-    let mut state_machine = StateMachine::new(&tree);
 
     let (open, continues, close) = KeywordKind::Continue
         .keep_take()
         .step_into(Delimiter::Bracket)
-        .parse(&mut state_machine, &Panic)
+        .parse_syntax(&tree, &Panic)
         .unwrap();
 
     assert_eq!(open.punctuation, '[');
@@ -136,18 +133,22 @@ fn step_into_mismatched_delimiter() {
         create_token_stream("[continue continue continue]".to_string());
 
     let tree = Tree::new(&token_stream);
-    let mut state_machine = StateMachine::new(&tree);
 
+    let storage = Storage::<error::Error>::new();
     let result = KeywordKind::Continue
         .keep_take()
         .step_into(Delimiter::Brace)
-        .parse(&mut state_machine, &Panic);
+        .parse_syntax(&tree, &storage);
 
-    let error = result.unwrap_err();
+    assert!(result.is_none());
 
-    let expected = error.expected.collect::<Vec<_>>();
-    assert_eq!(expected.len(), 1);
-    assert!(expected.contains(&Delimiter::Brace.into()))
+    let mut errors = storage.into_vec();
+    assert_eq!(errors.len(), 1);
+
+    let error = errors.pop().unwrap();
+
+    assert_eq!(error.expected().len(), 1);
+    assert!(error.expected().contains(&Delimiter::Brace.into()))
 }
 
 #[test]
@@ -156,14 +157,13 @@ fn step_into_dont_take_all() {
         create_token_stream("[continue continue continue;]".to_string());
 
     let tree = Tree::new(&token_stream);
-    let mut state_machine = StateMachine::new(&tree);
 
     let storage = Storage::<error::Error>::new();
 
     let (open, continues, close) = KeywordKind::Continue
         .keep_take()
         .step_into(Delimiter::Bracket)
-        .parse(&mut state_machine, &storage)
+        .parse_syntax(&tree, &storage)
         .unwrap();
 
     assert_eq!(open.punctuation, '[');
@@ -184,4 +184,53 @@ fn step_into_dont_take_all() {
     ));
 
     assert_eq!(*expected, ']'.into());
+}
+
+#[test]
+fn or_else_report_eaten_more() {
+    let (token_stream, _) = create_token_stream("continue break ;".to_string());
+
+    let tree = Tree::new(&token_stream);
+    let storage = Storage::<error::Error>::new();
+
+    let result = (KeywordKind::Continue, KeywordKind::Break, '!')
+        .map(|_| ())
+        .or_else((KeywordKind::Continue, '!').map(|_| ()))
+        .parse_syntax(&tree, &storage);
+
+    assert!(result.is_none());
+
+    let mut errors = storage.into_vec();
+    assert_eq!(errors.len(), 1);
+
+    let error = errors.pop().unwrap();
+
+    assert_eq!(error.expected().len(), 1);
+    assert!(error.expected().contains(&'!'.into()));
+    assert_eq!(
+        error.found().as_token().unwrap().as_punctuation().unwrap().punctuation,
+        ';'
+    );
+
+    let storage = Storage::<error::Error>::new();
+
+    // swap place
+    let result = (KeywordKind::Continue, '!')
+        .map(|_| ())
+        .or_else((KeywordKind::Continue, KeywordKind::Break, '!').map(|_| ()))
+        .parse_syntax(&tree, &storage);
+
+    assert!(result.is_none());
+
+    let mut errors = storage.into_vec();
+    assert_eq!(errors.len(), 1);
+
+    let error = errors.pop().unwrap();
+
+    assert_eq!(error.expected().len(), 1);
+    assert!(error.expected().contains(&'!'.into()));
+    assert_eq!(
+        error.found().as_token().unwrap().as_punctuation().unwrap().punctuation,
+        ';'
+    );
 }

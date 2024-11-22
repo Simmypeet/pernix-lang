@@ -14,11 +14,7 @@ proptest! {
         expression_input in Expression::arbitrary(),
     ) {
         let source = expression_input.to_string();
-        println!("{source}");
-        let expression = syntax_tree::test::parse(
-            &source,
-            |parser, handler| parser.parse_expression(handler)
-        )?;
+        let expression = syntax_tree::test::parse(&source)?;
 
         expression_input.assert(&expression)?;
     }

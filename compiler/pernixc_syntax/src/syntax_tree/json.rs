@@ -4,17 +4,20 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_lexical::{
-    token::{Keyword, KeywordKind, Punctuation, String, Token},
+    token::{Keyword, KeywordKind, Punctuation, String},
     token_stream::Delimiter,
 };
 
 use super::{
     expression::{Boolean, Numeric},
-    ConnectedList,
+    EnclosedConnectedList, ParseExt, SyntaxTree,
 };
 use crate::{
-    error::{Error, SyntaxKind},
-    parser::{Parser, Reading},
+    error, expect,
+    state_machine::{
+        parse::{self, Parse},
+        StateMachine,
+    },
 };
 
 /// Syntax Synopsis:
@@ -24,33 +27,17 @@ use crate::{
 ///     '[' (Value ("," Value)* ","? )? ']'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Array {
-    #[get = "pub"]
-    left_bracket: Punctuation,
-    #[get = "pub"]
-    values: Option<ConnectedList<Box<Value>, Punctuation>>,
-    #[get = "pub"]
-    right_bracket: Punctuation,
-}
+pub type Array = EnclosedConnectedList<Box<Value>, Punctuation>;
 
-impl SourceElement for Array {
-    fn span(&self) -> pernixc_base::source_file::Span {
-        self.left_bracket.span().join(&self.right_bracket.span()).unwrap()
-    }
-}
-
-impl Array {
-    /// Dissolve the array into its components.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (
-        Punctuation,
-        Option<ConnectedList<Box<Value>, Punctuation>>,
-        Punctuation,
-    ) {
-        (self.left_bracket, self.values, self.right_bracket)
+impl SyntaxTree for Array {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Value::parse
+            .map(Box::new)
+            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .parse(state_machine, handler)
     }
 }
 
@@ -69,6 +56,17 @@ pub struct Pair {
     colon: Punctuation,
     #[get = "pub"]
     value: Box<Value>,
+}
+
+impl SyntaxTree for Pair {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (expect::String.to_owned(), ';'.to_owned(), Value::parse.map(Box::new))
+            .map(|(key, colon, value)| Self { key, colon, value })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Pair {
@@ -92,30 +90,16 @@ impl Pair {
 ///     '{' (Pair ("," Pair)* ","?)? '}' ;
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Map {
-    #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    pairs: Option<ConnectedList<Box<Pair>, Punctuation>>,
-    #[get = "pub"]
-    right_brace: Punctuation,
-}
+pub type Map = EnclosedConnectedList<Pair, Punctuation>;
 
-impl SourceElement for Map {
-    fn span(&self) -> pernixc_base::source_file::Span {
-        self.left_brace.span().join(&self.right_brace.span()).unwrap()
-    }
-}
-
-impl Map {
-    /// Dissolve the map into its components.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (Punctuation, Option<ConnectedList<Box<Pair>, Punctuation>>, Punctuation)
-    {
-        (self.left_brace, self.pairs, self.right_brace)
+impl SyntaxTree for Map {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Pair::parse
+            .enclosed_connected_list(','.to_owned(), Delimiter::Brace)
+            .parse(state_machine, handler)
     }
 }
 
@@ -141,6 +125,23 @@ pub enum Value {
     Map(Map),
 }
 
+impl SyntaxTree for Value {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        KeywordKind::Null
+            .to_owned()
+            .map(Self::Null)
+            .or_else(Boolean::parse.map(Self::Boolean))
+            .or_else(Numeric::parse.map(Self::Numeric))
+            .or_else(expect::String.to_owned().map(Self::String))
+            .or_else(Array::parse.map(Self::Array))
+            .or_else(Map::parse.map(Self::Map))
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Value {
     fn span(&self) -> pernixc_base::source_file::Span {
         match self {
@@ -150,115 +151,6 @@ impl SourceElement for Value {
             Self::String(s) => s.span(),
             Self::Array(a) => a.span(),
             Self::Map(m) => m.span(),
-        }
-    }
-}
-
-impl<'a> Parser<'a> {
-    /// Parse a JSON value.
-    ///
-    /// This parsing function is not 100% accurate syntax-wise, for example, it
-    /// allows trailing commas in arrays and maps. However, it is good enough
-    /// for parsing JSON-like data.
-    pub fn parse_json_value(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Value> {
-        match self.stop_at_significant() {
-            // parse null
-            Reading::Unit(Token::Keyword(
-                null_keyword @ Keyword { kind: KeywordKind::Null, .. },
-            )) => {
-                // eat the null keyword
-                self.forward();
-
-                Some(Value::Null(null_keyword))
-            }
-
-            // parse boolean
-            Reading::Unit(Token::Keyword(
-                boolean_keyword @ Keyword {
-                    kind: KeywordKind::True | KeywordKind::False,
-                    ..
-                },
-            )) => {
-                // eat the boolean keyword
-                self.forward();
-
-                Some(Value::Boolean(match boolean_keyword.kind {
-                    KeywordKind::True => Boolean::True(boolean_keyword),
-                    KeywordKind::False => Boolean::False(boolean_keyword),
-                    _ => unreachable!(),
-                }))
-            }
-
-            // parse number
-            Reading::Unit(Token::Numeric(_)) => {
-                // eat the numeric token
-                self.forward();
-
-                Some(Value::Numeric(self.parse_numeric_literal()?))
-            }
-
-            // parse string
-            Reading::Unit(Token::String(string)) => {
-                // eat the string token
-                self.forward();
-
-                Some(Value::String(string))
-            }
-
-            // parse array
-            Reading::IntoDelimited(Delimiter::Bracket, _) => {
-                let list = self.parse_delimited_list(
-                    Delimiter::Brace,
-                    ',',
-                    |parser| parser.parse_json_value(handler).map(Box::new),
-                    handler,
-                )?;
-
-                Some(Value::Array(Array {
-                    left_bracket: list.open,
-                    values: list.list,
-                    right_bracket: list.close,
-                }))
-            }
-
-            // parse map
-            Reading::IntoDelimited(Delimiter::Brace, _) => {
-                let list = self.parse_delimited_list(
-                    Delimiter::Brace,
-                    ',',
-                    |parser| {
-                        let key = parser.parse_string(handler)?;
-                        let colon =
-                            parser.parse_punctuation(':', true, handler)?;
-                        let value =
-                            parser.parse_json_value(handler).map(Box::new)?;
-
-                        Some(Box::new(Pair { key, colon, value }))
-                    },
-                    handler,
-                )?;
-
-                Some(Value::Map(Map {
-                    left_brace: list.open,
-                    pairs: list.list,
-                    right_brace: list.close,
-                }))
-            }
-
-            // unexpected token
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::JsonValue,
-                    alternatives: vec![],
-                    found: self.reading_to_found(found),
-                });
-                self.forward();
-
-                None
-            }
         }
     }
 }

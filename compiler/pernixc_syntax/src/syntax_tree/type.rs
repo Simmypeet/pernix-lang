@@ -13,16 +13,20 @@ use pernixc_lexical::{
     token_stream::Delimiter,
 };
 
-use super::{Elided, Lifetime, Parse};
+use super::{
+    Constant, Elided, EnclosedConnectedList, Lifetime, Parse, ParseExt,
+    SyntaxTree,
+};
 use crate::{
     error,
     state_machine::{
-        parse::{self, ExpectedIterator},
+        parse::{self, ExpectExt},
         StateMachine,
     },
+    syntax_tree::QualifiedIdentifier,
 };
 
-pub mod strategy;
+// pub mod strategy;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -57,11 +61,11 @@ pub enum Primitive {
     Usize(Keyword),
     Isize(Keyword),
 }
-impl Primitive {
-    pub fn parse<'a>(
-        state_machine: &mut StateMachine<'a>,
+impl SyntaxTree for Primitive {
+    fn parse(
+        state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
+    ) -> parse::Result<Self> {
         KeywordKind::Bool
             .to_owned()
             .map(Primitive::Bool)
@@ -126,16 +130,16 @@ impl SourceElement for Reference {
     }
 }
 
-impl Reference {
-    pub fn parse<'a>(
-        state_machine: &mut StateMachine<'a>,
+impl SyntaxTree for Reference {
+    fn parse(
+        state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
+    ) -> parse::Result<Self> {
         (
             '&'.to_owned(),
             Lifetime::parse.or_none(),
             KeywordKind::Mutable.to_owned().or_none(),
-            Type::parse.boxed().map(Box::new),
+            Type::parse.map(Box::new),
         )
             .map(|(ampersand, lifetime, mutable_keyword, operand)| Self {
                 ampersand,
@@ -145,6 +149,9 @@ impl Reference {
             })
             .parse(state_machine, handler)
     }
+}
+
+impl Reference {
     /// Destructs the `Reference` into its components.
     #[must_use]
     pub fn destruct(
@@ -163,24 +170,27 @@ impl Reference {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Unpackable {
     #[get = "pub"]
-    pub(super) ellipsis: Option<(Punctuation, Punctuation, Punctuation)>,
+    ellipsis: Option<(Punctuation, Punctuation, Punctuation)>,
     #[get = "pub"]
-    pub(super) r#type: Box<Type>,
+    r#type: Box<Type>,
 }
-impl Parse for Unpackable {
-    fn syntax() -> impl Syntax<Output = Self> {
+
+impl SyntaxTree for Unpackable {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
         (
-            '.'.then_do(|parser, f, handler| {
-                Ok((
-                    f,
-                    parser.parse_dont_skip('.', handler)?,
-                    parser.parse_dont_skip('.', handler)?,
-                ))
-            })
-            .or_none(),
-            Type::syntax().map(Box::new),
+            (
+                '.'.to_owned(),
+                '.'.no_skip().to_owned(),
+                '.'.no_skip().to_owned(),
+            )
+                .or_none(),
+            Type::parse.map(Box::new),
         )
             .map(|(ellipsis, r#type)| Self { ellipsis, r#type })
+            .parse(state_machine, handler)
     }
 }
 
@@ -199,11 +209,16 @@ impl SourceElement for Unpackable {
 ///     '(' UnpackableList? ')'
 ///     ;
 /// ```
-pub type Tuple = DelimitedList<Unpackable>;
+pub type Tuple = EnclosedConnectedList<Unpackable, Punctuation>;
 
-impl Parse for Tuple {
-    fn syntax() -> impl Syntax<Output = Self> {
-        delimited_list(Delimiter::Parenthesis, ',')
+impl SyntaxTree for Tuple {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Unpackable::parse
+            .enclosed_connected_list(','.to_owned(), Delimiter::Parenthesis)
+            .parse(state_machine, handler)
     }
 }
 
@@ -227,31 +242,21 @@ pub struct Array {
     right_bracket: Punctuation,
 }
 
-impl Parse for Array {
-    fn syntax() -> impl Syntax<Output = Self> {
-        '['.verify_then_do(|parser, handler| {
-            let StepIntoTree { open, tree, close } = parser.step_into(
-                Delimiter::Bracket,
-                |parser| {
-                    Ok((
-                        parser.parse_syntax_tree(handler)?,
-                        parser.parse(':', handler)?,
-                        parser.parse_syntax_tree(handler)?,
-                    ))
-                },
-                handler,
-            )?;
-
-            let tree = tree?;
-
-            Ok(Array {
-                left_bracket: open,
+impl SyntaxTree for Array {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (Type::parse.map(Box::new), ':'.to_owned(), Constant::parse)
+            .step_into(Delimiter::Bracket)
+            .map(|(open, tree, close)| Self {
+                left_bracket: open.clone(),
                 operand: tree.0,
                 colon: tree.1,
                 constant: tree.2,
-                right_bracket: close,
+                right_bracket: close.clone(),
             })
-        })
+            .parse(state_machine, handler)
     }
 }
 
@@ -277,16 +282,22 @@ pub struct Pointer {
     operand: Box<Type>,
 }
 
-impl Parse for Pointer {
-    fn syntax() -> impl Syntax<Output = Self> {
-        '*'.then_do(|parser, asterisk, handler| {
-            Ok(Pointer {
+impl SyntaxTree for Pointer {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            '*'.to_owned(),
+            KeywordKind::Mutable.to_owned().or_none(),
+            Type::parse.map(Box::new),
+        )
+            .map(|(asterisk, mutable_keyword, operand)| Self {
                 asterisk,
-                mutable_keyword: parser
-                    .parse(KeywordKind::Mutable.or_none(), handler)?,
-                operand: parser.parse_syntax_tree(handler)?,
+                mutable_keyword,
+                operand,
             })
-        })
+            .parse(state_machine, handler)
     }
 }
 
@@ -311,14 +322,14 @@ pub struct Phantom {
     r#type: Box<Type>,
 }
 
-impl Parse for Phantom {
-    fn syntax() -> impl Syntax<Output = Self> {
-        KeywordKind::Phantom.then_do(|parser, phantom_keyword, handler| {
-            Ok(Phantom {
-                phantom_keyword,
-                r#type: parser.parse_syntax_tree(handler)?,
-            })
-        })
+impl SyntaxTree for Phantom {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Phantom.to_owned(), Type::parse.map(Box::new))
+            .map(|(phantom_keyword, r#type)| Self { phantom_keyword, r#type })
+            .parse(state_machine, handler)
     }
 }
 
@@ -343,14 +354,14 @@ pub struct Local {
     r#type: Box<Type>,
 }
 
-impl Parse for Local {
-    fn syntax() -> impl Syntax<Output = Self> {
-        KeywordKind::Local.then_do(|parser, local_keyword, handler| {
-            Ok(Local {
-                local_keyword,
-                r#type: parser.parse_syntax_tree(handler)?,
-            })
-        })
+impl SyntaxTree for Local {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Local.to_owned(), Type::parse.map(Box::new))
+            .map(|(local_keyword, r#type)| Self { local_keyword, r#type })
+            .parse(state_machine, handler)
     }
 }
 
@@ -398,29 +409,22 @@ pub enum Type {
     Elided(Elided),
 }
 
-impl Type {
-    pub fn parse<'a>(
-        state_machine: &mut StateMachine<'a>,
+impl SyntaxTree for Type {
+    fn parse(
+        state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<'a, Self, impl ExpectedIterator> {
-        Primitive::parse.map(Self::Primitive).parse(state_machine, handler)
-    }
-}
-
-impl Parse for Type {
-    fn syntax() -> impl Syntax<Output = Self> {
-        Primitive::syntax()
-            .map(Type::Primitive)
-            .or_else(
-                QualifiedIdentifier::syntax().map(Type::QualifiedIdentifier),
-            )
-            .or_else(Reference::syntax().map(Type::Reference))
-            .or_else(Pointer::syntax().map(Type::Pointer))
-            .or_else(Tuple::syntax().map(Type::Tuple))
-            .or_else(Local::syntax().map(Type::Local))
-            .or_else(Array::syntax().map(Type::Array))
-            .or_else(Phantom::syntax().map(Type::Phantom))
-            .or_else(Elided::syntax().map(Type::Elided))
+    ) -> parse::Result<Self> {
+        Primitive::parse
+            .map(Self::Primitive)
+            .or_else(QualifiedIdentifier::parse.map(Self::QualifiedIdentifier))
+            .or_else(Reference::parse.map(Self::Reference))
+            .or_else(Pointer::parse.map(Self::Pointer))
+            .or_else(Tuple::parse.map(Self::Tuple))
+            .or_else(Local::parse.map(Self::Local))
+            .or_else(Array::parse.map(Self::Array))
+            .or_else(Phantom::parse.map(Self::Phantom))
+            .or_else(Elided::parse.map(Self::Elided))
+            .parse(state_machine, handler)
     }
 }
 

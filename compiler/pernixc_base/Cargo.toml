@@ -17,6 +17,7 @@ ouroboros = { workspace = true }
 thiserror = { workspace = true }
 derive-new = { workspace = true }
 parking_lot = { workspace = true }
+displaydoc = { workspace = true }
 
 [lints.rust]
 missing_docs = "deny"

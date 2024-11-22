@@ -11,8 +11,8 @@ use proptest::{
 use crate::syntax_tree::{
     r#type::strategy::Type,
     strategy::{
-        ConnectedList, ConstantArgument, ConstantPunctuation, Lifetime,
-        LifetimeParameter, QualifiedIdentifier,
+        ConnectedList, ConstantPunctuation, Lifetime, LifetimeParameter,
+        QualifiedIdentifier,
     },
 };
 
@@ -40,7 +40,6 @@ impl Arbitrary for HigherRankedLifetimes {
             ConstantPunctuation::arbitrary(),
         ))
         .prop_map(|lifetime_parameter_list| Self { lifetime_parameter_list })
-        .boxed()
     }
 }
 
@@ -99,7 +98,6 @@ impl Arbitrary for TraitBound {
                     qualified_identifier,
                 },
             )
-            .boxed()
     }
 }
 
@@ -157,7 +155,6 @@ impl Arbitrary for MarkerBound {
                     }
                 },
             )
-            .boxed()
     }
 }
 
@@ -193,7 +190,6 @@ impl Arbitrary for Marker {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         BoundList::arbitrary_with(MarkerBound::arbitrary())
             .prop_map(|bounds| Self { bounds })
-            .boxed()
     }
 }
 
@@ -244,7 +240,6 @@ impl<T: std::fmt::Debug> BoundList<T> {
     ) -> BoxedStrategy<Self> {
         (args.clone(), proptest::collection::vec(args, 0..=6))
             .prop_map(|(first, rest)| Self { first, rest })
-            .boxed()
     }
 }
 
@@ -266,7 +261,6 @@ impl Arbitrary for Trait {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         BoundList::arbitrary_with(TraitBound::arbitrary())
             .prop_map(|bounds| Self { bounds })
-            .boxed()
     }
 }
 
@@ -312,7 +306,6 @@ impl Arbitrary for TraitTypeEquality {
                     }
                 },
             )
-            .boxed()
     }
 }
 
@@ -363,7 +356,6 @@ impl Arbitrary for OutlivesOperand {
                 .prop_map(OutlivesOperand::LifetimeParameter),
             Type::arbitrary().prop_map(OutlivesOperand::Type),
         ]
-        .boxed()
     }
 }
 
@@ -402,7 +394,6 @@ impl Arbitrary for Outlives {
             BoundList::arbitrary_with(Lifetime::arbitrary()),
         )
             .prop_map(|(operand, bounds)| Self { operand, bounds })
-            .boxed()
     }
 }
 
@@ -442,7 +433,6 @@ impl Arbitrary for ConstantTypeBound {
                 higher_ranked_lifetimes,
                 r#type,
             })
-            .boxed()
     }
 }
 
@@ -474,7 +464,6 @@ impl Arbitrary for ConstantType {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         BoundList::arbitrary_with(ConstantTypeBound::arbitrary())
             .prop_map(|bounds| Self { bounds })
-            .boxed()
     }
 }
 
@@ -485,56 +474,9 @@ impl Display for ConstantType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TupleOperandKind {
-    Type(Type),
-    Constant(ConstantArgument),
-}
-
-impl Input<&super::TupleOperandKind> for &TupleOperandKind {
-    fn assert(self, output: &super::TupleOperandKind) -> TestCaseResult {
-        match (self, output) {
-            (TupleOperandKind::Type(a), super::TupleOperandKind::Type(b)) => {
-                a.assert(b)
-            }
-
-            (
-                TupleOperandKind::Constant(a),
-                super::TupleOperandKind::Constant(b),
-            ) => a.assert(b),
-
-            _ => Err(TestCaseError::fail(format!(
-                "Expected {self:?}, got {output:?}"
-            ))),
-        }
-    }
-}
-
-impl Arbitrary for TupleOperandKind {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            Type::arbitrary().prop_map(TupleOperandKind::Type),
-            ConstantArgument::arbitrary().prop_map(TupleOperandKind::Constant),
-        ]
-        .boxed()
-    }
-}
-
-impl Display for TupleOperandKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Type(r#type) => Display::fmt(r#type, f),
-            Self::Constant(constant) => Display::fmt(constant, f),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TupleOperand {
     pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
-    pub kind: TupleOperandKind,
+    pub r#type: Type,
 }
 
 impl Input<&super::TupleOperand> for &TupleOperand {
@@ -542,7 +484,7 @@ impl Input<&super::TupleOperand> for &TupleOperand {
         self.higher_ranked_lifetimes
             .as_ref()
             .assert(output.higher_ranked_lifetimes().as_ref())?;
-        self.kind.assert(output.kind())
+        self.r#type.assert(output.r#type())
     }
 }
 
@@ -553,13 +495,12 @@ impl Arbitrary for TupleOperand {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         (
             proptest::option::of(HigherRankedLifetimes::arbitrary()),
-            TupleOperandKind::arbitrary(),
+            Type::arbitrary(),
         )
-            .prop_map(|(higher_ranked_lifetimes, kind)| Self {
+            .prop_map(|(higher_ranked_lifetimes, r#type)| Self {
                 higher_ranked_lifetimes,
-                kind,
+                r#type,
             })
-            .boxed()
     }
 }
 
@@ -591,7 +532,6 @@ impl Arbitrary for Tuple {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         BoundList::arbitrary_with(TupleOperand::arbitrary())
             .prop_map(|operands| Self { operands })
-            .boxed()
     }
 }
 
@@ -654,7 +594,6 @@ impl Arbitrary for Predicate {
             Tuple::arbitrary().prop_map(Predicate::Tuple),
             Marker::arbitrary().prop_map(Predicate::Marker),
         ]
-        .boxed()
     }
 }
 

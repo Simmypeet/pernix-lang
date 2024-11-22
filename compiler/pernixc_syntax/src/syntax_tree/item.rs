@@ -6,25 +6,29 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_base::{
-    handler::{Dummy, Handler},
+    handler::Handler,
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::{
-    token::{self, Identifier, Keyword, KeywordKind, Punctuation, Token},
+    token::{self, Identifier, Keyword, KeywordKind, Punctuation},
     token_stream::Delimiter,
 };
 
 use super::{
     expression::Expression, pattern, predicate::Predicate, r#type,
-    statement::Statement, AccessModifier, ConnectedList, LifetimeParameter,
-    QualifiedIdentifier, SimplePath,
+    statement::Statements, AccessModifier, ConnectedList,
+    EnclosedConnectedList, EnclosedTree, LifetimeParameter, ParseExt,
+    QualifiedIdentifier, SimplePath, SyntaxTree,
 };
 use crate::{
-    error::{Error, SyntaxKind},
-    parser::{Parser, Reading},
+    error, expect,
+    state_machine::{
+        parse::{self, Parse},
+        StateMachine,
+    },
 };
 
-pub mod strategy;
+// pub mod strategy;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -38,6 +42,17 @@ pub struct Alias {
     as_keyword: Keyword,
     #[get = "pub"]
     identifier: Identifier,
+}
+
+impl SyntaxTree for Alias {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::As.to_owned(), expect::Identifier.to_owned())
+            .map(|(as_keyword, identifier)| Self { as_keyword, identifier })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Alias {
@@ -57,7 +72,7 @@ impl Alias {
 /// Syntax Synopsis:
 /// ``` txt
 /// Import:
-///     'import' SimplePath Alias?
+///     Identifier Alias?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -66,6 +81,17 @@ pub struct Import {
     identifier: Identifier,
     #[get = "pub"]
     alias: Option<Alias>,
+}
+
+impl SyntaxTree for Import {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (expect::Identifier.to_owned(), Alias::parse.or_none())
+            .map(|(identifier, alias)| Self { identifier, alias })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Import {
@@ -77,7 +103,7 @@ impl SourceElement for Import {
 }
 
 impl Import {
-    /// Dissolves the [`Imported`] into a tuple of its fields.
+    /// Dissolves the [`Import`] into a tuple of its fields.
     #[must_use]
     pub fn dissolve(self) -> (Identifier, Option<Alias>) {
         (self.identifier, self.alias)
@@ -96,6 +122,20 @@ pub struct From {
     from_keyword: Keyword,
     #[get = "pub"]
     simple_path: SimplePath,
+}
+
+impl SyntaxTree for From {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::From.to_owned(), SimplePath::parse)
+            .map(|(from_keyword, simple_path)| Self {
+                from_keyword,
+                simple_path,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for From {
@@ -126,6 +166,17 @@ pub struct UsingOne {
     alias: Option<Alias>,
 }
 
+impl SyntaxTree for UsingOne {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (SimplePath::parse, Alias::parse.or_none())
+            .map(|(simple_path, alias)| Self { simple_path, alias })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for UsingOne {
     fn span(&self) -> Span {
         self.alias
@@ -151,18 +202,29 @@ impl UsingOne {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct UsingFrom {
     #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    imports: Option<ConnectedList<Import, Punctuation>>,
-    #[get = "pub"]
-    right_brace: Punctuation,
+    imports: EnclosedConnectedList<Import, Punctuation>,
     #[get = "pub"]
     from: From,
 }
 
+impl SyntaxTree for UsingFrom {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            Import::parse
+                .enclosed_connected_list(','.to_owned(), Delimiter::Brace),
+            From::parse,
+        )
+            .map(|(imports, from)| Self { imports, from })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for UsingFrom {
     fn span(&self) -> Span {
-        self.left_brace.span.join(&self.from.span()).unwrap()
+        self.from.span().join(&self.imports.span()).unwrap()
     }
 }
 
@@ -171,13 +233,8 @@ impl UsingFrom {
     #[must_use]
     pub fn dissolve(
         self,
-    ) -> (
-        Punctuation,
-        Option<ConnectedList<Import, Punctuation>>,
-        Punctuation,
-        From,
-    ) {
-        (self.left_brace, self.imports, self.right_brace, self.from)
+    ) -> (EnclosedConnectedList<Import, Punctuation>, From) {
+        (self.imports, self.from)
     }
 }
 
@@ -186,12 +243,24 @@ impl UsingFrom {
 /// UsingKind:
 ///     UsingOne
 ///     | UsingFrom
-///     ;    
+///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum UsingKind {
     One(UsingOne),
     From(UsingFrom),
+}
+
+impl SyntaxTree for UsingKind {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        UsingOne::parse
+            .map(Self::One)
+            .or_else(UsingFrom::parse.map(Self::From))
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for UsingKind {
@@ -219,6 +288,29 @@ pub struct Using {
     semicolon: Punctuation,
 }
 
+impl SyntaxTree for Using {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Using.to_owned(), UsingKind::parse, ';'.to_owned())
+            .map(|(using_keyword, kind, semicolon)| Self {
+                using_keyword,
+                kind,
+                semicolon,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
+impl Using {
+    /// Dissolves the [`Using`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Keyword, UsingKind, Punctuation) {
+        (self.using_keyword, self.kind, self.semicolon)
+    }
+}
+
 impl SourceElement for Using {
     fn span(&self) -> Span {
         self.using_keyword.span.join(&self.semicolon.span).unwrap()
@@ -237,6 +329,20 @@ pub struct ModuleSignature {
     module_keyword: Keyword,
     #[get = "pub"]
     identifier: Identifier,
+}
+
+impl SyntaxTree for ModuleSignature {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Module.to_owned(), expect::Identifier.to_owned())
+            .map(|(module_keyword, identifier)| Self {
+                module_keyword,
+                identifier,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for ModuleSignature {
@@ -259,6 +365,21 @@ pub struct Module {
     pub(super) signature: ModuleSignature,
     #[get = "pub"]
     pub(super) kind: ModuleKind,
+}
+
+impl SyntaxTree for Module {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (AccessModifier::parse, ModuleSignature::parse, ModuleKind::parse)
+            .map(|(access_modifier, signature, kind)| Self {
+                access_modifier,
+                signature,
+                kind,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl Module {
@@ -290,6 +411,17 @@ pub struct ModuleContent {
     pub(super) items: Vec<Item>,
 }
 
+impl SyntaxTree for ModuleContent {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (Using::parse.keep_take(), Item::parse.keep_take_all())
+            .map(|(usings, items)| Self { usings, items })
+            .parse(state_machine, handler)
+    }
+}
+
 impl ModuleContent {
     /// Dissolves the [`ModuleContent`] into a tuple of its fields.
     #[must_use]
@@ -311,6 +443,18 @@ pub enum ModuleKind {
     Inline(ModuleBody),
 }
 
+impl SyntaxTree for ModuleKind {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ';'.to_owned()
+            .map(ModuleKind::File)
+            .or_else(ModuleBody::parse.map(ModuleKind::Inline))
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for ModuleKind {
     fn span(&self) -> Span {
         match self {
@@ -326,37 +470,39 @@ impl SourceElement for ModuleKind {
 ///    '{' Using* Item* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ModuleBody {
-    #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    pub(super) content: ModuleContent,
-    #[get = "pub"]
-    right_brace: Punctuation,
-}
+pub type ModuleBody = EnclosedTree<ModuleContent>;
 
-impl ModuleBody {
-    /// Dissolves the [`ModuleBody`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (Punctuation, ModuleContent, Punctuation) {
-        (self.left_brace, self.content, self.right_brace)
-    }
-}
-
-impl SourceElement for ModuleBody {
-    fn span(&self) -> Span {
-        self.left_brace.span.join(&self.right_brace.span).unwrap()
+impl SyntaxTree for ModuleBody {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ModuleContent::parse
+            .enclosed_tree(Delimiter::Brace)
+            .parse(state_machine, handler)
     }
 }
 
 /// Represents a syntax tree node for a default generic parameter.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct DefaultGenericParameter<Value: SourceElement> {
+pub struct DefaultGenericParameter<Value> {
     #[get = "pub"]
     equals: Punctuation,
     #[get = "pub"]
     value: Value,
+}
+
+impl<Value: SyntaxTree + 'static> SyntaxTree
+    for DefaultGenericParameter<Value>
+{
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('='.to_owned(), Value::parse)
+            .map(|(equals, value)| Self { equals, value })
+            .parse(state_machine, handler)
+    }
 }
 
 impl<Value: SourceElement> SourceElement for DefaultGenericParameter<Value> {
@@ -393,6 +539,17 @@ pub struct TypeParameter {
     identifier: Identifier,
     #[get = "pub"]
     default: Option<DefaultTypeParameter>,
+}
+
+impl SyntaxTree for TypeParameter {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (expect::Identifier.to_owned(), DefaultTypeParameter::parse.or_none())
+            .map(|(identifier, default)| Self { identifier, default })
+            .parse(state_machine, handler)
+    }
 }
 
 impl TypeParameter {
@@ -433,6 +590,29 @@ pub struct ConstantParameter {
     r#type: r#type::Type,
     #[get = "pub"]
     default: Option<DefaultConstantParameter>,
+}
+
+impl SyntaxTree for ConstantParameter {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Const.to_owned(),
+            expect::Identifier.to_owned(),
+            ';'.to_owned(),
+            r#type::Type::parse,
+            DefaultConstantParameter::parse.or_none(),
+        )
+            .map(|(const_keyword, identifier, colon, r#type, default)| Self {
+                const_keyword,
+                identifier,
+                colon,
+                r#type,
+                default,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl ConstantParameter {
@@ -488,6 +668,19 @@ pub enum GenericParameter {
     Constant(ConstantParameter),
 }
 
+impl SyntaxTree for GenericParameter {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        LifetimeParameter::parse
+            .map(Self::Lifetime)
+            .or_else(ConstantParameter::parse.map(Self::Constant))
+            .or_else(TypeParameter::parse.map(Self::Type))
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for GenericParameter {
     fn span(&self) -> Span {
         match self {
@@ -500,41 +693,21 @@ impl SourceElement for GenericParameter {
 
 /// Syntax Synopsis:
 /// ``` txt
-///  GenericParameterList:
-///     GenericParameter (',' GenericParameter)*
-///     ;
-/// ```
-pub type GenericParameterList = ConnectedList<GenericParameter, Punctuation>;
-
-/// Syntax Synopsis:
-/// ``` txt
 /// GenericParameters:
 ///     '[' GenericParameterList? ']'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct GenericParameters {
-    #[get = "pub"]
-    left_bracket: Punctuation,
-    #[get = "pub"]
-    parameter_list: Option<GenericParameterList>,
-    #[get = "pub"]
-    right_bracket: Punctuation,
-}
+pub type GenericParameters =
+    EnclosedConnectedList<GenericParameter, Punctuation>;
 
-impl GenericParameters {
-    /// Dissolves the [`GenericParameters`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (Punctuation, Option<GenericParameterList>, Punctuation) {
-        (self.left_bracket, self.parameter_list, self.right_bracket)
-    }
-}
-
-impl SourceElement for GenericParameters {
-    fn span(&self) -> Span {
-        self.left_bracket.span.join(&self.right_bracket.span).unwrap()
+impl SyntaxTree for GenericParameters {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        GenericParameter::parse
+            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .parse(state_machine, handler)
     }
 }
 
@@ -558,6 +731,28 @@ pub struct WhereClause {
     where_keyword: Keyword,
     #[get = "pub"]
     predicate_list: PredicateList,
+}
+
+impl SyntaxTree for WhereClause {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Where.to_owned(),
+            (Predicate::parse, (','.to_owned(), Predicate::parse).keep_take())
+                .map(|(first, rest)| ConnectedList {
+                    first,
+                    rest,
+                    trailing_separator: None,
+                }),
+        )
+            .map(|(where_keyword, predicate_list)| Self {
+                where_keyword,
+                predicate_list,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl WhereClause {
@@ -590,6 +785,36 @@ pub struct TraitSignature {
     generic_parameters: Option<GenericParameters>,
     #[get = "pub"]
     where_clause: Option<WhereClause>,
+}
+
+impl SyntaxTree for TraitSignature {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Trait.to_owned(),
+            expect::Identifier.to_owned(),
+            GenericParameters::parse.or_none(),
+            WhereClause::parse.or_none(),
+        )
+            .map(
+                |(
+                    trait_keyword,
+                    identifier,
+                    generic_parameters,
+                    where_clause,
+                )| {
+                    Self {
+                        trait_keyword,
+                        identifier,
+                        generic_parameters,
+                        where_clause,
+                    }
+                },
+            )
+            .parse(state_machine, handler)
+    }
 }
 
 impl TraitSignature {
@@ -632,27 +857,17 @@ impl SourceElement for TraitSignature {
 ///     '{' TraitMember* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct TraitBody {
-    #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    members: Vec<TraitMember>,
-    #[get = "pub"]
-    right_brace: Punctuation,
-}
+pub type TraitBody = EnclosedTree<Vec<TraitMember>>;
 
-impl TraitBody {
-    /// Dissolves the [`TraitBody`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (Punctuation, Vec<TraitMember>, Punctuation) {
-        (self.left_brace, self.members, self.right_brace)
-    }
-}
-
-impl SourceElement for TraitBody {
-    fn span(&self) -> Span {
-        self.left_brace.span.join(&self.right_brace.span).unwrap()
+impl SyntaxTree for TraitBody {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        TraitMember::parse
+            .keep_take_all()
+            .enclosed_tree(Delimiter::Brace)
+            .parse(state_machine, handler)
     }
 }
 
@@ -672,6 +887,36 @@ pub struct MarkerSignature {
     generic_parameters: Option<GenericParameters>,
     #[get = "pub"]
     where_clause: Option<WhereClause>,
+}
+
+impl SyntaxTree for MarkerSignature {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Marker.to_owned(),
+            expect::Identifier.to_owned(),
+            GenericParameters::parse.or_none(),
+            WhereClause::parse.or_none(),
+        )
+            .map(
+                |(
+                    marker_keyword,
+                    identifier,
+                    generic_parameters,
+                    where_clause,
+                )| {
+                    Self {
+                        marker_keyword,
+                        identifier,
+                        generic_parameters,
+                        where_clause,
+                    }
+                },
+            )
+            .parse(state_machine, handler)
+    }
 }
 
 impl MarkerSignature {
@@ -724,6 +969,21 @@ pub struct Marker {
     semicolon: Punctuation,
 }
 
+impl SyntaxTree for Marker {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (AccessModifier::parse, MarkerSignature::parse, ';'.to_owned())
+            .map(|(access_modifier, signature, semicolon)| Self {
+                access_modifier,
+                signature,
+                semicolon,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
 impl Marker {
     /// Dissolves the [`Marker`] into a tuple of its fields.
     #[must_use]
@@ -752,6 +1012,21 @@ pub struct Trait {
     signature: TraitSignature,
     #[get = "pub"]
     body: TraitBody,
+}
+
+impl SyntaxTree for Trait {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (AccessModifier::parse, TraitSignature::parse, TraitBody::parse)
+            .map(|(access_modifier, signature, body)| Self {
+                access_modifier,
+                signature,
+                body,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl Trait {
@@ -784,6 +1059,21 @@ pub struct TraitFunction {
     semicolon: Punctuation,
 }
 
+impl SyntaxTree for TraitFunction {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (AccessModifier::parse, FunctionSignature::parse, ';'.to_owned())
+            .map(|(access_modifier, signature, semicolon)| Self {
+                access_modifier,
+                signature,
+                semicolon,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
 impl TraitFunction {
     /// Dissolves the [`TraitFunction`] into a tuple of its fields.
     #[must_use]
@@ -814,6 +1104,27 @@ pub struct TraitType {
     where_clause: Option<WhereClause>,
     #[get = "pub"]
     semicolon: Punctuation,
+}
+
+impl SyntaxTree for TraitType {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            AccessModifier::parse,
+            TypeSignature::parse,
+            WhereClause::parse.or_none(),
+            ';'.to_owned(),
+        )
+            .map(|(access_modifier, signature, where_clause, semicolon)| Self {
+                access_modifier,
+                signature,
+                where_clause,
+                semicolon,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl TraitType {
@@ -855,6 +1166,27 @@ pub struct TraitConstant {
     semicolon: Punctuation,
 }
 
+impl SyntaxTree for TraitConstant {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            AccessModifier::parse,
+            ConstantSignature::parse,
+            WhereClause::parse.or_none(),
+            ';'.to_owned(),
+        )
+            .map(|(access_modifier, signature, where_clause, semicolon)| Self {
+                access_modifier,
+                signature,
+                where_clause,
+                semicolon,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for TraitConstant {
     fn span(&self) -> Span {
         self.access_modifier.span().join(&self.semicolon.span).unwrap()
@@ -876,6 +1208,19 @@ pub enum TraitMember {
     Function(TraitFunction),
     Type(TraitType),
     Constant(TraitConstant),
+}
+
+impl SyntaxTree for TraitMember {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        TraitFunction::parse
+            .map(Self::Function)
+            .or_else(TraitType::parse.map(Self::Type))
+            .or_else(TraitConstant::parse.map(Self::Constant))
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for TraitMember {
@@ -904,6 +1249,21 @@ pub struct Parameter {
     r#type: r#type::Type,
 }
 
+impl SyntaxTree for Parameter {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (pattern::Irrefutable::parse, ':'.to_owned(), r#type::Type::parse)
+            .map(|(irrefutable_pattern, colon, r#type)| Self {
+                irrefutable_pattern,
+                colon,
+                r#type,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Parameter {
     fn span(&self) -> Span {
         self.irrefutable_pattern.span().join(&self.r#type.span()).unwrap()
@@ -912,39 +1272,20 @@ impl SourceElement for Parameter {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ParameterList:
-///     Parameter (',' Parameter)* ','?
-///     ;
-/// ```
-pub type ParameterList = ConnectedList<Parameter, Punctuation>;
-
-/// Syntax Synopsis:
-/// ``` txt
 /// Parameters:
 ///     '(' ParameterList? ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Parameters {
-    #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    parameter_list: Option<ParameterList>,
-    #[get = "pub"]
-    right_paren: Punctuation,
-}
+pub type Parameters = EnclosedConnectedList<Parameter, Punctuation>;
 
-impl Parameters {
-    /// Dissolves the [`Parameters`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (Punctuation, Option<ParameterList>, Punctuation) {
-        (self.left_paren, self.parameter_list, self.right_paren)
-    }
-}
-
-impl SourceElement for Parameters {
-    fn span(&self) -> Span {
-        self.left_paren.span.join(&self.right_paren.span).unwrap()
+impl SyntaxTree for Parameters {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Parameter::parse
+            .enclosed_connected_list(','.to_owned(), Delimiter::Parenthesis)
+            .parse(state_machine, handler)
     }
 }
 
@@ -962,6 +1303,17 @@ pub struct ReturnType {
     colon: Punctuation,
     #[get = "pub"]
     r#type: r#type::Type,
+}
+
+impl SyntaxTree for ReturnType {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (':'.to_owned(), r#type::Type::parse)
+            .map(|(colon, r#type)| Self { colon, r#type })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for ReturnType {
@@ -991,6 +1343,42 @@ pub struct FunctionSignature {
     return_type: Option<ReturnType>,
     #[get = "pub"]
     where_clause: Option<WhereClause>,
+}
+
+impl SyntaxTree for FunctionSignature {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Function.to_owned(),
+            expect::Identifier.to_owned(),
+            GenericParameters::parse.or_none(),
+            Parameters::parse,
+            ReturnType::parse.or_none(),
+            WhereClause::parse.or_none(),
+        )
+            .map(
+                |(
+                    function_keyword,
+                    identifier,
+                    generic_parameters,
+                    parameters,
+                    return_type,
+                    where_clause,
+                )| {
+                    Self {
+                        function_keyword,
+                        identifier,
+                        generic_parameters,
+                        parameters,
+                        return_type,
+                        where_clause,
+                    }
+                },
+            )
+            .parse(state_machine, handler)
+    }
 }
 
 impl FunctionSignature {
@@ -1036,28 +1424,6 @@ impl SourceElement for FunctionSignature {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// FunctionBody:
-///     '{' Statement* '}'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct FunctionBody {
-    #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    statements: Vec<Statement>,
-    #[get = "pub"]
-    right_brace: Punctuation,
-}
-
-impl SourceElement for FunctionBody {
-    fn span(&self) -> Span {
-        self.left_brace.span.join(&self.right_brace.span).unwrap()
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
 /// Function:
 ///     AccessModifier FunctionSignature FunctionBody
 ///     ;
@@ -1071,7 +1437,25 @@ pub struct Function {
     #[get = "pub"]
     signature: FunctionSignature,
     #[get = "pub"]
-    body: FunctionBody,
+    statements: Statements,
+}
+
+impl SyntaxTree for Function {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            AccessModifier::parse,
+            KeywordKind::Const.to_owned().or_none(),
+            FunctionSignature::parse,
+            Statements::parse,
+        )
+            .map(|(access_modifier, const_keyword, signature, statements)| {
+                Self { access_modifier, const_keyword, signature, statements }
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl Function {
@@ -1079,15 +1463,19 @@ impl Function {
     #[must_use]
     pub fn dissolve(
         self,
-    ) -> (AccessModifier, Option<Keyword>, FunctionSignature, FunctionBody)
-    {
-        (self.access_modifier, self.const_keyword, self.signature, self.body)
+    ) -> (AccessModifier, Option<Keyword>, FunctionSignature, Statements) {
+        (
+            self.access_modifier,
+            self.const_keyword,
+            self.signature,
+            self.statements,
+        )
     }
 }
 
 impl SourceElement for Function {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.body.span()).unwrap()
+        self.access_modifier.span().join(&self.statements.span()).unwrap()
     }
 }
 
@@ -1105,6 +1493,25 @@ pub struct TypeSignature {
     identifier: Identifier,
     #[get = "pub"]
     generic_parameters: Option<GenericParameters>,
+}
+
+impl SyntaxTree for TypeSignature {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Type.to_owned(),
+            expect::Identifier.to_owned(),
+            GenericParameters::parse.or_none(),
+        )
+            .map(|(type_keyword, identifier, generic_parameters)| Self {
+                type_keyword,
+                identifier,
+                generic_parameters,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl TypeSignature {
@@ -1137,16 +1544,31 @@ pub struct TypeDefinition {
     #[get = "pub"]
     equals: Punctuation,
     #[get = "pub"]
-    ty: r#type::Type,
+    r#type: r#type::Type,
     #[get = "pub"]
     where_clause: Option<WhereClause>,
+}
+
+impl SyntaxTree for TypeDefinition {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('='.to_owned(), r#type::Type::parse, WhereClause::parse.or_none())
+            .map(|(equals, r#type, where_clause)| Self {
+                equals,
+                r#type,
+                where_clause,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl TypeDefinition {
     /// Dissolves the [`TypeDefinition`] into a tuple of its fields.
     #[must_use]
     pub fn dissolve(self) -> (Punctuation, r#type::Type, Option<WhereClause>) {
-        (self.equals, self.ty, self.where_clause)
+        (self.equals, self.r#type, self.where_clause)
     }
 }
 
@@ -1158,7 +1580,7 @@ impl SourceElement for TypeDefinition {
                 &self
                     .where_clause
                     .as_ref()
-                    .map_or_else(|| self.ty.span(), SourceElement::span),
+                    .map_or_else(|| self.r#type.span(), SourceElement::span),
             )
             .unwrap()
     }
@@ -1180,6 +1602,27 @@ pub struct Type {
     definition: TypeDefinition,
     #[get = "pub"]
     semicolon: Punctuation,
+}
+
+impl SyntaxTree for Type {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            AccessModifier::parse,
+            TypeSignature::parse,
+            TypeDefinition::parse,
+            ';'.to_owned(),
+        )
+            .map(|(access_modifier, signature, definition, semicolon)| Self {
+                access_modifier,
+                signature,
+                definition,
+                semicolon,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl Type {
@@ -1216,6 +1659,36 @@ pub struct StructSignature {
     where_clause: Option<WhereClause>,
 }
 
+impl SyntaxTree for StructSignature {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Struct.to_owned(),
+            expect::Identifier.to_owned(),
+            GenericParameters::parse.or_none(),
+            WhereClause::parse.or_none(),
+        )
+            .map(
+                |(
+                    struct_keyword,
+                    identifier,
+                    generic_parameters,
+                    where_clause,
+                )| {
+                    Self {
+                        struct_keyword,
+                        identifier,
+                        generic_parameters,
+                        where_clause,
+                    }
+                },
+            )
+            .parse(state_machine, handler)
+    }
+}
+
 impl StructSignature {
     /// Dissolves the [`StructSignature`] into a tuple of its fields.
     #[must_use]
@@ -1240,39 +1713,20 @@ impl SourceElement for StructSignature {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// FieldList:
-///     Field (',' Field)* ','?
-///     ;
-/// ```
-pub type FieldList = ConnectedList<Field, Punctuation>;
-
-/// Syntax Synopsis:
-/// ``` txt
 /// StructDefinition:
 ///     '{' FieldList* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct StructBody {
-    #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    field_list: Option<FieldList>,
-    #[get = "pub"]
-    right_brace: Punctuation,
-}
+pub type StructBody = EnclosedConnectedList<Field, Punctuation>;
 
-impl StructBody {
-    /// Dissolves the [`StructBody`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (Punctuation, Option<FieldList>, Punctuation) {
-        (self.left_brace, self.field_list, self.right_brace)
-    }
-}
-
-impl SourceElement for StructBody {
-    fn span(&self) -> Span {
-        self.left_brace.span.join(&self.right_brace.span).unwrap()
+impl SyntaxTree for StructBody {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Field::parse
+            .enclosed_connected_list(','.to_owned(), Delimiter::Brace)
+            .parse(state_machine, handler)
     }
 }
 
@@ -1290,6 +1744,21 @@ pub struct Struct {
     signature: StructSignature,
     #[get = "pub"]
     body: StructBody,
+}
+
+impl SyntaxTree for Struct {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (AccessModifier::parse, StructSignature::parse, StructBody::parse)
+            .map(|(access_modifier, signature, body)| Self {
+                access_modifier,
+                signature,
+                body,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl Struct {
@@ -1324,6 +1793,27 @@ pub struct Field {
     r#type: r#type::Type,
 }
 
+impl SyntaxTree for Field {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            AccessModifier::parse,
+            expect::Identifier.to_owned(),
+            ':'.to_owned(),
+            r#type::Type::parse,
+        )
+            .map(|(access_modifier, identifier, colon, r#type)| Self {
+                access_modifier,
+                identifier,
+                colon,
+                r#type,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Field {
     fn span(&self) -> Span {
         self.access_modifier.span().join(&self.r#type.span()).unwrap()
@@ -1355,6 +1845,42 @@ pub struct ImplementationSignature {
     qualified_identifier: QualifiedIdentifier,
     #[get = "pub"]
     where_clause: Option<WhereClause>,
+}
+
+impl SyntaxTree for ImplementationSignature {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Final.to_owned().or_none(),
+            KeywordKind::Implements.to_owned(),
+            GenericParameters::parse.or_none(),
+            KeywordKind::Const.to_owned().or_none(),
+            QualifiedIdentifier::parse,
+            WhereClause::parse.or_none(),
+        )
+            .map(
+                |(
+                    final_keyword,
+                    implements_keyword,
+                    generic_parameters,
+                    const_keyword,
+                    qualified_identifier,
+                    where_clause,
+                )| {
+                    Self {
+                        final_keyword,
+                        implements_keyword,
+                        generic_parameters,
+                        const_keyword,
+                        qualified_identifier,
+                        where_clause,
+                    }
+                },
+            )
+            .parse(state_machine, handler)
+    }
 }
 
 impl ImplementationSignature {
@@ -1415,6 +1941,19 @@ pub enum ImplementationMember {
     Constant(Constant),
 }
 
+impl SyntaxTree for ImplementationMember {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Type::parse
+            .map(Self::Type)
+            .or_else(Function::parse.map(Self::Function))
+            .or_else(Constant::parse.map(Self::Constant))
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for ImplementationMember {
     fn span(&self) -> Span {
         match self {
@@ -1439,6 +1978,20 @@ pub struct NegativeImplementation {
     semicolon: Punctuation,
 }
 
+impl SyntaxTree for NegativeImplementation {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Delete.to_owned(), ';'.to_owned())
+            .map(|(delete_keyword, semicolon)| Self {
+                delete_keyword,
+                semicolon,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for NegativeImplementation {
     fn span(&self) -> Span {
         self.delete_keyword.span.join(&self.semicolon.span).unwrap()
@@ -1451,29 +2004,17 @@ impl SourceElement for NegativeImplementation {
 ///     '{' ImplementationMember* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ImplementationBody {
-    #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    members: Vec<ImplementationMember>,
-    #[get = "pub"]
-    right_brace: Punctuation,
-}
+pub type ImplementationBody = EnclosedTree<Vec<ImplementationMember>>;
 
-impl ImplementationBody {
-    /// Dissolves the [`ImplementationBody`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (Punctuation, Vec<ImplementationMember>, Punctuation) {
-        (self.left_brace, self.members, self.right_brace)
-    }
-}
-
-impl SourceElement for ImplementationBody {
-    fn span(&self) -> Span {
-        self.left_brace.span.join(&self.right_brace.span).unwrap()
+impl SyntaxTree for ImplementationBody {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ImplementationMember::parse
+            .keep_take_all()
+            .enclosed_tree(Delimiter::Brace)
+            .parse(state_machine, handler)
     }
 }
 
@@ -1490,6 +2031,19 @@ pub enum ImplementationKind {
     Negative(NegativeImplementation),
     Positive(ImplementationBody),
     Empty(Punctuation),
+}
+
+impl SyntaxTree for ImplementationKind {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        NegativeImplementation::parse
+            .map(Self::Negative)
+            .or_else(ImplementationBody::parse.map(Self::Positive))
+            .or_else(';'.to_owned().map(Self::Empty))
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for ImplementationKind {
@@ -1514,6 +2068,17 @@ pub struct Implementation {
     signature: ImplementationSignature,
     #[get = "pub"]
     kind: ImplementationKind,
+}
+
+impl SyntaxTree for Implementation {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (ImplementationSignature::parse, ImplementationKind::parse)
+            .map(|(signature, kind)| Self { signature, kind })
+            .parse(state_machine, handler)
+    }
 }
 
 impl Implementation {
@@ -1548,6 +2113,34 @@ pub struct EnumSignature {
     where_clause: Option<WhereClause>,
 }
 
+impl SyntaxTree for EnumSignature {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Enum.to_owned(),
+            expect::Identifier.to_owned(),
+            GenericParameters::parse.or_none(),
+            WhereClause::parse.or_none(),
+        )
+            .map(
+                |(
+                    enum_keyword,
+                    identifier,
+                    generic_parameters,
+                    where_clause,
+                )| Self {
+                    enum_keyword,
+                    identifier,
+                    generic_parameters,
+                    where_clause,
+                },
+            )
+            .parse(state_machine, handler)
+    }
+}
+
 impl EnumSignature {
     /// Dissolves the [`EnumSignature`] into a tuple of its fields.
     #[must_use]
@@ -1573,30 +2166,19 @@ impl SourceElement for EnumSignature {
 /// Syntax Synopsis:
 /// ``` txt
 /// VariantAssociation:
-///     '(' TypeSpecifier ')'
+///     '(' Type ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct VariantAssociation {
-    #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    r#type: r#type::Type,
-    #[get = "pub"]
-    right_paren: Punctuation,
-}
+pub type VariantAssociation = EnclosedTree<r#type::Type>;
 
-impl VariantAssociation {
-    /// Dissolves the [`VariantAssociation`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (Punctuation, r#type::Type, Punctuation) {
-        (self.left_paren, self.r#type, self.right_paren)
-    }
-}
-
-impl SourceElement for VariantAssociation {
-    fn span(&self) -> Span {
-        self.left_paren.span.join(&self.right_paren.span).unwrap()
+impl SyntaxTree for VariantAssociation {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        r#type::Type::parse
+            .enclosed_tree(Delimiter::Parenthesis)
+            .parse(state_machine, handler)
     }
 }
 
@@ -1612,6 +2194,17 @@ pub struct Variant {
     identifier: Identifier,
     #[get = "pub"]
     association: Option<VariantAssociation>,
+}
+
+impl SyntaxTree for Variant {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (expect::Identifier.to_owned(), VariantAssociation::parse.or_none())
+            .map(|(identifier, association)| Self { identifier, association })
+            .parse(state_machine, handler)
+    }
 }
 
 impl Variant {
@@ -1635,39 +2228,20 @@ impl SourceElement for Variant {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// VariantList:
-///     Identifier (',' Identifier)*
-///     ;
-/// ```
-pub type VariantList = ConnectedList<Variant, Punctuation>;
-
-/// Syntax Synopsis:
-/// ``` txt
 /// EnumBody:
-///     '{' VariantList? '}'
+///     '{' (Variant (',' Variant)+ ','?)? '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct EnumBody {
-    #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    variant_list: Option<VariantList>,
-    #[get = "pub"]
-    right_brace: Punctuation,
-}
+pub type EnumBody = EnclosedConnectedList<Variant, Punctuation>;
 
-impl EnumBody {
-    /// Dissolves the [`EnumBody`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (Punctuation, Option<VariantList>, Punctuation) {
-        (self.left_brace, self.variant_list, self.right_brace)
-    }
-}
-
-impl SourceElement for EnumBody {
-    fn span(&self) -> Span {
-        self.left_brace.span.join(&self.right_brace.span).unwrap()
+impl SyntaxTree for EnumBody {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Variant::parse
+            .enclosed_connected_list(','.to_owned(), Delimiter::Brace)
+            .parse(state_machine, handler)
     }
 }
 
@@ -1685,6 +2259,21 @@ pub struct Enum {
     signature: EnumSignature,
     #[get = "pub"]
     body: EnumBody,
+}
+
+impl SyntaxTree for Enum {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (AccessModifier::parse, EnumSignature::parse, EnumBody::parse)
+            .map(|(access_modifier, signature, body)| Self {
+                access_modifier,
+                signature,
+                body,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl Enum {
@@ -1718,12 +2307,45 @@ pub struct ConstantSignature {
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
-    ty: r#type::Type,
+    r#type: r#type::Type,
+}
+
+impl SyntaxTree for ConstantSignature {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Const.to_owned(),
+            expect::Identifier.to_owned(),
+            GenericParameters::parse.or_none(),
+            ':'.to_owned(),
+            r#type::Type::parse,
+        )
+            .map(
+                |(
+                    const_keyword,
+                    identifier,
+                    generic_parameters,
+                    colon,
+                    r#type,
+                )| {
+                    Self {
+                        const_keyword,
+                        identifier,
+                        generic_parameters,
+                        colon,
+                        r#type,
+                    }
+                },
+            )
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for ConstantSignature {
     fn span(&self) -> Span {
-        self.const_keyword.span.join(&self.ty.span()).unwrap()
+        self.const_keyword.span.join(&self.r#type.span()).unwrap()
     }
 }
 
@@ -1743,6 +2365,27 @@ pub struct ConstantDefinition {
     where_clause: Option<WhereClause>,
     #[get = "pub"]
     semicolon: Punctuation,
+}
+
+impl SyntaxTree for ConstantDefinition {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            '='.to_owned(),
+            Expression::parse,
+            WhereClause::parse.or_none(),
+            ';'.to_owned(),
+        )
+            .map(|(equals, expression, where_clause, semicolon)| Self {
+                equals,
+                expression,
+                where_clause,
+                semicolon,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for ConstantDefinition {
@@ -1767,6 +2410,35 @@ pub struct Constant {
     definition: ConstantDefinition,
 }
 
+impl SyntaxTree for Constant {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            AccessModifier::parse,
+            ConstantSignature::parse,
+            ConstantDefinition::parse,
+        )
+            .map(|(access_modifier, signature, definition)| Self {
+                access_modifier,
+                signature,
+                definition,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
+impl Constant {
+    /// Dissolves the [`Constant`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (AccessModifier, ConstantSignature, ConstantDefinition) {
+        (self.access_modifier, self.signature, self.definition)
+    }
+}
+
 impl SourceElement for Constant {
     fn span(&self) -> Span {
         self.access_modifier.span().join(&self.definition.span()).unwrap()
@@ -1789,6 +2461,21 @@ pub struct ExternFunction {
     semicolon: Punctuation,
 }
 
+impl SyntaxTree for ExternFunction {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (AccessModifier::parse, FunctionSignature::parse, ';'.to_owned())
+            .map(|(access_modifier, signature, semicolon)| Self {
+                access_modifier,
+                signature,
+                semicolon,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
 impl ExternFunction {
     /// Dissolves the [`ExternFunction`] into a tuple of its fields.
     #[must_use]
@@ -1805,8 +2492,28 @@ impl SourceElement for ExternFunction {
 
 /// Syntax Synopsis:
 /// ```txt
+/// ExternBody:
+///     '{' ExternFunction* '}'
+///     ;
+/// ```
+pub type ExternBody = EnclosedTree<Vec<ExternFunction>>;
+
+impl SyntaxTree for ExternBody {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ExternFunction::parse
+            .keep_take_all()
+            .enclosed_tree(Delimiter::Brace)
+            .parse(state_machine, handler)
+    }
+}
+
+/// Syntax Synopsis:
+/// ```txt
 /// Extern:
-///     'extern' String '{' ExternFunction* '}'
+///     'extern' String ExternBody
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Extern {
@@ -1815,11 +2522,26 @@ pub struct Extern {
     #[get = "pub"]
     convention: token::String,
     #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    functions: Vec<ExternFunction>,
-    #[get = "pub"]
-    right_brace: Punctuation,
+    extern_body: ExternBody,
+}
+
+impl SyntaxTree for Extern {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Extern.to_owned(),
+            expect::String.to_owned(),
+            ExternBody::parse,
+        )
+            .map(|(extern_keyword, convention, extern_body)| Self {
+                extern_keyword,
+                convention,
+                extern_body,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl Extern {
@@ -1827,21 +2549,14 @@ impl Extern {
     #[must_use]
     pub fn dissolve(
         self,
-    ) -> (Keyword, token::String, Punctuation, Vec<ExternFunction>, Punctuation)
-    {
-        (
-            self.extern_keyword,
-            self.convention,
-            self.left_brace,
-            self.functions,
-            self.right_brace,
-        )
+    ) -> (Keyword, token::String, EnclosedTree<Vec<ExternFunction>>) {
+        (self.extern_keyword, self.convention, self.extern_body)
     }
 }
 
 impl SourceElement for Extern {
     fn span(&self) -> Span {
-        self.extern_keyword.span.join(&self.right_brace.span).unwrap()
+        self.extern_keyword.span.join(&self.extern_body.span()).unwrap()
     }
 }
 
@@ -1876,6 +2591,26 @@ pub enum Item {
     Extern(Extern),
 }
 
+impl SyntaxTree for Item {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Trait::parse
+            .map(Self::Trait)
+            .or_else(Function::parse.map(Self::Function))
+            .or_else(Type::parse.map(Self::Type))
+            .or_else(Struct::parse.map(Self::Struct))
+            .or_else(Implementation::parse.map(Self::Implementation))
+            .or_else(Enum::parse.map(Self::Enum))
+            .or_else(Module::parse.map(Self::Module))
+            .or_else(Constant::parse.map(Self::Constant))
+            .or_else(Marker::parse.map(Self::Marker))
+            .or_else(Extern::parse.map(Self::Extern))
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Item {
     fn span(&self) -> Span {
         match self {
@@ -1889,1293 +2624,6 @@ impl SourceElement for Item {
             Self::Constant(c) => c.span(),
             Self::Marker(m) => m.span(),
             Self::Extern(e) => e.span(),
-        }
-    }
-}
-
-impl<'a> Parser<'a> {
-    /// Parses an [`AccessModifier`]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_access_modifier(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<AccessModifier> {
-        match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Public =>
-            {
-                self.forward();
-                Some(AccessModifier::Public(k))
-            }
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Private =>
-            {
-                self.forward();
-                Some(AccessModifier::Private(k))
-            }
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Internal =>
-            {
-                self.forward();
-                Some(AccessModifier::Internal(k))
-            }
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::AccessModifier,
-                    found: self.reading_to_found(found),
-                    alternatives: Vec::new(),
-                });
-                self.forward();
-                None
-            }
-        }
-    }
-
-    fn parse_generic_parameters(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<GenericParameters> {
-        let tree = self.parse_delimited_list(
-            Delimiter::Bracket,
-            ',',
-            |parser| {
-                match parser.stop_at_significant() {
-                    Reading::Unit(Token::Identifier(identifier)) => {
-                        parser.forward();
-                        Some(GenericParameter::Type(TypeParameter {
-                            identifier,
-                            default: match parser.stop_at_significant() {
-                                Reading::Unit(Token::Punctuation(equals))
-                                    if equals.punctuation == '=' =>
-                                {
-                                    // eat equals
-                                    parser.forward();
-
-                                    let value = parser.parse_type(handler)?;
-
-                                    Some(DefaultGenericParameter {
-                                        equals,
-                                        value,
-                                    })
-                                }
-                                _ => None,
-                            },
-                        }))
-                    }
-
-                    Reading::Unit(Token::Punctuation(apostrophe))
-                        if apostrophe.punctuation == '\'' =>
-                    {
-                        parser.forward();
-                        let identifier = parser.parse_identifier(handler)?;
-
-                        Some(GenericParameter::Lifetime(LifetimeParameter {
-                            apostrophe,
-                            identifier,
-                        }))
-                    }
-
-                    Reading::Unit(Token::Keyword(const_keyword))
-                        if const_keyword.kind == KeywordKind::Const =>
-                    {
-                        parser.forward();
-                        let identifier = parser.parse_identifier(handler)?;
-                        let colon =
-                            parser.parse_punctuation(':', true, handler)?;
-                        let r#type = parser.parse_type(handler)?;
-
-                        Some(GenericParameter::Constant(ConstantParameter {
-                            const_keyword,
-                            identifier,
-                            colon,
-                            r#type,
-                            default: match parser.stop_at_significant() {
-                                Reading::Unit(Token::Punctuation(equals))
-                                    if equals.punctuation == '=' =>
-                                {
-                                    // eat equals
-                                    parser.forward();
-
-                                    let value =
-                                        parser.parse_expression(handler)?;
-
-                                    Some(DefaultGenericParameter {
-                                        equals,
-                                        value,
-                                    })
-                                }
-                                _ => None,
-                            },
-                        }))
-                    }
-
-                    found => {
-                        handler.receive(Error {
-                            expected: SyntaxKind::GenericParameter,
-                            alternatives: Vec::new(),
-                            found: parser.reading_to_found(found),
-                        });
-                        parser.forward();
-                        None
-                    }
-                }
-            },
-            handler,
-        )?;
-
-        Some(GenericParameters {
-            left_bracket: tree.open,
-            parameter_list: tree.list,
-            right_bracket: tree.close,
-        })
-    }
-
-    fn parse_where_clause(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<WhereClause> {
-        let where_keyword = self.parse_keyword(KeywordKind::Where, handler)?;
-
-        let first = self.parse_predicate(handler)?;
-        let mut rest = Vec::new();
-        let mut trailing_separator = None;
-
-        while let Some(comma) =
-            self.try_parse(|parser| parser.parse_punctuation(',', true, &Dummy))
-        {
-            if matches!(
-                self.stop_at_significant(),
-                Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';'
-            ) || matches!(
-                self.stop_at_significant(),
-                Reading::IntoDelimited(Delimiter::Brace, _)
-            ) || matches!(
-                self.stop_at_significant(),
-                Reading::Unit(Token::Keyword(keyword)) if keyword.kind == KeywordKind::Delete
-            ) {
-                trailing_separator = Some(comma);
-                break;
-            }
-
-            let constraint = self.parse_predicate(handler)?;
-            rest.push((comma, constraint));
-        }
-
-        Some(WhereClause {
-            where_keyword,
-            predicate_list: ConnectedList { first, rest, trailing_separator },
-        })
-    }
-
-    #[allow(clippy::option_option)]
-    fn try_parse_where_clause(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Option<WhereClause>> {
-        match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(where_keyword))
-                if where_keyword.kind == KeywordKind::Where =>
-            {
-                self.parse_where_clause(handler).map(Some)
-            }
-            _ => Some(None),
-        }
-    }
-
-    fn parse_function_body(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<FunctionBody> {
-        let delimited_tree = self.step_into(
-            Delimiter::Brace,
-            |parser| {
-                let mut statements = Vec::new();
-
-                while !parser.is_exhausted() {
-                    // parse statements
-                    if let Some(statement) = parser.parse_statement(handler) {
-                        statements.push(statement);
-                        continue;
-                    }
-
-                    // try to stop at next statement
-                    parser.stop_at(|token| {
-                        matches!(
-                            token,
-                            Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';'
-                        )
-                    });
-
-                    // go after the semicolon
-                    if matches!(
-                        parser.stop_at_significant(),
-                        Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';'
-                    ) {
-                        parser.forward();
-                    }
-                }
-
-                Some(statements)
-            },
-            handler,
-        )?;
-
-        Some(FunctionBody {
-            left_brace: delimited_tree.open,
-            statements: delimited_tree.tree?,
-            right_brace: delimited_tree.close,
-        })
-    }
-
-    fn parse_function_signature(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<FunctionSignature> {
-        let function_keyword =
-            self.parse_keyword(KeywordKind::Function, handler)?;
-        let identifier = self.parse_identifier(handler)?;
-        let generic_parameters = self.try_parse_generic_parameters(handler)?;
-
-        let parameters = self.parse_delimited_list(
-            Delimiter::Parenthesis,
-            ',',
-            |parser| {
-                let irrefutable_pattern =
-                    parser.parse_irrefutable_pattern(handler)?;
-                let colon = parser.parse_punctuation(':', true, handler)?;
-                let ty = parser.parse_type(handler)?;
-
-                Some(Parameter { irrefutable_pattern, colon, r#type: ty })
-            },
-            handler,
-        )?;
-
-        let parameters = Parameters {
-            left_paren: parameters.open,
-            parameter_list: parameters.list,
-            right_paren: parameters.close,
-        };
-
-        let return_type = match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(p)) if p.punctuation == ':' => {
-                Some(ReturnType {
-                    colon: self.parse_punctuation(':', true, handler)?,
-                    r#type: self.parse_type(handler)?,
-                })
-            }
-            _ => None,
-        };
-
-        let where_clause = self.try_parse_where_clause(handler)?;
-
-        Some(FunctionSignature {
-            function_keyword,
-            identifier,
-            generic_parameters,
-            parameters,
-            return_type,
-            where_clause,
-        })
-    }
-
-    #[allow(clippy::option_option)]
-    fn try_parse_generic_parameters(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Option<GenericParameters>> {
-        if matches!(
-            self.stop_at_significant(),
-            Reading::IntoDelimited(Delimiter::Bracket, _)
-        ) {
-            Some(Some(self.parse_generic_parameters(handler)?))
-        } else {
-            Some(None)
-        }
-    }
-
-    fn parse_implements_member(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<ImplementationMember> {
-        let access_modifier = self.parse_access_modifier(handler)?;
-
-        match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(type_keyword))
-                if type_keyword.kind == KeywordKind::Type =>
-            {
-                let signature = self.parse_type_signature(handler)?;
-                let definition = self.parse_type_definition(handler)?;
-                let semicolon = self.parse_punctuation(';', true, handler)?;
-
-                Some(ImplementationMember::Type(Type {
-                    access_modifier,
-                    signature,
-                    definition,
-                    semicolon,
-                }))
-            }
-
-            Reading::Unit(Token::Keyword(function_keyword))
-                if function_keyword.kind == KeywordKind::Function =>
-            {
-                let signature = self.parse_function_signature(handler)?;
-                let body = self.parse_function_body(handler)?;
-
-                Some(ImplementationMember::Function(Function {
-                    access_modifier,
-                    const_keyword: None,
-                    signature,
-                    body,
-                }))
-            }
-
-            Reading::Unit(Token::Keyword(const_keyword))
-                if const_keyword.kind == KeywordKind::Const =>
-            {
-                // eat const Keyword
-                self.forward();
-
-                match self.stop_at_significant() {
-                    Reading::Unit(Token::Keyword(function_keyword))
-                        if function_keyword.kind == KeywordKind::Function =>
-                    {
-                        let signature =
-                            self.parse_function_signature(handler)?;
-                        let body = self.parse_function_body(handler)?;
-
-                        Some(ImplementationMember::Function(Function {
-                            access_modifier,
-                            const_keyword: Some(const_keyword),
-                            signature,
-                            body,
-                        }))
-                    }
-
-                    Reading::Unit(Token::Identifier(..)) => {
-                        let signature = self.parse_const_signature(
-                            Some(const_keyword),
-                            handler,
-                        )?;
-                        let definition =
-                            self.parse_const_definition(handler)?;
-
-                        Some(ImplementationMember::Constant(Constant {
-                            access_modifier,
-                            signature,
-                            definition,
-                        }))
-                    }
-
-                    found => {
-                        handler.receive(Error {
-                            expected: SyntaxKind::Keyword(KeywordKind::Const),
-                            alternatives: vec![SyntaxKind::Identifier],
-                            found: self.reading_to_found(found),
-                        });
-                        self.forward();
-                        None
-                    }
-                }
-            }
-
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::ImplementationMember,
-                    alternatives: vec![],
-                    found: self.reading_to_found(found),
-                });
-                self.forward();
-                None
-            }
-        }
-    }
-
-    fn parse_implements_body(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<ImplementationBody> {
-        let delimited_tree = self.step_into(
-            Delimiter::Brace,
-            |parser| {
-                let mut implements_members = Vec::new();
-
-                while !parser.is_exhausted() {
-                    if let Some(member) =
-                        parser.parse_implements_member(handler)
-                    {
-                        implements_members.push(member);
-                        continue;
-                    }
-
-                    // try to stop at next function signature
-                    parser.stop_at(|token| {
-                        matches!(
-                            token,
-                            Reading::IntoDelimited(Delimiter::Brace, _)
-                        )
-                    });
-                    parser.forward();
-                }
-
-                Some(implements_members)
-            },
-            handler,
-        )?;
-
-        Some(ImplementationBody {
-            left_brace: delimited_tree.open,
-            members: delimited_tree.tree?,
-            right_brace: delimited_tree.close,
-        })
-    }
-
-    fn parse_implements(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Implementation> {
-        let final_keyword = if let Reading::Unit(Token::Keyword(
-            final_keyword @ Keyword { kind: KeywordKind::Final, .. },
-        )) = self.stop_at_significant()
-        {
-            // eat final keyword
-            self.forward();
-
-            Some(final_keyword)
-        } else {
-            None
-        };
-
-        let implements_keyword =
-            self.parse_keyword(KeywordKind::Implements, handler)?;
-        let generic_parameters = self.try_parse_generic_parameters(handler)?;
-        let const_keyword = match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(const_keyword))
-                if const_keyword.kind == KeywordKind::Const =>
-            {
-                // eat const keyword
-                self.forward();
-
-                Some(const_keyword)
-            }
-            _ => None,
-        };
-
-        let qualified_identifier = self.parse_qualified_identifier(handler)?;
-        let where_clause = self.try_parse_where_clause(handler)?;
-
-        let kind = match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(delete_keyword))
-                if delete_keyword.kind == KeywordKind::Delete =>
-            {
-                // eat delete
-                self.forward();
-
-                let semicolon = self.parse_punctuation(';', true, handler)?;
-
-                ImplementationKind::Negative(NegativeImplementation {
-                    delete_keyword,
-                    semicolon,
-                })
-            }
-
-            Reading::Unit(Token::Punctuation(
-                semicolon @ Punctuation { punctuation: ';', .. },
-            )) => {
-                // eat semicolon
-                self.forward();
-
-                ImplementationKind::Empty(semicolon)
-            }
-
-            _ => ImplementationKind::Positive(
-                self.parse_implements_body(handler)?,
-            ),
-        };
-
-        Some(Implementation {
-            signature: ImplementationSignature {
-                final_keyword,
-                implements_keyword,
-                generic_parameters,
-                const_keyword,
-                qualified_identifier,
-                where_clause,
-            },
-            kind,
-        })
-    }
-
-    fn parse_trait_signature(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<TraitSignature> {
-        let trait_keyword = self.parse_keyword(KeywordKind::Trait, handler)?;
-        let identifier = self.parse_identifier(handler)?;
-        let generic_parameters = self.try_parse_generic_parameters(handler)?;
-        let where_clause = self.try_parse_where_clause(handler)?;
-
-        Some(TraitSignature {
-            trait_keyword,
-            identifier,
-            generic_parameters,
-            where_clause,
-        })
-    }
-
-    fn parse_trait_member(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<TraitMember> {
-        let access_modifier = self.parse_access_modifier(handler)?;
-        match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(function_keyword))
-                if function_keyword.kind == KeywordKind::Function =>
-            {
-                let function_signature =
-                    self.parse_function_signature(handler)?;
-                let semicolon = self.parse_punctuation(';', true, handler)?;
-
-                Some(TraitMember::Function(TraitFunction {
-                    access_modifier,
-                    signature: function_signature,
-                    semicolon,
-                }))
-            }
-
-            Reading::Unit(Token::Keyword(const_keyword))
-                if const_keyword.kind == KeywordKind::Const =>
-            {
-                let const_keyword =
-                    self.parse_keyword(KeywordKind::Const, handler)?;
-                let identifier = self.parse_identifier(handler)?;
-                let generic_parameters =
-                    self.try_parse_generic_parameters(handler)?;
-                let colon = self.parse_punctuation(':', true, handler)?;
-                let ty = self.parse_type(handler)?;
-                let where_clause = self.try_parse_where_clause(handler)?;
-                let semicolon = self.parse_punctuation(';', true, handler)?;
-
-                Some(TraitMember::Constant(TraitConstant {
-                    access_modifier,
-                    signature: ConstantSignature {
-                        const_keyword,
-                        identifier,
-                        generic_parameters,
-                        colon,
-                        ty,
-                    },
-                    where_clause,
-                    semicolon,
-                }))
-            }
-
-            Reading::Unit(Token::Keyword(type_keyword))
-                if type_keyword.kind == KeywordKind::Type =>
-            {
-                let signature = self.parse_type_signature(handler)?;
-                let where_clause = self.try_parse_where_clause(handler)?;
-                let semicolon = self.parse_punctuation(';', true, handler)?;
-
-                Some(TraitMember::Type(TraitType {
-                    access_modifier,
-                    signature,
-                    where_clause,
-                    semicolon,
-                }))
-            }
-
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::TraitMember,
-                    alternatives: Vec::new(),
-                    found: self.reading_to_found(found),
-                });
-                self.forward();
-                None
-            }
-        }
-    }
-
-    fn parse_trait_body(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<TraitBody> {
-        let delimited_tree = self.step_into(
-            Delimiter::Brace,
-            |parser| {
-                let mut trait_members = Vec::new();
-
-                while !parser.is_exhausted() {
-                    if let Some(trait_member) = parser.parse_trait_member(handler) {
-                        trait_members.push(trait_member);
-                        continue;
-                    }
-
-                    // try to stop at the next semicolon
-                    parser.stop_at(|token| {
-                        matches!(
-                            token,
-                            Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';'
-                        )
-                    });
-
-                    // eat semicolon
-                    parser.forward();
-                }
-                Some(trait_members)
-            },
-            handler,
-        )?;
-
-        Some(TraitBody {
-            left_brace: delimited_tree.open,
-            members: delimited_tree.tree?,
-            right_brace: delimited_tree.close,
-        })
-    }
-
-    fn parse_type_signature(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<TypeSignature> {
-        let type_keyword = self.parse_keyword(KeywordKind::Type, handler)?;
-        let identifier = self.parse_identifier(handler)?;
-        let generic_parameters = self.try_parse_generic_parameters(handler)?;
-
-        Some(TypeSignature { type_keyword, identifier, generic_parameters })
-    }
-
-    fn parse_type_definition(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<TypeDefinition> {
-        let equals = self.parse_punctuation('=', true, handler)?;
-        let ty = self.parse_type(handler)?;
-        let where_clause = self.try_parse_where_clause(handler)?;
-
-        Some(TypeDefinition { equals, ty, where_clause })
-    }
-
-    fn parse_struct_body(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<StructBody> {
-        let enclosed_list = self.parse_delimited_list(
-            Delimiter::Brace,
-            ',',
-            |parser| {
-                let access_modifier = parser.parse_access_modifier(handler)?;
-                let identifier = parser.parse_identifier(handler)?;
-                let colon = parser.parse_punctuation(':', true, handler)?;
-                let ty = parser.parse_type(handler)?;
-
-                Some(Field { access_modifier, identifier, colon, r#type: ty })
-            },
-            handler,
-        )?;
-
-        Some(StructBody {
-            left_brace: enclosed_list.open,
-            field_list: enclosed_list.list,
-            right_brace: enclosed_list.close,
-        })
-    }
-
-    fn parse_struct_signature(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<StructSignature> {
-        let struct_keyword =
-            self.parse_keyword(KeywordKind::Struct, handler)?;
-        let identifier = self.parse_identifier(handler)?;
-        let generic_parameters = self.try_parse_generic_parameters(handler)?;
-        let where_clause = self.try_parse_where_clause(handler)?;
-
-        Some(StructSignature {
-            struct_keyword,
-            identifier,
-            generic_parameters,
-            where_clause,
-        })
-    }
-
-    fn parse_enum_signature(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<EnumSignature> {
-        let enum_keyword = self.parse_keyword(KeywordKind::Enum, handler)?;
-        let identifier = self.parse_identifier(handler)?;
-        let generic_parameters = self.try_parse_generic_parameters(handler)?;
-        let where_clause = self.try_parse_where_clause(handler)?;
-
-        Some(EnumSignature {
-            enum_keyword,
-            identifier,
-            generic_parameters,
-            where_clause,
-        })
-    }
-
-    fn parse_enum_body(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<EnumBody> {
-        let body = self.parse_delimited_list(
-            Delimiter::Brace,
-            ',',
-            |parser| {
-                let identifier = parser.parse_identifier(handler)?;
-
-                // parse associated enum value
-                let associated_value = if matches!(
-                    parser.stop_at_significant(),
-                    Reading::IntoDelimited(Delimiter::Parenthesis, _)
-                ) {
-                    let delimited_tree = parser.step_into(
-                        Delimiter::Parenthesis,
-                        |parser| parser.parse_type(handler),
-                        handler,
-                    )?;
-
-                    Some(VariantAssociation {
-                        left_paren: delimited_tree.open,
-                        r#type: delimited_tree.tree?,
-                        right_paren: delimited_tree.close,
-                    })
-                } else {
-                    None
-                };
-
-                Some(Variant { identifier, association: associated_value })
-            },
-            handler,
-        )?;
-
-        Some(EnumBody {
-            left_brace: body.open,
-            variant_list: body.list,
-            right_brace: body.close,
-        })
-    }
-
-    fn parse_module_signature(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<ModuleSignature> {
-        let module_keyword =
-            self.parse_keyword(KeywordKind::Module, handler)?;
-        let identifier = self.parse_identifier(handler)?;
-
-        Some(ModuleSignature { module_keyword, identifier })
-    }
-
-    fn parse_using(&mut self, handler: &dyn Handler<Error>) -> Option<Using> {
-        let using_keyword = self.parse_keyword(KeywordKind::Using, handler)?;
-        let kind = if let Reading::IntoDelimited(Delimiter::Brace, _) =
-            self.stop_at_significant()
-        {
-            let tree = self.parse_delimited_list(
-                Delimiter::Brace,
-                ',',
-                |parser| {
-                    let identifier = parser.parse_identifier(handler)?;
-                    let alias = if let Reading::Unit(Token::Keyword(
-                        as_keyword @ Keyword { kind: KeywordKind::As, .. },
-                    )) = parser.stop_at_significant()
-                    {
-                        // eat as keyword
-                        parser.forward();
-
-                        let identifier = parser.parse_identifier(handler)?;
-                        Some(Alias { as_keyword, identifier })
-                    } else {
-                        None
-                    };
-
-                    Some(Import { identifier, alias })
-                },
-                handler,
-            )?;
-
-            let from_keyword =
-                self.parse_keyword(KeywordKind::From, handler)?;
-            let simple_path = self.parse_simple_path(handler)?;
-
-            UsingKind::From(UsingFrom {
-                left_brace: tree.open,
-                imports: tree.list,
-                right_brace: tree.close,
-                from: From { from_keyword, simple_path },
-            })
-        } else {
-            let simple_path = self.parse_simple_path(handler)?;
-            let alias = if let Reading::Unit(Token::Keyword(
-                as_keyword @ Keyword { kind: KeywordKind::As, .. },
-            )) = self.stop_at_significant()
-            {
-                // eat as keyword
-                self.forward();
-
-                let identifier = self.parse_identifier(handler)?;
-                Some(Alias { as_keyword, identifier })
-            } else {
-                None
-            };
-
-            UsingKind::One(UsingOne { simple_path, alias })
-        };
-        let semicolon = self.parse_punctuation(';', true, handler)?;
-
-        Some(Using { using_keyword, kind, semicolon })
-    }
-
-    /// Parses a [`ModuleContent`]
-    pub fn parse_module_content(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> ModuleContent {
-        let mut items = Vec::new();
-        let mut usings = Vec::new();
-
-        while !self.is_exhausted() {
-            match (items.is_empty(), self.stop_at_significant()) {
-                (true, Reading::Unit(Token::Keyword(using_keyword)))
-                    if using_keyword.kind == KeywordKind::Using =>
-                {
-                    if let Some(using) = self.parse_using(handler) {
-                        usings.push(using);
-                        continue;
-                    }
-                }
-                _ => {
-                    if let Some(item) = self.parse_item(handler) {
-                        items.push(item);
-                        continue;
-                    };
-                }
-            }
-
-            // try to stop at the next access modifier or usings keyword
-            self.stop_at(|token| match token {
-                Reading::Unit(Token::Keyword(keyword)) => {
-                    (keyword.kind == KeywordKind::Public
-                        || keyword.kind == KeywordKind::Private
-                        || keyword.kind == KeywordKind::Internal
-                        || keyword.kind == KeywordKind::Implements
-                        || keyword.kind == KeywordKind::Final
-                        || keyword.kind == KeywordKind::Extern)
-                        || if items.is_empty() {
-                            keyword.kind == KeywordKind::Using
-                        } else {
-                            false
-                        }
-                }
-
-                Reading::IntoDelimited(Delimiter::Brace, _) => true,
-
-                _ => false,
-            });
-
-            if matches!(
-                self.peek(),
-                Reading::IntoDelimited(Delimiter::Brace, _)
-            ) {
-                self.forward();
-            }
-        }
-
-        ModuleContent { usings, items }
-    }
-
-    fn parse_module_body(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<ModuleBody> {
-        let delimited_tree = self.step_into(
-            Delimiter::Brace,
-            |parser| {
-                let mut items = Vec::new();
-                let mut usings = Vec::new();
-
-                while !parser.is_exhausted() {
-                    if let (
-                        true,
-                        Reading::Unit(Token::Keyword(Keyword {
-                            kind: KeywordKind::Using,
-                            ..
-                        })),
-                    ) = (items.is_empty(), parser.stop_at_significant())
-                    {
-                        if let Some(using) = parser.parse_using(handler) {
-                            usings.push(using);
-                            continue;
-                        }
-                    } else if let Some(item) = parser.parse_item(handler) {
-                        items.push(item);
-                        continue;
-                    }
-
-                    // try to stop at the next access modifier or usings keyword
-                    parser.stop_at(|token| {
-                        if let Reading::Unit(Token::Keyword(keyword)) = token {
-                            (keyword.kind == KeywordKind::Public
-                                || keyword.kind == KeywordKind::Private
-                                || keyword.kind == KeywordKind::Internal)
-                                || if items.is_empty() {
-                                    keyword.kind == KeywordKind::Using
-                                } else {
-                                    false
-                                }
-                        } else {
-                            false
-                        }
-                    });
-
-                    // eat semicolon
-                    parser.forward();
-                }
-
-                Some(ModuleContent { usings, items })
-            },
-            handler,
-        )?;
-
-        Some(ModuleBody {
-            left_brace: delimited_tree.open,
-            content: delimited_tree.tree?,
-            right_brace: delimited_tree.close,
-        })
-    }
-
-    fn parse_const_signature(
-        &mut self,
-        const_keyword: Option<Keyword>,
-        handler: &dyn Handler<Error>,
-    ) -> Option<ConstantSignature> {
-        let const_keyword = if let Some(const_keyword) = const_keyword {
-            const_keyword
-        } else {
-            self.parse_keyword(KeywordKind::Const, handler)?
-        };
-        let identifier = self.parse_identifier(handler)?;
-        let generic_parameters = self.try_parse_generic_parameters(handler)?;
-        let colon = self.parse_punctuation(':', true, handler)?;
-        let ty = self.parse_type(handler)?;
-
-        Some(ConstantSignature {
-            const_keyword,
-            identifier,
-            generic_parameters,
-            colon,
-            ty,
-        })
-    }
-
-    fn parse_const_definition(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<ConstantDefinition> {
-        let equals = self.parse_punctuation('=', true, handler)?;
-        let expression = self.parse_expression(handler)?;
-        let where_clause = self.try_parse_where_clause(handler)?;
-        let semicolon = self.parse_punctuation(';', true, handler)?;
-
-        Some(ConstantDefinition { equals, expression, where_clause, semicolon })
-    }
-
-    fn parse_marker_signature(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<MarkerSignature> {
-        let marker_keyword =
-            self.parse_keyword(KeywordKind::Marker, handler)?;
-        let identifier = self.parse_identifier(handler)?;
-        let generic_parameters = self.try_parse_generic_parameters(handler)?;
-        let where_clause = self.try_parse_where_clause(handler)?;
-
-        Some(MarkerSignature {
-            marker_keyword,
-            identifier,
-            generic_parameters,
-            where_clause,
-        })
-    }
-
-    #[allow(clippy::too_many_lines)]
-    fn parse_item_with_access_modifier(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Item> {
-        let access_modifier = self.parse_access_modifier(handler)?;
-
-        match self.stop_at_significant() {
-            // parse function
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Function =>
-            {
-                let function_signature =
-                    self.parse_function_signature(handler)?;
-                let function_body = self.parse_function_body(handler)?;
-
-                Some(Item::Function(Function {
-                    access_modifier,
-                    const_keyword: None,
-                    signature: function_signature,
-                    body: function_body,
-                }))
-            }
-
-            Reading::Unit(Token::Keyword(Keyword {
-                kind: KeywordKind::Marker,
-                ..
-            })) => {
-                let marker_signature = self.parse_marker_signature(handler)?;
-
-                let semicolon = self.parse_punctuation(';', true, handler)?;
-
-                Some(Item::Marker(Marker {
-                    access_modifier,
-                    signature: marker_signature,
-                    semicolon,
-                }))
-            }
-
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Const =>
-            {
-                // eat const keyword
-                self.forward();
-
-                match self.stop_at_significant() {
-                    Reading::Unit(Token::Keyword(function_keyword))
-                        if function_keyword.kind == KeywordKind::Function =>
-                    {
-                        let function_signature =
-                            self.parse_function_signature(handler)?;
-                        let function_body =
-                            self.parse_function_body(handler)?;
-
-                        Some(Item::Function(Function {
-                            access_modifier,
-                            const_keyword: Some(k),
-                            signature: function_signature,
-                            body: function_body,
-                        }))
-                    }
-
-                    Reading::Unit(Token::Identifier(_)) => {
-                        let const_signature =
-                            self.parse_const_signature(Some(k), handler)?;
-                        let const_definition =
-                            self.parse_const_definition(handler)?;
-
-                        Some(Item::Constant(Constant {
-                            access_modifier,
-                            signature: const_signature,
-                            definition: const_definition,
-                        }))
-                    }
-
-                    found => {
-                        handler.receive(Error {
-                            expected: SyntaxKind::Keyword(
-                                KeywordKind::Function,
-                            ),
-                            alternatives: vec![SyntaxKind::Identifier],
-                            found: self.reading_to_found(found),
-                        });
-                        self.forward();
-                        None
-                    }
-                }
-            }
-
-            // parse module
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Module =>
-            {
-                let signature = self.parse_module_signature(handler)?;
-
-                let content = match self.stop_at_significant() {
-                    Reading::Unit(Token::Punctuation(p))
-                        if p.punctuation == ';' =>
-                    {
-                        // eat semi colon
-                        self.forward();
-                        ModuleKind::File(p)
-                    }
-                    _ => ModuleKind::Inline(self.parse_module_body(handler)?),
-                };
-
-                Some(Item::Module(Module {
-                    access_modifier,
-                    signature,
-                    kind: content,
-                }))
-            }
-
-            // parse trait
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Trait =>
-            {
-                let trait_signature = self.parse_trait_signature(handler)?;
-                let trait_body = self.parse_trait_body(handler)?;
-
-                Some(Item::Trait(Trait {
-                    access_modifier,
-                    signature: trait_signature,
-                    body: trait_body,
-                }))
-            }
-
-            // parse struct
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Struct =>
-            {
-                let struct_signature = self.parse_struct_signature(handler)?;
-                let struct_body = self.parse_struct_body(handler)?;
-
-                Some(Item::Struct(Struct {
-                    access_modifier,
-                    signature: struct_signature,
-                    body: struct_body,
-                }))
-            }
-
-            // parse type
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Type => {
-                let type_signature = self.parse_type_signature(handler)?;
-                let type_definition = self.parse_type_definition(handler)?;
-                let semicolon = self.parse_punctuation(';', true, handler)?;
-
-                Some(Item::Type(Type {
-                    access_modifier,
-                    signature: type_signature,
-                    definition: type_definition,
-                    semicolon,
-                }))
-            }
-
-            // parse enum
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Enum => {
-                let enum_signature = self.parse_enum_signature(handler)?;
-                let enum_body = self.parse_enum_body(handler)?;
-
-                Some(Item::Enum(Enum {
-                    access_modifier,
-                    signature: enum_signature,
-                    body: enum_body,
-                }))
-            }
-
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::Item,
-                    alternatives: Vec::new(),
-                    found: self.reading_to_found(found),
-                });
-                self.forward();
-                None
-            }
-        }
-    }
-
-    /// Parses an [`ExternFunction`]
-    pub fn parse_extern_function(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<ExternFunction> {
-        let access_modifier = self.parse_access_modifier(handler)?;
-        let signature = self.parse_function_signature(handler)?;
-        let semicolon = self.parse_punctuation(';', true, handler)?;
-
-        Some(ExternFunction { access_modifier, signature, semicolon })
-    }
-
-    /// Parses an [`Extern`]
-    pub fn parse_extern(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Extern> {
-        let extern_keyword =
-            self.parse_keyword(KeywordKind::Extern, handler)?;
-        let convention = self.parse_string(handler)?;
-        let delimited_tree = self.step_into(
-            Delimiter::Brace,
-            |parser| {
-                let mut functions = Vec::new();
-
-                while !parser.is_exhausted() {
-                    if let Some(function) = parser.parse_extern_function(handler) {
-                        functions.push(function);
-                        continue;
-                    }
-
-                    // try to stop at the next semicolon
-                    parser.stop_at(|token| {
-                        matches!(
-                            token,
-                            Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';'
-                        )
-                    });
-
-                    // eat semicolon
-                    parser.forward();
-                }
-
-                Some(functions)
-            },
-            handler,
-        )?;
-
-        Some(Extern {
-            extern_keyword,
-            convention,
-            left_brace: delimited_tree.open,
-            functions: delimited_tree.tree?,
-            right_brace: delimited_tree.close,
-        })
-    }
-
-    /// Parses an [`Item`]
-    pub fn parse_item(&mut self, handler: &dyn Handler<Error>) -> Option<Item> {
-        match self.stop_at_significant() {
-            // parses an item with an access modifier
-            Reading::Unit(Token::Keyword(access_modifier))
-                if matches!(
-                    access_modifier.kind,
-                    KeywordKind::Public
-                        | KeywordKind::Private
-                        | KeywordKind::Internal
-                ) =>
-            {
-                self.parse_item_with_access_modifier(handler)
-            }
-
-            // parses an extern
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Extern =>
-            {
-                self.parse_extern(handler).map(Item::Extern)
-            }
-
-            // parses an implements
-            Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Implements
-                    || k.kind == KeywordKind::Final =>
-            {
-                self.parse_implements(handler).map(Item::Implementation)
-            }
-
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::Item,
-                    found: self.reading_to_found(found),
-                    alternatives: Vec::new(),
-                });
-                self.forward();
-                None
-            }
         }
     }
 }

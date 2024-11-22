@@ -3,19 +3,25 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_base::source_file::{SourceElement, Span};
+use pernixc_base::{
+    handler::Handler,
+    source_file::{SourceElement, Span},
+};
 use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation},
     token_stream::Delimiter,
 };
 
 use super::{
-    delimited_list, r#type, DelimitedList, Lifetime, LifetimeParameter, Parse,
-    QualifiedIdentifier, UnionList,
+    r#type, EnclosedConnectedList, Lifetime, LifetimeParameter, Parse,
+    ParseExt, QualifiedIdentifier, SyntaxTree, UnionList,
 };
-use crate::parser::Syntax;
+use crate::{
+    error,
+    state_machine::{parse, StateMachine},
+};
 
-pub mod strategy;
+// pub mod strategy;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -28,17 +34,24 @@ pub struct HigherRankedLifetimes {
     #[get = "pub"]
     for_keyword: Keyword,
     #[get = "pub"]
-    lifetime_parameters: DelimitedList<LifetimeParameter>,
+    lifetime_parameters: EnclosedConnectedList<LifetimeParameter, Punctuation>,
 }
 
-impl Parse for HigherRankedLifetimes {
-    fn syntax() -> impl Syntax<Output = Self> {
-        (KeywordKind::For, delimited_list(Delimiter::Bracket, ',')).map(
-            |(for_keyword, lifetime_parameters)| HigherRankedLifetimes {
+impl SyntaxTree for HigherRankedLifetimes {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::For.to_owned(),
+            LifetimeParameter::parse
+                .enclosed_connected_list(','.to_owned(), Delimiter::Bracket),
+        )
+            .map(|(for_keyword, lifetime_parameters)| Self {
                 for_keyword,
                 lifetime_parameters,
-            },
-        )
+            })
+            .parse(state_machine, handler)
     }
 }
 
@@ -65,6 +78,36 @@ pub struct TraitTypeEquality {
     r#type: r#type::Type,
 }
 
+impl SyntaxTree for TraitTypeEquality {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            HigherRankedLifetimes::parse.or_none(),
+            QualifiedIdentifier::parse,
+            '='.to_owned(),
+            r#type::Type::parse,
+        )
+            .map(
+                |(
+                    higher_ranked_lifetimes,
+                    qualified_identifier,
+                    equals,
+                    r#type,
+                )| {
+                    Self {
+                        higher_ranked_lifetimes,
+                        qualified_identifier,
+                        equals,
+                        r#type,
+                    }
+                },
+            )
+            .parse(state_machine, handler)
+    }
+}
+
 impl TraitTypeEquality {
     /// Dissolves the [`TraitTypeEquality`] into a tuple of its fields.
     #[must_use]
@@ -82,30 +125,6 @@ impl TraitTypeEquality {
             self.equals,
             self.r#type,
         )
-    }
-}
-
-impl Parse for TraitTypeEquality {
-    fn syntax() -> impl Syntax<Output = Self> {
-        (
-            HigherRankedLifetimes::syntax().or_none(),
-            QualifiedIdentifier::syntax(),
-            '=',
-            r#type::Type::syntax(),
-        )
-            .map(
-                |(
-                    higher_ranked_lifetimes,
-                    qualified_identifier,
-                    equals,
-                    r#type,
-                )| TraitTypeEquality {
-                    higher_ranked_lifetimes,
-                    qualified_identifier,
-                    equals,
-                    r#type,
-                },
-            )
     }
 }
 
@@ -141,13 +160,16 @@ pub struct TraitBound {
     qualified_identifier: QualifiedIdentifier,
 }
 
-impl Parse for TraitBound {
-    fn syntax() -> impl Syntax<Output = Self> {
+impl SyntaxTree for TraitBound {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
         (
-            '!'.or_none(),
-            HigherRankedLifetimes::syntax().or_none(),
-            KeywordKind::Const.or_none(),
-            QualifiedIdentifier::syntax(),
+            '!'.to_owned().or_none(),
+            HigherRankedLifetimes::parse.or_none(),
+            KeywordKind::Const.to_owned().or_none(),
+            QualifiedIdentifier::parse,
         )
             .map(
                 |(
@@ -156,7 +178,7 @@ impl Parse for TraitBound {
                     const_keyword,
                     qualified_identifier,
                 )| {
-                    TraitBound {
+                    Self {
                         negation,
                         higher_ranked_lifetimes,
                         const_keyword,
@@ -164,6 +186,22 @@ impl Parse for TraitBound {
                     }
                 },
             )
+            .parse(state_machine, handler)
+    }
+}
+
+impl TraitBound {
+    /// Dissolves the [`TraitBound`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (Option<HigherRankedLifetimes>, Option<Keyword>, QualifiedIdentifier)
+    {
+        (
+            self.higher_ranked_lifetimes,
+            self.const_keyword,
+            self.qualified_identifier,
+        )
     }
 }
 
@@ -186,21 +224,6 @@ impl SourceElement for TraitBound {
     }
 }
 
-impl TraitBound {
-    /// Dissolves the [`TraitBound`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (Option<HigherRankedLifetimes>, Option<Keyword>, QualifiedIdentifier)
-    {
-        (
-            self.higher_ranked_lifetimes,
-            self.const_keyword,
-            self.qualified_identifier,
-        )
-    }
-}
-
 /// Syntax Synopsis:
 /// ``` txt
 /// TraitBound:
@@ -215,10 +238,14 @@ pub struct Trait {
     bounds: UnionList<TraitBound>,
 }
 
-impl Parse for Trait {
-    fn syntax() -> impl Syntax<Output = Self> {
-        (KeywordKind::Trait, UnionList::syntax())
-            .map(|(trait_keyword, bounds)| Trait { trait_keyword, bounds })
+impl SyntaxTree for Trait {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Trait.to_owned(), TraitBound::parse.union_list())
+            .map(|(trait_keyword, bounds)| Self { trait_keyword, bounds })
+            .parse(state_machine, handler)
     }
 }
 
@@ -251,22 +278,31 @@ pub struct MarkerBound {
     qualified_identifier: QualifiedIdentifier,
 }
 
-impl Parse for MarkerBound {
-    fn syntax() -> impl Syntax<Output = Self> {
+impl SyntaxTree for MarkerBound {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
         (
-            '!'.or_none(),
-            HigherRankedLifetimes::syntax().or_none(),
-            QualifiedIdentifier::syntax(),
+            '!'.to_owned().or_none(),
+            HigherRankedLifetimes::parse.or_none(),
+            QualifiedIdentifier::parse,
         )
-            .map(
-                |(negation, higher_ranked_lifetimes, qualified_identifier)| {
-                    MarkerBound {
-                        negation,
-                        higher_ranked_lifetimes,
-                        qualified_identifier,
-                    }
-                },
-            )
+            .map(|(negation, higher_ranked_lifetimes, qualified_identifier)| {
+                Self { negation, higher_ranked_lifetimes, qualified_identifier }
+            })
+            .parse(state_machine, handler)
+    }
+}
+
+impl MarkerBound {
+    /// Dissolves the [`MarkerBound`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (Option<Punctuation>, Option<HigherRankedLifetimes>, QualifiedIdentifier)
+    {
+        (self.negation, self.higher_ranked_lifetimes, self.qualified_identifier)
     }
 }
 
@@ -286,17 +322,6 @@ impl SourceElement for MarkerBound {
     }
 }
 
-impl MarkerBound {
-    /// Dissolves the [`MarkerBound`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (Option<Punctuation>, Option<HigherRankedLifetimes>, QualifiedIdentifier)
-    {
-        (self.negation, self.higher_ranked_lifetimes, self.qualified_identifier)
-    }
-}
-
 /// ``` txt
 /// Marker:
 ///     'marker' MarkerBound ('+' MarkerBound)*
@@ -310,10 +335,14 @@ pub struct Marker {
     bounds: UnionList<MarkerBound>,
 }
 
-impl Parse for Marker {
-    fn syntax() -> impl Syntax<Output = Self> {
-        (KeywordKind::Marker, UnionList::syntax())
-            .map(|(marker_keyword, bounds)| Marker { marker_keyword, bounds })
+impl SyntaxTree for Marker {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Marker.to_owned(), MarkerBound::parse.union_list())
+            .map(|(marker_keyword, bounds)| Self { marker_keyword, bounds })
+            .parse(state_machine, handler)
     }
 }
 
@@ -333,6 +362,42 @@ impl Marker {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// OutlivesOperand:
+///     LifetimeParameter
+///     | Type
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum OutlivesOperand {
+    LifetimeParameter(LifetimeParameter),
+    Type(r#type::Type),
+}
+
+impl SyntaxTree for OutlivesOperand {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        LifetimeParameter::parse
+            .map(OutlivesOperand::LifetimeParameter)
+            .or_else(r#type::Type::parse.map(OutlivesOperand::Type))
+            .parse(state_machine, handler)
+    }
+}
+
+impl SourceElement for OutlivesOperand {
+    fn span(&self) -> Span {
+        match self {
+            Self::LifetimeParameter(lifetime_parameter) => {
+                lifetime_parameter.span()
+            }
+            Self::Type(ty) => ty.span(),
+        }
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// Outlives:
 ///     OutlivesOperand ':' Lifetime ('+' Lifetime)*
 ///     ;
@@ -347,10 +412,14 @@ pub struct Outlives {
     bounds: UnionList<Lifetime>,
 }
 
-impl Parse for Outlives {
-    fn syntax() -> impl Syntax<Output = Self> {
-        (OutlivesOperand::syntax(), ':', UnionList::syntax())
-            .map(|(operand, colon, bounds)| Outlives { operand, colon, bounds })
+impl SyntaxTree for Outlives {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (OutlivesOperand::parse, ':'.to_owned(), Lifetime::parse.union_list())
+            .map(|(operand, colon, bounds)| Self { operand, colon, bounds })
+            .parse(state_machine, handler)
     }
 }
 
@@ -371,38 +440,6 @@ impl SourceElement for Outlives {
 }
 
 /// Syntax Synopsis:
-/// ``` txt
-/// OutlivesOperand:
-///     LifetimeParameter
-///     | Type
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum OutlivesOperand {
-    LifetimeParameter(LifetimeParameter),
-    Type(r#type::Type),
-}
-
-impl Parse for OutlivesOperand {
-    fn syntax() -> impl Syntax<Output = Self> {
-        LifetimeParameter::syntax()
-            .map(OutlivesOperand::LifetimeParameter)
-            .or_else(r#type::Type::syntax().map(OutlivesOperand::Type))
-    }
-}
-
-impl SourceElement for OutlivesOperand {
-    fn span(&self) -> Span {
-        match self {
-            Self::LifetimeParameter(lifetime_parameter) => {
-                lifetime_parameter.span()
-            }
-            Self::Type(ty) => ty.span(),
-        }
-    }
-}
-
-/// Syntax Synopsis:
 /// ```txt
 /// ConstantTypeBound:
 ///     HigherRankedLifetimes? Type
@@ -416,14 +453,17 @@ pub struct ConstantTypeBound {
     r#type: r#type::Type,
 }
 
-impl Parse for ConstantTypeBound {
-    fn syntax() -> impl Syntax<Output = Self> {
-        (HigherRankedLifetimes::syntax().or_none(), r#type::Type::syntax()).map(
-            |(higher_ranked_lifetimes, r#type)| ConstantTypeBound {
+impl SyntaxTree for ConstantTypeBound {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (HigherRankedLifetimes::parse.or_none(), r#type::Type::parse)
+            .map(|(higher_ranked_lifetimes, r#type)| Self {
                 higher_ranked_lifetimes,
                 r#type,
-            },
-        )
+            })
+            .parse(state_machine, handler)
     }
 }
 
@@ -450,11 +490,22 @@ pub struct ConstantType {
     bounds: UnionList<ConstantTypeBound>,
 }
 
-impl Parse for ConstantType {
-    fn syntax() -> impl Syntax<Output = Self> {
-        (KeywordKind::Const, UnionList::syntax()).map(
-            |(const_keyword, bounds)| ConstantType { const_keyword, bounds },
-        )
+impl SyntaxTree for ConstantType {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Const.to_owned(), ConstantTypeBound::parse.union_list())
+            .map(|(const_keyword, bounds)| Self { const_keyword, bounds })
+            .parse(state_machine, handler)
+    }
+}
+
+impl ConstantType {
+    /// Dissolves the [`ConstantType`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Keyword, UnionList<ConstantTypeBound>) {
+        (self.const_keyword, self.bounds)
     }
 }
 
@@ -478,14 +529,25 @@ pub struct TupleOperand {
     r#type: r#type::Type,
 }
 
-impl Parse for TupleOperand {
-    fn syntax() -> impl Syntax<Output = Self> {
-        (HigherRankedLifetimes::syntax().or_none(), r#type::Type::syntax()).map(
-            |(higher_ranked_lifetimes, r#type)| TupleOperand {
+impl SyntaxTree for TupleOperand {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (HigherRankedLifetimes::parse.or_none(), r#type::Type::parse)
+            .map(|(higher_ranked_lifetimes, r#type)| Self {
                 higher_ranked_lifetimes,
                 r#type,
-            },
-        )
+            })
+            .parse(state_machine, handler)
+    }
+}
+
+impl TupleOperand {
+    /// Dissolves the [`TupleOperand`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Option<HigherRankedLifetimes>, r#type::Type) {
+        (self.higher_ranked_lifetimes, self.r#type)
     }
 }
 
@@ -495,14 +557,6 @@ impl SourceElement for TupleOperand {
             || self.r#type.span(),
             |h| h.span().join(&self.r#type.span()).unwrap(),
         )
-    }
-}
-
-impl TupleOperand {
-    /// Dissolves the [`TupleOperand`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (Option<HigherRankedLifetimes>, r#type::Type) {
-        (self.higher_ranked_lifetimes, self.r#type)
     }
 }
 
@@ -520,16 +574,14 @@ pub struct Tuple {
     pub(super) operands: UnionList<TupleOperand>,
 }
 
-impl Parse for Tuple {
-    fn syntax() -> impl Syntax<Output = Self> {
-        (KeywordKind::Tuple, UnionList::syntax())
-            .map(|(tuple_keyword, operands)| Tuple { tuple_keyword, operands })
-    }
-}
-
-impl SourceElement for Tuple {
-    fn span(&self) -> Span {
-        self.tuple_keyword.span.join(&self.operands.span()).unwrap()
+impl SyntaxTree for Tuple {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Tuple.to_owned(), TupleOperand::parse.union_list())
+            .map(|(tuple_keyword, operands)| Self { tuple_keyword, operands })
+            .parse(state_machine, handler)
     }
 }
 
@@ -538,6 +590,12 @@ impl Tuple {
     #[must_use]
     pub fn dissolve(self) -> (Keyword, UnionList<TupleOperand>) {
         (self.tuple_keyword, self.operands)
+    }
+}
+
+impl SourceElement for Tuple {
+    fn span(&self) -> Span {
+        self.tuple_keyword.span.join(&self.operands.span()).unwrap()
     }
 }
 
@@ -563,15 +621,19 @@ pub enum Predicate {
     Marker(Marker),
 }
 
-impl Parse for Predicate {
-    fn syntax() -> impl Syntax<Output = Self> {
-        TraitTypeEquality::syntax()
+impl SyntaxTree for Predicate {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        TraitTypeEquality::parse
             .map(Predicate::TraitTypeEquality)
-            .or_else(Trait::syntax().map(Predicate::Trait))
-            .or_else(Outlives::syntax().map(Predicate::Outlives))
-            .or_else(ConstantType::syntax().map(Predicate::ConstantType))
-            .or_else(Tuple::syntax().map(Predicate::Tuple))
-            .or_else(Marker::syntax().map(Predicate::Marker))
+            .or_else(Trait::parse.map(Predicate::Trait))
+            .or_else(Outlives::parse.map(Predicate::Outlives))
+            .or_else(ConstantType::parse.map(Predicate::ConstantType))
+            .or_else(Tuple::parse.map(Predicate::Tuple))
+            .or_else(Marker::parse.map(Predicate::Marker))
+            .parse(state_machine, handler)
     }
 }
 

@@ -430,33 +430,93 @@ impl Location {
     }
 }
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    thiserror::Error,
+    displaydoc::Display,
+)]
+/// An error that occurs when creating a new span.
+pub enum NewSpanError {
+    /// The `start` index is not a character boundary.
+    StartIndexNotCharBoundary,
+
+    /// The `end` index is not a character boundary.
+    EndIndexNotCharBoundary,
+
+    /// The `start` index is greater than the `end` index.
+    StartIndexGreaterThanEndIndex,
+
+    /// The `end` index is larger than the source file content's length + 1..
+    EndIndexOutOfBounds,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    thiserror::Error,
+    displaydoc::Display,
+)]
+/// An error that occurs when joining two spans.
+pub enum JoinSpanError {
+    /// Two spans are from different source files.
+    DifferentSourceFiles,
+
+    /// The start of the first span is greater than the end of the second span.
+    StartIndexGreaterThanEndIndex,
+}
+
 impl Span {
     /// Creates a span from the given start and end byte indices in the source
     /// file.
     ///
-    /// # Parameters
-    /// - `start`: The start byte index of the span.
-    /// - `end`: The end byte index of the span (exclusive).
-    #[must_use]
+    /// # Errors
+    ///
+    /// See [`NewSpanError`] for more information.
     pub fn new(
         source_file: Arc<SourceFile>,
         start: ByteIndex,
         end: ByteIndex,
-    ) -> Option<Self> {
-        if start > end
-            || !source_file.content.is_char_boundary(start)
-            || source_file.content.len() < end
-            || (source_file.content.len() + 1 != end
-                && !source_file.content.is_char_boundary(end))
-        {
-            return None;
+    ) -> Result<Self, NewSpanError> {
+        if source_file.content.len() < end {
+            return Err(NewSpanError::EndIndexOutOfBounds);
         }
 
-        Some(Self { start, end, source_file })
+        if start > end {
+            return Err(NewSpanError::StartIndexGreaterThanEndIndex);
+        }
+
+        if !source_file.content.is_char_boundary(start) {
+            return Err(NewSpanError::StartIndexNotCharBoundary);
+        }
+
+        if !source_file.content.is_char_boundary(end)
+            && end != source_file.content.len() + 1
+        {
+            return Err(NewSpanError::EndIndexNotCharBoundary);
+        }
+
+        Ok(Self { start, end, source_file })
     }
 
     /// Creates a span from the given start byte index to the end of the source
     /// file.
+    ///
+    /// # Returns
+    ///
+    /// Returns [`None`] if the `start` index is not a character boundary.
     #[must_use]
     pub fn to_end(
         source_file: Arc<SourceFile>,
@@ -491,15 +551,20 @@ impl Span {
 
     /// Joins the starting position of this span with the end position of the
     /// given span.
-    #[must_use]
-    pub fn join(&self, end: &Self) -> Option<Self> {
-        if !Arc::ptr_eq(&self.source_file, &end.source_file)
-            || self.start > end.end
-        {
-            return None;
+    ///
+    /// # Errors
+    ///
+    /// See [`JoinSpanError`] for more information.
+    pub fn join(&self, end: &Self) -> Result<Self, JoinSpanError> {
+        if !Arc::ptr_eq(&self.source_file, &end.source_file) {
+            return Err(JoinSpanError::DifferentSourceFiles);
         }
 
-        Some(Self {
+        if self.start > end.end {
+            return Err(JoinSpanError::StartIndexGreaterThanEndIndex);
+        }
+
+        Ok(Self {
             start: self.start,
             end: end.end,
             source_file: self.source_file.clone(),
@@ -527,14 +592,14 @@ pub struct Iterator<'a> {
     iterator: Peekable<CharIndices<'a>>,
 }
 
-impl<'a> Iterator<'a> {
+impl Iterator<'_> {
     /// Peeks at the next character in the source file.
     pub fn peek(&mut self) -> Option<(ByteIndex, char)> {
         self.iterator.peek().copied()
     }
 }
 
-impl<'a> std::iter::Iterator for Iterator<'a> {
+impl std::iter::Iterator for Iterator<'_> {
     type Item = (ByteIndex, char);
 
     fn next(&mut self) -> Option<Self::Item> { self.iterator.next() }

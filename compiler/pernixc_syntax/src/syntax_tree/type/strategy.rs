@@ -40,7 +40,7 @@ impl Arbitrary for Reference {
                 is_mutable,
                 operand_type: Box::new(operand_type),
             })
-            .boxed()
+            
     }
 }
 
@@ -106,7 +106,7 @@ impl Arbitrary for Primitive {
             Just(Self::Usize),
             Just(Self::Isize),
         ]
-        .boxed()
+        
     }
 }
 
@@ -174,7 +174,7 @@ impl Arbitrary for Array {
                 operand: Box::new(type_specifier),
                 constant,
             })
-            .boxed()
+            
     }
 }
 
@@ -220,7 +220,7 @@ impl Arbitrary for Pointer {
                 is_mutable,
                 operand: Box::new(operand),
             })
-            .boxed()
+            
     }
 }
 
@@ -258,7 +258,7 @@ impl Arbitrary for Unpackable {
 
         (proptest::bool::ANY, ty.prop_map(Box::new))
             .prop_map(|(ellipsis, ty)| Self { ellipsis, ty })
-            .boxed()
+            
     }
 }
 
@@ -296,7 +296,7 @@ impl Arbitrary for Tuple {
         .prop_map(|type_specifier_list| Self {
             unpackable_list: type_specifier_list,
         })
-        .boxed()
+        
     }
 }
 
@@ -330,7 +330,7 @@ impl Arbitrary for Local {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         args.unwrap_or_else(Type::arbitrary)
             .prop_map(|ty| Self { ty: Box::new(ty) })
-            .boxed()
+            
     }
 }
 
@@ -358,7 +358,7 @@ impl Arbitrary for Phantom {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         args.unwrap_or_else(Type::arbitrary)
             .prop_map(|r#type| Self { r#type: Box::new(r#type) })
-            .boxed()
+            
     }
 }
 
@@ -450,7 +450,7 @@ impl Arbitrary for Type {
                 Just(Self::Elided),
             ]
         })
-        .boxed()
+        
     }
 }
 

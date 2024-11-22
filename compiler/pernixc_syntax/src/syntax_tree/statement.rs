@@ -5,18 +5,27 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_base::source_file::{SourceElement, Span};
-use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
+use pernixc_base::{
+    handler::Handler,
+    source_file::{SourceElement, Span},
+};
+use pernixc_lexical::{
+    token::{Keyword, KeywordKind, Punctuation},
+    token_stream::Delimiter,
+};
 
 use super::{
     expression::{Binary, Brace, Expression, Terminator},
     pattern::Irrefutable,
     r#type::Type,
-    Parse,
+    EnclosedTree, Parse, ParseExt, SyntaxTree,
 };
-use crate::parser::Syntax;
+use crate::{
+    error,
+    state_machine::{parse, StateMachine},
+};
 
-pub mod strategy;
+// pub mod strategy;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -33,31 +42,42 @@ pub enum Statement {
     Expressive(Expressive),
 }
 
-impl Parse for Statement {
-    fn syntax() -> impl Syntax<Output = Self> {
-        VariableDeclaration::syntax()
-            .map(Statement::VariableDeclaration)
-            .or_else(Expression::syntax().then_do(|parser, x, handler| {
-                let semi_expression = match x {
-                    Expression::Binary(binary) => {
-                        SemiExpression::Binary(binary)
-                    }
-                    Expression::Terminator(terminator) => {
-                        SemiExpression::Terminator(terminator)
+impl SyntaxTree for Statement {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        VariableDeclaration::parse
+            .map(Self::VariableDeclaration)
+            .or_else(Expression::parse.then(
+                |expression, state_machine, handler| match expression {
+                    expression @ (Expression::Binary(_)
+                    | Expression::Terminator(_)) => {
+                        let semi_expression = match expression {
+                            Expression::Binary(binary) => {
+                                SemiExpression::Binary(binary)
+                            }
+                            Expression::Terminator(terminator) => {
+                                SemiExpression::Terminator(terminator)
+                            }
+                            Expression::Brace(_) => unreachable!(),
+                        };
+
+                        let punctuation =
+                            ';'.to_owned().parse(state_machine, handler)?;
+
+                        Ok(Self::Expressive(Expressive::Semi(Semi {
+                            expression: semi_expression,
+                            semicolon: punctuation,
+                        })))
                     }
 
                     Expression::Brace(brace) => {
-                        return Ok(Statement::Expressive(Expressive::Brace(
-                            brace,
-                        )))
+                        Ok(Self::Expressive(Expressive::Brace(brace)))
                     }
-                };
-
-                Ok(Statement::Expressive(Expressive::Semi(Semi {
-                    expression: semi_expression,
-                    semicolon: parser.parse(';', handler)?,
-                })))
-            }))
+                },
+            ))
+            .parse(state_machine, handler)
     }
 }
 
@@ -84,9 +104,14 @@ pub struct TypeAnnotation {
     r#type: Type,
 }
 
-impl Parse for TypeAnnotation {
-    fn syntax() -> impl Syntax<Output = Self> {
-        (':', Type::syntax()).map(|(colon, r#type)| Self { colon, r#type })
+impl SyntaxTree for TypeAnnotation {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (':'.to_owned(), Type::parse)
+            .map(|(colon, r#type)| Self { colon, r#type })
+            .parse(state_machine, handler)
     }
 }
 
@@ -119,15 +144,18 @@ pub struct VariableDeclaration {
     semicolon: Punctuation,
 }
 
-impl Parse for VariableDeclaration {
-    fn syntax() -> impl Syntax<Output = Self> {
+impl SyntaxTree for VariableDeclaration {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
         (
-            KeywordKind::Let,
-            Irrefutable::syntax(),
-            TypeAnnotation::syntax().or_none(),
-            '=',
-            Expression::syntax(),
-            ';',
+            KeywordKind::Let.to_owned(),
+            Irrefutable::parse,
+            TypeAnnotation::parse.or_none(),
+            '='.to_owned(),
+            Expression::parse,
+            ';'.to_owned(),
         )
             .map(
                 |(
@@ -137,17 +165,16 @@ impl Parse for VariableDeclaration {
                     equals,
                     expression,
                     semicolon,
-                )| {
-                    Self {
-                        let_keyword,
-                        irrefutable_pattern,
-                        type_annotation,
-                        equals,
-                        expression,
-                        semicolon,
-                    }
+                )| Self {
+                    let_keyword,
+                    irrefutable_pattern,
+                    type_annotation,
+                    equals,
+                    expression,
+                    semicolon,
                 },
             )
+            .parse(state_machine, handler)
     }
 }
 
@@ -225,6 +252,26 @@ pub struct Semi {
 impl SourceElement for Semi {
     fn span(&self) -> Span {
         self.expression.span().join(&self.semicolon.span).unwrap()
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Statements:
+///     '{' Statement* '}'
+///     ;
+/// ```
+pub type Statements = EnclosedTree<Vec<Statement>>;
+
+impl SyntaxTree for Statements {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Statement::parse
+            .keep_take_all()
+            .enclosed_tree(Delimiter::Brace)
+            .parse(state_machine, handler)
     }
 }
 

@@ -45,7 +45,7 @@ impl Arbitrary for Named {
                 reference_of,
                 identifier,
             })
-            .boxed()
+            
     }
 }
 
@@ -75,7 +75,7 @@ impl Arbitrary for Wildcard {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        proptest::strategy::Just(Self).boxed()
+        proptest::strategy::Just(Self)
     }
 }
 
@@ -116,7 +116,7 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
                 identifier,
                 pattern: Box::new(pattern),
             })
-            .boxed()
+            
     }
 }
 
@@ -162,7 +162,7 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
             Named::arbitrary().prop_map(Field::Named),
             FieldAssociation::arbitrary_with(args).prop_map(Field::Association)
         ]
-        .boxed()
+        
     }
 }
 
@@ -206,7 +206,7 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
             proptest::bool::ANY,
         )
             .prop_map(|(fields, wildcard)| Self { fields, wildcard })
-            .boxed()
+            
     }
 }
 
@@ -254,7 +254,7 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
                 ellipsis,
                 pattern: Box::new(pattern),
             })
-            .boxed()
+            
     }
 }
 
@@ -298,7 +298,7 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
             ConstantPunctuation::<','>::arbitrary(),
         ))
         .prop_map(|patterns| Self { patterns })
-        .boxed()
+        
     }
 }
 
@@ -361,7 +361,7 @@ impl Arbitrary for Irrefutable {
                 Tuple::arbitrary_with(Some(inner)).prop_map(Self::Tuple),
             ]
         })
-        .boxed()
+        
     }
 }
 
@@ -404,7 +404,7 @@ impl Arbitrary for Enum {
                 identifier,
                 association: pattern.map(Box::new),
             })
-            .boxed()
+            
     }
 }
 
@@ -440,7 +440,7 @@ impl Arbitrary for Integer {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         (proptest::bool::ANY, token::strategy::Numeric::arbitrary())
             .prop_map(|(minus, value)| Self { minus, value })
-            .boxed()
+            
     }
 }
 
@@ -520,7 +520,7 @@ impl Arbitrary for Refutable {
                 Enum::arbitrary_with(Some(inner)).prop_map(Self::Enum),
             ]
         })
-        .boxed()
+        
     }
 }
 

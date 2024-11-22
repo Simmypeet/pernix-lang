@@ -65,7 +65,7 @@ pub struct SourceCodeDisplay<'a, T> {
     pub help_display: Option<T>,
 }
 
-impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
+impl<T: Display> Display for SourceCodeDisplay<'_, T> {
     #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let start_location = self.span.start_location();

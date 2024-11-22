@@ -5,26 +5,28 @@
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_base::{
-    handler::{Dummy, Handler},
+    handler::Handler,
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::{
-    token::{
-        self, Character, Identifier, Keyword, KeywordKind, Punctuation, Token,
-    },
+    token::{self, Character, Identifier, Keyword, KeywordKind, Punctuation},
     token_stream::Delimiter,
 };
 
 use super::{
-    pattern::Refutable, r#type::Type, statement::Statement, ConnectedList,
-    GenericIdentifier, Label, Parse, QualifiedIdentifier, ReferenceOf,
+    pattern::Refutable, r#type::Type, statement::Statements,
+    EnclosedConnectedList, EnclosedTree, GenericIdentifier, Label, Parse,
+    ParseExt, QualifiedIdentifier, ReferenceOf, SyntaxTree,
 };
 use crate::{
-    error::{Error, SyntaxKind},
-    parser::{self, Parser, Reading, Syntax},
+    error, expect,
+    state_machine::{
+        parse::{self, ExpectExt},
+        StateMachine,
+    },
 };
 
-pub mod strategy;
+// pub mod strategy;
 
 /// Syntax Synopsis:
 ///
@@ -42,8 +44,17 @@ pub enum Expression {
     Brace(Brace),
 }
 
-impl Parse for Expression {
-    fn syntax() -> impl Syntax<Output = Self> { todo!() }
+impl SyntaxTree for Expression {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Binary::parse
+            .map(Self::Binary)
+            .or_else(Terminator::parse.map(Self::Terminator))
+            .or_else(Brace::parse.map(Self::Brace))
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Expression {
@@ -75,6 +86,21 @@ pub enum Brace {
     While(While),
 }
 
+impl SyntaxTree for Brace {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Block::parse
+            .map(Self::Block)
+            .or_else(IfElse::parse.map(Self::IfElse))
+            .or_else(Loop::parse.map(Self::Loop))
+            .or_else(Match::parse.map(Self::Match))
+            .or_else(While::parse.map(Self::While))
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Brace {
     fn span(&self) -> Span {
         match self {
@@ -102,30 +128,19 @@ pub struct LabelSpecifier {
     colon: Punctuation,
 }
 
+impl SyntaxTree for LabelSpecifier {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (Label::parse, ':'.to_owned())
+            .map(|(label, colon)| Self { label, colon })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for LabelSpecifier {
     fn span(&self) -> Span { self.label.span().join(&self.colon.span).unwrap() }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Statements:
-///     '{' Statement* '}'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Statements {
-    #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    statements: Vec<Statement>,
-    #[get = "pub"]
-    right_brace: Punctuation,
-}
-
-impl SourceElement for Statements {
-    fn span(&self) -> Span {
-        self.left_brace.span().join(&self.right_brace.span).unwrap()
-    }
 }
 
 /// Syntax Synopsis:
@@ -144,6 +159,21 @@ pub struct MatchArm {
     expression: Box<Expression>,
 }
 
+impl SyntaxTree for MatchArm {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (Refutable::parse, ':'.to_owned(), Expression::parse.map(Box::new))
+            .map(|(refutable_pattern, colon, expression)| Self {
+                refutable_pattern,
+                colon,
+                expression,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for MatchArm {
     fn span(&self) -> Span {
         self.refutable_pattern.span().join(&self.expression.span()).unwrap()
@@ -152,8 +182,27 @@ impl SourceElement for MatchArm {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// MatchArms:
+///     '{' (MatchArm (',' MatchArm)* ','? )? '}'
+///     ;
+/// ```
+pub type MatchArms = EnclosedConnectedList<MatchArm, Punctuation>;
+
+impl SyntaxTree for MatchArms {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        MatchArm::parse
+            .enclosed_connected_list(','.to_owned(), Delimiter::Brace)
+            .parse(state_machine, handler)
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// Match:
-///     'match' '(' Expression ')' '{' MatchArm* '}'
+///     'match' Parenthesized MatchArms
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -163,16 +212,27 @@ pub struct Match {
     #[get = "pub"]
     parenthesized: Parenthesized,
     #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    arms: Option<ConnectedList<MatchArm, Punctuation>>,
-    #[get = "pub"]
-    right_brace: Punctuation,
+    arms: MatchArms,
+}
+
+impl SyntaxTree for Match {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Match.to_owned(), Parenthesized::parse, MatchArms::parse)
+            .map(|(match_keyword, parenthesized, arms)| Self {
+                match_keyword,
+                parenthesized,
+                arms,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Match {
     fn span(&self) -> Span {
-        self.match_keyword.span.join(&self.right_brace.span).unwrap()
+        self.match_keyword.span.join(&self.arms.span()).unwrap()
     }
 }
 
@@ -191,6 +251,25 @@ pub struct Block {
     unsafe_keyword: Option<Keyword>,
     #[get = "pub"]
     statements: Statements,
+}
+
+impl SyntaxTree for Block {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            LabelSpecifier::parse.or_none(),
+            KeywordKind::Unsafe.to_owned().or_none(),
+            Statements::parse,
+        )
+            .map(|(label_specifier, unsafe_keyword, statements)| Self {
+                label_specifier,
+                unsafe_keyword,
+                statements,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Block {
@@ -222,6 +301,18 @@ pub enum BlockOrIfElse {
     IfElse(IfElse),
 }
 
+impl SyntaxTree for BlockOrIfElse {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Block::parse
+            .map(Self::Block)
+            .or_else(IfElse::parse.map(Self::IfElse))
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for BlockOrIfElse {
     fn span(&self) -> Span {
         match self {
@@ -246,6 +337,17 @@ pub struct Else {
     expression: Box<BlockOrIfElse>,
 }
 
+impl SyntaxTree for Else {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Else.to_owned(), BlockOrIfElse::parse.map(Box::new))
+            .map(|(else_keyword, expression)| Self { else_keyword, expression })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Else {
     fn span(&self) -> Span {
         self.else_keyword.span().join(&self.expression.span()).unwrap()
@@ -255,7 +357,7 @@ impl SourceElement for Else {
 /// Syntax Synopsis:
 /// ``` txt
 /// IfElse:
-///     'if' '(' Expression ')' Block Else?
+///     'if' Parenthesized Block Else?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -264,15 +366,41 @@ pub struct IfElse {
     #[get = "pub"]
     if_keyword: Keyword,
     #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    condition: Box<Expression>,
-    #[get = "pub"]
-    right_paren: Punctuation,
+    parenthesized: Parenthesized,
     #[get = "pub"]
     then_expression: Block,
     #[get = "pub"]
     else_expression: Option<Else>,
+}
+
+impl SyntaxTree for IfElse {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::If.to_owned(),
+            Parenthesized::parse,
+            Block::parse,
+            Else::parse.or_none(),
+        )
+            .map(
+                |(
+                    if_keyword,
+                    parenthesized,
+                    then_expression,
+                    else_expression,
+                )| {
+                    Self {
+                        if_keyword,
+                        parenthesized,
+                        then_expression,
+                        else_expression,
+                    }
+                },
+            )
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for IfElse {
@@ -292,7 +420,7 @@ impl SourceElement for IfElse {
 /// Syntax Synopsis:
 /// ``` txt
 /// While:
-///     'while' '(' Expression ')' Block
+///     'while' Parenthesized Block
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -300,13 +428,24 @@ pub struct While {
     #[get = "pub"]
     while_keyword: Keyword,
     #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    condition: Box<Expression>,
-    #[get = "pub"]
-    right_paren: Punctuation,
+    parenthesized: Parenthesized,
     #[get = "pub"]
     block: Block,
+}
+
+impl SyntaxTree for While {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::While.to_owned(), Parenthesized::parse, Block::parse)
+            .map(|(while_keyword, parenthesized, block)| Self {
+                while_keyword,
+                parenthesized,
+                block,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for While {
@@ -318,16 +457,8 @@ impl SourceElement for While {
 impl While {
     /// Destructs the while into its components
     #[must_use]
-    pub fn destruct(
-        self,
-    ) -> (Keyword, Punctuation, Box<Expression>, Punctuation, Block) {
-        (
-            self.while_keyword,
-            self.left_paren,
-            self.condition,
-            self.right_paren,
-            self.block,
-        )
+    pub fn destruct(self) -> (Keyword, Parenthesized, Block) {
+        (self.while_keyword, self.parenthesized, self.block)
     }
 }
 
@@ -344,6 +475,17 @@ pub struct Loop {
     loop_keyword: Keyword,
     #[get = "pub"]
     block: Block,
+}
+
+impl SyntaxTree for Loop {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Loop.to_owned(), Block::parse)
+            .map(|(loop_keyword, block)| Self { loop_keyword, block })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Loop {
@@ -368,6 +510,20 @@ pub enum Terminator {
     Continue(Continue),
     Express(Express),
     Break(Break),
+}
+
+impl SyntaxTree for Terminator {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Return::parse
+            .map(Self::Return)
+            .or_else(Continue::parse.map(Self::Continue))
+            .or_else(Express::parse.map(Self::Express))
+            .or_else(Break::parse.map(Self::Break))
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Terminator {
@@ -396,6 +552,17 @@ pub struct Return {
     binary: Option<Binary>,
 }
 
+impl SyntaxTree for Return {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Return.to_owned(), Binary::parse.or_none())
+            .map(|(return_keyword, binary)| Self { return_keyword, binary })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Return {
     fn span(&self) -> Span {
         self.binary.as_ref().map_or_else(
@@ -420,6 +587,17 @@ pub struct Continue {
     continue_keyword: Keyword,
     #[get = "pub"]
     label: Option<Label>,
+}
+
+impl SyntaxTree for Continue {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Continue.to_owned(), Label::parse.or_none())
+            .map(|(continue_keyword, label)| Self { continue_keyword, label })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Continue {
@@ -448,6 +626,25 @@ pub struct Express {
     binary: Option<Binary>,
 }
 
+impl SyntaxTree for Express {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Express.to_owned(),
+            Label::parse.or_none(),
+            Binary::parse.or_none(),
+        )
+            .map(|(express_keyword, label, binary)| Self {
+                express_keyword,
+                label,
+                binary,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Express {
     fn span(&self) -> Span {
         self.binary.as_ref().map_or_else(
@@ -470,7 +667,7 @@ impl SourceElement for Express {
 ///
 /// ``` txt
 /// Break:
-///     'express' Label? Binary?
+///     'break' Label? Binary?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -481,6 +678,25 @@ pub struct Break {
     label: Option<Label>,
     #[get = "pub"]
     binary: Option<Binary>,
+}
+
+impl SyntaxTree for Break {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Break.to_owned(),
+            Label::parse.or_none(),
+            Binary::parse.or_none(),
+        )
+            .map(|(break_keyword, label, binary)| Self {
+                break_keyword,
+                label,
+                binary,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Break {
@@ -515,6 +731,19 @@ pub enum Boolean {
     False(Keyword),
 }
 
+impl SyntaxTree for Boolean {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        KeywordKind::True
+            .to_owned()
+            .map(Self::True)
+            .or_else(KeywordKind::False.to_owned().map(Self::False))
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Boolean {
     fn span(&self) -> Span {
         match self {
@@ -537,6 +766,17 @@ pub struct Decimal {
     pub(super) numeric: token::Numeric,
 }
 
+impl SyntaxTree for Decimal {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('.'.to_owned(), expect::Numeric.no_skip().to_owned())
+            .map(|(dot, numeric)| Self { dot, numeric })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Decimal {
     fn span(&self) -> Span { self.dot.span().join(&self.numeric.span).unwrap() }
 }
@@ -556,6 +796,23 @@ pub struct Numeric {
     pub(super) decimal: Option<Decimal>,
     #[get = "pub"]
     pub(super) suffix: Option<Identifier>,
+}
+
+impl SyntaxTree for Numeric {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            expect::Numeric.to_owned(),
+            ('.'.no_skip().to_owned(), expect::Numeric.no_skip().to_owned())
+                .map(|(dot, numeric)| Decimal { dot, numeric })
+                .or_none(),
+            expect::Identifier.no_skip().to_owned().or_none(),
+        )
+            .map(|(numeric, decimal, suffix)| Self { numeric, decimal, suffix })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Numeric {
@@ -588,6 +845,25 @@ pub struct Unpackable {
     expression: Box<Expression>,
 }
 
+impl SyntaxTree for Unpackable {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            (
+                '.'.to_owned(),
+                '.'.no_skip().to_owned(),
+                '.'.no_skip().to_owned(),
+            )
+                .or_none(),
+            Expression::parse.map(Box::new),
+        )
+            .map(|(ellipsis, expression)| Self { ellipsis, expression })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Unpackable {
     fn span(&self) -> Span {
         match &self.ellipsis {
@@ -605,20 +881,17 @@ impl SourceElement for Unpackable {
 ///     '(' (Unpackable (',' Unpackable)* ','? )? ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
-pub struct Parenthesized {
-    #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    expression: Option<ConnectedList<Unpackable, Punctuation>>,
-    #[get = "pub"]
-    right_paren: Punctuation,
-}
+pub type Parenthesized = EnclosedConnectedList<Unpackable, Punctuation>;
 
-impl SourceElement for Parenthesized {
-    fn span(&self) -> Span {
-        self.left_paren.span().join(&self.right_paren.span).unwrap()
+impl SyntaxTree for Parenthesized {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Unpackable::parse
+            .enclosed_connected_list(','.to_owned(), Delimiter::Parenthesis)
+            .parse(state_machine, handler)
     }
 }
 
@@ -639,6 +912,25 @@ pub struct FieldInitializer {
     expression: Box<Expression>,
 }
 
+impl SyntaxTree for FieldInitializer {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            expect::Identifier.to_owned(),
+            ':'.to_owned(),
+            Expression::parse.map(Box::new),
+        )
+            .map(|(identifier, colon, expression)| Self {
+                identifier,
+                colon,
+                expression,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for FieldInitializer {
     fn span(&self) -> Span {
         self.identifier.span().join(&self.expression.span()).unwrap()
@@ -647,16 +939,28 @@ impl SourceElement for FieldInitializer {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// FieldInitializeList:
-///     FieldInitializer (',' FieldInitializer)*
+/// FieldInitializers:
+///     '{' FieldInitializer (',' FieldInitializer)* '}'
 ///     ;
 /// ```
-pub type FieldInitializerList = ConnectedList<FieldInitializer, Punctuation>;
+pub type FieldInitializers =
+    EnclosedConnectedList<FieldInitializer, Punctuation>;
+
+impl SyntaxTree for FieldInitializers {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        FieldInitializer::parse
+            .enclosed_connected_list(','.to_owned(), Delimiter::Brace)
+            .parse(state_machine, handler)
+    }
+}
 
 /// Syntax Synopsis:
 /// ``` txt
 /// StructLiteral:
-///     QualifiedIdentifier '{' FieldInitializerList? '}'
+///     QualifiedIdentifier FieldInitializers
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -665,47 +969,59 @@ pub struct Struct {
     #[get = "pub"]
     qualified_identifier: QualifiedIdentifier,
     #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    field_initializers: Option<FieldInitializerList>,
-    #[get = "pub"]
-    right_brace: Punctuation,
+    field_initializers: FieldInitializers,
+}
+
+impl SyntaxTree for Struct {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (QualifiedIdentifier::parse, FieldInitializers::parse)
+            .map(|(qualified_identifier, field_initializers)| Self {
+                qualified_identifier,
+                field_initializers,
+            })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Struct {
     fn span(&self) -> Span {
-        self.qualified_identifier.span().join(&self.right_brace.span).unwrap()
+        self.qualified_identifier
+            .span()
+            .join(&self.field_initializers().span())
+            .unwrap()
     }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ArgumentList:
-///     Expression (',' Expression)*
-///     ;
-/// ```
-pub type ArgumentList = ConnectedList<Box<Expression>, Punctuation>;
-
-/// Syntax Synopsis:
-/// ``` txt
-/// ArrayLiteral:
-///     '[' ArgumentList? ']'
+/// Array:
+///     '[' (Expression (',' Expression)* ','? )? ']'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Array {
     #[get = "pub"]
-    left_bracket: Punctuation,
-    #[get = "pub"]
-    arguments: Option<ArgumentList>,
-    #[get = "pub"]
-    right_bracket: Punctuation,
+    arguments: EnclosedConnectedList<Box<Expression>, Punctuation>,
+}
+
+impl SyntaxTree for Array {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Expression::parse
+            .map(Box::new)
+            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .map(|arguments| Self { arguments })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Array {
-    fn span(&self) -> Span {
-        self.left_bracket.span.join(&self.right_bracket.span).unwrap()
-    }
+    fn span(&self) -> Span { self.arguments.span() }
 }
 
 /// Syntax Synopsis:
@@ -719,6 +1035,18 @@ impl SourceElement for Array {
 pub struct Phantom {
     #[get = "pub"]
     phantom_keyword: Keyword,
+}
+
+impl SyntaxTree for Phantom {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        KeywordKind::Phantom
+            .to_owned()
+            .map(|phantom_keyword| Self { phantom_keyword })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Phantom {
@@ -753,6 +1081,25 @@ pub enum Unit {
     Character(Character),
 }
 
+impl SyntaxTree for Unit {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Struct::parse
+            .map(Self::Struct)
+            .or_else(QualifiedIdentifier::parse.map(Self::QualifiedIdentifier))
+            .or_else(Array::parse.map(Self::Array))
+            .or_else(Phantom::parse.map(Self::Phantom))
+            .or_else(expect::String.to_owned().map(Self::String))
+            .or_else(expect::Character.to_owned().map(Self::Character))
+            .or_else(Numeric::parse.map(Self::Numeric))
+            .or_else(Boolean::parse.map(Self::Boolean))
+            .or_else(Parenthesized::parse.map(Self::Parenthesized))
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Unit {
     fn span(&self) -> Span {
         match self {
@@ -779,17 +1126,24 @@ impl SourceElement for Unit {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Call {
     #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    arguments: Option<ArgumentList>,
-    #[get = "pub"]
-    right_paren: Punctuation,
+    arguments: EnclosedConnectedList<Box<Expression>, Punctuation>,
+}
+
+impl SyntaxTree for Call {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Expression::parse
+            .map(Box::new)
+            .enclosed_connected_list(','.to_owned(), Delimiter::Parenthesis)
+            .map(|arguments| Self { arguments })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Call {
-    fn span(&self) -> Span {
-        self.left_paren.span().join(&self.right_paren.span).unwrap()
-    }
+    fn span(&self) -> Span { self.arguments.span() }
 }
 
 /// Syntax Synopsis:
@@ -805,6 +1159,17 @@ pub struct Cast {
     as_keyword: Keyword,
     #[get = "pub"]
     r#type: Type,
+}
+
+impl SyntaxTree for Cast {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::As.to_owned(), Type::parse)
+            .map(|(as_keyword, r#type)| Self { as_keyword, r#type })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Cast {
@@ -826,6 +1191,21 @@ pub enum AccessOperator {
     Arrow(Punctuation, Punctuation),
 }
 
+impl SyntaxTree for AccessOperator {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        '.'.to_owned()
+            .map(Self::Dot)
+            .or_else(
+                ('-'.to_owned(), '>'.no_skip().to_owned())
+                    .map(|(start, end)| Self::Arrow(start, end)),
+            )
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for AccessOperator {
     fn span(&self) -> Span {
         match self {
@@ -843,25 +1223,24 @@ impl SourceElement for AccessOperator {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Index {
     #[get = "pub"]
-    left_bracket: Punctuation,
-    #[get = "pub"]
-    expression: Box<Expression>,
-    #[get = "pub"]
-    right_bracket: Punctuation,
+    expression: EnclosedTree<Box<Expression>>,
+}
+
+impl SyntaxTree for Index {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Expression::parse
+            .map(Box::new)
+            .enclosed_tree(Delimiter::Bracket)
+            .map(|expression| Self { expression })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Index {
-    fn span(&self) -> Span {
-        self.left_bracket.span().join(&self.right_bracket.span).unwrap()
-    }
-}
-
-impl Index {
-    /// Destructs the index into its components
-    #[must_use]
-    pub fn destruct(self) -> (Punctuation, Box<Expression>, Punctuation) {
-        (self.left_bracket, self.expression, self.right_bracket)
-    }
+    fn span(&self) -> Span { self.expression.span() }
 }
 
 /// Syntax Synopsis:
@@ -876,6 +1255,17 @@ pub struct TupleIndex {
     minus: Option<Punctuation>,
     #[get = "pub"]
     index: token::Numeric,
+}
+
+impl SyntaxTree for TupleIndex {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('-'.to_owned().or_none(), expect::Numeric.to_owned())
+            .map(|(minus, index)| Self { minus, index })
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for TupleIndex {
@@ -911,6 +1301,19 @@ pub enum AccessKind {
     Index(Index),
 }
 
+impl SyntaxTree for AccessKind {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        GenericIdentifier::parse
+            .map(Self::GenericIdentifier)
+            .or_else(TupleIndex::parse.map(Self::Tuple))
+            .or_else(Index::parse.map(Self::Index))
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for AccessKind {
     fn span(&self) -> Span {
         match self {
@@ -936,6 +1339,17 @@ pub struct Access {
     kind: AccessKind,
 }
 
+impl SyntaxTree for Access {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (AccessOperator::parse, AccessKind::parse)
+            .map(|(operator, kind)| Self { operator, kind })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Access {
     fn span(&self) -> Span {
         self.operator.span().join(&self.kind.span()).unwrap()
@@ -956,6 +1370,19 @@ pub enum PostfixOperator {
     Call(Call),
     Cast(Cast),
     Access(Access),
+}
+
+impl SyntaxTree for PostfixOperator {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Call::parse
+            .map(Self::Call)
+            .or_else(Cast::parse.map(Self::Cast))
+            .or_else(Access::parse.map(Self::Access))
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for PostfixOperator {
@@ -1003,6 +1430,23 @@ pub enum Postfixable {
     Postfix(Postfix),
 }
 
+impl SyntaxTree for Postfixable {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        Unit::parse
+            .map(Self::Unit)
+            .keep_fold(PostfixOperator::parse, |operand, operator| {
+                Self::Postfix(Postfix {
+                    postfixable: Box::new(operand),
+                    operator,
+                })
+            })
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for Postfixable {
     fn span(&self) -> Span {
         match self {
@@ -1036,6 +1480,23 @@ pub enum PrefixOperator {
     ReferenceOf(ReferenceOf),
 }
 
+impl SyntaxTree for PrefixOperator {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        '!'.to_owned()
+            .map(Self::LogicalNot)
+            .or_else('-'.to_owned().map(Self::Negate))
+            .or_else('~'.to_owned().map(Self::BitwiseNot))
+            .or_else('*'.to_owned().map(Self::Dereference))
+            .or_else(KeywordKind::Local.to_owned().map(Self::Local))
+            .or_else(KeywordKind::Unlocal.to_owned().map(Self::Unlocal))
+            .or_else(ReferenceOf::parse.map(Self::ReferenceOf))
+            .parse(state_machine, handler)
+    }
+}
+
 impl SourceElement for PrefixOperator {
     fn span(&self) -> Span {
         match self {
@@ -1059,9 +1520,9 @@ impl SourceElement for PrefixOperator {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Prefix {
     #[get = "pub"]
-    prefixable: Box<Prefixable>,
-    #[get = "pub"]
     operator: PrefixOperator,
+    #[get = "pub"]
+    prefixable: Box<Prefixable>,
 }
 
 impl SourceElement for Prefix {
@@ -1082,6 +1543,19 @@ impl SourceElement for Prefix {
 pub enum Prefixable {
     Postfixable(Postfixable),
     Prefix(Prefix),
+}
+
+impl SyntaxTree for Prefixable {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (PrefixOperator::parse, Self::parse.map(Box::new))
+            .map(|(operator, prefixable)| Prefix { operator, prefixable })
+            .map(Self::Prefix)
+            .or_else(Postfixable::parse.map(Self::Postfixable))
+            .parse(state_machine, handler)
+    }
 }
 
 impl SourceElement for Prefixable {
@@ -1162,6 +1636,98 @@ pub enum BinaryOperator {
     CompoundBitwiseRightShift(Punctuation, Punctuation, Punctuation),
 }
 
+impl SyntaxTree for BinaryOperator {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('<'.to_owned(), '<'.no_skip().to_owned(), '='.no_skip().to_owned())
+            .map(|(start, end, assign)| {
+                Self::CompoundBitwiseLeftShift(start, end, assign)
+            })
+            .or_else(
+                ('<'.to_owned(), '<'.no_skip().to_owned())
+                    .map(|(start, end)| Self::BitwiseLeftShift(start, end)),
+            )
+            .or_else(
+                ('<'.to_owned(), '='.no_skip().to_owned())
+                    .map(|(start, end)| Self::LessThanOrEqual(start, end)),
+            )
+            .or_else('<'.to_owned().map(Self::LessThan))
+            .or_else(
+                (
+                    '>'.to_owned(),
+                    '>'.no_skip().to_owned(),
+                    '='.no_skip().to_owned(),
+                )
+                    .map(|(start, end, assign)| {
+                        Self::CompoundBitwiseRightShift(start, end, assign)
+                    }),
+            )
+            .or_else(
+                ('>'.to_owned(), '>'.no_skip().to_owned())
+                    .map(|(start, end)| Self::BitwiseRightShift(start, end)),
+            )
+            .or_else(
+                ('>'.to_owned(), '='.no_skip().to_owned())
+                    .map(|(start, end)| Self::GreaterThanOrEqual(start, end)),
+            )
+            .or_else('>'.to_owned().map(Self::GreaterThan))
+            .or_else(
+                ('^'.to_owned(), '='.no_skip().to_owned())
+                    .map(|(start, end)| Self::CompoundBitwiseXor(start, end)),
+            )
+            .or_else('^'.to_owned().map(Self::BitwiseXor))
+            .or_else(
+                ('&'.to_owned(), '='.no_skip().to_owned())
+                    .map(|(start, end)| Self::CompoundBitwiseAnd(start, end)),
+            )
+            .or_else('&'.to_owned().map(Self::BitwiseAnd))
+            .or_else(
+                ('|'.to_owned(), '='.no_skip().to_owned())
+                    .map(|(start, end)| Self::CompoundBitwiseOr(start, end)),
+            )
+            .or_else('|'.to_owned().map(Self::BitwiseOr))
+            .or_else(
+                ('='.to_owned(), '='.no_skip().to_owned())
+                    .map(|(start, end)| Self::Equal(start, end)),
+            )
+            .or_else(
+                ('!'.to_owned(), '='.no_skip().to_owned())
+                    .map(|(start, end)| Self::NotEqual(start, end)),
+            )
+            .or_else('='.to_owned().map(Self::Assign))
+            .or_else(KeywordKind::And.to_owned().map(Self::LogicalAnd))
+            .or_else(KeywordKind::Or.to_owned().map(Self::LogicalOr))
+            .or_else(
+                ('+'.to_owned(), '='.no_skip().to_owned())
+                    .map(|(start, end)| Self::CompoundAdd(start, end)),
+            )
+            .or_else('+'.to_owned().map(Self::Add))
+            .or_else(
+                ('-'.to_owned(), '='.no_skip().to_owned())
+                    .map(|(start, end)| Self::CompoundSubtract(start, end)),
+            )
+            .or_else('-'.to_owned().map(Self::Subtract))
+            .or_else(
+                ('*'.to_owned(), '='.no_skip().to_owned())
+                    .map(|(start, end)| Self::CompoundMultiply(start, end)),
+            )
+            .or_else('*'.to_owned().map(Self::Multiply))
+            .or_else(
+                ('/'.to_owned(), '='.no_skip().to_owned())
+                    .map(|(start, end)| Self::CompoundDivide(start, end)),
+            )
+            .or_else('/'.to_owned().map(Self::Divide))
+            .or_else(
+                ('%'.to_owned(), '='.no_skip().to_owned())
+                    .map(|(start, end)| Self::CompoundModulo(start, end)),
+            )
+            .or_else('%'.to_owned().map(Self::Modulo))
+            .parse(state_machine, handler)
+    }
+}
+
 /// Syntax Synopsis:
 ///
 /// ``` txt
@@ -1175,6 +1741,23 @@ pub struct Binary {
     first: Box<Prefixable>,
     #[get = "pub"]
     chain: Vec<(BinaryOperator, Prefixable)>,
+}
+
+impl SyntaxTree for Binary {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self>
+    where
+        Self: Sized,
+    {
+        (
+            Prefixable::parse.map(Box::new),
+            (BinaryOperator::parse, Prefixable::parse).keep_take(),
+        )
+            .map(|(first, chain)| Self { first, chain })
+            .parse(state_machine, handler)
+    }
 }
 
 impl Binary {
@@ -1193,948 +1776,6 @@ impl SourceElement for Binary {
             || self.first.span(),
             |(_, right)| self.first.span().join(&right.span()).unwrap(),
         )
-    }
-}
-
-impl Parser<'_> {
-    fn try_parse_label(&mut self) -> Option<Label> {
-        self.try_parse(|parser| {
-            let apostrophe = parser.parse_punctuation('\'', true, &Dummy)?;
-            let Reading::Unit(Token::Identifier(identifier)) =
-                parser.next_token()
-            else {
-                return None;
-            };
-
-            Some(Label { apostrophe, identifier })
-        })
-    }
-
-    fn parse_statements(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Statements> {
-        fn skip_to_next_statement(this: &mut Parser) {
-            this.stop_at(|token| matches!(token, Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';'));
-
-            if matches!(this.peek(), Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';')
-            {
-                this.forward();
-            }
-        }
-
-        let delimited_tree = self.step_into(
-            Delimiter::Brace,
-            |parser| {
-                let mut statements = Vec::new();
-
-                while !parser.is_exhausted() {
-                    // parse the statement
-                    let Some(statement) = parser.parse_statement(handler)
-                    else {
-                        skip_to_next_statement(parser);
-                        continue;
-                    };
-
-                    statements.push(statement);
-                }
-
-                Some(statements)
-            },
-            handler,
-        )?;
-
-        Some(Statements {
-            left_brace: delimited_tree.open,
-            statements: delimited_tree.tree?,
-            right_brace: delimited_tree.close,
-        })
-    }
-
-    fn parse_block(&mut self, handler: &dyn Handler<Error>) -> Option<Block> {
-        let label_specifier = match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(apostrophe))
-                if apostrophe.punctuation == '\'' =>
-            {
-                // eat apostrophe
-                self.forward();
-
-                let identifier = self.parse_identifier(handler)?;
-                let colon = self.parse_punctuation(':', true, handler)?;
-
-                Some(LabelSpecifier {
-                    label: Label { apostrophe, identifier },
-                    colon,
-                })
-            }
-            _ => None,
-        };
-
-        let unsafe_keyword = match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(unsafe_keyword))
-                if unsafe_keyword.kind == KeywordKind::Unsafe =>
-            {
-                self.forward();
-                Some(unsafe_keyword)
-            }
-            _ => None,
-        };
-        let statements = self.parse_statements(handler)?;
-
-        // parse block
-        Some(Block { label_specifier, unsafe_keyword, statements })
-    }
-
-    fn parse_else(&mut self, handler: &dyn Handler<Error>) -> Option<Else> {
-        let else_keyword = self.parse_keyword(KeywordKind::Else, handler)?;
-        let expression = Box::new(
-            if matches!(self.stop_at_significant(), Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::If)
-            {
-                BlockOrIfElse::IfElse(self.parse_if_else(handler)?)
-            } else {
-                BlockOrIfElse::Block(self.parse_block(handler)?)
-            },
-        );
-
-        Some(Else { else_keyword, expression })
-    }
-
-    fn parse_if_else(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<IfElse> {
-        let if_keyword = self.parse_keyword(KeywordKind::If, handler)?;
-
-        let delimited_tree_condition = self.step_into(
-            Delimiter::Parenthesis,
-            |parser| parser.parse_expression(handler).map(Box::new),
-            handler,
-        )?;
-
-        let then_expression = self.parse_block(handler)?;
-        let else_expression = if matches!(
-            self.stop_at_significant(),
-            Reading::Unit(Token::Keyword(else_keyword))
-                if else_keyword.kind == KeywordKind::Else
-        ) {
-            Some(self.parse_else(handler)?)
-        } else {
-            None
-        };
-
-        Some(IfElse {
-            if_keyword,
-            left_paren: delimited_tree_condition.open,
-            condition: delimited_tree_condition.tree?,
-            right_paren: delimited_tree_condition.close,
-            then_expression,
-            else_expression,
-        })
-    }
-
-    fn parse_match_arm(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<MatchArm> {
-        let refutable_pattern = self.parse_refutable_pattern(handler)?;
-
-        let colon = self.parse_punctuation(':', true, handler)?;
-        let expression = Box::new(self.parse_expression(handler)?);
-
-        Some(MatchArm { refutable_pattern, colon, expression })
-    }
-
-    fn parse_match(&mut self, handler: &dyn Handler<Error>) -> Option<Match> {
-        let match_keyword = self.parse_keyword(KeywordKind::Match, handler)?;
-        let parenthesized = self.parse_parenthesized_expression(handler)?;
-
-        let delimited_tree_arms = self.parse_delimited_list(
-            Delimiter::Brace,
-            ',',
-            |parser| parser.parse_match_arm(handler),
-            handler,
-        )?;
-
-        Some(Match {
-            match_keyword,
-            parenthesized,
-            left_brace: delimited_tree_arms.open,
-            arms: delimited_tree_arms.list,
-            right_brace: delimited_tree_arms.close,
-        })
-    }
-
-    /// Parses a binary expression.
-    #[allow(clippy::too_many_lines)]
-    pub fn parse_expression(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Result<Expression, parser::Error> {
-        match self.stop_at_significant() {
-            // parse continue
-            Reading::Unit(Token::Keyword(continue_keyword))
-                if continue_keyword.kind == KeywordKind::Continue =>
-            {
-                // eat continue keyword
-                self.forward();
-
-                let label = self.try_parse_label();
-
-                Some(Expression::Terminator(Terminator::Continue(Continue {
-                    continue_keyword,
-                    label,
-                })))
-            }
-
-            // parse return
-            Reading::Unit(Token::Keyword(return_keyword))
-                if return_keyword.kind == KeywordKind::Return =>
-            {
-                // eat return keyword
-                self.forward();
-
-                let binary =
-                    self.try_parse(|parser| parser.parse_binary(&Dummy));
-
-                Some(Expression::Terminator(Terminator::Return(Return {
-                    return_keyword,
-                    binary,
-                })))
-            }
-
-            // parse express
-            Reading::Unit(Token::Keyword(express_keyword))
-                if express_keyword.kind == KeywordKind::Express =>
-            {
-                // eat express keyword
-                self.forward();
-
-                let label = self.try_parse_label();
-                let binary =
-                    self.try_parse(|parser| parser.parse_binary(&Dummy));
-
-                Some(Expression::Terminator(Terminator::Express(Express {
-                    express_keyword,
-                    label,
-                    binary,
-                })))
-            }
-
-            // parse break
-            Reading::Unit(Token::Keyword(break_keyword))
-                if break_keyword.kind == KeywordKind::Break =>
-            {
-                // eat break keyword
-                self.forward();
-
-                let label = self.try_parse_label();
-                let binary =
-                    self.try_parse(|parser| parser.parse_binary(&Dummy));
-
-                Some(Expression::Terminator(Terminator::Break(Break {
-                    break_keyword,
-                    label,
-                    binary,
-                })))
-            }
-
-            // parse block
-            Reading::Unit(Token::Punctuation(p)) if p.punctuation == '\'' => {
-                self.parse_block(handler)
-                    .map(|x| Expression::Brace(Brace::Block(x)))
-            }
-
-            // parse block
-            Reading::Unit(Token::Keyword(keyword))
-                if keyword.kind == KeywordKind::Unsafe =>
-            {
-                self.parse_block(handler)
-                    .map(|x| Expression::Brace(Brace::Block(x)))
-            }
-
-            // parse block
-            Reading::IntoDelimited(Delimiter::Brace, _) => self
-                .parse_block(handler)
-                .map(|x| Expression::Brace(Brace::Block(x))),
-
-            // parse if
-            Reading::Unit(Token::Keyword(keyword))
-                if keyword.kind == KeywordKind::If =>
-            {
-                self.parse_if_else(handler)
-                    .map(|x| Expression::Brace(Brace::IfElse(x)))
-            }
-
-            // parse match
-            Reading::Unit(Token::Keyword(keyword))
-                if keyword.kind == KeywordKind::Match =>
-            {
-                self.parse_match(handler)
-                    .map(|x| Expression::Brace(Brace::Match(x)))
-            }
-
-            // parse while
-            Reading::Unit(Token::Keyword(while_keyword))
-                if while_keyword.kind == KeywordKind::While =>
-            {
-                // eat while keyword
-                self.forward();
-
-                let delimited_tree_condition = self.step_into(
-                    Delimiter::Parenthesis,
-                    |parser| parser.parse_expression(handler).map(Box::new),
-                    handler,
-                )?;
-
-                let block = self.parse_block(handler)?;
-
-                Some(Expression::Brace(Brace::While(While {
-                    while_keyword,
-                    left_paren: delimited_tree_condition.open,
-                    condition: delimited_tree_condition.tree?,
-                    right_paren: delimited_tree_condition.close,
-                    block,
-                })))
-            }
-
-            // parse loop
-            Reading::Unit(Token::Keyword(loop_keyword))
-                if loop_keyword.kind == KeywordKind::Loop =>
-            {
-                // eat loop keyword
-                self.forward();
-
-                let block = self.parse_block(handler)?;
-
-                Some(Expression::Brace(Brace::Loop(Loop {
-                    loop_keyword,
-                    block,
-                })))
-            }
-
-            _ => self.parse_binary(handler).map(Expression::Binary),
-        }
-    }
-
-    #[allow(clippy::too_many_lines)]
-    fn try_parse_binary_operator(&mut self) -> Option<BinaryOperator> {
-        let first_level =
-            self.try_parse(|parser| match parser.next_significant_token() {
-                Reading::Unit(Token::Punctuation(p)) => match p.punctuation {
-                    '+' => Some(BinaryOperator::Add(p)),
-                    '-' => Some(BinaryOperator::Subtract(p)),
-                    '*' => Some(BinaryOperator::Multiply(p)),
-                    '/' => Some(BinaryOperator::Divide(p)),
-                    '%' => Some(BinaryOperator::Modulo(p)),
-                    '=' => Some(BinaryOperator::Assign(p)),
-                    '&' => Some(BinaryOperator::BitwiseAnd(p)),
-                    '|' => Some(BinaryOperator::BitwiseOr(p)),
-                    '^' => Some(BinaryOperator::BitwiseXor(p)),
-                    '!' => {
-                        let equal =
-                            parser.parse_punctuation('=', false, &Dummy)?;
-                        Some(BinaryOperator::NotEqual(p, equal))
-                    }
-                    '>' => Some(BinaryOperator::GreaterThan(p)),
-                    '<' => Some(BinaryOperator::LessThan(p)),
-                    _ => None,
-                },
-                Reading::Unit(Token::Keyword(k)) => match k.kind {
-                    KeywordKind::And => Some(BinaryOperator::LogicalAnd(k)),
-                    KeywordKind::Or => Some(BinaryOperator::LogicalOr(k)),
-                    _ => None,
-                },
-                _ => None,
-            })?;
-
-        let Some(second_level) = self.try_parse(|parser| {
-            match (first_level.clone(), parser.next_token()) {
-                (first_level, Reading::Unit(Token::Punctuation(s))) => {
-                    match (first_level, s.punctuation) {
-                        (BinaryOperator::Add(p), '=') => {
-                            Some(BinaryOperator::CompoundAdd(p, s))
-                        }
-                        (BinaryOperator::Subtract(p), '=') => {
-                            Some(BinaryOperator::CompoundSubtract(p, s))
-                        }
-                        (BinaryOperator::Multiply(p), '=') => {
-                            Some(BinaryOperator::CompoundMultiply(p, s))
-                        }
-                        (BinaryOperator::Divide(p), '=') => {
-                            Some(BinaryOperator::CompoundDivide(p, s))
-                        }
-                        (BinaryOperator::Modulo(p), '=') => {
-                            Some(BinaryOperator::CompoundModulo(p, s))
-                        }
-                        (BinaryOperator::BitwiseAnd(p), '=') => {
-                            Some(BinaryOperator::CompoundBitwiseAnd(p, s))
-                        }
-                        (BinaryOperator::BitwiseOr(p), '=') => {
-                            Some(BinaryOperator::CompoundBitwiseOr(p, s))
-                        }
-                        (BinaryOperator::BitwiseXor(p), '=') => {
-                            Some(BinaryOperator::CompoundBitwiseXor(p, s))
-                        }
-
-                        (BinaryOperator::Assign(p), '=') => {
-                            Some(BinaryOperator::Equal(p, s))
-                        }
-
-                        (BinaryOperator::GreaterThan(p), '=') => {
-                            Some(BinaryOperator::GreaterThanOrEqual(p, s))
-                        }
-                        (BinaryOperator::LessThan(p), '=') => {
-                            Some(BinaryOperator::LessThanOrEqual(p, s))
-                        }
-
-                        (BinaryOperator::GreaterThan(p), '>') => {
-                            Some(BinaryOperator::BitwiseRightShift(p, s))
-                        }
-                        (BinaryOperator::LessThan(p), '<') => {
-                            Some(BinaryOperator::BitwiseLeftShift(p, s))
-                        }
-                        _ => None,
-                    }
-                }
-                _ => None,
-            }
-        }) else {
-            return Some(first_level);
-        };
-
-        Some(
-            self.try_parse(|parser| {
-                match (second_level.clone(), parser.next_token()) {
-                    (second_level, Reading::Unit(Token::Punctuation(s))) => {
-                        match (second_level, s.punctuation) {
-                            (BinaryOperator::BitwiseLeftShift(p1, p2), '=') => {
-                                Some(BinaryOperator::CompoundBitwiseLeftShift(
-                                    p1, p2, s,
-                                ))
-                            }
-                            (
-                                BinaryOperator::BitwiseRightShift(p1, p2),
-                                '=',
-                            ) => {
-                                Some(BinaryOperator::CompoundBitwiseRightShift(
-                                    p1, p2, s,
-                                ))
-                            }
-                            _ => None,
-                        }
-                    }
-                    _ => None,
-                }
-            })
-            .unwrap_or(second_level),
-        )
-    }
-
-    /// Parses [`Binary`]
-    pub fn parse_binary(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Binary> {
-        let first = self.parse_prefixable(handler)?;
-        let mut chain = Vec::new();
-
-        while let Some(operator) = self.try_parse_binary_operator() {
-            let right = self.parse_prefixable(handler)?;
-            chain.push((operator, right));
-        }
-
-        Some(Binary { first: Box::new(first), chain })
-    }
-
-    pub fn parse_numeric_literal(&mut self) -> Option<Numeric> {
-        let Reading::Unit(Token::Numeric(numeric)) =
-            self.next_significant_token()
-        else {
-            return None;
-        };
-
-        let decimal = match (self.peek(), self.peek_offset(1)) {
-            (
-                Reading::Unit(Token::Punctuation(dot)),
-                Some(Reading::Unit(Token::Numeric(numeric))),
-            ) if dot.punctuation == '.' => {
-                self.forward();
-                self.forward();
-                Some(Decimal { dot, numeric })
-            }
-            _ => None,
-        };
-
-        let suffix =
-            if let Reading::Unit(Token::Identifier(identifier)) = self.peek() {
-                self.forward();
-                Some(identifier)
-            } else {
-                None
-            };
-
-        Some(Numeric { numeric, decimal, suffix })
-    }
-
-    fn parse_parenthesized_expression(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Parenthesized> {
-        let enclosed_tree = self.parse_delimited_list(
-            Delimiter::Parenthesis,
-            ',',
-            |parser| {
-                parser.stop_at_significant();
-
-                let ellipsis = match (
-                    parser.peek(),
-                    parser.peek_offset(1),
-                    parser.peek_offset(2),
-                ) {
-                    (
-                        Reading::Unit(Token::Punctuation(p1)),
-                        Some(Reading::Unit(Token::Punctuation(p2))),
-                        Some(Reading::Unit(Token::Punctuation(p3))),
-                    ) if matches!(
-                        (p1.punctuation, p2.punctuation, p3.punctuation),
-                        ('.', '.', '.')
-                    ) =>
-                    {
-                        // eat the three dots
-                        parser.forward();
-                        parser.forward();
-                        parser.forward();
-
-                        Some((p1, p2, p3))
-                    }
-                    _ => None,
-                };
-
-                let expression = Box::new(parser.parse_expression(handler)?);
-
-                Some(Unpackable { ellipsis, expression })
-            },
-            handler,
-        )?;
-
-        Some(Parenthesized {
-            left_paren: enclosed_tree.open,
-            expression: enclosed_tree.list,
-            right_paren: enclosed_tree.close,
-        })
-    }
-
-    fn parse_identifier_expression(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Unit> {
-        let qualified_identifier = self.parse_qualified_identifier(handler)?;
-
-        match self.stop_at_significant() {
-            Reading::IntoDelimited(Delimiter::Brace, _) => {
-                // handle struct literal
-
-                let delimited_list = self.parse_delimited_list(
-                    Delimiter::Brace,
-                    ',',
-                    |this| {
-                        let identifier = this.parse_identifier(handler)?;
-                        let colon =
-                            this.parse_punctuation(':', true, handler)?;
-                        let expression =
-                            Box::new(this.parse_expression(handler)?);
-
-                        // field initializer
-                        Some(FieldInitializer { identifier, colon, expression })
-                    },
-                    handler,
-                )?;
-
-                Some(Unit::Struct(Struct {
-                    qualified_identifier,
-                    left_brace: delimited_list.open,
-                    field_initializers: delimited_list.list,
-                    right_brace: delimited_list.close,
-                }))
-            }
-
-            _ => Some(Unit::QualifiedIdentifier(qualified_identifier)),
-        }
-    }
-
-    pub fn parse_prefixable(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Prefixable> {
-        let prefix_op = match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(p))
-                if matches!(p.punctuation, '!' | '-' | '~' | '*') =>
-            {
-                // eat the token
-                self.forward();
-
-                match p.punctuation {
-                    '!' => PrefixOperator::LogicalNot(p),
-                    '-' => PrefixOperator::Negate(p),
-                    '~' => PrefixOperator::BitwiseNot(p),
-                    '*' => PrefixOperator::Dereference(p),
-                    _ => unreachable!(),
-                }
-            }
-
-            Reading::Unit(Token::Keyword(k))
-                if matches!(
-                    k.kind,
-                    KeywordKind::Local | KeywordKind::Unlocal
-                ) =>
-            {
-                // eat the token
-                self.forward();
-
-                match k.kind {
-                    KeywordKind::Local => PrefixOperator::Local(k),
-                    KeywordKind::Unlocal => PrefixOperator::Unlocal(k),
-                    _ => unreachable!(),
-                }
-            }
-
-            Reading::Unit(Token::Punctuation(
-                ampersand @ Punctuation { punctuation: '&', .. },
-            )) => {
-                self.forward();
-
-                let mutable_keyword = match self.stop_at_significant() {
-                    Reading::Unit(Token::Keyword(
-                        mutable_keyword @ Keyword {
-                            kind: KeywordKind::Mutable,
-                            ..
-                        },
-                    )) => {
-                        self.forward();
-                        Some(mutable_keyword)
-                    }
-                    _ => None,
-                };
-
-                PrefixOperator::ReferenceOf(ReferenceOf {
-                    ampersand,
-                    mutable_keyword,
-                })
-            }
-
-            _ => {
-                return self
-                    .parse_postfixable(handler)
-                    .map(Prefixable::Postfixable)
-            }
-        };
-
-        let prefixable = Box::new(self.parse_prefixable(handler)?);
-
-        Some(Prefixable::Prefix(Prefix { prefixable, operator: prefix_op }))
-    }
-
-    #[allow(clippy::too_many_lines)]
-    pub fn parse_postfixable(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<Postfixable> {
-        let mut current = Postfixable::Unit(self.parse_unit(handler)?);
-
-        loop {
-            match self.stop_at_significant() {
-                Reading::Unit(Token::Punctuation(p))
-                    if p.punctuation == '.' =>
-                {
-                    // eat the token
-                    self.forward();
-
-                    let kind = match self.stop_at_significant() {
-                        Reading::Unit(Token::Numeric(n)) => {
-                            // eat the access kind
-                            self.forward();
-                            AccessKind::Tuple(TupleIndex {
-                                minus: None,
-                                index: n,
-                            })
-                        }
-                        Reading::Unit(Token::Identifier(_)) => {
-                            let generic_identifier =
-                                self.parse_generic_identifier(handler)?;
-
-                            AccessKind::GenericIdentifier(generic_identifier)
-                        }
-
-                        Reading::Unit(Token::Punctuation(
-                            minus @ Punctuation { punctuation: '-', .. },
-                        )) => {
-                            // eat the access kind
-                            self.forward();
-
-                            AccessKind::Tuple(TupleIndex {
-                                minus: Some(minus),
-                                index: self.parse_numeric(handler)?,
-                            })
-                        }
-
-                        Reading::IntoDelimited(Delimiter::Bracket, _) => {
-                            let delimited_tree = self.step_into(
-                                Delimiter::Bracket,
-                                |parser| {
-                                    parser
-                                        .parse_expression(handler)
-                                        .map(Box::new)
-                                },
-                                handler,
-                            )?;
-
-                            AccessKind::Index(Index {
-                                left_bracket: delimited_tree.open,
-                                expression: delimited_tree.tree?,
-                                right_bracket: delimited_tree.close,
-                            })
-                        }
-
-                        found => {
-                            handler.receive(Error {
-                                expected: SyntaxKind::Identifier,
-                                alternatives: vec![
-                                    SyntaxKind::Numeric,
-                                    SyntaxKind::Punctuation('-'),
-                                    SyntaxKind::Punctuation('['),
-                                ],
-                                found: self.reading_to_found(found),
-                            });
-                            self.forward();
-                            return None;
-                        }
-                    };
-
-                    current = Postfixable::Postfix(Postfix {
-                        postfixable: Box::new(current),
-                        operator: PostfixOperator::Access(Access {
-                            operator: AccessOperator::Dot(p),
-                            kind,
-                        }),
-                    });
-                }
-
-                Reading::Unit(Token::Punctuation(hyphen))
-                    if hyphen.punctuation == '-'
-                        && matches!(
-                            self.peek_offset(1),
-                            Some(Reading::Unit(Token::Punctuation(p2)))
-                            if p2.punctuation == '>'
-                        ) =>
-                {
-                    // eat two tokens
-                    self.forward();
-                    let right_angle = self
-                        .next_token()
-                        .into_unit()
-                        .unwrap()
-                        .into_punctuation()
-                        .unwrap();
-
-                    let kind = match self.stop_at_significant() {
-                        Reading::Unit(Token::Numeric(n)) => {
-                            // eat the access kind
-                            self.forward();
-                            AccessKind::Tuple(TupleIndex {
-                                minus: None,
-                                index: n,
-                            })
-                        }
-
-                        Reading::Unit(Token::Identifier(_)) => {
-                            let generic_identifier =
-                                self.parse_generic_identifier(handler)?;
-
-                            AccessKind::GenericIdentifier(generic_identifier)
-                        }
-
-                        Reading::Unit(Token::Punctuation(
-                            minus @ Punctuation { punctuation: '-', .. },
-                        )) => {
-                            // eat the access kind
-                            self.forward();
-
-                            AccessKind::Tuple(TupleIndex {
-                                minus: Some(minus),
-                                index: self.parse_numeric(handler)?,
-                            })
-                        }
-
-                        Reading::IntoDelimited(Delimiter::Bracket, _) => {
-                            let delimited_tree = self.step_into(
-                                Delimiter::Bracket,
-                                |parser| {
-                                    parser
-                                        .parse_expression(handler)
-                                        .map(Box::new)
-                                },
-                                handler,
-                            )?;
-
-                            AccessKind::Index(Index {
-                                left_bracket: delimited_tree.open,
-                                expression: delimited_tree.tree?,
-                                right_bracket: delimited_tree.close,
-                            })
-                        }
-
-                        found => {
-                            handler.receive(Error {
-                                expected: SyntaxKind::Identifier,
-                                alternatives: vec![SyntaxKind::Numeric],
-                                found: self.reading_to_found(found),
-                            });
-                            self.forward();
-                            return None;
-                        }
-                    };
-
-                    current = Postfixable::Postfix(Postfix {
-                        postfixable: Box::new(current),
-                        operator: PostfixOperator::Access(Access {
-                            operator: AccessOperator::Arrow(
-                                hyphen,
-                                right_angle,
-                            ),
-                            kind,
-                        }),
-                    });
-                }
-
-                Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
-                    // handle call
-                    let delimited_list = self.parse_delimited_list(
-                        Delimiter::Parenthesis,
-                        ',',
-                        |this| this.parse_expression(handler).map(Box::new),
-                        handler,
-                    )?;
-
-                    current = Postfixable::Postfix(Postfix {
-                        postfixable: Box::new(current),
-                        operator: PostfixOperator::Call(Call {
-                            left_paren: delimited_list.open,
-                            arguments: delimited_list.list,
-                            right_paren: delimited_list.close,
-                        }),
-                    });
-                }
-
-                Reading::Unit(Token::Keyword(k))
-                    if k.kind == KeywordKind::As =>
-                {
-                    // eat the token
-                    self.forward();
-
-                    let ty = self.parse_type(handler)?;
-
-                    current = Postfixable::Postfix(Postfix {
-                        postfixable: Box::new(current),
-                        operator: PostfixOperator::Cast(Cast {
-                            as_keyword: k,
-                            r#type: ty,
-                        }),
-                    });
-                }
-                _ => break,
-            }
-        }
-
-        Some(current)
-    }
-
-    pub fn parse_unit(&mut self, handler: &dyn Handler<Error>) -> Option<Unit> {
-        match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(bool_keyword))
-                if matches!(
-                    bool_keyword.kind,
-                    KeywordKind::True | KeywordKind::False
-                ) =>
-            {
-                // eat the token
-                self.forward();
-
-                Some(Unit::Boolean(match bool_keyword.kind {
-                    KeywordKind::True => Boolean::True,
-                    KeywordKind::False => Boolean::False,
-                    _ => unreachable!(),
-                }(bool_keyword)))
-            }
-
-            Reading::Unit(Token::Keyword(keyword))
-                if keyword.kind == KeywordKind::Phantom =>
-            {
-                // eat the token
-                self.forward();
-
-                Some(Unit::Phantom(Phantom { phantom_keyword: keyword }))
-            }
-
-            Reading::Unit(Token::Character(character)) => {
-                // eat the token
-                self.forward();
-
-                Some(Unit::Character(character))
-            }
-
-            Reading::Unit(Token::String(string)) => {
-                // eat the token
-                self.forward();
-
-                Some(Unit::String(string))
-            }
-
-            Reading::Unit(Token::Numeric(_)) => {
-                Some(Unit::Numeric(self.parse_numeric_literal()?))
-            }
-
-            Reading::Unit(
-                Token::Identifier(_)
-                | Token::Keyword(Keyword {
-                    kind:
-                        KeywordKind::This | KeywordKind::Target | KeywordKind::Super,
-                    ..
-                }),
-            ) => self.parse_identifier_expression(handler),
-
-            Reading::IntoDelimited(Delimiter::Bracket, _) => {
-                let delimited_list = self.parse_delimited_list(
-                    Delimiter::Bracket,
-                    ',',
-                    |this| {
-                        let expression =
-                            Box::new(this.parse_expression(handler)?);
-                        Some(expression)
-                    },
-                    handler,
-                )?;
-
-                Some(Unit::Array(Array {
-                    left_bracket: delimited_list.open,
-                    arguments: delimited_list.list,
-                    right_bracket: delimited_list.close,
-                }))
-            }
-
-            Reading::IntoDelimited(Delimiter::Parenthesis, _) => self
-                .parse_parenthesized_expression(handler)
-                .map(Unit::Parenthesized),
-
-            found => {
-                handler.receive(Error {
-                    expected: SyntaxKind::Expression,
-                    alternatives: Vec::new(),
-                    found: self.reading_to_found(found),
-                });
-                self.forward();
-                None
-            }
-        }
     }
 }
 

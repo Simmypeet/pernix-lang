@@ -113,7 +113,7 @@ where
 
         (T::TraitMember::arbitrary(), args)
             .prop_map(|(equality, property)| Self { equality, property })
-            .boxed()
+            
     }
 }
 
@@ -239,7 +239,7 @@ impl Arbitrary for LifetimeMatching {
                 lifetime_properties,
                 bound,
             })
-            .boxed()
+            
     }
 }
 
@@ -271,7 +271,7 @@ impl Arbitrary for Reflexive {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         Box::<dyn equality::tests::Property<Lifetime<_>>>::arbitrary()
             .prop_map(|term| Self { term })
-            .boxed()
+            
     }
 }
 
@@ -290,7 +290,7 @@ impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + 'static> Arbitrary
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (T::arbitrary(), Lifetime::arbitrary())
             .prop_map(|(term, bound)| Self { term, bound })
-            .boxed()
+            
     }
 }
 
@@ -382,7 +382,7 @@ where
                 inner_property,
                 final_bound: bound,
             })
-            .boxed()
+            
     }
 }
 
@@ -402,7 +402,7 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
                 LifetimeMatching::arbitrary().prop_map(|x| Box::new(x) as _),
             ]
         })
-        .boxed()
+        
     }
 }
 
@@ -420,7 +420,7 @@ impl Arbitrary for Box<dyn Property<Lifetime<Default>>> {
             Transitive::arbitrary_with(Some(inner.clone()))
                 .prop_map(|x| Box::new(x) as _)
         })
-        .boxed()
+        
     }
 }
 

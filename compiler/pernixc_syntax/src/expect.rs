@@ -55,22 +55,17 @@ pub trait Expect: Into<Expected> {
     type Output;
 
     /// Checks if the [`TokenKind`] is the expected token.
-    fn expect<'a>(
-        &self,
-        token: &'a TokenKind,
-    ) -> Result<&'a Self::Output, &'a TokenKind>;
+    fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output>;
 }
 
 impl Expect for Identifier {
     type Output = token::Identifier;
 
-    fn expect<'a>(
-        &self,
-        token: &'a TokenKind,
-    ) -> Result<&'a Self::Output, &'a TokenKind> {
-        match token {
-            TokenKind::Token(Token::Identifier(ident)) => Ok(ident),
-            found => Err(found),
+    fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
+        if let TokenKind::Token(Token::Identifier(ident)) = token {
+            Some(ident)
+        } else {
+            None
         }
     }
 }
@@ -78,13 +73,11 @@ impl Expect for Identifier {
 impl Expect for Numeric {
     type Output = token::Numeric;
 
-    fn expect<'a>(
-        &self,
-        token: &'a TokenKind,
-    ) -> Result<&'a Self::Output, &'a TokenKind> {
-        match token {
-            TokenKind::Token(Token::Numeric(numeric)) => Ok(numeric),
-            found => Err(found),
+    fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
+        if let TokenKind::Token(Token::Numeric(ident)) = token {
+            Some(ident)
+        } else {
+            None
         }
     }
 }
@@ -92,13 +85,11 @@ impl Expect for Numeric {
 impl Expect for String {
     type Output = token::String;
 
-    fn expect<'a>(
-        &self,
-        token: &'a TokenKind,
-    ) -> Result<&'a Self::Output, &'a TokenKind> {
-        match token {
-            TokenKind::Token(Token::String(string)) => Ok(string),
-            found => Err(found),
+    fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
+        if let TokenKind::Token(Token::String(ident)) = token {
+            Some(ident)
+        } else {
+            None
         }
     }
 }
@@ -106,13 +97,11 @@ impl Expect for String {
 impl Expect for Character {
     type Output = token::Character;
 
-    fn expect<'a>(
-        &self,
-        token: &'a TokenKind,
-    ) -> Result<&'a Self::Output, &'a TokenKind> {
-        match token {
-            TokenKind::Token(Token::Character(character)) => Ok(character),
-            found => Err(found),
+    fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
+        if let TokenKind::Token(Token::Character(ident)) = token {
+            Some(ident)
+        } else {
+            None
         }
     }
 }
@@ -120,19 +109,15 @@ impl Expect for Character {
 impl Expect for char {
     type Output = token::Punctuation;
 
-    fn expect<'a>(
-        &self,
-        token: &'a TokenKind,
-    ) -> Result<&'a Self::Output, &'a TokenKind> {
-        match token {
-            TokenKind::Token(Token::Punctuation(punctuation)) => {
-                if punctuation.punctuation == *self {
-                    Ok(punctuation)
-                } else {
-                    Err(token)
-                }
+    fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
+        if let TokenKind::Token(Token::Punctuation(punc)) = token {
+            if punc.punctuation == *self {
+                Some(punc)
+            } else {
+                None
             }
-            found => Err(found),
+        } else {
+            None
         }
     }
 }
@@ -140,19 +125,15 @@ impl Expect for char {
 impl Expect for KeywordKind {
     type Output = token::Keyword;
 
-    fn expect<'a>(
-        &self,
-        token: &'a TokenKind,
-    ) -> Result<&'a Self::Output, &'a TokenKind> {
-        match token {
-            TokenKind::Token(Token::Keyword(keyword)) => {
-                if keyword.kind == *self {
-                    Ok(keyword)
-                } else {
-                    Err(token)
-                }
+    fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
+        if let TokenKind::Token(Token::Keyword(keyword)) = token {
+            if keyword.kind == *self {
+                Some(keyword)
+            } else {
+                None
             }
-            found => Err(found),
+        } else {
+            None
         }
     }
 }
@@ -160,19 +141,15 @@ impl Expect for KeywordKind {
 impl Expect for Delimiter {
     type Output = token_stream::Delimited;
 
-    fn expect<'a>(
-        &self,
-        token: &'a TokenKind,
-    ) -> Result<&'a Self::Output, &'a TokenKind> {
-        match token {
-            TokenKind::Delimited(delimiter) => {
-                if delimiter.delimiter == *self {
-                    Ok(delimiter)
-                } else {
-                    Err(token)
-                }
+    fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
+        if let TokenKind::Delimited(delimited) = token {
+            if delimited.delimiter == *self {
+                Some(delimited)
+            } else {
+                None
             }
-            found => Err(found),
+        } else {
+            None
         }
     }
 }
