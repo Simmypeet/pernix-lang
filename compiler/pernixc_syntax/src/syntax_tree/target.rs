@@ -20,16 +20,18 @@ use pernixc_base::{
     log::Severity,
     source_file::{self, SourceFile, Span},
 };
-use pernixc_lexical::token_stream::TokenStream;
+use pernixc_lexical::token_stream::{TokenStream, Tree};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use super::{
     item::{Module, ModuleContent, ModuleSignature},
-    AccessModifier,
+    AccessModifier, SyntaxTree,
 };
-use crate::{error, parse::Parser, syntax_tree::item::ModuleKind};
+use crate::{
+    error, state_machine::parse::Parse, syntax_tree::item::ModuleKind,
+};
 
-// // pub mod strategy;
+pub mod strategy;
 
 /// Contains both the access modifier and the module signature.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -234,12 +236,17 @@ impl Target {
                 } => (module_content, None, module_name, Some(access_modifier)),
                 Input::File { source_file, signature: access_modifier } => {
                     let token_stream =
-                        TokenStream::tokenize(&source_file, handler);
-                    let mut parser =
-                        Parser::new(&token_stream, source_file.clone());
+                        TokenStream::tokenize(source_file.clone(), handler);
+                    let tree = Tree::new(&token_stream);
+
+                    let module_content =
+                        ModuleContent::parse.parse_syntax(&tree, handler);
 
                     (
-                        parser.parse_module_content(handler),
+                        module_content.unwrap_or(ModuleContent {
+                            usings: Vec::new(),
+                            items: Vec::new(),
+                        }),
                         Some((access_modifier.is_none(), source_file.clone())),
                         source_file
                             .full_path()
@@ -252,6 +259,7 @@ impl Target {
                     )
                 }
             };
+
         let submodule_current_directory =
             if source_file.as_ref().map_or(false, |x| x.0) {
                 current_directory.to_path_buf()
@@ -291,7 +299,7 @@ impl Target {
                 };
                 Self::parse_input(
                     Input::Inline {
-                        module_content: inline_module_content.content,
+                        module_content: inline_module_content.tree,
                         module_name: signature_with_access_modifier
                             .signature
                             .identifier()
@@ -366,7 +374,7 @@ impl Target {
 
     /// Parses the whole module tree for the target program from the given root
     /// source file.
-    pub fn parse<'a><
+    pub fn parse<
         T: Handler<error::Error>
             + Handler<pernixc_lexical::error::Error>
             + Handler<Error>

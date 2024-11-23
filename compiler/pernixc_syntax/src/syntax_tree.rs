@@ -16,8 +16,7 @@ use pernixc_lexical::{
 use r#type::Type;
 
 use crate::{
-    error,
-    expect::{self, Expected},
+    error, expect,
     state_machine::{
         parse::{self, Branch, ExpectExt, Parse, StepInto},
         StateMachine,
@@ -31,7 +30,7 @@ pub mod pattern;
 pub mod predicate;
 pub mod statement;
 pub mod strategy;
-// pub mod target;
+pub mod target;
 pub mod r#type;
 
 /// An extension trait for the [`Parse`] trait allowing for more complex parsing
@@ -297,8 +296,6 @@ impl<'a, Element: Parse<'a> + Clone, Separator: Parse<'a> + Clone> Parse<'a>
 
         Ok(ConnectedList { first: first.unwrap(), rest, trailing_separator })
     }
-
-    fn commit_count(&self) -> usize { self.element_parser.commit_count() }
 }
 
 /// Represents a pattern of [`ConnectedList`] enclosed within a pair of
@@ -465,8 +462,6 @@ impl<'a, Element: Parse<'a> + Clone, Separator: Parse<'a> + Clone> Parse<'a>
             })
             .parse(state_machine, handler)
     }
-
-    fn commit_count(&self) -> usize { 1 }
 }
 
 /// Syntax Synopsis:
@@ -528,10 +523,10 @@ impl SyntaxTree for ScopeSeparator {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Ok(Self {
-            first: ':'.to_owned().parse(state_machine, handler)?,
-            second: ':'.no_skip().to_owned().parse(state_machine, handler)?,
-        })
+        (':'.to_owned(), ':'.no_skip().to_owned())
+            .map(|(first, second)| Self { first, second })
+            .commit_in(2)
+            .parse(state_machine, handler)
     }
 }
 
@@ -916,10 +911,7 @@ impl SyntaxTree for SimplePath {
     ) -> parse::Result<Self> {
         Ok(Self {
             root: SimplePathRoot::parse(state_machine, handler)?,
-            rest: (
-                ScopeSeparator::parse.commit_in(2),
-                expect::Identifier.to_owned(),
-            )
+            rest: (ScopeSeparator::parse, expect::Identifier.to_owned())
                 .keep_take()
                 .parse(state_machine, handler)?,
         })
@@ -997,10 +989,7 @@ impl SyntaxTree for QualifiedIdentifier {
     ) -> parse::Result<Self> {
         Ok(Self {
             root: QualifiedIdentifierRoot::parse(state_machine, handler)?,
-            rest: (
-                ScopeSeparator::parse.commit_in(2),
-                GenericIdentifier::parse,
-            )
+            rest: (ScopeSeparator::parse, GenericIdentifier::parse)
                 .keep_take()
                 .parse(state_machine, handler)?,
         })

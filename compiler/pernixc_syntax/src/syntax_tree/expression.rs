@@ -1208,7 +1208,8 @@ impl SyntaxTree for AccessOperator {
         (
             '.'.to_owned().map(Self::Dot),
             ('-'.to_owned(), '>'.no_skip().to_owned())
-                .map(|(start, end)| Self::Arrow(start, end)),
+                .map(|(start, end)| Self::Arrow(start, end))
+                .commit_in(2),
         )
             .branch()
             .parse(state_machine, handler)
@@ -1654,98 +1655,140 @@ pub enum BinaryOperator {
     CompoundBitwiseRightShift(Punctuation, Punctuation, Punctuation),
 }
 
+impl BinaryOperator {
+    fn parse_arithmetic_and_compound(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            ('+'.to_owned(), '='.no_skip().to_owned())
+                .map(|(start, end)| Self::CompoundAdd(start, end)),
+            ('-'.to_owned(), '='.no_skip().to_owned())
+                .map(|(start, end)| Self::CompoundSubtract(start, end)),
+            ('*'.to_owned(), '='.no_skip().to_owned())
+                .map(|(start, end)| Self::CompoundMultiply(start, end)),
+            ('/'.to_owned(), '='.no_skip().to_owned())
+                .map(|(start, end)| Self::CompoundDivide(start, end)),
+            ('%'.to_owned(), '='.no_skip().to_owned())
+                .map(|(start, end)| Self::CompoundModulo(start, end)),
+            '+'.to_owned().map(Self::Add),
+            '-'.to_owned().map(Self::Subtract),
+            '*'.to_owned().map(Self::Multiply),
+            '/'.to_owned().map(Self::Divide),
+            '%'.to_owned().map(Self::Modulo),
+        )
+            .branch()
+            .parse(state_machine, handler)
+    }
+
+    fn parse_left_angle(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            (
+                '<'.to_owned(),
+                '<'.no_skip().to_owned(),
+                '='.no_skip().to_owned(),
+            )
+                .map(|(start, end, assign)| {
+                    Self::CompoundBitwiseLeftShift(start, end, assign)
+                }),
+            ('<'.to_owned(), '<'.no_skip().to_owned())
+                .map(|(start, end)| Self::BitwiseLeftShift(start, end)),
+            ('<'.to_owned(), '='.no_skip().to_owned())
+                .map(|(start, end)| Self::LessThanOrEqual(start, end)),
+            '<'.to_owned().map(Self::LessThan),
+        )
+            .branch()
+            .parse(state_machine, handler)
+    }
+
+    fn parse_right_angle(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            (
+                '>'.to_owned(),
+                '>'.no_skip().to_owned(),
+                '='.no_skip().to_owned(),
+            )
+                .map(|(start, end, assign)| {
+                    Self::CompoundBitwiseRightShift(start, end, assign)
+                }),
+            ('>'.to_owned(), '>'.no_skip().to_owned())
+                .map(|(start, end)| Self::BitwiseRightShift(start, end)),
+            ('>'.to_owned(), '='.no_skip().to_owned())
+                .map(|(start, end)| Self::GreaterThanOrEqual(start, end)),
+            '>'.to_owned().map(Self::GreaterThan),
+        )
+            .branch()
+            .parse(state_machine, handler)
+    }
+
+    fn parse_bitwise_and_or_xor(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            ('&'.to_owned(), '='.no_skip().to_owned())
+                .map(|(start, end)| Self::CompoundBitwiseAnd(start, end)),
+            '&'.to_owned().map(Self::BitwiseAnd),
+            ('|'.to_owned(), '='.no_skip().to_owned())
+                .map(|(start, end)| Self::CompoundBitwiseOr(start, end)),
+            '|'.to_owned().map(Self::BitwiseOr),
+            ('^'.to_owned(), '='.no_skip().to_owned())
+                .map(|(start, end)| Self::CompoundBitwiseXor(start, end)),
+            '^'.to_owned().map(Self::BitwiseXor),
+        )
+            .branch()
+            .parse(state_machine, handler)
+    }
+
+    fn parse_equal(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            ('='.to_owned(), '='.no_skip().to_owned())
+                .map(|(start, end)| Self::Equal(start, end)),
+            ('!'.to_owned(), '='.no_skip().to_owned())
+                .map(|(start, end)| Self::NotEqual(start, end)),
+            '='.to_owned().map(Self::Assign),
+        )
+            .branch()
+            .parse(state_machine, handler)
+    }
+
+    fn parse_logical_and_or(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::And.to_owned().map(Self::LogicalAnd),
+            KeywordKind::Or.to_owned().map(Self::LogicalOr),
+        )
+            .branch()
+            .parse(state_machine, handler)
+    }
+}
+
 impl SyntaxTree for BinaryOperator {
     fn parse(
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        ('<'.to_owned(), '<'.no_skip().to_owned(), '='.no_skip().to_owned())
-            .map(|(start, end, assign)| {
-                Self::CompoundBitwiseLeftShift(start, end, assign)
-            })
+        (
+            Self::parse_arithmetic_and_compound,
+            Self::parse_left_angle,
+            Self::parse_right_angle,
+            Self::parse_bitwise_and_or_xor,
+            Self::parse_equal,
+            Self::parse_logical_and_or,
+        )
+            .branch()
             .parse(state_machine, handler)
-        /*
-            .or_else(
-                ('<'.to_owned(), '<'.no_skip().to_owned())
-                    .map(|(start, end)| Self::BitwiseLeftShift(start, end)),
-            )
-            .or_else(
-                ('<'.to_owned(), '='.no_skip().to_owned())
-                    .map(|(start, end)| Self::LessThanOrEqual(start, end)),
-            )
-            .or_else('<'.to_owned().map(Self::LessThan))
-            .or_else(
-                (
-                    '>'.to_owned(),
-                    '>'.no_skip().to_owned(),
-                    '='.no_skip().to_owned(),
-                )
-                    .map(|(start, end, assign)| {
-                        Self::CompoundBitwiseRightShift(start, end, assign)
-                    }),
-            )
-            .or_else(
-                ('>'.to_owned(), '>'.no_skip().to_owned())
-                    .map(|(start, end)| Self::BitwiseRightShift(start, end)),
-            )
-            .or_else(
-                ('>'.to_owned(), '='.no_skip().to_owned())
-                    .map(|(start, end)| Self::GreaterThanOrEqual(start, end)),
-            )
-            .or_else('>'.to_owned().map(Self::GreaterThan))
-            .or_else(
-                ('^'.to_owned(), '='.no_skip().to_owned())
-                    .map(|(start, end)| Self::CompoundBitwiseXor(start, end)),
-            )
-            .or_else('^'.to_owned().map(Self::BitwiseXor))
-            .or_else(
-                ('&'.to_owned(), '='.no_skip().to_owned())
-                    .map(|(start, end)| Self::CompoundBitwiseAnd(start, end)),
-            )
-            .or_else('&'.to_owned().map(Self::BitwiseAnd))
-            .or_else(
-                ('|'.to_owned(), '='.no_skip().to_owned())
-                    .map(|(start, end)| Self::CompoundBitwiseOr(start, end)),
-            )
-            .or_else('|'.to_owned().map(Self::BitwiseOr))
-            .or_else(
-                ('='.to_owned(), '='.no_skip().to_owned())
-                    .map(|(start, end)| Self::Equal(start, end)),
-            )
-            .or_else(
-                ('!'.to_owned(), '='.no_skip().to_owned())
-                    .map(|(start, end)| Self::NotEqual(start, end)),
-            )
-            .or_else('='.to_owned().map(Self::Assign))
-            .or_else(KeywordKind::And.to_owned().map(Self::LogicalAnd))
-            .or_else(KeywordKind::Or.to_owned().map(Self::LogicalOr))
-            .or_else(
-                ('+'.to_owned(), '='.no_skip().to_owned())
-                    .map(|(start, end)| Self::CompoundAdd(start, end)),
-            )
-            .or_else('+'.to_owned().map(Self::Add))
-            .or_else(
-                ('-'.to_owned(), '='.no_skip().to_owned())
-                    .map(|(start, end)| Self::CompoundSubtract(start, end)),
-            )
-            .or_else('-'.to_owned().map(Self::Subtract))
-            .or_else(
-                ('*'.to_owned(), '='.no_skip().to_owned())
-                    .map(|(start, end)| Self::CompoundMultiply(start, end)),
-            )
-            .or_else('*'.to_owned().map(Self::Multiply))
-            .or_else(
-                ('/'.to_owned(), '='.no_skip().to_owned())
-                    .map(|(start, end)| Self::CompoundDivide(start, end)),
-            )
-            .or_else('/'.to_owned().map(Self::Divide))
-            .or_else(
-                ('%'.to_owned(), '='.no_skip().to_owned())
-                    .map(|(start, end)| Self::CompoundModulo(start, end)),
-            )
-            .or_else('%'.to_owned().map(Self::Modulo))
-            .parse(state_machine, handler)
-        */
     }
 }
 

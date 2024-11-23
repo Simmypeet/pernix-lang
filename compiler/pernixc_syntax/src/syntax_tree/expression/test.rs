@@ -8,7 +8,6 @@ proptest! {
         max_shrink_iters: 10000,
         ..proptest::test_runner::Config::default()
     })]
-    #[allow(clippy::ignored_unit_patterns)]
     #[test]
     fn expression(
         expression_input in Expression::arbitrary(),

@@ -55,6 +55,7 @@ where
                 Unexpected {
                     token_index: Some(state_machine.current_token_index() - 1),
                     node_index: state_machine.current_node_index(),
+                    commit_count: 1,
                 }
             })
         } else {
@@ -63,11 +64,10 @@ where
             Err(Unexpected {
                 token_index: None,
                 node_index: state_machine.current_node_index(),
+                commit_count: 1,
             })
         }
     }
-
-    fn commit_count(&self) -> usize { 1 }
 }
 
 /// An unexpected token was found.
@@ -79,6 +79,9 @@ pub struct Unexpected {
 
     /// The node index in the token tree where the unexpected token was found.
     pub node_index: usize,
+
+    /// The commit token count
+    pub commit_count: usize,
 }
 
 /// A trait for parsing the syntax tree.
@@ -98,10 +101,6 @@ pub trait Parse<'a> {
         state_machine: &mut StateMachine<'a>,
         handler: &dyn Handler<error::Error>,
     ) -> Result<Self::Output>;
-
-    /// The number of eaten tokens that the parser will commit to the current
-    /// path. The default value is `1`.
-    fn commit_count(&self) -> usize;
 
     /// Changes the number of commiting tokens, which is most likely 1 for
     /// most parsers.
@@ -295,6 +294,7 @@ macro_rules! expect_implements_parse {
                         Unexpected {
                             token_index: Some(tok_index),
                             node_index: state_machine.current_node_index(),
+                            commit_count: 1,
                         }
                     })
                 } else {
@@ -303,11 +303,10 @@ macro_rules! expect_implements_parse {
                     return Err(Unexpected {
                         token_index: None,
                         node_index: state_machine.current_node_index(),
+                        commit_count: 1,
                     });
                 }
             }
-
-            fn commit_count(&self) -> usize { 1 }
         }
     };
 }
@@ -335,8 +334,6 @@ impl<
     ) -> Result<Self::Output> {
         self(state_machine, handler)
     }
-
-    fn commit_count(&self) -> usize { 1 }
 }
 
 /// Created by the [`Parse::to_owned`] method.
@@ -355,8 +352,6 @@ impl<'a, O: std::borrow::ToOwned + 'a, T: Parse<'a, Output = &'a O>> Parse<'a>
     ) -> Result<Self::Output> {
         self.0.parse(state_machine, handler).map(std::borrow::ToOwned::to_owned)
     }
-
-    fn commit_count(&self) -> usize { self.0.commit_count() }
 }
 
 /// Created by the [`Parse::map`] method.
@@ -376,8 +371,6 @@ impl<'a, P: Parse<'a>, F: FnOnce(P::Output) -> O, O> Parse<'a> for Map<P, F> {
     ) -> Result<Self::Output> {
         Ok((self.map)(self.parser.parse(state_machine, handler)?))
     }
-
-    fn commit_count(&self) -> usize { self.parser.commit_count() }
 }
 
 macro_rules! tuple_implements_syntax {
@@ -399,12 +392,6 @@ macro_rules! tuple_implements_syntax {
                         $i.parse(state_machine, handler)?
                     ),*
                 ))
-            }
-
-            // the first one is the committer
-            #[allow(non_snake_case)]
-            fn commit_count(&self) -> usize {
-                self.0.commit_count()
             }
         }
     };
@@ -436,14 +423,13 @@ impl<'a, T: Parse<'a>> Parse<'a> for OrNone<T> {
         let current_eaten = state_machine.eaten_tokens;
         let expected_len = state_machine.expected.len();
 
-        let commit_count = self.0.commit_count();
-
         match self.0.parse(state_machine, handler) {
             Ok(output) => Ok(Some(output)),
             Err(err) => {
                 // if the parser has consumed token more than the commit count,
                 // then return the error
-                if state_machine.eaten_tokens > current_eaten + commit_count {
+                if state_machine.eaten_tokens > current_eaten + err.commit_count
+                {
                     return Err(err);
                 }
 
@@ -456,8 +442,6 @@ impl<'a, T: Parse<'a>> Parse<'a> for OrNone<T> {
             }
         }
     }
-
-    fn commit_count(&self) -> usize { self.0.commit_count() }
 }
 
 /// Created by the [`Parse::keep_take`] method.
@@ -482,8 +466,6 @@ impl<'a, T: Parse<'a> + Clone> Parse<'a> for KeepTake<T> {
 
         Ok(output)
     }
-
-    fn commit_count(&self) -> usize { self.0.commit_count() }
 }
 
 /// Created by the [`Parse::step_into`] method.
@@ -510,6 +492,7 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
                             return Err(Unexpected {
                                 token_index: Some(location.token_index),
                                 node_index: location.node_index,
+                                commit_count: 1,
                             });
                         }
 
@@ -526,6 +509,7 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
                                         token_index: Some(index),
                                         node_index: state_machine
                                             .current_node_index(),
+                                        commit_count: 1,
                                     },
                                     vec![match self.delimiter {
                                         Delimiter::Parenthesis => ')',
@@ -567,20 +551,19 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
                     StepIntoError::EndOfStream => Err(Unexpected {
                         token_index: None,
                         node_index: state_machine.current_node_index(),
+                        commit_count: 1,
                     }),
                     StepIntoError::NotDelimited => Err(Unexpected {
                         token_index: Some(
                             state_machine.current_token_index() - 1,
                         ),
                         node_index: state_machine.current_node_index(),
+                        commit_count: 1,
                     }),
                 }
             }
         }
     }
-
-    // commit on the delimiter
-    fn commit_count(&self) -> usize { 1 }
 }
 
 /// Created by the [`Parse::keep_fold`] method.
@@ -622,8 +605,6 @@ impl<
 
         Ok(output)
     }
-
-    fn commit_count(&self) -> usize { self.initial.commit_count() }
 }
 
 /// Created by the [`Parse::keep_take_all`] method.
@@ -678,8 +659,6 @@ impl<'a, T: Parse<'a> + Clone> Parse<'a> for KeepTakeAll<T> {
 
         Ok(list)
     }
-
-    fn commit_count(&self) -> usize { self.element_parser.commit_count() }
 }
 
 /// Created by the [`Branch::branch`] method.
@@ -801,19 +780,6 @@ macro_rules! implements_tuple_branch {
 
                     return Err(max_err);
                 }
-
-                #[allow(non_snake_case)]
-                fn commit_count(&self) -> usize {
-                    let ($t, $($i),*) = &self.0;
-
-                    let mut count = $t.commit_count();
-
-                    $(
-                        count = count.max($i.commit_count());
-                    )*
-
-                    count
-                }
             }
         }
     };
@@ -834,10 +800,11 @@ impl<'a, T: Parse<'a> + Clone> Parse<'a> for CommitIn<T> {
         state_machine: &mut StateMachine<'a>,
         handler: &dyn Handler<error::Error>,
     ) -> Result<Self::Output> {
-        self.parser.parse(state_machine, handler)
+        self.parser.parse(state_machine, handler).map_err(|mut err| {
+            err.commit_count = self.count;
+            err
+        })
     }
-
-    fn commit_count(&self) -> usize { self.count }
 }
 
 implements_tuple_branch!(A, B);
@@ -855,6 +822,33 @@ implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J, K, L, M);
 implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
 implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
 implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
+implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q);
+implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
+implements_tuple_branch!(
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S
+);
+implements_tuple_branch!(
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T
+);
+implements_tuple_branch!(
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U
+);
+implements_tuple_branch!(
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V
+);
+implements_tuple_branch!(
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W
+);
+implements_tuple_branch!(
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X
+);
+implements_tuple_branch!(
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y
+);
+implements_tuple_branch!(
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y,
+    Z
+);
 
 #[cfg(test)]
 mod tests;

@@ -73,7 +73,7 @@ impl Arbitrary for ModuleTree {
             .prop_filter("filter out keyword", |x| {
                 KeywordKind::from_str(x).is_err()
             })
-            ;
+            .boxed();
 
         let leaf = (
             syntax_tree::strategy::AccessModifier::arbitrary(),
@@ -105,7 +105,7 @@ impl Arbitrary for ModuleTree {
                     },
                 )
         })
-        
+        .boxed()
     }
 }
 
