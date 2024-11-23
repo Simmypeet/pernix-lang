@@ -25,6 +25,7 @@ pernixc_tests = { path = "../pernixc_tests" }
 proptest = { workspace = true }
 displaydoc = { workspace = true }
 static_assertions = { workspace = true }
+paste = { workspace = true }
 
 [lints]
 workspace = true

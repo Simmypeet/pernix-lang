@@ -40,7 +40,7 @@ impl Arbitrary for Reference {
                 is_mutable,
                 operand_type: Box::new(operand_type),
             })
-            
+            .boxed()
     }
 }
 
@@ -106,7 +106,7 @@ impl Arbitrary for Primitive {
             Just(Self::Usize),
             Just(Self::Isize),
         ]
-        
+        .boxed()
     }
 }
 
@@ -174,7 +174,7 @@ impl Arbitrary for Array {
                 operand: Box::new(type_specifier),
                 constant,
             })
-            
+            .boxed()
     }
 }
 
@@ -220,7 +220,7 @@ impl Arbitrary for Pointer {
                 is_mutable,
                 operand: Box::new(operand),
             })
-            
+            .boxed()
     }
 }
 
@@ -239,13 +239,13 @@ impl Display for Pointer {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Unpackable {
     pub ellipsis: bool,
-    pub ty: Box<Type>,
+    pub r#type: Box<Type>,
 }
 
 impl Input<&super::Unpackable> for &Unpackable {
     fn assert(self, output: &super::Unpackable) -> TestCaseResult {
         prop_assert_eq!(self.ellipsis, output.ellipsis().is_some());
-        self.ty.assert(output.ty())
+        self.r#type.assert(output.r#type())
     }
 }
 
@@ -257,8 +257,8 @@ impl Arbitrary for Unpackable {
         let ty = args.unwrap_or_else(Type::arbitrary);
 
         (proptest::bool::ANY, ty.prop_map(Box::new))
-            .prop_map(|(ellipsis, ty)| Self { ellipsis, ty })
-            
+            .prop_map(|(ellipsis, ty)| Self { ellipsis, r#type: ty })
+            .boxed()
     }
 }
 
@@ -268,7 +268,7 @@ impl Display for Unpackable {
             f.write_str("...")?;
         }
 
-        Display::fmt(&self.ty, f)
+        Display::fmt(&self.r#type, f)
     }
 }
 
@@ -280,7 +280,7 @@ pub struct Tuple {
 
 impl Input<&super::Tuple> for &Tuple {
     fn assert(self, output: &super::Tuple) -> TestCaseResult {
-        self.unpackable_list.as_ref().assert(output.unpackable_list().as_ref())
+        self.unpackable_list.as_ref().assert(output.connected_list.as_ref())
     }
 }
 
@@ -296,7 +296,7 @@ impl Arbitrary for Tuple {
         .prop_map(|type_specifier_list| Self {
             unpackable_list: type_specifier_list,
         })
-        
+        .boxed()
     }
 }
 
@@ -314,12 +314,12 @@ impl Display for Tuple {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Local {
-    pub ty: Box<Type>,
+    pub r#type: Box<Type>,
 }
 
 impl Input<&super::Local> for &Local {
     fn assert(self, output: &super::Local) -> TestCaseResult {
-        self.ty.assert(output.ty())
+        self.r#type.assert(output.r#type())
     }
 }
 
@@ -329,14 +329,14 @@ impl Arbitrary for Local {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         args.unwrap_or_else(Type::arbitrary)
-            .prop_map(|ty| Self { ty: Box::new(ty) })
-            
+            .prop_map(|ty| Self { r#type: Box::new(ty) })
+            .boxed()
     }
 }
 
 impl Display for Local {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "local {}", &self.ty)
+        write!(f, "local {}", &self.r#type)
     }
 }
 
@@ -358,7 +358,7 @@ impl Arbitrary for Phantom {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         args.unwrap_or_else(Type::arbitrary)
             .prop_map(|r#type| Self { r#type: Box::new(r#type) })
-            
+            .boxed()
     }
 }
 
@@ -450,7 +450,7 @@ impl Arbitrary for Type {
                 Just(Self::Elided),
             ]
         })
-        
+        .boxed()
     }
 }
 

@@ -50,6 +50,7 @@ impl Arbitrary for Module {
                 signature,
                 kind: content,
             })
+            .boxed()
     }
 }
 
@@ -81,6 +82,7 @@ impl Arbitrary for UsingOne {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (SimplePath::arbitrary(), proptest::option::of(Identifier::arbitrary()))
             .prop_map(|(simple_path, alias)| Self { simple_path, alias })
+            .boxed()
     }
 }
 
@@ -118,6 +120,7 @@ impl Arbitrary for Import {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (Identifier::arbitrary(), proptest::option::of(Identifier::arbitrary()))
             .prop_map(|(identifier, alias)| Self { identifier, alias })
+            .boxed()
     }
 }
 
@@ -141,7 +144,7 @@ pub struct UsingFrom {
 
 impl Input<&super::UsingFrom> for &UsingFrom {
     fn assert(self, output: &super::UsingFrom) -> TestCaseResult {
-        self.imports.as_ref().assert(output.imports().as_ref())?;
+        self.imports.as_ref().assert(output.imports.connected_list.as_ref())?;
         self.from.assert(&output.from().simple_path)
     }
 }
@@ -159,6 +162,7 @@ impl Arbitrary for UsingFrom {
             SimplePath::arbitrary(),
         )
             .prop_map(|(imports, from)| Self { imports, from })
+            .boxed()
     }
 }
 
@@ -199,6 +203,7 @@ impl Arbitrary for UsingKind {
             UsingOne::arbitrary().prop_map(Self::One),
             UsingFrom::arbitrary().prop_map(Self::From),
         ]
+        .boxed()
     }
 }
 
@@ -227,7 +232,7 @@ impl Arbitrary for Using {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        UsingKind::arbitrary().prop_map(|kind| Self { kind })
+        UsingKind::arbitrary().prop_map(|kind| Self { kind }).boxed()
     }
 }
 
@@ -253,7 +258,9 @@ impl Arbitrary for ModuleSignature {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Identifier::arbitrary().prop_map(|identifier| Self { identifier })
+        Identifier::arbitrary()
+            .prop_map(|identifier| Self { identifier })
+            .boxed()
     }
 }
 
@@ -297,6 +304,7 @@ impl Arbitrary for ModuleContent {
             proptest::collection::vec(item_strategy, 0..=6),
         )
             .prop_map(|(usings, items)| Self { usings, items })
+            .boxed()
     }
 }
 
@@ -325,7 +333,7 @@ impl Input<&super::ModuleKind> for &ModuleKind {
         match (self, output) {
             (ModuleKind::File, super::ModuleKind::File(_)) => Ok(()),
             (ModuleKind::Inline(input), super::ModuleKind::Inline(output)) => {
-                input.assert(output.content())
+                input.assert(&output.tree)
             }
             _ => Err(TestCaseError::fail(format!(
                 "expected {self:?}, got {output:?}",
@@ -346,6 +354,7 @@ impl Arbitrary for ModuleKind {
             (ModuleContent::arbitrary_with(Some(item_strategy)))
                 .prop_map(Self::Inline),
         ]
+        .boxed()
     }
 }
 
@@ -390,6 +399,7 @@ impl Arbitrary for ConstantParameter {
                 ty,
                 default,
             })
+            .boxed()
     }
 }
 
@@ -428,6 +438,7 @@ impl Arbitrary for TypeParameter {
             proptest::option::of(r#type::strategy::Type::arbitrary()),
         )
             .prop_map(|(identifier, ty)| Self { identifier, default: ty })
+            .boxed()
     }
 }
 
@@ -481,6 +492,7 @@ impl Arbitrary for GenericParameter {
             TypeParameter::arbitrary().prop_map(Self::Type),
             ConstantParameter::arbitrary().prop_map(Self::Const),
         ]
+        .boxed()
     }
 }
 
@@ -502,7 +514,7 @@ pub struct GenericParameters {
 
 impl Input<&super::GenericParameters> for &GenericParameters {
     fn assert(self, output: &super::GenericParameters) -> TestCaseResult {
-        self.parameter_list.as_ref().assert(output.parameter_list().as_ref())
+        self.parameter_list.as_ref().assert(output.connected_list.as_ref())
     }
 }
 
@@ -516,6 +528,7 @@ impl Arbitrary for GenericParameters {
             ConstantPunctuation::arbitrary(),
         ))
         .prop_map(|parameter_list| Self { parameter_list })
+        .boxed()
     }
 }
 
@@ -552,6 +565,7 @@ impl Arbitrary for WhereClause {
             ConstantPunctuation::arbitrary(),
         )
         .prop_map(|constraint_list| Self { predicate_list: constraint_list })
+        .boxed()
     }
 }
 
@@ -584,6 +598,7 @@ impl Arbitrary for Parameter {
                 irrefutable_pattern,
                 r#type: ty,
             })
+            .boxed()
     }
 }
 
@@ -601,7 +616,7 @@ pub struct Parameters {
 
 impl Input<&super::Parameters> for &Parameters {
     fn assert(self, output: &super::Parameters) -> TestCaseResult {
-        self.parameter_list.as_ref().assert(output.parameter_list().as_ref())
+        self.parameter_list.as_ref().assert(output.connected_list.as_ref())
     }
 }
 
@@ -615,6 +630,7 @@ impl Arbitrary for Parameters {
             ConstantPunctuation::arbitrary(),
         ))
         .prop_map(|parameter_list| Self { parameter_list })
+        .boxed()
     }
 }
 
@@ -644,7 +660,9 @@ impl Arbitrary for ReturnType {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        r#type::strategy::Type::arbitrary().prop_map(|ty| Self { r#type: ty })
+        r#type::strategy::Type::arbitrary()
+            .prop_map(|ty| Self { r#type: ty })
+            .boxed()
     }
 }
 
@@ -704,6 +722,7 @@ impl Arbitrary for FunctionSignature {
                     }
                 },
             )
+            .boxed()
     }
 }
 
@@ -757,16 +776,12 @@ impl Arbitrary for Function {
             AccessModifier::arbitrary(),
             proptest::bool::ANY,
             FunctionSignature::arbitrary(),
-            FunctionBody::arbitrary(),
+            Statements::arbitrary(),
         )
-            .prop_map(
-                |(access_modifier, is_const, signature, body)| Self {
-                    access_modifier,
-                    is_const,
-                    signature,
-                    statements: body,
-                },
-            )
+            .prop_map(|(access_modifier, is_const, signature, statements)| {
+                Self { access_modifier, is_const, signature, statements }
+            })
+            .boxed()
     }
 }
 
@@ -786,7 +801,7 @@ impl Display for Function {
 pub struct ConstantSignature {
     pub identifier: Identifier,
     pub generic_parameters: Option<GenericParameters>,
-    pub ty: r#type::strategy::Type,
+    pub r#type: r#type::strategy::Type,
 }
 
 impl Input<&super::ConstantSignature> for &ConstantSignature {
@@ -795,7 +810,7 @@ impl Input<&super::ConstantSignature> for &ConstantSignature {
         self.generic_parameters
             .as_ref()
             .assert(output.generic_parameters.as_ref())?;
-        self.ty.assert(output.ty())
+        self.r#type.assert(output.r#type())
     }
 }
 
@@ -809,11 +824,12 @@ impl Arbitrary for ConstantSignature {
             proptest::option::of(GenericParameters::arbitrary()),
             r#type::strategy::Type::arbitrary(),
         )
-            .prop_map(|(identifier, generic_parameters, ty)| Self {
+            .prop_map(|(identifier, generic_parameters, r#type)| Self {
                 identifier,
                 generic_parameters,
-                ty,
+                r#type,
             })
+            .boxed()
     }
 }
 
@@ -825,7 +841,7 @@ impl Display for ConstantSignature {
             Display::fmt(generic_parameters, formatter)?;
         }
 
-        write!(formatter, ": {}", self.ty)
+        write!(formatter, ": {}", self.r#type)
     }
 }
 
@@ -855,6 +871,7 @@ impl Arbitrary for ConstantDefinition {
                 expression,
                 where_clause,
             })
+            .boxed()
     }
 }
 
@@ -895,9 +912,12 @@ impl Arbitrary for Constant {
             ConstantSignature::arbitrary(),
             ConstantDefinition::arbitrary(),
         )
-            .prop_map(|(access_modifier, signature, definition)| {
-                Self { access_modifier, signature, definition }
+            .prop_map(|(access_modifier, signature, definition)| Self {
+                access_modifier,
+                signature,
+                definition,
             })
+            .boxed()
     }
 }
 
@@ -938,13 +958,12 @@ impl Arbitrary for MarkerSignature {
             proptest::option::of(GenericParameters::arbitrary()),
             proptest::option::of(WhereClause::arbitrary()),
         )
-            .prop_map(
-                |(identifier, generic_parameters, where_clause)| Self {
-                    identifier,
-                    generic_parameters,
-                    where_clause,
-                },
-            )
+            .prop_map(|(identifier, generic_parameters, where_clause)| Self {
+                identifier,
+                generic_parameters,
+                where_clause,
+            })
+            .boxed()
     }
 }
 
@@ -982,9 +1001,12 @@ impl Arbitrary for Marker {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (AccessModifier::arbitrary(), MarkerSignature::arbitrary()).prop_map(
-            |(access_modifier, signature)| Self { access_modifier, signature },
-        )
+        (AccessModifier::arbitrary(), MarkerSignature::arbitrary())
+            .prop_map(|(access_modifier, signature)| Self {
+                access_modifier,
+                signature,
+            })
+            .boxed()
     }
 }
 
@@ -1045,11 +1067,12 @@ impl Arbitrary for Item {
         ];
 
         if avoid_module {
-            leaf
+            leaf.boxed()
         } else {
             leaf.prop_recursive(4, 24, 6, move |inner| {
                 Module::arbitrary_with(Some(inner)).prop_map(Self::Module)
             })
+            .boxed()
         }
     }
 }
@@ -1097,13 +1120,12 @@ impl Arbitrary for TraitSignature {
             proptest::option::of(GenericParameters::arbitrary()),
             proptest::option::of(WhereClause::arbitrary()),
         )
-            .prop_map(
-                |(identifier, generic_parameters, where_clause)| Self {
-                    identifier,
-                    generic_parameters,
-                    where_clause,
-                },
-            )
+            .prop_map(|(identifier, generic_parameters, where_clause)| Self {
+                identifier,
+                generic_parameters,
+                where_clause,
+            })
+            .boxed()
     }
 }
 
@@ -1151,6 +1173,7 @@ impl Arbitrary for TypeSignature {
                 identifier,
                 generic_parameters,
             })
+            .boxed()
     }
 }
 
@@ -1184,12 +1207,12 @@ impl Arbitrary for TraitFunction {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (AccessModifier::arbitrary(), FunctionSignature::arbitrary()).prop_map(
-            |(access_modifier, function_signature)| Self {
+        (AccessModifier::arbitrary(), FunctionSignature::arbitrary())
+            .prop_map(|(access_modifier, function_signature)| Self {
                 access_modifier,
                 function_signature,
-            },
-        )
+            })
+            .boxed()
     }
 }
 
@@ -1224,13 +1247,12 @@ impl Arbitrary for TraitType {
             TypeSignature::arbitrary(),
             proptest::option::of(WhereClause::arbitrary()),
         )
-            .prop_map(
-                |(access_modifier, type_signature, where_clause)| Self {
-                    access_modifier,
-                    type_signature,
-                    where_clause,
-                },
-            )
+            .prop_map(|(access_modifier, type_signature, where_clause)| Self {
+                access_modifier,
+                type_signature,
+                where_clause,
+            })
+            .boxed()
     }
 }
 
@@ -1273,9 +1295,12 @@ impl Arbitrary for TraitConstant {
             ConstantSignature::arbitrary(),
             proptest::option::of(WhereClause::arbitrary()),
         )
-            .prop_map(|(access_modifier, signature, where_clause)| {
-                Self { access_modifier, signature, where_clause }
+            .prop_map(|(access_modifier, signature, where_clause)| Self {
+                access_modifier,
+                signature,
+                where_clause,
             })
+            .boxed()
     }
 }
 
@@ -1327,6 +1352,7 @@ impl Arbitrary for TraitMember {
             TraitType::arbitrary().prop_map(Self::Type),
             TraitConstant::arbitrary().prop_map(Self::Constant),
         ]
+        .boxed()
     }
 }
 
@@ -1347,7 +1373,7 @@ pub struct TraitBody {
 
 impl Input<&super::TraitBody> for &TraitBody {
     fn assert(self, output: &super::TraitBody) -> TestCaseResult {
-        self.members.assert(output.members())
+        self.members.assert(&output.tree)
     }
 }
 
@@ -1358,6 +1384,7 @@ impl Arbitrary for TraitBody {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::collection::vec(TraitMember::arbitrary(), 0..=6)
             .prop_map(|members| Self { members })
+            .boxed()
     }
 }
 
@@ -1403,6 +1430,7 @@ impl Arbitrary for Trait {
                 signature,
                 body,
             })
+            .boxed()
     }
 }
 
@@ -1414,13 +1442,13 @@ impl Display for Trait {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeDefinition {
-    pub ty: r#type::strategy::Type,
+    pub r#type: r#type::strategy::Type,
     pub where_clause: Option<WhereClause>,
 }
 
 impl Input<&super::TypeDefinition> for &TypeDefinition {
     fn assert(self, output: &super::TypeDefinition) -> TestCaseResult {
-        self.ty.assert(output.ty())?;
+        self.r#type.assert(output.r#type())?;
         self.where_clause.as_ref().assert(output.where_clause().as_ref())
     }
 }
@@ -1434,13 +1462,14 @@ impl Arbitrary for TypeDefinition {
             r#type::strategy::Type::arbitrary(),
             proptest::option::of(WhereClause::arbitrary()),
         )
-            .prop_map(|(ty, where_clause)| Self { ty, where_clause })
+            .prop_map(|(ty, where_clause)| Self { r#type: ty, where_clause })
+            .boxed()
     }
 }
 
 impl Display for TypeDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "= {}", self.ty)?;
+        write!(f, "= {}", self.r#type)?;
 
         if let Some(where_clause) = &self.where_clause {
             write!(f, " {where_clause}")?;
@@ -1475,9 +1504,12 @@ impl Arbitrary for Type {
             TypeSignature::arbitrary(),
             TypeDefinition::arbitrary(),
         )
-            .prop_map(|(access_modifier, signature, definition)| {
-                Self { access_modifier, signature, definition }
+            .prop_map(|(access_modifier, signature, definition)| Self {
+                access_modifier,
+                signature,
+                definition,
             })
+            .boxed()
     }
 }
 
@@ -1521,6 +1553,7 @@ impl Arbitrary for Field {
                 identifier,
                 ty,
             })
+            .boxed()
     }
 }
 
@@ -1537,7 +1570,7 @@ pub struct StructBody {
 
 impl Input<&super::StructBody> for &StructBody {
     fn assert(self, output: &super::StructBody) -> TestCaseResult {
-        self.field_list.as_ref().assert(output.field_list().as_ref())
+        self.field_list.as_ref().assert(output.connected_list.as_ref())
     }
 }
 
@@ -1551,6 +1584,7 @@ impl Arbitrary for StructBody {
             ConstantPunctuation::<','>::arbitrary(),
         ))
         .prop_map(|struct_member_list| Self { field_list: struct_member_list })
+        .boxed()
     }
 }
 
@@ -1595,13 +1629,12 @@ impl Arbitrary for StructSignature {
             proptest::option::of(GenericParameters::arbitrary()),
             proptest::option::of(WhereClause::arbitrary()),
         )
-            .prop_map(
-                |(identifier, generic_parameters, where_clause)| Self {
-                    identifier,
-                    generic_parameters,
-                    where_clause,
-                },
-            )
+            .prop_map(|(identifier, generic_parameters, where_clause)| Self {
+                identifier,
+                generic_parameters,
+                where_clause,
+            })
+            .boxed()
     }
 }
 
@@ -1651,6 +1684,7 @@ impl Arbitrary for Struct {
                 signature,
                 body,
             })
+            .boxed()
     }
 }
 
@@ -1687,13 +1721,12 @@ impl Arbitrary for EnumSignature {
             proptest::option::of(GenericParameters::arbitrary()),
             proptest::option::of(WhereClause::arbitrary()),
         )
-            .prop_map(
-                |(identifier, generic_parameters, where_clause)| Self {
-                    identifier,
-                    generic_parameters,
-                    where_clause,
-                },
-            )
+            .prop_map(|(identifier, generic_parameters, where_clause)| Self {
+                identifier,
+                generic_parameters,
+                where_clause,
+            })
+            .boxed()
     }
 }
 
@@ -1724,7 +1757,7 @@ impl Input<&super::Variant> for &Variant {
         self.identifier.assert(output.identifier())?;
         match (self.association.as_ref(), output.association().as_ref()) {
             (None, None) => Ok(()),
-            (Some(expected), Some(output)) => expected.assert(&output.r#type),
+            (Some(expected), Some(output)) => expected.assert(&output.tree),
             (expected, output) => Err(TestCaseError::fail(format!(
                 "expected associated value {expected:?}, got {output:?}",
             ))),
@@ -1745,6 +1778,7 @@ impl Arbitrary for Variant {
                 identifier,
                 association: variant_association,
             })
+            .boxed()
     }
 }
 
@@ -1767,7 +1801,7 @@ pub struct EnumBody {
 
 impl Input<&super::EnumBody> for &EnumBody {
     fn assert(self, output: &super::EnumBody) -> TestCaseResult {
-        self.variant_list.as_ref().assert(output.variant_list().as_ref())
+        self.variant_list.as_ref().assert(output.connected_list().as_ref())
     }
 }
 
@@ -1781,6 +1815,7 @@ impl Arbitrary for EnumBody {
             ConstantPunctuation::arbitrary(),
         ))
         .prop_map(|variant_list| Self { variant_list })
+        .boxed()
     }
 }
 
@@ -1824,6 +1859,7 @@ impl Arbitrary for Enum {
                 signature,
                 body,
             })
+            .boxed()
     }
 }
 
@@ -1873,6 +1909,7 @@ impl Arbitrary for ImplementationMember {
             Function::arbitrary().prop_map(Self::Function),
             Constant::arbitrary().prop_map(Self::Constant),
         ]
+        .boxed()
     }
 }
 
@@ -1893,7 +1930,7 @@ pub struct ImplementationBody {
 
 impl Input<&super::ImplementationBody> for &ImplementationBody {
     fn assert(self, output: &super::ImplementationBody) -> TestCaseResult {
-        self.members.assert(output.members())
+        self.members.assert(&output.tree)
     }
 }
 
@@ -1904,6 +1941,7 @@ impl Arbitrary for ImplementationBody {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (proptest::collection::vec(ImplementationMember::arbitrary(), 0..=6))
             .prop_map(|members| Self { members })
+            .boxed()
     }
 }
 
@@ -1965,6 +2003,7 @@ impl Arbitrary for ImplementationSignature {
                     where_clause,
                 },
             )
+            .boxed()
     }
 }
 
@@ -2035,6 +2074,7 @@ impl Arbitrary for ImplementationKind {
             ImplementationBody::arbitrary().prop_map(Self::Positive),
             Just(Self::Empty),
         ]
+        .boxed()
     }
 }
 
@@ -2068,6 +2108,7 @@ impl Arbitrary for Implementation {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (ImplementationSignature::arbitrary(), ImplementationKind::arbitrary())
             .prop_map(|(signature, kind)| Self { signature, kind })
+            .boxed()
     }
 }
 

@@ -1,8 +1,9 @@
 //! Contains the [`Parse`] trait and various implementations for parser
 //! combinators.
 
-use std::{borrow, fmt::Debug, vec::Drain};
+use std::{borrow, cmp::Ordering, fmt::Debug, vec::Drain};
 
+use paste::paste;
 use pernixc_base::handler::Handler;
 use pernixc_lexical::{
     token::{KeywordKind, Punctuation},
@@ -65,6 +66,8 @@ where
             })
         }
     }
+
+    fn commit_count(&self) -> usize { 1 }
 }
 
 /// An unexpected token was found.
@@ -96,6 +99,21 @@ pub trait Parse<'a> {
         handler: &dyn Handler<error::Error>,
     ) -> Result<Self::Output>;
 
+    /// The number of eaten tokens that the parser will commit to the current
+    /// path. The default value is `1`.
+    fn commit_count(&self) -> usize;
+
+    /// Changes the number of commiting tokens, which is most likely 1 for
+    /// most parsers.
+    fn commit_in(self, count: usize) -> CommitIn<Self>
+    where
+        Self: Sized,
+    {
+        assert!(count > 0, "commit count must be greater than 0");
+
+        CommitIn { parser: self, count }
+    }
+
     /// Parses the syntax tree and returns the output if the parser is
     /// successful.
     fn parse_syntax(
@@ -110,6 +128,8 @@ pub trait Parse<'a> {
 
         match self.parse(&mut state_machine, handler) {
             Ok(output) => {
+                // if you see this error, then some of the parser errors were
+                // discarded or not properly handled
                 assert!(state_machine.expected.is_empty(), "should be empty");
 
                 Some(output)
@@ -124,17 +144,6 @@ pub trait Parse<'a> {
         }
     }
 
-    /// Tries an alternative parser if the current parser fails.
-    fn or_else<N: Parse<'a, Output = Self::Output>>(
-        self,
-        next: N,
-    ) -> OrElse<Self, N>
-    where
-        Self: Sized,
-    {
-        OrElse { previous: self, next }
-    }
-
     /// Maps the output of the parser to another output.
     fn map<O, F: FnOnce(Self::Output) -> O>(self, map: F) -> Map<Self, F>
     where
@@ -146,7 +155,7 @@ pub trait Parse<'a> {
     /// Converts the output of the parser to an owned type.
     fn to_owned<O: borrow::ToOwned + 'static>(self) -> ToOwned<Self>
     where
-        Self: Parse<'a, Output = &'a O> + Sized,
+        Self: Sized + Parse<'a, Output = &'a O>,
     {
         ToOwned(self)
     }
@@ -169,7 +178,7 @@ pub trait Parse<'a> {
     /// not match the parser.
     fn keep_take(self) -> KeepTake<Self>
     where
-        Self: Sized + Clone,
+        Self: Sized,
     {
         KeepTake(self)
     }
@@ -196,20 +205,14 @@ pub trait Parse<'a> {
 
     /// Keeps parsing the parser while the **first** token matches the parser
     /// and folds the output.
-    fn keep_fold<
-        R: Parse<'a> + Clone,
-        F: FnMut(Self::Output, R::Output) -> Self::Output,
-    >(
-        self,
-        rest: R,
-        fold: F,
-    ) -> KeepFold<Self, R, F>
+    fn keep_fold<R, F>(self, rest: R, fold: F) -> KeepFold<Self, R, F>
     where
         Self: Sized,
     {
         KeepFold { initial: self, rest, fold }
     }
 
+    /// Parses the syntax tree and reports an error if the parser fails.
     fn parse_and_report(
         self,
         state_machine: &mut StateMachine<'a>,
@@ -236,6 +239,11 @@ pub trait Parse<'a> {
     }
 
     /// Parses the given parser and drains the expected tokens if failed.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`Unexpected`] and the iterator of the expected tokens at
+    /// the time of the error.
     fn parse_and_drain<'s>(
         self,
         state_machine: &'s mut StateMachine<'a>,
@@ -293,6 +301,8 @@ macro_rules! expect_implements_parse {
                     });
                 }
             }
+
+            fn commit_count(&self) -> usize { 1 }
         }
     };
 }
@@ -304,105 +314,6 @@ expect_implements_parse!(expect::Character);
 expect_implements_parse!(KeywordKind);
 expect_implements_parse!(char);
 expect_implements_parse!(Delimiter);
-
-/// Created by the [`Parse::or_else`] method.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct OrElse<P, N> {
-    previous: P,
-    next: N,
-}
-
-/// An iterator of [`Expected`] tokens that were expected by the [`OrElse`]
-/// parser.
-#[derive(Debug, Clone)]
-#[allow(missing_docs)]
-pub enum OrElseExpectedIter<P, N> {
-    Previous(P),
-    Next(N),
-    Both(std::iter::Chain<P, N>),
-}
-
-impl<P: Iterator<Item = Expected>, N: Iterator<Item = Expected>> Iterator
-    for OrElseExpectedIter<P, N>
-{
-    type Item = Expected;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Previous(iter) => iter.next(),
-            Self::Next(iter) => iter.next(),
-            Self::Both(iter) => iter.next(),
-        }
-    }
-}
-
-impl<'a, P: Parse<'a>, N: Parse<'a, Output = P::Output>> Parse<'a>
-    for OrElse<P, N>
-{
-    type Output = P::Output;
-
-    fn parse(
-        self,
-        state_machine: &mut StateMachine<'a>,
-        handler: &dyn Handler<error::Error>,
-    ) -> Result<Self::Output> {
-        let starting_location = state_machine.location;
-        let starting_eaten = state_machine.eaten_tokens;
-        let starting_expecteds_len = state_machine.expected.len();
-
-        let previous_error = match self.previous.parse(state_machine, handler) {
-            // return the output now
-            Ok(output) => return Ok(output),
-            Err(err) => err,
-        };
-
-        let previous_location = state_machine.location;
-        let previous_eaten = state_machine.eaten_tokens;
-        let previous_expecteds_len = state_machine.expected.len();
-
-        // reset the state machine to the previous state
-        state_machine.location = starting_location;
-        state_machine.eaten_tokens = starting_eaten;
-
-        let next_error = match self.next.parse(state_machine, handler) {
-            // return the output now
-            Ok(output) => {
-                // pops the expected tokens that were added by the previous
-                // parser
-                state_machine.expected.truncate(starting_expecteds_len);
-
-                return Ok(output);
-            }
-            Err(err) => err,
-        };
-
-        match state_machine.eaten_tokens.cmp(&previous_eaten) {
-            std::cmp::Ordering::Equal => return Err(next_error),
-
-            // the previous parser has consumed more tokens than the next parser
-            std::cmp::Ordering::Less => {
-                // pops the expected tokens that were added by the next parser
-                state_machine.expected.truncate(previous_expecteds_len);
-
-                state_machine.location = previous_location;
-                state_machine.eaten_tokens = previous_eaten;
-
-                return Err(previous_error);
-            }
-
-            std::cmp::Ordering::Greater => {
-                // remove the expected tokens that were added by the previous
-                // parser
-
-                state_machine
-                    .expected
-                    .drain(starting_expecteds_len..previous_expecteds_len);
-
-                return Err(next_error);
-            }
-        }
-    }
-}
 
 impl<
         'a,
@@ -419,13 +330,15 @@ impl<
     ) -> Result<Self::Output> {
         self(state_machine, handler)
     }
+
+    fn commit_count(&self) -> usize { 1 }
 }
 
 /// Created by the [`Parse::to_owned`] method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ToOwned<T>(T);
 
-impl<'a, O: borrow::ToOwned + 'static, T: Parse<'a, Output = &'a O>> Parse<'a>
+impl<'a, O: std::borrow::ToOwned + 'a, T: Parse<'a, Output = &'a O>> Parse<'a>
     for ToOwned<T>
 {
     type Output = O::Owned;
@@ -437,6 +350,8 @@ impl<'a, O: borrow::ToOwned + 'static, T: Parse<'a, Output = &'a O>> Parse<'a>
     ) -> Result<Self::Output> {
         self.0.parse(state_machine, handler).map(std::borrow::ToOwned::to_owned)
     }
+
+    fn commit_count(&self) -> usize { self.0.commit_count() }
 }
 
 /// Created by the [`Parse::map`] method.
@@ -456,34 +371,12 @@ impl<'a, P: Parse<'a>, F: FnOnce(P::Output) -> O, O> Parse<'a> for Map<P, F> {
     ) -> Result<Self::Output> {
         Ok((self.map)(self.parser.parse(state_machine, handler)?))
     }
+
+    fn commit_count(&self) -> usize { self.parser.commit_count() }
 }
 
 macro_rules! tuple_implements_syntax {
-    ($iter:ident, $t:ident, $($i:ident),*) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        #[allow(missing_docs)]
-        pub enum $iter<$t, $($i),*> {
-            $t($t),
-            $(
-                $i($i),
-            )*
-        }
-
-        impl<$t: Iterator<Item = Expected>, $($i: Iterator<Item = Expected>),*> Iterator
-            for $iter<$t, $($i),*>
-        {
-            type Item = Expected;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                match self {
-                    Self::$t(iter) => iter.next(),
-                    $(
-                        Self::$i(iter) => iter.next(),
-                    )*
-                }
-            }
-        }
-
+    ($t:ident, $($i:ident),*) => {
         impl<'a, $t: Parse<'a>, $($i: Parse<'a>),*> Parse<'a> for ($t, $($i),*) {
             type Output = ($t::Output, $($i::Output),*);
 
@@ -502,19 +395,25 @@ macro_rules! tuple_implements_syntax {
                     ),*
                 ))
             }
+
+            // the first one is the committer
+            #[allow(non_snake_case)]
+            fn commit_count(&self) -> usize {
+                self.0.commit_count()
+            }
         }
     };
 }
 
-tuple_implements_syntax!(TupleExpectedIter2, A, B);
-tuple_implements_syntax!(TupleExpectedIter3, A, B, C);
-tuple_implements_syntax!(TupleExpectedIter4, A, B, C, D);
-tuple_implements_syntax!(TupleExpectedIter5, A, B, C, D, E);
-tuple_implements_syntax!(TupleExpectedIter6, A, B, C, D, E, F);
-tuple_implements_syntax!(TupleExpectedIter7, A, B, C, D, E, F, G);
-tuple_implements_syntax!(TupleExpectedIter8, A, B, C, D, E, F, G, H);
-tuple_implements_syntax!(TupleExpectedIter9, A, B, C, D, E, F, G, H, I);
-tuple_implements_syntax!(TupleExpectedIter10, A, B, C, D, E, F, G, H, I, J);
+tuple_implements_syntax!(A, B);
+tuple_implements_syntax!(A, B, C);
+tuple_implements_syntax!(A, B, C, D);
+tuple_implements_syntax!(A, B, C, D, E);
+tuple_implements_syntax!(A, B, C, D, E, F);
+tuple_implements_syntax!(A, B, C, D, E, F, G);
+tuple_implements_syntax!(A, B, C, D, E, F, G, H);
+tuple_implements_syntax!(A, B, C, D, E, F, G, H, I);
+tuple_implements_syntax!(A, B, C, D, E, F, G, H, I, J);
 
 /// Created by the [`Parse::or_none`] method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -532,12 +431,14 @@ impl<'a, T: Parse<'a>> Parse<'a> for OrNone<T> {
         let current_eaten = state_machine.eaten_tokens;
         let expected_len = state_machine.expected.len();
 
+        let commit_count = self.0.commit_count();
+
         match self.0.parse(state_machine, handler) {
             Ok(output) => Ok(Some(output)),
             Err(err) => {
-                // if have eaten more than one token, then return the error
-                // this mean that the parser has committed to the current path
-                if state_machine.eaten_tokens > current_eaten + 1 {
+                // if the parser has consumed token more than the commit count,
+                // then return the error
+                if state_machine.eaten_tokens > current_eaten + commit_count {
                     return Err(err);
                 }
 
@@ -549,6 +450,8 @@ impl<'a, T: Parse<'a>> Parse<'a> for OrNone<T> {
             }
         }
     }
+
+    fn commit_count(&self) -> usize { self.0.commit_count() }
 }
 
 /// Created by the [`Parse::keep_take`] method.
@@ -573,6 +476,8 @@ impl<'a, T: Parse<'a> + Clone> Parse<'a> for KeepTake<T> {
 
         Ok(output)
     }
+
+    fn commit_count(&self) -> usize { self.0.commit_count() }
 }
 
 /// Created by the [`Parse::step_into`] method.
@@ -667,6 +572,9 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
             }
         }
     }
+
+    // commit on the delimiter
+    fn commit_count(&self) -> usize { 1 }
 }
 
 /// Created by the [`Parse::keep_fold`] method.
@@ -708,6 +616,8 @@ impl<
 
         Ok(output)
     }
+
+    fn commit_count(&self) -> usize { self.initial.commit_count() }
 }
 
 /// Created by the [`Parse::keep_take_all`] method.
@@ -762,7 +672,176 @@ impl<'a, T: Parse<'a> + Clone> Parse<'a> for KeepTakeAll<T> {
 
         Ok(list)
     }
+
+    fn commit_count(&self) -> usize { self.element_parser.commit_count() }
 }
+
+/// Created by the [`Branch::branch`] method.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TupleBranch<T>(T);
+
+/// A trait for branching parsers.
+pub trait Branch {
+    /// Creates a branch parser that will try to parse multiple choices of
+    /// parsers and return the output of the first successful parser.
+    fn branch(self) -> TupleBranch<Self>
+    where
+        Self: Sized,
+    {
+        TupleBranch(self)
+    }
+}
+
+macro_rules! implements_tuple_branch {
+    ($t:ident, $($i:ident),*) => {
+        paste!{
+            impl<'a, $t: Parse<'a>, $($i: Parse<'a, Output = $t::Output>),*>
+                Branch for ($t, $($i),*) {}
+
+            impl<'a, $t: Parse<'a>, $($i: Parse<'a, Output = $t::Output>),*>
+                Parse<'a> for TupleBranch<($t, $($i),*)> {
+                type Output = $t::Output;
+
+                #[allow(non_snake_case, unused_assignments)]
+                fn parse(
+                    self,
+                    state_machine: &mut StateMachine<'a>,
+                    handler: &dyn Handler<error::Error>,
+                ) -> Result<Self::Output> {
+                    let starting_location = state_machine.location;
+                    let starting_eaten = state_machine.eaten_tokens;
+                    let starting_expected_len = state_machine.expected.len();
+
+                    let ($t, $($i),*) = self.0;
+
+                    let current_len = state_machine.expected.len();
+                    let mut max_err =
+                        match $t.parse(state_machine, handler) {
+                            // return the output now
+                            Ok(output) => return Ok(output),
+                            Err(err) => err,
+                        };
+
+
+                    let mut current_expected_range =
+                        current_len..state_machine.expected.len();
+
+                    let mut max_eaten = state_machine.eaten_tokens;
+                    let mut max_location = state_machine.location;
+
+                    $(
+                        // reset the state machine to the previous state
+                        state_machine.location = starting_location;
+                        state_machine.eaten_tokens = starting_eaten;
+
+                        let next_err = match $i.parse(state_machine, handler) {
+                            // return the output now
+                            Ok(output) => {
+                                state_machine
+                                    .expected
+                                    .truncate(starting_expected_len);
+
+                                return Ok(output);
+                            }
+                            Err(err) => err,
+                        };
+
+                        match state_machine.eaten_tokens.cmp(&max_eaten) {
+                            Ordering::Equal => {
+                                max_err = next_err;
+                                max_location = state_machine.location;
+                                max_eaten = state_machine.eaten_tokens;
+
+                                current_expected_range =
+                                    current_expected_range.start..
+                                        state_machine.expected.len();
+                            }
+
+                            Ordering::Less => {
+                                // remove new expected token that was added by
+                                // the next parser
+                                state_machine
+                                    .expected
+                                    .truncate(current_expected_range.end);
+                            }
+
+                            Ordering::Greater => {
+                                // remove the expected tokens that were added by
+                                // the previous parser
+                                state_machine
+                                    .expected
+                                    .drain(current_expected_range.clone());
+
+                                max_err = next_err;
+                                max_location = state_machine.location;
+                                max_eaten = state_machine.eaten_tokens;
+
+                                current_expected_range =
+                                    current_expected_range.start..
+                                        state_machine.expected.len();
+                            }
+                        }
+                    )*
+
+                    state_machine.location = max_location;
+                    state_machine.eaten_tokens = max_eaten;
+
+                    return Err(max_err);
+                }
+
+                #[allow(non_snake_case)]
+                fn commit_count(&self) -> usize {
+                    let ($t, $($i),*) = &self.0;
+
+                    let mut count = $t.commit_count();
+
+                    $(
+                        count = count.max($i.commit_count());
+                    )*
+
+                    count
+                }
+            }
+        }
+    };
+}
+
+/// Created by the [`Parse::commit_in`] method.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CommitIn<T> {
+    parser: T,
+    count: usize,
+}
+
+impl<'a, T: Parse<'a> + Clone> Parse<'a> for CommitIn<T> {
+    type Output = T::Output;
+
+    fn parse(
+        self,
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> Result<Self::Output> {
+        self.parser.parse(state_machine, handler)
+    }
+
+    fn commit_count(&self) -> usize { self.count }
+}
+
+implements_tuple_branch!(A, B);
+implements_tuple_branch!(A, B, C);
+implements_tuple_branch!(A, B, C, D);
+implements_tuple_branch!(A, B, C, D, E);
+implements_tuple_branch!(A, B, C, D, E, F);
+implements_tuple_branch!(A, B, C, D, E, F, G);
+implements_tuple_branch!(A, B, C, D, E, F, G, H);
+implements_tuple_branch!(A, B, C, D, E, F, G, H, I);
+implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J);
+implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J, K);
+implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J, K, L);
+implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J, K, L, M);
+implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
+implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
+implements_tuple_branch!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 
 #[cfg(test)]
 mod tests;

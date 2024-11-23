@@ -112,12 +112,12 @@ impl Error {
     /// # Errors
     ///
     /// See [`ConvertUnexpectedError`] for possible errors
-    pub fn new<'a>(
-        tree: &Tree<'a>,
+    pub fn new(
+        tree: &Tree,
         unexpected: Unexpected,
         expected: Vec<Expected>,
     ) -> Result<Self, ConvertUnexpectedError> {
-        if expected.len() == 0 {
+        if expected.is_empty() {
             return Err(ConvertUnexpectedError::EmptyExpectedIterator);
         }
 
@@ -178,7 +178,7 @@ impl Error {
             }
         });
 
-        Ok(Error {
+        Ok(Self {
             diagnostic_span: prior_insignificant.as_ref().map_or_else(
                 || match &found {
                     Found::Token(token) => token.span().clone(),

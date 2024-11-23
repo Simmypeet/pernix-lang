@@ -22,10 +22,13 @@ use super::{
 };
 use crate::{
     error,
-    state_machine::{parse, StateMachine},
+    state_machine::{
+        parse::{self, Branch},
+        StateMachine,
+    },
 };
 
-// pub mod strategy;
+pub mod strategy;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -47,10 +50,14 @@ impl SyntaxTree for Statement {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        VariableDeclaration::parse
-            .map(Self::VariableDeclaration)
-            .or_else(Expression::parse.then(
-                |expression, state_machine, handler| match expression {
+        (
+            VariableDeclaration::parse.map(Self::VariableDeclaration),
+            |state_machine: &mut StateMachine<'_>,
+             handler: &dyn Handler<error::Error>| {
+                let expression =
+                    Expression::parse.parse(state_machine, handler)?;
+
+                match expression {
                     expression @ (Expression::Binary(_)
                     | Expression::Terminator(_)) => {
                         let semi_expression = match expression {
@@ -75,8 +82,10 @@ impl SyntaxTree for Statement {
                     Expression::Brace(brace) => {
                         Ok(Self::Expressive(Expressive::Brace(brace)))
                     }
-                },
-            ))
+                }
+            },
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }

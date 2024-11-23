@@ -50,6 +50,7 @@ impl Arbitrary for Statement {
             VariableDeclaration::arbitrary_with(args)
                 .prop_map(Self::VariableDeclaration),
         ]
+        .boxed()
     }
 }
 
@@ -101,6 +102,7 @@ impl Arbitrary for VariableDeclaration {
                 ty,
                 expression,
             })
+            .boxed()
     }
 }
 
@@ -149,15 +151,17 @@ impl Arbitrary for Expressive {
             Expression::arbitrary_with((args.1, None, None))
         });
 
-        expr_strategy.prop_map(|x| match x {
-            Expression::Binary(x) => {
-                Self::Semi(Semi { expression: SemiExpression::Binary(x) })
-            }
-            Expression::Terminator(x) => {
-                Self::Semi(Semi { expression: SemiExpression::Terminator(x) })
-            }
-            Expression::Brace(x) => Self::Brace(x),
-        })
+        expr_strategy
+            .prop_map(|x| match x {
+                Expression::Binary(x) => {
+                    Self::Semi(Semi { expression: SemiExpression::Binary(x) })
+                }
+                Expression::Terminator(x) => Self::Semi(Semi {
+                    expression: SemiExpression::Terminator(x),
+                }),
+                Expression::Brace(x) => Self::Brace(x),
+            })
+            .boxed()
     }
 }
 
@@ -228,7 +232,7 @@ pub struct Statements {
 
 impl Input<&super::Statements> for &Statements {
     fn assert(self, output: &super::Statements) -> TestCaseResult {
-        self.statements.assert(output.statements())
+        self.statements.assert(&output.tree)
     }
 }
 
@@ -248,6 +252,7 @@ impl Arbitrary for Statements {
 
         proptest::collection::vec(statement, 0..=6)
             .prop_map(|statements| Self { statements })
+            .boxed()
     }
 }
 

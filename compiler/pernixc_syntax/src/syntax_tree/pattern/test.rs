@@ -14,10 +14,7 @@ proptest! {
     ) {
         let source = irrefutable_input.to_string();
 
-        let irrefutable = syntax_tree::test::parse(
-            &source,
-            |parser, handler| parser.parse_irrefutable_pattern(handler)
-        )?;
+        let irrefutable = syntax_tree::test::parse(&source)?;
 
         irrefutable_input.assert(&irrefutable)?;
     }
@@ -30,10 +27,7 @@ proptest! {
     ) {
         let source = refutable_input.to_string();
 
-        let irrefutable = syntax_tree::test::parse(
-            &source,
-            |parser, handler| parser.parse_refutable_pattern(handler)
-        )?;
+        let irrefutable = syntax_tree::test::parse(&source)?;
 
         refutable_input.assert(&irrefutable)?;
     }

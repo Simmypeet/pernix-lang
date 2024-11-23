@@ -15,10 +15,7 @@ proptest! {
     ) {
         let source = item_input.to_string();
 
-        let item = syntax_tree::test::parse(
-            &source,
-            |parser, handler| parser.parse_item(handler)
-        )?;
+        let item = syntax_tree::test::parse(&source)?;
 
         item_input.assert(&item)?;
     }

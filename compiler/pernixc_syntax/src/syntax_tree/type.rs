@@ -20,13 +20,13 @@ use super::{
 use crate::{
     error,
     state_machine::{
-        parse::{self, ExpectExt},
+        parse::{self, Branch, ExpectExt},
         StateMachine,
     },
     syntax_tree::QualifiedIdentifier,
 };
 
-// pub mod strategy;
+pub mod strategy;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -66,21 +66,22 @@ impl SyntaxTree for Primitive {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        KeywordKind::Bool
-            .to_owned()
-            .map(Primitive::Bool)
-            .or_else(KeywordKind::Float32.to_owned().map(Primitive::Float32))
-            .or_else(KeywordKind::Float64.to_owned().map(Primitive::Float64))
-            .or_else(KeywordKind::Int8.to_owned().map(Primitive::Int8))
-            .or_else(KeywordKind::Int16.to_owned().map(Primitive::Int16))
-            .or_else(KeywordKind::Int32.to_owned().map(Primitive::Int32))
-            .or_else(KeywordKind::Int64.to_owned().map(Primitive::Int64))
-            .or_else(KeywordKind::Uint8.to_owned().map(Primitive::Uint8))
-            .or_else(KeywordKind::Uint16.to_owned().map(Primitive::Uint16))
-            .or_else(KeywordKind::Uint32.to_owned().map(Primitive::Uint32))
-            .or_else(KeywordKind::Uint64.to_owned().map(Primitive::Uint64))
-            .or_else(KeywordKind::Usize.to_owned().map(Primitive::Usize))
-            .or_else(KeywordKind::Isize.to_owned().map(Primitive::Isize))
+        (
+            KeywordKind::Bool.to_owned().map(Self::Bool),
+            KeywordKind::Float32.to_owned().map(Self::Float32),
+            KeywordKind::Float64.to_owned().map(Self::Float64),
+            KeywordKind::Int8.to_owned().map(Self::Int8),
+            KeywordKind::Int16.to_owned().map(Self::Int16),
+            KeywordKind::Int32.to_owned().map(Self::Int32),
+            KeywordKind::Int64.to_owned().map(Self::Int64),
+            KeywordKind::Uint8.to_owned().map(Self::Uint8),
+            KeywordKind::Uint16.to_owned().map(Self::Uint16),
+            KeywordKind::Uint32.to_owned().map(Self::Uint32),
+            KeywordKind::Uint64.to_owned().map(Self::Uint64),
+            KeywordKind::Usize.to_owned().map(Self::Usize),
+            KeywordKind::Isize.to_owned().map(Self::Isize),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -186,6 +187,7 @@ impl SyntaxTree for Unpackable {
                 '.'.no_skip().to_owned(),
                 '.'.no_skip().to_owned(),
             )
+                .commit_in(3)
                 .or_none(),
             Type::parse.map(Box::new),
         )
@@ -414,16 +416,18 @@ impl SyntaxTree for Type {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Primitive::parse
-            .map(Self::Primitive)
-            .or_else(QualifiedIdentifier::parse.map(Self::QualifiedIdentifier))
-            .or_else(Reference::parse.map(Self::Reference))
-            .or_else(Pointer::parse.map(Self::Pointer))
-            .or_else(Tuple::parse.map(Self::Tuple))
-            .or_else(Local::parse.map(Self::Local))
-            .or_else(Array::parse.map(Self::Array))
-            .or_else(Phantom::parse.map(Self::Phantom))
-            .or_else(Elided::parse.map(Self::Elided))
+        (
+            Primitive::parse.map(Self::Primitive),
+            QualifiedIdentifier::parse.map(Self::QualifiedIdentifier),
+            Reference::parse.map(Self::Reference),
+            Pointer::parse.map(Self::Pointer),
+            Tuple::parse.map(Self::Tuple),
+            Local::parse.map(Self::Local),
+            Array::parse.map(Self::Array),
+            Phantom::parse.map(Self::Phantom),
+            Elided::parse.map(Self::Elided),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }

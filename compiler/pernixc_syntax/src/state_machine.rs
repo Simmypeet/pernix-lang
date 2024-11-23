@@ -28,6 +28,7 @@ pub struct StateMachine<'a> {
     #[get_copy = "pub"]
     eaten_tokens: usize,
 
+    correct_expected_len: usize,
     expected: Vec<Expected>,
 }
 
@@ -61,6 +62,7 @@ impl<'a> StateMachine<'a> {
             location: Location::new(0, 0),
             eaten_tokens: 0,
             expected: Vec::new(),
+            correct_expected_len: 0,
         }
     }
 
@@ -125,6 +127,13 @@ impl<'a> StateMachine<'a> {
     /// returns `None`.
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<(&'a TokenKind, usize)> {
+        assert_eq!(
+            self.expected.len(),
+            self.correct_expected_len,
+            "invariant violated: make sure that you haven't discarded the \
+             error"
+        );
+
         // counts as eaten no matter what
         self.eaten_tokens += 1;
 
@@ -153,6 +162,13 @@ impl<'a> StateMachine<'a> {
         &mut self,
         f: impl FnOnce(&mut Self, Location) -> O,
     ) -> Result<O, StepIntoError> {
+        assert_eq!(
+            self.expected.len(),
+            self.correct_expected_len,
+            "invariant violated: make sure that you haven't discarded the \
+             error"
+        );
+
         // counts as eaten no matter what
         self.eaten_tokens += 1;
 
@@ -171,6 +187,7 @@ impl<'a> StateMachine<'a> {
                 location: Location::new(delimited_node_index, 0),
                 eaten_tokens: 0,
                 expected: self.take_expected(),
+                correct_expected_len: self.correct_expected_len,
             };
 
             let result = f(
@@ -185,6 +202,7 @@ impl<'a> StateMachine<'a> {
 
             Ok(result)
         } else {
+            self.location.token_index = tok_index + 1;
             return Err(StepIntoError::NotDelimited);
         };
 
@@ -210,6 +228,7 @@ impl<'a> StateMachine<'a> {
     }
 
     /// Gets the length of expected tokens.
+    #[must_use]
     pub fn expected_len(&self) -> usize { self.expected.len() }
 
     /// Takes the expected vector and returns it.

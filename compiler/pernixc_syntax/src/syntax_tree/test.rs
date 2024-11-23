@@ -8,7 +8,11 @@ use pernixc_lexical::{
     token::KeywordKind,
     token_stream::{Delimiter, TokenStream, Tree},
 };
-use proptest::{prelude::TestCaseError, proptest};
+use pernixc_tests::input::Input;
+use proptest::{
+    prelude::{Arbitrary, TestCaseError},
+    proptest,
+};
 
 use super::SyntaxTree;
 use crate::{
@@ -19,8 +23,8 @@ use crate::{
     },
 };
 
-pub fn parse<T, S: SyntaxTree>(source: &str) -> Result<T, TestCaseError> {
-    let (token_stream, _) = create_token_stream("[]".to_string());
+pub fn parse<S: SyntaxTree>(source: &str) -> Result<S, TestCaseError> {
+    let (token_stream, _) = create_token_stream(source.to_string());
 
     let tree = Tree::new(&token_stream);
     let storage: Storage<error::Error> = Storage::new();
@@ -51,7 +55,7 @@ proptest! {
         qualified_identifier_input in QualifiedIdentifier::arbitrary(),
     ) {
         let source = qualified_identifier_input.to_string();
-        let qualified_identifier = parse(&source)?;
+        let qualified_identifier = parse::<super::QualifiedIdentifier>(&source)?;
 
         qualified_identifier_input.assert(&qualified_identifier)?;
     }

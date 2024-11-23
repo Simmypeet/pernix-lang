@@ -18,10 +18,13 @@ use super::{
 };
 use crate::{
     error,
-    state_machine::{parse, StateMachine},
+    state_machine::{
+        parse::{self, Branch},
+        StateMachine,
+    },
 };
 
-// pub mod strategy;
+pub mod strategy;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -378,9 +381,11 @@ impl SyntaxTree for OutlivesOperand {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        LifetimeParameter::parse
-            .map(OutlivesOperand::LifetimeParameter)
-            .or_else(r#type::Type::parse.map(OutlivesOperand::Type))
+        (
+            LifetimeParameter::parse.map(OutlivesOperand::LifetimeParameter),
+            r#type::Type::parse.map(OutlivesOperand::Type),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -626,13 +631,15 @@ impl SyntaxTree for Predicate {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        TraitTypeEquality::parse
-            .map(Predicate::TraitTypeEquality)
-            .or_else(Trait::parse.map(Predicate::Trait))
-            .or_else(Outlives::parse.map(Predicate::Outlives))
-            .or_else(ConstantType::parse.map(Predicate::ConstantType))
-            .or_else(Tuple::parse.map(Predicate::Tuple))
-            .or_else(Marker::parse.map(Predicate::Marker))
+        (
+            TraitTypeEquality::parse.map(Self::TraitTypeEquality),
+            Trait::parse.map(Self::Trait),
+            Outlives::parse.map(Self::Outlives),
+            ConstantType::parse.map(Self::ConstantType),
+            Tuple::parse.map(Self::Tuple),
+            Marker::parse.map(Self::Marker),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }

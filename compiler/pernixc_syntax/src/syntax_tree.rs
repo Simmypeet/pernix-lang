@@ -19,7 +19,7 @@ use crate::{
     error,
     expect::{self, Expected},
     state_machine::{
-        parse::{self, ExpectExt, Parse, StepInto},
+        parse::{self, Branch, ExpectExt, Parse, StepInto},
         StateMachine,
     },
 };
@@ -30,7 +30,7 @@ pub mod json;
 pub mod pattern;
 pub mod predicate;
 pub mod statement;
-// pub mod strategy;
+pub mod strategy;
 // pub mod target;
 pub mod r#type;
 
@@ -67,7 +67,6 @@ pub trait ParseExt<'a>: Parse<'a> {
     ) -> EnclosedConnectedListParser<Self, SeparatorParser>
     where
         Self: Sized,
-        SeparatorParser: Parse<'a>,
     {
         EnclosedConnectedListParser {
             delimiter,
@@ -85,7 +84,6 @@ pub trait ParseExt<'a>: Parse<'a> {
     ) -> ConnectedListParser<Self, SeparatorParser>
     where
         Self: Sized,
-        SeparatorParser: Parse<'a>,
     {
         ConnectedListParser { element_parser: self, separator_parser }
     }
@@ -234,31 +232,10 @@ pub struct ConnectedListParser<Element, Separator> {
     separator_parser: Separator,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ConnectedListExpectedIter<Element, Separator> {
-    Element(Element),
-    Separator(Separator),
-}
-
-impl<
-        Element: Iterator<Item = Expected>,
-        Separator: Iterator<Item = Expected>,
-    > Iterator for ConnectedListExpectedIter<Element, Separator>
-{
-    type Item = Expected;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Element(iter) => iter.next(),
-            Self::Separator(iter) => iter.next(),
-        }
-    }
-}
-
 impl<'a, Element: Parse<'a> + Clone, Separator: Parse<'a> + Clone> Parse<'a>
     for ConnectedListParser<Element, Separator>
 {
-    type Output = Option<ConnectedList<Element::Output, Separator::Output>>;
+    type Output = ConnectedList<Element::Output, Separator::Output>;
 
     fn parse(
         self,
@@ -270,58 +247,58 @@ impl<'a, Element: Parse<'a> + Clone, Separator: Parse<'a> + Clone> Parse<'a>
         let mut trailing_separator = None;
 
         loop {
-            let element = if let Some(element) = self
-                .element_parser
-                .clone()
-                .or_none()
-                .parse(state_machine, handler)?
-            {
-                element
+            let element = if first.is_none() {
+                self.element_parser.clone().parse(state_machine, handler)?
             } else {
-                break;
+                let Some(element) = self
+                    .element_parser
+                    .clone()
+                    .or_none()
+                    .parse(state_machine, handler)?
+                else {
+                    break;
+                };
+
+                element
             };
 
-            match self
+            if let Some(separator) = self
                 .separator_parser
                 .clone()
                 .or_none()
                 .parse(state_machine, handler)?
             {
-                Some(separator) => {
-                    if first.is_none() {
-                        first = Some(element);
-                        trailing_separator = Some(separator);
-                    } else {
-                        rest.push((
-                            trailing_separator.replace(separator).expect(
-                                "should have a separator from previous \
-                                 iteration",
-                            ),
-                            element,
-                        ));
-                    }
+                if first.is_none() {
+                    first = Some(element);
+                    trailing_separator = Some(separator);
+                } else {
+                    rest.push((
+                        trailing_separator.replace(separator).expect(
+                            "should have a separator from previous iteration",
+                        ),
+                        element,
+                    ));
+                }
+            } else {
+                if first.is_none() {
+                    first = Some(element);
+                } else {
+                    rest.push((
+                        std::mem::take(&mut trailing_separator).expect(
+                            "should have a separator from previous iteration",
+                        ),
+                        element,
+                    ));
                 }
 
-                None => {
-                    if first.is_none() {
-                        first = Some(element);
-                    } else {
-                        rest.push((
-                            std::mem::take(&mut trailing_separator).expect(
-                                "should have a separator from previous \
-                                 iteration",
-                            ),
-                            element,
-                        ));
-                    }
-
-                    break;
-                }
+                break;
             };
         }
 
-        Ok(first.map(|first| ConnectedList { first, rest, trailing_separator }))
+        Ok(ConnectedList { first: first.unwrap(), rest, trailing_separator })
     }
+
+    fn commit_count(&self) -> usize { self.element_parser.commit_count() }
 }
 
 /// Represents a pattern of [`ConnectedList`] enclosed within a pair of
@@ -410,13 +387,11 @@ impl<'a, Element: Parse<'a> + Clone, Separator: Parse<'a> + Clone> Parse<'a>
 
                 // keep parse until we hit the end
                 while state_machine.peek().is_some() {
-                    let element = if let Some(element) = self
+                    let Some(element) = self
                         .element_parser
                         .clone()
                         .parse_and_report(state_machine, handler)
-                    {
-                        element
-                    } else {
+                    else {
                         // error recovery, find the closest separator and
                         // start from there
                         if !find_closet_separator(state_machine, handler) {
@@ -490,6 +465,8 @@ impl<'a, Element: Parse<'a> + Clone, Separator: Parse<'a> + Clone> Parse<'a>
             })
             .parse(state_machine, handler)
     }
+
+    fn commit_count(&self) -> usize { 1 }
 }
 
 /// Syntax Synopsis:
@@ -513,15 +490,12 @@ impl SyntaxTree for AccessModifier {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        KeywordKind::Public
-            .to_owned()
-            .map(AccessModifier::Public)
-            .or_else(
-                KeywordKind::Private.to_owned().map(AccessModifier::Private),
-            )
-            .or_else(
-                KeywordKind::Internal.to_owned().map(AccessModifier::Internal),
-            )
+        (
+            KeywordKind::Public.to_owned().map(Self::Public),
+            KeywordKind::Private.to_owned().map(Self::Private),
+            KeywordKind::Internal.to_owned().map(Self::Internal),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -554,9 +528,10 @@ impl SyntaxTree for ScopeSeparator {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (':'.to_owned(), ':'.no_skip().to_owned())
-            .map(|(first, second)| Self { first, second })
-            .parse(state_machine, handler)
+        Ok(Self {
+            first: ':'.to_owned().parse(state_machine, handler)?,
+            second: ':'.no_skip().to_owned().parse(state_machine, handler)?,
+        })
     }
 }
 
@@ -583,9 +558,13 @@ impl SyntaxTree for Elided {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        ('.'.to_owned(), '.'.no_skip().to_owned())
-            .map(|(first_dot, second_dot)| Self { first_dot, second_dot })
-            .parse(state_machine, handler)
+        Ok(Self {
+            first_dot: '.'.to_owned().parse(state_machine, handler)?,
+            second_dot: '.'
+                .no_skip()
+                .to_owned()
+                .parse(state_machine, handler)?,
+        })
     }
 }
 
@@ -636,13 +615,12 @@ impl SyntaxTree for LifetimeIdentifier {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        expect::Identifier
-            .to_owned()
-            .map(LifetimeIdentifier::Identifier)
-            .or_else(
-                KeywordKind::Static.to_owned().map(LifetimeIdentifier::Static),
-            )
-            .or_else(Elided::parse.map(LifetimeIdentifier::Elided))
+        (
+            expect::Identifier.to_owned().map(Self::Identifier),
+            KeywordKind::Static.to_owned().map(Self::Static),
+            Elided::parse.map(Self::Elided),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -673,9 +651,10 @@ impl SyntaxTree for Lifetime {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        ('/'.to_owned(), LifetimeIdentifier::parse)
-            .map(|(apostrophe, identifier)| Self { apostrophe, identifier })
-            .parse(state_machine, handler)
+        Ok(Self {
+            apostrophe: '\''.to_owned().parse(state_machine, handler)?,
+            identifier: LifetimeIdentifier::parse(state_machine, handler)?,
+        })
     }
 }
 
@@ -697,10 +676,11 @@ impl SyntaxTree for Constant {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Expression::parse
-            .map(Box::new)
-            .map(Self::Expression)
-            .or_else(Elided::parse.map(Constant::Elided))
+        (
+            Expression::parse.map(Box::new).map(Constant::Expression),
+            Elided::parse.map(Constant::Elided),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -764,11 +744,12 @@ impl SyntaxTree for GenericArgument {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Type::parse
-            .map(Box::new)
-            .map(GenericArgument::Type)
-            .or_else(ConstantArgument::parse.map(GenericArgument::Constant))
-            .or_else(Lifetime::parse.map(GenericArgument::Lifetime))
+        (
+            Type::parse.map(Box::new).map(Self::Type),
+            ConstantArgument::parse.map(Self::Constant),
+            Lifetime::parse.map(Self::Lifetime),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -822,12 +803,14 @@ impl SyntaxTree for GenericIdentifier {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (expect::Identifier.to_owned(), GenericArguments::parse.or_none())
-            .map(|(identifier, generic_arguments)| Self {
-                identifier,
-                generic_arguments,
-            })
-            .parse(state_machine, handler)
+        Ok(Self {
+            identifier: expect::Identifier
+                .to_owned()
+                .parse(state_machine, handler)?,
+            generic_arguments: GenericArguments::parse
+                .or_none()
+                .parse(state_machine, handler)?,
+        })
     }
 }
 
@@ -861,9 +844,12 @@ impl SyntaxTree for LifetimeParameter {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        ('\''.to_owned(), expect::Identifier.to_owned())
-            .map(|(apostrophe, identifier)| Self { apostrophe, identifier })
-            .parse(state_machine, handler)
+        Ok(Self {
+            apostrophe: '\''.to_owned().parse(state_machine, handler)?,
+            identifier: expect::Identifier
+                .to_owned()
+                .parse(state_machine, handler)?,
+        })
     }
 }
 
@@ -891,12 +877,11 @@ impl SyntaxTree for SimplePathRoot {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        KeywordKind::Target
-            .to_owned()
-            .map(SimplePathRoot::Target)
-            .or_else(
-                expect::Identifier.to_owned().map(SimplePathRoot::Identifier),
-            )
+        (
+            KeywordKind::Target.to_owned().map(Self::Target),
+            expect::Identifier.to_owned().map(Self::Identifier),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -929,12 +914,15 @@ impl SyntaxTree for SimplePath {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (
-            SimplePathRoot::parse,
-            (ScopeSeparator::parse, expect::Identifier.to_owned()).keep_take(),
-        )
-            .map(|(root, rest)| Self { root, rest })
-            .parse(state_machine, handler)
+        Ok(Self {
+            root: SimplePathRoot::parse(state_machine, handler)?,
+            rest: (
+                ScopeSeparator::parse.commit_in(2),
+                expect::Identifier.to_owned(),
+            )
+                .keep_take()
+                .parse(state_machine, handler)?,
+        })
     }
 }
 
@@ -968,16 +956,12 @@ impl SyntaxTree for QualifiedIdentifierRoot {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        KeywordKind::Target
-            .to_owned()
-            .map(QualifiedIdentifierRoot::Target)
-            .or_else(
-                KeywordKind::This.to_owned().map(QualifiedIdentifierRoot::This),
-            )
-            .or_else(
-                GenericIdentifier::parse
-                    .map(QualifiedIdentifierRoot::GenericIdentifier),
-            )
+        (
+            KeywordKind::Target.to_owned().map(Self::Target),
+            KeywordKind::This.to_owned().map(Self::This),
+            GenericIdentifier::parse.map(Self::GenericIdentifier),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -1011,12 +995,15 @@ impl SyntaxTree for QualifiedIdentifier {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (
-            QualifiedIdentifierRoot::parse,
-            (ScopeSeparator::parse, GenericIdentifier::parse).keep_take(),
-        )
-            .map(|(root, rest)| Self { root, rest })
-            .parse(state_machine, handler)
+        Ok(Self {
+            root: QualifiedIdentifierRoot::parse(state_machine, handler)?,
+            rest: (
+                ScopeSeparator::parse.commit_in(2),
+                GenericIdentifier::parse,
+            )
+                .keep_take()
+                .parse(state_machine, handler)?,
+        })
     }
 }
 
@@ -1051,9 +1038,12 @@ impl SyntaxTree for Label {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        ('\''.to_owned(), expect::Identifier.to_owned())
-            .map(|(apostrophe, identifier)| Self { apostrophe, identifier })
-            .parse(state_machine, handler)
+        Ok(Self {
+            apostrophe: '\''.to_owned().parse(state_machine, handler)?,
+            identifier: expect::Identifier
+                .to_owned()
+                .parse(state_machine, handler)?,
+        })
     }
 }
 
@@ -1083,12 +1073,13 @@ impl SyntaxTree for ReferenceOf {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        ('&'.to_owned(), KeywordKind::Mutable.to_owned().or_none())
-            .map(|(ampersand, mutable_keyword)| Self {
-                ampersand,
-                mutable_keyword,
-            })
-            .parse(state_machine, handler)
+        Ok(Self {
+            ampersand: '&'.to_owned().parse(state_machine, handler)?,
+            mutable_keyword: KeywordKind::Mutable
+                .to_owned()
+                .or_none()
+                .parse(state_machine, handler)?,
+        })
     }
 }
 

@@ -26,7 +26,7 @@ impl Input<&super::HigherRankedLifetimes> for &HigherRankedLifetimes {
     fn assert(self, output: &super::HigherRankedLifetimes) -> TestCaseResult {
         self.lifetime_parameter_list
             .as_ref()
-            .assert(output.lifetime_parameter_list().as_ref())
+            .assert(output.lifetime_parameters.connected_list.as_ref())
     }
 }
 
@@ -40,6 +40,7 @@ impl Arbitrary for HigherRankedLifetimes {
             ConstantPunctuation::arbitrary(),
         ))
         .prop_map(|lifetime_parameter_list| Self { lifetime_parameter_list })
+        .boxed()
     }
 }
 
@@ -98,6 +99,7 @@ impl Arbitrary for TraitBound {
                     qualified_identifier,
                 },
             )
+            .boxed()
     }
 }
 
@@ -155,6 +157,7 @@ impl Arbitrary for MarkerBound {
                     }
                 },
             )
+            .boxed()
     }
 }
 
@@ -190,6 +193,7 @@ impl Arbitrary for Marker {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         BoundList::arbitrary_with(MarkerBound::arbitrary())
             .prop_map(|bounds| Self { bounds })
+            .boxed()
     }
 }
 
@@ -240,6 +244,7 @@ impl<T: std::fmt::Debug> BoundList<T> {
     ) -> BoxedStrategy<Self> {
         (args.clone(), proptest::collection::vec(args, 0..=6))
             .prop_map(|(first, rest)| Self { first, rest })
+            .boxed()
     }
 }
 
@@ -261,6 +266,7 @@ impl Arbitrary for Trait {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         BoundList::arbitrary_with(TraitBound::arbitrary())
             .prop_map(|bounds| Self { bounds })
+            .boxed()
     }
 }
 
@@ -306,6 +312,7 @@ impl Arbitrary for TraitTypeEquality {
                     }
                 },
             )
+            .boxed()
     }
 }
 
@@ -356,6 +363,7 @@ impl Arbitrary for OutlivesOperand {
                 .prop_map(OutlivesOperand::LifetimeParameter),
             Type::arbitrary().prop_map(OutlivesOperand::Type),
         ]
+        .boxed()
     }
 }
 
@@ -394,6 +402,7 @@ impl Arbitrary for Outlives {
             BoundList::arbitrary_with(Lifetime::arbitrary()),
         )
             .prop_map(|(operand, bounds)| Self { operand, bounds })
+            .boxed()
     }
 }
 
@@ -433,6 +442,7 @@ impl Arbitrary for ConstantTypeBound {
                 higher_ranked_lifetimes,
                 r#type,
             })
+            .boxed()
     }
 }
 
@@ -464,6 +474,7 @@ impl Arbitrary for ConstantType {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         BoundList::arbitrary_with(ConstantTypeBound::arbitrary())
             .prop_map(|bounds| Self { bounds })
+            .boxed()
     }
 }
 
@@ -501,6 +512,7 @@ impl Arbitrary for TupleOperand {
                 higher_ranked_lifetimes,
                 r#type,
             })
+            .boxed()
     }
 }
 
@@ -510,7 +522,7 @@ impl Display for TupleOperand {
             write!(f, "{higher_ranked_lifetimes} ")?;
         }
 
-        Display::fmt(&self.kind, f)
+        Display::fmt(&self.r#type, f)
     }
 }
 
@@ -532,6 +544,7 @@ impl Arbitrary for Tuple {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         BoundList::arbitrary_with(TupleOperand::arbitrary())
             .prop_map(|operands| Self { operands })
+            .boxed()
     }
 }
 
@@ -594,6 +607,7 @@ impl Arbitrary for Predicate {
             Tuple::arbitrary().prop_map(Predicate::Tuple),
             Marker::arbitrary().prop_map(Predicate::Marker),
         ]
+        .boxed()
     }
 }
 

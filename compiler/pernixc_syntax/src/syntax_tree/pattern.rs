@@ -20,12 +20,12 @@ use super::{
 use crate::{
     error, expect,
     state_machine::{
-        parse::{self, ExpectExt},
+        parse::{self, Branch, ExpectExt},
         StateMachine,
     },
 };
 
-// pub mod strategy;
+pub mod strategy;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -86,9 +86,11 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for Field<Pattern> {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        FieldAssociation::parse
-            .map(Self::Association)
-            .or_else(Named::parse.map(Self::Named))
+        (
+            FieldAssociation::parse.map(Self::Association),
+            Named::parse.map(Self::Named),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -129,7 +131,10 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for Structural<Pattern> {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (Field::parse.connected_list(','.to_owned()), Wildcard::parse.or_none())
+        (
+            Field::parse.connected_list(','.to_owned()).or_none(),
+            Wildcard::parse.or_none(),
+        )
             .step_into(Delimiter::Brace)
             .map(|(open, (fields, wildcard), close)| Self {
                 left_brace: open.clone(),
@@ -262,6 +267,7 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for TupleElement<Pattern> {
                 '.'.no_skip().to_owned(),
                 '.'.no_skip().to_owned(),
             )
+                .commit_in(3)
                 .or_none(),
             Pattern::parse.map(Box::new),
         )
@@ -433,14 +439,16 @@ impl SyntaxTree for Refutable {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Boolean::parse
-            .map(Self::Boolean)
-            .or_else(Integer::parse.map(Self::Integer))
-            .or_else(Structural::parse.map(Self::Structural))
-            .or_else(Enum::parse.map(Self::Enum))
-            .or_else(Named::parse.map(Self::Named))
-            .or_else(Tuple::parse.map(Self::Tuple))
-            .or_else(Wildcard::parse.map(Self::Wildcard))
+        (
+            Boolean::parse.map(Self::Boolean),
+            Integer::parse.map(Self::Integer),
+            Structural::parse.map(Self::Structural),
+            Enum::parse.map(Self::Enum),
+            Named::parse.map(Self::Named),
+            Tuple::parse.map(Self::Tuple),
+            Wildcard::parse.map(Self::Wildcard),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -491,11 +499,13 @@ impl SyntaxTree for Irrefutable {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Structural::parse
-            .map(Self::Structural)
-            .or_else(Named::parse.map(Self::Named))
-            .or_else(Tuple::parse.map(Self::Tuple))
-            .or_else(Wildcard::parse.map(Self::Wildcard))
+        (
+            Structural::parse.map(Self::Structural),
+            Named::parse.map(Self::Named),
+            Tuple::parse.map(Self::Tuple),
+            Wildcard::parse.map(Self::Wildcard),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }

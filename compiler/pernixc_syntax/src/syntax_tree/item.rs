@@ -23,12 +23,12 @@ use super::{
 use crate::{
     error, expect,
     state_machine::{
-        parse::{self, Parse},
+        parse::{self, Branch, Parse},
         StateMachine,
     },
 };
 
-// pub mod strategy;
+pub mod strategy;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -256,9 +256,8 @@ impl SyntaxTree for UsingKind {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        UsingOne::parse
-            .map(Self::One)
-            .or_else(UsingFrom::parse.map(Self::From))
+        (UsingOne::parse.map(Self::One), UsingFrom::parse.map(Self::From))
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -448,9 +447,8 @@ impl SyntaxTree for ModuleKind {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        ';'.to_owned()
-            .map(ModuleKind::File)
-            .or_else(ModuleBody::parse.map(ModuleKind::Inline))
+        (';'.to_owned().map(Self::File), ModuleBody::parse.map(Self::Inline))
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -600,7 +598,7 @@ impl SyntaxTree for ConstantParameter {
         (
             KeywordKind::Const.to_owned(),
             expect::Identifier.to_owned(),
-            ';'.to_owned(),
+            ':'.to_owned(),
             r#type::Type::parse,
             DefaultConstantParameter::parse.or_none(),
         )
@@ -673,10 +671,12 @@ impl SyntaxTree for GenericParameter {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        LifetimeParameter::parse
-            .map(Self::Lifetime)
-            .or_else(ConstantParameter::parse.map(Self::Constant))
-            .or_else(TypeParameter::parse.map(Self::Type))
+        (
+            LifetimeParameter::parse.map(GenericParameter::Lifetime),
+            TypeParameter::parse.map(GenericParameter::Type),
+            ConstantParameter::parse.map(GenericParameter::Constant),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -740,12 +740,7 @@ impl SyntaxTree for WhereClause {
     ) -> parse::Result<Self> {
         (
             KeywordKind::Where.to_owned(),
-            (Predicate::parse, (','.to_owned(), Predicate::parse).keep_take())
-                .map(|(first, rest)| ConnectedList {
-                    first,
-                    rest,
-                    trailing_separator: None,
-                }),
+            Predicate::parse.connected_list(','.to_owned()),
         )
             .map(|(where_keyword, predicate_list)| Self {
                 where_keyword,
@@ -1215,10 +1210,12 @@ impl SyntaxTree for TraitMember {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        TraitFunction::parse
-            .map(Self::Function)
-            .or_else(TraitType::parse.map(Self::Type))
-            .or_else(TraitConstant::parse.map(Self::Constant))
+        (
+            TraitFunction::parse.map(TraitMember::Function),
+            TraitType::parse.map(TraitMember::Type),
+            TraitConstant::parse.map(TraitMember::Constant),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -1946,10 +1943,12 @@ impl SyntaxTree for ImplementationMember {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Type::parse
-            .map(Self::Type)
-            .or_else(Function::parse.map(Self::Function))
-            .or_else(Constant::parse.map(Self::Constant))
+        (
+            Type::parse.map(ImplementationMember::Type),
+            Function::parse.map(ImplementationMember::Function),
+            Constant::parse.map(ImplementationMember::Constant),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -2038,10 +2037,12 @@ impl SyntaxTree for ImplementationKind {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        NegativeImplementation::parse
-            .map(Self::Negative)
-            .or_else(ImplementationBody::parse.map(Self::Positive))
-            .or_else(';'.to_owned().map(Self::Empty))
+        (
+            NegativeImplementation::parse.map(ImplementationKind::Negative),
+            ImplementationBody::parse.map(ImplementationKind::Positive),
+            ';'.to_owned().map(ImplementationKind::Empty),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -2596,17 +2597,19 @@ impl SyntaxTree for Item {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Trait::parse
-            .map(Self::Trait)
-            .or_else(Function::parse.map(Self::Function))
-            .or_else(Type::parse.map(Self::Type))
-            .or_else(Struct::parse.map(Self::Struct))
-            .or_else(Implementation::parse.map(Self::Implementation))
-            .or_else(Enum::parse.map(Self::Enum))
-            .or_else(Module::parse.map(Self::Module))
-            .or_else(Constant::parse.map(Self::Constant))
-            .or_else(Marker::parse.map(Self::Marker))
-            .or_else(Extern::parse.map(Self::Extern))
+        (
+            Trait::parse.map(Item::Trait),
+            Function::parse.map(Item::Function),
+            Type::parse.map(Item::Type),
+            Struct::parse.map(Item::Struct),
+            Implementation::parse.map(Item::Implementation),
+            Enum::parse.map(Item::Enum),
+            Module::parse.map(Item::Module),
+            Constant::parse.map(Item::Constant),
+            Marker::parse.map(Item::Marker),
+            Extern::parse.map(Item::Extern),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }

@@ -15,7 +15,7 @@ use super::{
 use crate::{
     error, expect,
     state_machine::{
-        parse::{self, Parse},
+        parse::{self, Branch, Parse},
         StateMachine,
     },
 };
@@ -130,14 +130,15 @@ impl SyntaxTree for Value {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        KeywordKind::Null
-            .to_owned()
-            .map(Self::Null)
-            .or_else(Boolean::parse.map(Self::Boolean))
-            .or_else(Numeric::parse.map(Self::Numeric))
-            .or_else(expect::String.to_owned().map(Self::String))
-            .or_else(Array::parse.map(Self::Array))
-            .or_else(Map::parse.map(Self::Map))
+        (
+            KeywordKind::Null.to_owned().map(Self::Null),
+            Boolean::parse.map(Self::Boolean),
+            Numeric::parse.map(Self::Numeric),
+            expect::String.to_owned().map(Self::String),
+            Array::parse.map(Self::Array),
+            Map::parse.map(Self::Map),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }

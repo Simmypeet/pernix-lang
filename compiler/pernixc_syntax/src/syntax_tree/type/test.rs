@@ -10,10 +10,7 @@ proptest! {
         type_specifier_input in Type::arbitrary(),
     ) {
         let source = type_specifier_input.to_string();
-        let type_specifier = syntax_tree::test::parse(
-            &source,
-            |parser, handler| parser.parse_type(handler)
-        )?;
+        let type_specifier = syntax_tree::test::parse(&source)?;
 
         type_specifier_input.assert(&type_specifier)?;
     }

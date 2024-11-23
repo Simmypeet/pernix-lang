@@ -13,7 +13,7 @@ use super::ExpectExt;
 use crate::{
     error::{self, Found},
     state_machine::{
-        parse::{self, Parse},
+        parse::{self, Branch, Parse},
         StateMachine,
     },
 };
@@ -34,19 +34,22 @@ enum ConsList {
 impl ConsList {
     fn count(&self) -> usize {
         match self {
-            ConsList::Cons(_, b) => 1 + b.count(),
-            ConsList::Nil(_) => 0,
+            Self::Cons(_, b) => 1 + b.count(),
+            Self::Nil(_) => 0,
         }
     }
 }
 
-fn cons_list_syntax<'a>(
-    state_machine: &mut StateMachine<'a>,
+fn cons_list_syntax(
+    state_machine: &mut StateMachine,
     handler: &dyn Handler<error::Error>,
 ) -> parse::Result<ConsList> {
-    (KeywordKind::Continue.to_owned(), cons_list_syntax.map(Box::new))
-        .map(|(keyword, list)| ConsList::Cons(keyword, list))
-        .or_else(';'.to_owned().map(ConsList::Nil))
+    (
+        (KeywordKind::Continue.to_owned(), cons_list_syntax.map(Box::new))
+            .map(|(keyword, list)| ConsList::Cons(keyword, list)),
+        ';'.to_owned().map(ConsList::Nil),
+    )
+        .branch()
         .parse(state_machine, handler)
 }
 
@@ -148,7 +151,7 @@ fn step_into_mismatched_delimiter() {
     let error = errors.pop().unwrap();
 
     assert_eq!(error.expected().len(), 1);
-    assert!(error.expected().contains(&Delimiter::Brace.into()))
+    assert!(error.expected().contains(&Delimiter::Brace.into()));
 }
 
 #[test]
@@ -187,20 +190,23 @@ fn step_into_dont_take_all() {
 }
 
 #[test]
-fn or_else_report_eaten_more() {
+fn tuple_branch_report_eaten_more() {
     let (token_stream, _) = create_token_stream("continue break ;".to_string());
 
     let tree = Tree::new(&token_stream);
     let storage = Storage::<error::Error>::new();
 
-    let result = (KeywordKind::Continue, KeywordKind::Break, '!')
-        .map(|_| ())
-        .or_else((KeywordKind::Continue, '!').map(|_| ()))
+    let result = (
+        (KeywordKind::Continue, KeywordKind::Break, '!').map(|_| ()),
+        (KeywordKind::Continue, '!').map(|_| ()),
+    )
+        .branch()
         .parse_syntax(&tree, &storage);
 
     assert!(result.is_none());
 
     let mut errors = storage.into_vec();
+
     assert_eq!(errors.len(), 1);
 
     let error = errors.pop().unwrap();
@@ -215,14 +221,16 @@ fn or_else_report_eaten_more() {
     let storage = Storage::<error::Error>::new();
 
     // swap place
-    let result = (KeywordKind::Continue, '!')
-        .map(|_| ())
-        .or_else((KeywordKind::Continue, KeywordKind::Break, '!').map(|_| ()))
-        .parse_syntax(&tree, &storage);
+    let result = (
+        (KeywordKind::Continue, '!').map(|_| ()),
+        (KeywordKind::Continue, KeywordKind::Break, '!').map(|_| ()),
+    )
+        .branch();
 
-    assert!(result.is_none());
+    assert!(result.parse_syntax(&tree, &storage).is_none());
 
     let mut errors = storage.into_vec();
+
     assert_eq!(errors.len(), 1);
 
     let error = errors.pop().unwrap();

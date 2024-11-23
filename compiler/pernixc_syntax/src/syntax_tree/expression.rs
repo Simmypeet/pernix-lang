@@ -21,12 +21,12 @@ use super::{
 use crate::{
     error, expect,
     state_machine::{
-        parse::{self, ExpectExt},
+        parse::{self, Branch, ExpectExt},
         StateMachine,
     },
 };
 
-// pub mod strategy;
+pub mod strategy;
 
 /// Syntax Synopsis:
 ///
@@ -49,10 +49,12 @@ impl SyntaxTree for Expression {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Binary::parse
-            .map(Self::Binary)
-            .or_else(Terminator::parse.map(Self::Terminator))
-            .or_else(Brace::parse.map(Self::Brace))
+        (
+            Binary::parse.map(Self::Binary),
+            Terminator::parse.map(Self::Terminator),
+            Brace::parse.map(Self::Brace),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -91,12 +93,14 @@ impl SyntaxTree for Brace {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Block::parse
-            .map(Self::Block)
-            .or_else(IfElse::parse.map(Self::IfElse))
-            .or_else(Loop::parse.map(Self::Loop))
-            .or_else(Match::parse.map(Self::Match))
-            .or_else(While::parse.map(Self::While))
+        (
+            Block::parse.map(Self::Block),
+            IfElse::parse.map(Self::IfElse),
+            Loop::parse.map(Self::Loop),
+            Match::parse.map(Self::Match),
+            While::parse.map(Self::While),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -306,9 +310,8 @@ impl SyntaxTree for BlockOrIfElse {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Block::parse
-            .map(Self::Block)
-            .or_else(IfElse::parse.map(Self::IfElse))
+        (Block::parse.map(Self::Block), IfElse::parse.map(Self::IfElse))
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -517,11 +520,13 @@ impl SyntaxTree for Terminator {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Return::parse
-            .map(Self::Return)
-            .or_else(Continue::parse.map(Self::Continue))
-            .or_else(Express::parse.map(Self::Express))
-            .or_else(Break::parse.map(Self::Break))
+        (
+            Return::parse.map(Terminator::Return),
+            Continue::parse.map(Terminator::Continue),
+            Express::parse.map(Terminator::Express),
+            Break::parse.map(Terminator::Break),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -736,10 +741,11 @@ impl SyntaxTree for Boolean {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        KeywordKind::True
-            .to_owned()
-            .map(Self::True)
-            .or_else(KeywordKind::False.to_owned().map(Self::False))
+        (
+            KeywordKind::True.to_owned().map(Self::True),
+            KeywordKind::False.to_owned().map(Self::False),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -807,6 +813,7 @@ impl SyntaxTree for Numeric {
             expect::Numeric.to_owned(),
             ('.'.no_skip().to_owned(), expect::Numeric.no_skip().to_owned())
                 .map(|(dot, numeric)| Decimal { dot, numeric })
+                .commit_in(2)
                 .or_none(),
             expect::Identifier.no_skip().to_owned().or_none(),
         )
@@ -1086,16 +1093,18 @@ impl SyntaxTree for Unit {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Struct::parse
-            .map(Self::Struct)
-            .or_else(QualifiedIdentifier::parse.map(Self::QualifiedIdentifier))
-            .or_else(Array::parse.map(Self::Array))
-            .or_else(Phantom::parse.map(Self::Phantom))
-            .or_else(expect::String.to_owned().map(Self::String))
-            .or_else(expect::Character.to_owned().map(Self::Character))
-            .or_else(Numeric::parse.map(Self::Numeric))
-            .or_else(Boolean::parse.map(Self::Boolean))
-            .or_else(Parenthesized::parse.map(Self::Parenthesized))
+        (
+            Struct::parse.map(Self::Struct),
+            QualifiedIdentifier::parse.map(Self::QualifiedIdentifier),
+            Array::parse.map(Self::Array),
+            Phantom::parse.map(Self::Phantom),
+            expect::String.to_owned().map(Self::String),
+            expect::Character.to_owned().map(Self::Character),
+            Numeric::parse.map(Self::Numeric),
+            Boolean::parse.map(Self::Boolean),
+            Parenthesized::parse.map(Self::Parenthesized),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -1196,12 +1205,12 @@ impl SyntaxTree for AccessOperator {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        '.'.to_owned()
-            .map(Self::Dot)
-            .or_else(
-                ('-'.to_owned(), '>'.no_skip().to_owned())
-                    .map(|(start, end)| Self::Arrow(start, end)),
-            )
+        (
+            '.'.to_owned().map(Self::Dot),
+            ('-'.to_owned(), '>'.no_skip().to_owned())
+                .map(|(start, end)| Self::Arrow(start, end)),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -1306,10 +1315,12 @@ impl SyntaxTree for AccessKind {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        GenericIdentifier::parse
-            .map(Self::GenericIdentifier)
-            .or_else(TupleIndex::parse.map(Self::Tuple))
-            .or_else(Index::parse.map(Self::Index))
+        (
+            GenericIdentifier::parse.map(Self::GenericIdentifier),
+            TupleIndex::parse.map(Self::Tuple),
+            Index::parse.map(Self::Index),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -1377,10 +1388,12 @@ impl SyntaxTree for PostfixOperator {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Call::parse
-            .map(Self::Call)
-            .or_else(Cast::parse.map(Self::Cast))
-            .or_else(Access::parse.map(Self::Access))
+        (
+            Call::parse.map(Self::Call),
+            Cast::parse.map(Self::Cast),
+            Access::parse.map(Self::Access),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -1485,14 +1498,16 @@ impl SyntaxTree for PrefixOperator {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        '!'.to_owned()
-            .map(Self::LogicalNot)
-            .or_else('-'.to_owned().map(Self::Negate))
-            .or_else('~'.to_owned().map(Self::BitwiseNot))
-            .or_else('*'.to_owned().map(Self::Dereference))
-            .or_else(KeywordKind::Local.to_owned().map(Self::Local))
-            .or_else(KeywordKind::Unlocal.to_owned().map(Self::Unlocal))
-            .or_else(ReferenceOf::parse.map(Self::ReferenceOf))
+        (
+            '!'.to_owned().map(Self::LogicalNot),
+            '-'.to_owned().map(Self::Negate),
+            '~'.to_owned().map(Self::BitwiseNot),
+            '*'.to_owned().map(Self::Dereference),
+            KeywordKind::Local.to_owned().map(Self::Local),
+            KeywordKind::Unlocal.to_owned().map(Self::Unlocal),
+            ReferenceOf::parse.map(Self::ReferenceOf),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -1550,10 +1565,13 @@ impl SyntaxTree for Prefixable {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (PrefixOperator::parse, Self::parse.map(Box::new))
-            .map(|(operator, prefixable)| Prefix { operator, prefixable })
-            .map(Self::Prefix)
-            .or_else(Postfixable::parse.map(Self::Postfixable))
+        (
+            (PrefixOperator::parse, Self::parse.map(Box::new))
+                .map(|(operator, prefixable)| Prefix { operator, prefixable })
+                .map(Self::Prefix),
+            Postfixable::parse.map(Self::Postfixable),
+        )
+            .branch()
             .parse(state_machine, handler)
     }
 }
@@ -1645,6 +1663,8 @@ impl SyntaxTree for BinaryOperator {
             .map(|(start, end, assign)| {
                 Self::CompoundBitwiseLeftShift(start, end, assign)
             })
+            .parse(state_machine, handler)
+        /*
             .or_else(
                 ('<'.to_owned(), '<'.no_skip().to_owned())
                     .map(|(start, end)| Self::BitwiseLeftShift(start, end)),
@@ -1725,6 +1745,7 @@ impl SyntaxTree for BinaryOperator {
             )
             .or_else('%'.to_owned().map(Self::Modulo))
             .parse(state_machine, handler)
+        */
     }
 }
 

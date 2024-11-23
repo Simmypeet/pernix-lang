@@ -11,10 +11,7 @@ proptest! {
     ) {
         let source = statement_input.to_string();
 
-        let statement = syntax_tree::test::parse(
-            &source,
-            |parser, handler| parser.parse_statement(handler)
-        )?;
+        let statement = syntax_tree::test::parse(&source)?;
 
         statement_input.assert(&statement)?;
     }
