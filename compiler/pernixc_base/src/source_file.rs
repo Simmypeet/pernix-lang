@@ -535,10 +535,13 @@ impl Span {
     }
 
     /// Gets the starting [`Location`] of the span.
+    ///
+    /// Returns [`None`] if the start of the span is at the end of the source
+    /// file.
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
-    pub fn start_location(&self) -> Location {
-        self.source_file.get_location(self.start).unwrap()
+    pub fn start_location(&self) -> Option<Location> {
+        self.source_file.get_location(self.start)
     }
 
     /// Gets the ending [`Location`] of the span.

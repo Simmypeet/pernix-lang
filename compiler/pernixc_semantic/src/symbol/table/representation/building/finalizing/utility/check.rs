@@ -738,7 +738,6 @@ where
                 };
             }
             Predicate::TupleType(pred) => (pred.query(self), Vec::new()),
-            Predicate::TupleConstant(pred) => (pred.query(self), Vec::new()),
             Predicate::PositiveMarker(pred) => match pred.query(self) {
                 Ok(None) => (Ok(None), Vec::new()),
 
@@ -1217,13 +1216,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         }
 
         // check unpacked constant occurrences
-        for (unpacked, syn) in occurrences.unpacked_constants() {
-            environment.check_unpacked_ocurrences(
-                unpacked.clone(),
-                &syn.span(),
-                id,
-                handler,
-            );
+        for _ in occurrences.unpacked_constants() {
+            // TODO: check that the type of constant must be a tuple
         }
     }
 }

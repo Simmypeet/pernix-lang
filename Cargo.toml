@@ -5,10 +5,10 @@ members = [
     "compiler/pernixc_lexical",
     "compiler/pernixc_syntax",
     "compiler/pernixc_tests",
-    #"compiler/pernixc_semantic",
-    #"compiler/pernixc_driver",
-    #"compiler/pernixc",
-    #"lsp/pernix_server",
+    "compiler/pernixc_semantic",
+    "compiler/pernixc_driver",
+    "compiler/pernixc",
+    "lsp/pernix_server",
 ]
 
 [workspace.dependencies]

@@ -1665,6 +1665,7 @@ fn transition_to_building(
 
                 for import in a
                     .imports()
+                    .connected_list()
                     .as_ref()
                     .into_iter()
                     .flat_map(ConnectedList::elements)

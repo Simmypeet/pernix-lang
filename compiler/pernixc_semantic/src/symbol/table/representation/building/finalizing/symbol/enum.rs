@@ -89,7 +89,7 @@ impl Finalize for Enum {
                     let variant = table.get(variant_id).unwrap();
                     let syntax_tree = syntax_tree
                         .body()
-                        .variant_list()
+                        .connected_list()
                         .as_ref()
                         .into_iter()
                         .flat_map(ConnectedList::elements)
@@ -103,7 +103,7 @@ impl Finalize for Enum {
                     if let Some(association) = syntax_tree.association() {
                         let ty = table
                             .resolve_type(
-                                association.r#type(),
+                                association.tree(),
                                 symbol_id.into(),
                                 resolution::Config {
                                     elided_lifetime_provider: None,
@@ -175,7 +175,7 @@ impl Finalize for Enum {
                     let variant = table.get(variant_id).unwrap();
                     let syntax_tree = syntax_tree
                         .body()
-                        .variant_list()
+                        .connected_list()
                         .as_ref()
                         .into_iter()
                         .flat_map(ConnectedList::elements)

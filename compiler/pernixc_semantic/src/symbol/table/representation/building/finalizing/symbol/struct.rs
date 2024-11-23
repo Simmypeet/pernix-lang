@@ -86,7 +86,7 @@ impl Finalize for Struct {
 
                 for field_syn in syntax_tree
                     .body()
-                    .field_list()
+                    .connected_list()
                     .iter()
                     .flat_map(ConnectedList::elements)
                 {

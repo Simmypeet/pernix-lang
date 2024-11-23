@@ -49,7 +49,7 @@ impl Arbitrary for PrimitivesTuple {
 
         proptest::collection::vec(proptest::sample::select(primitives), 0..=10)
             .prop_map(|primitives| Self { primitives })
-            
+            .boxed()
     }
 }
 

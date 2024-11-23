@@ -1,11 +1,14 @@
 use std::{fmt::Display, sync::Arc};
 
 use pernixc_base::{
-    handler::{Counter, Storage},
+    handler::{Panic, Storage},
     source_file::SourceFile,
 };
-use pernixc_lexical::token_stream::TokenStream;
-use pernixc_syntax::{parser::Parser, syntax_tree};
+use pernixc_lexical::token_stream::{TokenStream, Tree};
+use pernixc_syntax::{
+    state_machine::parse::Parse,
+    syntax_tree::{self, SyntaxTree},
+};
 
 use super::Binder;
 use crate::{
@@ -78,41 +81,25 @@ impl TestTemplate {
 pub fn parse_expression(
     source: impl Display,
 ) -> syntax_tree::expression::Expression {
-    let counter = Counter::default();
-
     let source_file =
         Arc::new(SourceFile::new(source.to_string(), "test".into()));
-    let token_stream = TokenStream::tokenize(&source_file, &counter);
+    let token_stream = TokenStream::tokenize(source_file, &Panic);
+    let tree = Tree::new(&token_stream);
 
-    // no error
-    assert_eq!(counter.count(), 0);
-
-    let mut parser = Parser::new(&token_stream, source_file);
-    let expression = parser.parse_expression(&counter).unwrap();
-
-    // no error
-    assert_eq!(counter.count(), 0);
-
-    expression
+    syntax_tree::expression::Expression::parse
+        .parse_syntax(&tree, &Panic)
+        .unwrap()
 }
 
 pub fn parse_statement(
     source: impl Display,
 ) -> syntax_tree::statement::Statement {
-    let counter = Counter::default();
-
     let source_file =
         Arc::new(SourceFile::new(source.to_string(), "test".into()));
-    let token_stream = TokenStream::tokenize(&source_file, &counter);
+    let token_stream = TokenStream::tokenize(source_file, &Panic);
+    let tree = Tree::new(&token_stream);
 
-    // no error
-    assert_eq!(counter.count(), 0);
-
-    let mut parser = Parser::new(&token_stream, source_file);
-    let statement = parser.parse_statement(&counter).unwrap();
-
-    // no error
-    assert_eq!(counter.count(), 0);
-
-    statement
+    syntax_tree::statement::Statement::parse
+        .parse_syntax(&tree, &Panic)
+        .unwrap()
 }

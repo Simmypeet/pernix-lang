@@ -72,7 +72,7 @@ impl Finalize for Type {
                 // resolve the type
                 let mut ty = table
                     .resolve_type(
-                        syntax_tree.definition().ty(),
+                        syntax_tree.definition().r#type(),
                         symbol_id.into(),
                         resolution::Config {
                             elided_lifetime_provider: None,
@@ -100,7 +100,7 @@ impl Finalize for Type {
 
                 ty = environment.simplify_and_check_lifetime_constraints(
                     &ty,
-                    &syntax_tree.definition().ty().span(),
+                    &syntax_tree.definition().r#type().span(),
                     handler,
                 );
 
@@ -114,7 +114,10 @@ impl Finalize for Type {
                         PrivateEntityLeakedToPublicInterface {
                             entity: ty.clone(),
                             entity_overall_accessibility: ty_accessible,
-                            leaked_span: syntax_tree.definition().ty().span(),
+                            leaked_span: syntax_tree
+                                .definition()
+                                .r#type()
+                                .span(),
                             public_interface_id: symbol_id.into(),
                         },
                     ));

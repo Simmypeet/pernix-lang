@@ -63,7 +63,7 @@ impl SyntaxTree for Pair {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (expect::String.to_owned(), ';'.to_owned(), Value::parse.map(Box::new))
+        (expect::String.to_owned(), ':'.to_owned(), Value::parse.map(Box::new))
             .map(|(key, colon, value)| Self { key, colon, value })
             .parse(state_machine, handler)
     }

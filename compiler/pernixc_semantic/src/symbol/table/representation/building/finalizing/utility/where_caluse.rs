@@ -10,7 +10,7 @@ use crate::{
     arena::ID,
     error::{
         self, ExpectTrait, ExpectTraitMember, ExpectedMarker,
-        HigherRankedLifetimeRedefinition, UnexpectedInference,
+        HigherRankedLifetimeRedefinition,
     },
     symbol::{
         self,
@@ -439,74 +439,40 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         ID<T>: Into<GlobalID> + Into<GenericID>,
     {
         for tuple in syntax_tree.operands().elements() {
-            match tuple.kind() {
-                syntax_tree::predicate::TupleOperandKind::Type(ty) => {
-                    let higher_ranked_lifetimes =
-                        tuple.higher_ranked_lifetimes().as_ref().map(|x| {
-                            Self::create_higher_ranked_lifetimes(x, handler)
-                        });
+            let higher_ranked_lifetimes = tuple
+                .higher_ranked_lifetimes()
+                .as_ref()
+                .map(|x| Self::create_higher_ranked_lifetimes(x, handler));
 
-                    let resolve_type = self.resolve_type(
-                        ty,
-                        generic_id.into(),
-                        resolution::Config {
-                            elided_lifetime_provider: None,
-                            elided_type_provider: None,
-                            elided_constant_provider: None,
-                            observer: Some(
-                                &mut builder::Resolution::basic()
-                                    .chain(occurrences),
-                            ),
-                            higher_ranked_lifetimes: higher_ranked_lifetimes
-                                .as_ref(),
-                        },
-                        handler,
-                    );
-                    let Ok(ty) = resolve_type else {
-                        continue;
-                    };
+            let resolve_type = self.resolve_type(
+                tuple.r#type(),
+                generic_id.into(),
+                resolution::Config {
+                    elided_lifetime_provider: None,
+                    elided_type_provider: None,
+                    elided_constant_provider: None,
+                    observer: Some(
+                        &mut builder::Resolution::basic().chain(occurrences),
+                    ),
+                    higher_ranked_lifetimes: higher_ranked_lifetimes.as_ref(),
+                },
+                handler,
+            );
+            let Ok(ty) = resolve_type else {
+                continue;
+            };
 
-                    let mut generic_symbol =
-                        T::get_arena(self).get(generic_id).unwrap().write();
+            let mut generic_symbol =
+                T::get_arena(self).get(generic_id).unwrap().write();
 
-                    generic_symbol.generic_declaration_mut().predicates.push(
-                        symbol::Predicate {
-                            predicate: predicate::Predicate::TupleType(
-                                predicate::Tuple(ty),
-                            ),
-                            span: Some(syntax_tree.span()),
-                        },
-                    );
-                }
-                syntax_tree::predicate::TupleOperandKind::Constant(expr) => {
-                    let Ok(constant) = (match expr.constant() {
-                        syntax_tree::Constant::Expression(expression) => self
-                            .evaluate(expression, generic_id.into(), handler),
-                        syntax_tree::Constant::Elided(elided) => {
-                            handler.receive(Box::new(UnexpectedInference {
-                                unexpected_span: elided.span(),
-                                generic_kind: symbol::GenericKind::Constant,
-                            }));
-
-                            continue;
-                        }
-                    }) else {
-                        continue;
-                    };
-
-                    let mut generic_symbol =
-                        T::get_arena(self).get(generic_id).unwrap().write();
-
-                    generic_symbol.generic_declaration_mut().predicates.push(
-                        symbol::Predicate {
-                            predicate: predicate::Predicate::TupleConstant(
-                                predicate::Tuple(constant),
-                            ),
-                            span: Some(syntax_tree.span()),
-                        },
-                    );
-                }
-            }
+            generic_symbol.generic_declaration_mut().predicates.push(
+                symbol::Predicate {
+                    predicate: predicate::Predicate::TupleType(
+                        predicate::Tuple(ty),
+                    ),
+                    span: Some(syntax_tree.span()),
+                },
+            );
         }
     }
 
@@ -517,7 +483,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         let mut forall_lifetimes_by_name = HashMap::new();
 
         for syn in syntax_tree
-            .lifetime_parameter_list()
+            .lifetime_parameters()
+            .connected_list()
             .iter()
             .flat_map(ConnectedList::elements)
         {

@@ -1015,13 +1015,13 @@ impl<S: State> Table<S> {
         // extracts the generic arguments from the syntax tree to the list of
         // syntax trees
         for generic_argument in generic_arguments
-            .argument_list()
+            .connected_list()
             .iter()
             .flat_map(ConnectedList::elements)
         {
             let misordered = match generic_argument {
                 syntax_tree::GenericArgument::Constant(arg) => {
-                    constant_argument_syns.push(arg.constant());
+                    constant_argument_syns.push(arg.tree());
 
                     false
                 }
@@ -1083,7 +1083,7 @@ impl<S: State> Table<S> {
                 .into_iter()
                 .map(|x| match x {
                     syntax_tree::Constant::Expression(expression) => match self
-                        .evaluate(expression, referring_site, handler)
+                        .evaluate(&*expression, referring_site, handler)
                     {
                         Ok(value) => Ok(M::from_default_constant(value)),
 
@@ -1384,7 +1384,7 @@ impl<S: State> Table<S> {
             }
             syntax_tree::r#type::Type::Local(local) => {
                 r#type::Type::Local(Local(Box::new(self.resolve_type(
-                    local.ty(),
+                    local.r#type(),
                     referring_site,
                     config.reborrow(),
                     handler,
@@ -1462,12 +1462,12 @@ impl<S: State> Table<S> {
                 let mut elements = Vec::new();
 
                 for element in syntax_tree
-                    .unpackable_list()
+                    .connected_list()
                     .iter()
                     .flat_map(ConnectedList::elements)
                 {
                     let ty = self.resolve_type(
-                        element.ty(),
+                        element.r#type(),
                         referring_site,
                         config.reborrow(),
                         handler,
@@ -1486,7 +1486,7 @@ impl<S: State> Table<S> {
                                         referring_site,
                                         handler,
                                         &ty,
-                                        element.ty(),
+                                        element.r#type(),
                                     );
                                 }
 

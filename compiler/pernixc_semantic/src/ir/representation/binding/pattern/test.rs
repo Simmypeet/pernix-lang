@@ -1,11 +1,14 @@
 use std::{fmt::Display, sync::Arc};
 
 use pernixc_base::{
-    handler::{Counter, Storage},
+    handler::{Counter, Panic, Storage},
     source_file::SourceFile,
 };
-use pernixc_lexical::token_stream::TokenStream;
-use pernixc_syntax::{parser::Parser, syntax_tree};
+use pernixc_lexical::token_stream::{TokenStream, Tree};
+use pernixc_syntax::{
+    state_machine::parse::Parse,
+    syntax_tree::{self, SyntaxTree},
+};
 
 use crate::{
     arena::ID,
@@ -46,20 +49,14 @@ use crate::{
 };
 
 fn create_pattern(source: impl Display) -> syntax_tree::pattern::Irrefutable {
-    let counter = Counter::default();
-
     let source_file =
         Arc::new(SourceFile::new(source.to_string(), "test".into()));
-    let token_stream = TokenStream::tokenize(&source_file, &counter);
+    let token_stream = TokenStream::tokenize(source_file, &Panic);
+    let tree = Tree::new(&token_stream);
 
-    // no error
-    assert_eq!(counter.count(), 0);
-
-    let mut parser = Parser::new(&token_stream, source_file);
-    let pattern = parser.parse_irrefutable_pattern(&counter).unwrap();
-
-    // no error
-    assert_eq!(counter.count(), 0);
+    let pattern = syntax_tree::pattern::Irrefutable::parse
+        .parse_syntax(&tree, &Panic)
+        .unwrap();
 
     pattern
 }

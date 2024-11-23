@@ -417,10 +417,6 @@ fn predicate_satisfies<'a, M: Model, S: State>(
                 tuple_type.query_with_context(environment, context)?.is_some()
             }
 
-            Predicate::TupleConstant(tuple_constant) => tuple_constant
-                .query_with_context(environment, context)?
-                .is_some(),
-
             Predicate::PositiveTrait(tr) => {
                 tr.query_with_context(environment, context)?.is_some()
             }

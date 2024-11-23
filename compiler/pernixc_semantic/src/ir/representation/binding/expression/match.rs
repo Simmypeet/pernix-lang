@@ -838,6 +838,7 @@ impl<
 
         let arm_count = syntax_tree
             .arms()
+            .connected_list()
             .as_ref()
             .into_iter()
             .flat_map(ConnectedList::elements)
@@ -859,6 +860,7 @@ impl<
 
         let mut match_arms = syntax_tree
             .arms()
+            .connected_list()
             .as_ref()
             .into_iter()
             .flat_map(ConnectedList::elements)

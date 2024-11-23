@@ -42,7 +42,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
         // extract out the generic parameter syntax trees
         for parameter in syntax_tree.iter().flat_map(|x| {
-            x.parameter_list().iter().flat_map(ConnectedList::elements)
+            x.connected_list().iter().flat_map(ConnectedList::elements)
         }) {
             match parameter {
                 syntax_tree::item::GenericParameter::Constant(constant) => {

@@ -5,7 +5,7 @@ use std::fmt::Display;
 use derive_new::new;
 use formatting::{Color, Style};
 
-use crate::source_file::Span;
+use crate::source_file::{Location, Span};
 
 pub mod formatting;
 
@@ -68,7 +68,11 @@ pub struct SourceCodeDisplay<'a, T> {
 impl<T: Display> Display for SourceCodeDisplay<'_, T> {
     #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let start_location = self.span.start_location();
+        let start_location =
+            self.span.start_location().unwrap_or_else(|| Location {
+                line: self.span.source_file().line_coount() - 1,
+                column: self.span.source_file().content().len(),
+            });
         let end_location = self.span.end_location();
 
         let start_line = start_location.line;

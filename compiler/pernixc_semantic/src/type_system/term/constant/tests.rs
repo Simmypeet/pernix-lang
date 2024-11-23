@@ -23,7 +23,7 @@ impl Arbitrary for Primitive {
             proptest::num::i128::ANY.prop_map(Self::Integer),
             proptest::bool::ANY.prop_map(Self::Bool),
         ]
-        
+        .boxed()
     }
 }
 
@@ -40,7 +40,7 @@ impl Arbitrary for Struct<Default> {
             ),
         )
             .prop_map(|(id, fields)| Self { id, fields })
-            
+            .boxed()
     }
 }
 
@@ -57,7 +57,7 @@ impl Arbitrary for Enum<Default> {
                 variant_id,
                 associated_value: associated_value.map(Box::new),
             })
-            
+            .boxed()
     }
 }
 
@@ -71,7 +71,7 @@ impl Arbitrary for Array<Default> {
             0..=2,
         )
         .prop_map(|elements| Self { elements })
-        
+        .boxed()
     }
 }
 
@@ -95,6 +95,6 @@ impl Arbitrary for Constant<Default> {
                     .prop_map(Self::Tuple),
             ]
         })
-        
+            .boxed()
     }
 }

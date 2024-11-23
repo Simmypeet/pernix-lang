@@ -12,8 +12,11 @@ use pernixc_base::{
     handler::Handler,
     source_file::{Location, ReplaceRangeError, SourceFile},
 };
-use pernixc_lexical::token_stream::TokenStream;
-use pernixc_syntax::parser::Parser;
+use pernixc_lexical::token_stream::{TokenStream, Tree};
+use pernixc_syntax::{
+    state_machine::parse::Parse,
+    syntax_tree::{item::ModuleContent, SyntaxTree},
+};
 use tower_lsp::lsp_types::{self, Diagnostic, Url};
 
 use crate::extension::DaignosticExt;
@@ -139,11 +142,10 @@ impl Syntax {
         let source_file = self.source_files_by_url.get(url)?.clone();
 
         let collector = Collector::new();
-        let token_stream = TokenStream::tokenize(&source_file, &collector);
+        let token_stream = TokenStream::tokenize(source_file, &collector);
+        let tree = Tree::new(&token_stream);
 
-        let mut parser = Parser::new(&token_stream, source_file);
-
-        parser.parse_module_content(&collector);
+        ModuleContent::parse.parse_syntax(&tree, &collector);
 
         Some(collector.into_diagnostic())
     }

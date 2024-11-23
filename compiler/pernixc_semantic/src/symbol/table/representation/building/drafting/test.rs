@@ -119,7 +119,7 @@ impl Arbitrary for AccessModifier {
             Just(Self::Private),
             Just(Self::Internal)
         ]
-        
+        .boxed()
     }
 }
 
@@ -314,7 +314,7 @@ impl Arbitrary for Trait {
 
                 Self { access_modifier, trait_members }
             })
-            
+            .boxed()
     }
 }
 
@@ -353,7 +353,7 @@ impl Arbitrary for Function {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         AccessModifier::arbitrary()
             .prop_map(|access_modifier| Self { access_modifier })
-            
+            .boxed()
     }
 }
 
@@ -392,7 +392,7 @@ impl Arbitrary for Type {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         AccessModifier::arbitrary()
             .prop_map(|access_modifier| Self { access_modifier })
-            
+            .boxed()
     }
 }
 
@@ -431,7 +431,7 @@ impl Arbitrary for Struct {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         AccessModifier::arbitrary()
             .prop_map(|access_modifier| Self { access_modifier })
-            
+            .boxed()
     }
 }
 
@@ -491,7 +491,7 @@ impl Arbitrary for Enum {
                 access_modifier,
                 variants,
             })
-            
+            .boxed()
     }
 }
 
@@ -530,7 +530,7 @@ impl Arbitrary for Constant {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         AccessModifier::arbitrary()
             .prop_map(|access_modifier| Self { access_modifier })
-            
+            .boxed()
     }
 }
 
@@ -620,7 +620,7 @@ impl Arbitrary for Module {
                     items,
                 })
         })
-        
+        .boxed()
     }
 }
 

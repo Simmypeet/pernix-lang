@@ -585,7 +585,7 @@ impl<
         // normal tuple pattern, the number of pattern must exactly
         // match
         let tuple_element_patterns = syntax_tree
-            .patterns()
+            .connected_list()
             .iter()
             .flat_map(ConnectedList::elements)
             .collect::<Vec<_>>();
@@ -1030,7 +1030,7 @@ impl<
                 let pattern = Refutable::bind(
                     self,
                     &simplification.result,
-                    pat.pattern(),
+                    pat.tree(),
                     handler,
                 )
                 .unwrap_or_else(|| {

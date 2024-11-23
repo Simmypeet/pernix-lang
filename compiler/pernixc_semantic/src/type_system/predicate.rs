@@ -132,7 +132,6 @@ pub enum Predicate<M: Model> {
     LifetimeOutlives(Outlives<Lifetime<M>>),
     TypeOutlives(Outlives<Type<M>>),
     TupleType(Tuple<Type<M>>),
-    TupleConstant(Tuple<Constant<M>>),
     PositiveTrait(PositiveTrait<M>),
     NegativeTrait(NegativeTrait<M>),
     PositiveMarker(PositiveMarker<M>),
@@ -176,9 +175,6 @@ impl<M: Model> Predicate<M> {
             Predicate::TupleType(x) => {
                 Self::TupleType(Tuple(M::from_default_type(x.0)))
             }
-            Predicate::TupleConstant(x) => {
-                Self::TupleConstant(Tuple(M::from_default_constant(x.0)))
-            }
             Predicate::PositiveTrait(x) => {
                 Self::PositiveTrait(PositiveTrait::from_default_model(x))
             }
@@ -219,7 +215,6 @@ where
             Self::LifetimeOutlives(outlives) => outlives.fmt(table, f),
             Self::TypeOutlives(outlives) => outlives.fmt(table, f),
             Self::TupleType(tuple) => tuple.fmt(table, f),
-            Self::TupleConstant(tuple) => tuple.fmt(table, f),
             Self::PositiveTrait(tr) => tr.fmt(table, f),
             Self::NegativeTrait(tr) => tr.fmt(table, f),
             Self::PositiveMarker(marker) => marker.fmt(table, f),
@@ -238,7 +233,6 @@ impl<M: Model> Predicate<M> {
             Self::LifetimeOutlives(outlives) => outlives.contains_error(),
             Self::TypeOutlives(outlives) => outlives.contains_error(),
             Self::TupleType(tuple) => tuple.contains_error(),
-            Self::TupleConstant(tuple) => tuple.contains_error(),
             Self::PositiveTrait(tr) => tr.contains_error(),
             Self::NegativeTrait(tr) => tr.contains_error(),
             Self::PositiveMarker(marker) => marker.contains_error(),
@@ -260,7 +254,6 @@ impl<M: Model> Predicate<M> {
             }
             Self::TypeOutlives(outlives) => outlives.instantiate(substitution),
             Self::TupleType(tuple) => tuple.instantiate(substitution),
-            Self::TupleConstant(tuple) => tuple.instantiate(substitution),
             Self::PositiveTrait(tr) => tr.instantiate(substitution),
             Self::NegativeTrait(tr) => tr.instantiate(substitution),
             Self::PositiveMarker(marker) => marker.instantiate(substitution),

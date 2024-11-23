@@ -2,6 +2,8 @@
 
 #![allow(missing_docs)]
 
+use std::fmt::Debug;
+
 use enum_as_inner::EnumAsInner;
 use expression::Expression;
 use getset::Getters;
@@ -139,7 +141,7 @@ pub struct EnclosedTree<T> {
 impl<T> EnclosedTree<T> {
     /// Destructs the [`EnclosedTree`] into its components.
     #[must_use]
-    pub fn destruct(self) -> (Punctuation, T, Punctuation) {
+    pub fn dissolve(self) -> (Punctuation, T, Punctuation) {
         (self.open, self.tree, self.close)
     }
 }
@@ -327,7 +329,7 @@ impl<Element, Separator> SourceElement
 impl<Element, Separator> EnclosedConnectedList<Element, Separator> {
     /// Destructs the [`EnclosedConnectedList`] into its components.
     #[must_use]
-    pub fn destruct(
+    pub fn dissolve(
         self,
     ) -> (Punctuation, Option<ConnectedList<Element, Separator>>, Punctuation)
     {

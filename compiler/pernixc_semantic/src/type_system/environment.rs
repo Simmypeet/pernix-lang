@@ -360,7 +360,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
         let mut ambiguous_negative_marker_predicates_set = Vec::new();
         let mut ambiguous_constant_type_predicates_set = Vec::new();
         let mut ambiguous_tuple_type_predicates_set = Vec::new();
-        let mut ambiguous_tuple_constant_predicates_set = Vec::new();
         let mut ambiguous_trait_type_equality_predicates_set = Vec::new();
 
         let mut recursive_trait_type_equality_predicates = Vec::new();
@@ -374,7 +373,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
         let mut all_negative_marker_predicates = Vec::new();
         let mut all_constant_type_predicates = Vec::new();
         let mut all_tuple_type_predicates = Vec::new();
-        let mut all_tuple_constant_predicates = Vec::new();
         let mut all_trait_type_equality_predicates = Vec::new();
 
         for predicate in &environment.premise.predicates {
@@ -401,10 +399,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
 
                 Predicate::TupleType(x) => {
                     all_tuple_type_predicates.push(x.clone());
-                }
-
-                Predicate::TupleConstant(x) => {
-                    all_tuple_constant_predicates.push(x.clone());
                 }
 
                 Predicate::TraitTypeEquality(x) => {
@@ -528,22 +522,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
         );
         check_ambiguous_predicates(
             &mut environment,
-            false,
-            &all_tuple_constant_predicates,
-            &mut overflow_predicates,
-            &mut ambiguous_tuple_constant_predicates_set,
-            |lhs, rhs, environment| {
-                Unification::new(
-                    lhs.0.clone(),
-                    rhs.0.clone(),
-                    lifetime_unifier.clone(),
-                )
-                .query(environment)
-                .map(|x| x.is_some())
-            },
-        );
-        check_ambiguous_predicates(
-            &mut environment,
             true,
             &all_trait_type_equality_predicates,
             &mut overflow_predicates,
@@ -627,18 +605,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
             &mut environment,
             false,
             &all_tuple_type_predicates,
-            &mut overflow_predicates,
-            &mut definite_predicate,
-            |predicate, environment| {
-                definite::Definite(predicate.0.clone())
-                    .query(environment)
-                    .map(|x| x.is_some())
-            },
-        );
-        check_definite_predicate(
-            &mut environment,
-            false,
-            &all_tuple_constant_predicates,
             &mut overflow_predicates,
             &mut definite_predicate,
             |predicate, environment| {
@@ -772,13 +738,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                     .map(Predicate::TupleType),
             )
             .chain(
-                ambiguous_tuple_constant_predicates_set
-                    .iter()
-                    .flatten()
-                    .cloned()
-                    .map(Predicate::TupleConstant),
-            )
-            .chain(
                 ambiguous_trait_type_equality_predicates_set
                     .iter()
                     .flatten()
@@ -806,11 +765,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
             )
             .chain(
                 ambiguous_tuple_type_predicates_set
-                    .into_iter()
-                    .map(|x| x.into_iter().map(Into::into).collect()),
-            )
-            .chain(
-                ambiguous_tuple_constant_predicates_set
                     .into_iter()
                     .map(|x| x.into_iter().map(Into::into).collect()),
             )

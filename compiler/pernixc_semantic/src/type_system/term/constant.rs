@@ -742,22 +742,20 @@ where
         Err(predicate)
     }
 
-    fn as_tuple_predicate(
-        predicate: &Predicate<M>,
-    ) -> Option<&predicate::Tuple<Self>> {
-        predicate.as_tuple_constant()
+    fn as_tuple_predicate(_: &Predicate<M>) -> Option<&predicate::Tuple<Self>> {
+        None
     }
 
     fn as_tuple_predicate_mut(
-        predicate: &mut Predicate<M>,
+        _: &mut Predicate<M>,
     ) -> Option<&mut predicate::Tuple<Self>> {
-        predicate.as_tuple_constant_mut()
+        None
     }
 
     fn into_tuple_predicate(
         predicate: Predicate<M>,
     ) -> Result<predicate::Tuple<Self>, Predicate<M>> {
-        predicate.into_tuple_constant()
+        Err(predicate)
     }
 
     fn definite_satisfiability(&self) -> Satisfiability {

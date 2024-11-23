@@ -1650,6 +1650,7 @@ impl<
 
         let mut arguments = call
             .arguments()
+            .connected_list()
             .as_ref()
             .into_iter()
             .flat_map(ConnectedList::elements)
@@ -2022,6 +2023,7 @@ impl<
             syntax_tree::expression::PostfixOperator::Call(call) => {
                 let arguments = call
                     .arguments()
+                    .connected_list()
                     .iter()
                     .flat_map(ConnectedList::elements)
                     .map(|arg| {
@@ -2433,7 +2435,7 @@ impl<
 
                     syntax_tree::expression::AccessKind::Index(index) => {
                         let value = self.bind_value_or_error(
-                            &**index.expression(),
+                            &**index.expression().tree(),
                             handler,
                         )?;
 
@@ -2725,6 +2727,7 @@ impl<
 
         for field_syn in syntax_tree
             .field_initializers()
+            .connected_list()
             .as_ref()
             .into_iter()
             .flat_map(ConnectedList::elements)
@@ -2940,7 +2943,7 @@ impl<
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let bind_as_tuple =
-            syntax_tree.expression().as_ref().map_or(true, |x| {
+            syntax_tree.connected_list().as_ref().map_or(true, |x| {
                 !x.rest().is_empty()
                     || x.trailing_separator().is_some()
                     || x.first().ellipsis().is_some()
@@ -2950,7 +2953,7 @@ impl<
             let mut elements = Vec::new();
 
             for element_syn in syntax_tree
-                .expression()
+                .connected_list()
                 .as_ref()
                 .into_iter()
                 .flat_map(ConnectedList::elements)
@@ -3021,7 +3024,7 @@ impl<
             // propagate the target
             self.bind(
                 &**syntax_tree
-                    .expression()
+                    .connected_list()
                     .as_ref()
                     .unwrap()
                     .first()
@@ -3074,7 +3077,7 @@ impl<
         _: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
-        let Some(arguments) = syntax_tree.arguments() else {
+        let Some(arguments) = syntax_tree.arguments().connected_list() else {
             let inference = InferenceVariable::new();
 
             assert!(self
@@ -4594,13 +4597,13 @@ impl<
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         let condition =
-            self.bind_value_or_error(&**syntax_tree.condition(), handler)?;
+            self.bind_value_or_error(syntax_tree.parenthesized(), handler)?;
 
         // expect the type boolean
         let _ = self.type_check(
             &self.type_of_value(&condition)?,
             Expected::Known(Type::Primitive(r#type::Primitive::Bool)),
-            syntax_tree.condition().span(),
+            syntax_tree.parenthesized().span(),
             true,
             handler,
         );
@@ -4886,7 +4889,7 @@ impl<
         });
 
         // bind the loop block
-        for statement in syntax_tree.block().statements().statements() {
+        for statement in syntax_tree.block().statements().tree() {
             self.bind_statement(statement, handler)?;
         }
 
@@ -5109,11 +5112,11 @@ impl<
 
         // bind the conditional value
         let condition =
-            self.bind_value_or_error(&**syntax_tree.condition(), handler)?;
+            self.bind_value_or_error(syntax_tree.parenthesized(), handler)?;
         let _ = self.type_check(
             &self.type_of_value(&condition)?,
             Expected::Known(Type::Primitive(r#type::Primitive::Bool)),
-            syntax_tree.condition().span(),
+            syntax_tree.parenthesized().span(),
             true,
             handler,
         );
@@ -5166,7 +5169,7 @@ impl<
         self.current_block_id = loop_body_block_id;
 
         // bind the loop block
-        for statement in syntax_tree.block().statements().statements() {
+        for statement in syntax_tree.block().statements().tree() {
             self.bind_statement(statement, handler)?;
         }
 
@@ -5400,7 +5403,7 @@ impl<
         self.stack.push_scope(scope_id);
 
         // bind list of statements
-        for statement in syntax_tree.statements().statements() {
+        for statement in syntax_tree.statements().tree() {
             self.bind_statement(statement, handler)?;
         }
 

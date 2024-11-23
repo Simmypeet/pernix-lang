@@ -3344,7 +3344,7 @@ fn array_access() {
                     return false;
                 };
 
-                error.span.str() == "3f64"
+                error.span.str() == "[3f64]"
                     && error.expected_type == Type::Primitive(Primitive::Usize)
                     && error.found_type == Type::Primitive(Primitive::Float64)
             }));

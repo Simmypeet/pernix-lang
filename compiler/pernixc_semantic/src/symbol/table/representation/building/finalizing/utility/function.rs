@@ -98,7 +98,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         // build the parameters
         for parameter in syntax_tree
             .parameters()
-            .parameter_list()
+            .connected_list()
             .iter()
             .flat_map(ConnectedList::elements)
         {

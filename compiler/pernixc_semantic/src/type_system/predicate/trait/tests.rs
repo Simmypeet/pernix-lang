@@ -471,7 +471,7 @@ impl Arbitrary for SingleImplementation {
                     }
                 },
             )
-            
+            .boxed()
     }
 }
 
@@ -846,7 +846,7 @@ impl Arbitrary for SpecializedImplementation {
                     })
                 },
             )
-            
+            .boxed()
     }
 }
 
@@ -925,7 +925,7 @@ impl Arbitrary for FallbackToGeneralImplementation {
 
                 Self(prop)
             })
-            
+            .boxed()
     }
 }
 
@@ -1136,7 +1136,7 @@ impl Arbitrary for NegativeImplementation {
                     generic_arguments: prop.generic_arguments,
                 }
             })
-            
+
     }
 }
 */

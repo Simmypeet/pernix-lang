@@ -12,10 +12,13 @@ use pernixc_base::{
     handler::Handler,
     source_file::{SourceElement, SourceFile, Span},
 };
-use pernixc_lexical::{token, token_stream::TokenStream};
+use pernixc_lexical::{
+    token,
+    token_stream::{TokenStream, Tree},
+};
 use pernixc_syntax::{
-    parser::Parser,
-    syntax_tree::{json, ConnectedList},
+    state_machine::parse::Parse,
+    syntax_tree::{json, ConnectedList, SyntaxTree},
 };
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Url};
 
@@ -344,17 +347,13 @@ impl Workspace {
             JsonConfigurationErrorCollector(RwLock::new(Vec::new()));
 
         let token_stream = TokenStream::tokenize(
-            &pernix_configuration_source_file,
+            pernix_configuration_source_file.clone(),
             &error_collector,
         );
-
-        let mut parser = Parser::new(
-            &token_stream,
-            pernix_configuration_source_file.clone(),
-        );
+        let tree = Tree::new(&token_stream);
 
         let Some(configuration_json) =
-            parser.parse_json_value(&error_collector)
+            json::Value::parse.parse_syntax(&tree, &error_collector)
         else {
             return Err(NewWorkspaceError::JsonConfiguration(
                 pernix_configuration_path,

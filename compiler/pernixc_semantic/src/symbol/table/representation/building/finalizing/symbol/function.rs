@@ -134,7 +134,7 @@ impl Finalize for Function {
                     let irrefutable_patterns = syntax_tree
                         .signature()
                         .parameters()
-                        .parameter_list()
+                        .connected_list()
                         .as_ref()
                         .into_iter()
                         .flat_map(ConnectedList::elements)
@@ -151,7 +151,7 @@ impl Finalize for Function {
                     )
                     .unwrap();
 
-                    for statement in syntax_tree.body().statements() {
+                    for statement in syntax_tree.statements().tree() {
                         let _ = binder.bind_statement(statement, handler);
                     }
 

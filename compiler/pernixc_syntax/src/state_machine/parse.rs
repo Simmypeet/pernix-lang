@@ -623,38 +623,33 @@ impl<'a, T: Parse<'a> + Clone> Parse<'a> for KeepTakeAll<T> {
     ) -> Result<Self::Output> {
         let mut list = Vec::new();
         let mut recovering = false;
-        let mut latest_expected_len = state_machine.expected_len();
+        let tree = state_machine.tree;
 
         while state_machine.peek().is_some() {
-            match self.element_parser.clone().parse(state_machine, handler) {
+            match self
+                .element_parser
+                .clone()
+                .parse_and_drain(state_machine, handler)
+            {
                 Ok(element) => {
                     list.push(element);
                     recovering = false;
                 }
 
-                Err(err) => {
-                    let this_expecteds =
-                        state_machine.expected.drain(latest_expected_len..);
-
+                Err((unexpected, expected)) => {
                     // not in recovery mode, report the error
                     if !recovering {
-                        let this_expecteds = this_expecteds.collect::<Vec<_>>();
+                        let this_expecteds = expected.collect::<Vec<_>>();
 
                         handler.receive(
-                            error::Error::new(
-                                state_machine.tree,
-                                err,
-                                this_expecteds,
-                            )
-                            .unwrap(),
+                            error::Error::new(tree, unexpected, this_expecteds)
+                                .unwrap(),
                         );
                     }
 
                     recovering = true;
                 }
             }
-
-            latest_expected_len = state_machine.expected_len();
         }
 
         Ok(list)

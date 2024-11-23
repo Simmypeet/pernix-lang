@@ -71,7 +71,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
     ) {
         let identifiers = syntax_tree
             .body()
-            .variant_list()
+            .connected_list()
             .as_ref()
             .into_iter()
             .flat_map(ConnectedList::elements)
@@ -415,8 +415,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                     );
                 }
                 syntax_tree::item::Item::Extern(syn) => {
-                    let (_, calling_convention, _, functions, _) =
-                        syn.dissolve();
+                    let (_, calling_convention, functions) = syn.dissolve();
 
                     // get the calling convention of this extern
                     let calling_convention =
@@ -432,7 +431,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                             Extern::Unknown
                         };
 
-                    for function in functions {
+                    for function in functions.dissolve().1 {
                         let accessibility = self
                             .create_accessibility(
                                 module_id.into(),
@@ -897,22 +896,24 @@ impl Table<Building<RwLockContainer, Drafter>> {
         defined_in_module_id: ID<Module>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        let mut current_id: GlobalID =
-            match implementation.signature().qualified_identifier().root() {
-                syntax_tree::QualifiedIdentifierRoot::Target(_) => self
-                    .get_root_module_id(defined_in_module_id.into())
-                    .unwrap()
-                    .into(),
-                syntax_tree::QualifiedIdentifierRoot::This(keyword) => {
-                    handler.receive(Box::new(ThisNotFound {
-                        span: keyword.span(),
-                    }));
-                    return;
-                }
-                syntax_tree::QualifiedIdentifierRoot::GenericIdentifier(
-                    generic_identifier,
-                ) => {
-                    let Ok(id) = self
+        let mut current_id: GlobalID = match implementation
+            .signature()
+            .qualified_identifier()
+            .root()
+        {
+            syntax_tree::QualifiedIdentifierRoot::Target(_) => self
+                .get_root_module_id(defined_in_module_id.into())
+                .unwrap()
+                .into(),
+            syntax_tree::QualifiedIdentifierRoot::This(keyword) => {
+                handler
+                    .receive(Box::new(ThisNotFound { span: keyword.span() }));
+                return;
+            }
+            syntax_tree::QualifiedIdentifierRoot::GenericIdentifier(
+                generic_identifier,
+            ) => {
+                let Ok(id) = self
                     .get_member_of(
                         defined_in_module_id.into(),
                         generic_identifier.identifier().span.str(),
@@ -936,9 +937,9 @@ impl Table<Building<RwLockContainer, Drafter>> {
                     return;
                 };
 
-                    id
-                }
-            };
+                id
+            }
+        };
 
         if !implementation.signature().qualified_identifier().rest().is_empty()
         {

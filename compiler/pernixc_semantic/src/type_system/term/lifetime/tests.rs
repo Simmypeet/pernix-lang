@@ -27,6 +27,6 @@ impl Arbitrary for Lifetime<Default> {
             4 => (GenericID::arbitrary(), ID::arbitrary())
                 .prop_map(|(parent, id)| Self::Parameter(LifetimeParameterID { parent, id })),
         ]
-        
+            .boxed()
     }
 }
