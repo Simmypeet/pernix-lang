@@ -93,6 +93,7 @@ impl<
         match_exit_block_id: ID<Block<infer::Model>>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), InternalError> {
+        self.stack.push_scope(match_arm.scope_id);
         let _ = self.current_block_mut().insert_instruction(
             Instruction::ScopePush(ScopePush(match_arm.scope_id)),
         );
@@ -108,8 +109,17 @@ impl<
             handler,
         );
 
+        // add the named binding point to the current scope
+        self.stack
+            .current_scope_mut()
+            .add_named_binding_point(name_binding_point);
+
         let value = self.bind_value_or_error(match_arm.expression, handler)?;
 
+        assert_eq!(
+            self.stack.pop_scope().map(|x| x.scope_id()),
+            Some(match_arm.scope_id),
+        );
         let _ = self.current_block_mut().insert_instruction(
             Instruction::ScopePop(ScopePop(match_arm.scope_id)),
         );
