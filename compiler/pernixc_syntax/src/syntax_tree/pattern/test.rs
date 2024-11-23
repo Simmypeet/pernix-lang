@@ -6,6 +6,12 @@ use crate::syntax_tree::{
     pattern::strategy::{Irrefutable, Refutable},
 };
 
+#[test]
+fn test() {
+    let tuple =
+        dbg!(syntax_tree::test::parse::<super::Irrefutable>("()").unwrap());
+}
+
 proptest! {
     #[test]
     #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]

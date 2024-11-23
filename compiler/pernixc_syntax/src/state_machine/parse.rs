@@ -136,6 +136,7 @@ pub trait Parse<'a> {
             }
             Err(unexpected) => {
                 let expected = state_machine.take_expected();
+
                 handler.receive(
                     error::Error::new(tree, unexpected, expected).unwrap(),
                 );
@@ -266,10 +267,14 @@ pub trait Parse<'a> {
 
                 Ok(result)
             }
-            Err(unexpected) => Err((
-                unexpected,
-                state_machine.expected.drain(current_expected_len..),
-            )),
+            Err(unexpected) => {
+                state_machine.correct_expected_len = current_expected_len;
+
+                Err((
+                    unexpected,
+                    state_machine.expected.drain(current_expected_len..),
+                ))
+            }
         }
     }
 }
@@ -445,6 +450,7 @@ impl<'a, T: Parse<'a>> Parse<'a> for OrNone<T> {
                 state_machine.location = current_location;
                 state_machine.eaten_tokens = current_eaten;
                 state_machine.expected.truncate(expected_len);
+                state_machine.correct_expected_len = expected_len;
 
                 Ok(None)
             }
@@ -734,12 +740,19 @@ macro_rules! implements_tuple_branch {
                         state_machine.location = starting_location;
                         state_machine.eaten_tokens = starting_eaten;
 
+                        state_machine.correct_expected_len
+                            = current_expected_range.end;
+
                         let next_err = match $i.parse(state_machine, handler) {
                             // return the output now
                             Ok(output) => {
                                 state_machine
                                     .expected
                                     .truncate(starting_expected_len);
+
+                                state_machine
+                                    .correct_expected_len
+                                    = starting_expected_len;
 
                                 return Ok(output);
                             }

@@ -106,6 +106,14 @@ impl<'a> StateMachine<'a> {
     /// This counts as a token that has been choosen by the parser; therefore,
     /// the [`Self::eaten_tokens`] is incremented.
     pub fn next_no_skip(&mut self) -> Option<&'a TokenKind> {
+        assert_eq!(
+            self.expected.len(),
+            self.correct_expected_len,
+            "invariant violated: make sure that you haven't discarded the \
+             error; expected: {:#?}",
+            self.expected
+        );
+
         // counts as eaten no matter what
         self.eaten_tokens += 1;
 
@@ -131,7 +139,8 @@ impl<'a> StateMachine<'a> {
             self.expected.len(),
             self.correct_expected_len,
             "invariant violated: make sure that you haven't discarded the \
-             error"
+             error; expected: {:#?}",
+            self.expected
         );
 
         // counts as eaten no matter what
@@ -166,7 +175,8 @@ impl<'a> StateMachine<'a> {
             self.expected.len(),
             self.correct_expected_len,
             "invariant violated: make sure that you haven't discarded the \
-             error"
+             error; expected: {:#?}",
+            self.expected
         );
 
         // counts as eaten no matter what
@@ -186,8 +196,8 @@ impl<'a> StateMachine<'a> {
                 tree: self.tree,
                 location: Location::new(delimited_node_index, 0),
                 eaten_tokens: 0,
-                expected: self.take_expected(),
                 correct_expected_len: self.correct_expected_len,
+                expected: self.take_expected(),
             };
 
             let result = f(
@@ -196,6 +206,7 @@ impl<'a> StateMachine<'a> {
             );
 
             self.expected = step_state_machine.expected;
+            self.correct_expected_len = step_state_machine.correct_expected_len;
 
             // accumulates the step state machine's eaten tokens
             self.eaten_tokens += step_state_machine.eaten_tokens;
@@ -233,6 +244,7 @@ impl<'a> StateMachine<'a> {
 
     /// Takes the expected vector and returns it.
     pub fn take_expected(&mut self) -> Vec<Expected> {
+        self.correct_expected_len = 0;
         std::mem::take(&mut self.expected)
     }
 }

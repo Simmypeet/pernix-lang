@@ -4,6 +4,10 @@ use proptest::{prelude::Arbitrary, proptest};
 use crate::syntax_tree::{self, statement::strategy::Statement};
 
 proptest! {
+    #![proptest_config(proptest::test_runner::Config {
+        max_shrink_iters: 10000,
+        ..proptest::test_runner::Config::default()
+    })]
     #[test]
     #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
     fn statement(
