@@ -1493,6 +1493,16 @@ where
 }
 
 impl<M: Model> Type<M> {
+    /// Keeps removing the reference until it reaches a non-reference type.
+    ///
+    /// This is useful for pattern matching.
+    pub fn reduce_reference(mut self: &Self) -> &Self {
+        while let Self::Reference(reference) = self {
+            self = &*reference.pointee;
+        }
+        self
+    }
+
     /// Gets a list of [`GlobalID`]s that occur in the type.
     #[must_use]
     pub fn get_global_id_dependencies(

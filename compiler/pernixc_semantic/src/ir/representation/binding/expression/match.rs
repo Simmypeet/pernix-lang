@@ -4,6 +4,8 @@ use std::{
     ops::Not,
 };
 
+use drain_filter_polyfill::VecExt;
+use enum_as_inner::EnumAsInner;
 use pernixc_base::{
     handler::Handler,
     source_file::{SourceElement, Span},
@@ -13,7 +15,7 @@ use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use super::{Bind, Config, Expression, Path, Target};
 use crate::{
     arena::ID,
-    error,
+    error::{self, NonExhaustiveMatch, UnreachableMatchArm},
     ir::{
         address::{Address, Memory},
         control_flow_graph::Block,
@@ -37,17 +39,52 @@ use crate::{
         },
     },
     symbol::{
-        table::{self, representation::Index, resolution},
+        self,
+        table::{self, representation::Index, resolution, Table},
         AdtID,
     },
     type_system::{
-        self, simplify,
+        self,
+        instantiation::{self, Instantiation},
+        simplify,
         term::{
             r#type::{self, Primitive, Qualifier, Type},
-            Symbol,
+            Symbol, Term,
         },
     },
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TupleCase {
+    pub cases: Vec<Case>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StrcturalCase {
+    pub cases_by_field_id: HashMap<ID<symbol::Field>, Case>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumCase {
+    pub cases_by_variant_id: HashMap<ID<symbol::Variant>, Case>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BooleanCase {
+    pub true_case_handled: bool,
+    pub false_case_handled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
+#[allow(unused)]
+pub enum Case {
+    Unhandled,
+    Handled,
+    Boolean(BooleanCase),
+    Enum(EnumCase),
+    Tuple(TupleCase),
+    Strctural(StrcturalCase),
+}
 
 /// Represents a single arm in the match expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,13 +107,36 @@ struct MatchArm<'a> {
     binding_result: Option<(ID<Block<infer::Model>>, Value<infer::Model>)>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct AddressInfo<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MatchInfo<'a> {
     address: Address<infer::Model>,
     r#type: &'a Type<infer::Model>,
     qualifier: Qualifier,
     from_lvalue: bool,
     span: Span,
+}
+
+impl Refutable {
+    fn get_conditional_value(&self, table: &Table<impl table::State>) -> i128 {
+        match self {
+            Refutable::Boolean(boolean) => boolean.value as i128,
+            Refutable::Integer(integer) => integer.value,
+            Refutable::Enum(variant) => {
+                let parent_enum_id =
+                    table.get(variant.variant_id).unwrap().parent_enum_id();
+
+                table
+                    .get(parent_enum_id)
+                    .unwrap()
+                    .variant_declaration_order()
+                    .iter()
+                    .position(|x| *x == variant.variant_id)
+                    .unwrap() as i128
+            }
+
+            x => panic!("pattern {x:#?} is not refutable"),
+        }
+    }
 }
 
 impl<
@@ -86,14 +146,314 @@ impl<
         TO: type_system::observer::Observer<infer::Model, S>,
     > Binder<'t, S, RO, TO>
 {
+    #[allow(unused)]
+    fn handle_case(
+        &mut self,
+        case: &mut Case,
+        refutable: &Refutable,
+        ty: &Type<infer::Model>,
+    ) {
+        let ty = ty.reduce_reference();
+        if let Type::Symbol(Symbol { id: AdtID::Enum(enum_id), .. }) = ty {
+            let symbol = self.table.get(*enum_id).unwrap();
+            if symbol.variant_declaration_order().is_empty() {
+                *case = Case::Handled;
+                return;
+            }
+        }
+
+        match refutable {
+            // mark the case as handled
+            Refutable::Wildcard(_) | Refutable::Named(_) => {
+                *case = Case::Handled;
+            }
+
+            // handle boolean case
+            Refutable::Boolean(boolean) => match case {
+                Case::Unhandled => {
+                    *case = Case::Boolean(BooleanCase {
+                        true_case_handled: boolean.value,
+                        false_case_handled: !boolean.value,
+                    });
+                }
+                Case::Handled => {
+                    // do nothing
+                }
+                Case::Boolean(boolean_case) => {
+                    boolean_case.true_case_handled |= boolean.value;
+                    boolean_case.false_case_handled |= !boolean.value;
+
+                    // if both cases are handled, mark the case as handled
+                    if boolean_case.true_case_handled
+                        && boolean_case.false_case_handled
+                    {
+                        *case = Case::Handled;
+                    }
+                }
+
+                _ => panic!("unexpected case {case:#?}"),
+            },
+
+            Refutable::Integer(_) => {
+                // currently, we don't support exhaustive integer matching
+                // so we'll do nothing here
+            }
+
+            Refutable::Enum(en) => {
+                let Type::Symbol(Symbol {
+                    id: AdtID::Enum(enum_id),
+                    generic_arguments,
+                }) = ty
+                else {
+                    panic!("should've been an enum")
+                };
+                let enum_sym = self.table.get(*enum_id).unwrap();
+                let instantiation = Instantiation::from_generic_arguments(
+                    generic_arguments.clone(),
+                    (*enum_id).into(),
+                    &enum_sym.generic_declaration.parameters,
+                )
+                .unwrap();
+                let variant_id = en.variant_id;
+                let variant = self.table.get(variant_id).unwrap();
+
+                match case {
+                    Case::Unhandled => {
+                        *case = Case::Enum(EnumCase {
+                            cases_by_variant_id: enum_sym
+                                .variant_declaration_order()
+                                .iter()
+                                .copied()
+                                .map(|x| (x, Case::Unhandled))
+                                .collect(),
+                        });
+                    }
+
+                    // do nothing
+                    Case::Handled => return,
+
+                    Case::Enum(_) => {
+                        // continue, the enum case has been created
+                    }
+
+                    _ => panic!("unexpected case {case:#?}"),
+                }
+
+                if let Some(ty) = &variant.associated_type {
+                    let mut ty = Type::from_default_model(ty.clone());
+                    instantiation::instantiate(&mut ty, &instantiation);
+
+                    // handle the associated type
+                    self.handle_case(
+                        case.as_enum_mut()
+                            .unwrap()
+                            .cases_by_variant_id
+                            .get_mut(&variant_id)
+                            .unwrap(),
+                        en.pattern.as_ref().unwrap(),
+                        &ty,
+                    );
+                } else {
+                    // just mark as unhandled
+                    assert!(en.pattern.is_none());
+
+                    *case
+                        .as_enum_mut()
+                        .unwrap()
+                        .cases_by_variant_id
+                        .get_mut(&variant_id)
+                        .unwrap() = Case::Handled;
+                }
+
+                // check if all the cases are handled
+                if case
+                    .as_enum()
+                    .unwrap()
+                    .cases_by_variant_id
+                    .values()
+                    .all(|x| x == &Case::Handled)
+                {
+                    *case = Case::Handled;
+                }
+            }
+
+            Refutable::Tuple(tuple) => {
+                let Type::Tuple(tuple_ty) = ty else {
+                    panic!("should've been a tuple")
+                };
+                let unpacked_position =
+                    tuple.elements.iter().position(|x| !x.is_packed);
+
+                match case {
+                    Case::Unhandled => {
+                        *case = Case::Tuple(TupleCase {
+                            cases: (0..tuple_ty.elements.len())
+                                .map(|_| Case::Unhandled)
+                                .collect(),
+                        });
+                    }
+                    Case::Tuple(_) => {
+                        // continue, the tuple case has been created
+                    }
+                    Case::Handled => return,
+
+                    _ => panic!("unexpected case {case:#?}"),
+                }
+
+                assert!(
+                    tuple.elements.iter().filter(|x| x.is_packed).count() <= 1
+                );
+
+                if let Some(unpacked_position) = unpacked_position {
+                    let start_range = 0..unpacked_position;
+                    let end_range =
+                        unpacked_position + 1..tuple_ty.elements.len();
+
+                    let packed_type_range = unpacked_position
+                        ..(tuple_ty.elements.len() - end_range.len());
+                    let type_end_range =
+                        packed_type_range.end..tuple_ty.elements.len();
+
+                    assert_eq!(end_range.len(), type_end_range.len());
+
+                    // check start case
+                    for i in start_range {
+                        self.handle_case(
+                            case.as_tuple_mut()
+                                .unwrap()
+                                .cases
+                                .get_mut(i)
+                                .unwrap(),
+                            &tuple.elements[i].pattern,
+                            &tuple_ty.elements[i].term,
+                        );
+                    }
+
+                    // check end case
+                    for (i, j) in end_range.zip(type_end_range) {
+                        self.handle_case(
+                            case.as_tuple_mut()
+                                .unwrap()
+                                .cases
+                                .get_mut(j)
+                                .unwrap(),
+                            &tuple.elements[i].pattern,
+                            &tuple_ty.elements[j].term,
+                        );
+                    }
+
+                    // make packed case handled since it's must be irrefutable
+                    for i in packed_type_range {
+                        *case
+                            .as_tuple_mut()
+                            .unwrap()
+                            .cases
+                            .get_mut(i)
+                            .unwrap() = Case::Handled;
+                    }
+                } else {
+                    for (i, element) in tuple.elements.iter().enumerate() {
+                        self.handle_case(
+                            case.as_tuple_mut()
+                                .unwrap()
+                                .cases
+                                .get_mut(i)
+                                .unwrap(),
+                            &element.pattern,
+                            &tuple_ty.elements[i].term,
+                        );
+                    }
+                }
+
+                // check if all the cases are handled
+                if case
+                    .as_tuple()
+                    .unwrap()
+                    .cases
+                    .iter()
+                    .all(|x| x == &Case::Handled)
+                {
+                    *case = Case::Handled;
+                }
+            }
+
+            Refutable::Structural(structural) => {
+                let Type::Symbol(Symbol {
+                    id: AdtID::Struct(struct_id),
+                    generic_arguments,
+                }) = ty
+                else {
+                    panic!("should've been a struct")
+                };
+                let struct_sym = self.table.get(*struct_id).unwrap();
+                let instantiation = Instantiation::from_generic_arguments(
+                    generic_arguments.clone(),
+                    (*struct_id).into(),
+                    &struct_sym.generic_declaration.parameters,
+                )
+                .unwrap();
+
+                match case {
+                    Case::Unhandled => {
+                        *case = Case::Strctural(StrcturalCase {
+                            cases_by_field_id: struct_sym
+                                .field_declaration_order()
+                                .iter()
+                                .copied()
+                                .map(|x| (x, Case::Unhandled))
+                                .collect(),
+                        });
+                    }
+
+                    // do nothing
+                    Case::Handled => return,
+
+                    Case::Strctural(_) => {
+                        // continue, the structural case has been created
+                    }
+
+                    _ => panic!("unexpected case {case:#?}"),
+                }
+
+                for (field_id, pattern) in &structural.patterns_by_field_id {
+                    let field = struct_sym.fields().get(*field_id).unwrap();
+                    let mut ty = Type::from_default_model(field.r#type.clone());
+                    instantiation::instantiate(&mut ty, &instantiation);
+
+                    self.handle_case(
+                        case.as_strctural_mut()
+                            .unwrap()
+                            .cases_by_field_id
+                            .get_mut(field_id)
+                            .unwrap(),
+                        pattern,
+                        &ty,
+                    );
+                }
+
+                // check if all the cases are handled
+                if case
+                    .as_strctural()
+                    .unwrap()
+                    .cases_by_field_id
+                    .values()
+                    .all(|x| x == &Case::Handled)
+                {
+                    *case = Case::Handled;
+                }
+            }
+        }
+    }
+
     fn bind_match_arm(
         &mut self,
         match_arm: &mut MatchArm,
-        address_info: AddressInfo,
+        match_info: MatchInfo,
         match_exit_block_id: ID<Block<infer::Model>>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), InternalError> {
         self.stack.push_scope(match_arm.scope_id);
+
         let _ = self.current_block_mut().insert_instruction(
             Instruction::ScopePush(ScopePush(match_arm.scope_id)),
         );
@@ -102,10 +462,10 @@ impl<
         self.insert_refutable_named_binding_point(
             &mut name_binding_point,
             &match_arm.pattern,
-            address_info.r#type,
-            address_info.address,
-            address_info.qualifier,
-            address_info.from_lvalue,
+            match_info.r#type,
+            match_info.address,
+            match_info.qualifier,
+            match_info.from_lvalue,
             handler,
         );
 
@@ -208,7 +568,7 @@ impl<
         &mut self,
         match_arms: &mut [MatchArm],
         refutable_path: &Path,
-        address_info: AddressInfo,
+        match_info: MatchInfo,
         continue_block_id: ID<Block<infer::Model>>,
         match_exit_block_id: ID<Block<infer::Model>>,
         handler: &dyn Handler<Box<dyn error::Error>>,
@@ -226,8 +586,14 @@ impl<
             // match arms that have the same refutable condition
             while i + 1 < match_arms.len() {
                 for j in i + 1..match_arms.len() {
-                    if match_arms[i].pattern.get_from_path(refutable_path)
-                        != match_arms[j].pattern.get_from_path(refutable_path)
+                    if match_arms[i]
+                        .pattern
+                        .get_from_path(refutable_path)
+                        .get_conditional_value(self.table)
+                        != match_arms[j]
+                            .pattern
+                            .get_from_path(refutable_path)
+                            .get_conditional_value(self.table)
                     {
                         continue;
                     }
@@ -244,31 +610,13 @@ impl<
 
         // bind all the arms
         {
-            let get_value_of = |index: usize| match match_arms
-                .get(index)
-                .unwrap()
-                .pattern
-                .get_from_path(refutable_path)
-            {
-                Refutable::Boolean(boolean) => boolean.value as i128,
-                Refutable::Integer(integer) => integer.value,
-                Refutable::Enum(variant) => {
-                    let parent_enum_id = self
-                        .table
-                        .get(variant.variant_id)
-                        .unwrap()
-                        .parent_enum_id();
-
-                    self.table
-                        .get(parent_enum_id)
-                        .unwrap()
-                        .variant_declaration_order()
-                        .iter()
-                        .position(|x| *x == variant.variant_id)
-                        .unwrap() as i128
-                }
-
-                x => panic!("pattern {x:#?} is not refutable"),
+            let get_value_of = |index: usize| {
+                match_arms
+                    .get(index)
+                    .unwrap()
+                    .pattern
+                    .get_from_path(refutable_path)
+                    .get_conditional_value(self.table)
             };
 
             // vec of ranges of the same refutable condition
@@ -299,8 +647,8 @@ impl<
                 .get_address_and_type_from_path(
                     &match_arms.first().unwrap().pattern,
                     refutable_path,
-                    address_info.address.clone(),
-                    address_info.r#type.clone(),
+                    match_info.address.clone(),
+                    match_info.r#type.clone(),
                 );
 
             match pattern {
@@ -312,7 +660,7 @@ impl<
 
                     let load_value = self.create_register_assignmnet(
                         Assignment::Load(Load { address: load_address }),
-                        Some(address_info.span.clone()),
+                        Some(match_info.span.clone()),
                     );
 
                     if value_groups.len() == 1 {
@@ -359,14 +707,14 @@ impl<
                         self.current_block_id = binding_block_id;
                         self.handle_match_arms(
                             match_arms[range].as_mut(),
-                            address_info,
+                            match_info,
                             continue_block_id,
                             match_exit_block_id,
                             handler,
                         )?;
                         self.current_block_id = current_block_id;
                     } else {
-                        assert_eq!(value_groups.len(), 2);
+                        assert_eq!(value_groups.len(), 2, "{value_groups:#?}");
 
                         let (true_range, false_range) =
                             if value_groups[0].1 == 1 {
@@ -414,7 +762,7 @@ impl<
                         self.current_block_id = true_block_id;
                         self.handle_match_arms(
                             match_arms[true_range].as_mut(),
-                            address_info.clone(),
+                            match_info.clone(),
                             continue_block_id,
                             match_exit_block_id,
                             handler,
@@ -424,7 +772,7 @@ impl<
                         self.current_block_id = false_block_id;
                         self.handle_match_arms(
                             match_arms[false_range].as_mut(),
-                            address_info,
+                            match_info,
                             continue_block_id,
                             match_exit_block_id,
                             handler,
@@ -442,14 +790,14 @@ impl<
                                 Assignment::Load(Load {
                                     address: load_address,
                                 }),
-                                Some(address_info.span.clone()),
+                                Some(match_info.span.clone()),
                             ),
 
                         Refutable::Enum(_) => self.create_register_assignmnet(
                             Assignment::VariantNumber(VariantNumber {
-                                address: address_info.address.clone(),
+                                address: match_info.address.clone(),
                             }),
-                            Some(address_info.span.clone()),
+                            Some(match_info.span.clone()),
                         ),
 
                         _ => unreachable!(),
@@ -469,7 +817,7 @@ impl<
                         // simply bind without condition
                         (1, true) => self.handle_match_arms(
                             match_arms,
-                            address_info,
+                            match_info,
                             continue_block_id,
                             match_exit_block_id,
                             handler,
@@ -498,7 +846,7 @@ impl<
                                                     numeric_value,
                                                 )?,
                                                 span: Some(
-                                                    address_info.span.clone(),
+                                                    match_info.span.clone(),
                                                 ),
                                             },
                                         )),
@@ -506,7 +854,7 @@ impl<
                                             RelationalOperator::Equal,
                                         ),
                                     }),
-                                    Some(address_info.span.clone()),
+                                    Some(match_info.span.clone()),
                                 );
 
                             assert!(self
@@ -535,7 +883,7 @@ impl<
                             self.current_block_id = binding_block_id;
                             self.handle_match_arms(
                                 match_arms,
-                                address_info,
+                                match_info,
                                 continue_block_id,
                                 match_exit_block_id,
                                 handler,
@@ -570,7 +918,7 @@ impl<
                                                     numeric_value,
                                                 )?,
                                                 span: Some(
-                                                    address_info.span.clone(),
+                                                    match_info.span.clone(),
                                                 ),
                                             },
                                         )),
@@ -578,7 +926,7 @@ impl<
                                             RelationalOperator::Equal,
                                         ),
                                     }),
-                                    Some(address_info.span.clone()),
+                                    Some(match_info.span.clone()),
                                 );
 
                             assert!(self
@@ -607,7 +955,7 @@ impl<
                             self.current_block_id = true_block_id;
                             self.handle_match_arms(
                                 match_arms[value_groups[0].0.clone()].as_mut(),
-                                address_info.clone(),
+                                match_info.clone(),
                                 continue_block_id,
                                 match_exit_block_id,
                                 handler,
@@ -617,7 +965,7 @@ impl<
                             self.current_block_id = false_block_id;
                             self.handle_match_arms(
                                 match_arms[value_groups[1].0.clone()].as_mut(),
-                                address_info,
+                                match_info,
                                 continue_block_id,
                                 match_exit_block_id,
                                 handler,
@@ -676,7 +1024,7 @@ impl<
                                 self.current_block_id = block_ids[idx];
                                 self.handle_match_arms(
                                     match_arms[range].as_mut(),
-                                    address_info.clone(),
+                                    match_info.clone(),
                                     continue_block_id,
                                     match_exit_block_id,
                                     handler,
@@ -699,7 +1047,7 @@ impl<
     fn handle_match_arms(
         &mut self,
         match_arms: &mut [MatchArm],
-        address_info: AddressInfo,
+        match_info: MatchInfo,
         continue_block_id: ID<Block<infer::Model>>,
         match_exit_block_id: ID<Block<infer::Model>>,
         handler: &dyn Handler<Box<dyn error::Error>>,
@@ -718,7 +1066,7 @@ impl<
         else {
             return self.bind_match_arm(
                 match_arms.first_mut().unwrap(),
-                address_info,
+                match_info,
                 match_exit_block_id,
                 handler,
             );
@@ -757,7 +1105,7 @@ impl<
         self.bind_match_arm_groups(
             &mut match_arms[..including_end],
             &main_path,
-            address_info.clone(),
+            match_info.clone(),
             next_block_id.unwrap_or(continue_block_id),
             match_exit_block_id,
             handler,
@@ -770,7 +1118,7 @@ impl<
 
             self.handle_match_arms(
                 &mut match_arms[including_end..],
-                address_info,
+                match_info,
                 continue_block_id,
                 match_exit_block_id,
                 handler,
@@ -900,10 +1248,12 @@ impl<
             })
             .collect::<Vec<_>>();
 
+        let starting_block_id = self.current_block_id;
+
         self.handle_match_arms(
             &mut match_arms,
-            AddressInfo {
-                address,
+            MatchInfo {
+                address: address.clone(),
                 r#type: &ty,
                 qualifier,
                 from_lvalue,
@@ -917,16 +1267,74 @@ impl<
         assert!(self
             .intermediate_representation
             .control_flow_graph
+            .insert_terminator(starting_block_id, Terminator::Panic)
+            .map_or_else(|x| !x.is_invalid_block_id(), |()| true));
+        assert!(self
+            .intermediate_representation
+            .control_flow_graph
             .insert_terminator(unreachable_block, Terminator::Panic)
             .map_or_else(|x| !x.is_invalid_block_id(), |()| true));
 
         self.current_block_id = successor_block_id;
 
+        // remove the match arms that are unreachable and report the error
+        for unreachable in
+            match_arms.drain_filter(|x| x.binding_result.is_none())
+        {
+            self.create_handler_wrapper(handler).receive(Box::new(
+                UnreachableMatchArm {
+                    match_arm_span: unreachable.expression.span(),
+                },
+            ));
+        }
+
         if match_arms.is_empty() {
+            assert!(!self.current_block().is_reachable());
+
+            let ty = ty.reduce_reference();
+
+            let mut is_inhabited = false;
+            if let Type::Symbol(Symbol { id: AdtID::Enum(enum_id), .. }) = ty {
+                let symbol = self.table.get(*enum_id).unwrap();
+
+                is_inhabited = symbol.variant_declaration_order().is_empty();
+            }
+
+            if !is_inhabited {
+                self.create_handler_wrapper(handler).receive(Box::new(
+                    NonExhaustiveMatch {
+                        match_expression_span: syntax_tree
+                            .match_keyword()
+                            .span
+                            .join(&syntax_tree.parenthesized().span())
+                            .unwrap(),
+                    },
+                ));
+            }
+
             Ok(Expression::RValue(Value::Literal(
                 self.create_unreachable(Some(syntax_tree.span())),
             )))
         } else {
+            if self
+                .intermediate_representation
+                .control_flow_graph
+                .blocks()
+                .get(unreachable_block)
+                .unwrap()
+                .is_reachable()
+            {
+                self.create_handler_wrapper(handler).receive(Box::new(
+                    NonExhaustiveMatch {
+                        match_expression_span: syntax_tree
+                            .match_keyword()
+                            .span
+                            .join(&syntax_tree.parenthesized().span())
+                            .unwrap(),
+                    },
+                ));
+            }
+
             // no match arms reach the successor block
             let Some(first_reachable_arm_index) =
                 match_arms.iter().position(|x| {

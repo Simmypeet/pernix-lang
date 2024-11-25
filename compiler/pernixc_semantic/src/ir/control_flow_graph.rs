@@ -37,6 +37,11 @@ impl<M: Model> Block<M> {
             || (!self.is_entry && self.predecessors.is_empty())
     }
 
+    /// Returns `true` if the block is reachable from the entry block.
+    pub fn is_reachable(&self) -> bool {
+        !self.predecessors.is_empty() || self.is_entry
+    }
+
     /// Adds a basic instruction to the block.
     #[must_use]
     pub fn insert_instruction(&mut self, instruction: Instruction<M>) -> bool {

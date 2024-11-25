@@ -4089,6 +4089,48 @@ impl Report<&Table<Suboptimal>> for ReftuablePatternFoundInPackedTuple {
     }
 }
 
+/// The match arm is unreachable.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnreachableMatchArm {
+    /// The span of the match arm.
+    pub match_arm_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for UnreachableMatchArm {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.match_arm_span.clone(),
+            message: "unreachable match arm".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The match expression is non-exhaustive.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NonExhaustiveMatch {
+    /// The span of the match expression.
+    pub match_expression_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for NonExhaustiveMatch {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.match_expression_span.clone(),
+            message: "non-exhaustive match expression".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
 /// The calling convention is an `extern` block is invalid.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnknownExternCallingConvention {

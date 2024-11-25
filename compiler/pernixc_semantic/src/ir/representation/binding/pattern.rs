@@ -525,14 +525,6 @@ fn bind_named_pattern(syntax_tree: &syntax_tree::pattern::Named) -> Named {
     }
 }
 
-fn reduce_reference_type<M: Model>(mut ty: &Type<M>) -> &Type<M> {
-    while let Type::Reference(Reference { pointee, .. }) = ty {
-        ty = pointee.as_ref();
-    }
-
-    ty
-}
-
 impl<
         't,
         S: table::State,
@@ -547,7 +539,7 @@ impl<
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Option<Tuple<T>> {
-        ty = reduce_reference_type(ty);
+        ty = ty.reduce_reference();
 
         let Type::Tuple(tuple_ty) = ty else {
             handler.receive(Box::new(MismatchedPatternBindingType {
@@ -763,7 +755,7 @@ impl<
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Option<Boolean> {
-        ty = reduce_reference_type(ty);
+        ty = ty.reduce_reference();
 
         if self
             .type_check(
@@ -799,7 +791,7 @@ impl<
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Option<Structural<T>> {
-        ty = reduce_reference_type(ty);
+        ty = ty.reduce_reference();
 
         // must be a struct type
         let Type::Symbol(Symbol {
@@ -956,7 +948,7 @@ impl<
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Option<Enum> {
-        ty = reduce_reference_type(ty);
+        ty = ty.reduce_reference();
 
         // must be an enum type
         let Type::Symbol(Symbol {
@@ -1071,7 +1063,7 @@ impl<
         syntax_tree: &syntax_tree::pattern::Integer,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Option<Integer> {
-        ty = reduce_reference_type(ty);
+        ty = ty.reduce_reference();
         let mut value = match syntax_tree.numeric().span.str().parse::<i128>() {
             Ok(value) => value,
             Err(err) => match err.kind() {
