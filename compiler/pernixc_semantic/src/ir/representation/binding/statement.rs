@@ -11,6 +11,7 @@ use crate::{
     error,
     ir::{
         address::{Address, Memory},
+        instruction::{Drop, Instruction, Store},
         pattern::{NameBindingPoint, Wildcard},
         value::{
             literal::{self, Literal},
@@ -79,12 +80,38 @@ impl<
                         ),
                 };
 
-                self.pop_scope(scope_id);
+                let result = match result {
+                    Ok(Expression::RValue(value)) => {
+                        let alloca_id = self
+                            .create_alloca(self.type_of_value(&value)?, None);
 
-                match result {
-                    Ok(_) | Err(Error::Semantic(_)) => Ok(()),
-                    Err(Error::Internal(err)) => Err(err),
-                }
+                        // store to the alloca and immediately drop the value
+                        let _ = self.current_block_mut().insert_instruction(
+                            Instruction::Store(Store {
+                                address: Address::Memory(Memory::Alloca(
+                                    alloca_id,
+                                )),
+                                value,
+                            }),
+                        );
+
+                        let _ = self.current_block_mut().insert_instruction(
+                            Instruction::Drop(Drop {
+                                address: Address::Memory(Memory::Alloca(
+                                    alloca_id,
+                                )),
+                            }),
+                        );
+                        Ok(())
+                    }
+                    Err(Error::Semantic(_)) | Ok(_) => Ok(()),
+                    Err(Error::Internal(err)) => {
+                        return Err(err);
+                    }
+                };
+
+                self.pop_scope(scope_id);
+                return result;
             }
         }
     }
@@ -146,8 +173,6 @@ impl<
                 }
                 Error::Internal(internal_error) => return Err(internal_error),
             },
-
-            Ok(Expression::SideEffect) => unreachable!(),
         };
         self.pop_scope(scope_id);
 
