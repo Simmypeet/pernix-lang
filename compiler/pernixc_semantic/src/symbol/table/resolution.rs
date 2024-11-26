@@ -1083,7 +1083,7 @@ impl<S: State> Table<S> {
                 .into_iter()
                 .map(|x| match x {
                     syntax_tree::Constant::Expression(expression) => match self
-                        .evaluate(&*expression, referring_site, handler)
+                        .evaluate(expression, referring_site, handler)
                     {
                         Ok(value) => Ok(M::from_default_constant(value)),
 

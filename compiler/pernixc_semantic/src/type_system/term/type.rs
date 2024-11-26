@@ -1496,7 +1496,7 @@ impl<M: Model> Type<M> {
     /// Keeps removing the reference until it reaches a non-reference type.
     ///
     /// This is useful for pattern matching.
-    pub fn reduce_reference(mut self: &Self) -> &Self {
+    pub const fn reduce_reference(mut self: &Self) -> &Self {
         while let Self::Reference(reference) = self {
             self = &*reference.pointee;
         }
