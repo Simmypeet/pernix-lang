@@ -106,6 +106,38 @@ pub enum InsertTerminatorError<M: Model> {
 }
 
 impl<M: Model> ControlFlowGraph<M> {
+    /// Traverses through the flow of the graph and calls the given function
+    /// for each block.
+    ///
+    /// Every block is guaranteed to be visited exactly once and reachable from
+    /// the entry block.
+    ///
+    /// The function is called in a depth-first order.
+    pub fn traverse(&self, mut function: impl FnMut(&Block<M>)) {
+        let mut visited = HashSet::new();
+        let mut stack = vec![self.entry_block_id];
+
+        while let Some(block_id) = stack.pop() {
+            if visited.contains(&block_id) {
+                continue;
+            }
+
+            let block = self.get_block(block_id).unwrap();
+
+            function(block);
+
+            visited.insert(block_id);
+
+            stack.extend(
+                block
+                    .terminator()
+                    .iter()
+                    .flat_map(|x| x.as_jump())
+                    .flat_map(|x| x.jump_targets()),
+            );
+        }
+    }
+
     /// Gets the [`Block`] with the given ID.
     #[must_use]
     pub fn get_block(&self, id: ID<Block<M>>) -> Option<&Block<M>> {
