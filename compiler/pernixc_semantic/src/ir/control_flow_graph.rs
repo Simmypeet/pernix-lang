@@ -105,38 +105,59 @@ pub enum InsertTerminatorError<M: Model> {
     InvalidBlockID(ID<Block<M>>),
 }
 
-impl<M: Model> ControlFlowGraph<M> {
-    /// Traverses through the flow of the graph and calls the given function
-    /// for each block.
-    ///
-    /// Every block is guaranteed to be visited exactly once and reachable from
-    /// the entry block.
-    ///
-    /// The function is called in a depth-first order.
-    pub fn traverse(&self, mut function: impl FnMut(&Block<M>)) {
-        let mut visited = HashSet::new();
-        let mut stack = vec![self.entry_block_id];
+/// An iterator for traversing through the control flow graph.
+///
+/// Every block is guaranteed to be visited exactly once and reachable from
+/// the entry block.
+///
+/// The iterator is called in a depth-first and pre-order manner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlFlowGraphTraverser<'a, M: Model> {
+    graph: &'a ControlFlowGraph<M>,
+    visited: HashSet<ID<Block<M>>>,
+    stack: Vec<ID<Block<M>>>,
+}
 
-        while let Some(block_id) = stack.pop() {
-            if visited.contains(&block_id) {
-                continue;
+impl<'a, M: Model> Iterator for ControlFlowGraphTraverser<'a, M> {
+    type Item = (ID<Block<M>>, &'a Block<M>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let block_id = loop {
+            let block_id = self.stack.pop()?;
+            if self.visited.insert(block_id) {
+                break block_id;
             }
+        };
 
-            let block = self.get_block(block_id).unwrap();
+        let block = self.graph.get_block(block_id).unwrap();
 
-            function(block);
+        self.stack.extend(
+            block
+                .terminator()
+                .iter()
+                .flat_map(|x| x.as_jump())
+                .flat_map(|x| x.jump_targets()),
+        );
 
-            visited.insert(block_id);
+        Some((block_id, block))
+    }
+}
 
-            stack.extend(
-                block
-                    .terminator()
-                    .iter()
-                    .flat_map(|x| x.as_jump())
-                    .flat_map(|x| x.jump_targets()),
-            );
+impl<M: Model> ControlFlowGraph<M> {
+    /// Creates an iterator used for traversing through the control flow graph.
+    ///
+    /// See [`ControlFlowGraphTraverser`] for more information.
+    pub fn traverse(&self) -> ControlFlowGraphTraverser<M> {
+        ControlFlowGraphTraverser {
+            graph: self,
+            visited: HashSet::new(),
+            stack: vec![self.entry_block_id],
         }
     }
+
+    /// Removes all the blocks in the control flow graphs that are unreachable
+    /// from the entry block.
+    pub fn remove_unerachable_blocks(&mut self) -> Vec<Block<M>> { todo!() }
 
     /// Gets the [`Block`] with the given ID.
     #[must_use]

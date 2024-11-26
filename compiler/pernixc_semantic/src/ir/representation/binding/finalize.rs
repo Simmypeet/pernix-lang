@@ -39,15 +39,12 @@ impl<
                 }
 
                 // check if all paths return the value
-                let mut found_non_returning_path = false;
-                self.intermediate_representation.control_flow_graph.traverse(
-                    |block| {
-                        found_non_returning_path |=
-                            block.terminator().is_none();
-                    },
-                );
-
-                if found_non_returning_path {
+                if self
+                    .intermediate_representation
+                    .control_flow_graph
+                    .traverse()
+                    .any(|(_, x)| x.terminator().is_none())
+                {
                     self.create_handler_wrapper(handler).receive(Box::new(
                         NotAllFlowPathsReturnAValue { callable_id },
                     ));
