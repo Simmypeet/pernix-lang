@@ -223,6 +223,22 @@ impl<M: Model> ControlFlowGraph<M> {
         })
     }
 
+    /// Creates a new block with the given explicitly specified ID.
+    /// 
+    /// # Returns
+    /// 
+    /// Returns `true` if the block is successfully created.
+    pub fn new_block_with_id(&mut self, id: ID<Block<M>>) -> bool {
+        self.blocks
+            .insert_with_id(id, Block {
+                instructions: Vec::new(),
+                predecessors: HashSet::new(),
+                terminator: None,
+                is_entry: false,
+            })
+            .is_ok()
+    }
+
     /// Inserts a new terminator instruction to the given block ID.
     ///
     /// # Errors
