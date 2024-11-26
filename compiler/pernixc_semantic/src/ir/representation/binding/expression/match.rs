@@ -4,7 +4,6 @@ use std::{
 };
 
 use drain_filter_polyfill::VecExt;
-use enum_as_inner::EnumAsInner;
 use pernixc_base::{
     handler::Handler,
     source_file::{SourceElement, Span},
@@ -38,7 +37,6 @@ use crate::{
         },
     },
     symbol::{
-        self,
         table::{self, representation::Index, resolution, Table},
         AdtID,
     },
@@ -51,47 +49,15 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TupleCase {
-    pub cases: Vec<Case>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StrcturalCase {
-    pub cases_by_field_id: HashMap<ID<symbol::Field>, Case>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EnumCase {
-    pub cases_by_variant_id: HashMap<ID<symbol::Variant>, Case>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BooleanCase {
-    pub true_case_handled: bool,
-    pub false_case_handled: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
-#[allow(unused)]
-pub enum Case {
-    Unhandled,
-    Handled,
-    Boolean(BooleanCase),
-    Enum(EnumCase),
-    Tuple(TupleCase),
-    Strctural(StrcturalCase),
-}
-
 impl Refutable {
     fn get_conditional_value(
         &self,
         table: &Table<impl table::State>,
     ) -> Option<i128> {
         match self {
-            Refutable::Boolean(boolean) => Some(boolean.value as i128),
-            Refutable::Integer(integer) => Some(integer.value),
-            Refutable::Enum(variant) => {
+            Self::Boolean(boolean) => Some(i128::from(boolean.value)),
+            Self::Integer(integer) => Some(integer.value),
+            Self::Enum(variant) => {
                 let parent_enum_id =
                     table.get(variant.variant_id).unwrap().parent_enum_id();
 
@@ -118,872 +84,6 @@ impl<
         TO: type_system::observer::Observer<infer::Model, S>,
     > Binder<'t, S, RO, TO>
 {
-    /*
-    #[allow(unused)]
-    fn handle_case(
-        &mut self,
-        case: &mut Case,
-        refutable: &Refutable,
-        ty: &Type<infer::Model>,
-    ) {
-        let ty = ty.reduce_reference();
-        if let Type::Symbol(Symbol { id: AdtID::Enum(enum_id), .. }) = ty {
-            let symbol = self.table.get(*enum_id).unwrap();
-            if symbol.variant_declaration_order().is_empty() {
-                *case = Case::Handled;
-                return;
-            }
-        }
-        match refutable {
-            // mark the case as handled
-            Refutable::Wildcard(_) | Refutable::Named(_) => {
-                *case = Case::Handled;
-            }
-
-            // handle boolean case
-            Refutable::Boolean(boolean) => match case {
-                Case::Unhandled => {
-                    *case = Case::Boolean(BooleanCase {
-                        true_case_handled: boolean.value,
-                        false_case_handled: !boolean.value,
-                    });
-                }
-                Case::Handled => {
-                    // do nothing
-                }
-                Case::Boolean(boolean_case) => {
-                    boolean_case.true_case_handled |= boolean.value;
-                    boolean_case.false_case_handled |= !boolean.value;
-
-                    // if both cases are handled, mark the case as handled
-                    if boolean_case.true_case_handled
-                        && boolean_case.false_case_handled
-                    {
-                        *case = Case::Handled;
-                    }
-                }
-
-                _ => panic!("unexpected case {case:#?}"),
-            },
-
-            Refutable::Integer(_) => {
-                // currently, we don't support exhaustive integer matching
-                // so we'll do nothing here
-            }
-
-            Refutable::Enum(en) => {
-                let Type::Symbol(Symbol {
-                    id: AdtID::Enum(enum_id),
-                    generic_arguments,
-                }) = ty
-                else {
-                    panic!("should've been an enum")
-                };
-                let enum_sym = self.table.get(*enum_id).unwrap();
-                let instantiation = Instantiation::from_generic_arguments(
-                    generic_arguments.clone(),
-                    (*enum_id).into(),
-                    &enum_sym.generic_declaration.parameters,
-                )
-                .unwrap();
-                let variant_id = en.variant_id;
-                let variant = self.table.get(variant_id).unwrap();
-
-                match case {
-                    Case::Unhandled => {
-                        *case = Case::Enum(EnumCase {
-                            cases_by_variant_id: enum_sym
-                                .variant_declaration_order()
-                                .iter()
-                                .copied()
-                                .map(|x| (x, Case::Unhandled))
-                                .collect(),
-                        });
-                    }
-
-                    // do nothing
-                    Case::Handled => return,
-
-                    Case::Enum(_) => {
-                        // continue, the enum case has been created
-                    }
-
-                    _ => panic!("unexpected case {case:#?}"),
-                }
-
-                if let Some(ty) = &variant.associated_type {
-                    let mut ty = Type::from_default_model(ty.clone());
-                    instantiation::instantiate(&mut ty, &instantiation);
-
-                    // handle the associated type
-                    self.handle_case(
-                        case.as_enum_mut()
-                            .unwrap()
-                            .cases_by_variant_id
-                            .get_mut(&variant_id)
-                            .unwrap(),
-                        en.pattern.as_ref().unwrap(),
-                        &ty,
-                    );
-                } else {
-                    // just mark as unhandled
-                    assert!(en.pattern.is_none());
-
-                    *case
-                        .as_enum_mut()
-                        .unwrap()
-                        .cases_by_variant_id
-                        .get_mut(&variant_id)
-                        .unwrap() = Case::Handled;
-                }
-
-                // check if all the cases are handled
-                if case
-                    .as_enum()
-                    .unwrap()
-                    .cases_by_variant_id
-                    .values()
-                    .all(|x| x == &Case::Handled)
-                {
-                    *case = Case::Handled;
-                }
-            }
-
-            Refutable::Tuple(tuple) => {
-                let Type::Tuple(tuple_ty) = ty else {
-                    panic!("should've been a tuple")
-                };
-                let unpacked_position =
-                    tuple.elements.iter().position(|x| !x.is_packed);
-
-                match case {
-                    Case::Unhandled => {
-                        *case = Case::Tuple(TupleCase {
-                            cases: (0..tuple_ty.elements.len())
-                                .map(|_| Case::Unhandled)
-                                .collect(),
-                        });
-                    }
-                    Case::Tuple(_) => {
-                        // continue, the tuple case has been created
-                    }
-                    Case::Handled => return,
-
-                    _ => panic!("unexpected case {case:#?}"),
-                }
-
-                assert!(
-                    tuple.elements.iter().filter(|x| x.is_packed).count() <= 1
-                );
-
-                if let Some(unpacked_position) = unpacked_position {
-                    let start_range = 0..unpacked_position;
-                    let end_range =
-                        unpacked_position + 1..tuple_ty.elements.len();
-
-                    let packed_type_range = unpacked_position
-                        ..(tuple_ty.elements.len() - end_range.len());
-                    let type_end_range =
-                        packed_type_range.end..tuple_ty.elements.len();
-
-                    assert_eq!(end_range.len(), type_end_range.len());
-
-                    // check start case
-                    for i in start_range {
-                        self.handle_case(
-                            case.as_tuple_mut()
-                                .unwrap()
-                                .cases
-                                .get_mut(i)
-                                .unwrap(),
-                            &tuple.elements[i].pattern,
-                            &tuple_ty.elements[i].term,
-                        );
-                    }
-
-                    // check end case
-                    for (i, j) in end_range.zip(type_end_range) {
-                        self.handle_case(
-                            case.as_tuple_mut()
-                                .unwrap()
-                                .cases
-                                .get_mut(j)
-                                .unwrap(),
-                            &tuple.elements[i].pattern,
-                            &tuple_ty.elements[j].term,
-                        );
-                    }
-
-                    // make packed case handled since it's must be irrefutable
-                    for i in packed_type_range {
-                        *case
-                            .as_tuple_mut()
-                            .unwrap()
-                            .cases
-                            .get_mut(i)
-                            .unwrap() = Case::Handled;
-                    }
-                } else {
-                    for (i, element) in tuple.elements.iter().enumerate() {
-                        self.handle_case(
-                            case.as_tuple_mut()
-                                .unwrap()
-                                .cases
-                                .get_mut(i)
-                                .unwrap(),
-                            &element.pattern,
-                            &tuple_ty.elements[i].term,
-                        );
-                    }
-                }
-
-                // check if all the cases are handled
-                if case
-                    .as_tuple()
-                    .unwrap()
-                    .cases
-                    .iter()
-                    .all(|x| x == &Case::Handled)
-                {
-                    *case = Case::Handled;
-                }
-            }
-
-            Refutable::Structural(structural) => {
-                let Type::Symbol(Symbol {
-                    id: AdtID::Struct(struct_id),
-                    generic_arguments,
-                }) = ty
-                else {
-                    panic!("should've been a struct")
-                };
-                let struct_sym = self.table.get(*struct_id).unwrap();
-                let instantiation = Instantiation::from_generic_arguments(
-                    generic_arguments.clone(),
-                    (*struct_id).into(),
-                    &struct_sym.generic_declaration.parameters,
-                )
-                .unwrap();
-
-                match case {
-                    Case::Unhandled => {
-                        *case = Case::Strctural(StrcturalCase {
-                            cases_by_field_id: struct_sym
-                                .field_declaration_order()
-                                .iter()
-                                .copied()
-                                .map(|x| (x, Case::Unhandled))
-                                .collect(),
-                        });
-                    }
-
-                    // do nothing
-                    Case::Handled => return,
-
-                    Case::Strctural(_) => {
-                        // continue, the structural case has been created
-                    }
-
-                    _ => panic!("unexpected case {case:#?}"),
-                }
-
-                for (field_id, pattern) in &structural.patterns_by_field_id {
-                    let field = struct_sym.fields().get(*field_id).unwrap();
-                    let mut ty = Type::from_default_model(field.r#type.clone());
-                    instantiation::instantiate(&mut ty, &instantiation);
-
-                    self.handle_case(
-                        case.as_strctural_mut()
-                            .unwrap()
-                            .cases_by_field_id
-                            .get_mut(field_id)
-                            .unwrap(),
-                        pattern,
-                        &ty,
-                    );
-                }
-
-                // check if all the cases are handled
-                if case
-                    .as_strctural()
-                    .unwrap()
-                    .cases_by_field_id
-                    .values()
-                    .all(|x| x == &Case::Handled)
-                {
-                    *case = Case::Handled;
-                }
-            }
-        }
-    }
-
-
-
-    // bind a group of match arms that have the same refutable path
-    #[allow(clippy::cast_lossless, clippy::too_many_lines)]
-    fn bind_match_arm_groups(
-        &mut self,
-        match_arms: &mut [MatchArm],
-        refutable_path: &Path,
-        match_info: MatchInfo,
-        continue_block_id: ID<Block<infer::Model>>,
-        match_exit_block_id: ID<Block<infer::Model>>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<(), InternalError> {
-        // switch match arms in the group such that the arms with the same
-        // **refutable condition** are stored together. we'll do swapping
-        // it would look like this: [a, b, c, b, d, c] -> [a, b, b, c, c, d]
-
-        // FIXME: this algorithm is probably o(n^2), it can show a compiler
-        // performance bottleneck when there are many match arms
-        {
-            let mut i = 0;
-
-            // i + 1 is used here since the last arm won't have any other
-            // match arms that have the same refutable condition
-            while i + 1 < match_arms.len() {
-                for j in i + 1..match_arms.len() {
-                    if match_arms[i]
-                        .pattern
-                        .get_from_path(refutable_path)
-                        .get_conditional_value(self.table)
-                        != match_arms[j]
-                            .pattern
-                            .get_from_path(refutable_path)
-                            .get_conditional_value(self.table)
-                    {
-                        continue;
-                    }
-
-                    // swap the arms
-                    match_arms.swap(i + 1, j);
-
-                    i += 1;
-                }
-
-                i += 1;
-            }
-        }
-
-        // bind all the arms
-        {
-            let get_value_of = |index: usize| {
-                match_arms
-                    .get(index)
-                    .unwrap()
-                    .pattern
-                    .get_from_path(refutable_path)
-                    .get_conditional_value(self.table)
-            };
-
-            // vec of ranges of the same refutable condition
-            let mut value_groups = Vec::new();
-
-            let mut current_index = 0;
-            let mut current_value = get_value_of(0);
-
-            let mut i = 1;
-            while i < match_arms.len() {
-                let new_value = get_value_of(i);
-
-                if new_value != current_value {
-                    value_groups.push((current_index..i, current_value));
-                    current_index = i;
-                    current_value = new_value;
-                }
-
-                i += 1;
-            }
-
-            if current_index != match_arms.len() {
-                value_groups
-                    .push((current_index..match_arms.len(), current_value));
-            }
-
-            let (load_address, load_ty, pattern) = self
-                .get_address_and_type_from_path(
-                    &match_arms.first().unwrap().pattern,
-                    refutable_path,
-                    match_info.address.clone(),
-                    match_info.r#type.clone(),
-                );
-
-            match pattern {
-                Refutable::Boolean(_) => {
-                    assert!(matches!(
-                        load_ty,
-                        Type::Primitive(Primitive::Bool)
-                    ));
-
-                    let load_value = self.create_register_assignmnet(
-                        Assignment::Load(Load { address: load_address }),
-                        Some(match_info.span.clone()),
-                    );
-
-                    if value_groups.len() == 1 {
-                        let (range, value) = value_groups.pop().unwrap();
-
-                        // if 0, negate the value
-                        let should_negate = value == 0;
-                        assert!(value == 0 || value == 1);
-
-                        let binding_block_id = self
-                            .intermediate_representation
-                            .control_flow_graph
-                            .new_block();
-
-                        assert!(self
-                            .intermediate_representation
-                            .control_flow_graph
-                            .insert_terminator(
-                                self.current_block_id,
-                                Terminator::Jump(Jump::Conditional(
-                                    ConditionalJump {
-                                        condition: Value::Register(load_value),
-                                        true_target: if should_negate {
-                                            continue_block_id
-                                        } else {
-                                            binding_block_id
-                                        },
-                                        false_target: if should_negate {
-                                            binding_block_id
-                                        } else {
-                                            continue_block_id
-                                        },
-                                    },
-                                )),
-                            )
-                            .map_or_else(
-                                |x| !x.is_invalid_block_id(),
-                                |()| true,
-                            ));
-
-                        let current_block_id = self.current_block_id;
-
-                        // bind the arm
-                        self.current_block_id = binding_block_id;
-                        self.handle_match_arms(
-                            match_arms[range].as_mut(),
-                            match_info,
-                            continue_block_id,
-                            match_exit_block_id,
-                            handler,
-                        )?;
-                        self.current_block_id = current_block_id;
-                    } else {
-                        assert_eq!(value_groups.len(), 2, "{value_groups:#?}");
-
-                        let (true_range, false_range) =
-                            if value_groups[0].1 == 1 {
-                                (
-                                    value_groups[0].0.clone(),
-                                    value_groups[1].0.clone(),
-                                )
-                            } else {
-                                (
-                                    value_groups[1].0.clone(),
-                                    value_groups[0].0.clone(),
-                                )
-                            };
-
-                        let true_block_id = self
-                            .intermediate_representation
-                            .control_flow_graph
-                            .new_block();
-                        let false_block_id = self
-                            .intermediate_representation
-                            .control_flow_graph
-                            .new_block();
-
-                        assert!(self
-                            .intermediate_representation
-                            .control_flow_graph
-                            .insert_terminator(
-                                self.current_block_id,
-                                Terminator::Jump(Jump::Conditional(
-                                    ConditionalJump {
-                                        condition: Value::Register(load_value),
-                                        true_target: true_block_id,
-                                        false_target: false_block_id,
-                                    },
-                                )),
-                            )
-                            .map_or_else(
-                                |x| !x.is_invalid_block_id(),
-                                |()| true,
-                            ));
-
-                        let current_block_id = self.current_block_id;
-
-                        // bind the true arm
-                        self.current_block_id = true_block_id;
-                        self.handle_match_arms(
-                            match_arms[true_range].as_mut(),
-                            match_info.clone(),
-                            continue_block_id,
-                            match_exit_block_id,
-                            handler,
-                        )?;
-
-                        // bind the false arm
-                        self.current_block_id = false_block_id;
-                        self.handle_match_arms(
-                            match_arms[false_range].as_mut(),
-                            match_info,
-                            continue_block_id,
-                            match_exit_block_id,
-                            handler,
-                        )?;
-
-                        self.current_block_id = current_block_id;
-                    }
-                }
-
-                // both of the arms are integer comparison
-                Refutable::Integer(_) | Refutable::Enum(_) => {
-                    let numeric_value = match pattern {
-                        Refutable::Integer(_) => self
-                            .create_register_assignmnet(
-                                Assignment::Load(Load {
-                                    address: load_address,
-                                }),
-                                Some(match_info.span.clone()),
-                            ),
-
-                        Refutable::Enum(_) => self.create_register_assignmnet(
-                            Assignment::VariantNumber(VariantNumber {
-                                address: match_info.address.clone(),
-                            }),
-                            Some(match_info.span.clone()),
-                        ),
-
-                        _ => unreachable!(),
-                    };
-
-                    let is_exhaustive = self.is_exhaustive(
-                        value_groups.iter().map(|x| x.1),
-                        pattern,
-                        &load_ty,
-                    );
-
-                    match (value_groups.len(), is_exhaustive) {
-                        (0, _) => {
-                            panic!("invalid value group {value_groups:#?}")
-                        }
-
-                        // simply bind without condition
-                        (1, true) => self.handle_match_arms(
-                            match_arms,
-                            match_info,
-                            continue_block_id,
-                            match_exit_block_id,
-                            handler,
-                        )?,
-
-                        // if (cond) { bind } else { continue }
-                        (1, false) => {
-                            let binding_block_id = self
-                                .intermediate_representation
-                                .control_flow_graph
-                                .new_block();
-
-                            let comparison_register = self
-                                .create_register_assignmnet(
-                                    Assignment::Binary(Binary {
-                                        lhs: Value::Register(numeric_value),
-                                        rhs: Value::Literal(Literal::Numeric(
-                                            Numeric {
-                                                integer_string: value_groups
-                                                    .first()
-                                                    .unwrap()
-                                                    .1
-                                                    .to_string(),
-                                                decimal_stirng: None,
-                                                r#type: self.type_of_register(
-                                                    numeric_value,
-                                                )?,
-                                                span: Some(
-                                                    match_info.span.clone(),
-                                                ),
-                                            },
-                                        )),
-                                        operator: BinaryOperator::Relational(
-                                            RelationalOperator::Equal,
-                                        ),
-                                    }),
-                                    Some(match_info.span.clone()),
-                                );
-
-                            assert!(self
-                                .intermediate_representation
-                                .control_flow_graph
-                                .insert_terminator(
-                                    self.current_block_id,
-                                    Terminator::Jump(Jump::Conditional(
-                                        ConditionalJump {
-                                            condition: Value::Register(
-                                                comparison_register
-                                            ),
-                                            true_target: binding_block_id,
-                                            false_target: continue_block_id,
-                                        },
-                                    )),
-                                )
-                                .map_or_else(
-                                    |x| !x.is_invalid_block_id(),
-                                    |()| true,
-                                ));
-
-                            let current_block_id = self.current_block_id;
-
-                            // bind the arm
-                            self.current_block_id = binding_block_id;
-                            self.handle_match_arms(
-                                match_arms,
-                                match_info,
-                                continue_block_id,
-                                match_exit_block_id,
-                                handler,
-                            )?;
-                            self.current_block_id = current_block_id;
-                        }
-
-                        // if (cond) { bind1 } else { bind2 }
-                        (2, true) => {
-                            let true_block_id = self
-                                .intermediate_representation
-                                .control_flow_graph
-                                .new_block();
-                            let false_block_id = self
-                                .intermediate_representation
-                                .control_flow_graph
-                                .new_block();
-
-                            let comparison_register = self
-                                .create_register_assignmnet(
-                                    Assignment::Binary(Binary {
-                                        lhs: Value::Register(numeric_value),
-                                        rhs: Value::Literal(Literal::Numeric(
-                                            Numeric {
-                                                integer_string: value_groups
-                                                    .first()
-                                                    .unwrap()
-                                                    .1
-                                                    .to_string(),
-                                                decimal_stirng: None,
-                                                r#type: self.type_of_register(
-                                                    numeric_value,
-                                                )?,
-                                                span: Some(
-                                                    match_info.span.clone(),
-                                                ),
-                                            },
-                                        )),
-                                        operator: BinaryOperator::Relational(
-                                            RelationalOperator::Equal,
-                                        ),
-                                    }),
-                                    Some(match_info.span.clone()),
-                                );
-
-                            assert!(self
-                                .intermediate_representation
-                                .control_flow_graph
-                                .insert_terminator(
-                                    self.current_block_id,
-                                    Terminator::Jump(Jump::Conditional(
-                                        ConditionalJump {
-                                            condition: Value::Register(
-                                                comparison_register
-                                            ),
-                                            true_target: true_block_id,
-                                            false_target: false_block_id,
-                                        },
-                                    )),
-                                )
-                                .map_or_else(
-                                    |x| !x.is_invalid_block_id(),
-                                    |()| true,
-                                ));
-
-                            let current_block_id = self.current_block_id;
-
-                            // bind the true arm
-                            self.current_block_id = true_block_id;
-                            self.handle_match_arms(
-                                match_arms[value_groups[0].0.clone()].as_mut(),
-                                match_info.clone(),
-                                continue_block_id,
-                                match_exit_block_id,
-                                handler,
-                            )?;
-
-                            // bind the false arm
-                            self.current_block_id = false_block_id;
-                            self.handle_match_arms(
-                                match_arms[value_groups[1].0.clone()].as_mut(),
-                                match_info,
-                                continue_block_id,
-                                match_exit_block_id,
-                                handler,
-                            )?;
-
-                            self.current_block_id = current_block_id;
-                        }
-
-                        // select inst
-                        _ => {
-                            // generate the binding block for each value
-                            let block_ids = (0..value_groups.len())
-                                .map(|_| {
-                                    self.intermediate_representation
-                                        .control_flow_graph
-                                        .new_block()
-                                })
-                                .collect::<Vec<_>>();
-
-                            // create select inst
-                            assert!(self
-                                .intermediate_representation
-                                .control_flow_graph
-                                .insert_terminator(
-                                    self.current_block_id,
-                                    Terminator::Jump(Jump::Select(
-                                        SelectJump {
-                                            integer: Value::Register(
-                                                numeric_value
-                                            ),
-                                            branches: value_groups
-                                                .iter()
-                                                .enumerate()
-                                                .map(|(idx, x)| (
-                                                    x.1,
-                                                    block_ids[idx]
-                                                ))
-                                                .collect(),
-                                            otherwise: is_exhaustive
-                                                .not()
-                                                .then_some(continue_block_id),
-                                        }
-                                    ))
-                                )
-                                .map_or_else(
-                                    |x| !x.is_invalid_block_id(),
-                                    |()| true,
-                                ));
-
-                            let current_block_id = self.current_block_id;
-
-                            // bind the arms
-                            for (idx, (range, _)) in
-                                value_groups.into_iter().enumerate()
-                            {
-                                self.current_block_id = block_ids[idx];
-                                self.handle_match_arms(
-                                    match_arms[range].as_mut(),
-                                    match_info.clone(),
-                                    continue_block_id,
-                                    match_exit_block_id,
-                                    handler,
-                                )?;
-                            }
-
-                            self.current_block_id = current_block_id;
-                        }
-                    }
-                }
-
-                x => panic!("pattern {x:#?} is not refutable"),
-            }
-        }
-
-        Ok(())
-    }
-
-    #[allow(clippy::cast_lossless, clippy::too_many_lines)]
-    fn handle_match_arms(
-        &mut self,
-        match_arms: &mut [MatchArm],
-        match_info: MatchInfo,
-        continue_block_id: ID<Block<infer::Model>>,
-        match_exit_block_id: ID<Block<infer::Model>>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    )-> Result<(), InternalError> {
-        // no more arms to bind
-        if match_arms.is_empty() {
-            return Ok(());
-        }
-
-        // pick the path from the arm that is declared first
-
-        // NOTE: the rest of the arms are unreachable, we can issue a warning
-        // here
-        let Some(main_path) =
-            match_arms.first_mut().unwrap().refutable_paths.pop_front()
-        else {
-            return self.bind_match_arm(
-                match_arms.first_mut().unwrap(),
-                match_info,
-                match_exit_block_id,
-                handler,
-            );
-        };
-
-        // find the match arms that have the same refutable paths as the main
-        // path
-        let mut including_end = 1;
-        while including_end < match_arms.len() {
-            // have the matching path
-            let Some(position) = match_arms[including_end]
-                .refutable_paths
-                .iter()
-                .position(|x| *x == main_path)
-            else {
-                // stop there, the rest of the arms will be handled in the next
-                // iteration
-                break;
-            };
-
-            // remove the path, mark it as handled
-            assert!(match_arms[including_end]
-                .refutable_paths
-                .remove(position)
-                .is_some());
-
-            including_end += 1;
-        }
-
-        let next_block_id = (including_end != match_arms.len()).then(|| {
-            self.intermediate_representation.control_flow_graph.new_block()
-        });
-
-        // 0..including_end is the range of match arm that will test a condition
-        // to the same **path**
-        self.bind_match_arm_groups(
-            &mut match_arms[..including_end],
-            &main_path,
-            match_info.clone(),
-            next_block_id.unwrap_or(continue_block_id),
-            match_exit_block_id,
-            handler,
-        )?;
-
-        if including_end == match_arms.len() {
-            Ok(())
-        } else {
-            self.current_block_id = next_block_id.unwrap();
-
-            self.handle_match_arms(
-                &mut match_arms[including_end..],
-                match_info,
-                continue_block_id,
-                match_exit_block_id,
-                handler,
-            )
-        }
-    }
-    */
-
     #[allow(clippy::cast_sign_loss)]
     fn is_exhaustive(
         &self,
@@ -1046,6 +146,7 @@ impl<
         }
     }
 
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     fn handle_match_arms(
         &mut self,
         match_info: &MatchInfo,
@@ -1121,7 +222,7 @@ impl<
         }
 
         // at least the main path must be preset
-        assert!(arm_states_by_value.len() >= 1);
+        assert!(!arm_states_by_value.is_empty());
 
         let (load_address, load_ty, main_leaf_refutable) = self
             .get_address_and_type_from_path(
@@ -1178,7 +279,7 @@ impl<
                                 non_exhaustives.push(NonExhaustive {
                                     path: main_path,
                                     missing_value: MissingValue::Known(vec![
-                                        if value == 0 { 1 } else { 0 },
+                                        i128::from(value == 0),
                                     ]),
                                 });
 
@@ -1585,10 +686,9 @@ impl<
             )?;
 
             self.current_block_id = current_block_id;
-            Ok(())
-        } else {
-            Ok(())
         }
+
+        Ok(())
     }
 
     fn bind_match_arm(
@@ -1597,12 +697,23 @@ impl<
         arm_info: &mut ArmInfo,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), InternalError> {
-        let starting_block_id = self.current_block_id;
-
         // already bound
-        if arm_info.binding_result.is_some() {
+        if let Some(result) = &arm_info.binding_result {
+            assert!(self
+                .intermediate_representation
+                .control_flow_graph
+                .insert_terminator(
+                    self.current_block_id,
+                    Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                        target: result.entry_block_id,
+                    })),
+                )
+                .map_or_else(|x| !x.is_invalid_block_id(), |()| true));
+
             return Ok(());
         }
+
+        let starting_block_id = self.current_block_id;
 
         self.stack.push_scope(arm_info.scope_id);
 
@@ -1839,7 +950,7 @@ impl<
 
         self.handle_match_arms(
             &MatchInfo {
-                address: address.clone(),
+                address,
                 r#type: &ty,
                 qualifier,
                 from_lvalue,
