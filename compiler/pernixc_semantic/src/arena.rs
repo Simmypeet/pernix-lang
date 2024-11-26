@@ -208,8 +208,7 @@ impl<T, Idx: Key> Arena<T, Idx> {
 
     /// Inserts a new item into the [`Arena`] with explicit `Idx`.
     ///
-    /// If the `Idx` is already reserved, the arena will remove the given ID
-    /// from the reservation list and insert the item with the given ID.
+    /// If the `Idx` is already occupied, the item is reutrned back.
     ///
     /// # Returns
     ///
