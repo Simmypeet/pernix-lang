@@ -2981,7 +2981,7 @@ fn invalid_cast_type() {
     });
 }
 
-struct Check<T> {
+pub struct Check<T> {
     source: String,
     config: Config,
     check: Box<
@@ -2995,7 +2995,7 @@ struct Check<T> {
 }
 
 impl<T> Check<T> {
-    fn new(
+    pub fn new(
         source: impl std::fmt::Display,
         config: Config,
         check: impl FnOnce(
@@ -3009,7 +3009,7 @@ impl<T> Check<T> {
     }
 }
 
-fn setup_and_bind<T: 'static>(
+pub fn setup_and_bind<T: 'static>(
     setup: impl for<'a> FnOnce(
         &'a mut TestTemplate,
     ) -> (

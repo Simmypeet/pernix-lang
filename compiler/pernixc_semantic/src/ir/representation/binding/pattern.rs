@@ -1945,42 +1945,34 @@ impl<
 }
 
 impl Refutable {
-    pub(super) fn get_from_path(&self, path: &Path) -> &Self {
+    pub(super) fn get_from_path(&self, path: &Path) -> Option<&Self> {
         match path {
-            Path::Base => self,
+            Path::Base => Some(self),
 
             Path::Field(field_path) => {
                 let structural_pat = self
-                    .get_from_path(&field_path.struct_path)
-                    .as_structural()
-                    .unwrap();
+                    .get_from_path(&field_path.struct_path)?
+                    .as_structural()?;
 
-                structural_pat
-                    .patterns_by_field_id
-                    .get(&field_path.field_id)
-                    .unwrap()
+                structural_pat.patterns_by_field_id.get(&field_path.field_id)
             }
 
             Path::TupleElement(tuple_element_path) => {
                 let tuple_pat = self
-                    .get_from_path(&tuple_element_path.tuple_path)
-                    .as_tuple()
-                    .unwrap();
+                    .get_from_path(&tuple_element_path.tuple_path)?
+                    .as_tuple()?;
 
                 tuple_pat
                     .elements
                     .get(tuple_element_path.index)
                     .map(|x| &x.pattern)
-                    .unwrap()
             }
 
             Path::Variant(variant_path) => {
-                let enum_pat = self
-                    .get_from_path(&variant_path.enum_path)
-                    .as_enum()
-                    .unwrap();
+                let enum_pat =
+                    self.get_from_path(&variant_path.enum_path)?.as_enum()?;
 
-                enum_pat.pattern.as_ref().unwrap()
+                enum_pat.pattern.as_deref()
             }
         }
     }
