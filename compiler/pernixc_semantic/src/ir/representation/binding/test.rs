@@ -15,11 +15,18 @@ use crate::{
     arena::ID,
     error,
     symbol::{
-        table::{representation::Insertion, resolution, Building, Table},
+        table::{
+            representation::{IndexMut, Insertion},
+            resolution, Building, Table,
+        },
         Accessibility, Function, FunctionDefinition, FunctionTemplate,
         GenericDeclaration, Module,
     },
-    type_system::observer,
+    type_system::{
+        model::Default,
+        observer,
+        term::{r#type::Type, Tuple},
+    },
 };
 
 #[derive(Debug)]
@@ -31,7 +38,11 @@ pub struct TestTemplate {
 
 impl TestTemplate {
     pub fn new() -> Self {
-        let mut table = Table::default();
+        Self::new_with_return_type(Type::Tuple(Tuple { elements: Vec::new() }))
+    }
+
+    pub fn new_with_return_type(ty: Type<Default>) -> Self {
+        let mut table = Table::<Building>::default();
 
         let Insertion { id: test_module_id, duplication } =
             table.create_root_module("test".to_string());
@@ -50,6 +61,8 @@ impl TestTemplate {
             .unwrap();
 
         assert!(duplication.is_none());
+
+        table.get_mut(function_id).unwrap().return_type = ty;
 
         Self { table, function_id, test_module_id }
     }
