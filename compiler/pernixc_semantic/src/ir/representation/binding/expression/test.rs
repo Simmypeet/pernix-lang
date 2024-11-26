@@ -20,7 +20,7 @@ use crate::{
         representation::binding::{
             expression::{Bind, Config, Target},
             infer::{self, ConstraintModel, Erased},
-            tests::{parse_expression, parse_statement, TestTemplate},
+            test::{parse_expression, parse_statement, TestTemplate},
             Binder,
         },
         value::{

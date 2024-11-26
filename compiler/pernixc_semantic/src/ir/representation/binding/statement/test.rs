@@ -1,4 +1,4 @@
-use crate::ir::representation::binding::tests::{
+use crate::ir::representation::binding::test::{
     parse_statement, TestTemplate,
 };
 
