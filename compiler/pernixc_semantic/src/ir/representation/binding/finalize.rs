@@ -27,7 +27,6 @@ impl<
         self.inference_context.fill_default_inferences();
 
         // we're in the function, check if all paths return the value
-
         'out: {
             if let Ok(callable_id) = CallableID::try_from(self.current_site) {
                 let callable = self.table.get_callable(callable_id).unwrap();
@@ -51,6 +50,11 @@ impl<
                 }
             }
         }
+
+        // remove all the unreachable blocks
+        self.intermediate_representation
+            .control_flow_graph
+            .remove_unerachable_blocks();
     }
 }
 
