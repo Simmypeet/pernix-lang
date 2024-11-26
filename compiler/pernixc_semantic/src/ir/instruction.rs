@@ -164,6 +164,13 @@ pub struct ScopePush(pub ID<Scope>);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopePop(pub ID<Scope>);
 
+/// Invokes the `Drop::drop` on the given address.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Drop<M: Model> {
+    /// The address to drop.
+    pub address: Address<M>,
+}
+
 /// An enumeration containig all the basic instructions.
 ///
 /// The basic instructions are the instructions that have no effect on the
@@ -178,6 +185,7 @@ pub enum Instruction<M: Model> {
     TuplePack(TuplePack<M>),
     ScopePush(ScopePush),
     ScopePop(ScopePop),
+    Drop(Drop<M>),
 }
 
 /// An enumeration containing all the possible terminators.
