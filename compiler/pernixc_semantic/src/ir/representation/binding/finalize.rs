@@ -1,5 +1,7 @@
 //! Contains the "binder-finalization" logic.
 
+use std::collections::HashSet;
+
 use pernixc_base::handler::Handler;
 
 use super::{infer, Binder};
@@ -55,6 +57,27 @@ impl<
         self.intermediate_representation
             .control_flow_graph
             .remove_unerachable_blocks();
+
+        let used_register_assignments = self
+            .intermediate_representation
+            .control_flow_graph
+            .traverse()
+            .flat_map(|x| x.1.instructions())
+            .flat_map(|x| x.as_register_assignment().map(|x| x.id))
+            .collect::<HashSet<_>>();
+        let unused_registers = self
+            .intermediate_representation
+            .registers
+            .ids()
+            .filter(|x| !used_register_assignments.contains(x))
+            .collect::<Vec<_>>();
+
+        for register in unused_registers {
+            self.intermediate_representation
+                .registers
+                .remove(register)
+                .unwrap();
+        }
     }
 }
 
