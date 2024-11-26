@@ -874,8 +874,6 @@ impl<
                     return Err(Error::Internal(internal_error))
                 }
             },
-
-            Ok(Expression::SideEffect) => unreachable!(),
         };
         let ty = simplify::simplify(
             &self.type_of_address(&address)?,

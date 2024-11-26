@@ -140,9 +140,6 @@ pub enum Expression {
 
     /// The expression is bound as an l-value.
     LValue(LValue),
-
-    /// The expression is bound as a statement.
-    SideEffect,
 }
 
 /// The trait for binding the expression syntax tree.
@@ -330,9 +327,6 @@ impl<
                 }
             }
             Expression::LValue(lvalue) => Ok(lvalue),
-            Expression::SideEffect => {
-                unreachable!()
-            }
         }
     }
 }
@@ -1063,7 +1057,6 @@ impl<
             Expression::LValue(lvalue) => {
                 self.type_of_address(&lvalue.address).unwrap()
             }
-            Expression::SideEffect => unreachable!(),
         };
 
         let reference_type = match operand_type {
@@ -1091,7 +1084,6 @@ impl<
                     reference_address: Box::new(lvalue.address),
                 })
             }
-            Expression::SideEffect => unreachable!(),
         };
 
         match config.target {
@@ -1521,8 +1513,6 @@ impl<
 
                 Ok(Value::Register(reference_of))
             }
-
-            (_, Expression::SideEffect) => unreachable!(),
         }
     }
 
@@ -1559,7 +1549,6 @@ impl<
                     literal.span().unwrap().clone()
                 }
                 Expression::LValue(lvalue) => lvalue.span.clone(),
-                Expression::SideEffect => unreachable!(),
             };
             self.inference_context = inference_context;
 
@@ -1642,7 +1631,6 @@ impl<
                 Expression::LValue(val) => {
                     self.type_of_address(&val.address).unwrap()
                 }
-                Expression::SideEffect => unreachable!(),
             };
 
             (value, ty)
@@ -2486,13 +2474,13 @@ impl<
                     }
 
                     // qualifier should've been checked earlier
-                    Target::LValue { .. } => Ok(Expression::LValue(LValue {
-                        address,
-                        span: syntax_tree.span(),
-                        qualifier: lvalue.qualifier,
-                    })),
-
-                    Target::Statement => Ok(Expression::SideEffect),
+                    Target::Statement | Target::LValue { .. } => {
+                        Ok(Expression::LValue(LValue {
+                            address,
+                            span: syntax_tree.span(),
+                            qualifier: lvalue.qualifier,
+                        }))
+                    }
                 }
             }
         }
@@ -2562,21 +2550,17 @@ impl<
                 let address = name.load_address.clone();
 
                 match config.target {
-                    Target::Statement | Target::RValue => {
+                    Target::RValue => {
                         let register_id = self.create_register_assignmnet(
                             Assignment::Load(Load { address }),
                             Some(syntax_tree.span()),
                         );
 
-                        return Ok(match config.target {
-                            Target::Statement => Expression::SideEffect,
-                            Target::RValue => {
-                                Expression::RValue(Value::Register(register_id))
-                            }
-                            Target::LValue { .. } => unreachable!(),
-                        });
+                        return Ok(Expression::RValue(Value::Register(
+                            register_id,
+                        )));
                     }
-                    Target::LValue => {
+                    Target::Statement | Target::LValue => {
                         let name_qualifier = if name.mutable {
                             Qualifier::Mutable
                         } else {
@@ -3449,13 +3433,13 @@ impl<
 
             // qualifier is not checked here since the address is already bound
             // as Qualifier::Unique, which has the highest priority
-            Target::LValue { .. } => Expression::LValue(LValue {
-                address: lhs_address.address,
-                span: tree.span(),
-                qualifier: lhs_address.qualifier,
-            }),
-
-            Target::Statement => Expression::SideEffect,
+            Target::Statement | Target::LValue { .. } => {
+                Expression::LValue(LValue {
+                    address: lhs_address.address,
+                    span: tree.span(),
+                    qualifier: lhs_address.qualifier,
+                })
+            }
         })
     }
 
