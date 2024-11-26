@@ -60,6 +60,7 @@ use crate::{
 };
 
 pub mod expression;
+pub mod finalize;
 pub mod infer;
 pub mod stack;
 pub mod statement;

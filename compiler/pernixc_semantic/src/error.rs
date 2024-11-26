@@ -1619,7 +1619,7 @@ pub struct AlreadyImplementedTraitMember {
     /// The trait member that is being implemented more than once.
     pub trait_member_id: TraitMemberID,
 
-    /// The ID of the existing trait implementation member.   
+    /// The ID of the existing trait implementation member.
     pub implemented_id: TraitImplementationMemberID,
 
     /// The span where the re-implementation occurred.
@@ -4171,6 +4171,35 @@ impl<T: State> Display<T> for UnknownExternCallingConvention {
         })?;
 
         Ok(())
+    }
+}
+
+/// Not all flow paths in the function return a value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NotAllFlowPathsReturnAValue {
+    /// The function which contains an error.
+    pub callable_id: CallableID,
+}
+
+impl Report<&Table<Suboptimal>> for NotAllFlowPathsReturnAValue {
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let callable_symbol =
+            table.get_callable(self.callable_id).ok_or(ReportError)?;
+        let span = callable_symbol.span().cloned().ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span,
+            message: "not all flow paths in the function return a value"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
     }
 }
 

@@ -208,7 +208,7 @@ impl Finalize for TraitImplementationFunction {
                     let _ = binder.bind_statement(statement, handler);
                 }
 
-                binder.intermediate_representation();
+                binder.finalize(handler);
             }
 
             _ => panic!("invalid state flag"),

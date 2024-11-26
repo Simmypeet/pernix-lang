@@ -155,7 +155,9 @@ impl Finalize for Function {
                         let _ = binder.bind_statement(statement, handler);
                     }
 
-                    binder.intermediate_representation();
+                    dbg!(binder.intermediate_representation());
+
+                    binder.finalize(handler);
                 }
             }
 
