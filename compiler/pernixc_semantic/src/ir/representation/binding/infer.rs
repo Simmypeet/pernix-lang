@@ -29,7 +29,7 @@ use crate::{
             constant::Constant,
             lifetime::Lifetime,
             r#type::{self, Type},
-            Never, Term,
+            Never, Term, Tuple,
         },
         unification::{self, Log, Unification},
         visitor::RecursiveIterator,
@@ -1150,6 +1150,62 @@ impl Context {
         };
 
         self.handle_unifer(unifier, premise, table, observer)
+    }
+}
+
+impl Context {
+    /// Scans through every the inference variables and fills the default type
+    /// for them if possible (e.g., {number} -> int32)
+    pub fn fill_default_inferences(&mut self) {
+        let inference_variables = self
+            .type_inference_context
+            .inference_by_ids
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+
+        for inference_variable in inference_variables {
+            let Inference::Inferring(inference) = self
+                .type_inference_context
+                .get_inference(inference_variable)
+                .unwrap()
+            else {
+                continue;
+            };
+
+            let default_type = match *self
+                .type_inference_context
+                .get_constraint(*inference)
+                .unwrap()
+            {
+                r#type::Constraint::All(can_default) => {
+                    if !can_default {
+                        continue;
+                    }
+
+                    Type::Tuple(Tuple { elements: Vec::new() })
+                }
+
+                r#type::Constraint::Signed
+                | r#type::Constraint::Integer
+                | r#type::Constraint::SignedInteger
+                | r#type::Constraint::Number => {
+                    Type::Primitive(r#type::Primitive::Int32)
+                }
+
+                r#type::Constraint::UnsignedInteger => {
+                    Type::Primitive(r#type::Primitive::Uint32)
+                }
+
+                r#type::Constraint::Floating => {
+                    Type::Primitive(r#type::Primitive::Float32)
+                }
+            };
+
+            self.type_inference_context
+                .assign_infer_to_known(*inference, default_type)
+                .unwrap()
+        }
     }
 }
 
