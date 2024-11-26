@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 
+use enum_as_inner::EnumAsInner;
+
 use super::{
     address::Address,
     alloca::Alloca,
@@ -68,6 +70,26 @@ pub enum Jump<M: Model> {
     Unconditional(UnconditionalJump<M>),
     Conditional(ConditionalJump<M>),
     Select(SelectJump<M>),
+}
+
+impl<M: Model> Jump<M> {
+    /// Returns the block IDs that this jump goes to.
+    pub fn jump_targets(&self) -> Vec<ID<Block<M>>> {
+        match self {
+            Jump::Unconditional(jump) => vec![jump.target],
+            Jump::Conditional(jump) => {
+                vec![jump.true_target, jump.false_target]
+            }
+            Jump::Select(jump) => {
+                let mut targets =
+                    jump.branches.values().copied().collect::<Vec<_>>();
+                if let Some(otherwise) = jump.otherwise {
+                    targets.push(otherwise);
+                }
+                targets
+            }
+        }
+    }
 }
 
 /// Represents a return instruction.
@@ -162,7 +184,7 @@ pub enum Instruction<M: Model> {
 ///
 /// Terminators are instructions that change the control flow of the program.
 /// Either they move to another block or they return from the function.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Terminator<M: Model> {
     Jump(Jump<M>),
