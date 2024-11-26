@@ -1,6 +1,6 @@
 //! Contains the definition of [`Block`] and [`ControlFlowGraph`].
 
-use std::collections::HashSet;
+use std::{collections::HashSet, ops::Not};
 
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
@@ -143,6 +143,34 @@ impl<'a, M: Model> Iterator for ControlFlowGraphTraverser<'a, M> {
     }
 }
 
+/// An iterator used for retrieving the removed unreachable blocks from the
+/// control flow graph.
+///
+/// This iterator behaves similarly like `drain` in Rust's standard library.
+#[derive(Debug, PartialEq, Eq)]
+pub struct RemoveUnreachableBlocks<'a, M: Model> {
+    graph: &'a mut ControlFlowGraph<M>,
+    unreachable_blocks: Vec<ID<Block<M>>>,
+}
+
+impl<M: Model> Iterator for RemoveUnreachableBlocks<'_, M> {
+    type Item = (ID<Block<M>>, Block<M>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let block_id = self.unreachable_blocks.pop()?;
+        let block = self.graph.blocks.remove(block_id);
+        Some((block_id, block.unwrap()))
+    }
+}
+
+impl<M: Model> Drop for RemoveUnreachableBlocks<'_, M> {
+    fn drop(&mut self) {
+        for block in self.unreachable_blocks.iter().copied() {
+            self.graph.blocks.remove(block).unwrap();
+        }
+    }
+}
+
 impl<M: Model> ControlFlowGraph<M> {
     /// Creates an iterator used for traversing through the control flow graph.
     ///
@@ -157,7 +185,16 @@ impl<M: Model> ControlFlowGraph<M> {
 
     /// Removes all the blocks in the control flow graphs that are unreachable
     /// from the entry block.
-    pub fn remove_unerachable_blocks(&mut self) -> Vec<Block<M>> { todo!() }
+    pub fn remove_unerachable_blocks(&mut self) -> RemoveUnreachableBlocks<M> {
+        RemoveUnreachableBlocks {
+            unreachable_blocks: self
+                .blocks()
+                .iter()
+                .filter_map(|(id, x)| x.is_reachable().not().then_some(id))
+                .collect(),
+            graph: self,
+        }
+    }
 
     /// Gets the [`Block`] with the given ID.
     #[must_use]
