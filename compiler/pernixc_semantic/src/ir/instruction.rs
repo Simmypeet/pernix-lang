@@ -169,7 +169,7 @@ pub struct ScopePop(pub ID<Scope>);
 /// The basic instructions are the instructions that have no effect on the
 /// control flow of the program -- return instructions and jumps do change the
 /// flow of the program, so they are not considered basic.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Instruction<M: Model> {
     Store(Store<M>),
