@@ -43,11 +43,19 @@ use value::{register::Register, Value};
 use self::representation::Representation;
 use crate::{
     arena::ID,
-    symbol::{self, CallableID, GlobalID, Parameter},
+    symbol::{
+        self,
+        table::{self, Table},
+        CallableID, GlobalID, Parameter,
+    },
     type_system::{
+        fresh::Fresh,
         instantiation::MismatchedGenericArgumentCountError,
-        model::{self, Model},
-        term::{self, r#type::Type},
+        model,
+        term::{
+            self, constant::Constant, lifetime::Lifetime, r#type::Type, Never,
+            Term,
+        },
     },
 };
 
@@ -63,7 +71,55 @@ pub mod value;
 /// The model to used to generate the IR.
 pub trait State {
     /// The model to use for the type system.
-    type Model: Model;
+    type Model: model::Model;
+}
+
+/// The type system model used in the IR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Model;
+
+/// The inference variable used for lifetimes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Erased;
+
+impl<T: table::State> table::Display<T> for Erased {
+    fn fmt(
+        &self,
+        _: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "_")
+    }
+}
+
+impl From<Never> for Erased {
+    fn from(value: Never) -> Self { match value {} }
+}
+
+impl Fresh for Erased {
+    fn fresh() -> Self { Self }
+}
+
+impl model::Model for Model {
+    type LifetimeInference = Erased;
+    type TypeInference = Never;
+    type ConstantInference = Never;
+
+    fn from_default_type(ty: Type<model::Default>) -> Type<Self> {
+        Type::from_other_model(ty)
+    }
+
+    fn from_default_lifetime(
+        lifetime: Lifetime<model::Default>,
+    ) -> Lifetime<Self> {
+        Lifetime::from_other_model(lifetime)
+    }
+
+    fn from_default_constant(
+        constant: Constant<model::Default>,
+    ) -> Constant<Self> {
+        Constant::from_other_model(constant)
+    }
 }
 
 /// A tag type representing a successfully generated IR.
@@ -71,7 +127,7 @@ pub trait State {
 pub struct Success(() /* Prevent arbitrary instantiation */);
 
 impl State for Success {
-    type Model = model::Default;
+    type Model = Model;
 }
 
 /// A tag type representing an IR that is suboptimal (contains an error).
@@ -79,7 +135,7 @@ impl State for Success {
 pub struct Suboptimal;
 
 impl State for Suboptimal {
-    type Model = model::Default;
+    type Model = Model;
 }
 
 /// An intermediate representation of the program.
@@ -97,7 +153,7 @@ pub struct IR<T: State> {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
-pub enum TypeOfError<M: Model> {
+pub enum TypeOfError<M: model::Model> {
     #[error(
         "the `Field` address requires `struct_address` field to have an \
          adress of type `struct` but found the other type"

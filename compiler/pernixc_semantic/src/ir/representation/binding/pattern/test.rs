@@ -18,13 +18,11 @@ use crate::{
         instruction::Instruction,
         pattern::{Irrefutable, NameBindingPoint, Named},
         representation::{
-            binding::{
-                infer::{self, Erased},
-                Binder,
-            },
+            binding::{infer, Binder},
             Representation,
         },
         value::{register::Assignment, Value},
+        Erased,
     },
     symbol::{
         self,

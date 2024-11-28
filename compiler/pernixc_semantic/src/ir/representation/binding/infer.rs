@@ -14,6 +14,7 @@ use lazy_static::lazy_static;
 
 use crate::{
     arena::{Arena, ID},
+    ir::Erased,
     symbol::table::{self, Building, Table},
     type_system::{
         environment::Environment,
@@ -45,28 +46,6 @@ pub struct Model;
 
 impl<T> From<Never> for InferenceVariable<T> {
     fn from(value: Never) -> Self { match value {} }
-}
-
-/// The inference variable used for lifetimes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Erased;
-
-impl<T: table::State> table::Display<T> for Erased {
-    fn fmt(
-        &self,
-        _: &Table<T>,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        write!(f, "_")
-    }
-}
-
-impl From<Never> for Erased {
-    fn from(value: Never) -> Self { match value {} }
-}
-
-impl Fresh for Erased {
-    fn fresh() -> Self { Self }
 }
 
 impl model::Model for Model {

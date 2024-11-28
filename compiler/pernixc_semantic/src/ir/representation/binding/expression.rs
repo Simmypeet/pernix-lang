@@ -18,10 +18,8 @@ use pernixc_syntax::syntax_tree::{
 };
 
 use super::{
-    infer::{self, Erased},
-    pattern::Path,
-    stack::Scope,
-    Binder, Error, InferenceProvider, InternalError, LoopKind, SemanticError,
+    infer, pattern::Path, stack::Scope, Binder, Error, InferenceProvider,
+    InternalError, LoopKind, SemanticError,
 };
 use crate::{
     arena::ID,
@@ -63,7 +61,7 @@ use crate::{
             },
             Value,
         },
-        TypeOfError,
+        Erased, TypeOfError,
     },
     symbol::{
         table::{

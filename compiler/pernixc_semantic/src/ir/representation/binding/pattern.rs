@@ -8,10 +8,7 @@ use pernixc_base::{
 };
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::{
-    infer::{self, Erased},
-    Binder,
-};
+use super::{infer, Binder};
 use crate::{
     arena::ID,
     error::{
@@ -34,6 +31,7 @@ use crate::{
             register::{Assignment, Load, ReferenceOf},
             Value,
         },
+        Erased,
     },
     symbol::{
         table::{self, representation::Index, resolution},
