@@ -76,11 +76,11 @@ impl<M: Model> Jump<M> {
     /// Returns the block IDs that this jump goes to.
     pub fn jump_targets(&self) -> Vec<ID<Block<M>>> {
         match self {
-            Jump::Unconditional(jump) => vec![jump.target],
-            Jump::Conditional(jump) => {
+            Self::Unconditional(jump) => vec![jump.target],
+            Self::Conditional(jump) => {
                 vec![jump.true_target, jump.false_target]
             }
-            Jump::Select(jump) => {
+            Self::Select(jump) => {
                 let mut targets =
                     jump.branches.values().copied().collect::<Vec<_>>();
                 if let Some(otherwise) = jump.otherwise {
@@ -125,7 +125,8 @@ pub struct Store<M: Model> {
 /// It is used to keep track of when an `alloca` is declared so that the ir
 /// knows when to drop it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AllocaDeclaration<M: Model> { /// The ID of the `alloca` that is being declared.
+pub struct AllocaDeclaration<M: Model> {
+    /// The ID of the `alloca` that is being declared.
     pub id: ID<Alloca<M>>,
 }
 

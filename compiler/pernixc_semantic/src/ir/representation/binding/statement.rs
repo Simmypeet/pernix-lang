@@ -111,7 +111,8 @@ impl<
                 };
 
                 self.pop_scope(scope_id);
-                return result;
+
+                result
             }
         }
     }

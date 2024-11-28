@@ -5,10 +5,7 @@ use std::{collections::HashSet, ops::Not};
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 
-use super::{
-    instruction::{Instruction, Jump, Terminator},
-    value::{literal::Literal, Value},
-};
+use super::instruction::{Instruction, Jump, Terminator};
 use crate::{
     arena::{Arena, ID},
     type_system::model::Model,
@@ -115,13 +112,13 @@ pub enum InsertTerminatorError<M: Model> {
 ///
 /// The iterator is called in a depth-first and pre-order manner.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ControlFlowGraphTraverser<'a, M: Model> {
+pub struct Traverser<'a, M: Model> {
     graph: &'a ControlFlowGraph<M>,
     visited: HashSet<ID<Block<M>>>,
     stack: Vec<ID<Block<M>>>,
 }
 
-impl<'a, M: Model> Iterator for ControlFlowGraphTraverser<'a, M> {
+impl<'a, M: Model> Iterator for Traverser<'a, M> {
     type Item = (ID<Block<M>>, &'a Block<M>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -138,8 +135,8 @@ impl<'a, M: Model> Iterator for ControlFlowGraphTraverser<'a, M> {
             block
                 .terminator()
                 .iter()
-                .flat_map(|x| x.as_jump())
-                .flat_map(|x| x.jump_targets()),
+                .filter_map(|x| x.as_jump())
+                .flat_map(Jump::jump_targets),
         );
 
         Some((block_id, block))
@@ -178,8 +175,9 @@ impl<M: Model> ControlFlowGraph<M> {
     /// Creates an iterator used for traversing through the control flow graph.
     ///
     /// See [`ControlFlowGraphTraverser`] for more information.
-    pub fn traverse(&self) -> ControlFlowGraphTraverser<M> {
-        ControlFlowGraphTraverser {
+    #[must_use]
+    pub fn traverse(&self) -> Traverser<M> {
+        Traverser {
             graph: self,
             visited: HashSet::new(),
             stack: vec![self.entry_block_id],

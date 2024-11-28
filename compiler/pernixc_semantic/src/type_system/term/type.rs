@@ -208,12 +208,11 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
                 .get_term_mut(location)
                 .ok_or(AssignSubTermError::InvalidLocation)?,
 
-            (
-                Type::TraitMember(trait_member),
-                SubLifetimeLocation::TraitMember(location),
-            ) => trait_member
-                .get_term_mut(location.0)
-                .ok_or(AssignSubTermError::InvalidLocation)?,
+            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
+                trait_member
+                    .get_term_mut(location.0)
+                    .ok_or(AssignSubTermError::InvalidLocation)?
+            }
 
             _ => return Err(AssignSubTermError::InvalidLocation),
         };
@@ -237,10 +236,9 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
                 Self::MemberSymbol(location),
             ) => member_symbol.get_term(location).cloned(),
 
-            (
-                Type::TraitMember(trait_member),
-                SubLifetimeLocation::TraitMember(location),
-            ) => trait_member.get_term(location.0).cloned(),
+            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
+                trait_member.get_term(location.0).cloned()
+            }
 
             _ => None,
         }
@@ -261,10 +259,9 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
                 Self::MemberSymbol(location),
             ) => member_symbol.get_term(location),
 
-            (
-                Type::TraitMember(trait_member),
-                SubLifetimeLocation::TraitMember(location),
-            ) => trait_member.get_term(location.0),
+            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
+                trait_member.get_term(location.0)
+            }
 
             _ => None,
         }
@@ -285,10 +282,9 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
                 Self::MemberSymbol(location),
             ) => member_symbol.get_term_mut(location),
 
-            (
-                Type::TraitMember(trait_member),
-                SubLifetimeLocation::TraitMember(location),
-            ) => trait_member.get_term_mut(location.0),
+            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
+                trait_member.get_term_mut(location.0)
+            }
 
             _ => None,
         }

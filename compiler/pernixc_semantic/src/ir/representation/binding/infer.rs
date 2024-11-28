@@ -1183,7 +1183,7 @@ impl Context {
 
             self.type_inference_context
                 .assign_infer_to_known(*inference, default_type)
-                .unwrap()
+                .unwrap();
         }
     }
 }

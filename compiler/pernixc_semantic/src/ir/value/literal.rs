@@ -150,18 +150,13 @@ impl<M: Model> Literal<M> {
                     .transform(numeric.r#type, numeric.span.clone()),
                 span: numeric.span,
             }),
-            Self::Boolean(boolean) => Literal::Boolean(Boolean {
-                value: boolean.value,
-                span: boolean.span,
-            }),
+            Self::Boolean(boolean) => Literal::Boolean(boolean),
             Self::Error(error) => Literal::Error(Error {
                 r#type: transformer.transform(error.r#type, error.span.clone()),
                 span: error.span,
             }),
-            Self::Unit(unit) => Literal::Unit(Unit { span: unit.span }),
-            Self::String(s) => {
-                Literal::String(String { value: s.value, span: s.span })
-            }
+            Self::Unit(unit) => Literal::Unit(unit),
+            Self::String(s) => Literal::String(s),
             Self::Character(character) => Literal::Character(Character {
                 character: character.character,
                 r#type: transformer
