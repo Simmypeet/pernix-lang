@@ -40,6 +40,7 @@ impl Finalize for AdtImplementationFunction {
     const FINAL_STATE: usize = INTERMEDIATE_REPRESENTATION_AND_CHECK_STATE;
     type Data = (Occurrences, Occurrences, Occurrences);
 
+    #[allow(clippy::too_many_lines)]
     fn finalize(
         table: &Table<Building<RwLockContainer, Finalizer>>,
         symbol_id: ID<Self>,

@@ -59,11 +59,11 @@ use crate::{
 };
 
 pub mod expression;
-pub mod finalize;
 pub mod infer;
 pub mod stack;
 pub mod statement;
 
+mod finalize;
 mod pattern;
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]

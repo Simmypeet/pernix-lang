@@ -27,6 +27,12 @@ impl<
     > Binder<'t, S, RO, TO>
 {
     /// Finalizes the current binder and returns the IR
+    ///
+    /// # Errors
+    ///
+    /// Return [`Err`] with [`IR`] of [`Suboptimal`] if any semantic errors
+    /// encountered during binding and finalization.
+    #[allow(clippy::result_large_err)]
     pub fn finalize(
         mut self,
         handler: &dyn Handler<Box<dyn error::Error>>,
