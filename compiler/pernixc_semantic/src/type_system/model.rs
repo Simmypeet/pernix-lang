@@ -35,7 +35,8 @@ pub trait Model:
         + Hash
         + 'static
         + Send
-        + Sync;
+        + Sync
+        + From<Never>;
 
     /// The type to use for type inference.
     type TypeInference: Debug
@@ -47,7 +48,8 @@ pub trait Model:
         + Hash
         + 'static
         + Send
-        + Sync;
+        + Sync
+        + From<Never>;
 
     /// The type to use for constant inference.
     type ConstantInference: Debug
@@ -59,7 +61,8 @@ pub trait Model:
         + Hash
         + 'static
         + Send
-        + Sync;
+        + Sync
+        + From<Never>;
 
     /// Converts a type from the default model to the current model.
     fn from_default_type(ty: Type<Default>) -> Type<Self>;
