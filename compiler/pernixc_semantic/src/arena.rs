@@ -228,6 +228,19 @@ impl<T, Idx: Key> Arena<T, Idx> {
         }
     }
 
+    /// Maps the items in the [`Arena`] to another type using the given
+    /// function. The mapped items will have the same `Idx`s as the original
+    /// items.
+    pub fn map<U: 'static>(mut self, mut f: impl FnMut(T) -> U) -> Arena<U> {
+        let items = self
+            .items
+            .drain()
+            .map(|(id, item)| (ID::from_index(id.into_index()), f(item)))
+            .collect();
+
+        Arena { items }
+    }
+
     /// Gets the [`ID`] that would be assigned to the next item inserted into
     /// the [`Arena`].
     #[must_use]

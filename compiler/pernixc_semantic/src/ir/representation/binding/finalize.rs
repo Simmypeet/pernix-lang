@@ -1,7 +1,5 @@
 //! Contains the "binder-finalization" logic.
 
-use std::collections::HashSet;
-
 use pernixc_base::handler::Handler;
 
 use super::{infer, Binder};
@@ -61,9 +59,10 @@ impl<
             .remove_unerachable_blocks();
 
         let handler_wrapper = self.create_handler_wrapper(handler);
-        let transformed_ir = transform_inference::transform_inference(
+        let _transformed_ir = transform_inference::transform_inference(
             self.intermediate_representation,
             &self.inference_context,
+            self.table,
             &handler_wrapper,
         );
     }
