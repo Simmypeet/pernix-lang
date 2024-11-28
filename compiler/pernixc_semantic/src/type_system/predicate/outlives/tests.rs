@@ -23,7 +23,9 @@ use crate::{
         normalizer, observer,
         predicate::{Equality, Outlives, Predicate},
         term::{
-            constant::Constant, lifetime::Lifetime, r#type::Type,
+            constant::Constant,
+            lifetime::Lifetime,
+            r#type::{self, Type},
             GenericArguments, Symbol, Term,
         },
         variance::Variance,
@@ -179,7 +181,7 @@ impl Property<Type<Default>> for LifetimeMatching {
         }
 
         let ty_operand = Type::Symbol(Symbol {
-            id: AdtID::Struct(id),
+            id: r#type::SymbolID::Adt(AdtID::Struct(id)),
             generic_arguments: GenericArguments {
                 lifetimes: operand_lifetimes,
                 types: Vec::new(),
@@ -198,7 +200,7 @@ impl Property<Type<Default>> for LifetimeMatching {
         {
             premise.predicates.insert(Predicate::TypeOutlives(Outlives {
                 operand: Type::Symbol(Symbol {
-                    id: AdtID::Struct(id),
+                    id: r#type::SymbolID::Adt(AdtID::Struct(id)),
                     generic_arguments: GenericArguments {
                         lifetimes: bound_lifetimes,
                         types: Vec::new(),

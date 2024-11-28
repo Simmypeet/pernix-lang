@@ -41,7 +41,12 @@ use crate::{
     type_system::{
         model::{Default, Model},
         predicate::Predicate,
-        term::{constant, lifetime::Lifetime, r#type, GenericArguments},
+        term::{
+            constant,
+            lifetime::Lifetime,
+            r#type::{self, MemberSymbolID},
+            GenericArguments,
+        },
         Premise,
     },
 };
@@ -919,6 +924,36 @@ impl<T: Container> Representation<T> {
             r#type::Type::Local(local) => self.get_type_accessibility(&local.0),
 
             r#type::Type::Inference(never) => match *never {},
+
+            r#type::Type::MemberSymbol(member_symbol) => {
+                let MemberSymbolID::Function(member_function_id) =
+                    member_symbol.id;
+
+                let symbol_accessibility = self
+                    .get_accessibility(member_function_id.into())
+                    .ok_or(GetTermAccessibilityError::InvalidID)?;
+
+                let member_generic_accessibility = self
+                    .get_generic_arguments_accessibility(
+                        &member_symbol.member_generic_arguments,
+                    )?;
+
+                let parent_generic_accessibility = self
+                    .get_generic_arguments_accessibility(
+                        &member_symbol.parent_generic_arguments,
+                    )?;
+
+                let generic_arguments_accessibility = self
+                    .merge_accessibility_down(
+                        member_generic_accessibility,
+                        parent_generic_accessibility,
+                    )?;
+
+                Ok(self.merge_accessibility_down(
+                    symbol_accessibility,
+                    generic_arguments_accessibility,
+                )?)
+            }
 
             r#type::Type::Symbol(adt) => {
                 let symbol_accessibility = self

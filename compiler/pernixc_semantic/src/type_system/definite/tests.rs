@@ -12,7 +12,7 @@ use crate::{
     arena::{self, ID},
     symbol::{
         table::{representation::Insertion, Building, Table},
-        AdtID, Module,
+        Module,
     },
     type_system::{
         model::Default,
@@ -170,7 +170,7 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
                 .unwrap_or_else(Box::<dyn Property<Constant<_>>>::arbitrary);
 
             prop_oneof![
-                4 => SymbolCongruence::<AdtID>::arbitrary_with((
+                4 => SymbolCongruence::<r#type::SymbolID>::arbitrary_with((
                     Some(inner.clone()),
                     Some(const_strat.clone())
                 )).prop_map(|x| Box::new(x) as _),

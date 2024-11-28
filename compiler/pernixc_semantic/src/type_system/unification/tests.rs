@@ -9,9 +9,11 @@ use proptest::{
 
 use super::{Log, Predicate as _, Unification, Unifier};
 use crate::{
+    arena::ID,
     symbol::{
+        self,
         table::{Building, Table},
-        ConstantParameterID, LifetimeParameterID, TypeParameterID,
+        AdtID, ConstantParameterID, LifetimeParameterID, TypeParameterID,
     },
     type_system::{
         equality::Equality,
@@ -142,6 +144,20 @@ impl Arbitrary for Box<dyn Property<Lifetime<Default>>> {
         Basic::<LifetimeParameterID, Lifetime<_>>::arbitrary()
             .prop_map(|x| Box::new(x) as _)
             .boxed()
+    }
+}
+
+impl Arbitrary for r#type::SymbolID {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            AdtID::arbitrary().prop_map(r#type::SymbolID::Adt),
+            ID::<symbol::Function>::arbitrary()
+                .prop_map(r#type::SymbolID::Function)
+        ]
+        .boxed()
     }
 }
 

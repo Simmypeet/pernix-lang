@@ -1278,7 +1278,7 @@ impl<S: State> Table<S> {
                     };
 
                     Ok(r#type::Type::Symbol(term::Symbol {
-                        id,
+                        id: r#type::SymbolID::Adt(id),
                         generic_arguments: symbol.generic_arguments,
                     }))
                 }

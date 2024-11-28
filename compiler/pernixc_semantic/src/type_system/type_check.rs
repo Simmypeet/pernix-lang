@@ -293,7 +293,7 @@ impl<M: Model> Compute for TypeCheck<M> {
                 // check struct type
                 (
                     Type::Symbol(Symbol {
-                        id: AdtID::Struct(struct_id),
+                        id: r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
                         generic_arguments,
                     }),
                     Constant::Struct(value),
@@ -354,7 +354,7 @@ impl<M: Model> Compute for TypeCheck<M> {
                 // check enum type
                 (
                     Type::Symbol(Symbol {
-                        id: AdtID::Enum(enum_id),
+                        id: r#type::SymbolID::Adt(AdtID::Enum(enum_id)),
                         generic_arguments,
                     }),
                     Constant::Enum(enum_value),

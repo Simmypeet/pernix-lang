@@ -20,7 +20,11 @@ use crate::{
         normalizer::Normalizer,
         observer::Observer,
         simplify,
-        term::{self, r#type::Type, Symbol},
+        term::{
+            self,
+            r#type::{self, Type},
+            Symbol,
+        },
         Succeeded,
     },
 };
@@ -210,12 +214,12 @@ impl<M: Model> Address<M> {
             Self::ReferenceAddress(reference_address) => {
                 Address::ReferenceAddress(ReferenceAddress {
                     reference_address: Box::new(
-                        reference_address.reference_address.transform_model(
-                            transformer,
-                        ),
+                        reference_address
+                            .reference_address
+                            .transform_model(transformer),
                     ),
                 })
-            },
+            }
         }
     }
 }
@@ -299,7 +303,7 @@ impl<M: Model> Representation<M> {
 
                 let (struct_id, generic_arguments) = match result {
                     Type::Symbol(Symbol {
-                        id: AdtID::Struct(struct_id),
+                        id: r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
                         generic_arguments,
                     }) => (struct_id, generic_arguments),
 
@@ -430,7 +434,7 @@ impl<M: Model> Representation<M> {
 
                 let (enum_id, generic_arguments) = match result {
                     Type::Symbol(Symbol {
-                        id: AdtID::Enum(enum_id),
+                        id: r#type::SymbolID::Adt(AdtID::Enum(enum_id)),
                         generic_arguments,
                     }) => (enum_id, generic_arguments),
 

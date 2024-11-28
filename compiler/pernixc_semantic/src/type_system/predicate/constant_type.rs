@@ -1,9 +1,6 @@
 use super::{contains_error, Satisfiability};
 use crate::{
-    symbol::{
-        table::{self, DisplayObject, State, Table},
-        AdtID,
-    },
+    symbol::table::{self, DisplayObject, State, Table},
     type_system::{
         compatible::{Compatibility, Compatible},
         equivalence::get_equivalences_with_context,
@@ -16,7 +13,7 @@ use crate::{
             constant::Constant,
             lifetime::Lifetime,
             r#type::{Primitive, Type},
-            Symbol, Term,
+            Term,
         },
         variance::Variance,
         visitor::{self, Element},
@@ -178,11 +175,9 @@ impl<M: Model> Compute for ConstantType<M> {
             | Type::Parameter(_)
             | Type::Inference(_) => Satisfiability::Unsatisfied,
 
-            Type::Symbol(Symbol { id, .. }) => match id {
-                AdtID::Struct(_) | AdtID::Enum(_) => Satisfiability::Congruent,
-            },
-
             Type::Pointer(_)
+            | Type::Symbol(_)
+            | Type::MemberSymbol(_)
             | Type::Reference(_)
             | Type::Array(_)
             | Type::Tuple(_)

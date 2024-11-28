@@ -18,8 +18,8 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index, DisplayObject, State, Table},
-        AdtID, GlobalID, TraitImplementationMemberID, TypeParameter,
-        TypeParameterID,
+        AdtID, GlobalID, MemberFunctionID, TraitImplementationMemberID,
+        TypeParameter, TypeParameterID,
     },
     type_system::{
         self,
@@ -45,7 +45,7 @@ use crate::{
     },
 };
 
-/// A qualifier that can be applied to references/pointers.  
+/// A qualifier that can be applied to references/pointers.
 #[derive(
     Debug,
     Clone,
@@ -149,6 +149,12 @@ pub type Tuple<M> = super::Tuple<Type<M>>;
 /// syntax.
 pub type TraitMember<M> = MemberSymbol<M, ID<symbol::TraitType>>;
 
+/// Represents a function type, this is internal compiler type.
+pub type Function<M> = Symbol<M, ID<symbol::Function>>;
+
+/// Represents a member function type, this is internal compiler type.
+pub type MemberFunction<M> = MemberSymbol<M, MemberFunctionID>;
+
 /// Represents a phantom type, denoted by `phantom TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Phantom<M: Model>(pub Box<Type<M>>);
@@ -158,12 +164,16 @@ pub struct Phantom<M: Model>(pub Box<Type<M>>);
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
 )]
 pub enum SubLifetimeLocation {
-    /// The index of lifetime argument in a [`Symbol`] type.
+    /// The index of lifetime argument in a [`Type::Symbol`] type.
     #[from]
     Symbol(SubSymbolLocation),
 
     /// The lifetime of a reference.
     Reference,
+
+    /// A lifetime argument in a [`Type::MemberSymbol`] variant.
+    #[from]
+    MemberSymbol(SubMemberSymbolLocation),
 
     /// A lifetime argument in a [`Type::TraitMember`] variant.
     #[from]
@@ -191,11 +201,19 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
                 .get_term_mut(location)
                 .ok_or(AssignSubTermError::InvalidLocation)?,
 
-            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member
-                    .get_term_mut(location.0)
-                    .ok_or(AssignSubTermError::InvalidLocation)?
-            }
+            (
+                Type::MemberSymbol(member_symbol),
+                Self::MemberSymbol(location),
+            ) => member_symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (
+                Type::TraitMember(trait_member),
+                SubLifetimeLocation::TraitMember(location),
+            ) => trait_member
+                .get_term_mut(location.0)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
 
             _ => return Err(AssignSubTermError::InvalidLocation),
         };
@@ -214,9 +232,15 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
                 symbol.get_term(location).cloned()
             }
 
-            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.get_term(location.0).cloned()
-            }
+            (
+                Type::MemberSymbol(member_symbol),
+                Self::MemberSymbol(location),
+            ) => member_symbol.get_term(location).cloned(),
+
+            (
+                Type::TraitMember(trait_member),
+                SubLifetimeLocation::TraitMember(location),
+            ) => trait_member.get_term(location.0).cloned(),
 
             _ => None,
         }
@@ -232,9 +256,15 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
                 symbol.get_term(location)
             }
 
-            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.get_term(location.0)
-            }
+            (
+                Type::MemberSymbol(member_symbol),
+                Self::MemberSymbol(location),
+            ) => member_symbol.get_term(location),
+
+            (
+                Type::TraitMember(trait_member),
+                SubLifetimeLocation::TraitMember(location),
+            ) => trait_member.get_term(location.0),
 
             _ => None,
         }
@@ -250,9 +280,15 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
                 symbol.get_term_mut(location)
             }
 
-            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.get_term_mut(location.0)
-            }
+            (
+                Type::MemberSymbol(member_symbol),
+                Self::MemberSymbol(location),
+            ) => member_symbol.get_term_mut(location),
+
+            (
+                Type::TraitMember(trait_member),
+                SubLifetimeLocation::TraitMember(location),
+            ) => trait_member.get_term_mut(location.0),
 
             _ => None,
         }
@@ -264,7 +300,7 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
 )]
 pub enum SubTypeLocation {
-    /// The index of the type argument in a [`Symbol`] type.
+    /// The index of the type argument in a [`Type::Symbol`] type.
     #[from]
     Symbol(SubSymbolLocation),
 
@@ -274,24 +310,24 @@ pub enum SubTypeLocation {
     /// The [`Reference::pointee`] of a reference.
     Reference,
 
-    /// The [`Array::r#type`] of an array.
+    /// The [`Array::type`] of an array.
     Array,
 
-    /// The index of the type element in a [`Tuple`] type.
+    /// The index of the type element in a [`Type::Tuple`] type.
     #[from]
     Tuple(SubTupleLocation),
 
-    /// The inner type of a [`Local`] type.
+    /// The inner type of a [`Type::Local`] type.
     Local,
 
-    /// The inner type of a [`Phantom`] type.
+    /// The inner type of a [`Type::Phantom`] type.
     Phantom,
 
-    /// The type argument in a [`MemberSymbol`] type.
+    /// The type argument in a [`Type::MemberSymbol`] type.
     #[from]
     MemberSymbol(SubMemberSymbolLocation),
 
-    /// A type argument in a [`Type::TraitMember`] variant.
+    /// The type argument in a [`Type::TraitMember`] type.
     #[from]
     TraitMember(SubTraitMemberLocation),
 }
@@ -328,6 +364,13 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
             }
 
             (Self::Local, Type::Local(local)) => &mut *local.0,
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
 
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member
@@ -370,6 +413,11 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
 
             (Self::Local, Type::Local(local)) => Some((*local.0).clone()),
 
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(trait_member),
+            ) => trait_member.get_term(location).cloned(),
+
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member.get_term(location.0).cloned()
             }
@@ -400,6 +448,11 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
             },
 
             (Self::Local, Type::Local(local)) => Some(&*local.0),
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term(location),
 
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member.get_term(location.0)
@@ -434,6 +487,11 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
 
             (Self::Local, Type::Local(local)) => Some(&mut *local.0),
 
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term_mut(location),
+
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member.get_term_mut(location.0)
             }
@@ -448,18 +506,18 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
 )]
 pub enum SubConstantLocation {
-    /// The index of the constant argument in a [`Symbol`] type.
+    /// The index of the constant argument in a [`Type::Symbol`] type.
     #[from]
     Symbol(SubSymbolLocation),
 
-    /// The constant argument in a [`MemberSymbol`] type.
+    /// The constant argument in a [`Type::MemberSymbol`] type.
     #[from]
     MemberSymbol(SubMemberSymbolLocation),
 
     /// The [`Array::length`] of an array.
     Array,
 
-    /// A constant argument in a [`Type::TraitMember`] variant.
+    /// The constant argument in a [`Type::TraitMember`] type.
     #[from]
     TraitMember(SubTraitMemberLocation),
 }
@@ -483,6 +541,13 @@ impl<M: Model> Location<Type<M>, Constant<M>> for SubConstantLocation {
 
             (Self::Array, Type::Array(array)) => &mut array.length,
 
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member
                     .get_term_mut(location.0)
@@ -504,6 +569,11 @@ impl<M: Model> Location<Type<M>, Constant<M>> for SubConstantLocation {
 
             (Self::Array, Type::Array(array)) => Some(array.length.clone()),
 
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term(location).cloned(),
+
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member.get_term(location.0).cloned()
             }
@@ -520,6 +590,11 @@ impl<M: Model> Location<Type<M>, Constant<M>> for SubConstantLocation {
 
             (Self::Array, Type::Array(array)) => Some(&array.length),
 
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term(location),
+
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member.get_term(location.0)
             }
@@ -535,6 +610,11 @@ impl<M: Model> Location<Type<M>, Constant<M>> for SubConstantLocation {
             }
 
             (Self::Array, Type::Array(array)) => Some(&mut array.length),
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term_mut(location),
 
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member.get_term_mut(location.0)
@@ -644,31 +724,25 @@ impl<M: Model> Match for Type<M> {
                 lhs.substructural_match(rhs)
             }
 
-            (Self::TraitMember(lhs), Self::TraitMember(rhs))
+            (Self::MemberSymbol(lhs), Self::MemberSymbol(rhs))
                 if lhs.id == rhs.id =>
             {
                 lhs.parent_generic_arguments
                     .substructural_match(
                         &rhs.parent_generic_arguments,
                         matching::Substructural::default(),
-                        |x| {
-                            SubTraitMemberLocation(SubMemberSymbolLocation {
-                                index: x,
-                                from_parent: true,
-                            })
+                        |x| SubMemberSymbolLocation {
+                            index: x,
+                            from_parent: true,
                         },
                     )
                     .and_then(|x| {
                         lhs.member_generic_arguments.substructural_match(
                             &rhs.member_generic_arguments,
                             x,
-                            |x| {
-                                SubTraitMemberLocation(
-                                    SubMemberSymbolLocation {
-                                        index: x,
-                                        from_parent: false,
-                                    },
-                                )
+                            |x| SubMemberSymbolLocation {
+                                index: x,
+                                from_parent: false,
                             },
                         )
                     })
@@ -701,6 +775,42 @@ impl<M: Model> Match for Type<M> {
     }
 }
 
+/// An ID used with the [`Type::Symbol`] type.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum SymbolID {
+    Adt(AdtID),
+    Function(ID<symbol::Function>),
+}
+
+impl From<SymbolID> for GlobalID {
+    fn from(value: SymbolID) -> Self {
+        match value {
+            SymbolID::Adt(adt) => adt.into(),
+            SymbolID::Function(function) => Self::Function(function),
+        }
+    }
+}
+
+/// An ID used with the [`Type::MemberSymbol`] type.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum MemberSymbolID {
+    Function(MemberFunctionID),
+}
+
+impl From<MemberSymbolID> for GlobalID {
+    fn from(value: MemberSymbolID) -> Self {
+        match value {
+            MemberSymbolID::Function(function_id) => function_id.into(),
+        }
+    }
+}
+
 /// Represents a type term.
 #[derive(
     Debug,
@@ -721,7 +831,7 @@ pub enum Type<M: Model> {
     Parameter(TypeParameterID),
     Inference(M::TypeInference),
     #[from]
-    Symbol(Symbol<M, AdtID>),
+    Symbol(Symbol<M, SymbolID>),
     #[from]
     Pointer(Pointer<M>),
     #[from]
@@ -735,7 +845,9 @@ pub enum Type<M: Model> {
     #[from]
     Phantom(Phantom<M>),
     #[from]
-    TraitMember(TraitMember<M>),
+    MemberSymbol(MemberSymbol<M, MemberSymbolID>),
+    #[from]
+    TraitMember(MemberSymbol<M, ID<symbol::TraitType>>),
     #[from]
     Error(Error),
 }
@@ -869,6 +981,9 @@ where
             Type::Phantom(phantom) => Self::Phantom(Phantom(Box::new(
                 Self::from_other_model(*phantom.0),
             ))),
+            Type::MemberSymbol(member_symbol) => Self::MemberSymbol(
+                MemberSymbol::from_other_model(member_symbol),
+            ),
             Type::TraitMember(trait_member) => {
                 Self::TraitMember(TraitMember::from_other_model(trait_member))
             }
@@ -919,6 +1034,9 @@ where
             Type::Phantom(phantom) => Self::Phantom(Phantom(Box::new(
                 Self::try_from_other_model(*phantom.0)?,
             ))),
+            Type::MemberSymbol(member_symbol) => Self::MemberSymbol(
+                MemberSymbol::try_from_other_model(member_symbol)?,
+            ),
             Type::TraitMember(trait_member) => Self::TraitMember(
                 TraitMember::try_from_other_model(trait_member)?,
             ),
@@ -1113,6 +1231,7 @@ where
             }
 
             Self::TraitMember(_)
+            | Self::MemberSymbol(_)
             | Self::Local(_)
             | Self::Symbol(_)
             | Self::Pointer(_)
@@ -1204,7 +1323,10 @@ where
 
     fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>> {
         match self {
-            Self::Symbol(Symbol { id, generic_arguments }) => match *id {
+            Self::Symbol(Symbol {
+                id: SymbolID::Adt(id),
+                generic_arguments,
+            }) => match *id {
                 AdtID::Struct(struct_id) => {
                     let struct_sym = table.get(struct_id)?;
 
@@ -1336,6 +1458,7 @@ where
             Self::Primitive(_) => Satisfiability::Satisfied,
 
             Self::Local(_)
+            | Self::MemberSymbol(_)
             | Self::Pointer(_)
             | Self::Symbol(_)
             | Self::Reference(_)
@@ -1485,6 +1608,9 @@ where
                     display: &*phantom.0
                 })
             }
+            Self::MemberSymbol(member_symbol) => {
+                write!(f, "{}", DisplayObject { table, display: member_symbol })
+            }
             Self::Error(_) => {
                 write!(f, "{{error}}")
             }
@@ -1522,6 +1648,26 @@ impl<M: Model> Type<M> {
                     .generic_arguments
                     .get_global_id_dependencies(table)?;
                 occurrences.push(symbol.id.into());
+                occurrences
+            }
+
+            Self::MemberSymbol(member_symbol) => {
+                let mut occurrences = member_symbol
+                    .parent_generic_arguments
+                    .get_global_id_dependencies(table)?;
+                occurrences.extend(
+                    member_symbol
+                        .member_generic_arguments
+                        .get_global_id_dependencies(table)?,
+                );
+
+                occurrences.push(member_symbol.id.into());
+                occurrences.extend(
+                    table
+                        .get_global(member_symbol.id.into())?
+                        .parent_global_id(),
+                );
+
                 occurrences
             }
 

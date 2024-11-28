@@ -124,35 +124,77 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                         r#type::SubLifetimeLocation::Symbol(location),
                         Type::Symbol(symbol),
                     ) => {
-                        let adt = self
-                            .table()
-                            .get_adt(symbol.id)
-                            .ok_or(GetVarianceError::InvalidAdtID(symbol.id))?;
-
                         // there's no sub-term in the lifetime
                         if locations.next().is_some() {
                             return Err(GetVarianceError::InvalidLocation);
                         }
 
-                        // gets the id based on the position
-                        let id = adt
-                            .generic_declaration()
-                            .parameters
-                            .lifetime_order()
-                            .get(location.0)
-                            .ok_or(GetVarianceError::InvalidLocation)?;
+                        match symbol.id {
+                            r#type::SymbolID::Adt(adt_id) => {
+                                let adt = self.table().get_adt(adt_id).ok_or(
+                                    GetVarianceError::InvalidAdtID(adt_id),
+                                )?;
 
-                        Observer::on_retrieving_variance(symbol.id, self)
-                            .map_err(|x| GetVarianceError::Overflow(x))?;
+                                // gets the id based on the position
+                                let id = adt
+                                    .generic_declaration()
+                                    .parameters
+                                    .lifetime_order()
+                                    .get(location.0)
+                                    .ok_or(GetVarianceError::InvalidLocation)?;
 
-                        Ok(parent_variance.xfrom(
-                            *adt.generic_parameter_variances()
-                                .variances_by_lifetime_ids
-                                .get(id)
-                                .ok_or(GetVarianceError::NoVarianceInfo(
-                                    symbol.id,
-                                ))?,
-                        ))
+                                Observer::on_retrieving_variance(adt_id, self)
+                                    .map_err(|x| {
+                                        GetVarianceError::Overflow(x)
+                                    })?;
+
+                                Ok(parent_variance.xfrom(
+                                    *adt.generic_parameter_variances()
+                                        .variances_by_lifetime_ids
+                                        .get(id)
+                                        .ok_or(
+                                            GetVarianceError::NoVarianceInfo(
+                                                adt_id,
+                                            ),
+                                        )?,
+                                ))
+                            }
+
+                            r#type::SymbolID::Function(_) => {
+                                Ok(parent_variance.xfrom(Variance::Invariant))
+                            }
+                        }
+                    }
+
+                    // lifetime in the member function
+                    (
+                        r#type::SubLifetimeLocation::MemberSymbol(location),
+                        Type::MemberSymbol(member_symbol),
+                    ) => {
+                        // there's no sub-term in the lifetime
+                        if locations.next().is_some() {
+                            return Err(GetVarianceError::InvalidLocation);
+                        }
+
+                        let invalid = if location.from_parent {
+                            location.index
+                                >= member_symbol
+                                    .parent_generic_arguments
+                                    .lifetimes
+                                    .len()
+                        } else {
+                            location.index
+                                >= member_symbol
+                                    .member_generic_arguments
+                                    .lifetimes
+                                    .len()
+                        };
+
+                        if invalid {
+                            return Err(GetVarianceError::InvalidLocation);
+                        }
+
+                        Ok(parent_variance.xfrom(Variance::Invariant))
                     }
 
                     // lifetime in the reference
@@ -204,42 +246,57 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                     (
                         r#type::SubTypeLocation::Symbol(location),
                         Type::Symbol(symbol),
-                    ) => {
-                        let adt = self
-                            .table
-                            .get_adt(symbol.id)
-                            .ok_or(GetVarianceError::InvalidAdtID(symbol.id))?;
+                    ) => match symbol.id {
+                        r#type::SymbolID::Adt(adt_id) => {
+                            let adt = self.table.get_adt(adt_id).ok_or(
+                                GetVarianceError::InvalidAdtID(adt_id),
+                            )?;
 
-                        // gets the id based on the position
-                        let id = adt
-                            .generic_declaration()
-                            .parameters
-                            .type_order()
-                            .get(location.0)
-                            .ok_or(GetVarianceError::InvalidLocation)?;
+                            // gets the id based on the position
+                            let id = adt
+                                .generic_declaration()
+                                .parameters
+                                .type_order()
+                                .get(location.0)
+                                .ok_or(GetVarianceError::InvalidLocation)?;
 
-                        let current_variance = parent_variance.xfrom(
-                            adt.generic_parameter_variances()
-                                .variances_by_type_ids
-                                .get(id)
-                                .copied()
-                                .ok_or(GetVarianceError::NoVarianceInfo(
-                                    symbol.id,
-                                ))?,
-                        );
+                            let current_variance = parent_variance.xfrom(
+                                adt.generic_parameter_variances()
+                                    .variances_by_type_ids
+                                    .get(id)
+                                    .copied()
+                                    .ok_or(GetVarianceError::NoVarianceInfo(
+                                        adt_id,
+                                    ))?,
+                            );
 
-                        let inner_term = symbol
-                            .generic_arguments
-                            .types
-                            .get(location.0)
-                            .ok_or(GetVarianceError::InvalidLocation)?;
+                            let inner_term = symbol
+                                .generic_arguments
+                                .types
+                                .get(location.0)
+                                .ok_or(GetVarianceError::InvalidLocation)?;
 
-                        self.get_variance_of(
-                            inner_term,
-                            current_variance,
-                            locations,
-                        )
-                    }
+                            self.get_variance_of(
+                                inner_term,
+                                current_variance,
+                                locations,
+                            )
+                        }
+
+                        r#type::SymbolID::Function(_) => {
+                            let inner_term = symbol
+                                .generic_arguments
+                                .types
+                                .get(location.0)
+                                .ok_or(GetVarianceError::InvalidLocation)?;
+
+                            self.get_variance_of(
+                                inner_term,
+                                parent_variance.xfrom(Variance::Invariant),
+                                locations,
+                            )
+                        }
+                    },
 
                     (
                         r#type::SubTypeLocation::Reference,
@@ -330,6 +387,33 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
 
                         self.get_variance_of(
                             &sub_term,
+                            current_variance,
+                            locations,
+                        )
+                    }
+
+                    (
+                        r#type::SubTypeLocation::MemberSymbol(location),
+                        Type::MemberSymbol(symbol),
+                    ) => {
+                        let inner_term = if location.from_parent {
+                            symbol
+                                .parent_generic_arguments
+                                .types
+                                .get(location.index)
+                        } else {
+                            symbol
+                                .member_generic_arguments
+                                .types
+                                .get(location.index)
+                        }
+                        .ok_or(GetVarianceError::InvalidLocation)?;
+
+                        let current_variance =
+                            parent_variance.xfrom(Variance::Invariant);
+
+                        self.get_variance_of(
+                            inner_term,
                             current_variance,
                             locations,
                         )

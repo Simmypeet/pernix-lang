@@ -68,11 +68,11 @@ fn sub_term() {
 
     let Succeeded { result: simplified, constraints } = simplify(
         &Type::Symbol(Symbol {
-            id: AdtID::Struct(ID::new(0)),
+            id: r#type::SymbolID::Adt(AdtID::Struct(ID::new(0))),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
                 types: vec![Type::Symbol(Symbol {
-                    id: AdtID::Struct(ID::new(0)),
+                    id: r#type::SymbolID::Adt(AdtID::Struct(ID::new(0))),
                     generic_arguments: GenericArguments {
                         lifetimes: Vec::new(),
                         types: vec![Type::TraitMember(trait_member)],
@@ -93,11 +93,11 @@ fn sub_term() {
     assert_eq!(
         simplified,
         Type::Symbol(Symbol {
-            id: AdtID::Struct(ID::new(0)),
+            id: r#type::SymbolID::Adt(AdtID::Struct(ID::new(0))),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
                 types: vec![Type::Symbol(Symbol {
-                    id: AdtID::Struct(ID::new(0)),
+                    id: r#type::SymbolID::Adt(AdtID::Struct(ID::new(0))),
                     generic_arguments: GenericArguments {
                         lifetimes: Vec::new(),
                         types: vec![equivalent],

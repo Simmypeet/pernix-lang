@@ -206,7 +206,7 @@ fn congruence() {
 
     let table = Table::<Building>::default();
     let lhs = Type::Symbol(Symbol {
-        id: AdtID::Struct(ID::new(0)),
+        id: r#type::SymbolID::Adt(AdtID::Struct(ID::new(0))),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![
@@ -217,7 +217,7 @@ fn congruence() {
         },
     });
     let rhs = Type::Symbol(Symbol {
-        id: AdtID::Struct(ID::new(0)),
+        id: r#type::SymbolID::Adt(AdtID::Struct(ID::new(0))),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![first_equivalence, second_equivalence],

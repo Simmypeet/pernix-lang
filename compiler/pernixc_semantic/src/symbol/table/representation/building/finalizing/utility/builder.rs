@@ -93,7 +93,11 @@ impl<'a, M: Model>
             | Record::NegativeTraitSatisfiability(_) => {}
 
             Record::ConstantType(q) => {
-                let Type::Symbol(Symbol { id, .. }) = &q.query.0 else {
+                let Type::Symbol(Symbol {
+                    id: term::r#type::SymbolID::Adt(id),
+                    ..
+                }) = &q.query.0
+                else {
                     return Ok(());
                 };
 

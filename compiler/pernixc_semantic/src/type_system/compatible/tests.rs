@@ -17,7 +17,7 @@ use crate::{
         predicate::Outlives,
         term::{
             lifetime::Lifetime,
-            r#type::{Primitive, Qualifier, Reference, Type},
+            r#type::{self, Primitive, Qualifier, Reference, Type},
             GenericArguments, Symbol,
         },
         variance::Variance,
@@ -195,7 +195,7 @@ fn compatible_with_adt() {
 
         // Adt['a]
         let a_t = Type::<Default>::Symbol(Symbol {
-            id: adt_sym_id.into(),
+            id: r#type::SymbolID::Adt(adt_sym_id.into()),
             generic_arguments: GenericArguments {
                 lifetimes: vec![a_lt.clone()],
                 types: Vec::new(),
@@ -205,7 +205,7 @@ fn compatible_with_adt() {
 
         // Adt['b]
         let b_t = Type::<Default>::Symbol(Symbol {
-            id: adt_sym_id.into(),
+            id: r#type::SymbolID::Adt(adt_sym_id.into()),
             generic_arguments: GenericArguments {
                 lifetimes: vec![b_lt.clone()],
                 types: Vec::new(),

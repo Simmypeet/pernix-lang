@@ -931,6 +931,7 @@ where
             | term::r#type::Type::Parameter(_)
             | term::r#type::Type::Symbol(_)
             | term::r#type::Type::TraitMember(_)
+            | term::r#type::Type::MemberSymbol(_)
             | term::r#type::Type::Inference(_) => { /* no additional check */ }
 
             term::r#type::Type::Reference(reference) => {
@@ -1315,6 +1316,14 @@ impl UnusedGenericParameters {
         match ty {
             r#type::Type::Parameter(parameter) => {
                 self.types.remove(parameter);
+            }
+            r#type::Type::MemberSymbol(symbol) => {
+                self.check_in_generic_arguments(
+                    &symbol.parent_generic_arguments,
+                );
+                self.check_in_generic_arguments(
+                    &symbol.member_generic_arguments,
+                );
             }
             r#type::Type::Symbol(symbol) => {
                 self.check_in_generic_arguments(&symbol.generic_arguments);

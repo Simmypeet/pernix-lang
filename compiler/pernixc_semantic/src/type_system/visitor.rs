@@ -509,6 +509,26 @@ macro_rules! implements_type {
                     SubTypeLocation::FromType(r#type::SubTypeLocation::Local)
                 )
             ),
+            Self::MemberSymbol(member_symbol) => Ok(
+                member_symbol
+                    .parent_generic_arguments
+                    .$accept_one_level::<Self, _, _>(
+                        $visitor,
+                        |id| SubMemberSymbolLocation {
+                            index: id,
+                            from_parent: true,
+                        }
+                    )
+                    && member_symbol
+                        .member_generic_arguments
+                        .$accept_one_level::<Self, _, _>(
+                            $visitor,
+                            |id| SubMemberSymbolLocation {
+                                index: id,
+                                from_parent: false,
+                            }
+                        ),
+            ),
             Self::TraitMember(trait_member) => Ok(
                 trait_member
                     .parent_generic_arguments
