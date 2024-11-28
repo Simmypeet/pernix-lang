@@ -4,7 +4,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
 
 use crate::type_system::{
-    model::Model,
+    model::{Model, Transform},
     term::{
         self, constant,
         lifetime::Lifetime,
@@ -137,6 +137,54 @@ pub enum Literal<M: Model> {
 }
 
 impl<M: Model> Literal<M> {
+    /// Transforms the literal to another model using the given transformer.
+    pub fn transform_model<T: Transform<Type<M>>>(
+        self,
+        transformer: &mut T,
+    ) -> Literal<T::Target> {
+        match self {
+            Self::Numeric(numeric) => Literal::Numeric(Numeric {
+                integer_string: numeric.integer_string,
+                decimal_stirng: numeric.decimal_stirng,
+                r#type: transformer
+                    .transform(numeric.r#type, numeric.span.clone()),
+                span: numeric.span,
+            }),
+            Self::Boolean(boolean) => Literal::Boolean(Boolean {
+                value: boolean.value,
+                span: boolean.span,
+            }),
+            Self::Error(error) => Literal::Error(Error {
+                r#type: transformer.transform(error.r#type, error.span.clone()),
+                span: error.span,
+            }),
+            Self::Unit(unit) => Literal::Unit(Unit { span: unit.span }),
+            Self::String(s) => {
+                Literal::String(String { value: s.value, span: s.span })
+            }
+            Self::Character(character) => Literal::Character(Character {
+                character: character.character,
+                r#type: transformer
+                    .transform(character.r#type, character.span.clone()),
+                span: character.span,
+            }),
+            Self::Unreachable(unreachable) => {
+                Literal::Unreachable(Unreachable {
+                    r#type: transformer.transform(
+                        unreachable.r#type,
+                        unreachable.span.clone(),
+                    ),
+                    span: unreachable.span,
+                })
+            }
+            Self::Phantom(phantom) => Literal::Phantom(Phantom {
+                r#type: transformer
+                    .transform(phantom.r#type, phantom.span.clone()),
+                span: phantom.span,
+            }),
+        }
+    }
+
     /// Returns the type of the literal value.
     pub fn r#type(&self) -> Type<M> {
         match self {
