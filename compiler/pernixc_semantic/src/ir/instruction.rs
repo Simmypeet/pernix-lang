@@ -119,10 +119,13 @@ pub struct Store<M: Model> {
     pub value: Value<M>,
 }
 
-/// An instruction that allocates a new `alloca` memory.
+/// An instruction specifying when an `alloca` is declared.
+///
+/// This is kind of a pseudo-instruction, as it doesn't actually do anything.
+/// It is used to keep track of when an `alloca` is declared so that the ir
+/// knows when to drop it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AllocaAllocation<M: Model> {
-    /// The ID of the `alloca` that is being allocated.
+pub struct AllocaDeclaration<M: Model> { /// The ID of the `alloca` that is being declared.
     pub id: ID<Alloca<M>>,
 }
 
@@ -181,7 +184,7 @@ pub struct Drop<M: Model> {
 pub enum Instruction<M: Model> {
     Store(Store<M>),
     RegisterAssignment(RegisterAssignment<M>),
-    AllocaAllocation(AllocaAllocation<M>),
+    AllocaDeclaration(AllocaDeclaration<M>),
     TuplePack(TuplePack<M>),
     ScopePush(ScopePush),
     ScopePop(ScopePop),
