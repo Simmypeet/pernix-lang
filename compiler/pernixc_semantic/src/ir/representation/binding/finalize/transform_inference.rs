@@ -99,6 +99,7 @@ impl TryFrom<r#type::Constraint> for Never {
 pub struct Transformer<'a> {
     inference_context: &'a infer::Context,
     handler: &'a HandlerWrapper<'a>,
+    should_report: bool,
 }
 
 impl Transform<Lifetime<infer::Model>> for Transformer<'_> {
@@ -127,7 +128,8 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
         term: Type<infer::Model>,
         span: Option<Span>,
     ) -> <Type<infer::Model> as Term>::Rebind<Self::Target> {
-        let ty = self.inference_context.into_constraint_model(term).unwrap();
+        let mut ty =
+            self.inference_context.into_constraint_model(term).unwrap();
         let found_inference = RecursiveIterator::new(&ty).any(|x| match x.0 {
             term::Kind::Lifetime(a) => a.is_inference(),
             term::Kind::Type(a) => a.is_inference(),
@@ -135,13 +137,17 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
         });
 
         if let Some(span) = span {
-            if found_inference {
+            if found_inference && self.should_report {
                 self.handler.receive(Box::new(TypeAnnotationRequired {
                     span,
                     r#type: ty.clone(),
                 }));
             }
         }
+
+        let mut replace_inference = ReplaceInference;
+
+        visitor::accept_recursive_mut(&mut ty, &mut replace_inference);
 
         Type::try_from_other_model(ty)
             .expect("all inference should've been replaced")
@@ -587,10 +593,14 @@ pub fn transform_inference(
 ) -> ir::Representation<ir::Model> {
     let mut result = ir::Representation::<ir::Model>::default();
 
-    let mut transformer = Transformer { inference_context, handler };
+    let mut transformer =
+        Transformer { inference_context, handler, should_report: false };
 
     result.allocas =
         original.allocas.map(|x| x.transform_model(&mut transformer));
+
+    transformer.should_report = true;
+
     result.control_flow_graph =
         original.control_flow_graph.transform_model(&mut transformer);
     result.registers = original
