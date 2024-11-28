@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use std::{collections::HashSet, convert::Infallible};
 
 use pernixc_base::{handler::Handler, source_file::Span};
 
@@ -586,11 +586,31 @@ impl Register<infer::Model> {
 }
 
 pub fn transform_inference(
-    original: ir::Representation<infer::Model>,
+    mut original: ir::Representation<infer::Model>,
     inference_context: &infer::Context,
     table: &Table<impl table::State>,
     handler: &HandlerWrapper,
 ) -> ir::Representation<ir::Model> {
+    original.control_flow_graph.remove_unerachable_blocks();
+
+    let used_allocas = original
+        .control_flow_graph
+        .traverse()
+        .flat_map(|x| x.1.instructions())
+        .filter_map(|x| x.as_alloca_declaration().map(|x| x.id))
+        .collect::<HashSet<_>>();
+
+    original.allocas.retain(|id, _| used_allocas.contains(&id));
+
+    let used_registers = original
+        .control_flow_graph
+        .traverse()
+        .flat_map(|x| x.1.instructions())
+        .filter_map(|x| x.as_register_assignment().map(|x| x.id))
+        .collect::<HashSet<_>>();
+
+    original.registers.retain(|id, _| used_registers.contains(&id));
+
     let mut result = ir::Representation::<ir::Model>::default();
 
     let mut transformer =
