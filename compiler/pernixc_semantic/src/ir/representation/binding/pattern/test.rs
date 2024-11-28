@@ -40,7 +40,7 @@ use crate::{
         term::{
             self,
             lifetime::Lifetime,
-            r#type::{Primitive, Qualifier, Reference, Type},
+            r#type::{self, Primitive, Qualifier, Reference, Type},
             GenericArguments, Symbol, Tuple, TupleElement,
         },
     },
@@ -336,7 +336,7 @@ fn value_bound_struct() {
     };
 
     let struct_ty = Type::Symbol(Symbol {
-        id: AdtID::Struct(struct_id),
+        id: r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
         generic_arguments: GenericArguments::default(),
     });
 
@@ -484,7 +484,7 @@ fn reference_bound_struct() {
     assert!(storage.as_vec().is_empty());
 
     let struct_ty = Type::Symbol(Symbol {
-        id: AdtID::Struct(struct_id),
+        id: r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
         generic_arguments: GenericArguments::default(),
     });
     let reference_struct_ty = Type::Reference(Reference {

@@ -240,7 +240,7 @@ pub struct Struct<M: Model> {
 
 fn type_of_struct_assignment<M: Model>(st: &Struct<M>) -> Type<M> {
     Type::Symbol(Symbol {
-        id: AdtID::Struct(st.struct_id),
+        id: r#type::SymbolID::Adt(AdtID::Struct(st.struct_id)),
         generic_arguments: st.generic_arguments.clone(),
     })
 }
@@ -268,7 +268,7 @@ fn type_of_variant_assignment<M: Model>(
         .parent_enum_id();
 
     Ok(Type::Symbol(Symbol {
-        id: AdtID::Enum(enum_id),
+        id: r#type::SymbolID::Adt(AdtID::Enum(enum_id)),
         generic_arguments: variant.generic_arguments.clone(),
     }))
 }

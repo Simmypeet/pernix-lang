@@ -955,11 +955,11 @@ impl<
 
                         let _ = self.type_check(
                             &Type::Symbol(Symbol {
-                                id: adt_implementation.implemented_id(),
+                                id: adt_implementation.implemented_id().into(),
                                 generic_arguments: parent_generic_arguments,
                             }),
                             Expected::Known(Type::Symbol(Symbol {
-                                id: adt_implementation.implemented_id(),
+                                id: adt_implementation.implemented_id().into(),
                                 generic_arguments: {
                                     let mut adt_generic_arguments =
                                         GenericArguments::from_default_model(
@@ -1663,7 +1663,7 @@ impl<
         );
 
         let Type::Symbol(Symbol {
-            id: adt_id,
+            id: r#type::SymbolID::Adt(adt_id),
             generic_arguments: adt_generic_arguments,
         }) = access_type
         else {
@@ -1812,11 +1812,11 @@ impl<
 
         let _ = self.type_check(
             &Type::Symbol(Symbol {
-                id: adt_implementation.implemented_id(),
+                id: adt_implementation.implemented_id().into(),
                 generic_arguments: adt_generic_arguments.clone(),
             }),
             Expected::Known(Type::Symbol(Symbol {
-                id: adt_implementation.implemented_id(),
+                id: adt_implementation.implemented_id().into(),
                 generic_arguments: {
                     let mut adt_generic_arguments =
                         GenericArguments::from_default_model(
@@ -1886,7 +1886,7 @@ impl<
         }
 
         let implemented_type = Type::Symbol(Symbol {
-            id: adt_id,
+            id: r#type::SymbolID::Adt(adt_id),
             generic_arguments: self
                 .table
                 .get(adt_implementation_id)
@@ -2200,7 +2200,8 @@ impl<
                     ) => {
                         let struct_id = match ty {
                             Type::Symbol(Symbol {
-                                id: AdtID::Struct(struct_id),
+                                id:
+                                    r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
                                 ..
                             }) => struct_id,
 

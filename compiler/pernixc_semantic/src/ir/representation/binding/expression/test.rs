@@ -3694,7 +3694,7 @@ fn struct_method() {
             let get_x_func = test_template.table.get_mut(get_x_id).unwrap();
             get_x_func.insert_parameter(Parameter {
                 r#type: Type::Symbol(Symbol {
-                    id: struct_id.into(),
+                    id: r#type::SymbolID::Adt(struct_id.into()),
                     generic_arguments: GenericArguments {
                         lifetimes: Vec::new(),
                         types: vec![Type::Parameter(TypeParameterID {
@@ -3748,7 +3748,7 @@ fn struct_method() {
                     }),
                     qualifier: Qualifier::Immutable,
                     pointee: Box::new(Type::Symbol(Symbol {
-                        id: struct_id.into(),
+                        id: r#type::SymbolID::Adt(struct_id.into()),
                         generic_arguments: GenericArguments {
                             lifetimes: Vec::new(),
                             types: vec![Type::Parameter(TypeParameterID {
@@ -3808,7 +3808,7 @@ fn struct_method() {
                     }),
                     qualifier: Qualifier::Mutable,
                     pointee: Box::new(Type::Symbol(Symbol {
-                        id: struct_id.into(),
+                        id: r#type::SymbolID::Adt(struct_id.into()),
                         generic_arguments: GenericArguments {
                             lifetimes: Vec::new(),
                             types: vec![Type::Parameter(TypeParameterID {
@@ -4026,7 +4026,7 @@ fn trait_method() {
 
             no_method_trait_method.insert_parameter(Parameter {
                 r#type: Type::Symbol(Symbol {
-                    id: AdtID::Struct(my_struct_id),
+                    id: r#type::SymbolID::Adt(AdtID::Struct(my_struct_id)),
                     generic_arguments: GenericArguments::default(),
                 }),
                 span: None,

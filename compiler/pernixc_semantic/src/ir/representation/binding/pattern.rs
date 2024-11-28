@@ -271,7 +271,7 @@ impl Pattern for Refutable {
 
                     // must be an enum type
                     let Type::Symbol(Symbol {
-                        id: AdtID::Enum(enum_id),
+                        id: r#type::SymbolID::Adt(AdtID::Enum(enum_id)),
                         generic_arguments,
                     }) = binding.r#type
                     else {
@@ -793,7 +793,7 @@ impl<
 
         // must be a struct type
         let Type::Symbol(Symbol {
-            id: AdtID::Struct(struct_id),
+            id: r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
             generic_arguments,
         }) = ty
         else {
@@ -950,7 +950,7 @@ impl<
 
         // must be an enum type
         let Type::Symbol(Symbol {
-            id: AdtID::Enum(enum_id),
+            id: r#type::SymbolID::Adt(AdtID::Enum(enum_id)),
             generic_arguments,
         }) = ty
         else {
@@ -1573,7 +1573,7 @@ impl<
 
         // must be a struct type
         let Type::Symbol(Symbol {
-            id: AdtID::Struct(struct_id),
+            id: r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
             generic_arguments,
         }) = binding.r#type
         else {
@@ -1803,7 +1803,7 @@ impl<
                     );
 
                 let Type::Symbol(Symbol {
-                    id: AdtID::Enum(enum_id),
+                    id: r#type::SymbolID::Adt(AdtID::Enum(enum_id)),
                     generic_arguments,
                 }) = ty
                 else {
@@ -1894,7 +1894,7 @@ impl<
 
                 // must be a struct type
                 let Type::Symbol(Symbol {
-                    id: AdtID::Struct(struct_id),
+                    id: r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
                     generic_arguments,
                 }) = ty
                 else {

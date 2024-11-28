@@ -119,7 +119,10 @@ impl<
             }
 
             Refutable::Enum(_) => {
-                let Type::Symbol(Symbol { id: AdtID::Enum(enum_id), .. }) = ty
+                let Type::Symbol(Symbol {
+                    id: r#type::SymbolID::Adt(AdtID::Enum(enum_id)),
+                    ..
+                }) = ty
                 else {
                     panic!("unexpected type {ty:#?}");
                 };
@@ -992,7 +995,11 @@ impl<
             let ty = ty.reduce_reference();
 
             let mut is_inhabited = false;
-            if let Type::Symbol(Symbol { id: AdtID::Enum(enum_id), .. }) = ty {
+            if let Type::Symbol(Symbol {
+                id: r#type::SymbolID::Adt(AdtID::Enum(enum_id)),
+                ..
+            }) = ty
+            {
                 let symbol = self.table.get(*enum_id).unwrap();
 
                 is_inhabited = symbol.variant_declaration_order().is_empty();

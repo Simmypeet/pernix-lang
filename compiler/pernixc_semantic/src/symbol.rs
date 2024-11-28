@@ -162,6 +162,59 @@ pub trait Generic: Global {
     fn generic_declaration_mut(&mut self) -> &mut GenericDeclaration;
 }
 
+/// An enumeration of all kinds of functions that are declared inside another
+/// symbol.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum MemberFunctionID {
+    Trait(ID<TraitFunction>),
+    TraitImplementation(ID<TraitImplementationFunction>),
+    AdtImplementation(ID<AdtImplementationFunction>),
+}
+
+from_ids! {
+    MemberFunctionID,
+    CallableID,
+    (Trait, TraitFunction),
+    (TraitImplementation, TraitImplementationFunction),
+    (AdtImplementation, AdtImplementationFunction)
+}
+
+from_ids! {
+    MemberFunctionID,
+    GlobalID,
+    (Trait, TraitFunction),
+    (TraitImplementation, TraitImplementationFunction),
+    (AdtImplementation, AdtImplementationFunction)
+}
+
+from_ids! {
+    MemberFunctionID,
+    GenericID,
+    (Trait, TraitFunction),
+    (TraitImplementation, TraitImplementationFunction),
+    (AdtImplementation, AdtImplementationFunction)
+}
+
+try_from_ids!(
+    GlobalID,
+    MemberFunctionID,
+    (TraitFunction, Trait),
+    (TraitImplementationFunction, TraitImplementation),
+    (AdtImplementationFunction, AdtImplementation)
+);
+
 /// An enumeration of all kinds of functions.
 #[derive(
     Debug,
