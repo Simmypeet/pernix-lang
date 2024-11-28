@@ -6,7 +6,7 @@ use super::{
     alloca::Alloca, representation::Representation, value::Value, TypeOfError,
 };
 use crate::{
-    arena::ID,
+    arena::{Key, ID},
     ir::address,
     symbol::{
         self,
@@ -16,7 +16,7 @@ use crate::{
     type_system::{
         environment::Environment,
         instantiation::{self, Instantiation},
-        model::Model,
+        model::{Model, Transform},
         normalizer::Normalizer,
         observer::Observer,
         simplify,
@@ -165,8 +165,63 @@ impl<M: Model> Address<M> {
 #[allow(missing_docs)]
 pub struct InvalidStructAddressError<M: Model>(Type<M>);
 
+impl<M: Model> Address<M> {
+    /// Transforms the [`Address`] to another model using the given transformer.
+    pub fn transform_model<T: Transform<Type<M>>>(
+        self,
+        transformer: &mut T,
+    ) -> Address<T::Target> {
+        match self {
+            Self::Memory(memory) => match memory {
+                Memory::Parameter(id) => Address::Memory(Memory::Parameter(id)),
+                Memory::Alloca(id) => Address::Memory(Memory::Alloca(
+                    ID::from_index(id.into_index()),
+                )),
+                Memory::ReferenceValue(value) => Address::Memory(
+                    Memory::ReferenceValue(value.transform_model(transformer)),
+                ),
+            },
+            Self::Field(field) => Address::Field(Field {
+                struct_address: Box::new(
+                    field.struct_address.transform_model(transformer),
+                ),
+                id: field.id,
+            }),
+            Self::Tuple(tuple) => Address::Tuple(Tuple {
+                tuple_address: Box::new(
+                    tuple.tuple_address.transform_model(transformer),
+                ),
+                offset: tuple.offset,
+            }),
+            Self::Index(index) => Address::Index(Index {
+                array_address: Box::new(
+                    index.array_address.transform_model(transformer),
+                ),
+                indexing_value: index
+                    .indexing_value
+                    .transform_model(transformer),
+            }),
+            Self::Variant(variant) => Address::Variant(Variant {
+                enum_address: Box::new(
+                    variant.enum_address.transform_model(transformer),
+                ),
+                variant_id: variant.variant_id,
+            }),
+            Self::ReferenceAddress(reference_address) => {
+                Address::ReferenceAddress(ReferenceAddress {
+                    reference_address: Box::new(
+                        reference_address.reference_address.transform_model(
+                            transformer,
+                        ),
+                    ),
+                })
+            },
+        }
+    }
+}
+
 impl<M: Model> Representation<M> {
-    /// Gets the type of the [`Register`] with the given ID.
+    /// Gets the type of the [`Address`] with the given ID.
     ///
     /// # Parameters
     ///
