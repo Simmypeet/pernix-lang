@@ -18,7 +18,7 @@ use crate::{
             },
             Building,
         },
-        AdtImplementationFunction,
+        AdtImplementationFunction, FunctionIR,
     },
 };
 
@@ -157,7 +157,16 @@ impl Finalize for AdtImplementationFunction {
                     let _ = binder.bind_statement(statement, handler);
                 }
 
-                binder.finalize(handler);
+                table
+                    .representation
+                    .adt_implementation_functions
+                    .get(symbol_id)
+                    .unwrap()
+                    .write()
+                    .ir = match binder.finalize(handler) {
+                    Ok(ir) => FunctionIR::Success(ir),
+                    Err(ir) => FunctionIR::Suboptimal(ir),
+                };
             }
 
             _ => panic!("invalid state flag"),

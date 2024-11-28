@@ -17,7 +17,7 @@ use crate::{
             },
             Building, Table,
         },
-        Function,
+        Function, FunctionDefinition, FunctionIR,
     },
 };
 
@@ -157,7 +157,19 @@ impl Finalize for Function {
 
                     dbg!(binder.intermediate_representation());
 
-                    binder.finalize(handler);
+                    *table
+                        .representation
+                        .functions
+                        .get(symbol_id)
+                        .unwrap()
+                        .write()
+                        .definition = FunctionDefinition::Regular {
+                        const_function: syntax_tree.const_keyword().is_some(),
+                        ir: match binder.finalize(handler) {
+                            Ok(ir) => FunctionIR::Success(ir),
+                            Err(ir) => FunctionIR::Suboptimal(ir),
+                        },
+                    };
                 }
             }
 

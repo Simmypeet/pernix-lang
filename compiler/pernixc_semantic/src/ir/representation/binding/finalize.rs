@@ -5,6 +5,7 @@ use pernixc_base::handler::Handler;
 use super::{infer, Binder};
 use crate::{
     error::{self, NotAllFlowPathsReturnAValue},
+    ir::{Suboptimal, Success, IR},
     symbol::{
         table::{self, resolution},
         CallableID,
@@ -15,6 +16,7 @@ use crate::{
     },
 };
 
+mod check;
 mod transform_inference;
 
 impl<
@@ -25,7 +27,10 @@ impl<
     > Binder<'t, S, RO, TO>
 {
     /// Finalizes the current binder and returns the IR
-    pub fn finalize(mut self, handler: &dyn Handler<Box<dyn error::Error>>) {
+    pub fn finalize(
+        mut self,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<IR<Success>, IR<Suboptimal>> {
         self.inference_context.fill_default_inferences();
 
         // we're in the function, check if all paths return the value
@@ -54,12 +59,22 @@ impl<
         }
 
         let handler_wrapper = self.create_handler_wrapper(handler);
-        let _transformed_ir = transform_inference::transform_inference(
+        let transformed_ir = transform_inference::transform_inference(
             self.intermediate_representation,
             &self.inference_context,
             self.table,
             &handler_wrapper,
         );
+
+        // stop now, it will produce useless errors
+        if *handler_wrapper.suboptimal.read() {
+            return Err(IR {
+                representation: transformed_ir,
+                state: Suboptimal,
+            });
+        }
+
+        Ok(IR { representation: transformed_ir, state: Success(()) })
     }
 }
 

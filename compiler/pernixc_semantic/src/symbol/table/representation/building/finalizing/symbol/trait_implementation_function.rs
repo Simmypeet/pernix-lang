@@ -18,7 +18,7 @@ use crate::{
             },
             Building,
         },
-        TraitImplementationFunction,
+        FunctionIR, TraitImplementationFunction,
     },
     type_system::instantiation::Instantiation,
 };
@@ -208,7 +208,16 @@ impl Finalize for TraitImplementationFunction {
                     let _ = binder.bind_statement(statement, handler);
                 }
 
-                binder.finalize(handler);
+                table
+                    .representation
+                    .trait_implementation_functions
+                    .get(symbol_id)
+                    .unwrap()
+                    .write()
+                    .ir = match binder.finalize(handler) {
+                    Ok(ir) => FunctionIR::Success(ir),
+                    Err(ir) => FunctionIR::Suboptimal(ir),
+                };
             }
 
             _ => panic!("invalid state flag"),

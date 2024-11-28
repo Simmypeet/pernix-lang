@@ -35,7 +35,7 @@ fn empty_function_not_return() {
 
     let (binder, storage) = test_tempalte.create_binder();
 
-    binder.finalize(&storage);
+    let _ = binder.finalize(&storage);
 
     test_tempalte.contains_not_all_flow_paths_return_a_value(&storage);
 }
@@ -55,7 +55,7 @@ fn empty_loop_can_dont_return() {
         )
         .unwrap();
 
-    binder.finalize(&storage);
+    let _ = binder.finalize(&storage);
 
     assert!(storage.as_vec().is_empty());
 }
@@ -75,7 +75,7 @@ fn loop_with_break_not_return() {
         )
         .unwrap();
 
-    binder.finalize(&storage);
+    let _ = binder.finalize(&storage);
 
     test_tempalte.contains_not_all_flow_paths_return_a_value(&storage);
 }
@@ -97,7 +97,7 @@ fn exhaustive_match_all_return() {
         )
         .unwrap();
 
-    binder.finalize(&storage);
+    let _ = binder.finalize(&storage);
 
     assert!(storage.as_vec().is_empty());
 }
@@ -124,7 +124,7 @@ fn not_all_arms_return() {
         )
         .unwrap();
 
-    binder.finalize(&storage);
+    let _ = binder.finalize(&storage);
 
     test_tempalte.contains_not_all_flow_paths_return_a_value(&storage);
 }
