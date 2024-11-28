@@ -4110,6 +4110,30 @@ impl Report<&Table<Suboptimal>> for UnreachableMatchArm {
     }
 }
 
+/// Couldn't further infer the type, explicit type annotation is required.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TypeAnnotationRequired {
+    /// The span of the expression/declration where the type annotation is
+    /// required.
+    pub span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for TypeAnnotationRequired {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "couldn't further infer the type, explicit type \
+                      annotation is required"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
 /// The match expression is non-exhaustive.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NonExhaustiveMatch {
