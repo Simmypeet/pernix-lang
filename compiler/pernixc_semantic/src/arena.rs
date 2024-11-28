@@ -206,6 +206,12 @@ impl<T, Idx: Key> Arena<T, Idx> {
         id
     }
 
+    /// Retains only the items in the [`Arena`] that satisfy the given
+    /// predicate.
+    pub fn retain(&mut self, mut f: impl FnMut(Idx, &mut T) -> bool) {
+        self.items.retain(|&id, item| f(id, item));
+    }
+
     /// Inserts a new item into the [`Arena`] with explicit `Idx`.
     ///
     /// If the `Idx` is already occupied, the item is reutrned back.
