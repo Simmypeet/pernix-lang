@@ -5,7 +5,10 @@ use std::{collections::HashSet, ops::Not};
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 
-use super::instruction::{Instruction, Jump, Terminator};
+use super::{
+    instruction::{Instruction, Jump, Terminator},
+    value::{literal::Literal, Value},
+};
 use crate::{
     arena::{Arena, ID},
     type_system::model::Model,
@@ -224,9 +227,9 @@ impl<M: Model> ControlFlowGraph<M> {
     }
 
     /// Creates a new block with the given explicitly specified ID.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// Returns `true` if the block is successfully created.
     pub fn new_block_with_id(&mut self, id: ID<Block<M>>) -> bool {
         self.blocks
