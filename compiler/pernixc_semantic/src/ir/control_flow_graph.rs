@@ -7,8 +7,11 @@ use getset::{CopyGetters, Getters};
 
 use super::instruction::{Instruction, Jump, Terminator};
 use crate::{
-    arena::{Arena, ID},
-    type_system::model::Model,
+    arena::{Arena, Key, ID},
+    type_system::{
+        model::{Model, Transform},
+        term::r#type::Type,
+    },
 };
 
 /// Represents a list of instructions executed in sequence.
@@ -29,6 +32,28 @@ pub struct Block<M: Model> {
 }
 
 impl<M: Model> Block<M> {
+    /// Transforms the [`Block`] to another model using the given
+    /// transformer.
+    pub fn transform_model<T: Transform<Type<M>>>(
+        self,
+        transformer: &mut T,
+    ) -> Block<T::Target> {
+        Block {
+            instructions: self
+                .instructions
+                .into_iter()
+                .map(|x| x.transform_model(transformer))
+                .collect(),
+            terminator: self.terminator.map(|x| x.transform_model(transformer)),
+            predecessors: self
+                .predecessors
+                .into_iter()
+                .map(|x| ID::from_index(x.into_index()))
+                .collect(),
+            is_entry: self.is_entry,
+        }
+    }
+
     /// Returns `true` if any of the instructions that will be added in the
     /// future will be unreachable (never executed)
     #[must_use]
@@ -172,9 +197,21 @@ impl<M: Model> Drop for RemoveUnreachableBlocks<'_, M> {
 }
 
 impl<M: Model> ControlFlowGraph<M> {
+    /// Transforms the [`ControlFlowGraph`] to another model using the given
+    /// transformer.
+    pub fn transform_model<T: Transform<Type<M>>>(
+        self,
+        transformer: &mut T,
+    ) -> ControlFlowGraph<T::Target> {
+        ControlFlowGraph {
+            blocks: self.blocks.map(|x| x.transform_model(transformer)),
+            entry_block_id: ID::from_index(self.entry_block_id.into_index()),
+        }
+    }
+
     /// Creates an iterator used for traversing through the control flow graph.
     ///
-    /// See [`ControlFlowGraphTraverser`] for more information.
+    /// See [`Traverser`] for more information.
     #[must_use]
     pub fn traverse(&self) -> Traverser<M> {
         Traverser {

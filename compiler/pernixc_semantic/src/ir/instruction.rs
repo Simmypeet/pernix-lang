@@ -11,7 +11,13 @@ use super::{
     scope::Scope,
     value::{register::Register, Value},
 };
-use crate::{arena::ID, type_system::model::Model};
+use crate::{
+    arena::{Key, ID},
+    type_system::{
+        model::{Model, Transform},
+        term::r#type::Type,
+    },
+};
 
 /// An enumeration containing all the possible sources of an unconditional jump.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -73,6 +79,40 @@ pub enum Jump<M: Model> {
 }
 
 impl<M: Model> Jump<M> {
+    /// Transforms the [`Jump`] to another model using the given transformer.
+    pub fn transform_model<T: Transform<Type<M>>>(
+        self,
+        transformer: &mut T,
+    ) -> Jump<T::Target> {
+        match self {
+            Self::Unconditional(jump) => {
+                Jump::Unconditional(UnconditionalJump {
+                    target: ID::from_index(jump.target.into_index()),
+                })
+            }
+
+            Self::Conditional(jump) => Jump::Conditional(ConditionalJump {
+                condition: jump.condition.transform_model(transformer),
+                true_target: ID::from_index(jump.true_target.into_index()),
+                false_target: ID::from_index(jump.false_target.into_index()),
+            }),
+
+            Self::Select(jump) => Jump::Select(SelectJump {
+                integer: jump.integer.transform_model(transformer),
+                branches: jump
+                    .branches
+                    .into_iter()
+                    .map(|(integer, target)| {
+                        (integer, ID::from_index(target.into_index()))
+                    })
+                    .collect(),
+                otherwise: jump
+                    .otherwise
+                    .map(|id| ID::from_index(id.into_index())),
+            }),
+        }
+    }
+
     /// Returns the block IDs that this jump goes to.
     pub fn jump_targets(&self) -> Vec<ID<Block<M>>> {
         match self {
@@ -192,6 +232,54 @@ pub enum Instruction<M: Model> {
     Drop(Drop<M>),
 }
 
+impl<M: Model> Instruction<M> {
+    /// Transforms the [`Instruction`] to another model using the given
+    /// transformer.
+    pub fn transform_model<T: Transform<Type<M>>>(
+        self,
+        transformer: &mut T,
+    ) -> Instruction<T::Target> {
+        match self {
+            Self::Store(store) => Instruction::Store(Store {
+                address: store.address.transform_model(transformer),
+                value: store.value.transform_model(transformer),
+            }),
+            Self::RegisterAssignment(register_assignment) => {
+                Instruction::RegisterAssignment(RegisterAssignment {
+                    id: ID::from_index(register_assignment.id.into_index()),
+                })
+            }
+            Self::AllocaDeclaration(alloca_declaration) => {
+                Instruction::AllocaDeclaration(AllocaDeclaration {
+                    id: ID::from_index(alloca_declaration.id.into_index()),
+                })
+            }
+            Self::TuplePack(tuple_pack) => Instruction::TuplePack(TuplePack {
+                store_address: tuple_pack
+                    .store_address
+                    .transform_model(transformer),
+                tuple_address: tuple_pack
+                    .tuple_address
+                    .transform_model(transformer),
+                starting_offset: tuple_pack.starting_offset,
+                before_packed_element_count: tuple_pack
+                    .before_packed_element_count,
+                after_packed_element_count: tuple_pack
+                    .after_packed_element_count,
+            }),
+            Self::ScopePush(scope_push) => {
+                Instruction::ScopePush(ScopePush(scope_push.0))
+            }
+            Self::ScopePop(scope_pop) => {
+                Instruction::ScopePop(ScopePop(scope_pop.0))
+            }
+            Self::Drop(drop) => Instruction::Drop(Drop {
+                address: drop.address.transform_model(transformer),
+            }),
+        }
+    }
+}
+
 /// An enumeration containing all the possible terminators.
 ///
 /// Terminators are instructions that change the control flow of the program.
@@ -204,4 +292,23 @@ pub enum Terminator<M: Model> {
 
     /// Aborts the program.
     Panic,
+}
+
+impl<M: Model> Terminator<M> {
+    /// Transforms the [`Terminator`] to another model using the given
+    /// transformer.
+    pub fn transform_model<T: Transform<Type<M>>>(
+        self,
+        transformer: &mut T,
+    ) -> Terminator<T::Target> {
+        match self {
+            Self::Jump(jump) => {
+                Terminator::Jump(jump.transform_model(transformer))
+            }
+            Self::Return(r#return) => Terminator::Return(Return {
+                value: r#return.value.transform_model(transformer),
+            }),
+            Self::Panic => Terminator::Panic,
+        }
+    }
 }

@@ -15,6 +15,7 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
+    ir::representation::binding::infer::ConstraintModel,
     symbol::{
         table::{
             self, representation::Index, Display, DisplayObject, State,
@@ -4116,17 +4117,25 @@ pub struct TypeAnnotationRequired {
     /// The span of the expression/declration where the type annotation is
     /// required.
     pub span: Span,
+
+    /// The type that couldn't be further inferred.
+    pub r#type: Type<ConstraintModel>,
 }
 
 impl Report<&Table<Suboptimal>> for TypeAnnotationRequired {
     type Error = ReportError;
 
-    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             span: self.span.clone(),
-            message: "couldn't further infer the type, explicit type \
-                      annotation is required"
-                .to_string(),
+            message: format!(
+                "couldn't further infer the type `{}`, explicit type \
+                 annotation is required",
+                DisplayObject { display: &self.r#type, table }
+            ),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),

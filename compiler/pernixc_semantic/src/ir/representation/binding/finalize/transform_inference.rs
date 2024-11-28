@@ -7,23 +7,28 @@ use crate::{
     error::TypeAnnotationRequired,
     ir::{
         self,
-        alloca::Alloca,
         representation::binding::{
             infer::{self, ConstraintModel, NoConstraint},
             HandlerWrapper,
         },
-        value::literal::{self, Literal},
+        value::register::{self, Assignment, Register},
         Erased,
     },
+    symbol::{
+        table::{self, representation::Index, Table},
+        AdtID, CallableID, ConstantParameterID, Generic, GenericID,
+        ImplementationID, LifetimeParameterID, TypeParameterID,
+    },
     type_system::{
-        model::Transform,
+        instantiation::Instantiation,
+        model::{Model, Transform},
         sub_term::TermLocation,
         term::{
             self,
             constant::Constant,
             lifetime::Lifetime,
             r#type::{self, Type},
-            Error, Never, Term,
+            Error, GenericArguments, MemberSymbol, Never, Symbol, Term,
         },
         visitor::{self, MutableRecursive, RecursiveIterator},
     },
@@ -71,7 +76,7 @@ impl MutableRecursive<Constant<ConstraintModel>> for ReplaceInference {
 impl TryFrom<NoConstraint> for Erased {
     type Error = Infallible;
 
-    fn try_from(_: NoConstraint) -> Result<Self, Self::Error> { Ok(Erased) }
+    fn try_from(_: NoConstraint) -> Result<Self, Self::Error> { Ok(Self) }
 }
 
 impl TryFrom<NoConstraint> for Never {
@@ -96,6 +101,24 @@ pub struct Transformer<'a> {
     handler: &'a HandlerWrapper<'a>,
 }
 
+impl Transform<Lifetime<infer::Model>> for Transformer<'_> {
+    type Target = ir::Model;
+
+    fn transform(
+        &mut self,
+        term: Lifetime<infer::Model>,
+        _: Option<Span>,
+    ) -> <Lifetime<infer::Model> as Term>::Rebind<Self::Target> {
+        match term {
+            Lifetime::Static => Lifetime::Static,
+            Lifetime::Parameter(member_id) => Lifetime::Parameter(member_id),
+            Lifetime::Inference(_) => Lifetime::Inference(Erased),
+            Lifetime::Forall(forall) => Lifetime::Forall(forall),
+            Lifetime::Error(error) => Lifetime::Error(error),
+        }
+    }
+}
+
 impl Transform<Type<infer::Model>> for Transformer<'_> {
     type Target = ir::Model;
 
@@ -104,8 +127,7 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
         term: Type<infer::Model>,
         span: Option<Span>,
     ) -> <Type<infer::Model> as Term>::Rebind<Self::Target> {
-        let mut ty =
-            self.inference_context.into_constraint_model(term).unwrap();
+        let ty = self.inference_context.into_constraint_model(term).unwrap();
         let found_inference = RecursiveIterator::new(&ty).any(|x| match x.0 {
             term::Kind::Lifetime(a) => a.is_inference(),
             term::Kind::Type(a) => a.is_inference(),
@@ -114,56 +136,467 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
 
         if let Some(span) = span {
             if found_inference {
-                self.handler.receive(Box::new(TypeAnnotationRequired { span }));
+                self.handler.receive(Box::new(TypeAnnotationRequired {
+                    span,
+                    r#type: ty.clone(),
+                }));
             }
         }
-
-        visitor::accept_recursive_mut(&mut ty, &mut ReplaceInference);
 
         Type::try_from_other_model(ty)
             .expect("all inference should've been replaced")
     }
 }
 
-pub fn transform_inference(
-    mut original: ir::Representation<infer::Model>,
+fn instantiation_to_generic_arguments<M: Model>(
+    generic_symbol: &dyn Generic,
+    generic_id: GenericID,
+    instantiation: &mut Instantiation<M>,
+) -> GenericArguments<M> {
+    GenericArguments {
+        lifetimes: generic_symbol
+            .generic_declaration()
+            .parameters
+            .lifetime_order()
+            .iter()
+            .copied()
+            .map(|x| {
+                instantiation
+                    .lifetimes
+                    .remove(&Lifetime::Parameter(LifetimeParameterID {
+                        parent: generic_id,
+                        id: x,
+                    }))
+                    .unwrap()
+            })
+            .collect(),
+        types: generic_symbol
+            .generic_declaration()
+            .parameters
+            .type_order()
+            .iter()
+            .copied()
+            .map(|x| {
+                instantiation
+                    .types
+                    .remove(&Type::Parameter(TypeParameterID {
+                        parent: generic_id,
+                        id: x,
+                    }))
+                    .unwrap()
+            })
+            .collect(),
+        constants: generic_symbol
+            .generic_declaration()
+            .parameters
+            .constant_order()
+            .iter()
+            .copied()
+            .map(|x| {
+                instantiation
+                    .constants
+                    .remove(&Constant::Parameter(ConstantParameterID {
+                        parent: generic_id,
+                        id: x,
+                    }))
+                    .unwrap()
+            })
+            .collect(),
+    }
+}
+
+fn transform_instantiation(
+    instantiation: Instantiation<infer::Model>,
     inference_context: &infer::Context,
+) -> Instantiation<ir::Model> {
+    Instantiation {
+        lifetimes: instantiation
+            .lifetimes
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    match k {
+                        Lifetime::Static => Lifetime::Static,
+                        Lifetime::Parameter(member_id) => {
+                            Lifetime::Parameter(member_id)
+                        }
+                        Lifetime::Inference(Erased) => {
+                            Lifetime::Inference(Erased)
+                        }
+                        Lifetime::Forall(forall) => Lifetime::Forall(forall),
+                        Lifetime::Error(error) => Lifetime::Error(error),
+                    },
+                    match v {
+                        Lifetime::Static => Lifetime::Static,
+                        Lifetime::Parameter(member_id) => {
+                            Lifetime::Parameter(member_id)
+                        }
+                        Lifetime::Inference(Erased) => {
+                            Lifetime::Inference(Erased)
+                        }
+                        Lifetime::Forall(forall) => Lifetime::Forall(forall),
+                        Lifetime::Error(error) => Lifetime::Error(error),
+                    },
+                )
+            })
+            .collect(),
+        types: instantiation
+            .types
+            .into_iter()
+            .map(|(k, v)| {
+                let mut k = inference_context.into_constraint_model(k).unwrap();
+                let mut v = inference_context.into_constraint_model(v).unwrap();
+
+                let mut replace_inference = ReplaceInference;
+
+                visitor::accept_recursive_mut(&mut k, &mut replace_inference);
+                visitor::accept_recursive_mut(&mut v, &mut replace_inference);
+
+                (
+                    Type::try_from_other_model(k).unwrap(),
+                    Type::try_from_other_model(v).unwrap(),
+                )
+            })
+            .collect(),
+        constants: {
+            instantiation
+                .constants
+                .into_iter()
+                .map(|(k, v)| {
+                    let mut k = inference_context
+                        .constant_into_constraint_model(k)
+                        .unwrap();
+                    let mut v = inference_context
+                        .constant_into_constraint_model(v)
+                        .unwrap();
+
+                    let mut replace_inference = ReplaceInference;
+
+                    visitor::accept_recursive_mut(
+                        &mut k,
+                        &mut replace_inference,
+                    );
+                    visitor::accept_recursive_mut(
+                        &mut v,
+                        &mut replace_inference,
+                    );
+
+                    (
+                        Constant::try_from_other_model(k).unwrap(),
+                        Constant::try_from_other_model(v).unwrap(),
+                    )
+                })
+                .collect()
+        },
+    }
+}
+
+impl Register<infer::Model> {
+    /// Transforms the [`Register`] to another model using the given
+    /// transformer.
+    #[allow(clippy::too_many_lines)]
+    fn transform_model(
+        self,
+        transformer: &mut Transformer,
+        inference_context: &infer::Context,
+        table: &Table<impl table::State>,
+    ) -> Register<ir::Model> {
+        Register {
+            span: self.span.clone(),
+            assignment: match self.assignment {
+                Assignment::Tuple(tuple) => {
+                    Assignment::Tuple(register::Tuple {
+                        elements: tuple
+                            .elements
+                            .into_iter()
+                            .map(|x| register::TupleElement {
+                                value: x.value.transform_model(transformer),
+                                is_unpacked: x.is_unpacked,
+                            })
+                            .collect(),
+                    })
+                }
+                Assignment::Load(load) => Assignment::Load(register::Load {
+                    address: load.address.transform_model(transformer),
+                }),
+                Assignment::ReferenceOf(reference_of) => {
+                    Assignment::ReferenceOf(register::ReferenceOf {
+                        address: reference_of
+                            .address
+                            .transform_model(transformer),
+                        qualifier: reference_of.qualifier,
+                        lifetime: transformer
+                            .transform(reference_of.lifetime, self.span),
+                    })
+                }
+                Assignment::Prefix(prefix) => {
+                    Assignment::Prefix(register::Prefix {
+                        operand: prefix.operand.transform_model(transformer),
+                        operator: prefix.operator,
+                    })
+                }
+                Assignment::Struct(st) => {
+                    Assignment::Struct(register::Struct {
+                        struct_id: st.struct_id,
+                        initializers_by_field_id: st
+                            .initializers_by_field_id
+                            .into_iter()
+                            .map(|(k, v)| (k, v.transform_model(transformer)))
+                            .collect(),
+                        generic_arguments: {
+                            transformer
+                                .transform(
+                                    Type::Symbol(Symbol {
+                                        id: r#type::SymbolID::Adt(
+                                            AdtID::Struct(st.struct_id),
+                                        ),
+                                        generic_arguments: st.generic_arguments,
+                                    }),
+                                    self.span,
+                                )
+                                .into_symbol()
+                                .unwrap()
+                                .generic_arguments
+                        },
+                    })
+                }
+                Assignment::Variant(variant) => {
+                    Assignment::Variant(register::Variant {
+                        variant_id: variant.variant_id,
+                        associated_value: variant
+                            .associated_value
+                            .map(|x| x.transform_model(transformer)),
+                        generic_arguments: {
+                            let enum_id = table
+                                .get(variant.variant_id)
+                                .unwrap()
+                                .parent_enum_id();
+
+                            transformer
+                                .transform(
+                                    Type::Symbol(Symbol {
+                                        id: r#type::SymbolID::Adt(AdtID::Enum(
+                                            enum_id,
+                                        )),
+                                        generic_arguments: variant
+                                            .generic_arguments,
+                                    }),
+                                    self.span,
+                                )
+                                .into_symbol()
+                                .unwrap()
+                                .generic_arguments
+                        },
+                    })
+                }
+
+                // this is such a bad idea :(
+                Assignment::FunctionCall(mut function_call) => {
+                    Assignment::FunctionCall(register::FunctionCall {
+                        callable_id: function_call.callable_id,
+                        arguments: function_call
+                            .arguments
+                            .into_iter()
+                            .map(|x| x.transform_model(transformer))
+                            .collect(),
+                        instantiation: match function_call.callable_id {
+                            CallableID::Function(id) => {
+                                let function_symbol = table.get(id).unwrap();
+
+                                let generic_arguments =
+                                    instantiation_to_generic_arguments(
+                                        &*function_symbol,
+                                        id.into(),
+                                        &mut function_call.instantiation,
+                                    );
+                                let generic_arguments = transformer
+                                    .transform(
+                                        Type::Symbol(Symbol {
+                                            id: r#type::SymbolID::Function(id),
+                                            generic_arguments,
+                                        }),
+                                        self.span,
+                                    )
+                                    .into_symbol()
+                                    .unwrap()
+                                    .generic_arguments;
+
+                                Instantiation::from_generic_arguments(
+                                    generic_arguments,
+                                    id.into(),
+                                    &function_symbol
+                                        .generic_declaration
+                                        .parameters,
+                                )
+                                .unwrap()
+                            }
+
+                            CallableID::TraitFunction(id) => {
+                                let trait_funciton = table.get(id).unwrap();
+                                let parent_trait = trait_funciton.parent_id();
+
+                                let parent_generic_arguments =
+                                    instantiation_to_generic_arguments(
+                                        &*table.get(parent_trait).unwrap(),
+                                        parent_trait.into(),
+                                        &mut function_call.instantiation,
+                                    );
+                                let member_generic_arguments =
+                                    instantiation_to_generic_arguments(
+                                        &*trait_funciton,
+                                        id.into(),
+                                        &mut function_call.instantiation,
+                                    );
+
+                                transformer.transform(
+                                    Type::MemberSymbol(MemberSymbol {
+                                        id: r#type::MemberSymbolID::Function(
+                                            id.into(),
+                                        ),
+                                        member_generic_arguments,
+                                        parent_generic_arguments,
+                                    }),
+                                    self.span,
+                                );
+
+                                transform_instantiation(
+                                    function_call.instantiation,
+                                    inference_context,
+                                )
+                            }
+
+                            CallableID::TraitImplementationFunction(_)
+                            | CallableID::AdtImplementationFunction(_) => {
+                                let parent_implementation_id =
+                                    match function_call.callable_id {
+                                        CallableID::TraitImplementationFunction(id) => {
+                                            ImplementationID::PositiveTrait(
+                                                table.get(id).unwrap().parent_id(),
+                                            )
+                                        }
+                                        CallableID::AdtImplementationFunction(id) => {
+                                            ImplementationID::Adt(
+                                                table.get(id).unwrap().parent_id(),
+                                            )
+                                        }
+                                        _ => unreachable!()
+                                    };
+
+                                let mut parent_generic_arguments =
+                                    GenericArguments::from_other_model(
+                                        table
+                                            .get_implementation(
+                                                parent_implementation_id,
+                                            )
+                                            .unwrap()
+                                            .arguments()
+                                            .clone(),
+                                    );
+
+                                parent_generic_arguments
+                                    .instantiate(&function_call.instantiation);
+
+                                let member_generic_arguments =
+                                    instantiation_to_generic_arguments(
+                                        &*table
+                                            .get_generic(
+                                                function_call
+                                                    .callable_id
+                                                    .into(),
+                                            )
+                                            .unwrap(),
+                                        function_call.callable_id.into(),
+                                        &mut function_call.instantiation,
+                                    );
+
+                                transformer.transform(
+                                    Type::MemberSymbol(MemberSymbol {
+                                        id: r#type::MemberSymbolID::Function(
+                                            match function_call.callable_id {
+                                                CallableID::TraitImplementationFunction(id) => id.into(),
+                                                CallableID::AdtImplementationFunction(id) => id.into(),
+                                                _ => unreachable!()
+                                            }
+                                        ),
+                                        member_generic_arguments,
+                                        parent_generic_arguments,
+                                    }),
+                                    self.span,
+                                ).into_member_symbol().unwrap();
+
+                                transform_instantiation(
+                                    function_call.instantiation,
+                                    inference_context,
+                                )
+                            }
+                        },
+                    })
+                }
+                Assignment::Binary(binary) => {
+                    Assignment::Binary(register::Binary {
+                        lhs: binary.lhs.transform_model(transformer),
+                        rhs: binary.rhs.transform_model(transformer),
+                        operator: binary.operator,
+                    })
+                }
+                Assignment::Array(array) => {
+                    Assignment::Array(register::Array {
+                        elements: array
+                            .elements
+                            .into_iter()
+                            .map(|x| x.transform_model(transformer))
+                            .collect(),
+                        element_type: transformer
+                            .transform(array.element_type, self.span),
+                    })
+                }
+                Assignment::Phi(phi) => Assignment::Phi(register::Phi {
+                    incoming_values: phi
+                        .incoming_values
+                        .into_iter()
+                        .map(|(k, v)| {
+                            (
+                                ID::from_index(k.into_index()),
+                                v.transform_model(transformer),
+                            )
+                        })
+                        .collect(),
+                    r#type: transformer.transform(phi.r#type, self.span),
+                }),
+                Assignment::Cast(cast) => Assignment::Cast(register::Cast {
+                    value: cast.value.transform_model(transformer),
+                    r#type: transformer.transform(cast.r#type, self.span),
+                }),
+                Assignment::VariantNumber(variant_number) => {
+                    Assignment::VariantNumber(register::VariantNumber {
+                        address: variant_number
+                            .address
+                            .transform_model(transformer),
+                    })
+                }
+            },
+        }
+    }
+}
+
+pub fn transform_inference(
+    original: ir::Representation<infer::Model>,
+    inference_context: &infer::Context,
+    table: &Table<impl table::State>,
     handler: &HandlerWrapper,
 ) -> ir::Representation<ir::Model> {
-    let mut transformed = ir::Representation::<ir::Model>::default();
-
-    // should always be equal, ID(0)
-    assert_eq!(
-        transformed.control_flow_graph.entry_block_id().into_index(),
-        original.control_flow_graph.entry_block_id().into_index()
-    );
+    let mut result = ir::Representation::<ir::Model>::default();
 
     let mut transformer = Transformer { inference_context, handler };
 
-    // transform the allocas
-    let used_allocas = original
-        .control_flow_graph
-        .traverse()
-        .flat_map(|x| x.1.instructions())
-        .flat_map(|x| x.as_alloca_declaration().map(|x| x.id))
-        .collect::<Vec<_>>();
+    result.allocas =
+        original.allocas.map(|x| x.transform_model(&mut transformer));
+    result.control_flow_graph =
+        original.control_flow_graph.transform_model(&mut transformer);
+    result.registers = original
+        .registers
+        .map(|x| x.transform_model(&mut transformer, inference_context, table));
+    result.scope_tree = original.scope_tree;
 
-    for alloca_id in used_allocas {
-        let removed_alloca = original.allocas.remove(alloca_id).unwrap();
-        transformed.allocas.insert_with_id(
-            ID::from_index(alloca_id.into_index()),
-            removed_alloca.transform_model(&mut transformer),
-        );
-    }
-
-    // transform the blocks
-    transform_block(
-        &mut original,
-        &mut transformed,
-        inference_context,
-        0, // start from the entry block
-        handler,
-    );
-
-    transformed
+    result
 }

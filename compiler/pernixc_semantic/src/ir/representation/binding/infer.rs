@@ -1479,7 +1479,7 @@ impl TryFrom<InferenceOrConstraint<InferenceVariable<Constant<Model>>, Self>>
 }
 
 impl Context {
-    /// Converts the type with [`super::Model`] into the type with the
+    /// Converts the type with [`Model`] into the type with the
     /// [`ConstraintModel`] model.
     ///
     /// All type inference variables will be replaced with the constraints they
@@ -1514,6 +1514,44 @@ impl Context {
         intermediary_type = simplify(&intermediary_type, &environment).result;
 
         Type::try_from_other_model(intermediary_type)
+    }
+
+    /// Converts the constant with [`Model`] into the constant with the
+    /// [`ConstraintModel`] model.
+    ///
+    /// All type inference variables will be replaced with the constraints they
+    /// currently infer.
+    ///
+    /// # Errors
+    ///
+    /// See [`IntoConstraintModelError`] for the possible errors.
+    pub fn constant_into_constraint_model(
+        &self,
+        constant: Constant<Model>,
+    ) -> Result<Constant<ConstraintModel>, IntoConstraintModelError> {
+        let mut intermediary_constant =
+            Constant::<IntermediaryModel>::from_other_model(constant);
+
+        lazy_static! {
+            static ref DUMMY_TABLE: Table<Building> = Table::default();
+            static ref DUMMY_PREMISE: Premise<IntermediaryModel> =
+                Premise::default();
+        };
+
+        // normalze all the inference variables
+        let constraint_normalizer = ConstraintNormalizer { context: self };
+
+        let (environment, _) = Environment::new_with(
+            DUMMY_PREMISE.clone(),
+            &DUMMY_TABLE,
+            &constraint_normalizer,
+            observer::NO_OP,
+        );
+
+        intermediary_constant =
+            simplify(&intermediary_constant, &environment).result;
+
+        Constant::try_from_other_model(intermediary_constant)
     }
 }
 
