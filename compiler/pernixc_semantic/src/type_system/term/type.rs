@@ -720,6 +720,36 @@ impl<M: Model> Match for Type<M> {
                 lhs.substructural_match(rhs)
             }
 
+            (Self::TraitMember(lhs), Self::TraitMember(rhs))
+                if lhs.id == rhs.id =>
+            {
+                lhs.parent_generic_arguments
+                    .substructural_match(
+                        &rhs.parent_generic_arguments,
+                        matching::Substructural::default(),
+                        |x| {
+                            SubTraitMemberLocation(SubMemberSymbolLocation {
+                                index: x,
+                                from_parent: true,
+                            })
+                        },
+                    )
+                    .and_then(|x| {
+                        lhs.member_generic_arguments.substructural_match(
+                            &rhs.member_generic_arguments,
+                            x,
+                            |x| {
+                                SubTraitMemberLocation(
+                                    SubMemberSymbolLocation {
+                                        index: x,
+                                        from_parent: false,
+                                    },
+                                )
+                            },
+                        )
+                    })
+            }
+
             (Self::MemberSymbol(lhs), Self::MemberSymbol(rhs))
                 if lhs.id == rhs.id =>
             {
