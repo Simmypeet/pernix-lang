@@ -5,8 +5,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use infer::{
-    Constraint as _, Context, Erased, InferenceVariable, NoConstraint,
-    UnifyError,
+    Constraint as _, Context, InferenceVariable, NoConstraint, UnifyError,
 };
 use parking_lot::RwLock;
 use pernixc_base::{
@@ -32,7 +31,7 @@ use crate::{
             register::{Assignment, Register},
             Value,
         },
-        TypeOfError,
+        Erased, TypeOfError,
     },
     symbol::{
         table::{
@@ -391,6 +390,11 @@ impl<
                 span,
             });
 
+        let _ = self.current_block_mut().insert_instruction(
+            instruction::Instruction::AllocaDeclaration(
+                instruction::AllocaDeclaration { id: alloca_id },
+            ),
+        );
         self.stack.current_scope_mut().add_variable_declaration(alloca_id);
 
         alloca_id
