@@ -16,12 +16,11 @@ use crate::{
     },
     symbol::{
         table::{self, representation::Index, Table},
-        AdtID, CallableID, ConstantParameterID, Generic, GenericID,
-        ImplementationID, LifetimeParameterID, TypeParameterID,
+        AdtID, CallableID, ImplementationID,
     },
     type_system::{
         instantiation::Instantiation,
-        model::{Model, Transform},
+        model::Transform,
         sub_term::TermLocation,
         term::{
             self,
@@ -151,63 +150,6 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
 
         Type::try_from_other_model(ty)
             .expect("all inference should've been replaced")
-    }
-}
-
-fn instantiation_to_generic_arguments<M: Model>(
-    generic_symbol: &dyn Generic,
-    generic_id: GenericID,
-    instantiation: &mut Instantiation<M>,
-) -> GenericArguments<M> {
-    GenericArguments {
-        lifetimes: generic_symbol
-            .generic_declaration()
-            .parameters
-            .lifetime_order()
-            .iter()
-            .copied()
-            .map(|x| {
-                instantiation
-                    .lifetimes
-                    .remove(&Lifetime::Parameter(LifetimeParameterID {
-                        parent: generic_id,
-                        id: x,
-                    }))
-                    .unwrap()
-            })
-            .collect(),
-        types: generic_symbol
-            .generic_declaration()
-            .parameters
-            .type_order()
-            .iter()
-            .copied()
-            .map(|x| {
-                instantiation
-                    .types
-                    .remove(&Type::Parameter(TypeParameterID {
-                        parent: generic_id,
-                        id: x,
-                    }))
-                    .unwrap()
-            })
-            .collect(),
-        constants: generic_symbol
-            .generic_declaration()
-            .parameters
-            .constant_order()
-            .iter()
-            .copied()
-            .map(|x| {
-                instantiation
-                    .constants
-                    .remove(&Constant::Parameter(ConstantParameterID {
-                        parent: generic_id,
-                        id: x,
-                    }))
-                    .unwrap()
-            })
-            .collect(),
     }
 }
 
@@ -397,7 +339,7 @@ impl Register<infer::Model> {
                 }
 
                 // this is such a bad idea :(
-                Assignment::FunctionCall(mut function_call) => {
+                Assignment::FunctionCall(function_call) => {
                     Assignment::FunctionCall(register::FunctionCall {
                         callable_id: function_call.callable_id,
                         arguments: function_call
@@ -409,13 +351,17 @@ impl Register<infer::Model> {
                             CallableID::Function(id) => {
                                 let function_symbol = table.get(id).unwrap();
 
-                                let generic_arguments =
-                                    instantiation_to_generic_arguments(
-                                        &*function_symbol,
+                                let generic_arguments = function_call
+                                    .instantiation
+                                    .create_generic_arguments(
                                         id.into(),
-                                        &mut function_call.instantiation,
-                                    );
-                                let generic_arguments = transformer
+                                        &function_symbol
+                                            .generic_declaration
+                                            .parameters,
+                                    )
+                                    .unwrap();
+
+                                transformer
                                     .transform(
                                         Type::Symbol(Symbol {
                                             id: r#type::SymbolID::Function(id),
@@ -427,32 +373,36 @@ impl Register<infer::Model> {
                                     .unwrap()
                                     .generic_arguments;
 
-                                Instantiation::from_generic_arguments(
-                                    generic_arguments,
-                                    id.into(),
-                                    &function_symbol
-                                        .generic_declaration
-                                        .parameters,
+                                transform_instantiation(
+                                    function_call.instantiation,
+                                    inference_context,
                                 )
-                                .unwrap()
                             }
 
                             CallableID::TraitFunction(id) => {
                                 let trait_funciton = table.get(id).unwrap();
                                 let parent_trait = trait_funciton.parent_id();
 
-                                let parent_generic_arguments =
-                                    instantiation_to_generic_arguments(
-                                        &*table.get(parent_trait).unwrap(),
+                                let parent_generic_arguments = function_call
+                                    .instantiation
+                                    .create_generic_arguments(
                                         parent_trait.into(),
-                                        &mut function_call.instantiation,
-                                    );
-                                let member_generic_arguments =
-                                    instantiation_to_generic_arguments(
-                                        &*trait_funciton,
+                                        &&table
+                                            .get(parent_trait)
+                                            .unwrap()
+                                            .generic_declaration
+                                            .parameters,
+                                    )
+                                    .unwrap();
+                                let member_generic_arguments = function_call
+                                    .instantiation
+                                    .create_generic_arguments(
                                         id.into(),
-                                        &mut function_call.instantiation,
-                                    );
+                                        &trait_funciton
+                                            .generic_declaration
+                                            .parameters,
+                                    )
+                                    .unwrap();
 
                                 transformer.transform(
                                     Type::MemberSymbol(MemberSymbol {
@@ -502,18 +452,21 @@ impl Register<infer::Model> {
                                 parent_generic_arguments
                                     .instantiate(&function_call.instantiation);
 
-                                let member_generic_arguments =
-                                    instantiation_to_generic_arguments(
-                                        &*table
+                                let member_generic_arguments = function_call
+                                    .instantiation
+                                    .create_generic_arguments(
+                                        function_call.callable_id.into(),
+                                        &table
                                             .get_generic(
                                                 function_call
                                                     .callable_id
                                                     .into(),
                                             )
-                                            .unwrap(),
-                                        function_call.callable_id.into(),
-                                        &mut function_call.instantiation,
-                                    );
+                                            .unwrap()
+                                            .generic_declaration()
+                                            .parameters,
+                                    )
+                                    .unwrap();
 
                                 transformer.transform(
                                     Type::MemberSymbol(MemberSymbol {

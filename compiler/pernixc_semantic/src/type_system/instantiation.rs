@@ -9,16 +9,19 @@ use super::{
     model::Model,
     sub_term::TermLocation,
     term::{
-        constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
-        Term,
+        constant::Constant,
+        lifetime::{self, Lifetime},
+        r#type::Type,
+        GenericArguments, Term,
     },
     visitor::{self, MutableRecursive},
 };
 use crate::{
     arena::ID,
     symbol::{
-        ConstantParameter, GenericID, GenericKind, GenericParameters,
-        LifetimeParameter, MemberID, TypeParameter,
+        ConstantParameter, ConstantParameterID, GenericID, GenericKind,
+        GenericParameters, LifetimeParameter, LifetimeParameterID, MemberID,
+        TypeParameter, TypeParameterID,
     },
 };
 
@@ -86,6 +89,33 @@ pub struct MismatchedGenericArgumentCountError<M: Model> {
 
     /// The generic arguments passed into the function.
     pub generic_arguments: GenericArguments<M>,
+}
+
+/**
+ * Error that occurs when creating a [`GenericArguments`] from an
+ * [`Instantiation`] but a parameter is missing.
+ */
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    thiserror::Error,
+    displaydoc::Display,
+)]
+pub enum MissingInstantiationError {
+    /// The lifetime parameter with the given ID is missing.
+    Lifetime(ID<LifetimeParameter>),
+
+    /// The type parameter with the given ID is missing.
+    Type(ID<TypeParameter>),
+
+    /// The constant parameter with the given ID is missing.
+    Constant(ID<ConstantParameter>),
 }
 
 /// Returns with [`Instantiation::append_from_arguments`] if the given
@@ -224,6 +254,78 @@ impl<M: Model> Instantiation<M> {
         );
 
         Ok(collisions)
+    }
+
+    /// Converts the instantiation into a [`GenericArguments`].
+    ///
+    /// The function will search for the corresponding instantiation for each
+    /// generic parameter.
+    pub fn create_generic_arguments(
+        &self,
+        generic_id: GenericID,
+        parameters: &GenericParameters,
+    ) -> Result<GenericArguments<M>, MissingInstantiationError> {
+        Ok(GenericArguments {
+            lifetimes: parameters
+                .lifetime_order()
+                .iter()
+                .copied()
+                .map(|x| {
+                    let lifetime_parameter =
+                        lifetime::Lifetime::Parameter(LifetimeParameterID {
+                            parent: generic_id,
+                            id: x,
+                        });
+
+                    let inst = self
+                        .lifetimes
+                        .get(&lifetime_parameter)
+                        .cloned()
+                        .ok_or(MissingInstantiationError::Lifetime(x))?;
+
+                    Ok(inst)
+                })
+                .collect::<Result<_, _>>()?,
+            types: parameters
+                .type_order()
+                .iter()
+                .copied()
+                .map(|x| {
+                    let type_parameter = Type::Parameter(TypeParameterID {
+                        parent: generic_id,
+                        id: x,
+                    });
+
+                    let inst = self
+                        .types
+                        .get(&type_parameter)
+                        .cloned()
+                        .ok_or(MissingInstantiationError::Type(x))?;
+
+                    Ok(inst)
+                })
+                .collect::<Result<_, _>>()?,
+            constants: parameters
+                .constant_order()
+                .iter()
+                .copied()
+                .map(|x| {
+                    let constant_parameter =
+                        Constant::Parameter(ConstantParameterID {
+                            parent: generic_id,
+                            id: x,
+                        });
+
+                    let inst = self
+                        .constants
+                        .get(&constant_parameter)
+                        .cloned()
+                        .ok_or(MissingInstantiationError::Constant(x))?;
+
+                    Ok(inst)
+                })
+                .collect::<Result<_, _>>()?,
+        })
     }
 
     /// Converts the given generic arguments into a substitution.
