@@ -130,7 +130,7 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
         let mut ty =
             self.inference_context.into_constraint_model(term).unwrap();
         let found_inference = RecursiveIterator::new(&ty).any(|x| match x.0 {
-            term::Kind::Lifetime(a) => a.is_inference(),
+            term::Kind::Lifetime(_) => false,
             term::Kind::Type(a) => a.is_inference(),
             term::Kind::Constant(a) => a.is_inference(),
         });
@@ -583,3 +583,6 @@ pub fn transform_inference(
 
     result
 }
+
+#[cfg(test)]
+mod test;
