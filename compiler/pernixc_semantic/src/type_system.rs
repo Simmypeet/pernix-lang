@@ -40,6 +40,7 @@ pub mod type_check;
 pub mod unification;
 pub mod variance;
 pub mod visitor;
+pub mod well_formedness;
 
 /// A struct implementing the [`unification::Predicate`] that allows the
 /// lifetime to be unified.
