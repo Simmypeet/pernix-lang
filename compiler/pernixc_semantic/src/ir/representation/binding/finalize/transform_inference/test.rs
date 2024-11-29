@@ -6,10 +6,12 @@ use crate::{
     symbol::{
         table::representation::IndexMut, Accessibility, AdtID, AdtTemplate,
         EnumDefinition, FunctionDefinition, FunctionTemplate,
-        GenericDeclaration, Parameter, TypeParameter, TypeParameterID,
+        GenericDeclaration, LifetimeParameter, LifetimeParameterID, Parameter,
+        TypeParameter, TypeParameterID,
     },
     type_system::term::{
-        r#type::{Constraint, Primitive, SymbolID, Type},
+        lifetime::Lifetime,
+        r#type::{Constraint, Primitive, Qualifier, Reference, SymbolID, Type},
         GenericArguments, Symbol,
     },
 };
@@ -158,4 +160,65 @@ fn function_with_no_generic_parameter() {
             }
         })
     );
+}
+
+#[test]
+fn lifetime_inference_is_not_error() {
+    let mut test_template = TestTemplate::new();
+
+    let function_id = test_template
+        .table
+        .insert_member(
+            "foo".to_string(),
+            Accessibility::Public,
+            test_template.test_module_id,
+            None,
+            GenericDeclaration::default(),
+            FunctionTemplate::<FunctionDefinition>::default(),
+        )
+        .unwrap()
+        .unwrap_no_duplication();
+
+    let function_sym = test_template.table.get_mut(function_id).unwrap();
+
+    let lt_id = function_sym
+        .generic_declaration
+        .parameters
+        .add_lifetime_parameter(LifetimeParameter {
+            name: Some("a".to_string()),
+            span: None,
+        })
+        .unwrap();
+
+    let t_id = function_sym
+        .generic_declaration
+        .parameters
+        .add_type_parameter(TypeParameter {
+            name: Some("T".to_string()),
+            span: None,
+        })
+        .unwrap();
+
+    function_sym.insert_parameter(Parameter {
+        r#type: Type::Reference(Reference {
+            qualifier: Qualifier::Immutable,
+            lifetime: Lifetime::Parameter(LifetimeParameterID {
+                parent: function_id.into(),
+                id: lt_id,
+            }),
+            pointee: Box::new(Type::Parameter(TypeParameterID {
+                parent: function_id.into(),
+                id: t_id,
+            })),
+        }),
+        span: None,
+    });
+
+    let (mut binder, storage) = test_template.create_binder();
+
+    assert!(binder
+        .bind_statement(&parse_statement("let x = foo(&32);"), &Panic)
+        .is_ok());
+
+    assert!(binder.finalize(&storage).is_ok(), "{:?}", storage.as_vec());
 }
