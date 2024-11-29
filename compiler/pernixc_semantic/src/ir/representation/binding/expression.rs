@@ -41,6 +41,7 @@ use crate::{
         TupleIndexOutOfBOunds, UnexpectedGenericArgumentsInField,
     },
     ir::{
+        self,
         address::{self, Address, Memory, ReferenceAddress},
         control_flow_graph::{Block, InsertTerminatorError},
         instruction::{
@@ -160,7 +161,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Numeric> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -249,7 +251,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Boolean> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -274,7 +277,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     /// Binds the given syntax tree as an address.
@@ -333,7 +337,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Prefix> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -460,7 +465,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Prefixable> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -484,7 +490,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     fn bind_variant_call(
@@ -589,7 +596,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     fn bind_function_call(
@@ -680,7 +688,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -1032,7 +1041,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     fn bind_dereference<'a, T>(
@@ -1124,7 +1134,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     fn is_method(
@@ -1995,7 +2006,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Postfix> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -2490,7 +2502,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Postfixable> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -2514,7 +2527,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::QualifiedIdentifier> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -2672,7 +2686,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Struct> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -2829,7 +2844,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&token::String> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -2876,7 +2892,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&token::Character> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -2916,7 +2933,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Parenthesized> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -3023,7 +3041,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Phantom> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -3051,7 +3070,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Array> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -3125,7 +3145,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Unit> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -3382,7 +3403,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     fn bind_assignment(
@@ -3689,7 +3711,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&BinaryTree<'x>> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -3976,7 +3999,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&BinaryNode<'x>> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -3998,7 +4022,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Binary> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -4018,7 +4043,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Return> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -4107,7 +4133,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     /// Finds a [`ID<scope::Scope>`] to operate a control flow on based on the
@@ -4165,7 +4192,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Continue> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -4240,7 +4268,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Break> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -4385,7 +4414,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Terminator> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -4415,7 +4445,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Express> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -4569,7 +4600,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::IfElse> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -4806,7 +4838,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Loop> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -4973,7 +5006,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Brace> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -5006,7 +5040,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::While> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -5212,7 +5247,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Expression> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -5239,7 +5275,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<BlockState> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -5347,7 +5384,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     /// Binds the basic block of the given syntax tree.
@@ -5424,7 +5462,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Block> for Binder<'t, S, RO, TO>
 {
     fn bind(
@@ -5461,7 +5500,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     /// Binds the given syntax tree as a value. In case of an error, an error

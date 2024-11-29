@@ -15,6 +15,7 @@ use crate::{
     arena::ID,
     error::{self, NonExhaustiveMatch, UnreachableMatchArm},
     ir::{
+        self,
         address::{Address, Memory},
         control_flow_graph::Block,
         instruction::{
@@ -81,7 +82,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     #[allow(clippy::cast_sign_loss)]
@@ -823,7 +825,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Bind<&syntax_tree::expression::Match> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]

@@ -10,6 +10,7 @@ use super::{
 use crate::{
     error,
     ir::{
+        self,
         address::{Address, Memory},
         instruction::{Drop, Instruction, Store},
         pattern::{NameBindingPoint, Wildcard},
@@ -29,7 +30,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     /// Binds the given [`syntax_tree::statement::Statement`] to the IR.

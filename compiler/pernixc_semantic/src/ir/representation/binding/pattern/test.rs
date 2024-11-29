@@ -14,6 +14,7 @@ use crate::{
     arena::ID,
     error::{self, Error},
     ir::{
+        self,
         address::{self, Address, Field, Memory},
         instruction::Instruction,
         pattern::{Irrefutable, NameBindingPoint, Named},
@@ -164,7 +165,8 @@ fn create_dummy_function() -> (Table<Building>, ID<Function>) {
 impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'_, S, RO, TO>
 {
     fn bind_irrefutable(

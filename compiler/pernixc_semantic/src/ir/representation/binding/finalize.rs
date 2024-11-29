@@ -5,13 +5,15 @@ use pernixc_base::handler::Handler;
 use super::{infer, Binder};
 use crate::{
     error::{self, NotAllFlowPathsReturnAValue},
-    ir::{Suboptimal, Success, IR},
+    ir::{self, Suboptimal, Success, IR},
     symbol::{
         table::{self, resolution},
         CallableID,
     },
     type_system::{
         self,
+        environment::Environment,
+        normalizer,
         term::{r#type::Type, Tuple},
     },
 };
@@ -23,7 +25,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     /// Finalizes the current binder and returns the IR
@@ -79,6 +82,17 @@ impl<
                 state: Suboptimal,
             });
         }
+
+        let premise = self
+            .table
+            .get_active_premise::<ir::Model>(self.current_site)
+            .unwrap();
+        let (environment, _) = Environment::new_with(
+            premise,
+            self.table,
+            normalizer::NO_OP,
+            &self.type_system_observer,
+        );
 
         Ok(IR { representation: transformed_ir, state: Success(()) })
     }

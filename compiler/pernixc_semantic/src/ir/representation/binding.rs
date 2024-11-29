@@ -20,6 +20,7 @@ use crate::{
     arena::ID,
     error::{self, CyclicInference, MismatchedType},
     ir::{
+        self,
         address::{Address, Memory},
         alloca::Alloca,
         control_flow_graph::Block,
@@ -105,7 +106,8 @@ pub struct Binder<
     't,
     S: table::State,
     RO: resolution::Observer<S, infer::Model>,
-    TO: type_system::observer::Observer<infer::Model, S>,
+    TO: type_system::observer::Observer<infer::Model, S>
+        + type_system::observer::Observer<ir::Model, S>,
 > {
     table: &'t Table<S>,
 
@@ -163,7 +165,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     /// Creates the binder for building the IR.
@@ -348,7 +351,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     fn create_unreachable(

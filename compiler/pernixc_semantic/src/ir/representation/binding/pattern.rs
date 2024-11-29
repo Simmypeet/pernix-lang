@@ -21,6 +21,7 @@ use crate::{
         TooLargetNumericLiteral, UnboundFields, UnexpectedAssociatedPattern,
     },
     ir::{
+        self,
         address::{self, Address, Memory, ReferenceAddress, Variant},
         instruction::{self, Instruction, Store, TuplePack},
         pattern::{
@@ -77,7 +78,8 @@ pub(super) trait Pattern:
     fn bind<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     >(
         binder: &mut Binder<S, RO, TO>,
         ty: &Type<infer::Model>,
@@ -88,7 +90,8 @@ pub(super) trait Pattern:
     fn insert_named_binding_point<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     >(
         binder: &mut Binder<S, RO, TO>,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
@@ -105,7 +108,8 @@ impl Pattern for Refutable {
     fn bind<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     >(
         binder: &mut Binder<S, RO, TO>,
         ty: &Type<infer::Model>,
@@ -141,7 +145,8 @@ impl Pattern for Refutable {
     fn insert_named_binding_point<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     >(
         binder: &mut Binder<S, RO, TO>,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
@@ -354,7 +359,8 @@ impl Pattern for Irrefutable {
     fn bind<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     >(
         binder: &mut Binder<S, RO, TO>,
         ty: &Type<infer::Model>,
@@ -381,7 +387,8 @@ impl Pattern for Irrefutable {
     fn insert_named_binding_point<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     >(
         binder: &mut Binder<S, RO, TO>,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
@@ -527,7 +534,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -1629,7 +1637,8 @@ impl<
         't,
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     fn replace_refutable_in_tuple_pack_internal(
