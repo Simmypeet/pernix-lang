@@ -46,7 +46,7 @@ impl<
         'out: {
             if let Ok(callable_id) = CallableID::try_from(self.current_site) {
                 let callable = self.table.get_callable(callable_id).unwrap();
-                let return_type = dbg!(callable.return_type());
+                let return_type = callable.return_type();
 
                 // no checking need
                 if *return_type == Type::Tuple(Tuple { elements: Vec::new() }) {
@@ -93,6 +93,9 @@ impl<
             normalizer::NO_OP,
             &self.type_system_observer,
         );
+
+        // perform the well-formedness check
+        transformed_ir.check(&environment, &handler_wrapper);
 
         Ok(IR { representation: transformed_ir, state: Success(()) })
     }
