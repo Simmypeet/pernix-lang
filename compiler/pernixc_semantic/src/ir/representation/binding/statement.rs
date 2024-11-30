@@ -12,7 +12,7 @@ use crate::{
     ir::{
         self,
         address::{Address, Memory},
-        instruction::{Drop, Instruction, Store},
+        instruction::{Instruction, RegisterDiscard},
         pattern::{NameBindingPoint, Wildcard},
         value::{
             literal::{self, Literal},
@@ -83,30 +83,19 @@ impl<
                 };
 
                 let result = match result {
-                    Ok(Expression::RValue(value)) => {
-                        let alloca_id = self
-                            .create_alloca(self.type_of_value(&value)?, None);
-
-                        // store to the alloca and immediately drop the value
+                    Ok(Expression::RValue(Value::Register(register_id))) => {
                         let _ = self.current_block_mut().insert_instruction(
-                            Instruction::Store(Store {
-                                address: Address::Memory(Memory::Alloca(
-                                    alloca_id,
-                                )),
-                                value,
+                            Instruction::RegisterDiscard(RegisterDiscard {
+                                id: register_id,
                             }),
                         );
 
-                        let _ = self.current_block_mut().insert_instruction(
-                            Instruction::Drop(Drop {
-                                address: Address::Memory(Memory::Alloca(
-                                    alloca_id,
-                                )),
-                            }),
-                        );
                         Ok(())
                     }
-                    Err(Error::Semantic(_)) | Ok(_) => Ok(()),
+
+                    Ok(Expression::RValue(Value::Literal(_)))
+                    | Err(Error::Semantic(_))
+                    | Ok(_) => Ok(()),
                     Err(Error::Internal(err)) => {
                         return Err(err);
                     }

@@ -215,6 +215,15 @@ pub struct Drop<M: Model> {
     pub address: Address<M>,
 }
 
+/// An instruction that invokes `Drop::drop` on a value in the register.
+///
+/// This is a pseudo-instruction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RegisterDiscard<M: Model> {
+    /// The register that is being dropped.
+    pub id: ID<Register<M>>,
+}
+
 /// An enumeration containig all the basic instructions.
 ///
 /// The basic instructions are the instructions that have no effect on the
@@ -226,6 +235,7 @@ pub enum Instruction<M: Model> {
     Store(Store<M>),
     RegisterAssignment(RegisterAssignment<M>),
     AllocaDeclaration(AllocaDeclaration<M>),
+    RegisterDiscard(RegisterDiscard<M>),
     TuplePack(TuplePack<M>),
     ScopePush(ScopePush),
     ScopePop(ScopePop),
@@ -252,6 +262,11 @@ impl<M: Model> Instruction<M> {
             Self::AllocaDeclaration(alloca_declaration) => {
                 Instruction::AllocaDeclaration(AllocaDeclaration {
                     id: ID::from_index(alloca_declaration.id.into_index()),
+                })
+            }
+            Self::RegisterDiscard(register_discard) => {
+                Instruction::RegisterDiscard(RegisterDiscard {
+                    id: ID::from_index(register_discard.id.into_index()),
                 })
             }
             Self::TuplePack(tuple_pack) => Instruction::TuplePack(TuplePack {
