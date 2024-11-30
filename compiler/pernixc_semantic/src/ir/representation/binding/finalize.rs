@@ -95,7 +95,7 @@ impl<
         );
 
         // perform the well-formedness check
-        transformed_ir.check(&environment, &handler_wrapper);
+        transformed_ir.check(self.current_site, &environment, &handler_wrapper);
 
         Ok(IR { representation: transformed_ir, state: Success(()) })
     }

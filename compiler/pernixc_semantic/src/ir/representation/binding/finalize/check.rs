@@ -2,7 +2,7 @@ use pernixc_base::{handler::Handler, source_file::Span};
 
 use crate::{
     arena::ID,
-    error,
+    error::{self, CannotMoveOutBehindReference},
     ir::{
         self,
         representation::{binding::HandlerWrapper, Representation},
@@ -10,14 +10,15 @@ use crate::{
     },
     symbol::{
         table::{self, representation::Index},
-        CallableID, GenericID,
+        CallableID, GenericID, GlobalID,
     },
     type_system::{
         environment::Environment,
         instantiation::Instantiation,
         normalizer::Normalizer,
         observer::Observer,
-        predicate::{self, PositiveTrait},
+        predicate::{self, PositiveMarker, PositiveTrait, Predicate},
+        term::GenericArguments,
         well_formedness,
     },
 };
@@ -86,6 +87,7 @@ impl Representation<ir::Model> {
     fn check_register_assignment<T: table::State>(
         &self,
         register_id: ID<Register<ir::Model>>,
+        current_site: GlobalID,
         environment: &Environment<
             ir::Model,
             T,
@@ -273,10 +275,55 @@ impl Representation<ir::Model> {
                 }
             }
 
+            // check for move behind shared reference on non-copy type
+            register::Assignment::Load(load) => {
+                if load.address.is_behind_reference() {
+                    let ty = self
+                        .type_of_address(
+                            &load.address,
+                            current_site,
+                            environment,
+                        )
+                        .unwrap()
+                        .result;
+
+                    let copy_marker = environment
+                        .table()
+                        .get_by_qualified_name(["core", "Copy"].into_iter())
+                        .unwrap()
+                        .into_marker()
+                        .unwrap();
+
+                    let predicate = Predicate::PositiveMarker(
+                        PositiveMarker::new(copy_marker, GenericArguments {
+                            lifetimes: Vec::new(),
+                            types: vec![ty.clone()],
+                            constants: Vec::new(),
+                        }),
+                    );
+
+                    let mut errors = well_formedness::predicate_satisfied(
+                        predicate,
+                        None,
+                        false,
+                        environment,
+                    );
+                    errors.retain(|x| !x.is_lifetime_constraints());
+
+                    // if there's an error, report it
+                    if !errors.is_empty() {
+                        handler.receive(Box::new(
+                            CannotMoveOutBehindReference {
+                                span: register.span.clone().unwrap(),
+                                r#type: ty,
+                            },
+                        ));
+                    }
+                }
+            }
+
             // TODO: tuple unpacking
-            // TODO: move in not copy type on shared reference
             register::Assignment::Tuple(_)
-            | register::Assignment::Load(_)
             | register::Assignment::ReferenceOf(_)
             | register::Assignment::Prefix(_)
             | register::Assignment::Binary(_)
@@ -289,6 +336,7 @@ impl Representation<ir::Model> {
 
     pub(super) fn check<T: table::State>(
         &self,
+        current_site: GlobalID,
         environment: &Environment<
             ir::Model,
             T,
@@ -303,7 +351,12 @@ impl Representation<ir::Model> {
             .flat_map(|x| x.1.instructions())
             .filter_map(|x| x.as_register_assignment().map(|x| x.id))
         {
-            self.check_register_assignment(register_id, environment, handler);
+            self.check_register_assignment(
+                register_id,
+                current_site,
+                environment,
+                handler,
+            );
         }
     }
 }

@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 
+use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
 
 use super::{
@@ -58,7 +59,7 @@ pub struct ImplementationIsNotGeneralEnough<M: Model> {
 }
 
 /// Represents an error found while checking for the well-formedness.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Error<M: Model> {
     Unsatisfied(Unsatisfied<M>),
