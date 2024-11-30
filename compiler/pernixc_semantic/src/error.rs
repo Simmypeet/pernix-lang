@@ -15,7 +15,7 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    ir::{self, representation::binding::infer::ConstraintModel},
+    ir::representation::binding::infer::ConstraintModel,
     symbol::{
         table::{
             self, representation::Index, Display, DisplayObject, State,
@@ -36,7 +36,6 @@ use crate::{
             r#type::{self, Qualifier, Type},
             GenericArguments,
         },
-        well_formedness,
     },
 };
 
@@ -4105,39 +4104,6 @@ impl Report<&Table<Suboptimal>> for UnreachableMatchArm {
         Ok(Diagnostic {
             span: self.match_arm_span.clone(),
             message: "unreachable match arm".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        })
-    }
-}
-
-/// Cannot move the value out behind a shared reference.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CannotMoveOutBehindReference {
-    /// The span of the move expression.
-    pub span: Span,
-
-    /// The type of the value being moved.
-    pub r#type: Type<ir::Model>,
-}
-
-impl Report<&Table<Suboptimal>> for CannotMoveOutBehindReference {
-    type Error = ReportError;
-
-    fn report(
-        &self,
-        table: &Table<Suboptimal>,
-    ) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
-            span: self.span.clone(),
-            message: format!(
-                "cannot move the value of type `{}` behind a shared \
-                 reference; since type `{}` does not implement the `Copy` \
-                 trait",
-                DisplayObject { display: &self.r#type, table },
-                DisplayObject { display: &self.r#type, table }
-            ),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),

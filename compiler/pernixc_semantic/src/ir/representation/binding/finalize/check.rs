@@ -2,7 +2,7 @@ use pernixc_base::{handler::Handler, source_file::Span};
 
 use crate::{
     arena::ID,
-    error::{self, CannotMoveOutBehindReference},
+    error,
     ir::{
         self,
         representation::{binding::HandlerWrapper, Representation},
@@ -17,7 +17,7 @@ use crate::{
         instantiation::Instantiation,
         normalizer::Normalizer,
         observer::Observer,
-        predicate::{self, PositiveMarker, PositiveTrait, Predicate},
+        predicate::{self, PositiveMarker, PositiveTrait, Predicate, Tuple},
         term::GenericArguments,
         well_formedness,
     },
@@ -302,29 +302,65 @@ impl Representation<ir::Model> {
                         }),
                     );
 
-                    let mut errors = well_formedness::predicate_satisfied(
+                    let errors = well_formedness::predicate_satisfied(
                         predicate,
                         None,
                         false,
                         environment,
                     );
-                    errors.retain(|x| !x.is_lifetime_constraints());
 
-                    // if there's an error, report it
-                    if !errors.is_empty() {
-                        handler.receive(Box::new(
-                            CannotMoveOutBehindReference {
-                                span: register.span.clone().unwrap(),
-                                r#type: ty,
-                            },
-                        ));
+                    for error in errors {
+                        report_error(
+                            error,
+                            register.span.clone().unwrap(),
+                            handler,
+                        );
                     }
                 }
             }
 
-            // TODO: tuple unpacking
-            register::Assignment::Tuple(_)
-            | register::Assignment::ReferenceOf(_)
+            // tuple unpacking
+            register::Assignment::Tuple(tuple) => {
+                for element in tuple.elements.iter().filter(|x| x.is_unpacked) {
+                    let ty = self
+                        .type_of_value(
+                            &element.value,
+                            current_site,
+                            environment,
+                        )
+                        .unwrap()
+                        .result;
+
+                    let predicate = Predicate::TupleType(Tuple(ty));
+                    let errors = well_formedness::predicate_satisfied(
+                        predicate,
+                        None,
+                        false,
+                        environment,
+                    );
+
+                    for error in errors {
+                        report_error(
+                            error,
+                            match &element.value {
+                                ir::value::Value::Register(id) => self
+                                    .registers
+                                    .get(*id)
+                                    .unwrap()
+                                    .span
+                                    .clone()
+                                    .unwrap(),
+                                ir::value::Value::Literal(literal) => {
+                                    literal.span().cloned().unwrap()
+                                }
+                            },
+                            handler,
+                        );
+                    }
+                }
+            }
+
+            register::Assignment::ReferenceOf(_)
             | register::Assignment::Prefix(_)
             | register::Assignment::Binary(_)
             | register::Assignment::Array(_)
