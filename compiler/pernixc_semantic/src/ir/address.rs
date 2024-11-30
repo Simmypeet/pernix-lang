@@ -35,6 +35,9 @@ pub struct Field<M: Model> {
     /// The address to the struct.
     pub struct_address: Box<Address<M>>,
 
+    /// The struct id of the the [`Self::struct_address`].
+    pub struct_id: ID<symbol::Struct>,
+
     /// The field that the address points to.
     pub id: ID<symbol::Field>,
 }
@@ -109,19 +112,14 @@ pub struct ReferenceAddress<M: Model> {
 pub enum Memory<M: Model> {
     Parameter(ID<Parameter>),
     Alloca(ID<Alloca<M>>),
+}
 
-    /// The memory pointer is stored in a register.
-    ///
-    /// # Example
-    ///
-    /// ```pnx
-    /// *getReference() = 5;
-    /// ```
-    ///
-    /// The `*getReference()` is represented by `Memory::ReferenceValue(
-    /// "getReference()" )` where `getReference()` is a function that returns a
-    /// reference.
-    ReferenceValue(Value<M>),
+/// Represents a memory location on the stack.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum Stack<M: Model> {
+    Parameter(ID<Parameter>),
+    Alloca(ID<Alloca<M>>),
 }
 
 /// Represents an address to a particular location in memory.
@@ -153,8 +151,7 @@ impl<M: Model> Address<M> {
                 variant.enum_address.is_behind_reference()
             }
 
-            Self::Memory(Memory::ReferenceValue(_))
-            | Self::ReferenceAddress(_) => true,
+            Self::ReferenceAddress(_) => true,
         }
     }
 }
@@ -181,14 +178,12 @@ impl<M: Model> Address<M> {
                 Memory::Alloca(id) => Address::Memory(Memory::Alloca(
                     ID::from_index(id.into_index()),
                 )),
-                Memory::ReferenceValue(value) => Address::Memory(
-                    Memory::ReferenceValue(value.transform_model(transformer)),
-                ),
             },
             Self::Field(field) => Address::Field(Field {
                 struct_address: Box::new(
                     field.struct_address.transform_model(transformer),
                 ),
+                struct_id: field.struct_id,
                 id: field.id,
             }),
             Self::Tuple(tuple) => Address::Tuple(Tuple {
@@ -281,16 +276,6 @@ impl<M: Model> Representation<M> {
 
                 Ok(simplify::simplify(&alloca.r#type.clone(), environment))
             }
-
-            Address::Memory(Memory::ReferenceValue(value)) => self
-                .type_of_value(value, current_site, environment)?
-                .try_map(|x| match x {
-                    Type::Reference(x) => Ok(*x.pointee),
-                    found => Err(TypeOfError::NonReferenceValueType {
-                        value: value.clone(),
-                        r#type: found,
-                    }),
-                }),
 
             Address::Field(field_address) => {
                 // the type of address should've been simplified

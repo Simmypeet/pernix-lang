@@ -3040,7 +3040,7 @@ fn struct_access() {
         |_binder,
          exp,
          errors,
-         (_struct_id, x_field_id, _y_field_id, variable_address): &(
+         (struct_id, x_field_id, _y_field_id, variable_address): &(
             _,
             _,
             _,
@@ -3052,6 +3052,7 @@ fn struct_access() {
 
             let expected_address = Address::Field(address::Field {
                 struct_address: Box::new((*variable_address).clone()),
+                struct_id: *struct_id,
                 id: *x_field_id,
             });
 
@@ -3404,19 +3405,34 @@ fn arrow_access() {
                 .into_tuple()
                 .unwrap();
 
-            let tuple_ref_register_id = address
+            let temp_mutable_tuple_variable = address
                 .tuple_address
+                .into_reference_address()
+                .unwrap()
+                .reference_address
                 .into_memory()
                 .unwrap()
-                .into_reference_value()
-                .unwrap()
-                .into_register()
+                .into_alloca()
+                .unwrap();
+
+            let store = binder
+                .current_block()
+                .instructions()
+                .iter()
+                .find_map(|x| {
+                    x.as_store().take_if(|x| {
+                        x.address
+                            .as_memory()
+                            .and_then(|x| x.as_alloca().copied())
+                            .map_or(false, |x| x == temp_mutable_tuple_variable)
+                    })
+                })
                 .unwrap();
 
             let reference_of = binder
                 .intermediate_representation
                 .registers
-                .get(tuple_ref_register_id)
+                .get(store.value.as_register().copied().unwrap())
                 .unwrap()
                 .assignment
                 .as_reference_of()

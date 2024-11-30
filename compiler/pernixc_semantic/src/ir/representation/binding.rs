@@ -756,18 +756,6 @@ impl<
         match address {
             Address::Memory(Memory::Alloca(_) | Memory::Parameter(_)) => None,
 
-            Address::Memory(Memory::ReferenceValue(value)) => {
-                let ty = self.type_of_value(value).unwrap();
-                let ref_ty = match ty {
-                    Type::Reference(ref_ty) => ref_ty,
-                    found => {
-                        panic!("expected a reference type, found: {found:#?}",);
-                    }
-                };
-
-                Some(ref_ty.qualifier)
-            }
-
             Address::Field(ad) => {
                 self.get_behind_reference_qualifier(&ad.struct_address)
             }

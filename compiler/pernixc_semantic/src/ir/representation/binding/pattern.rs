@@ -1618,6 +1618,7 @@ impl<
             binding_cloned.r#type = &field_ty;
             binding_cloned.address = Address::Field(address::Field {
                 struct_address: Box::new(binding_cloned.address),
+                struct_id,
                 id: field_id,
             });
 
@@ -1941,6 +1942,7 @@ impl<
                     field_ty,
                     Address::Field(address::Field {
                         struct_address: Box::new(address),
+                        struct_id,
                         id: path.field_id,
                     }),
                 );

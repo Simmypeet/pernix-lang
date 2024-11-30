@@ -1056,16 +1056,10 @@ impl<
         Self: Bind<&'a T>,
         T: SourceElement,
     {
-        let operand =
-            self.bind(dereference, Config { target: Target::LValue }, handler)?;
+        let operand = self.bind_as_lvalue(dereference, true, handler)?;
 
         // expected a reference type
-        let operand_type = match &operand {
-            Expression::RValue(val) => self.type_of_value(val).unwrap(),
-            Expression::LValue(lvalue) => {
-                self.type_of_address(&lvalue.address).unwrap()
-            }
-        };
+        let operand_type = self.type_of_address(&operand.address).unwrap();
 
         let reference_type = match operand_type {
             Type::Reference(reference) => reference,
@@ -1083,21 +1077,14 @@ impl<
             }
         };
 
-        let address = |operand| match operand {
-            Expression::RValue(value) => {
-                Address::Memory(Memory::ReferenceValue(value))
-            }
-            Expression::LValue(lvalue) => {
-                Address::ReferenceAddress(ReferenceAddress {
-                    reference_address: Box::new(lvalue.address),
-                })
-            }
-        };
-
         match config.target {
             Target::RValue | Target::Statement => {
                 let register_id = self.create_register_assignmnet(
-                    Assignment::Load(Load { address: address(operand) }),
+                    Assignment::Load(Load {
+                        address: Address::ReferenceAddress(ReferenceAddress {
+                            reference_address: Box::new(operand.address),
+                        }),
+                    }),
                     Some(dereference.span()),
                 );
 
@@ -1105,17 +1092,17 @@ impl<
             }
             Target::LValue => {
                 let new_qualifier = reference_type.qualifier.min(
-                    operand.as_l_value().map_or(Qualifier::Mutable, |lvalue| {
-                        if lvalue.address.is_behind_reference() {
-                            lvalue.qualifier
-                        } else {
-                            Qualifier::Mutable
-                        }
-                    }),
+                    if operand.address.is_behind_reference() {
+                        operand.qualifier
+                    } else {
+                        Qualifier::Mutable
+                    },
                 );
 
                 Ok(Expression::LValue(LValue {
-                    address: address(operand),
+                    address: Address::ReferenceAddress(ReferenceAddress {
+                        reference_address: Box::new(operand.address),
+                    }),
                     span: final_span,
                     qualifier: new_qualifier,
                 }))
@@ -2299,6 +2286,7 @@ impl<
 
                         Address::Field(address::Field {
                             struct_address: Box::new(lvalue.address),
+                            struct_id,
                             id: field_id,
                         })
                     }

@@ -389,6 +389,7 @@ fn value_bound_struct() {
                 struct_address: Box::new(Address::Memory(Memory::Alloca(
                     struct_alloca_id,
                 ))),
+                struct_id,
                 id: a_field_id,
             }),
             Qualifier::Mutable,
@@ -414,6 +415,7 @@ fn value_bound_struct() {
                 struct_address: Box::new(Address::Memory(Memory::Alloca(
                     struct_alloca_id,
                 ))),
+                struct_id,
                 id: b_field_id,
             })
         );
@@ -534,6 +536,7 @@ fn reference_bound_struct() {
             "a",
             &Address::Field(Field {
                 struct_address: Box::new(base_struct_address.clone()),
+                struct_id,
                 id: a_field_id,
             }),
             Qualifier::Immutable,
@@ -555,6 +558,7 @@ fn reference_bound_struct() {
             "b",
             &Address::Field(Field {
                 struct_address: Box::new(base_struct_address),
+                struct_id,
                 id: b_field_id,
             }),
             Qualifier::Immutable,
