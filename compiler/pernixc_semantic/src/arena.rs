@@ -38,7 +38,7 @@ pub trait Key:
 /// type `T`.
 pub struct ID<T: ?Sized> {
     index: usize,
-    _marker: PhantomData<T>,
+    _marker: PhantomData<Box<T>>,
 }
 
 impl<T: 'static> Key for ID<T> {
