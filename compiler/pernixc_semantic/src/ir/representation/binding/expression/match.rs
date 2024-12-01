@@ -732,6 +732,7 @@ impl<
             &arm_info.reftuable_pattern,
             match_info.r#type,
             match_info.address.clone(),
+            Some(match_info.address_span.clone()),
             match_info.qualifier,
             match_info.from_lvalue,
             handler,
@@ -801,6 +802,7 @@ struct ArmInfo<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MatchInfo<'a> {
     address: Address<infer::Model>,
+    address_span: Span,
     r#type: &'a Type<infer::Model>,
     qualifier: Qualifier,
     from_lvalue: bool,
@@ -955,6 +957,7 @@ impl<
         self.handle_match_arms(
             &MatchInfo {
                 address,
+                address_span: syntax_tree.parenthesized().span(),
                 r#type: &ty,
                 qualifier,
                 from_lvalue,

@@ -370,8 +370,7 @@ impl Register<infer::Model> {
                                         self.span,
                                     )
                                     .into_symbol()
-                                    .unwrap()
-                                    .generic_arguments;
+                                    .unwrap();
 
                                 transform_instantiation(
                                     function_call.instantiation,
@@ -387,7 +386,7 @@ impl Register<infer::Model> {
                                     .instantiation
                                     .create_generic_arguments(
                                         parent_trait.into(),
-                                        &&table
+                                        &table
                                             .get(parent_trait)
                                             .unwrap()
                                             .generic_declaration

@@ -18,7 +18,7 @@ use crate::{
         normalizer::Normalizer,
         observer::Observer,
         predicate::{self, PositiveMarker, PositiveTrait, Predicate, Tuple},
-        term::GenericArguments,
+        term::{r#type::Qualifier, GenericArguments},
         well_formedness,
     },
 };
@@ -84,6 +84,7 @@ fn report_error(
 }
 
 impl Representation<ir::Model> {
+    #[allow(clippy::too_many_lines)]
     fn check_register_assignment<T: table::State>(
         &self,
         register_id: ID<Register<ir::Model>>,
@@ -197,7 +198,7 @@ impl Representation<ir::Model> {
                         let mut errors = well_formedness::predicate_satisfied(
                             predicate::Predicate::PositiveTrait(
                                 PositiveTrait {
-                                    id: parent_trait_id.into(),
+                                    id: parent_trait_id,
                                     is_const: false, /* TODO: reflect the
                                                       * actual valuec */
                                     generic_arguments: trait_arguments,
@@ -277,7 +278,10 @@ impl Representation<ir::Model> {
 
             // check for move behind shared reference on non-copy type
             register::Assignment::Load(load) => {
-                if load.address.is_behind_reference() {
+                if load.address.get_reference_qualifier()
+                    == Some(Qualifier::Immutable)
+                    || load.address.is_behind_index()
+                {
                     let ty = self
                         .type_of_address(
                             &load.address,
@@ -297,7 +301,7 @@ impl Representation<ir::Model> {
                     let predicate = Predicate::PositiveMarker(
                         PositiveMarker::new(copy_marker, GenericArguments {
                             lifetimes: Vec::new(),
-                            types: vec![ty.clone()],
+                            types: vec![ty],
                             constants: Vec::new(),
                         }),
                     );

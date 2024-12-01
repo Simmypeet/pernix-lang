@@ -1,6 +1,4 @@
-use crate::ir::representation::binding::test::{
-    parse_statement, TestTemplate,
-};
+use crate::ir::representation::binding::test::{parse_statement, TestTemplate};
 
 #[test]
 fn variable_declaration_with_type_annotation() {

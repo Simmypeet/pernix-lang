@@ -22,7 +22,7 @@ use crate::{
         simplify,
         term::{
             self,
-            r#type::{self, Type},
+            r#type::{self, Qualifier, Type},
             Symbol,
         },
         Succeeded,
@@ -34,9 +34,6 @@ use crate::{
 pub struct Field<M: Model> {
     /// The address to the struct.
     pub struct_address: Box<Address<M>>,
-
-    /// The struct id of the the [`Self::struct_address`].
-    pub struct_id: ID<symbol::Struct>,
 
     /// The field that the address points to.
     pub id: ID<symbol::Field>,
@@ -71,7 +68,7 @@ pub struct Variant<M: Model> {
     pub enum_address: Box<Address<M>>,
 
     /// The variant of to interpret the enum address as.
-    pub variant_id: ID<symbol::Variant>,
+    pub id: ID<symbol::Variant>,
 }
 
 /// The address points to an element in a tuple.
@@ -98,7 +95,10 @@ pub struct Tuple<M: Model> {
 /// Memory::Alloca(&address) }`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(clippy::module_name_repetitions)]
-pub struct ReferenceAddress<M: Model> {
+pub struct Reference<M: Model> {
+    /// The reference qualifier of the memory pointer.
+    pub qualifier: Qualifier,
+
     /// The address where the memory pointer is stored.
     pub reference_address: Box<Address<M>>,
 }
@@ -114,14 +114,6 @@ pub enum Memory<M: Model> {
     Alloca(ID<Alloca<M>>),
 }
 
-/// Represents a memory location on the stack.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum Stack<M: Model> {
-    Parameter(ID<Parameter>),
-    Alloca(ID<Alloca<M>>),
-}
-
 /// Represents an address to a particular location in memory.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
@@ -132,26 +124,86 @@ pub enum Address<M: Model> {
     Tuple(Tuple<M>),
     Index(Index<M>),
     Variant(Variant<M>),
-    ReferenceAddress(ReferenceAddress<M>),
+    Reference(Reference<M>),
 }
 
 impl<M: Model> Address<M> {
     /// Checks if the address has a root that is a reference.
     ///
-    /// the root is either from [`Memory::ReferenceValue`] or
-    /// [`Self::ReferenceAddress`].
-    pub fn is_behind_reference(&self) -> bool {
-        match self {
-            Self::Memory(Memory::Alloca(_) | Memory::Parameter(_)) => false,
+    /// This checks if the address contains [`Address::Reference`].
+    pub const fn is_behind_reference(mut self: &Self) -> bool {
+        loop {
+            match self {
+                Self::Memory(_) => return false,
 
-            Self::Field(field) => field.struct_address.is_behind_reference(),
-            Self::Tuple(tuple) => tuple.tuple_address.is_behind_reference(),
-            Self::Index(index) => index.array_address.is_behind_reference(),
-            Self::Variant(variant) => {
-                variant.enum_address.is_behind_reference()
+                Self::Reference(_) => return true,
+
+                Self::Field(field) => self = &*field.struct_address,
+                Self::Tuple(tuple) => self = &*tuple.tuple_address,
+                Self::Index(index) => self = &*index.array_address,
+                Self::Variant(variant) => self = &*variant.enum_address,
             }
+        }
+    }
 
-            Self::ReferenceAddress(_) => true,
+    /// Gets the root memory of the address.
+    pub const fn get_root_memory(mut self: &Self) -> &Memory<M> {
+        loop {
+            match self {
+                Self::Memory(memory) => return memory,
+                Self::Field(field) => self = &*field.struct_address,
+                Self::Tuple(tuple) => self = &*tuple.tuple_address,
+                Self::Index(index) => self = &*index.array_address,
+                Self::Variant(variant) => self = &*variant.enum_address,
+                Self::Reference(reference) => {
+                    self = &*reference.reference_address;
+                }
+            }
+        }
+    }
+
+    /// Checks if the address is behind an index.
+    ///
+    /// This checks if the address contains [`Address::Index`].
+    pub const fn is_behind_index(mut self: &Self) -> bool {
+        loop {
+            match self {
+                Self::Memory(_) => return false,
+
+                Self::Index(_) => return true,
+
+                Self::Field(field) => self = &*field.struct_address,
+                Self::Tuple(tuple) => self = &*tuple.tuple_address,
+                Self::Variant(variant) => self = &*variant.enum_address,
+                Self::Reference(reference) => {
+                    self = &*reference.reference_address;
+                }
+            }
+        }
+    }
+
+    /// Gets the reference qualifier of the address.
+    pub fn get_reference_qualifier(&self) -> Option<Qualifier> {
+        match self {
+            Self::Memory(_) => None,
+            Self::Field(field) => {
+                field.struct_address.get_reference_qualifier()
+            }
+            Self::Tuple(tuple) => tuple.tuple_address.get_reference_qualifier(),
+            Self::Index(index) => index.array_address.get_reference_qualifier(),
+            Self::Variant(variant) => {
+                variant.enum_address.get_reference_qualifier()
+            }
+            Self::Reference(reference) => {
+                let parent_qualifier =
+                    reference.reference_address.get_reference_qualifier();
+
+                Some(
+                    reference
+                        .qualifier
+                        .min(parent_qualifier.unwrap_or(Qualifier::Mutable)),
+                )
+            }
         }
     }
 }
@@ -183,7 +235,6 @@ impl<M: Model> Address<M> {
                 struct_address: Box::new(
                     field.struct_address.transform_model(transformer),
                 ),
-                struct_id: field.struct_id,
                 id: field.id,
             }),
             Self::Tuple(tuple) => Address::Tuple(Tuple {
@@ -204,10 +255,11 @@ impl<M: Model> Address<M> {
                 enum_address: Box::new(
                     variant.enum_address.transform_model(transformer),
                 ),
-                variant_id: variant.variant_id,
+                id: variant.id,
             }),
-            Self::ReferenceAddress(reference_address) => {
-                Address::ReferenceAddress(ReferenceAddress {
+            Self::Reference(reference_address) => {
+                Address::Reference(Reference {
+                    qualifier: reference_address.qualifier,
                     reference_address: Box::new(
                         reference_address
                             .reference_address
@@ -431,15 +483,15 @@ impl<M: Model> Representation<M> {
                     }
                 };
 
-                let variant_sym =
-                    environment.table().get(variant.variant_id).ok_or(
-                        TypeOfError::InvalidGlobalID(variant.variant_id.into()),
-                    )?;
+                let variant_sym = environment
+                    .table()
+                    .get(variant.id)
+                    .ok_or(TypeOfError::InvalidGlobalID(variant.id.into()))?;
 
                 // mismatched enum id
                 if variant_sym.parent_enum_id() != enum_id {
                     return Err(TypeOfError::InvalidVariantID {
-                        variant_id: variant.variant_id,
+                        variant_id: variant.id,
                         enum_id,
                     });
                 }
@@ -469,7 +521,7 @@ impl<M: Model> Representation<M> {
                 let mut variant_ty = M::from_default_type(
                     variant_sym.associated_type.clone().ok_or(
                         TypeOfError::VariantHasNoAssociatedValue {
-                            variant_id: variant.variant_id,
+                            variant_id: variant.id,
                         },
                     )?,
                 );
@@ -486,7 +538,7 @@ impl<M: Model> Representation<M> {
                 ))
             }
 
-            Address::ReferenceAddress(value) => self
+            Address::Reference(value) => self
                 .type_of_address(
                     &value.reference_address,
                     current_site,

@@ -93,9 +93,8 @@ impl<
                         Ok(())
                     }
 
-                    Ok(Expression::RValue(Value::Literal(_)))
-                    | Err(Error::Semantic(_))
-                    | Ok(_) => Ok(()),
+                    Err(Error::Semantic(_)) | Ok(_) => Ok(()),
+
                     Err(Error::Internal(err)) => {
                         return Err(err);
                     }
@@ -126,11 +125,14 @@ impl<
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(Address<infer::Model>, bool), InternalError> {
         let scope_id = self.push_scope();
-        let (address, qualifier, from_lvalue) = match self.bind(
+        let binding_result = self.bind(
             syntax_tree.expression(),
             Config { target: Target::LValue },
             handler,
-        ) {
+        );
+        self.pop_scope(scope_id);
+
+        let (address, qualifier, from_lvalue) = match binding_result {
             Ok(Expression::LValue(lvalue)) => {
                 (lvalue.address, lvalue.qualifier, true)
             }
@@ -166,7 +168,6 @@ impl<
                 Error::Internal(internal_error) => return Err(internal_error),
             },
         };
-        self.pop_scope(scope_id);
 
         let type_of_address = self.type_of_address(&address)?;
 
@@ -211,6 +212,7 @@ impl<
             &pattern,
             &type_of_address,
             address.clone(),
+            Some(syntax_tree.expression().span()),
             qualifier,
             from_lvalue,
             &self.create_handler_wrapper(handler),

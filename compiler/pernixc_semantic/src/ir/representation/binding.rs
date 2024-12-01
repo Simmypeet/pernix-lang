@@ -258,6 +258,7 @@ impl<
                 &pattern,
                 &parameter_type,
                 Address::Memory(Memory::Parameter(parameter_id)),
+                None,
                 Qualifier::Mutable,
                 false,
                 &handler,
@@ -768,7 +769,7 @@ impl<
             Address::Variant(ad) => {
                 self.get_behind_reference_qualifier(&ad.enum_address)
             }
-            Address::ReferenceAddress(ad) => {
+            Address::Reference(ad) => {
                 let ty = self.type_of_address(&ad.reference_address).unwrap();
                 let ref_ty = match ty {
                     Type::Reference(ref_ty) => ref_ty,

@@ -194,6 +194,7 @@ impl<
             &irrefutable,
             ty,
             address,
+            None,
             Qualifier::Mutable,
             false,
             &storage,
@@ -389,7 +390,6 @@ fn value_bound_struct() {
                 struct_address: Box::new(Address::Memory(Memory::Alloca(
                     struct_alloca_id,
                 ))),
-                struct_id,
                 id: a_field_id,
             }),
             Qualifier::Mutable,
@@ -415,7 +415,6 @@ fn value_bound_struct() {
                 struct_address: Box::new(Address::Memory(Memory::Alloca(
                     struct_alloca_id,
                 ))),
-                struct_id,
                 id: b_field_id,
             })
         );
@@ -515,12 +514,12 @@ fn reference_bound_struct() {
         panic!("Expected a named pattern")
     };
 
-    let base_struct_address =
-        Address::ReferenceAddress(address::ReferenceAddress {
-            reference_address: Box::new(Address::Memory(Memory::Alloca(
-                struct_alloca_id,
-            ))),
-        });
+    let base_struct_address = Address::Reference(address::Reference {
+        qualifier: Qualifier::Immutable,
+        reference_address: Box::new(Address::Memory(Memory::Alloca(
+            struct_alloca_id,
+        ))),
+    });
 
     // ref a field check
     {
@@ -536,7 +535,6 @@ fn reference_bound_struct() {
             "a",
             &Address::Field(Field {
                 struct_address: Box::new(base_struct_address.clone()),
-                struct_id,
                 id: a_field_id,
             }),
             Qualifier::Immutable,
@@ -558,7 +556,6 @@ fn reference_bound_struct() {
             "b",
             &Address::Field(Field {
                 struct_address: Box::new(base_struct_address),
-                struct_id,
                 id: b_field_id,
             }),
             Qualifier::Immutable,
@@ -716,12 +713,12 @@ fn reference_bound_tuple() {
         panic!("Expected a named pattern")
     };
 
-    let base_tuple_address =
-        Address::ReferenceAddress(address::ReferenceAddress {
-            reference_address: Box::new(Address::Memory(Memory::Alloca(
-                tuple_alloca_id,
-            ))),
-        });
+    let base_tuple_address = Address::Reference(address::Reference {
+        qualifier: Qualifier::Mutable,
+        reference_address: Box::new(Address::Memory(Memory::Alloca(
+            tuple_alloca_id,
+        ))),
+    });
 
     // ref a tuple check
     {

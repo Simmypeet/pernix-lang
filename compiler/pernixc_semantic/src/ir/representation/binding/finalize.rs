@@ -5,7 +5,11 @@ use pernixc_base::handler::Handler;
 use super::{infer, Binder};
 use crate::{
     error::{self, NotAllFlowPathsReturnAValue},
-    ir::{self, Suboptimal, Success, IR},
+    ir::{
+        self,
+        instruction::{Instruction, ScopePop},
+        Suboptimal, Success, IR,
+    },
     symbol::{
         table::{self, resolution},
         CallableID,
@@ -19,7 +23,8 @@ use crate::{
 };
 
 mod check;
-// mod state;
+mod memory_check;
+mod state;
 mod transform_inference;
 
 impl<
@@ -41,6 +46,11 @@ impl<
         mut self,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<IR<Success>, IR<Suboptimal>> {
+        let root_scope_id =
+            self.intermediate_representation.scope_tree.root_scope_id();
+        let _ = self
+            .current_block_mut()
+            .insert_instruction(Instruction::ScopePop(ScopePop(root_scope_id)));
         self.inference_context.fill_default_inferences();
 
         // we're in the function, check if all paths return the value
@@ -69,7 +79,7 @@ impl<
         }
 
         let handler_wrapper = self.create_handler_wrapper(handler);
-        let transformed_ir = transform_inference::transform_inference(
+        let mut transformed_ir = transform_inference::transform_inference(
             self.intermediate_representation,
             &self.inference_context,
             self.table,
@@ -97,6 +107,11 @@ impl<
 
         // perform the well-formedness check
         transformed_ir.check(self.current_site, &environment, &handler_wrapper);
+        transformed_ir.memory_check(
+            self.current_site,
+            &environment,
+            &handler_wrapper,
+        );
 
         Ok(IR { representation: transformed_ir, state: Success(()) })
     }

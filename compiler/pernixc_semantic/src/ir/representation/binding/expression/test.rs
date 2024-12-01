@@ -916,7 +916,7 @@ fn dereference_as_value() {
     let dereference = dereference_register.assignment.as_load().unwrap();
 
     assert_eq!(
-        *dereference.address.as_reference_address().unwrap().reference_address,
+        *dereference.address.as_reference().unwrap().reference_address,
         reference_variable_address
     );
 }
@@ -965,7 +965,7 @@ fn dereference_as_address() {
     assert!(storage.as_vec().is_empty());
 
     assert_eq!(
-        *address.as_reference_address().unwrap().reference_address,
+        *address.into_reference().unwrap().reference_address,
         reference_variable_address
     );
 }
@@ -3040,7 +3040,7 @@ fn struct_access() {
         |_binder,
          exp,
          errors,
-         (struct_id, x_field_id, _y_field_id, variable_address): &(
+         (_struct_id, x_field_id, _y_field_id, variable_address): &(
             _,
             _,
             _,
@@ -3052,7 +3052,6 @@ fn struct_access() {
 
             let expected_address = Address::Field(address::Field {
                 struct_address: Box::new((*variable_address).clone()),
-                struct_id: *struct_id,
                 id: *x_field_id,
             });
 
@@ -3407,7 +3406,7 @@ fn arrow_access() {
 
             let temp_mutable_tuple_variable = address
                 .tuple_address
-                .into_reference_address()
+                .into_reference()
                 .unwrap()
                 .reference_address
                 .into_memory()

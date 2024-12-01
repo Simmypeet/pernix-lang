@@ -42,7 +42,7 @@ use crate::{
     },
     ir::{
         self,
-        address::{self, Address, Memory, ReferenceAddress},
+        address::{self, Address, Memory, Reference},
         control_flow_graph::{Block, InsertTerminatorError},
         instruction::{
             self, Instruction, Jump, ScopePop, ScopePush, Store, Terminator,
@@ -1081,7 +1081,8 @@ impl<
             Target::RValue | Target::Statement => {
                 let register_id = self.create_register_assignmnet(
                     Assignment::Load(Load {
-                        address: Address::ReferenceAddress(ReferenceAddress {
+                        address: Address::Reference(Reference {
+                            qualifier: reference_type.qualifier,
                             reference_address: Box::new(operand.address),
                         }),
                     }),
@@ -1100,7 +1101,8 @@ impl<
                 );
 
                 Ok(Expression::LValue(LValue {
-                    address: Address::ReferenceAddress(ReferenceAddress {
+                    address: Address::Reference(Reference {
+                        qualifier: reference_type.qualifier,
                         reference_address: Box::new(operand.address),
                     }),
                     span: final_span,
@@ -2286,7 +2288,6 @@ impl<
 
                         Address::Field(address::Field {
                             struct_address: Box::new(lvalue.address),
-                            struct_id,
                             id: field_id,
                         })
                     }

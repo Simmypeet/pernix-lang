@@ -22,7 +22,7 @@ use crate::{
     },
     ir::{
         self,
-        address::{self, Address, Memory, ReferenceAddress, Variant},
+        address::{self, Address, Memory, Variant},
         instruction::{self, Instruction, Store, TuplePack},
         pattern::{
             Boolean, Enum, Integer, Irrefutable, NameBinding, NameBindingPoint,
@@ -96,6 +96,7 @@ pub(super) trait Pattern:
         binder: &mut Binder<S, RO, TO>,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
         pattern: &Self,
+        address_span: Option<Span>,
         binding: Binding,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
@@ -151,6 +152,7 @@ impl Pattern for Refutable {
         binder: &mut Binder<S, RO, TO>,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
         pattern: &Self,
+        address_span: Option<Span>,
         mut binding: Binding,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
@@ -181,6 +183,7 @@ impl Pattern for Refutable {
                             binding.r#type.clone(),
                             qualifier,
                             binding.address,
+                            address_span,
                             pat.span.clone(),
                             pat.name.clone(),
                             pat.is_mutable,
@@ -197,14 +200,17 @@ impl Pattern for Refutable {
                             );
 
                             // copy/move the value from the given address
-                            let load_value = Value::Register(
-                                binder.create_register_assignmnet(
-                                    Assignment::Load(Load {
-                                        address: binding.address,
-                                    }),
-                                    Some(pat.span.clone()),
-                                ),
-                            );
+                            let load_value =
+                                Value::Register(
+                                    binder.create_register_assignmnet(
+                                        Assignment::Load(Load {
+                                            address: binding.address,
+                                        }),
+                                        Some(address_span.unwrap_or_else(
+                                            || pat.span.clone(),
+                                        )),
+                                    ),
+                                );
 
                             // store the value to the alloca
                             let _ =
@@ -239,6 +245,7 @@ impl Pattern for Refutable {
                             binding.r#type.clone(),
                             binding.qualifier,
                             binding.address,
+                            address_span,
                             pat.span.clone(),
                             pat.name.clone(),
                             pat.is_mutable,
@@ -252,6 +259,7 @@ impl Pattern for Refutable {
                 binder.insert_named_binding_point_tuple(
                     name_binding_point,
                     pat,
+                    address_span,
                     binding,
                     must_copy,
                     handler,
@@ -262,6 +270,7 @@ impl Pattern for Refutable {
                 binder.insert_named_binding_point_structural(
                     name_binding_point,
                     pat,
+                    address_span,
                     binding,
                     must_copy,
                     handler,
@@ -308,12 +317,13 @@ impl Pattern for Refutable {
                         binder,
                         name_binding_point,
                         &**inner,
+                        address_span,
                         Binding {
                             kind: binding.kind,
                             r#type: &variant_ty,
                             address: Address::Variant(Variant {
                                 enum_address: Box::new(binding.address),
-                                variant_id: variant.variant_id,
+                                id: variant.variant_id,
                             }),
                             qualifier: binding.qualifier,
                         },
@@ -342,7 +352,8 @@ fn reduce_reference(mut binding: Binding) -> Binding {
                             Qualifier::Mutable
                         },
                     ),
-                    address: Address::ReferenceAddress(ReferenceAddress {
+                    address: Address::Reference(address::Reference {
+                        qualifier: reference.qualifier,
                         reference_address: Box::new(binding.address),
                     }),
                 };
@@ -393,6 +404,7 @@ impl Pattern for Irrefutable {
         binder: &mut Binder<S, RO, TO>,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
         pattern: &Self,
+        address_span: Option<Span>,
         binding: Binding,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
@@ -408,7 +420,9 @@ impl Pattern for Irrefutable {
                         if qualifier > binding.qualifier {
                             handler.receive(Box::new(
                                 MismatchedQualifierForReferenceOf {
-                                    reference_of_span: pat.span.clone(),
+                                    reference_of_span: address_span
+                                        .clone()
+                                        .unwrap_or_else(|| pat.span.clone()),
                                     found_qualifier: binding.qualifier,
                                     expected_qualifier: qualifier,
                                     is_behind_reference: binding
@@ -423,6 +437,7 @@ impl Pattern for Irrefutable {
                             binding.r#type.clone(),
                             qualifier,
                             binding.address,
+                            address_span,
                             pat.span.clone(),
                             pat.name.clone(),
                             pat.is_mutable,
@@ -435,18 +450,25 @@ impl Pattern for Irrefutable {
                         let load_address = if must_copy {
                             let alloca_id = binder.create_alloca(
                                 binding.r#type.clone(),
-                                Some(pat.span.clone()),
+                                Some(
+                                    address_span
+                                        .clone()
+                                        .unwrap_or_else(|| pat.span.clone()),
+                                ),
                             );
 
                             // copy/move the value from the given address
-                            let load_value = Value::Register(
-                                binder.create_register_assignmnet(
-                                    Assignment::Load(Load {
-                                        address: binding.address,
-                                    }),
-                                    Some(pat.span.clone()),
-                                ),
-                            );
+                            let load_value =
+                                Value::Register(
+                                    binder.create_register_assignmnet(
+                                        Assignment::Load(Load {
+                                            address: binding.address,
+                                        }),
+                                        Some(address_span.unwrap_or_else(
+                                            || pat.span.clone(),
+                                        )),
+                                    ),
+                                );
 
                             // store the value to the alloca
                             let _ =
@@ -481,6 +503,7 @@ impl Pattern for Irrefutable {
                             binding.r#type.clone(),
                             binding.qualifier,
                             binding.address,
+                            address_span,
                             pat.span.clone(),
                             pat.name.clone(),
                             pat.is_mutable,
@@ -494,6 +517,7 @@ impl Pattern for Irrefutable {
                 binder.insert_named_binding_point_tuple(
                     name_binding_point,
                     pat,
+                    address_span,
                     binding,
                     must_copy,
                     handler,
@@ -504,6 +528,7 @@ impl Pattern for Irrefutable {
                 binder.insert_named_binding_point_structural(
                     name_binding_point,
                     pat,
+                    address_span,
                     binding,
                     must_copy,
                     handler,
@@ -1137,6 +1162,7 @@ impl<
         irreftuable: &Irrefutable,
         simplified_type: &Type<infer::Model>,
         address: Address<infer::Model>,
+        address_span: Option<Span>,
         qualifier: Qualifier,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
@@ -1145,6 +1171,7 @@ impl<
             self,
             name_binding_point,
             irreftuable,
+            address_span,
             Binding {
                 kind: BindingKind::Value,
                 r#type: simplified_type,
@@ -1173,6 +1200,7 @@ impl<
         refutable: &Refutable,
         simplified_type: &Type<infer::Model>,
         address: Address<infer::Model>,
+        address_span: Option<Span>,
         qualifier: Qualifier,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
@@ -1181,6 +1209,7 @@ impl<
             self,
             name_binding_point,
             refutable,
+            address_span,
             Binding {
                 kind: BindingKind::Value,
                 r#type: simplified_type,
@@ -1199,7 +1228,8 @@ impl<
         address_type: Type<infer::Model>,
         qualifier: Qualifier,
         address: Address<infer::Model>,
-        span: Span,
+        address_span: Option<Span>,
+        pattern_span: Span,
         name: String,
         mutable: bool,
         handler: &dyn Handler<Box<dyn Error>>,
@@ -1211,7 +1241,7 @@ impl<
                 qualifier,
                 lifetime: Lifetime::Inference(Erased),
             }),
-            Some(span.clone()),
+            Some(address_span.unwrap_or_else(|| pattern_span.clone())),
         );
 
         let alloca_ty = Type::Reference(Reference {
@@ -1220,7 +1250,8 @@ impl<
             pointee: Box::new(address_type),
         });
 
-        let alloca_id = self.create_alloca(alloca_ty, Some(span.clone()));
+        let alloca_id =
+            self.create_alloca(alloca_ty, Some(pattern_span.clone()));
 
         let _ = self.current_block_mut().insert_instruction(
             instruction::Instruction::Store(Store {
@@ -1234,7 +1265,7 @@ impl<
             NameBinding {
                 mutable,
                 load_address: Address::Memory(Memory::Alloca(alloca_id)),
-                span,
+                span: pattern_span,
             },
             handler,
         );
@@ -1252,6 +1283,7 @@ impl<
         &mut self,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
         tuple_pat: &Tuple<T>,
+        address_span: Option<Span>,
         mut binding: Binding,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
@@ -1321,6 +1353,7 @@ impl<
                     self,
                     name_binding_point,
                     &tuple_pat.pattern,
+                    address_span.clone(),
                     Binding {
                         kind: binding.kind,
                         r#type: &tuple_ty.term,
@@ -1364,15 +1397,15 @@ impl<
 
                     let moved_reg = self.create_register_assignmnet(
                         Assignment::Load(Load { address: element_address }),
-                        Some(
+                        Some(address_span.clone().unwrap_or_else(|| {
                             tuple_pat
                                 .elements
                                 .get(packed_position)
                                 .unwrap()
                                 .pattern
                                 .span()
-                                .clone(),
-                        ),
+                                .clone()
+                        })),
                     );
 
                     let _ = self.current_block_mut().insert_instruction(
@@ -1422,15 +1455,15 @@ impl<
 
                     let moved_reg = self.create_register_assignmnet(
                         Assignment::Load(Load { address: element_address }),
-                        Some(
+                        Some(address_span.clone().unwrap_or_else(|| {
                             tuple_pat
                                 .elements
                                 .get(packed_position)
                                 .unwrap()
                                 .pattern
                                 .span()
-                                .clone(),
-                        ),
+                                .clone()
+                        })),
                     );
 
                     let _ = self.current_block_mut().insert_instruction(
@@ -1459,15 +1492,15 @@ impl<
 
                     let moved_reg = self.create_register_assignmnet(
                         Assignment::Load(Load { address: element_address }),
-                        Some(
+                        Some(address_span.clone().unwrap_or_else(|| {
                             tuple_pat
                                 .elements
                                 .get(packed_position)
                                 .unwrap()
                                 .pattern
                                 .span()
-                                .clone(),
-                        ),
+                                .clone()
+                        })),
                     );
 
                     let _ = self.current_block_mut().insert_instruction(
@@ -1488,6 +1521,7 @@ impl<
                 self,
                 name_binding_point,
                 &tuple_pat.elements.get(packed_position).unwrap().pattern,
+                address_span.clone(),
                 Binding {
                     kind: binding.kind,
                     r#type: &packed_type,
@@ -1524,6 +1558,7 @@ impl<
                     self,
                     name_binding_point,
                     &pat_elem.pattern,
+                    address_span.clone(),
                     Binding {
                         kind: binding.kind,
                         r#type: &ty_elem.term,
@@ -1556,6 +1591,7 @@ impl<
                     self,
                     name_binding_point,
                     &tuple_pat.pattern,
+                    address_span.clone(),
                     Binding {
                         kind: binding.kind,
                         r#type: tuple_ty,
@@ -1573,6 +1609,7 @@ impl<
         &mut self,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
         structural: &Structural<T>,
+        address_span: Option<Span>,
         mut binding: Binding,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
@@ -1618,7 +1655,6 @@ impl<
             binding_cloned.r#type = &field_ty;
             binding_cloned.address = Address::Field(address::Field {
                 struct_address: Box::new(binding_cloned.address),
-                struct_id,
                 id: field_id,
             });
 
@@ -1626,6 +1662,7 @@ impl<
                 self,
                 name_binding_point,
                 structural.patterns_by_field_id.get(&field_id).unwrap(),
+                address_span.clone(),
                 binding_cloned,
                 must_copy,
                 handler,
@@ -1778,7 +1815,8 @@ impl<
                     // update the address, reference binding
                     // info, and binding ty
                     ty = *reference.pointee;
-                    address = Address::ReferenceAddress(ReferenceAddress {
+                    address = Address::Reference(address::Reference {
+                        qualifier: reference.qualifier,
                         reference_address: Box::new(address),
                     });
                 }
@@ -1847,10 +1885,7 @@ impl<
                     variant_ty,
                     Address::Variant(address::Variant {
                         enum_address: Box::new(address),
-                        variant_id: reftuable_pattern
-                            .as_enum()
-                            .unwrap()
-                            .variant_id,
+                        id: reftuable_pattern.as_enum().unwrap().variant_id,
                     }),
                 );
 
@@ -1942,7 +1977,6 @@ impl<
                     field_ty,
                     Address::Field(address::Field {
                         struct_address: Box::new(address),
-                        struct_id,
                         id: path.field_id,
                     }),
                 );
