@@ -1183,7 +1183,7 @@ impl<
                     .iter()
                     .filter_map(|x| x.as_positive_trait().map(|x| x.id)),
             )
-            .collect::<Vec<_>>();
+            .collect::<HashSet<_>>();
 
         drop(current_module_sym);
         let starting_inference_context = self.inference_context.clone();
