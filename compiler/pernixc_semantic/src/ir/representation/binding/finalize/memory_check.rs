@@ -201,6 +201,7 @@ impl Values<ir::Model> {
             MemoryState::Initialized => {}
         }
     }
+
     fn handle_instruction<S: table::State>(
         &self,
         block: &mut Block<ir::Model>,
@@ -220,10 +221,10 @@ impl Values<ir::Model> {
         match &block.instructions()[inst_index] {
             Instruction::Store(store) => {
                 stack
-                    .current_mut()
                     .set_initialized(&store.address, environment.table())
                     .unwrap();
             }
+
             Instruction::RegisterAssignment(register_assignment) => {
                 let register =
                     self.registers.get(register_assignment.id).unwrap();
@@ -254,6 +255,7 @@ impl Values<ir::Model> {
                     | Assignment::VariantNumber(_) => {}
                 }
             }
+
             Instruction::AllocaDeclaration(alloca_declaration) => {
                 assert!(stack.current_mut().new_state(
                     Memory::Alloca(alloca_declaration.id),
