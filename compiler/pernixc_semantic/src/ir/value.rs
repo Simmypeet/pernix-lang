@@ -3,7 +3,7 @@
 use literal::Literal;
 use register::Register;
 
-use super::{representation::Representation, TypeOfError};
+use super::{representation::Values, TypeOfError};
 use crate::{
     arena::{Key, ID},
     symbol::{table, GlobalID},
@@ -58,7 +58,7 @@ impl<M: Model> Value<M> {
     }
 }
 
-impl<M: Model> Representation<M> {
+impl<M: Model> Values<M> {
     /// Gets the type of the [`Value`]
     ///
     /// # Parameters

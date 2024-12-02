@@ -384,7 +384,7 @@ impl<
         // binding finishes
 
         let alloca_id =
-            self.intermediate_representation.allocas.insert(Alloca {
+            self.intermediate_representation.values.allocas.insert(Alloca {
                 r#type,
                 declared_in_scope_id: self.stack.current_scope().scope_id(),
                 declaration_order: self
@@ -415,6 +415,7 @@ impl<
         let span = match &value {
             Value::Register(id) => self
                 .intermediate_representation
+                .values
                 .registers
                 .get(*id)
                 .unwrap()
@@ -486,6 +487,7 @@ impl<
     ) -> ID<Register<infer::Model>> {
         let register_id = self
             .intermediate_representation
+            .values
             .registers
             .insert(Register { assignment, span });
 
@@ -504,6 +506,7 @@ impl<
         register_id: ID<Register<infer::Model>>,
     ) -> Result<Type<infer::Model>, TypeOfError<infer::Model>> {
         self.intermediate_representation
+            .values
             .type_of_register(
                 register_id,
                 self.current_site,
@@ -529,6 +532,7 @@ impl<
         address: &Address<infer::Model>,
     ) -> Result<Type<infer::Model>, TypeOfError<infer::Model>> {
         self.intermediate_representation
+            .values
             .type_of_address(
                 address,
                 self.current_site,

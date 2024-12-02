@@ -149,7 +149,7 @@ fn try_simplify_to_uninitialized<'a>(
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
 )]
-enum LatestLoadInternal {
+enum LatestLoad {
     Uninitialized,
     Moved(ID<Register<ir::Model>>, usize),
 }
@@ -158,31 +158,34 @@ enum LatestLoadInternal {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
 )]
-pub enum LatestLoad {
+pub enum MemoryState {
+    Initialized,
     Uninitialized,
     Moved(ID<Register<ir::Model>>),
 }
 
 impl State {
     /// Returns the latest register ID that moved the value.
-    pub fn get_latest_load_register_id(&self) -> Option<LatestLoad> {
-        self.get_latest_accessor_internal().map(|x| match x {
-            LatestLoadInternal::Uninitialized => LatestLoad::Uninitialized,
-            LatestLoadInternal::Moved(id, _) => LatestLoad::Moved(id),
-        })
+    pub fn get_memory_state(&self) -> MemoryState {
+        self.get_latest_accessor_internal().map_or(
+            MemoryState::Initialized,
+            |x| match x {
+                LatestLoad::Uninitialized => MemoryState::Uninitialized,
+                LatestLoad::Moved(id, _) => MemoryState::Moved(id),
+            },
+        )
     }
 
-    fn get_latest_accessor_internal(&self) -> Option<LatestLoadInternal> {
+    fn get_latest_accessor_internal(&self) -> Option<LatestLoad> {
         match self {
             Self::Total(Initialized::False(Uninitialized {
                 latest_accessor,
                 version,
-            })) => Some(
-                latest_accessor
-                    .map_or(LatestLoadInternal::Uninitialized, |x| {
-                        LatestLoadInternal::Moved(x, *version)
-                    }),
-            ),
+            })) => {
+                Some(latest_accessor.map_or(LatestLoad::Uninitialized, |x| {
+                    LatestLoad::Moved(x, *version)
+                }))
+            }
             Self::Projection(Projection::Struct(Struct {
                 states_by_field_id,
             })) => {
@@ -197,8 +200,8 @@ impl State {
                         .chain(iter)
                         .filter_map(|x| x.into_moved().ok())
                         .max_by_key(|x| x.1)
-                        .map_or(LatestLoadInternal::Uninitialized, |x| {
-                            LatestLoadInternal::Moved(x.0, x.1)
+                        .map_or(LatestLoad::Uninitialized, |x| {
+                            LatestLoad::Moved(x.0, x.1)
                         }),
                 )
             }
@@ -214,8 +217,8 @@ impl State {
                         .chain(iter)
                         .filter_map(|x| x.into_moved().ok())
                         .max_by_key(|x| x.1)
-                        .map_or(LatestLoadInternal::Uninitialized, |x| {
-                            LatestLoadInternal::Moved(x.0, x.1)
+                        .map_or(LatestLoad::Uninitialized, |x| {
+                            LatestLoad::Moved(x.0, x.1)
                         }),
                 )
             }
@@ -453,6 +456,56 @@ impl Scope {
                 unreachable!()
             }
         })
+    }
+
+    /// Gets the state of the value in memory with the given address.
+    pub fn get_state(&self, address: &Address<ir::Model>) -> Option<&State> {
+        match address {
+            Address::Memory(memory) => {
+                self.memories_by_address.get(memory).map(|x| &x.state)
+            }
+
+            Address::Field(field) => {
+                let state = self.get_state(&field.struct_address)?;
+
+                state.as_projection().map_or(Some(state), |x| {
+                    x.as_struct()
+                        .and_then(|x| x.states_by_field_id.get(&field.id))
+                })
+            }
+
+            Address::Tuple(tuple) => {
+                let state = self.get_state(&tuple.tuple_address)?;
+
+                state.as_projection().map_or(Some(state), |x| {
+                    x.as_tuple().and_then(|x| {
+                        x.elements.get(match tuple.offset {
+                            address::Offset::FromStart(index) => index,
+                            address::Offset::FromEnd(index) => {
+                                x.elements.len() - index
+                            }
+                        })
+                    })
+                })
+            }
+
+            Address::Index(_) => None,
+
+            Address::Variant(variant) => {
+                let state = self.get_state(&variant.enum_address)?;
+
+                state
+                    .as_projection()
+                    .map_or(Some(state), |x| x.as_enum().map(|x| &*x.state))
+            }
+            Address::Reference(reference) => {
+                let state = self.get_state(&reference.reference_address)?;
+
+                state.as_projection().map_or(Some(state), |x| {
+                    x.as_mutable_reference().map(|x| &*x.state)
+                })
+            }
+        }
     }
 
     // returns `Ok(None)` if the state is already satisfied

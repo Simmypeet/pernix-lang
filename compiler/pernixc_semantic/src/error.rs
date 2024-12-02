@@ -3410,6 +3410,55 @@ where
     }
 }
 
+/// The value is used after it has been moved.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UseAfterMove {
+    /// The span where the value is used.
+    pub use_span: Span,
+
+    /// The span where the value is moved.
+    pub move_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for UseAfterMove {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.use_span.clone(),
+            message: "the value is used after it has been moved".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: vec![Related {
+                span: self.move_span.clone(),
+                message: "the value is moved here".to_string(),
+            }],
+        })
+    }
+}
+
+/// The value is used before it has been initialized.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UseBeforeInitialization {
+    /// The span where the value is used.
+    pub use_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for UseBeforeInitialization {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.use_span.clone(),
+            message: "the value is used before it has been initialized"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
 /// The predicates are ambiguous to each other.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AmbiguousPredicates<M: Model> {

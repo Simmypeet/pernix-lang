@@ -12,8 +12,8 @@ use super::Value;
 use crate::{
     arena::ID,
     ir::{
-        address::Address, control_flow_graph::Block,
-        representation::Representation, TypeOfError,
+        address::Address, control_flow_graph::Block, representation::Values,
+        TypeOfError,
     },
     symbol::{
         self,
@@ -55,7 +55,7 @@ pub struct Tuple<M: Model> {
     pub elements: Vec<TupleElement<M>>,
 }
 
-impl<M: Model> Representation<M> {
+impl<M: Model> Values<M> {
     fn type_of_tuple_assignment<S: table::State>(
         &self,
         tuple: &Tuple<M>,
@@ -104,7 +104,7 @@ pub struct Load<M: Model> {
     pub address: Address<M>,
 }
 
-impl<M: Model> Representation<M> {
+impl<M: Model> Values<M> {
     fn type_of_load_assignment<S: table::State>(
         &self,
         load: &Load<M>,
@@ -133,7 +133,7 @@ pub struct ReferenceOf<M: Model> {
     pub lifetime: Lifetime<M>,
 }
 
-impl<M: Model> Representation<M> {
+impl<M: Model> Values<M> {
     fn type_of_reference_of_assignment<S: table::State>(
         &self,
         reference_of: &ReferenceOf<M>,
@@ -187,7 +187,7 @@ pub struct Prefix<M: Model> {
     pub operator: PrefixOperator,
 }
 
-impl<M: Model> Representation<M> {
+impl<M: Model> Values<M> {
     fn type_of_prefix_assignment<S: table::State>(
         &self,
         prefix: &Prefix<M>,
@@ -397,7 +397,7 @@ pub struct Binary<M: Model> {
     pub operator: BinaryOperator,
 }
 
-impl<M: Model> Representation<M> {
+impl<M: Model> Values<M> {
     fn type_of_binary<S: table::State>(
         &self,
         binary: &Binary<M>,
@@ -502,7 +502,7 @@ pub struct Register<M: Model> {
     pub span: Option<Span>,
 }
 
-impl<M: Model> Representation<M> {
+impl<M: Model> Values<M> {
     /// Gets the type of the [`Register`] with the given ID.
     ///
     /// # Parameters

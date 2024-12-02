@@ -260,6 +260,10 @@ impl<M: Model> Instantiation<M> {
     ///
     /// The function will search for the corresponding instantiation for each
     /// generic parameter.
+    ///
+    /// # Errors
+    ///
+    /// See [`MissingInstantiationError`] for the possible errors.
     pub fn create_generic_arguments(
         &self,
         generic_id: GenericID,

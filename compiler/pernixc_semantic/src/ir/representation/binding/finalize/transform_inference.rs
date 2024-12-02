@@ -552,7 +552,7 @@ pub fn transform_inference(
         .filter_map(|x| x.as_alloca_declaration().map(|x| x.id))
         .collect::<HashSet<_>>();
 
-    original.allocas.retain(|id, _| used_allocas.contains(&id));
+    original.values.allocas.retain(|id, _| used_allocas.contains(&id));
 
     let used_registers = original
         .control_flow_graph
@@ -561,21 +561,22 @@ pub fn transform_inference(
         .filter_map(|x| x.as_register_assignment().map(|x| x.id))
         .collect::<HashSet<_>>();
 
-    original.registers.retain(|id, _| used_registers.contains(&id));
+    original.values.registers.retain(|id, _| used_registers.contains(&id));
 
     let mut result = ir::Representation::<ir::Model>::default();
 
     let mut transformer =
         Transformer { inference_context, handler, should_report: false };
 
-    result.allocas =
-        original.allocas.map(|x| x.transform_model(&mut transformer));
+    result.values.allocas =
+        original.values.allocas.map(|x| x.transform_model(&mut transformer));
 
     transformer.should_report = true;
 
     result.control_flow_graph =
         original.control_flow_graph.transform_model(&mut transformer);
-    result.registers = original
+    result.values.registers = original
+        .values
         .registers
         .map(|x| x.transform_model(&mut transformer, inference_context, table));
     result.scope_tree = original.scope_tree;

@@ -86,6 +86,7 @@ fn unreachable_match_arm() {
                 |binder, exp, errors, _| {
                     let phi_node = binder
                         .intermediate_representation
+                        .values
                         .registers
                         .get(
                             exp.unwrap()
@@ -142,6 +143,7 @@ fn unreachable_match_arm() {
                 |binder, exp, errors, _| {
                     let phi_node = binder
                         .intermediate_representation
+                        .values
                         .registers
                         .get(
                             exp.unwrap()
@@ -209,6 +211,7 @@ fn unreachable_match_arm() {
                 |binder, exp, errors, _| {
                     let phi_node = binder
                         .intermediate_representation
+                        .values
                         .registers
                         .get(
                             exp.unwrap()
@@ -290,6 +293,7 @@ fn exhaustive_match_arm() {
 
                 let phi_node = binder
                     .intermediate_representation
+                    .values
                     .registers
                     .get(
                         exp.unwrap()

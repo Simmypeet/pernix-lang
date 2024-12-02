@@ -99,6 +99,7 @@ impl Representation<infer::Model> {
                 };
 
                 let Assignment::ReferenceOf(reference_of) = &self
+                    .values
                     .registers
                     .get(register_assignment.id)
                     .unwrap()
@@ -125,7 +126,7 @@ impl Representation<infer::Model> {
                     == Address::Memory(Memory::Alloca(stored_address_alloca_id))
         }));
 
-        let alloca = self.allocas.get(stored_address_alloca_id).unwrap();
+        let alloca = self.values.allocas.get(stored_address_alloca_id).unwrap();
 
         assert_eq!(
             alloca.r#type,
@@ -896,6 +897,7 @@ fn more_packed_tuple() {
                 && store.value.as_register().copied().map_or(false, |reg| {
                     binder
                         .intermediate_representation
+                        .values
                         .registers
                         .get(reg)
                         .and_then(|reg| reg.assignment.as_load())
@@ -924,6 +926,7 @@ fn more_packed_tuple() {
                 && store.value.as_register().copied().map_or(false, |reg| {
                     binder
                         .intermediate_representation
+                        .values
                         .registers
                         .get(reg)
                         .and_then(|reg| reg.assignment.as_load())
@@ -952,6 +955,7 @@ fn more_packed_tuple() {
                 && store.value.as_register().copied().map_or(false, |reg| {
                     binder
                         .intermediate_representation
+                        .values
                         .registers
                         .get(reg)
                         .and_then(|reg| reg.assignment.as_load())
@@ -971,6 +975,7 @@ fn more_packed_tuple() {
         assert_eq!(
             binder
                 .intermediate_representation
+                .values
                 .allocas
                 .get(*load_address.as_memory().unwrap().as_alloca().unwrap())
                 .unwrap()

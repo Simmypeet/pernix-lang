@@ -463,6 +463,7 @@ fn bind_prefix_operator() {
 
     assert!(binder
         .intermediate_representation
+        .values
         .registers
         .get(local)
         .unwrap()
@@ -483,6 +484,7 @@ fn bind_prefix_operator() {
 
     assert!(binder
         .intermediate_representation
+        .values
         .registers
         .get(logical_not)
         .unwrap()
@@ -499,6 +501,7 @@ fn bind_prefix_operator() {
 
     assert!(binder
         .intermediate_representation
+        .values
         .registers
         .get(negate)
         .unwrap()
@@ -519,6 +522,7 @@ fn bind_prefix_operator() {
 
     assert!(binder
         .intermediate_representation
+        .values
         .registers
         .get(bitwise_not)
         .unwrap()
@@ -535,6 +539,7 @@ fn bind_prefix_operator() {
 
     assert!(binder
         .intermediate_representation
+        .values
         .registers
         .get(unlocal)
         .unwrap()
@@ -723,6 +728,7 @@ fn named_load() {
     assert_eq!(
         binder
             .intermediate_representation
+            .values
             .registers
             .get(register_id)
             .unwrap()
@@ -806,6 +812,7 @@ fn reference_of() {
         |id: ID<Register<infer::Model>>, qualifier: Qualifier| {
             let reference_of = binder
                 .intermediate_representation
+                .values
                 .registers
                 .get(id)
                 .unwrap()
@@ -910,8 +917,12 @@ fn dereference_as_value() {
 
     assert!(storage.as_vec().is_empty());
 
-    let dereference_register =
-        binder.intermediate_representation.registers.get(register_id).unwrap();
+    let dereference_register = binder
+        .intermediate_representation
+        .values
+        .registers
+        .get(register_id)
+        .unwrap();
 
     let dereference = dereference_register.assignment.as_load().unwrap();
 
@@ -1058,6 +1069,7 @@ fn struct_expression() {
         |field_id: ID<Field>, expected_string: &str| {
             let register = binder
                 .intermediate_representation
+                .values
                 .registers
                 .get(register_id)
                 .unwrap();
@@ -1436,6 +1448,7 @@ fn variant_call() {
 
     let first_assignment = binder
         .intermediate_representation
+        .values
         .registers
         .get(first_register_id)
         .unwrap()
@@ -1473,6 +1486,7 @@ fn variant_call() {
 
     let fourth_assignment = binder
         .intermediate_representation
+        .values
         .registers
         .get(fourth_register_id)
         .unwrap()
@@ -1646,6 +1660,7 @@ fn qualified_identifier_variant() {
 
     let fourth_assignment = binder
         .intermediate_representation
+        .values
         .registers
         .get(fourth_register)
         .unwrap()
@@ -1804,6 +1819,7 @@ fn function_call() {
 
     let function_call_assignment = binder
         .intermediate_representation
+        .values
         .registers
         .get(call_register)
         .unwrap()
@@ -2028,6 +2044,7 @@ fn assignment() {
 
     let register = binder
         .intermediate_representation
+        .values
         .registers
         .get(register_id)
         .unwrap()
@@ -2064,6 +2081,7 @@ fn normal_operator() {
 
         let register = binder
             .intermediate_representation
+            .values
             .registers
             .get(register_id)
             .unwrap()
@@ -2154,6 +2172,7 @@ fn compound_binary_operator() {
 
         let Some(binary) = binder
             .intermediate_representation
+            .values
             .registers
             .get(*binary_register_id)
             .unwrap()
@@ -2174,6 +2193,7 @@ fn compound_binary_operator() {
 
         let Some(load) = binder
             .intermediate_representation
+            .values
             .registers
             .get(binary_lhs_register_id)
             .unwrap()
@@ -2219,6 +2239,7 @@ fn binary_operator_precedence() {
 
     let add_register = binder
         .intermediate_representation
+        .values
         .registers
         .get(add_op)
         .unwrap()
@@ -2238,6 +2259,7 @@ fn binary_operator_precedence() {
 
     let mul_register = binder
         .intermediate_representation
+        .values
         .registers
         .get(*add_register.rhs.as_register().unwrap())
         .unwrap()
@@ -2357,6 +2379,7 @@ fn multiple_express_block() {
 
     let phi = binder
         .intermediate_representation
+        .values
         .registers
         .get(register_id)
         .unwrap()
@@ -2523,6 +2546,7 @@ fn parenthesized_as_single_tuple() {
 
         let tuple_assignment = binder
             .intermediate_representation
+            .values
             .registers
             .get(register_id)
             .unwrap()
@@ -2550,6 +2574,7 @@ fn parenthesized_as_tuple() {
 
         let tuple_assignment = binder
             .intermediate_representation
+            .values
             .registers
             .get(register_id)
             .unwrap()
@@ -2582,6 +2607,7 @@ fn parenthesized_as_tuple() {
 
             let tuple_assignment = binder
                 .intermediate_representation
+                .values
                 .registers
                 .get(*register_id)
                 .unwrap()
@@ -2670,6 +2696,7 @@ fn zero_element_array() {
 
         let array_assignment = binder
             .intermediate_representation
+            .values
             .registers
             .get(register_id)
             .unwrap()
@@ -2707,6 +2734,7 @@ fn array() {
 
         let array_assignment = binder
             .intermediate_representation
+            .values
             .registers
             .get(reigster_id)
             .unwrap()
@@ -2756,6 +2784,7 @@ fn array_type_mismatched_error() {
 
         let array_assignment = binder
             .intermediate_representation
+            .values
             .registers
             .get(register_id)
             .unwrap()
@@ -2843,6 +2872,7 @@ fn multiple_break_loop() {
 
         let phi = binder
             .intermediate_representation
+            .values
             .registers
             .get(register_id)
             .unwrap()
@@ -2888,6 +2918,7 @@ fn create_temporary_lvalue() {
 
         let reference_of = binder
             .intermediate_representation
+            .values
             .registers
             .get(register_id)
             .unwrap()
@@ -2953,6 +2984,7 @@ fn cast() {
 
         let cast = binder
             .intermediate_representation
+            .values
             .registers
             .get(register_id)
             .unwrap()
@@ -3430,6 +3462,7 @@ fn arrow_access() {
 
             let reference_of = binder
                 .intermediate_representation
+                .values
                 .registers
                 .get(store.value.as_register().copied().unwrap())
                 .unwrap()
@@ -3488,6 +3521,7 @@ fn struct_method() {
 
             let call = binder
                 .intermediate_representation
+                .values
                 .registers
                 .get(call_register_id)
                 .unwrap()
@@ -3506,6 +3540,7 @@ fn struct_method() {
 
             let load = binder
                 .intermediate_representation
+                .values
                 .registers
                 .get(load_register_id)
                 .unwrap()
@@ -3536,6 +3571,7 @@ fn struct_method() {
 
             let call = binder
                 .intermediate_representation
+                .values
                 .registers
                 .get(call_register_id)
                 .unwrap()
@@ -3554,6 +3590,7 @@ fn struct_method() {
 
             let reference_of = binder
                 .intermediate_representation
+                .values
                 .registers
                 .get(reference_of_register_id)
                 .unwrap()
@@ -3593,6 +3630,7 @@ fn struct_method() {
 
             let call = binder
                 .intermediate_representation
+                .values
                 .registers
                 .get(call_register_id)
                 .unwrap()
@@ -3611,6 +3649,7 @@ fn struct_method() {
 
             let reference_of = binder
                 .intermediate_representation
+                .values
                 .registers
                 .get(reference_of_register_id)
                 .unwrap()
@@ -3930,6 +3969,7 @@ fn trait_method() {
 
             let call = binder
                 .intermediate_representation
+                .values
                 .registers
                 .get(call_register_id)
                 .unwrap()
@@ -3955,6 +3995,7 @@ fn trait_method() {
 
             let call = binder
                 .intermediate_representation
+                .values
                 .registers
                 .get(call_register_id)
                 .unwrap()

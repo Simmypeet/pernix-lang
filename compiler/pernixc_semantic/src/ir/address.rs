@@ -3,7 +3,7 @@
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    alloca::Alloca, representation::Representation, value::Value, TypeOfError,
+    alloca::Alloca, representation::Values, value::Value, TypeOfError,
 };
 use crate::{
     arena::{Key, ID},
@@ -271,7 +271,7 @@ impl<M: Model> Address<M> {
     }
 }
 
-impl<M: Model> Representation<M> {
+impl<M: Model> Values<M> {
     /// Gets the type of the [`Address`] with the given ID.
     ///
     /// # Parameters

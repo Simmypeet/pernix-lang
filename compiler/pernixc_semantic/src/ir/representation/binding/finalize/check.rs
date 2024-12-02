@@ -98,7 +98,7 @@ impl Representation<ir::Model> {
         handler: &HandlerWrapper,
     ) {
         let register =
-            self.registers.get(register_id).expect("Register not found");
+            self.values.registers.get(register_id).expect("Register not found");
 
         match &register.assignment {
             register::Assignment::Struct(st) => {
@@ -283,6 +283,7 @@ impl Representation<ir::Model> {
                     || load.address.is_behind_index()
                 {
                     let ty = self
+                        .values
                         .type_of_address(
                             &load.address,
                             current_site,
@@ -327,6 +328,7 @@ impl Representation<ir::Model> {
             register::Assignment::Tuple(tuple) => {
                 for element in tuple.elements.iter().filter(|x| x.is_unpacked) {
                     let ty = self
+                        .values
                         .type_of_value(
                             &element.value,
                             current_site,
@@ -348,6 +350,7 @@ impl Representation<ir::Model> {
                             error,
                             match &element.value {
                                 ir::value::Value::Register(id) => self
+                                    .values
                                     .registers
                                     .get(*id)
                                     .unwrap()

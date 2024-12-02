@@ -1451,6 +1451,7 @@ impl<
                 let span = match &value {
                     Value::Register(id) => self
                         .intermediate_representation
+                        .values
                         .registers
                         .get(*id)
                         .unwrap()
@@ -1537,6 +1538,7 @@ impl<
             let span = match &reciever {
                 Expression::RValue(Value::Register(register_id)) => self
                     .intermediate_representation
+                    .values
                     .registers
                     .get(*register_id)
                     .unwrap()
@@ -3108,6 +3110,7 @@ impl<
                 match element {
                     Value::Register(register_id) => self
                         .intermediate_representation
+                        .values
                         .registers
                         .get(*register_id)
                         .unwrap()

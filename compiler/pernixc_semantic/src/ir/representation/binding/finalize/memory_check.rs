@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use getset::Getters;
-use pernixc_base::handler::Handler;
+use pernixc_base::{handler::Handler, source_file::Span};
 
 use super::state::{
-    LatestLoad, Scope, SetStateError, SetStateSucceeded, State, Uninitialized,
+    self, MemoryState, Scope, SetStateError, SetStateSucceeded, Uninitialized,
 };
 use crate::{
     arena::ID,
@@ -14,9 +14,9 @@ use crate::{
         address::{Address, Memory},
         control_flow_graph::Block,
         instruction::Instruction,
-        representation::binding::HandlerWrapper,
+        representation::{binding::HandlerWrapper, Values},
         scope,
-        value::register::{Assignment, Register},
+        value::register::{Assignment, Load, Register},
     },
     symbol::{
         table::{self, Table},
@@ -65,6 +65,22 @@ impl Stack {
         Err(SetStateError::InvalidAddress)
     }
 
+    pub fn get_state(
+        &self,
+        address: &Address<ir::Model>,
+    ) -> Option<&state::State> {
+        let root = address.get_root_memory();
+
+        for scope in self.scopes.iter().rev() {
+            if scope.contains(root) {
+                return scope.get_state(address);
+            }
+        }
+
+        // not found
+        None
+    }
+
     pub fn set_uninitialized(
         &mut self,
         address: &Address<ir::Model>,
@@ -93,13 +109,104 @@ impl Stack {
     pub fn current(&self) -> &Scope { self.scopes.last().unwrap() }
 }
 
-impl ir::Representation<ir::Model> {
-    fn handle<S: table::State>(
-        &mut self,
-        block: ID<Block<ir::Model>>,
+impl Values<ir::Model> {
+    fn handle_load<S: table::State>(
+        &self,
+        load: &Load<ir::Model>,
+        register_id: ID<Register<ir::Model>>,
+        register_span: Span,
+        stack: &mut Stack,
+        current_site: GlobalID,
+        environment: &Environment<
+            ir::Model,
+            S,
+            impl Normalizer<ir::Model, S>,
+            impl Observer<ir::Model, S>,
+        >,
+        handler: &HandlerWrapper,
+    ) {
+        let ty = self
+            .type_of_address(&load.address, current_site, environment)
+            .unwrap();
+
+        // has been checked previously
+        let memory_state = if load.address.get_reference_qualifier()
+            == Some(Qualifier::Immutable)
+            || load.address.is_behind_index()
+        {
+            stack.get_state(&load.address).unwrap().get_memory_state()
+        } else {
+            let copy_marker = environment
+                .table()
+                .get_by_qualified_name(["core", "Copy"].into_iter())
+                .unwrap()
+                .into_marker()
+                .unwrap();
+
+            // no need to move
+            if well_formedness::predicate_satisfied(
+                Predicate::PositiveMarker(PositiveMarker::new(
+                    copy_marker,
+                    GenericArguments {
+                        lifetimes: Vec::new(),
+                        types: vec![ty.result],
+                        constants: Vec::new(),
+                    },
+                )),
+                None,
+                false,
+                environment,
+            )
+            .iter()
+            .all(well_formedness::Error::is_lifetime_constraints)
+            {
+                return;
+            }
+
+            let state = stack
+                .set_uninitialized(
+                    &load.address,
+                    register_id,
+                    environment.table(),
+                )
+                .unwrap();
+
+            match state {
+                SetStateSucceeded::Unchanged(initialized) => initialized
+                    .as_false()
+                    .and_then(Uninitialized::latest_accessor)
+                    .map(MemoryState::Moved)
+                    .unwrap_or(MemoryState::Initialized),
+
+                SetStateSucceeded::Updated(state) => state.get_memory_state(),
+            }
+        };
+
+        match memory_state {
+            MemoryState::Uninitialized => {
+                handler.receive(Box::new(UseBeforeInitialization {
+                    use_span: register_span,
+                }));
+            }
+
+            MemoryState::Moved(id) => {
+                let prior_load_register = self.registers.get(id).unwrap();
+
+                handler.receive(Box::new(UseAfterMove {
+                    use_span: register_span,
+                    move_span: prior_load_register.span.clone().unwrap(),
+                }));
+            }
+
+            MemoryState::Initialized => {}
+        }
+    }
+    fn handle_instruction<S: table::State>(
+        &self,
+        block: &mut Block<ir::Model>,
+        scope_tree: &scope::Tree,
         inst_index: usize,
         stack: &mut Stack,
-        visited: &mut Vec<ID<Block<ir::Model>>>,
         stack_states_by_scope_id: &mut HashMap<ID<scope::Scope>, Stack>,
         current_site: GlobalID,
         environment: &Environment<
@@ -110,8 +217,6 @@ impl ir::Representation<ir::Model> {
         >,
         handler: &HandlerWrapper,
     ) {
-        let block = self.control_flow_graph.get_block(block).unwrap();
-
         match &block.instructions()[inst_index] {
             Instruction::Store(store) => {
                 stack
@@ -125,99 +230,15 @@ impl ir::Representation<ir::Model> {
 
                 match &register.assignment {
                     Assignment::Load(load) => {
-                        let ty = self
-                            .type_of_address(
-                                &load.address,
-                                current_site,
-                                environment,
-                            )
-                            .unwrap();
-
-                        // has been checked previously
-                        if load.address.get_reference_qualifier()
-                            == Some(Qualifier::Immutable)
-                            || load.address.is_behind_index()
-                        {
-                            return;
-                        }
-
-                        let copy_marker = environment
-                            .table()
-                            .get_by_qualified_name(["core", "Copy"].into_iter())
-                            .unwrap()
-                            .into_marker()
-                            .unwrap();
-
-                        // no need to move
-
-                        if well_formedness::predicate_satisfied(
-                            Predicate::PositiveMarker(PositiveMarker::new(
-                                copy_marker,
-                                GenericArguments {
-                                    lifetimes: Vec::new(),
-                                    types: vec![ty.result],
-                                    constants: Vec::new(),
-                                },
-                            )),
-                            None,
-                            false,
+                        self.handle_load(
+                            load,
+                            register_assignment.id,
+                            register.span.clone().unwrap(),
+                            stack,
+                            current_site,
                             environment,
-                        )
-                        .iter()
-                        .all(well_formedness::Error::is_lifetime_constraints)
-                        {
-                            return;
-                        }
-
-                        let state = dbg!(stack
-                            .set_uninitialized(
-                                dbg!(&load.address),
-                                register_assignment.id,
-                                environment.table(),
-                            )
-                            .unwrap());
-
-                        let latest_load = match state {
-                            SetStateSucceeded::Unchanged(initialized) => {
-                                initialized
-                                    .as_false()
-                                    .and_then(Uninitialized::latest_accessor)
-                                    .map(LatestLoad::Moved)
-                            }
-                            SetStateSucceeded::Updated(state) => {
-                                state.get_latest_load_register_id()
-                            }
-                        };
-
-                        if let Some(latest_load) = latest_load {
-                            match latest_load {
-                                LatestLoad::Uninitialized => {
-                                    handler.receive(Box::new(
-                                        UseBeforeInitialization {
-                                            use_span: register
-                                                .span
-                                                .clone()
-                                                .unwrap(),
-                                        },
-                                    ));
-                                }
-                                LatestLoad::Moved(id) => {
-                                    let prior_load_register =
-                                        self.registers.get(id).unwrap();
-
-                                    handler.receive(Box::new(UseAfterMove {
-                                        use_span: register
-                                            .span
-                                            .clone()
-                                            .unwrap(),
-                                        move_span: prior_load_register
-                                            .span
-                                            .clone()
-                                            .unwrap(),
-                                    }));
-                                }
-                            }
-                        }
+                            handler,
+                        );
                     }
 
                     Assignment::Tuple(_)
@@ -253,7 +274,7 @@ impl ir::Representation<ir::Model> {
                 'out: {
                     // if we're in the function and at the root scope,
                     // we need to initialize the parameters
-                    if scope_push.0 == self.scope_tree.root_scope_id() {
+                    if scope_push.0 == scope_tree.root_scope_id() {
                         let Ok(callable_id) =
                             CallableID::try_from(current_site)
                         else {
@@ -304,7 +325,9 @@ impl ir::Representation<ir::Model> {
             Instruction::Drop(_) => {}
         }
     }
+}
 
+impl ir::Representation<ir::Model> {
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     fn walk<S: table::State>(
         &mut self,
@@ -336,11 +359,11 @@ impl ir::Representation<ir::Model> {
                 .instructions()
                 .len()
         {
-            self.handle(
-                block_id,
+            self.values.handle_instruction(
+                self.control_flow_graph.get_block_mut(block_id).unwrap(),
+                &self.scope_tree,
                 current_index,
                 stack,
-                visited,
                 stack_states_by_scope_id,
                 current_site,
                 environment,
