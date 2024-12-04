@@ -1,43 +1,10 @@
 //! Contains the definition of the intermediate representation of the program.
-//!
-//! ## Steps of Creating IR
-//!
-//! ### Binding
-//!
-//! The syntax tree is traversed and the Control Flow Graph (CFG) is built.
-//! During this step, the type inference and type checking are performed.
-//!
-//! The model used for the type system in this step is
-//! [`representation::binding::infer::Model`].
-//!
-//! ### Auto Move Analysis
-//!
-//! In the prior step, every load instruction is performed as copy. In this
-//! step, the redundant copy instructions are removed and replaced with move
-//! instructions.
-//!
-//! ### Alternate Drop Analysis
-//!
-//! The required drop instructions are inserted in the CFG. These drop
-//! instructions are inserted in the alternative path when the value is moved
-//! out.
-//!
-//! ### Well-formedness
-//!
-//! After the Binding step, when the full type information is available, the
-//! IR is checked for well-formedness. This step includes checking for
-//! where clauses predicates, type bounds, move/copy,and other
-//! type-related checks.
-//!
-//! ### Borrow Checking
-//!
-//! The copy of IR is created and all the "erased" lifetimes are replaced with
-//! the inference variables. The borrow checking is performed on this copy.
 
 use std::{fmt::Debug, hash::Hash};
 
 use address::Address;
 use alloca::Alloca;
+use pernixc_base::source_file::Span;
 use value::{register::Register, Value};
 
 use self::representation::Representation;
@@ -147,8 +114,37 @@ pub struct IR<T: State> {
     state: T,
 }
 
-/// An error returned calling [`Representation::type_of_register`] and
-/// [`Representation::type_of_address`].
+/// A trait for transforming terms from one model to another.
+///
+/// For example, this can be used when finishing the inference process to
+/// transform the terms from the inference model to the final concrete model.
+pub trait Transform<T: Term> {
+    /// The target model to transform the terms to.
+    type Target: model::Model;
+
+    /// Transforms a term from the current model to the target model.
+    ///
+    /// # Parameters
+    ///
+    /// - `term`: The term to transform.
+    fn transform(&mut self, term: T) -> T::Rebind<Self::Target>;
+
+    /// Inspects a term from the current model.
+    fn inspect(&mut self, _: &T, _: Option<Span>) {}
+
+    /// Inspects and transforms a term from the current model.
+    fn inspect_and_transform(
+        &mut self,
+        term: T,
+        span: Option<Span>,
+    ) -> T::Rebind<Self::Target> {
+        self.inspect(&term, span);
+        self.transform(term)
+    }
+}
+
+/// An error returned calling [`representation::Values::type_of_register`] and
+/// [`representation::Values::type_of_address`].
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]

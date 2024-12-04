@@ -3,12 +3,15 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
 
-use crate::type_system::{
-    model::{Model, Transform},
-    term::{
-        self, constant,
-        lifetime::Lifetime,
-        r#type::{Array, Primitive, Qualifier, Reference, Type},
+use crate::{
+    ir::Transform,
+    type_system::{
+        model::Model,
+        term::{
+            self, constant,
+            lifetime::Lifetime,
+            r#type::{Array, Primitive, Qualifier, Reference, Type},
+        },
     },
 };
 
@@ -146,26 +149,31 @@ impl<M: Model> Literal<M> {
             Self::Numeric(numeric) => Literal::Numeric(Numeric {
                 integer_string: numeric.integer_string,
                 decimal_stirng: numeric.decimal_stirng,
-                r#type: transformer
-                    .transform(numeric.r#type, numeric.span.clone()),
+                r#type: transformer.inspect_and_transform(
+                    numeric.r#type,
+                    numeric.span.clone(),
+                ),
                 span: numeric.span,
             }),
             Self::Boolean(boolean) => Literal::Boolean(boolean),
             Self::Error(error) => Literal::Error(Error {
-                r#type: transformer.transform(error.r#type, error.span.clone()),
+                r#type: transformer
+                    .inspect_and_transform(error.r#type, error.span.clone()),
                 span: error.span,
             }),
             Self::Unit(unit) => Literal::Unit(unit),
             Self::String(s) => Literal::String(s),
             Self::Character(character) => Literal::Character(Character {
                 character: character.character,
-                r#type: transformer
-                    .transform(character.r#type, character.span.clone()),
+                r#type: transformer.inspect_and_transform(
+                    character.r#type,
+                    character.span.clone(),
+                ),
                 span: character.span,
             }),
             Self::Unreachable(unreachable) => {
                 Literal::Unreachable(Unreachable {
-                    r#type: transformer.transform(
+                    r#type: transformer.inspect_and_transform(
                         unreachable.r#type,
                         unreachable.span.clone(),
                     ),
@@ -173,8 +181,10 @@ impl<M: Model> Literal<M> {
                 })
             }
             Self::Phantom(phantom) => Literal::Phantom(Phantom {
-                r#type: transformer
-                    .transform(phantom.r#type, phantom.span.clone()),
+                r#type: transformer.inspect_and_transform(
+                    phantom.r#type,
+                    phantom.span.clone(),
+                ),
                 span: phantom.span,
             }),
         }

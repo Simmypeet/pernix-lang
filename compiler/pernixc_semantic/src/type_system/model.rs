@@ -2,10 +2,8 @@
 
 use std::{fmt::Debug, hash::Hash};
 
-use pernixc_base::source_file::Span;
-
 use super::term::{
-    constant::Constant, lifetime::Lifetime, r#type::Type, Never, Term,
+    constant::Constant, lifetime::Lifetime, r#type::Type, Never,
 };
 
 /// The model that the terms will be based on.
@@ -90,26 +88,4 @@ impl Model for Default {
     fn from_default_constant(constant: Constant<Default>) -> Constant<Self> {
         constant
     }
-}
-
-/// A trait for transforming terms from one model to another.
-///
-/// For example, this can be used when finishing the inference process to
-/// transform the terms from the inference model to the final concrete model.
-pub trait Transform<T: Term> {
-    /// The target model to transform the terms to.
-    type Target: Model;
-
-    /// Transforms a term from the current model to the target model.
-    ///
-    /// # Parameters
-    ///
-    /// - `term`: The term to transform.
-    /// - `span`: The location of the expression/declaration that have the term;
-    ///   this is used for error reporting.
-    fn transform(
-        &mut self,
-        term: T,
-        span: Option<Span>,
-    ) -> T::Rebind<Self::Target>;
 }

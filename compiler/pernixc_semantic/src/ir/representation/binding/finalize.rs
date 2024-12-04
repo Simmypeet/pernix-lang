@@ -22,10 +22,9 @@ use crate::{
     },
 };
 
+mod borrow;
 mod check;
 mod memory;
-//mod memory_check;
-//mod state;
 mod transform_inference;
 
 impl<
@@ -113,6 +112,14 @@ impl<
             &environment,
             &handler_wrapper,
         );
+
+        // stop now, it will produce useless errors
+        if *handler_wrapper.suboptimal.read() {
+            return Err(IR {
+                representation: transformed_ir,
+                state: Suboptimal,
+            });
+        }
 
         Ok(IR { representation: transformed_ir, state: Success(()) })
     }

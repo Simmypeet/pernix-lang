@@ -856,11 +856,11 @@ impl<
                     ) => Some(Box::new(CyclicInference {
                         first: self
                             .inference_context
-                            .into_constraint_model(simplified_ty)
+                            .transform_type_into_constraint_model(simplified_ty)
                             .unwrap(),
                         second: self
                             .inference_context
-                            .into_constraint_model(simplified_expected)
+                            .transform_type_into_constraint_model(simplified_expected)
                             .unwrap(),
                         span: type_check_span.clone(),
                     })),
@@ -874,11 +874,11 @@ impl<
                     ) => Some(Box::new(MismatchedType {
                         expected_type: self
                             .inference_context
-                            .into_constraint_model(simplified_expected)
+                            .transform_type_into_constraint_model(simplified_expected)
                             .unwrap(),
                         found_type: self
                             .inference_context
-                            .into_constraint_model(simplified_ty)
+                            .transform_type_into_constraint_model(simplified_ty)
                             .unwrap(),
                         span: type_check_span.clone(),
                     })),
@@ -916,7 +916,7 @@ impl<
                         expected_type: Type::Inference(constraint),
                         found_type: self
                             .inference_context
-                            .into_constraint_model(simplified_ty)
+                            .transform_type_into_constraint_model(simplified_ty)
                             .unwrap(),
                         span: type_check_span.clone(),
                     });

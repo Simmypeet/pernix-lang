@@ -2,13 +2,10 @@
 
 use pernixc_base::source_file::Span;
 
-use super::scope;
+use super::{scope, Transform};
 use crate::{
     arena::ID,
-    type_system::{
-        model::{Model, Transform},
-        term::r#type::Type,
-    },
+    type_system::{model::Model, term::r#type::Type},
 };
 
 /// Represents a stack memory allocation.
@@ -35,7 +32,8 @@ impl<M: Model> Alloca<M> {
         transformer: &mut T,
     ) -> Alloca<T::Target> {
         Alloca {
-            r#type: transformer.transform(self.r#type, self.span.clone()),
+            r#type: transformer
+                .inspect_and_transform(self.r#type, self.span.clone()),
             declared_in_scope_id: self.declared_in_scope_id,
             declaration_order: self.declaration_order,
             span: self.span,

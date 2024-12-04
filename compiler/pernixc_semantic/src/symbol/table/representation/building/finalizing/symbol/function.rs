@@ -25,7 +25,6 @@ use crate::{
 pub const GENERIC_PARAMETER_STATE: usize = 0;
 
 /// Where cluase predicates are built
-#[allow(unused)]
 pub const WHERE_CLAUSE_STATE: usize = 1;
 
 /// The function signature information is built, including parameters and return

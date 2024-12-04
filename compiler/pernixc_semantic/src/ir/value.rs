@@ -3,18 +3,13 @@
 use literal::Literal;
 use register::Register;
 
-use super::{representation::Values, TypeOfError};
+use super::{representation::Values, Transform, TypeOfError};
 use crate::{
     arena::{Key, ID},
     symbol::{table, GlobalID},
     type_system::{
-        environment::Environment,
-        model::{Model, Transform},
-        normalizer::Normalizer,
-        observer::Observer,
-        simplify,
-        term::r#type::Type,
-        Succeeded,
+        environment::Environment, model::Model, normalizer::Normalizer,
+        observer::Observer, simplify, term::r#type::Type, Succeeded,
     },
 };
 

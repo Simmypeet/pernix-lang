@@ -1068,7 +1068,7 @@ impl<
                     CannotDereference {
                         found_type: self
                             .inference_context
-                            .into_constraint_model(found_type)
+                            .transform_type_into_constraint_model(found_type)
                             .unwrap(),
                         span: dereference.span(),
                     },
@@ -2128,7 +2128,7 @@ impl<
                         InvalidCastType {
                             r#type: self
                                 .inference_context
-                                .into_constraint_model(cast_type)
+                                .transform_type_into_constraint_model(cast_type)
                                 .unwrap(),
                             span: cast_syn.r#type().span(),
                         },
@@ -2214,7 +2214,7 @@ impl<
                                         span: syntax_tree.postfixable().span(),
                                         r#type: self
                                             .inference_context
-                                            .into_constraint_model(found_type)
+                                            .transform_type_into_constraint_model(found_type)
                                             .unwrap(),
                                     }),
                                 );
@@ -2303,7 +2303,7 @@ impl<
                                         span: syntax_tree.postfixable().span(),
                                         r#type: self
                                             .inference_context
-                                            .into_constraint_model(found_type)
+                                            .transform_type_into_constraint_model(found_type)
                                             .unwrap(),
                                     }),
                                 );
@@ -2366,7 +2366,7 @@ impl<
                                     access_span: access_syn.span(),
                                     tuple_type: self
                                         .inference_context
-                                        .into_constraint_model(Type::Tuple(
+                                        .transform_type_into_constraint_model(Type::Tuple(
                                             tuple_ty,
                                         ))
                                         .unwrap()
@@ -2398,7 +2398,7 @@ impl<
                                         index_span: syn.span(),
                                         tuple_type: self
                                             .inference_context
-                                            .into_constraint_model(Type::Tuple(
+                                            .transform_type_into_constraint_model(Type::Tuple(
                                                 tuple_ty,
                                             ))
                                             .unwrap()
@@ -2435,7 +2435,7 @@ impl<
                                     span: syntax_tree.postfixable().span(),
                                     r#type: self
                                         .inference_context
-                                        .into_constraint_model(ty)
+                                        .transform_type_into_constraint_model(ty)
                                         .unwrap(),
                                 }),
                             );
@@ -2989,7 +2989,7 @@ impl<
                         span: syntax_tree.span(),
                         r#type: self
                             .inference_context
-                            .into_constraint_model(Type::Tuple(tuple_type))
+                            .transform_type_into_constraint_model(Type::Tuple(tuple_type))
                             .unwrap(),
                     },
                 ));
@@ -3591,7 +3591,7 @@ impl<
                         InvalidRelationalOperation {
                             found_type: self
                                 .inference_context
-                                .into_constraint_model(lhs_register_ty)
+                                .transform_type_into_constraint_model(lhs_register_ty)
                                 .unwrap(),
                             span: syntax_tree.span(),
                         },
@@ -3643,7 +3643,7 @@ impl<
                             InvalidRelationalOperation {
                                 found_type: self
                                     .inference_context
-                                    .into_constraint_model(lhs_register_ty)
+                                    .transform_type_into_constraint_model(lhs_register_ty)
                                     .unwrap(),
                                 span: syntax_tree.span(),
                             },

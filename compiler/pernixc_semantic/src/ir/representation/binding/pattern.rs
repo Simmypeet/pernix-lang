@@ -991,7 +991,7 @@ impl<
                 expected_bindnig_type: PatternBindingType::Enum,
                 found_type: self
                     .inference_context
-                    .into_constraint_model(ty.clone())
+                    .transform_type_into_constraint_model(ty.clone())
                     .unwrap(),
                 pattern_span: syntax_tree.span(),
             }));

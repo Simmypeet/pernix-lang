@@ -1488,7 +1488,7 @@ impl Context {
     /// # Errors
     ///
     /// See [`IntoConstraintModelError`] for the possible errors.
-    pub fn into_constraint_model(
+    pub fn transform_type_into_constraint_model(
         &self,
         ty: Type<Model>,
     ) -> Result<Type<ConstraintModel>, IntoConstraintModelError> {
@@ -1525,7 +1525,7 @@ impl Context {
     /// # Errors
     ///
     /// See [`IntoConstraintModelError`] for the possible errors.
-    pub fn constant_into_constraint_model(
+    pub fn transform_constant_into_constraint_model(
         &self,
         constant: Constant<Model>,
     ) -> Result<Constant<ConstraintModel>, IntoConstraintModelError> {

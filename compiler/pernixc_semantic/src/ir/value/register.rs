@@ -10,15 +10,15 @@ use pernixc_base::source_file::Span;
 
 use super::Value;
 use crate::{
-    arena::ID,
+    arena::{Key, ID},
     ir::{
         address::Address, control_flow_graph::Block, representation::Values,
-        TypeOfError,
+        Transform, TypeOfError,
     },
     symbol::{
         self,
         table::{self, representation::Index, Table},
-        AdtID, CallableID, Field, GlobalID,
+        AdtID, CallableID, Field, GlobalID, ImplementationID,
     },
     type_system::{
         environment::Environment,
@@ -32,7 +32,7 @@ use crate::{
             constant::{self, Constant},
             lifetime::Lifetime,
             r#type::{self, Qualifier, Type},
-            GenericArguments, Local, Symbol,
+            GenericArguments, Local, MemberSymbol, Symbol,
         },
         Succeeded,
     },
@@ -586,5 +586,332 @@ impl<M: Model> Values<M> {
         }?;
 
         Ok(simplify::simplify(&ty, environment))
+    }
+}
+
+fn transform_instantiation<
+    FM: Model,
+    TM: Model,
+    T: Transform<Lifetime<FM>, Target = TM>
+        + Transform<Type<FM>, Target = TM>
+        + Transform<Constant<FM>, Target = TM>,
+>(
+    transformer: &mut T,
+    instantiation: Instantiation<FM>,
+) -> Instantiation<TM> {
+    Instantiation {
+        lifetimes: instantiation
+            .lifetimes
+            .into_iter()
+            .map(|(k, v)| (transformer.transform(k), transformer.transform(v)))
+            .collect(),
+        types: instantiation
+            .types
+            .into_iter()
+            .map(|(k, v)| (transformer.transform(k), transformer.transform(v)))
+            .collect(),
+        constants: {
+            instantiation
+                .constants
+                .into_iter()
+                .map(|(k, v)| {
+                    (transformer.transform(k), transformer.transform(v))
+                })
+                .collect()
+        },
+    }
+}
+
+impl<M: Model> Register<M> {
+    /// Transforms the [`Register`] to another model using the given
+    /// transformer.
+    #[allow(clippy::too_many_lines)]
+    pub fn transform_model<
+        U: Model,
+        T: Transform<Lifetime<M>, Target = U>
+            + Transform<Type<M>, Target = U>
+            + Transform<Constant<M>, Target = U>,
+    >(
+        self,
+        transformer: &mut T,
+        table: &Table<impl table::State>,
+    ) -> Register<U> {
+        Register {
+            span: self.span.clone(),
+            assignment: match self.assignment {
+                Assignment::Tuple(tuple) => Assignment::Tuple(Tuple {
+                    elements: tuple
+                        .elements
+                        .into_iter()
+                        .map(|x| TupleElement {
+                            value: x.value.transform_model(transformer),
+                            is_unpacked: x.is_unpacked,
+                        })
+                        .collect(),
+                }),
+                Assignment::Load(load) => Assignment::Load(Load {
+                    address: load.address.transform_model(transformer),
+                }),
+                Assignment::ReferenceOf(reference_of) => {
+                    Assignment::ReferenceOf(ReferenceOf {
+                        address: reference_of
+                            .address
+                            .transform_model(transformer),
+                        qualifier: reference_of.qualifier,
+                        lifetime: transformer.inspect_and_transform(
+                            reference_of.lifetime,
+                            self.span,
+                        ),
+                    })
+                }
+                Assignment::Prefix(prefix) => Assignment::Prefix(Prefix {
+                    operand: prefix.operand.transform_model(transformer),
+                    operator: prefix.operator,
+                }),
+                Assignment::Struct(st) => Assignment::Struct(Struct {
+                    struct_id: st.struct_id,
+                    initializers_by_field_id: st
+                        .initializers_by_field_id
+                        .into_iter()
+                        .map(|(k, v)| (k, v.transform_model(transformer)))
+                        .collect(),
+                    generic_arguments: {
+                        transformer
+                            .inspect_and_transform(
+                                Type::Symbol(Symbol {
+                                    id: r#type::SymbolID::Adt(AdtID::Struct(
+                                        st.struct_id,
+                                    )),
+                                    generic_arguments: st.generic_arguments,
+                                }),
+                                self.span,
+                            )
+                            .into_symbol()
+                            .unwrap()
+                            .generic_arguments
+                    },
+                }),
+                Assignment::Variant(variant) => Assignment::Variant(Variant {
+                    variant_id: variant.variant_id,
+                    associated_value: variant
+                        .associated_value
+                        .map(|x| x.transform_model(transformer)),
+                    generic_arguments: {
+                        let enum_id = table
+                            .get(variant.variant_id)
+                            .unwrap()
+                            .parent_enum_id();
+
+                        transformer
+                            .inspect_and_transform(
+                                Type::Symbol(Symbol {
+                                    id: r#type::SymbolID::Adt(AdtID::Enum(
+                                        enum_id,
+                                    )),
+                                    generic_arguments: variant
+                                        .generic_arguments,
+                                }),
+                                self.span,
+                            )
+                            .into_symbol()
+                            .unwrap()
+                            .generic_arguments
+                    },
+                }),
+
+                // this is such a bad idea :(
+                Assignment::FunctionCall(function_call) => {
+                    Assignment::FunctionCall(FunctionCall {
+                        callable_id: function_call.callable_id,
+                        arguments: function_call
+                            .arguments
+                            .into_iter()
+                            .map(|x| x.transform_model(transformer))
+                            .collect(),
+                        instantiation: match function_call.callable_id {
+                            CallableID::Function(id) => {
+                                let function_symbol = table.get(id).unwrap();
+
+                                let generic_arguments = function_call
+                                    .instantiation
+                                    .create_generic_arguments(
+                                        id.into(),
+                                        &function_symbol
+                                            .generic_declaration
+                                            .parameters,
+                                    )
+                                    .unwrap();
+
+                                transformer
+                                    .inspect_and_transform(
+                                        Type::Symbol(Symbol {
+                                            id: r#type::SymbolID::Function(id),
+                                            generic_arguments,
+                                        }),
+                                        self.span,
+                                    )
+                                    .into_symbol()
+                                    .unwrap();
+
+                                transform_instantiation(
+                                    transformer,
+                                    function_call.instantiation,
+                                )
+                            }
+
+                            CallableID::TraitFunction(id) => {
+                                let trait_funciton = table.get(id).unwrap();
+                                let parent_trait = trait_funciton.parent_id();
+
+                                let parent_generic_arguments = function_call
+                                    .instantiation
+                                    .create_generic_arguments(
+                                        parent_trait.into(),
+                                        &table
+                                            .get(parent_trait)
+                                            .unwrap()
+                                            .generic_declaration
+                                            .parameters,
+                                    )
+                                    .unwrap();
+                                let member_generic_arguments = function_call
+                                    .instantiation
+                                    .create_generic_arguments(
+                                        id.into(),
+                                        &trait_funciton
+                                            .generic_declaration
+                                            .parameters,
+                                    )
+                                    .unwrap();
+
+                                transformer.inspect_and_transform(
+                                    Type::MemberSymbol(MemberSymbol {
+                                        id: r#type::MemberSymbolID::Function(
+                                            id.into(),
+                                        ),
+                                        member_generic_arguments,
+                                        parent_generic_arguments,
+                                    }),
+                                    self.span,
+                                );
+
+                                transform_instantiation(
+                                    transformer,
+                                    function_call.instantiation,
+                                )
+                            }
+
+                            CallableID::TraitImplementationFunction(_)
+                            | CallableID::AdtImplementationFunction(_) => {
+                                let parent_implementation_id =
+                                    match function_call.callable_id {
+                                        CallableID::TraitImplementationFunction(id) => {
+                                            ImplementationID::PositiveTrait(
+                                                table.get(id).unwrap().parent_id(),
+                                            )
+                                        }
+                                        CallableID::AdtImplementationFunction(id) => {
+                                            ImplementationID::Adt(
+                                                table.get(id).unwrap().parent_id(),
+                                            )
+                                        }
+                                        _ => unreachable!()
+                                    };
+
+                                let mut parent_generic_arguments =
+                                    GenericArguments::from_other_model(
+                                        table
+                                            .get_implementation(
+                                                parent_implementation_id,
+                                            )
+                                            .unwrap()
+                                            .arguments()
+                                            .clone(),
+                                    );
+
+                                parent_generic_arguments
+                                    .instantiate(&function_call.instantiation);
+
+                                let member_generic_arguments = function_call
+                                    .instantiation
+                                    .create_generic_arguments(
+                                        function_call.callable_id.into(),
+                                        &table
+                                            .get_generic(
+                                                function_call
+                                                    .callable_id
+                                                    .into(),
+                                            )
+                                            .unwrap()
+                                            .generic_declaration()
+                                            .parameters,
+                                    )
+                                    .unwrap();
+
+                                transformer.inspect_and_transform(
+                                    Type::MemberSymbol(MemberSymbol {
+                                        id: r#type::MemberSymbolID::Function(
+                                            match function_call.callable_id {
+                                                CallableID::TraitImplementationFunction(id) => id.into(),
+                                                CallableID::AdtImplementationFunction(id) => id.into(),
+                                                _ => unreachable!()
+                                            }
+                                        ),
+                                        member_generic_arguments,
+                                        parent_generic_arguments,
+                                    }),
+                                    self.span,
+                                ).into_member_symbol().unwrap();
+
+                                transform_instantiation(
+                                    transformer,
+                                    function_call.instantiation,
+                                )
+                            }
+                        },
+                    })
+                }
+                Assignment::Binary(binary) => Assignment::Binary(Binary {
+                    lhs: binary.lhs.transform_model(transformer),
+                    rhs: binary.rhs.transform_model(transformer),
+                    operator: binary.operator,
+                }),
+                Assignment::Array(array) => Assignment::Array(Array {
+                    elements: array
+                        .elements
+                        .into_iter()
+                        .map(|x| x.transform_model(transformer))
+                        .collect(),
+                    element_type: transformer
+                        .inspect_and_transform(array.element_type, self.span),
+                }),
+                Assignment::Phi(phi) => Assignment::Phi(Phi {
+                    incoming_values: phi
+                        .incoming_values
+                        .into_iter()
+                        .map(|(k, v)| {
+                            (
+                                ID::from_index(k.into_index()),
+                                v.transform_model(transformer),
+                            )
+                        })
+                        .collect(),
+                    r#type: transformer
+                        .inspect_and_transform(phi.r#type, self.span),
+                }),
+                Assignment::Cast(cast) => Assignment::Cast(Cast {
+                    value: cast.value.transform_model(transformer),
+                    r#type: transformer
+                        .inspect_and_transform(cast.r#type, self.span),
+                }),
+                Assignment::VariantNumber(variant_number) => {
+                    Assignment::VariantNumber(VariantNumber {
+                        address: variant_number
+                            .address
+                            .transform_model(transformer),
+                    })
+                }
+            },
+        }
     }
 }

@@ -3,7 +3,8 @@
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    alloca::Alloca, representation::Values, value::Value, TypeOfError,
+    alloca::Alloca, representation::Values, value::Value, Transform,
+    TypeOfError,
 };
 use crate::{
     arena::{Key, ID},
@@ -16,7 +17,7 @@ use crate::{
     type_system::{
         environment::Environment,
         instantiation::{self, Instantiation},
-        model::{Model, Transform},
+        model::Model,
         normalizer::Normalizer,
         observer::Observer,
         simplify,

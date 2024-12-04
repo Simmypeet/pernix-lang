@@ -5,13 +5,13 @@ use std::{collections::HashSet, ops::Not};
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 
-use super::instruction::{Instruction, Jump, Terminator};
+use super::{
+    instruction::{Instruction, Jump, Terminator},
+    Transform,
+};
 use crate::{
     arena::{Arena, Key, ID},
-    type_system::{
-        model::{Model, Transform},
-        term::r#type::Type,
-    },
+    type_system::{model::Model, term::r#type::Type},
 };
 
 /// Represents a list of instructions executed in sequence.

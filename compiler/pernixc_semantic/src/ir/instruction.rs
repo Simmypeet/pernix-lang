@@ -11,13 +11,11 @@ use super::{
     control_flow_graph::Block,
     scope::Scope,
     value::{register::Register, Value},
+    Transform,
 };
 use crate::{
     arena::{Key, ID},
-    type_system::{
-        model::{Model, Transform},
-        term::r#type::Type,
-    },
+    type_system::{model::Model, term::r#type::Type},
 };
 
 /// Represents a jump to another block unconditionally.
