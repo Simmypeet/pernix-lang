@@ -1,12 +1,7 @@
-use std::{
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
-    env,
-};
+use std::{cmp::Ordering, collections::HashMap};
 
 use getset::Getters;
 use pernixc_base::{handler::Handler, source_file::Span};
-use pernixc_syntax::syntax_tree::target;
 
 use super::state::{self, Scope, SetStateSucceeded, Summary};
 use crate::{
@@ -29,7 +24,7 @@ use crate::{
         },
     },
     symbol::{
-        table::{self, representation::MergeAccessibilityError, Table},
+        table::{self, Table},
         CallableID, GlobalID,
     },
     type_system::{
@@ -264,7 +259,7 @@ impl Values<ir::Model> {
 }
 
 fn sort_drop_addresses(
-    addresses: &mut Vec<Memory<ir::Model>>,
+    addresses: &mut [Memory<ir::Model>],
     allocas: &Arena<Alloca<ir::Model>>,
     current_site: GlobalID,
     table: &Table<impl table::State>,
@@ -819,7 +814,6 @@ impl ir::Representation<ir::Model> {
                         drop_instructions,
                     );
 
-                    dbg!(&target_state, &this_state);
                     for move_span in target_state
                         .get_uninitialized_diff(this_state)
                         .unwrap()

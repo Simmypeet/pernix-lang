@@ -3,7 +3,6 @@ use std::collections::{hash_map::Entry, HashMap};
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use pernixc_base::source_file::Span;
-use pernixc_syntax::syntax_tree::target;
 
 use crate::{
     arena::ID,
@@ -1093,7 +1092,7 @@ impl Scope {
         if result.is_ok() {
             let state = self
                 .memories_by_address
-                .get_mut(&address.get_root_memory())
+                .get_mut(address.get_root_memory())
                 .unwrap();
 
             state.state.simplify();
@@ -1125,7 +1124,7 @@ impl Scope {
         if result.is_ok() {
             let state = self
                 .memories_by_address
-                .get_mut(&address.get_root_memory())
+                .get_mut(address.get_root_memory())
                 .unwrap();
 
             state.state.simplify();
@@ -1496,7 +1495,7 @@ impl Scope {
         };
 
         if root {
-            let repalced = match initialized.clone() {
+            let repalced = match initialized {
                 Some(id) => {
                     let current_version = *version;
                     *version += 1;
