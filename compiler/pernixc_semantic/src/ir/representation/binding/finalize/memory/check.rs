@@ -1,18 +1,24 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+    env,
+};
 
 use getset::Getters;
 use pernixc_base::{handler::Handler, source_file::Span};
+use pernixc_syntax::syntax_tree::target;
 
-use super::state::{self, Scope, SetStateError, SetStateSucceeded, Summary};
+use super::state::{self, Scope, SetStateSucceeded, Summary};
 use crate::{
-    arena::ID,
+    arena::{Arena, ID},
     error::{
-        MovedOutValueFromMutableReference, UseAfterMove,
+        MoveInLoop, MovedOutValueFromMutableReference, UseAfterMove,
         UseBeforeInitialization,
     },
     ir::{
         self,
         address::{Address, Memory},
+        alloca::Alloca,
         control_flow_graph::Block,
         instruction::Instruction,
         representation::{binding::HandlerWrapper, Values},
@@ -23,7 +29,7 @@ use crate::{
         },
     },
     symbol::{
-        table::{self, Table},
+        table::{self, representation::MergeAccessibilityError, Table},
         CallableID, GlobalID,
     },
     type_system::{
@@ -57,32 +63,29 @@ impl Stack {
         &mut self,
         address: &Address<ir::Model>,
         table: &Table<impl table::State>,
-    ) -> Result<SetStateSucceeded, SetStateError> {
+    ) -> SetStateSucceeded {
         let root = address.get_root_memory();
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains(root) {
-                return scope.set_initialized(address, table);
+                return scope.set_initialized(address, table).unwrap();
             }
         }
 
         // not found
-        Err(SetStateError::InvalidAddress)
+        panic!("Invalid address");
     }
 
-    pub fn get_state(
-        &self,
-        address: &Address<ir::Model>,
-    ) -> Option<&state::State> {
+    pub fn get_state(&self, address: &Address<ir::Model>) -> &state::State {
         let root = address.get_root_memory();
 
         for scope in self.scopes.iter().rev() {
             if scope.contains(root) {
-                return scope.get_state(address);
+                return scope.get_state(address).unwrap();
             }
         }
 
         // not found
-        None
+        panic!("Invalid address");
     }
 
     pub fn set_uninitialized(
@@ -90,35 +93,31 @@ impl Stack {
         address: &Address<ir::Model>,
         move_span: Span,
         table: &Table<impl table::State>,
-    ) -> Result<SetStateSucceeded, SetStateError> {
+    ) -> SetStateSucceeded {
         let root = address.get_root_memory();
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains(root) {
-                return scope.set_uninitialized(address, move_span, table);
+                return scope
+                    .set_uninitialized(address, move_span, table)
+                    .unwrap();
             }
         }
 
         // not found
-        Err(SetStateError::InvalidAddress)
+        panic!("Invalid address");
     }
 
     pub fn current_mut(&mut self) -> &mut Scope {
         self.scopes.last_mut().unwrap()
     }
 
-    pub fn current(&self) -> &Scope { self.scopes.last().unwrap() }
-}
+    pub fn min_merge(&mut self, other: &Self) {
+        assert_eq!(self.scopes.len(), other.scopes.len());
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PopSnapshot {
-    stack_snapshot: Stack,
-    poped_scope: Scope,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ScopeMemory {
-    before_push_stack_snapshot: Stack,
-    after_pop_stack_snapshot: Option<PopSnapshot>,
+        for (lhs, rhs) in self.scopes.iter_mut().zip(other.scopes.iter()) {
+            take_mut::take(lhs, |lhs| lhs.min_merge(rhs).unwrap());
+        }
+    }
 }
 
 impl Values<ir::Model> {
@@ -128,8 +127,7 @@ impl Values<ir::Model> {
         stack: &mut Stack,
         handler: &HandlerWrapper,
     ) {
-        let state =
-            stack.get_state(&reference_of.address).unwrap().get_state_summary();
+        let state = stack.get_state(&reference_of.address).get_state_summary();
 
         match state {
             Summary::Uninitialized => {
@@ -150,14 +148,13 @@ impl Values<ir::Model> {
     }
 
     fn handle_store<S: table::State>(
-        &self,
         store_address: &Address<ir::Model>,
         store_span: Span,
         stack: &mut Stack,
         table: &Table<S>,
         handler: &HandlerWrapper,
     ) -> Vec<Instruction<ir::Model>> {
-        let state = stack.set_initialized(&store_address, table).unwrap();
+        let state = stack.set_initialized(store_address, table);
 
         let (state, target_address) = match state {
             SetStateSucceeded::Unchanged(initialized, address) => {
@@ -200,7 +197,7 @@ impl Values<ir::Model> {
             == Some(Qualifier::Immutable)
             || load.address.is_behind_index()
         {
-            stack.get_state(&load.address).unwrap().get_state_summary()
+            stack.get_state(&load.address).get_state_summary()
         } else {
             let copy_marker = environment
                 .table()
@@ -229,13 +226,11 @@ impl Values<ir::Model> {
                 return;
             }
 
-            let state = stack
-                .set_uninitialized(
-                    &load.address,
-                    register_span.clone(),
-                    environment.table(),
-                )
-                .unwrap();
+            let state = stack.set_uninitialized(
+                &load.address,
+                register_span.clone(),
+                environment.table(),
+            );
 
             match state {
                 SetStateSucceeded::Unchanged(initialized, _) => initialized
@@ -268,13 +263,54 @@ impl Values<ir::Model> {
     }
 }
 
+fn sort_drop_addresses(
+    addresses: &mut Vec<Memory<ir::Model>>,
+    allocas: &Arena<Alloca<ir::Model>>,
+    current_site: GlobalID,
+    table: &Table<impl table::State>,
+) {
+    let callable = CallableID::try_from(current_site)
+        .ok()
+        .map(|x| table.get_callable(x).unwrap());
+
+    addresses.sort_by(|x, y| match (x, y) {
+        (Memory::Parameter(x_id), Memory::Parameter(y_id)) => {
+            let x = callable
+                .as_ref()
+                .unwrap()
+                .parameter_order()
+                .iter()
+                .position(|y| y == x_id)
+                .unwrap();
+            let y = callable
+                .as_ref()
+                .unwrap()
+                .parameter_order()
+                .iter()
+                .position(|y| y == y_id)
+                .unwrap();
+
+            x.cmp(&y).reverse()
+        }
+
+        (Memory::Alloca(x_id), Memory::Alloca(y_id)) => {
+            let x = allocas.get(*x_id).unwrap().declaration_order;
+            let y = allocas.get(*y_id).unwrap().declaration_order;
+
+            x.cmp(&y).reverse()
+        }
+
+        (Memory::Parameter(_), Memory::Alloca(_)) => Ordering::Greater,
+        (Memory::Alloca(_), Memory::Parameter(_)) => Ordering::Less,
+    });
+}
+
 impl ir::Representation<ir::Model> {
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
-    fn walk<S: table::State>(
+    fn walk_instructions<S: table::State>(
         &mut self,
         block_id: ID<Block<ir::Model>>,
         stack: &mut Stack,
-        scope_memories_by_scope_id: &mut HashMap<ID<scope::Scope>, ScopeMemory>,
         current_site: GlobalID,
         environment: &Environment<
             ir::Model,
@@ -290,7 +326,7 @@ impl ir::Representation<ir::Model> {
         while current_index < block.instructions().len() {
             let step = match &block.instructions()[current_index] {
                 Instruction::Store(store) => {
-                    let instructions = self.values.handle_store(
+                    let instructions = Values::handle_store(
                         &store.address,
                         match &store.value {
                             Value::Register(id) => self
@@ -403,13 +439,11 @@ impl ir::Representation<ir::Model> {
                         });
 
                         // mark as moved out
-                        let state = stack
-                            .set_uninitialized(
-                                &address,
-                                tuple_pack.packed_tuple_span.clone().unwrap(),
-                                environment.table(),
-                            )
-                            .unwrap();
+                        let state = stack.set_uninitialized(
+                            &address,
+                            tuple_pack.packed_tuple_span.clone().unwrap(),
+                            environment.table(),
+                        );
 
                         let sumamry = match state {
                             SetStateSucceeded::Unchanged(initialized, _) => {
@@ -452,7 +486,7 @@ impl ir::Representation<ir::Model> {
                         }
                     }
 
-                    let instructions = self.values.handle_store(
+                    let instructions = Values::handle_store(
                         &tuple_pack.store_address,
                         tuple_pack.packed_tuple_span.clone().unwrap(),
                         stack,
@@ -472,17 +506,6 @@ impl ir::Representation<ir::Model> {
                 | Instruction::Drop(_) => 1,
 
                 Instruction::ScopePush(scope_push) => {
-                    match scope_memories_by_scope_id.entry(scope_push.0) {
-                        // skip if already processed
-                        Entry::Occupied(_) => return,
-                        Entry::Vacant(entry) => {
-                            entry.insert(ScopeMemory {
-                                before_push_stack_snapshot: stack.clone(),
-                                after_pop_stack_snapshot: None,
-                            });
-                        }
-                    }
-
                     stack.new_scope(scope_push.0);
 
                     'out: {
@@ -533,14 +556,51 @@ impl ir::Representation<ir::Model> {
                     let poped_scope = stack.pop_scope().unwrap();
                     assert_eq!(poped_scope.scope_id(), scope_pop.0);
 
-                    let stack_snapshot = stack.clone();
-                    scope_memories_by_scope_id
-                        .get_mut(&scope_pop.0)
-                        .unwrap()
-                        .after_pop_stack_snapshot =
-                        Some(PopSnapshot { stack_snapshot, poped_scope });
+                    let mut memories = poped_scope
+                        .memories_by_address()
+                        .keys()
+                        .copied()
+                        .collect::<Vec<_>>();
 
-                    1
+                    sort_drop_addresses(
+                        &mut memories,
+                        &self.values.allocas,
+                        current_site,
+                        environment.table(),
+                    );
+
+                    let mut drop_instructions = Vec::new();
+
+                    for memory in memories {
+                        let state = poped_scope
+                            .get_state(&Address::Memory(memory))
+                            .unwrap();
+
+                        if let Some(moved_out) =
+                            state.get_moved_out_mutable_reference()
+                        {
+                            handler.receive(Box::new(
+                                MovedOutValueFromMutableReference {
+                                    moved_out_value_span: moved_out.clone(),
+                                    reassignment_span: None,
+                                },
+                            ));
+                        }
+
+                        drop_instructions.extend(
+                            state
+                                .get_drop_instructions(
+                                    &Address::Memory(memory),
+                                    environment.table(),
+                                )
+                                .unwrap(),
+                        );
+                    }
+
+                    let len = drop_instructions.len();
+                    block.insert_instructions(current_index, drop_instructions);
+
+                    1 + len
                 }
             };
 
@@ -548,7 +608,244 @@ impl ir::Representation<ir::Model> {
         }
     }
 
-    pub(super) fn memory_check<S: table::State>(
+    #[allow(clippy::too_many_lines)]
+    pub(in super::super) fn walk<S: table::State>(
+        &mut self,
+        block_id: ID<Block<ir::Model>>,
+        stacks_by_block_id: &mut HashMap<ID<Block<ir::Model>>, Option<Stack>>,
+        target_stacks_by_block_id: &mut HashMap<ID<Block<ir::Model>>, Stack>,
+        current_site: GlobalID,
+        environment: &Environment<
+            ir::Model,
+            S,
+            impl Normalizer<ir::Model, S>,
+            impl Observer<ir::Model, S>,
+        >,
+        handler: &HandlerWrapper,
+    ) -> Option<Stack> {
+        // skip if already processed
+        if let Some(stack) = stacks_by_block_id.get(&block_id) {
+            return stack.clone();
+        }
+
+        // mark as processing
+        stacks_by_block_id.insert(block_id, None);
+
+        let block = self.control_flow_graph.get_block(block_id).unwrap();
+
+        let mut starting_stack = if block.is_entry() {
+            Stack::new()
+        } else {
+            let predecessors =
+                block.predecessors().iter().copied().collect::<Vec<_>>();
+
+            let mut merging_stakcs = Vec::new();
+            let mut looped_block_ids = Vec::new();
+
+            for predecessor_id in predecessors.iter().copied() {
+                if let Some(stack) = self.walk(
+                    predecessor_id,
+                    stacks_by_block_id,
+                    target_stacks_by_block_id,
+                    current_site,
+                    environment,
+                    handler,
+                ) {
+                    merging_stakcs.push((predecessor_id, stack));
+                } else {
+                    looped_block_ids.push(predecessor_id);
+                }
+            }
+
+            if merging_stakcs.is_empty() {
+                // try again later
+                stacks_by_block_id.remove(&block_id);
+
+                return None;
+            }
+
+            // Sanity check
+            for i in merging_stakcs.iter().map(|x| x.0) {
+                for j in merging_stakcs.iter().map(|x| x.0) {
+                    if i != j {
+                        assert!(
+                            !self
+                                .control_flow_graph
+                                .is_reachable_from(i, j)
+                                .unwrap(),
+                            "ICE: two merging blocks shouldn't be reachable \
+                             to each other {:#?}",
+                            self.control_flow_graph
+                        );
+                    }
+                }
+            }
+
+            // merge the stacks
+            let mut starting_stack = merging_stakcs.pop().unwrap().1;
+            starting_stack = merging_stakcs.into_iter().fold(
+                starting_stack,
+                |mut acc, (_, stack)| {
+                    acc.min_merge(&stack);
+                    acc
+                },
+            );
+
+            for looped in looped_block_ids.iter().copied() {
+                target_stacks_by_block_id
+                    .insert(looped, starting_stack.clone());
+            }
+
+            for predecessor in predecessors
+                .iter()
+                .copied()
+                .filter(|x| !looped_block_ids.contains(x))
+            {
+                let alternate_stack = stacks_by_block_id
+                    .get(&predecessor)
+                    .unwrap()
+                    .as_ref()
+                    .unwrap();
+
+                // drop instructions to insert at the end of the block
+                let mut drop_instructions = Vec::new();
+
+                for (this, alternate) in starting_stack
+                    .scopes
+                    .iter()
+                    .rev()
+                    .zip(alternate_stack.scopes.iter().rev())
+                {
+                    assert_eq!(this.scope_id(), alternate.scope_id());
+
+                    let mut memories = this
+                        .memories_by_address()
+                        .keys()
+                        .copied()
+                        .collect::<Vec<_>>();
+
+                    sort_drop_addresses(
+                        &mut memories,
+                        &self.values.allocas,
+                        current_site,
+                        environment.table(),
+                    );
+
+                    for memory_to_drop in memories {
+                        let this_state = this
+                            .get_state(&Address::Memory(memory_to_drop))
+                            .unwrap();
+                        let alternate_state = alternate
+                            .get_state(&Address::Memory(memory_to_drop))
+                            .unwrap();
+
+                        drop_instructions.extend(
+                            this_state
+                                .get_alternate_drop_instructions(
+                                    alternate_state,
+                                    &Address::Memory(memory_to_drop),
+                                    environment.table(),
+                                )
+                                .unwrap(),
+                        );
+                    }
+                }
+
+                let block =
+                    self.control_flow_graph.get_block_mut(predecessor).unwrap();
+
+                block.insert_instructions(
+                    block.instructions().len(),
+                    drop_instructions,
+                );
+            }
+
+            starting_stack
+        };
+
+        self.walk_instructions(
+            block_id,
+            &mut starting_stack,
+            current_site,
+            environment,
+            handler,
+        );
+
+        // handle loop
+        if let Some(target_stack) = target_stacks_by_block_id.get(&block_id) {
+            assert_eq!(target_stack.scopes.len(), starting_stack.scopes.len());
+
+            for (this_scope, target_scope) in
+                starting_stack.scopes.iter().zip(target_stack.scopes.iter())
+            {
+                assert_eq!(this_scope.scope_id(), target_scope.scope_id());
+
+                let mut memories = this_scope
+                    .memories_by_address()
+                    .keys()
+                    .copied()
+                    .collect::<Vec<_>>();
+
+                sort_drop_addresses(
+                    &mut memories,
+                    &self.values.allocas,
+                    current_site,
+                    environment.table(),
+                );
+
+                for memory in memories {
+                    let this_state =
+                        this_scope.get_state(&Address::Memory(memory)).unwrap();
+                    let target_state = target_scope
+                        .get_state(&Address::Memory(memory))
+                        .unwrap();
+
+                    // get the drop instructions that will make this scope the
+                    // same as the target scope
+                    let drop_instructions = target_state
+                        .get_alternate_drop_instructions(
+                            this_state,
+                            &Address::Memory(memory),
+                            environment.table(),
+                        )
+                        .unwrap();
+
+                    let block = self
+                        .control_flow_graph
+                        .get_block_mut(block_id)
+                        .unwrap();
+                    block.insert_instructions(
+                        block.instructions().len(),
+                        drop_instructions,
+                    );
+
+                    dbg!(&target_state, &this_state);
+                    for move_span in target_state
+                        .get_uninitialized_diff(this_state)
+                        .unwrap()
+                        .into_iter()
+                        .map(|x| x.get_state_summary().into_moved().unwrap())
+                    {
+                        handler.receive(Box::new(MoveInLoop {
+                            moved_value_span: move_span,
+                        }));
+                    }
+                }
+            }
+
+            starting_stack = target_stack.clone();
+        }
+
+        // mark as done
+        assert!(stacks_by_block_id
+            .insert(block_id, Some(starting_stack.clone()))
+            .unwrap()
+            .is_none());
+
+        Some(starting_stack)
+    }
+
+    pub(in super::super) fn memory_check<S: table::State>(
         &mut self,
         current_site: GlobalID,
         environment: &Environment<
@@ -559,16 +856,23 @@ impl ir::Representation<ir::Model> {
         >,
         handler: &HandlerWrapper,
     ) {
-        let mut stack = Stack::new();
-        let mut pop_snapshots_by_scope_id = HashMap::new();
+        let mut stacks_by_block_id = HashMap::new();
+        let mut target_stack_by_block_ids = HashMap::new();
 
-        self.walk(
-            self.control_flow_graph.entry_block_id(),
-            &mut stack,
-            &mut pop_snapshots_by_scope_id,
-            current_site,
-            environment,
-            handler,
-        );
+        let all_block_ids =
+            self.control_flow_graph.blocks().ids().collect::<Vec<_>>();
+
+        for block_id in all_block_ids {
+            self.walk(
+                block_id,
+                &mut stacks_by_block_id,
+                &mut target_stack_by_block_ids,
+                current_site,
+                environment,
+                handler,
+            );
+        }
+
+        assert!(stacks_by_block_id.values().all(Option::is_some));
     }
 }

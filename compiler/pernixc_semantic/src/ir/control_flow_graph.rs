@@ -54,6 +54,17 @@ impl<M: Model> Block<M> {
         }
     }
 
+    /// Inserts a multiple instructions to the block at the given index.
+    ///
+    /// The instructions are inserted in the order they are given.
+    pub fn insert_instructions(
+        &mut self,
+        index: usize,
+        instructions: impl IntoIterator<Item = Instruction<M>>,
+    ) {
+        self.instructions.splice(index..index, instructions);
+    }
+
     /// Returns `true` if any of the instructions that will be added in the
     /// future will be unreachable (never executed)
     #[must_use]
@@ -234,6 +245,118 @@ impl<M: Model> ControlFlowGraph<M> {
         }
     }
 
+    /// From the given block and instruction index, checks if is it possible to
+    /// reach an instruction that satisfies the given predicate.
+    ///
+    /// The predicate might be invoked multiple times for the same instruction.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(true)` if the predicate is satisfied, `Some(false)` if
+    /// the predicate is not satisfied, and `None` if the block ID or the
+    /// instruction index is invalid.
+    #[must_use]
+    pub fn is_reachable(
+        &self,
+        from_block_id: ID<Block<M>>,
+        from_instruction_index: usize,
+        mut predicate: impl FnMut(&Instruction<M>) -> bool,
+    ) -> Option<bool> {
+        self.is_reachable_internal(
+            from_block_id,
+            from_instruction_index,
+            true,
+            &mut predicate,
+            &mut HashSet::new(),
+        )
+    }
+
+    fn is_reachable_internal(
+        &self,
+        from_block_id: ID<Block<M>>,
+        from_instruction_index: usize,
+        is_root: bool,
+        predicate: &mut impl FnMut(&Instruction<M>) -> bool,
+        visited: &mut HashSet<ID<Block<M>>>,
+    ) -> Option<bool> {
+        if !is_root && visited.insert(from_block_id) {
+            return Some(false);
+        }
+
+        let block = self.blocks.get(from_block_id)?;
+
+        // check index
+        if from_instruction_index >= block.instructions.len() {
+            return None;
+        }
+
+        for inst in self
+            .blocks
+            .get(from_block_id)?
+            .instructions
+            .iter()
+            .skip(from_instruction_index)
+        {
+            if predicate(inst) {
+                return Some(true);
+            }
+        }
+
+        let Some(terminator) = &block.terminator else {
+            return None;
+        };
+
+        match terminator {
+            Terminator::Jump(Jump::Conditional(jump)) => {
+                if self.is_reachable_internal(
+                    jump.true_target,
+                    0,
+                    false,
+                    predicate,
+                    visited,
+                )? || self.is_reachable_internal(
+                    jump.false_target,
+                    0,
+                    false,
+                    predicate,
+                    visited,
+                )? {
+                    return Some(true);
+                }
+
+                Some(false)
+            }
+            Terminator::Jump(Jump::Unconditional(jump)) => self
+                .is_reachable_internal(
+                    jump.target,
+                    0,
+                    false,
+                    predicate,
+                    visited,
+                ),
+
+            Terminator::Jump(Jump::Select(condition)) => {
+                let blocks = condition
+                    .branches
+                    .values()
+                    .copied()
+                    .chain(condition.otherwise);
+
+                for block in blocks {
+                    if self.is_reachable_internal(
+                        block, 0, false, predicate, visited,
+                    )? {
+                        return Some(true);
+                    }
+                }
+
+                Some(false)
+            }
+
+            Terminator::Return(_) | Terminator::Panic => Some(false),
+        }
+    }
+
     /// Gets the [`Block`] with the given ID.
     #[must_use]
     pub fn get_block(&self, id: ID<Block<M>>) -> Option<&Block<M>> {
@@ -275,6 +398,83 @@ impl<M: Model> ControlFlowGraph<M> {
                 is_entry: false,
             })
             .is_ok()
+    }
+
+    /// Checks if the `to_block_id` is reachable from the `from_block_id`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if the `from_block_id` or `to_block_id` is invalid.
+    #[must_use]
+    pub fn is_reachable_from(
+        &self,
+        from_block_id: ID<Block<M>>,
+        to_block_id: ID<Block<M>>,
+    ) -> Option<bool> {
+        self.is_reachable_from_internal(
+            from_block_id,
+            to_block_id,
+            &mut HashSet::new(),
+        )
+    }
+
+    fn is_reachable_from_internal(
+        &self,
+        from_block_id: ID<Block<M>>,
+        to_block_id: ID<Block<M>>,
+        visited: &mut HashSet<ID<Block<M>>>,
+    ) -> Option<bool> {
+        if from_block_id == to_block_id {
+            return Some(true);
+        }
+
+        if !visited.insert(from_block_id) {
+            return Some(false);
+        }
+
+        let block = self.blocks.get(from_block_id)?;
+        let Some(Terminator::Jump(jump)) = &block.terminator else {
+            return Some(false);
+        };
+
+        match jump {
+            Jump::Unconditional(unconditional_jump) => self
+                .is_reachable_from_internal(
+                    unconditional_jump.target,
+                    to_block_id,
+                    visited,
+                ),
+            Jump::Conditional(conditional_jump) => Some(
+                self.is_reachable_from_internal(
+                    conditional_jump.true_target,
+                    to_block_id,
+                    visited,
+                )? || self.is_reachable_from_internal(
+                    conditional_jump.false_target,
+                    to_block_id,
+                    visited,
+                )?,
+            ),
+            Jump::Select(select_jump) => {
+                let blocks = select_jump
+                    .branches
+                    .values()
+                    .copied()
+                    .chain(select_jump.otherwise);
+
+                for block in blocks {
+                    if self.is_reachable_from_internal(
+                        block,
+                        to_block_id,
+                        visited,
+                    )? {
+                        return Some(true);
+                    }
+                }
+
+                Some(false)
+            }
+        }
     }
 
     /// Inserts a new terminator instruction to the given block ID.

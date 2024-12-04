@@ -107,7 +107,9 @@ pub struct Reference<M: Model> {
 ///
 /// This is used to represent the base address of a memory location for the
 /// [`Address`] type.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
 #[allow(missing_docs)]
 pub enum Memory<M: Model> {
     Parameter(ID<Parameter>),

@@ -155,7 +155,7 @@ impl Finalize for Function {
                         let _ = binder.bind_statement(statement, handler);
                     }
 
-                    dbg!(binder.intermediate_representation());
+                    binder.intermediate_representation();
 
                     *table
                         .representation
@@ -163,13 +163,13 @@ impl Finalize for Function {
                         .get(symbol_id)
                         .unwrap()
                         .write()
-                        .definition = FunctionDefinition::Regular {
+                        .definition = dbg!(FunctionDefinition::Regular {
                         const_function: syntax_tree.const_keyword().is_some(),
                         ir: match binder.finalize(handler) {
                             Ok(ir) => FunctionIR::Success(ir),
                             Err(ir) => FunctionIR::Suboptimal(ir),
                         },
-                    };
+                    });
                 }
             }
 

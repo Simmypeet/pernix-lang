@@ -1,6 +1,6 @@
 //! Contains the definition of [`Scope`].
 
-use std::num::NonZeroUsize;
+use std::{collections::HashSet, num::NonZeroUsize};
 
 use getset::{CopyGetters, Getters};
 
@@ -15,7 +15,7 @@ use crate::arena::{Arena, ID};
 pub struct Branch(pub Vec<ID<Scope>>);
 
 /// Represents a scope introduced by `{ ... }` expressions.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scope {
     /// The parent scope of the current scope.
     ///
@@ -26,6 +26,12 @@ pub struct Scope {
     ///
     /// Starting from 0, the depth increases as the scope is nested.
     pub depth: usize,
+
+    /// If the scope is in a branch, these are the IDs of the neighboring
+    /// scopes. Else, this is an empty set.
+    ///
+    /// The set doesn't include this scope's ID.
+    pub neighbors: HashSet<ID<Scope>>,
 
     /// The children of the scope in sequential order.
     pub children: Vec<Branch>,
@@ -51,6 +57,7 @@ impl Tree {
         let root_scope_id = scopes.insert(Scope {
             parent_scope: None,
             depth: 0,
+            neighbors: HashSet::new(),
             children: Vec::new(),
         });
 
@@ -71,8 +78,13 @@ impl Tree {
         let mut branch = Vec::with_capacity(branch_count.get());
 
         for _ in 0..branch_count.get() {
-            let new_scope_id = self.scopes.insert(Scope {
+            let new_scope_id = self.scopes.insert_with(|new_scope_id| Scope {
                 parent_scope: Some(parent_scope_id),
+                neighbors: branch
+                    .iter()
+                    .copied()
+                    .filter(|x| *x != new_scope_id)
+                    .collect(),
                 depth: new_depth,
                 children: Vec::new(),
             });

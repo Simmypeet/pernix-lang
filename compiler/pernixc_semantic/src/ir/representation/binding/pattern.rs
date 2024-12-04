@@ -259,7 +259,7 @@ impl Pattern for Refutable {
                 binder.insert_named_binding_point_tuple(
                     name_binding_point,
                     pat,
-                    address_span,
+                    &address_span,
                     binding,
                     must_copy,
                     handler,
@@ -270,7 +270,7 @@ impl Pattern for Refutable {
                 binder.insert_named_binding_point_structural(
                     name_binding_point,
                     pat,
-                    address_span,
+                    &address_span,
                     binding,
                     must_copy,
                     handler,
@@ -517,7 +517,7 @@ impl Pattern for Irrefutable {
                 binder.insert_named_binding_point_tuple(
                     name_binding_point,
                     pat,
-                    address_span,
+                    &address_span,
                     binding,
                     must_copy,
                     handler,
@@ -528,7 +528,7 @@ impl Pattern for Irrefutable {
                 binder.insert_named_binding_point_structural(
                     name_binding_point,
                     pat,
-                    address_span,
+                    &address_span,
                     binding,
                     must_copy,
                     handler,
@@ -1283,7 +1283,7 @@ impl<
         &mut self,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
         tuple_pat: &Tuple<T>,
-        address_span: Option<Span>,
+        address_span: &Option<Span>,
         mut binding: Binding,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
@@ -1387,8 +1387,7 @@ impl<
                 let before_unpacked_range =
                     type_pack_range.start..unpacked_position_in_type;
 
-                for (offset, index) in before_unpacked_range.clone().enumerate()
-                {
+                for (offset, index) in before_unpacked_range.enumerate() {
                     let element_address =
                         Address::Tuple(crate::ir::address::Tuple {
                             tuple_address: Box::new(binding.address.clone()),
@@ -1404,7 +1403,6 @@ impl<
                                 .unwrap()
                                 .pattern
                                 .span()
-                                .clone()
                         })),
                     );
 
@@ -1424,11 +1422,18 @@ impl<
                 // use dedicated instruction to pack the unpacked element
                 let _ = self.current_block_mut().insert_instruction(
                     Instruction::TuplePack(TuplePack {
+                        packed_tuple_span: Some(
+                            tuple_pat
+                                .elements
+                                .get(packed_position)
+                                .unwrap()
+                                .pattern
+                                .span(),
+                        ),
                         store_address: Address::Memory(Memory::Alloca(
                             packed_alloca,
                         )),
                         tuple_address: binding.address.clone(),
-                        starting_offset: before_unpacked_range.count(),
                         before_packed_element_count: unpacked_position_in_type,
                         after_packed_element_count: tuple_ty.elements.len()
                             - unpacked_position_in_type
@@ -1462,7 +1467,6 @@ impl<
                                 .unwrap()
                                 .pattern
                                 .span()
-                                .clone()
                         })),
                     );
 
@@ -1499,7 +1503,6 @@ impl<
                                 .unwrap()
                                 .pattern
                                 .span()
-                                .clone()
                         })),
                     );
 
@@ -1609,7 +1612,7 @@ impl<
         &mut self,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
         structural: &Structural<T>,
-        address_span: Option<Span>,
+        address_span: &Option<Span>,
         mut binding: Binding,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,

@@ -2703,6 +2703,67 @@ impl Report<&Table<Suboptimal>> for UnexpectedAssociatedPattern {
     }
 }
 
+/// The value has been moved inside the loop, which could be used in the
+/// subsequent iteration.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MoveInLoop {
+    /// The span of the moved value.
+    pub moved_value_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for MoveInLoop {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.moved_value_span.clone(),
+            message: "the value has been moved inside the loop, which could \
+                      be used in the subsequent iteration"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The value behind the mutable reference has been moved out and needs to be
+/// restored.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MovedOutValueFromMutableReference {
+    /// The span of the moved out value.
+    pub moved_out_value_span: Span,
+
+    /// The span of the mutable reference.
+    pub reassignment_span: Option<Span>,
+}
+
+impl Report<&Table<Suboptimal>> for MovedOutValueFromMutableReference {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.moved_out_value_span.clone(),
+            message: "the value behind the mutable reference has been moved \
+                      out and needs to be restored"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: self
+                .reassignment_span
+                .as_ref()
+                .map(|reassignment_span| Related {
+                    span: reassignment_span.clone(),
+                    message: "this assignment makes the value behind mutable \
+                              reference inaccessible from now on..."
+                        .to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
+    }
+}
+
 /// Adt implementation function cannot be used as a method.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AdtImplementationFunctionCannotBeUsedAsMethod {

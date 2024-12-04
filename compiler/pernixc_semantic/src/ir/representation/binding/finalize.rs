@@ -23,8 +23,9 @@ use crate::{
 };
 
 mod check;
-mod memory_check;
-mod state;
+mod memory;
+//mod memory_check;
+//mod state;
 mod transform_inference;
 
 impl<
