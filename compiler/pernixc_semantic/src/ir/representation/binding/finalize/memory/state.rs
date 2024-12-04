@@ -871,13 +871,9 @@ impl State {
             )) => {
                 state.simplify();
 
-                dbg!(&state);
-
                 if **state == Self::Total(Initialized::True) {
                     *self = Self::Total(Initialized::True);
                 }
-
-                dbg!(&*self);
             }
 
             Self::Projection(Projection::Enum(Enum { state, .. })) => {
