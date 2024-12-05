@@ -188,7 +188,7 @@ impl<
                 syntax_tree.expression().span(),
                 true,
                 handler,
-            );
+            )?;
         };
 
         let type_of_address =

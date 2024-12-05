@@ -835,7 +835,7 @@ impl<
         type_check_span: Span,
         include_suboptimal_flag: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, TypeSystemOverflow> {
         let environment = self.create_environment();
 
         // simplify the types
@@ -913,7 +913,7 @@ impl<
 
                 // report the error
                 error.map_or_else(
-                    || Ok(()),
+                    || Ok(true),
                     |error| {
                         if include_suboptimal_flag {
                             self.create_handler_wrapper(handler).receive(error);
@@ -921,7 +921,7 @@ impl<
                             handler.receive(error);
                         }
 
-                        Err(Error::Semantic(SemanticError(type_check_span)))
+                        Ok(false)
                     },
                 )
             }
@@ -937,7 +937,7 @@ impl<
 
                 // report the error
                 if result {
-                    Ok(())
+                    Ok(true)
                 } else {
                     let error = Box::new(MismatchedType {
                         expected_type: Type::Inference(constraint),
@@ -954,7 +954,7 @@ impl<
                         handler.receive(error);
                     }
 
-                    Err(Error::Semantic(SemanticError(type_check_span)))
+                    Ok(false)
                 }
             }
         }

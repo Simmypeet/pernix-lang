@@ -395,13 +395,17 @@ impl<
 
                 // if required, type check the operand
                 if let Some(expected_type) = expected_type {
-                    self.type_check(
+                    if !self.type_check(
                         &self.type_of_value(&operand)?,
                         expected_type,
                         syntax_tree.span(),
                         true,
                         handler,
-                    )?;
+                    )? {
+                        return Err(Error::Semantic(SemanticError(
+                            syntax_tree.span(),
+                        )));
+                    }
                 }
                 let register_id = self.create_register_assignmnet(
                     Assignment::Prefix(Prefix { operand, operator }),
@@ -501,7 +505,7 @@ impl<
         variant: resolution::Variant<infer::Model>,
         syntax_tree_span: Span,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<ID<Register<infer::Model>>, TypeOfError<infer::Model>> {
+    ) -> Result<ID<Register<infer::Model>>, InternalError> {
         let variant_sym = self.table.get(variant.variant).unwrap();
         let enum_sym = self.table.get(variant_sym.parent_enum_id()).unwrap();
 
@@ -555,7 +559,7 @@ impl<
                         argument.0,
                         true,
                         &self.create_handler_wrapper(handler),
-                    );
+                    )?;
 
                     argument.1
                 }
@@ -608,7 +612,7 @@ impl<
         instantiation: Instantiation<infer::Model>,
         syntax_tree_span: Span,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> ID<Register<infer::Model>> {
+    ) -> Result<ID<Register<infer::Model>>, TypeSystemOverflow> {
         let callable = self.table.get_callable(callable_id).unwrap();
         let mut acutal_arguments = Vec::new();
 
@@ -644,7 +648,7 @@ impl<
                 argument_span.clone(),
                 true,
                 handler,
-            );
+            )?;
 
             acutal_arguments.push(argument_value.clone());
         }
@@ -674,14 +678,14 @@ impl<
 
         instantiation::instantiate(&mut return_type, &instantiation);
 
-        self.create_register_assignmnet(
+        Ok(self.create_register_assignmnet(
             Assignment::FunctionCall(FunctionCall {
                 callable_id,
                 arguments: acutal_arguments,
                 instantiation,
             }),
             syntax_tree_span,
-        )
+        ))
     }
 }
 
@@ -838,7 +842,7 @@ impl<
                     instantiation,
                     syntax_tree_span,
                     handler,
-                ));
+                )?);
 
                 Ok(Expression::RValue(value))
             }
@@ -987,7 +991,7 @@ impl<
                             resolution_span,
                             true,
                             handler,
-                        );
+                        )?;
 
                         assert!(instantiation
                             .append_from_generic_arguments(
@@ -1018,7 +1022,7 @@ impl<
                     inst,
                     syntax_tree_span,
                     handler,
-                ));
+                )?);
 
                 Ok(Expression::RValue(value))
             }
@@ -1155,12 +1159,15 @@ impl<
         access_type: &Type<infer::Model>,
         arguments: &[(Span, Value<infer::Model>)],
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Vec<(
-        CallableID,
-        Instantiation<infer::Model>,
-        infer::Context,
-        RecieverKind,
-    )> {
+    ) -> Result<
+        Vec<(
+            CallableID,
+            Instantiation<infer::Model>,
+            infer::Context,
+            RecieverKind,
+        )>,
+        TypeSystemOverflow,
+    > {
         let mut candidates = Vec::new();
 
         let current_module_id =
@@ -1395,16 +1402,13 @@ impl<
 
                 instantiation::instantiate(&mut parameter_ty, &instantiation);
 
-                if self
-                    .type_check(
-                        &self.type_of_value(argument_value).unwrap(),
-                        Expected::Known(parameter_ty),
-                        argument_span.clone(),
-                        false,
-                        &Dummy,
-                    )
-                    .is_err()
-                {
+                if !self.type_check(
+                    &self.type_of_value(argument_value).unwrap(),
+                    Expected::Known(parameter_ty),
+                    argument_span.clone(),
+                    false,
+                    &Dummy,
+                )? {
                     continue 'candidate;
                 }
             }
@@ -1422,7 +1426,7 @@ impl<
             self.inference_context = starting_inference_context;
         }
 
-        candidates
+        Ok(candidates)
     }
 
     fn bind_reciever_argument(
@@ -1560,7 +1564,7 @@ impl<
                 instantiation,
                 method_call_span,
                 handler,
-            )));
+            )?));
         } else if trait_method_candidates.is_empty() {
             let wrapper = self.create_handler_wrapper(handler);
 
@@ -1660,7 +1664,7 @@ impl<
             &access_type,
             &arguments,
             handler,
-        );
+        )?;
 
         let Type::Symbol(Symbol {
             id: r#type::SymbolID::Adt(adt_id),
@@ -1831,7 +1835,7 @@ impl<
             struct_expression_wth_access.postfixable().span(),
             true,
             handler,
-        );
+        )?;
 
         assert!(instantiation
             .append_from_generic_arguments(
@@ -1987,7 +1991,7 @@ impl<
             instantiation,
             postfix.span(),
             handler,
-        )))
+        )?))
     }
 }
 
@@ -2156,7 +2160,7 @@ impl<
                     syntax_tree.postfixable().span(),
                     true,
                     handler,
-                );
+                )?;
 
                 Ok(Expression::RValue(Value::Register(
                     self.create_register_assignmnet(
@@ -2462,7 +2466,7 @@ impl<
                             index.expression().span(),
                             true,
                             handler,
-                        );
+                        )?;
 
                         Address::Index(address::Index {
                             array_address: Box::new(lvalue.address),
@@ -2785,7 +2789,7 @@ impl<
                 field_syn.expression().span(),
                 true,
                 handler,
-            );
+            )?;
 
             match initializers_by_field_id.entry(field_id) {
                 Entry::Occupied(entry) => self
@@ -3134,7 +3138,7 @@ impl<
                 },
                 true,
                 handler,
-            );
+            )?;
         }
 
         let value = Value::Register(self.create_register_assignmnet(
@@ -3429,7 +3433,7 @@ impl<
             tree.right.span(),
             true,
             handler,
-        );
+        )?;
 
         if lhs_address.qualifier != Qualifier::Mutable {
             self.create_handler_wrapper(handler).receive(Box::new(
@@ -3541,7 +3545,7 @@ impl<
                 syntax_tree.right.span(),
                 true,
                 handler,
-            );
+            )?;
         }
 
         match op {
@@ -3561,7 +3565,7 @@ impl<
                     syntax_tree.span(),
                     true,
                     handler,
-                );
+                )?;
             }
             BinaryOperator::Relational(_) => {
                 let lhs_register_ty = simplify::simplify(
@@ -3687,7 +3691,7 @@ impl<
                         syntax_tree.left.span(),
                         true,
                         handler,
-                    );
+                    )?;
 
                     let rhs_value_ty = self.type_of_value(&rhs_value)?;
 
@@ -3697,7 +3701,7 @@ impl<
                         syntax_tree.right.span(),
                         true,
                         handler,
-                    );
+                    )?;
                 }
             },
         }
@@ -3769,7 +3773,7 @@ impl<
                     syntax_tree.left.span(),
                     true,
                     handler,
-                );
+                )?;
 
                 let true_block_id = self
                     .intermediate_representation
@@ -3841,7 +3845,7 @@ impl<
                             syntax_tree.right.span(),
                             true,
                             handler,
-                        );
+                        )?;
 
                         rhs
                     };
@@ -3905,7 +3909,7 @@ impl<
                             syntax_tree.right.span(),
                             true,
                             handler,
-                        );
+                        )?;
 
                         rhs
                     };
@@ -4102,7 +4106,7 @@ impl<
             syntax_tree.span(),
             true,
             handler,
-        );
+        )?;
 
         // pop all the needed scopes
         for popping_scope in
@@ -4330,7 +4334,7 @@ impl<
                     ),
                     true,
                     handler,
-                );
+                )?;
             }
 
             // can use any type
@@ -4342,7 +4346,7 @@ impl<
                         syntax_tree.span(),
                         true,
                         handler,
-                    );
+                    )?;
                 } else {
                     *self
                         .loop_states_by_scope_id
@@ -4541,7 +4545,7 @@ impl<
                 syntax_tree.span(),
                 true,
                 handler,
-            );
+            )?;
         } else {
             // have no express before, gets to decide the type.
             self.block_states_by_scope_id
@@ -4640,7 +4644,7 @@ impl<
             syntax_tree.parenthesized().span(),
             true,
             handler,
-        );
+        )?;
 
         let then_block_id =
             self.intermediate_representation.control_flow_graph.new_block();
@@ -4817,7 +4821,7 @@ impl<
                             .map_or(syntax_tree.span(), SourceElement::span),
                         true,
                         handler,
-                    );
+                    )?;
                 } else {
                     let _ = self.type_check(
                         &then_type,
@@ -4825,7 +4829,7 @@ impl<
                         syntax_tree.span(),
                         true,
                         handler,
-                    );
+                    )?;
                 }
 
                 let phi_register_id = self.create_register_assignmnet(
@@ -5156,7 +5160,7 @@ impl<
             syntax_tree.parenthesized().span(),
             true,
             handler,
-        );
+        )?;
 
         // based on the condition, jump to the loop body block or the condition
         // fail block

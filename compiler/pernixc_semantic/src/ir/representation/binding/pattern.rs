@@ -120,10 +120,10 @@ impl Pattern for Refutable {
     ) -> Result<Option<Self>, TypeSystemOverflow> {
         match syntax_tree {
             syntax_tree::pattern::Refutable::Boolean(boolean) => {
-                Ok(binder.bind_boolean(boolean, ty, handler).map(Into::into))
+                Ok(binder.bind_boolean(boolean, ty, handler)?.map(Into::into))
             }
             syntax_tree::pattern::Refutable::Integer(integer) => {
-                Ok(binder.bind_integer(ty, integer, handler).map(Into::into))
+                Ok(binder.bind_integer(ty, integer, handler)?.map(Into::into))
             }
             syntax_tree::pattern::Refutable::Structural(structural) => {
                 Ok(binder
@@ -797,25 +797,20 @@ impl<
         syntax_tree: &syntax_tree::expression::Boolean,
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) -> Option<Boolean> {
+    ) -> Result<Option<Boolean>, TypeSystemOverflow> {
         ty = ty.reduce_reference();
 
-        if self
-            .type_check(
-                ty,
-                r#type::Expected::Known(Type::Primitive(
-                    r#type::Primitive::Bool,
-                )),
-                syntax_tree.span(),
-                true,
-                handler,
-            )
-            .is_ok()
-        {
-            Some(Boolean {
+        if self.type_check(
+            ty,
+            r#type::Expected::Known(Type::Primitive(r#type::Primitive::Bool)),
+            syntax_tree.span(),
+            true,
+            handler,
+        )? {
+            Ok(Some(Boolean {
                 value: syntax_tree.is_true(),
                 span: syntax_tree.span(),
-            })
+            }))
         } else {
             handler.receive(Box::new(MismatchedPatternBindingType {
                 expected_bindnig_type: PatternBindingType::Boolean,
@@ -823,7 +818,7 @@ impl<
                 pattern_span: syntax_tree.span(),
             }));
 
-            None
+            Ok(None)
         }
     }
 
@@ -1115,7 +1110,7 @@ impl<
         mut ty: &Type<infer::Model>,
         syntax_tree: &syntax_tree::pattern::Integer,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) -> Option<Integer> {
+    ) -> Result<Option<Integer>, TypeSystemOverflow> {
         ty = ty.reduce_reference();
         let mut value = match syntax_tree.numeric().span.str().parse::<i128>() {
             Ok(value) => value,
@@ -1125,7 +1120,7 @@ impl<
                     handler.receive(Box::new(TooLargetNumericLiteral {
                         span: syntax_tree.numeric().span.clone(),
                     }));
-                    return None;
+                    return Ok(None);
                 }
 
                 _ => unreachable!(),
@@ -1136,25 +1131,20 @@ impl<
             value = -value;
         }
 
-        if self
-            .type_check(
-                ty,
-                r#type::Expected::Constraint(
-                    if syntax_tree.minus().is_some() {
-                        Constraint::SignedInteger
-                    } else {
-                        Constraint::Integer
-                    },
-                ),
-                syntax_tree.span(),
-                true,
-                handler,
-            )
-            .is_err()
-        {
-            None
+        if self.type_check(
+            ty,
+            r#type::Expected::Constraint(if syntax_tree.minus().is_some() {
+                Constraint::SignedInteger
+            } else {
+                Constraint::Integer
+            }),
+            syntax_tree.span(),
+            true,
+            handler,
+        )? {
+            Ok(Some(Integer { value, span: syntax_tree.span() }))
         } else {
-            Some(Integer { value, span: syntax_tree.span() })
+            Ok(None)
         }
     }
 

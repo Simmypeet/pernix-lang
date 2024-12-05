@@ -1081,7 +1081,7 @@ impl<
                     arm.expression.span(),
                     true,
                     handler,
-                );
+                )?;
             }
 
             let incoming_values = arm_infos
