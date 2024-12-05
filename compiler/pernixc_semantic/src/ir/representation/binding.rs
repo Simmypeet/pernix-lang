@@ -870,31 +870,26 @@ impl<
                     Ok(()) => None,
 
                     Err(
-                        UnifyError::UnregisteredConstantInferenceVariable(_)
-                        | UnifyError::UnregisteredTypeInferenceVariable(_),
-                    ) => panic!("unregistered inference variable"),
-
-                    Err(
                         UnifyError::CyclicTypeInference(_)
                         | UnifyError::CyclicConstantInference(_),
                     ) => Some(Box::new(CyclicInference {
                         first: self
                             .inference_context
                             .transform_type_into_constraint_model(simplified_ty)
-                            .map_err(|x| TypeSystemOverflow {
+                            .map_err(|overflow_error| TypeSystemOverflow {
                                 operation: OverflowOperation::TypeOf,
                                 overflow_span: type_check_span.clone(),
-                                overflow_error: x.into_overflow().unwrap(),
+                                overflow_error,
                             })?,
                         second: self
                             .inference_context
                             .transform_type_into_constraint_model(
                                 simplified_expected,
                             )
-                            .map_err(|x| TypeSystemOverflow {
+                            .map_err(|overflow_error| TypeSystemOverflow {
                                 operation: OverflowOperation::TypeOf,
                                 overflow_span: type_check_span.clone(),
-                                overflow_error: x.into_overflow().unwrap(),
+                                overflow_error,
                             })?,
                         span: type_check_span,
                     })),
@@ -911,18 +906,18 @@ impl<
                             .transform_type_into_constraint_model(
                                 simplified_expected,
                             )
-                            .map_err(|x| TypeSystemOverflow {
+                            .map_err(|overflow_error| TypeSystemOverflow {
                                 operation: OverflowOperation::TypeOf,
                                 overflow_span: type_check_span.clone(),
-                                overflow_error: x.into_overflow().unwrap(),
+                                overflow_error,
                             })?,
                         found_type: self
                             .inference_context
                             .transform_type_into_constraint_model(simplified_ty)
-                            .map_err(|x| TypeSystemOverflow {
+                            .map_err(|overflow_error| TypeSystemOverflow {
                                 operation: OverflowOperation::TypeOf,
                                 overflow_span: type_check_span.clone(),
-                                overflow_error: x.into_overflow().unwrap(),
+                                overflow_error,
                             })?,
                         span: type_check_span,
                     })),

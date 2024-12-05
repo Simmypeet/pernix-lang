@@ -1,5 +1,7 @@
 //! Contains the code for binding the expression syntax tree.
 
+// TODO: this file is too intense, split it into multiple modules
+
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     num::NonZeroUsize,
@@ -1074,10 +1076,10 @@ impl<
                         found_type: self
                             .inference_context
                             .transform_type_into_constraint_model(found_type)
-                            .map_err(|x| TypeSystemOverflow {
+                            .map_err(|overflow_error| TypeSystemOverflow {
                                 operation: OverflowOperation::TypeOf,
                                 overflow_span: dereference.span(),
-                                overflow_error: x.into_overflow().unwrap(),
+                                overflow_error,
                             })?,
                         span: dereference.span(),
                     },
@@ -2140,10 +2142,12 @@ impl<
                             r#type: self
                                 .inference_context
                                 .transform_type_into_constraint_model(cast_type)
-                                .map_err(|x| TypeSystemOverflow {
-                                    operation: OverflowOperation::TypeOf,
-                                    overflow_span: cast_syn.r#type().span(),
-                                    overflow_error: x.into_overflow().unwrap(),
+                                .map_err(|overflow_error| {
+                                    TypeSystemOverflow {
+                                        operation: OverflowOperation::TypeOf,
+                                        overflow_span: cast_syn.r#type().span(),
+                                        overflow_error,
+                                    }
                                 })?,
                             span: cast_syn.r#type().span(),
                         },
@@ -2232,15 +2236,15 @@ impl<
                                         .transform_type_into_constraint_model(
                                             found_type,
                                         )
-                                        .map_err(|x| TypeSystemOverflow {
-                                            operation:
-                                                OverflowOperation::TypeOf,
-                                            overflow_span: syntax_tree
-                                                .postfixable()
-                                                .span(),
-                                            overflow_error: x
-                                                .into_overflow()
-                                                .unwrap(),
+                                        .map_err(|overflow_error| {
+                                            TypeSystemOverflow {
+                                                operation:
+                                                    OverflowOperation::TypeOf,
+                                                overflow_span: syntax_tree
+                                                    .postfixable()
+                                                    .span(),
+                                                overflow_error,
+                                            }
                                         })?,
                                 }));
 
@@ -2331,15 +2335,15 @@ impl<
                                         .transform_type_into_constraint_model(
                                             found_type,
                                         )
-                                        .map_err(|x| TypeSystemOverflow {
-                                            operation:
-                                                OverflowOperation::TypeOf,
-                                            overflow_span: syntax_tree
-                                                .postfixable()
-                                                .span(),
-                                            overflow_error: x
-                                                .into_overflow()
-                                                .unwrap(),
+                                        .map_err(|overflow_error| {
+                                            TypeSystemOverflow {
+                                                operation:
+                                                    OverflowOperation::TypeOf,
+                                                overflow_span: syntax_tree
+                                                    .postfixable()
+                                                    .span(),
+                                                overflow_error,
+                                            }
                                         })?,
                                 }));
 
@@ -2404,15 +2408,15 @@ impl<
                                         .transform_type_into_constraint_model(
                                             Type::Tuple(tuple_ty),
                                         )
-                                        .map_err(|x| TypeSystemOverflow {
-                                            operation:
-                                                OverflowOperation::TypeOf,
-                                            overflow_span: syntax_tree
-                                                .postfixable()
-                                                .span(),
-                                            overflow_error: x
-                                                .into_overflow()
-                                                .unwrap(),
+                                        .map_err(|overflow_error| {
+                                            TypeSystemOverflow {
+                                                operation:
+                                                    OverflowOperation::TypeOf,
+                                                overflow_span: syntax_tree
+                                                    .postfixable()
+                                                    .span(),
+                                                overflow_error,
+                                            }
                                         })?
                                         .into_tuple()
                                         .unwrap(),
@@ -2445,10 +2449,10 @@ impl<
                                             .transform_type_into_constraint_model(Type::Tuple(
                                                 tuple_ty,
                                             ))
-                                            .map_err(|x| TypeSystemOverflow {
+                                            .map_err(|overflow_error| TypeSystemOverflow {
                                                 operation: OverflowOperation::TypeOf,
                                                 overflow_span: syntax_tree.postfixable().span(),
-                                                overflow_error: x.into_overflow().unwrap(),
+                                                overflow_error,
                                             })?
                                             .into_tuple()
                                             .unwrap(),
@@ -2486,15 +2490,15 @@ impl<
                                         .transform_type_into_constraint_model(
                                             ty,
                                         )
-                                        .map_err(|x| TypeSystemOverflow {
-                                            operation:
-                                                OverflowOperation::TypeOf,
-                                            overflow_span: syntax_tree
-                                                .postfixable()
-                                                .span(),
-                                            overflow_error: x
-                                                .into_overflow()
-                                                .unwrap(),
+                                        .map_err(|overflow_error| {
+                                            TypeSystemOverflow {
+                                                operation:
+                                                    OverflowOperation::TypeOf,
+                                                overflow_span: syntax_tree
+                                                    .postfixable()
+                                                    .span(),
+                                                overflow_error,
+                                            }
                                         })?,
                                 }),
                             );
@@ -3056,10 +3060,10 @@ impl<
                             .transform_type_into_constraint_model(Type::Tuple(
                                 tuple_type,
                             ))
-                            .map_err(|x| TypeSystemOverflow {
+                            .map_err(|overflow_error| TypeSystemOverflow {
                                 operation: OverflowOperation::TypeOf,
                                 overflow_span: syntax_tree.span(),
-                                overflow_error: x.into_overflow().unwrap(),
+                                overflow_error,
                             })?,
                     },
                 ));
@@ -3668,10 +3672,12 @@ impl<
                                 .transform_type_into_constraint_model(
                                     lhs_register_ty,
                                 )
-                                .map_err(|x| TypeSystemOverflow {
-                                    operation: OverflowOperation::TypeOf,
-                                    overflow_span: syntax_tree.left.span(),
-                                    overflow_error: x.into_overflow().unwrap(),
+                                .map_err(|overflow_error| {
+                                    TypeSystemOverflow {
+                                        operation: OverflowOperation::TypeOf,
+                                        overflow_span: syntax_tree.left.span(),
+                                        overflow_error,
+                                    }
                                 })?,
                             span: syntax_tree.span(),
                         },
@@ -3731,12 +3737,15 @@ impl<
                                     .transform_type_into_constraint_model(
                                         lhs_register_ty,
                                     )
-                                    .map_err(|x| TypeSystemOverflow {
-                                        operation: OverflowOperation::TypeOf,
-                                        overflow_span: syntax_tree.left.span(),
-                                        overflow_error: x
-                                            .into_overflow()
-                                            .unwrap(),
+                                    .map_err(|overflow_error| {
+                                        TypeSystemOverflow {
+                                            operation:
+                                                OverflowOperation::TypeOf,
+                                            overflow_span: syntax_tree
+                                                .left
+                                                .span(),
+                                            overflow_error,
+                                        }
                                     })?,
                                 span: syntax_tree.span(),
                             },

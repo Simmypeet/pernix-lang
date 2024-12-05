@@ -227,24 +227,10 @@ pub struct UnsatisfiedConstraintError<T, C> {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
-#[error(
-    "the inference variable is used before being registered in the context"
-)]
-#[allow(missing_docs)]
-pub struct UnregisteredInferenceVariableError<ID>(pub ID);
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
 #[allow(missing_docs)]
 pub enum UnifyConstraintError<T: Term, C> {
     #[error(transparent)]
     UnsatisfiedConstraint(#[from] UnsatisfiedConstraintError<T, C>),
-
-    #[error(transparent)]
-    UnregisteredInferenceVariable(
-        #[from] UnregisteredInferenceVariableError<T::InferenceVariable>,
-    ),
 
     #[error(transparent)]
     CombineConstraint(#[from] CombineConstraintError<C>),
@@ -257,9 +243,6 @@ pub enum UnifyConstraintError<T: Term, C> {
 pub enum AssignKnownValueError<T, C> {
     #[error(transparent)]
     UnsatisfiedConstraintError(#[from] UnsatisfiedConstraintError<T, C>),
-
-    #[error("the given constraint ID doesn't exist in the context")]
-    InvalidConstraintID(ID<C>),
 }
 
 impl<T: Term, C: Constraint<T> + 'static> ContextImpl<T, C> {
@@ -272,9 +255,7 @@ impl<T: Term, C: Constraint<T> + 'static> ContextImpl<T, C> {
         let inference = self
             .inference_by_ids
             .get_mut(&inference_variable)
-            .ok_or(UnifyConstraintError::UnregisteredInferenceVariable(
-                UnregisteredInferenceVariableError(inference_variable.clone()),
-            ))?;
+            .expect("invalid inference variable");
 
         match inference {
             Inference::Known(inferred) => {
@@ -312,10 +293,8 @@ impl<T: Term, C: Constraint<T> + 'static> ContextImpl<T, C> {
         known: T,
     ) -> Result<(), AssignKnownValueError<T, C>> {
         // check if the known value satisfies the constraint
-        let constraint = self
-            .constraints
-            .get(constraint_id)
-            .ok_or(AssignKnownValueError::InvalidConstraintID(constraint_id))?;
+        let constraint =
+            self.constraints.get(constraint_id).expect("invalid constraint ID");
 
         // check if the known value satisfies the constraint
         if !constraint.satisfies(&known) {
@@ -535,18 +514,6 @@ pub struct CyclicInferenceError<T>(InferenceVariable<T>);
 )]
 #[allow(missing_docs)]
 pub enum UnifyError {
-    #[error(transparent)]
-    UnregisteredTypeInferenceVariable(
-        #[from]
-        UnregisteredInferenceVariableError<InferenceVariable<Type<Model>>>,
-    ),
-
-    #[error(transparent)]
-    UnregisteredConstantInferenceVariable(
-        #[from]
-        UnregisteredInferenceVariableError<InferenceVariable<Constant<Model>>>,
-    ),
-
     #[error(
         "cannot unify the term due to the undecidability (exceeding the \
          computation limit)"
@@ -685,6 +652,10 @@ impl Context {
     /// the `constraint_id` in the inference context will be replaced with the
     /// known value.
     ///
+    /// # Panics
+    ///
+    /// Panics if the `constraint_id` is invalid.
+    ///
     /// # Errors
     ///
     /// See [`AssignKnownValueError`] for more information.
@@ -797,8 +768,7 @@ impl Context {
         into_unify_error: &impl Fn(UnsatisfiedConstraintError<T, C>) -> UnifyError,
     ) -> Result<(), UnifyError>
     where
-        UnifyError: From<UnregisteredInferenceVariableError<InferenceVariable<T>>>
-            + From<CyclicInferenceError<T>>,
+        UnifyError: From<CyclicInferenceError<T>>,
     {
         // check if there's a constraint with the given ID on the known
         for (term, _) in RecursiveIterator::new(known) {
@@ -810,7 +780,7 @@ impl Context {
 
             let Inference::Inferring(inference) = context(self)
                 .get_inference(*inference_variable)
-                .ok_or(UnregisteredInferenceVariableError(*inference_variable))?
+                .expect("invalid inference variable")
                 .clone()
             else {
                 continue;
@@ -823,12 +793,6 @@ impl Context {
 
         match context(self).assign_infer_to_known(inferring, known.clone()) {
             Ok(()) => Ok(()),
-            Err(AssignKnownValueError::InvalidConstraintID(id)) => {
-                panic!(
-                    "found invalid {id:?} constraint id in the inference \
-                     context"
-                )
-            }
 
             Err(AssignKnownValueError::UnsatisfiedConstraintError(error)) => {
                 Err(into_unify_error(error))
@@ -861,8 +825,7 @@ impl Context {
         combine_constraint_error: &impl Fn(CombineConstraintError<C>) -> UnifyError,
     ) -> Result<(), UnifyError>
     where
-        UnifyError: From<UnregisteredInferenceVariableError<InferenceVariable<T>>>
-            + From<CyclicInferenceError<T>>,
+        UnifyError: From<CyclicInferenceError<T>>,
     {
         for (lhs, rhs) in mapping
             .iter()
@@ -872,12 +835,12 @@ impl Context {
                 (Some(lhs), Some(rhs)) => {
                     let lhs_inference = inference_context(self)
                         .get_inference(lhs)
-                        .ok_or(UnregisteredInferenceVariableError(lhs))?
+                        .expect("invalid inference variable")
                         .clone();
 
                     let rhs_inference = inference_context(self)
                         .get_inference(rhs)
-                        .ok_or(UnregisteredInferenceVariableError(rhs))?
+                        .expect("invalid inference variable")
                         .clone();
 
                     match (lhs_inference, rhs_inference) {
@@ -984,7 +947,7 @@ impl Context {
                     match inference_context(self)
                         .get_inference(inference)
                         .cloned()
-                        .ok_or(UnregisteredInferenceVariableError(inference))?
+                        .expect("invalid inference variable")
                     {
                         Inference::Known(known) => {
                             unify(
@@ -1268,15 +1231,11 @@ impl model::Model for ConstraintModel {
 )]
 #[allow(missing_docs)]
 pub enum IntoConstraintModelError {
-    #[error(transparent)]
-    UnregisteredTypeInferenceVariable(
-        UnregisteredInferenceVariableError<InferenceVariable<Type<Model>>>,
-    ),
+    #[error("the inference variable is not registered in the context")]
+    UnregisteredTypeInferenceVariable(InferenceVariable<Type<Model>>),
 
-    #[error(transparent)]
-    UnregisteredConstantInferenceVariable(
-        UnregisteredInferenceVariableError<InferenceVariable<Constant<Model>>>,
-    ),
+    #[error("the inference variable is not registered in the context")]
+    UnregisteredConstantInferenceVariable(InferenceVariable<Constant<Model>>),
 
     #[error(transparent)]
     Overflow(#[from] OverflowError),
@@ -1463,7 +1422,7 @@ impl TryFrom<InferenceOrConstraint<InferenceVariable<Type<Model>>, Self>>
         match value {
             InferenceOrConstraint::InferenceID(inference_id) => Err(
                 IntoConstraintModelError::UnregisteredTypeInferenceVariable(
-                    UnregisteredInferenceVariableError(inference_id),
+                    inference_id,
                 ),
             ),
             InferenceOrConstraint::Constraint(constraint) => Ok(constraint),
@@ -1482,7 +1441,7 @@ impl TryFrom<InferenceOrConstraint<InferenceVariable<Constant<Model>>, Self>>
         match value {
             InferenceOrConstraint::InferenceID(inference_id) => Err(
                 IntoConstraintModelError::UnregisteredConstantInferenceVariable(
-                    UnregisteredInferenceVariableError(inference_id),
+                    inference_id,
                 ),
             ),
             InferenceOrConstraint::Constraint(constraint) => Ok(constraint),
@@ -1496,14 +1455,10 @@ impl Context {
     ///
     /// All type inference variables will be replaced with the constraints they
     /// currently infer.
-    ///
-    /// # Errors
-    ///
-    /// See [`IntoConstraintModelError`] for the possible errors.
     pub fn transform_type_into_constraint_model(
         &self,
         ty: Type<Model>,
-    ) -> Result<Type<ConstraintModel>, IntoConstraintModelError> {
+    ) -> Result<Type<ConstraintModel>, OverflowError> {
         let mut intermediary_type =
             Type::<IntermediaryModel>::from_other_model(ty);
 
@@ -1525,7 +1480,7 @@ impl Context {
 
         intermediary_type = simplify(&intermediary_type, &environment)?.result;
 
-        Type::try_from_other_model(intermediary_type)
+        Ok(Type::try_from_other_model(intermediary_type).unwrap())
     }
 
     /// Converts the constant with [`Model`] into the constant with the
@@ -1540,7 +1495,7 @@ impl Context {
     pub fn transform_constant_into_constraint_model(
         &self,
         constant: Constant<Model>,
-    ) -> Result<Constant<ConstraintModel>, IntoConstraintModelError> {
+    ) -> Result<Constant<ConstraintModel>, OverflowError> {
         let mut intermediary_constant =
             Constant::<IntermediaryModel>::from_other_model(constant);
 
@@ -1563,7 +1518,7 @@ impl Context {
         intermediary_constant =
             simplify(&intermediary_constant, &environment)?.result;
 
-        Constant::try_from_other_model(intermediary_constant)
+        Ok(Constant::try_from_other_model(intermediary_constant).unwrap())
     }
 }
 
