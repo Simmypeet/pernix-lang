@@ -1004,7 +1004,11 @@ impl<
                 found_type: self
                     .inference_context
                     .transform_type_into_constraint_model(ty.clone())
-                    .unwrap(),
+                    .map_err(|x| TypeSystemOverflow {
+                        operation: OverflowOperation::TypeOf,
+                        overflow_span: syntax_tree.span(),
+                        overflow_error: x.into_overflow().unwrap(),
+                    })?,
                 pattern_span: syntax_tree.span(),
             }));
             return Ok(None);

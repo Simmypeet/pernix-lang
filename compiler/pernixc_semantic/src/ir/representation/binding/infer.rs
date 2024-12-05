@@ -1255,7 +1255,16 @@ impl model::Model for ConstraintModel {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    thiserror::Error,
+    EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum IntoConstraintModelError {

@@ -1074,7 +1074,11 @@ impl<
                         found_type: self
                             .inference_context
                             .transform_type_into_constraint_model(found_type)
-                            .unwrap(),
+                            .map_err(|x| TypeSystemOverflow {
+                                operation: OverflowOperation::TypeOf,
+                                overflow_span: dereference.span(),
+                                overflow_error: x.into_overflow().unwrap(),
+                            })?,
                         span: dereference.span(),
                     },
                 ));
@@ -2136,7 +2140,11 @@ impl<
                             r#type: self
                                 .inference_context
                                 .transform_type_into_constraint_model(cast_type)
-                                .unwrap(),
+                                .map_err(|x| TypeSystemOverflow {
+                                    operation: OverflowOperation::TypeOf,
+                                    overflow_span: cast_syn.r#type().span(),
+                                    overflow_error: x.into_overflow().unwrap(),
+                                })?,
                             span: cast_syn.r#type().span(),
                         },
                     ));
@@ -2224,7 +2232,16 @@ impl<
                                         .transform_type_into_constraint_model(
                                             found_type,
                                         )
-                                        .unwrap(),
+                                        .map_err(|x| TypeSystemOverflow {
+                                            operation:
+                                                OverflowOperation::TypeOf,
+                                            overflow_span: syntax_tree
+                                                .postfixable()
+                                                .span(),
+                                            overflow_error: x
+                                                .into_overflow()
+                                                .unwrap(),
+                                        })?,
                                 }));
 
                                 return Err(Error::Semantic(SemanticError(
@@ -2314,7 +2331,16 @@ impl<
                                         .transform_type_into_constraint_model(
                                             found_type,
                                         )
-                                        .unwrap(),
+                                        .map_err(|x| TypeSystemOverflow {
+                                            operation:
+                                                OverflowOperation::TypeOf,
+                                            overflow_span: syntax_tree
+                                                .postfixable()
+                                                .span(),
+                                            overflow_error: x
+                                                .into_overflow()
+                                                .unwrap(),
+                                        })?,
                                 }));
 
                                 return Err(Error::Semantic(SemanticError(
@@ -2378,7 +2404,16 @@ impl<
                                         .transform_type_into_constraint_model(
                                             Type::Tuple(tuple_ty),
                                         )
-                                        .unwrap()
+                                        .map_err(|x| TypeSystemOverflow {
+                                            operation:
+                                                OverflowOperation::TypeOf,
+                                            overflow_span: syntax_tree
+                                                .postfixable()
+                                                .span(),
+                                            overflow_error: x
+                                                .into_overflow()
+                                                .unwrap(),
+                                        })?
                                         .into_tuple()
                                         .unwrap(),
                                 }),
@@ -2410,7 +2445,11 @@ impl<
                                             .transform_type_into_constraint_model(Type::Tuple(
                                                 tuple_ty,
                                             ))
-                                            .unwrap()
+                                            .map_err(|x| TypeSystemOverflow {
+                                                operation: OverflowOperation::TypeOf,
+                                                overflow_span: syntax_tree.postfixable().span(),
+                                                overflow_error: x.into_overflow().unwrap(),
+                                            })?
                                             .into_tuple()
                                             .unwrap(),
                                     }),
@@ -2447,7 +2486,16 @@ impl<
                                         .transform_type_into_constraint_model(
                                             ty,
                                         )
-                                        .unwrap(),
+                                        .map_err(|x| TypeSystemOverflow {
+                                            operation:
+                                                OverflowOperation::TypeOf,
+                                            overflow_span: syntax_tree
+                                                .postfixable()
+                                                .span(),
+                                            overflow_error: x
+                                                .into_overflow()
+                                                .unwrap(),
+                                        })?,
                                 }),
                             );
 
@@ -3008,7 +3056,11 @@ impl<
                             .transform_type_into_constraint_model(Type::Tuple(
                                 tuple_type,
                             ))
-                            .unwrap(),
+                            .map_err(|x| TypeSystemOverflow {
+                                operation: OverflowOperation::TypeOf,
+                                overflow_span: syntax_tree.span(),
+                                overflow_error: x.into_overflow().unwrap(),
+                            })?,
                     },
                 ));
 
@@ -3616,7 +3668,11 @@ impl<
                                 .transform_type_into_constraint_model(
                                     lhs_register_ty,
                                 )
-                                .unwrap(),
+                                .map_err(|x| TypeSystemOverflow {
+                                    operation: OverflowOperation::TypeOf,
+                                    overflow_span: syntax_tree.left.span(),
+                                    overflow_error: x.into_overflow().unwrap(),
+                                })?,
                             span: syntax_tree.span(),
                         },
                     ));
@@ -3675,7 +3731,13 @@ impl<
                                     .transform_type_into_constraint_model(
                                         lhs_register_ty,
                                     )
-                                    .unwrap(),
+                                    .map_err(|x| TypeSystemOverflow {
+                                        operation: OverflowOperation::TypeOf,
+                                        overflow_span: syntax_tree.left.span(),
+                                        overflow_error: x
+                                            .into_overflow()
+                                            .unwrap(),
+                                    })?,
                                 span: syntax_tree.span(),
                             },
                         ));

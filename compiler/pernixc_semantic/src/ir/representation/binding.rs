@@ -881,13 +881,21 @@ impl<
                         first: self
                             .inference_context
                             .transform_type_into_constraint_model(simplified_ty)
-                            .unwrap(),
+                            .map_err(|x| TypeSystemOverflow {
+                                operation: OverflowOperation::TypeOf,
+                                overflow_span: type_check_span.clone(),
+                                overflow_error: x.into_overflow().unwrap(),
+                            })?,
                         second: self
                             .inference_context
                             .transform_type_into_constraint_model(
                                 simplified_expected,
                             )
-                            .unwrap(),
+                            .map_err(|x| TypeSystemOverflow {
+                                operation: OverflowOperation::TypeOf,
+                                overflow_span: type_check_span.clone(),
+                                overflow_error: x.into_overflow().unwrap(),
+                            })?,
                         span: type_check_span,
                     })),
 
@@ -903,11 +911,19 @@ impl<
                             .transform_type_into_constraint_model(
                                 simplified_expected,
                             )
-                            .unwrap(),
+                            .map_err(|x| TypeSystemOverflow {
+                                operation: OverflowOperation::TypeOf,
+                                overflow_span: type_check_span.clone(),
+                                overflow_error: x.into_overflow().unwrap(),
+                            })?,
                         found_type: self
                             .inference_context
                             .transform_type_into_constraint_model(simplified_ty)
-                            .unwrap(),
+                            .map_err(|x| TypeSystemOverflow {
+                                operation: OverflowOperation::TypeOf,
+                                overflow_span: type_check_span.clone(),
+                                overflow_error: x.into_overflow().unwrap(),
+                            })?,
                         span: type_check_span,
                     })),
                 };
