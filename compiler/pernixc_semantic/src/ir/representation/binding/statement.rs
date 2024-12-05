@@ -8,7 +8,7 @@ use super::{
     infer, Binder, Error, InternalError,
 };
 use crate::{
-    error,
+    error::{self, OverflowOperation, TypeSystemOverflow},
     ir::{
         self,
         address::{Address, Memory},
@@ -193,6 +193,11 @@ impl<
 
         let type_of_address =
             simplify::simplify(&type_of_address, &self.create_environment())
+                .map_err(|overflow_error| TypeSystemOverflow {
+                    operation: OverflowOperation::TypeOf,
+                    overflow_span: syntax_tree.expression().span(),
+                    overflow_error,
+                })?
                 .result;
 
         let pattern = self
@@ -200,7 +205,7 @@ impl<
                 &type_of_address,
                 syntax_tree.irrefutable_pattern(),
                 &self.create_handler_wrapper(handler),
-            )
+            )?
             .unwrap_or_else(|| {
                 Wildcard { span: syntax_tree.irrefutable_pattern().span() }
                     .into()
@@ -216,7 +221,7 @@ impl<
             qualifier,
             from_lvalue,
             &self.create_handler_wrapper(handler),
-        );
+        )?;
 
         // add the variable to the stack
         self.stack

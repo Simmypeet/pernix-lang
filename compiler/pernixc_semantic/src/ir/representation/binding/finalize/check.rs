@@ -2,7 +2,7 @@ use pernixc_base::{handler::Handler, source_file::Span};
 
 use crate::{
     arena::ID,
-    error,
+    error::{self, OverflowOperation, TypeSystemOverflow},
     ir::{
         self,
         representation::{binding::HandlerWrapper, Representation},
@@ -19,7 +19,7 @@ use crate::{
         observer::Observer,
         predicate::{self, PositiveMarker, PositiveTrait, Predicate, Tuple},
         term::{r#type::Qualifier, GenericArguments},
-        well_formedness,
+        well_formedness, OverflowError,
     },
 };
 
@@ -46,11 +46,10 @@ fn report_error(
                 return;
             }
 
-            handler.receive(Box::new(error::UndecidablePredicate {
-                instantiation_span,
-                predicate: undecidable.predicate,
-                predicate_declaration_span: undecidable
-                    .predicate_declaration_span,
+            handler.receive(Box::new(TypeSystemOverflow {
+                operation: OverflowOperation::Predicate(undecidable.predicate),
+                overflow_span: instantiation_span,
+                overflow_error: OverflowError,
             }));
         }
         well_formedness::Error::ImplementationIsNotGeneralEnough(

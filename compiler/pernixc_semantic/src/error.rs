@@ -29,13 +29,14 @@ use crate::{
     },
     type_system::{
         equality,
-        model::Model,
+        model::{self, Model},
         predicate::Predicate,
         term::{
             constant,
             r#type::{self, Qualifier, Type},
             GenericArguments,
         },
+        OverflowError,
     },
 };
 
@@ -1042,21 +1043,39 @@ impl Report<&Table<Suboptimal>> for UnexpectedInference {
     }
 }
 
-/// The satisfiability of the predicate was undecidable (takes too long to
-/// solve).
+/// Represents an enumeration of operations that can cause [`OverflowError`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UndecidablePredicate<M: Model> {
-    /// The span where the predicate satisfiability was undecidable.
-    pub instantiation_span: Span,
+pub enum OverflowOperation<M: Model> {
+    /// Caused by calculating the type of particular entity
+    TypeOf,
 
-    /// The predicate that was undecidable.
-    pub predicate: Predicate<M>,
+    /// Caused by type checking
+    TypeCheck,
 
-    /// The span where the predicate is defined.
-    pub predicate_declaration_span: Option<Span>,
+    /// Caused by evaluating the predicate satisfiability
+    Predicate(Predicate<M>),
 }
 
-impl<M: Model> Report<&Table<Suboptimal>> for UndecidablePredicate<M>
+/// An [`OverflowError`] occurred while compiling the program.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error(
+    "ecnountered an over flow error from the `type_system` module; this \
+     should be reported to the user"
+)]
+pub struct TypeSystemOverflow<M: Model = model::Default> {
+    /// The operation that caused the overflow.
+    pub operation: OverflowOperation<M>,
+
+    /// The span where the overflow occurred.
+    pub overflow_span: Span,
+
+    /// The [`OverflowError`] that occurred.
+    pub overflow_error: OverflowError,
+}
+
+impl<M: Model> Report<&Table<Suboptimal>> for TypeSystemOverflow<M>
 where
     Predicate<M>: Display<Suboptimal>,
 {
@@ -1067,23 +1086,29 @@ where
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
-            span: self.instantiation_span.clone(),
-            message: format!(
-                "overflow calculating the satisfiability of `{}` predicate \
-                 when instantiating",
-                DisplayObject { display: &self.predicate, table }
-            ),
+            span: self.overflow_span.clone(),
+            message: match &self.operation {
+                OverflowOperation::TypeOf => format!(
+                    "overflow calculating the type of `{}`",
+                    self.overflow_span.str()
+                ),
+                OverflowOperation::TypeCheck => format!(
+                    "overflow while calculating requirements for checking the \
+                     type of `{}`",
+                    self.overflow_span.str()
+                ),
+                OverflowOperation::Predicate(predicate) => format!(
+                    "overflow calculating the satisfiability of `{}` predicate",
+                    DisplayObject { display: predicate, table }
+                ),
+            },
             severity: Severity::Error,
-            help_message: None,
-            related: self
-                .predicate_declaration_span
-                .as_ref()
-                .map(|predicate_span| Related {
-                    span: predicate_span.clone(),
-                    message: "predicate defined here".to_string(),
-                })
-                .into_iter()
-                .collect(),
+            help_message: Some(
+                "try reduce the complexity of the code; this error is the \
+                 limitation of the type-system/compiler"
+                    .to_string(),
+            ),
+            related: Vec::new(),
         })
     }
 }

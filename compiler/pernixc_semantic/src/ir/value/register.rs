@@ -585,7 +585,7 @@ impl<M: Model> Values<M> {
             }
         }?;
 
-        Ok(simplify::simplify(&ty, environment))
+        Ok(simplify::simplify(&ty, environment)?)
     }
 }
 

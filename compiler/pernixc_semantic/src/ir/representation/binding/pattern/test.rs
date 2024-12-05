@@ -181,7 +181,7 @@ impl<
         let storage = Storage::<Box<dyn error::Error>>::default();
 
         let irrefutable =
-            self.bind_pattern(ty, &pattern_syn, &storage).unwrap();
+            self.bind_pattern(ty, &pattern_syn, &storage).unwrap().unwrap();
 
         let storage = storage.into_vec();
         assert!(storage.is_empty(), "{storage:?}");
@@ -199,7 +199,8 @@ impl<
             Qualifier::Mutable,
             false,
             &storage,
-        );
+        )
+        .unwrap();
 
         let storage = storage.into_vec();
         assert!(storage.is_empty(), "{storage:?}");

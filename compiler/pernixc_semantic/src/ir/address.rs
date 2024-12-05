@@ -320,7 +320,7 @@ impl<M: Model> Values<M> {
                     .r#type
                     .clone();
 
-                Ok(simplify::simplify(&M::from_default_type(ty), environment))
+                Ok(simplify::simplify(&M::from_default_type(ty), environment)?)
             }
 
             Address::Memory(Memory::Alloca(parameter)) => {
@@ -329,7 +329,7 @@ impl<M: Model> Values<M> {
                     .get(*parameter)
                     .ok_or(TypeOfError::InvalidAllocaID(*parameter))?;
 
-                Ok(simplify::simplify(&alloca.r#type.clone(), environment))
+                Ok(simplify::simplify(&alloca.r#type.clone(), environment)?)
             }
 
             Address::Field(field_address) => {
@@ -389,7 +389,8 @@ impl<M: Model> Values<M> {
                 );
 
                 instantiation::instantiate(&mut field_ty, &instantiation);
-                let simplification = simplify::simplify(&field_ty, environment);
+                let simplification =
+                    simplify::simplify(&field_ty, environment)?;
                 constraints.extend(simplification.constraints);
 
                 Ok(Succeeded { result: simplification.result, constraints })
@@ -532,7 +533,7 @@ impl<M: Model> Values<M> {
                 instantiation::instantiate(&mut variant_ty, &instantiation);
 
                 let simplification =
-                    simplify::simplify(&variant_ty, environment);
+                    simplify::simplify(&variant_ty, environment)?;
                 constraints.extend(simplification.constraints);
 
                 Ok(Succeeded::with_constraints(

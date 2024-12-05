@@ -43,7 +43,8 @@ fn basic() {
             table: &table,
             normalizer: normalizer::NO_OP,
             observer: observer::NO_OP,
-        });
+        })
+        .unwrap();
 
     assert_eq!(simplified, equivalent);
     assert!(constraints.is_empty());
@@ -88,7 +89,8 @@ fn sub_term() {
             normalizer: normalizer::NO_OP,
             observer: observer::NO_OP,
         },
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         simplified,
@@ -135,7 +137,8 @@ fn already_simplified() {
             table: &table,
             normalizer: normalizer::NO_OP,
             observer: observer::NO_OP,
-        });
+        })
+        .unwrap();
 
     assert_eq!(simplified, equivalent);
     assert!(constraints.is_empty());
@@ -187,7 +190,8 @@ fn with_lifetime_matching() {
             table: &table,
             normalizer: normalizer::NO_OP,
             observer: observer::NO_OP,
-        });
+        })
+        .unwrap();
 
     assert_eq!(simplified, equivalent);
     assert_eq!(constraints.len(), 2);
@@ -234,10 +238,11 @@ fn multiple_equivalences() {
     };
 
     let Succeeded { result: result1, constraints: constraints1 } =
-        simplify(&Type::TraitMember(first_trait_member), &environment);
+        simplify(&Type::TraitMember(first_trait_member), &environment).unwrap();
 
     let Succeeded { result: result2, constraints: constraints2 } =
-        simplify(&Type::TraitMember(second_trait_member), &environment);
+        simplify(&Type::TraitMember(second_trait_member), &environment)
+            .unwrap();
 
     assert_eq!(result1, result2);
 
@@ -308,7 +313,7 @@ fn transitive() {
     };
 
     let Succeeded { result: simplified, constraints } =
-        simplify(&Type::TraitMember(trait_a), &environment);
+        simplify(&Type::TraitMember(trait_a), &environment).unwrap();
 
     assert_eq!(simplified, equivalent);
     assert_eq!(constraints.len(), 2);

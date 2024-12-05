@@ -18,7 +18,10 @@ use stack::Stack;
 use super::Representation;
 use crate::{
     arena::ID,
-    error::{self, CyclicInference, MismatchedType},
+    error::{
+        self, CyclicInference, MismatchedType, OverflowOperation,
+        TypeSystemOverflow,
+    },
     ir::{
         self,
         address::{Address, Memory},
@@ -133,7 +136,7 @@ pub struct Binder<
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
 pub enum CreateFunctionBinderError {
@@ -145,6 +148,9 @@ pub enum CreateFunctionBinderError {
          the function's parameter count"
     )]
     MismatchedParameterCount,
+
+    #[error(transparent)]
+    TypeSystemOverflow(#[from] TypeSystemOverflow),
 }
 
 #[derive(Clone)]
@@ -247,7 +253,7 @@ impl<
                 infer::Model::from_default_type(parameter_sym.r#type.clone());
 
             let pattern = binder
-                .bind_pattern(&parameter_type, syntax_tree, &handler)
+                .bind_pattern(&parameter_type, syntax_tree, &handler)?
                 .unwrap_or_else(|| {
                     Wildcard { span: syntax_tree.span() }.into()
                 });
@@ -262,7 +268,7 @@ impl<
                 Qualifier::Mutable,
                 false,
                 &handler,
-            );
+            )?;
         }
 
         binder
@@ -301,6 +307,15 @@ pub enum InternalError {
          register or address while binding the IR"
     )]
     TypeOf(#[from] TypeOfError<infer::Model>),
+
+    #[error(transparent)]
+    TypeSystemOverflow(#[from] TypeSystemOverflow),
+}
+
+impl From<TypeSystemOverflow> for Error {
+    fn from(error: TypeSystemOverflow) -> Self {
+        Self::Internal(InternalError::TypeSystemOverflow(error))
+    }
 }
 
 /// Is an error occurred while binding the syntax tree
@@ -823,16 +838,27 @@ impl<
         type_check_span: Span,
         include_suboptimal_flag: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<(), SemanticError> {
+    ) -> Result<(), Error> {
         let environment = self.create_environment();
 
         // simplify the types
-        let simplified_ty = simplify(ty, &environment).result;
+        let simplified_ty = simplify(ty, &environment)
+            .map_err(|overflow_error| TypeSystemOverflow {
+                operation: OverflowOperation::TypeOf,
+                overflow_span: type_check_span.clone(),
+                overflow_error,
+            })?
+            .result;
 
         match expected_ty {
             Expected::Known(expected_ty) => {
-                let simplified_expected =
-                    simplify(&expected_ty, &environment).result;
+                let simplified_expected = simplify(&expected_ty, &environment)
+                    .map_err(|overflow_error| TypeSystemOverflow {
+                        operation: OverflowOperation::TypeOf,
+                        overflow_span: type_check_span.clone(),
+                        overflow_error,
+                    })?
+                    .result;
 
                 let error: Option<Box<dyn error::Error>> = match self
                     .inference_context
@@ -860,7 +886,9 @@ impl<
                             .unwrap(),
                         second: self
                             .inference_context
-                            .transform_type_into_constraint_model(simplified_expected)
+                            .transform_type_into_constraint_model(
+                                simplified_expected,
+                            )
                             .unwrap(),
                         span: type_check_span.clone(),
                     })),
@@ -874,7 +902,9 @@ impl<
                     ) => Some(Box::new(MismatchedType {
                         expected_type: self
                             .inference_context
-                            .transform_type_into_constraint_model(simplified_expected)
+                            .transform_type_into_constraint_model(
+                                simplified_expected,
+                            )
                             .unwrap(),
                         found_type: self
                             .inference_context
@@ -894,7 +924,7 @@ impl<
                             handler.receive(error);
                         }
 
-                        Err(SemanticError(type_check_span))
+                        Err(Error::Semantic(SemanticError(type_check_span)))
                     },
                 )
             }
@@ -927,7 +957,7 @@ impl<
                         handler.receive(error);
                     }
 
-                    Err(SemanticError(type_check_span))
+                    Err(Error::Semantic(SemanticError(type_check_span)))
                 }
             }
         }

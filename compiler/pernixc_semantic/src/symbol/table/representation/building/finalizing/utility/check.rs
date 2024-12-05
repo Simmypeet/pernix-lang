@@ -24,8 +24,8 @@ use crate::{
         MismatchedGenericParameterCountInImplementation,
         MismatchedImplementationArguments,
         MismatchedImplementationConstantTypeParameter,
-        OverflowCalculatingRequirementForInstantiation,
-        RecursiveTraitTypeEquality, UndecidablePredicate, UnsatisifedPredicate,
+        OverflowCalculatingRequirementForInstantiation, OverflowOperation,
+        RecursiveTraitTypeEquality, TypeSystemOverflow, UnsatisifedPredicate,
         UnusedGenericParameterInImplementation,
     },
     symbol::{
@@ -122,15 +122,15 @@ where
                 }));
             }
 
-            Self::Undecidable { predicate, predicate_declaration_span } => {
+            Self::Undecidable { predicate, .. } => {
                 if predicate.contains_error() {
                     return;
                 }
 
-                handler.receive(Box::new(UndecidablePredicate {
-                    instantiation_span,
-                    predicate,
-                    predicate_declaration_span,
+                handler.receive(Box::new(TypeSystemOverflow {
+                    operation: OverflowOperation::Predicate(predicate),
+                    overflow_span: instantiation_span,
+                    overflow_error: OverflowError,
                 }));
             }
 
@@ -960,13 +960,15 @@ where
                             }));
                         }
 
-                        Err(OverflowError) => {
-                            handler.receive(Box::new(UndecidablePredicate {
-                                instantiation_span: instantiation_span.clone(),
-                                predicate: predicate::Predicate::TypeOutlives(
-                                    outlives,
+                        Err(overflow_error) => {
+                            handler.receive(Box::new(TypeSystemOverflow {
+                                operation: OverflowOperation::Predicate(
+                                    predicate::Predicate::TypeOutlives(
+                                        outlives,
+                                    ),
                                 ),
-                                predicate_declaration_span: None,
+                                overflow_span: instantiation_span.clone(),
+                                overflow_error,
                             }));
                         }
                     }
@@ -1056,14 +1058,15 @@ where
                             }));
                         }
 
-                        Err(OverflowError) => {
-                            handler.receive(Box::new(UndecidablePredicate {
-                                instantiation_span: instantiation_span.clone(),
-                                predicate:
+                        Err(overflow_error) => {
+                            handler.receive(Box::new(TypeSystemOverflow {
+                                operation: OverflowOperation::Predicate(
                                     predicate::Predicate::LifetimeOutlives(
                                         outlives,
                                     ),
-                                predicate_declaration_span: None,
+                                ),
+                                overflow_span: instantiation_span.clone(),
+                                overflow_error,
                             }));
                         }
                     }
@@ -1083,7 +1086,18 @@ where
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> r#type::Type<M> {
         let Succeeded { result: simplified, constraints } =
-            simplify::simplify(ty, self);
+            match simplify::simplify(ty, self) {
+                Ok(a) => a,
+                Err(overflow_error) => {
+                    handler.receive(Box::new(TypeSystemOverflow {
+                        operation: OverflowOperation::TypeOf,
+                        overflow_span: instantiation_span.clone(),
+                        overflow_error,
+                    }));
+
+                    return r#type::Type::Error(term::Error);
+                }
+            };
 
         self.check_lifetime_constraints(
             constraints,

@@ -81,7 +81,7 @@ impl<M: Model> Values<M> {
                 self.type_of_register(*register, current_site, environment)
             }
             Value::Literal(literal) => {
-                Ok(simplify::simplify(&literal.r#type(), environment))
+                Ok(simplify::simplify(&literal.r#type(), environment)?)
             }
         }
     }

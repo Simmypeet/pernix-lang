@@ -36,9 +36,10 @@ use crate::{
         MethodNotFound, MismatchedArgumentCount,
         MismatchedQualifierForReferenceOf,
         MoreThanOneUnpackedInTupleExpression, NotAllFlowPathsExpressValue,
-        ReturnIsNotAllowed, SymbolIsNotAccessible, SymbolIsNotCallable,
-        SymbolNotFound, TooLargeTupleIndex, TupleExpected,
-        TupleIndexOutOfBOunds, UnexpectedGenericArgumentsInField,
+        OverflowOperation, ReturnIsNotAllowed, SymbolIsNotAccessible,
+        SymbolIsNotCallable, SymbolNotFound, TooLargeTupleIndex, TupleExpected,
+        TupleIndexOutOfBOunds, TypeSystemOverflow,
+        UnexpectedGenericArgumentsInField,
     },
     ir::{
         self,
@@ -2104,6 +2105,11 @@ impl<
 
                 cast_type =
                     simplify::simplify(&cast_type, &self.create_environment())
+                        .map_err(|overflow_error| TypeSystemOverflow {
+                            operation: OverflowOperation::TypeOf,
+                            overflow_span: cast_syn.r#type().span(),
+                            overflow_error,
+                        })?
                         .result;
 
                 // can only cast between numeric types
@@ -2209,15 +2215,16 @@ impl<
                             }) => struct_id,
 
                             found_type => {
-                                self.create_handler_wrapper(handler).receive(
-                                    Box::new(ExpectStructType {
-                                        span: syntax_tree.postfixable().span(),
-                                        r#type: self
-                                            .inference_context
-                                            .transform_type_into_constraint_model(found_type)
-                                            .unwrap(),
-                                    }),
-                                );
+                                self.create_handler_wrapper(handler)
+                                    .receive(Box::new(ExpectStructType {
+                                    span: syntax_tree.postfixable().span(),
+                                    r#type: self
+                                        .inference_context
+                                        .transform_type_into_constraint_model(
+                                            found_type,
+                                        )
+                                        .unwrap(),
+                                }));
 
                                 return Err(Error::Semantic(SemanticError(
                                     syntax_tree.postfixable().span(),
@@ -2298,15 +2305,16 @@ impl<
                         let tuple_ty = match ty {
                             Type::Tuple(tuple_ty) => tuple_ty,
                             found_type => {
-                                self.create_handler_wrapper(handler).receive(
-                                    Box::new(TupleExpected {
-                                        span: syntax_tree.postfixable().span(),
-                                        r#type: self
-                                            .inference_context
-                                            .transform_type_into_constraint_model(found_type)
-                                            .unwrap(),
-                                    }),
-                                );
+                                self.create_handler_wrapper(handler)
+                                    .receive(Box::new(TupleExpected {
+                                    span: syntax_tree.postfixable().span(),
+                                    r#type: self
+                                        .inference_context
+                                        .transform_type_into_constraint_model(
+                                            found_type,
+                                        )
+                                        .unwrap(),
+                                }));
 
                                 return Err(Error::Semantic(SemanticError(
                                     syntax_tree.postfixable().span(),
@@ -2366,9 +2374,9 @@ impl<
                                     access_span: access_syn.span(),
                                     tuple_type: self
                                         .inference_context
-                                        .transform_type_into_constraint_model(Type::Tuple(
-                                            tuple_ty,
-                                        ))
+                                        .transform_type_into_constraint_model(
+                                            Type::Tuple(tuple_ty),
+                                        )
                                         .unwrap()
                                         .into_tuple()
                                         .unwrap(),
@@ -2435,7 +2443,9 @@ impl<
                                     span: syntax_tree.postfixable().span(),
                                     r#type: self
                                         .inference_context
-                                        .transform_type_into_constraint_model(ty)
+                                        .transform_type_into_constraint_model(
+                                            ty,
+                                        )
                                         .unwrap(),
                                 }),
                             );
@@ -2977,6 +2987,11 @@ impl<
                 }),
                 &self.create_environment(),
             )
+            .map_err(|overflow_error| TypeSystemOverflow {
+                operation: OverflowOperation::TypeOf,
+                overflow_span: syntax_tree.span(),
+                overflow_error,
+            })?
             .result
             .into_tuple()
             .unwrap();
@@ -2989,7 +3004,9 @@ impl<
                         span: syntax_tree.span(),
                         r#type: self
                             .inference_context
-                            .transform_type_into_constraint_model(Type::Tuple(tuple_type))
+                            .transform_type_into_constraint_model(Type::Tuple(
+                                tuple_type,
+                            ))
                             .unwrap(),
                     },
                 ));
@@ -3555,6 +3572,11 @@ impl<
                     &lhs_register_ty,
                     &self.create_environment(),
                 )
+                .map_err(|overflow_error| TypeSystemOverflow {
+                    operation: OverflowOperation::TypeOf,
+                    overflow_span: syntax_tree.left.span(),
+                    overflow_error,
+                })?
                 .result;
 
                 let valid = match lhs_register_ty {
@@ -3591,7 +3613,9 @@ impl<
                         InvalidRelationalOperation {
                             found_type: self
                                 .inference_context
-                                .transform_type_into_constraint_model(lhs_register_ty)
+                                .transform_type_into_constraint_model(
+                                    lhs_register_ty,
+                                )
                                 .unwrap(),
                             span: syntax_tree.span(),
                         },
@@ -3606,6 +3630,11 @@ impl<
                         &lhs_register_ty,
                         &self.create_environment(),
                     )
+                    .map_err(|overflow_error| TypeSystemOverflow {
+                        operation: OverflowOperation::TypeOf,
+                        overflow_span: syntax_tree.left.span(),
+                        overflow_error,
+                    })?
                     .result;
 
                     let valid = match lhs_register_ty {
@@ -3643,7 +3672,9 @@ impl<
                             InvalidRelationalOperation {
                                 found_type: self
                                     .inference_context
-                                    .transform_type_into_constraint_model(lhs_register_ty)
+                                    .transform_type_into_constraint_model(
+                                        lhs_register_ty,
+                                    )
                                     .unwrap(),
                                 span: syntax_tree.span(),
                             },

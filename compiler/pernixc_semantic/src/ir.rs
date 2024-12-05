@@ -23,6 +23,7 @@ use crate::{
             self, constant::Constant, lifetime::Lifetime, r#type::Type, Never,
             Term,
         },
+        OverflowError,
     },
 };
 
@@ -328,4 +329,7 @@ pub enum TypeOfError<M: model::Model> {
         /// The function where the parameter is expected to be.
         in_function: CallableID,
     },
+
+    #[error(transparent)]
+    OverflowError(#[from] OverflowError),
 }

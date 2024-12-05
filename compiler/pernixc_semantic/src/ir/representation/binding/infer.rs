@@ -1268,6 +1268,9 @@ pub enum IntoConstraintModelError {
     UnregisteredConstantInferenceVariable(
         UnregisteredInferenceVariableError<InferenceVariable<Constant<Model>>>,
     ),
+
+    #[error(transparent)]
+    Overflow(#[from] OverflowError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1511,7 +1514,7 @@ impl Context {
             observer::NO_OP,
         );
 
-        intermediary_type = simplify(&intermediary_type, &environment).result;
+        intermediary_type = simplify(&intermediary_type, &environment)?.result;
 
         Type::try_from_other_model(intermediary_type)
     }
@@ -1549,7 +1552,7 @@ impl Context {
         );
 
         intermediary_constant =
-            simplify(&intermediary_constant, &environment).result;
+            simplify(&intermediary_constant, &environment)?.result;
 
         Constant::try_from_other_model(intermediary_constant)
     }

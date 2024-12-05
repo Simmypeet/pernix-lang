@@ -13,7 +13,10 @@ use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use super::{Bind, Config, Expression, Path, Target};
 use crate::{
     arena::ID,
-    error::{self, NonExhaustiveMatch, UnreachableMatchArm},
+    error::{
+        self, NonExhaustiveMatch, OverflowOperation, TypeSystemOverflow,
+        UnreachableMatchArm,
+    },
     ir::{
         self,
         address::{Address, Memory},
@@ -736,7 +739,7 @@ impl<
             match_info.qualifier,
             match_info.from_lvalue,
             handler,
-        );
+        )?;
 
         // add the named binding point to the current scope
         self.stack
@@ -887,6 +890,11 @@ impl<
             &self.type_of_address(&address)?,
             &self.create_environment(),
         )
+        .map_err(|overflow_error| TypeSystemOverflow {
+            operation: OverflowOperation::TypeOf,
+            overflow_span: syntax_tree.parenthesized().span(),
+            overflow_error,
+        })?
         .result;
 
         let arm_count = syntax_tree
@@ -924,21 +932,21 @@ impl<
                         &ty,
                         x.refutable_pattern(),
                         &self.create_handler_wrapper(handler),
-                    )
+                    )?
                     .unwrap_or_else(|| {
                         Wildcard { span: x.refutable_pattern().span() }.into()
                     });
 
                 Self::replace_refutable_in_tuple_pack(&mut pat, handler);
 
-                ArmInfo {
+                Ok(ArmInfo {
                     expression: x.expression(),
                     scope_id,
                     binding_result: None,
                     reftuable_pattern: pat,
-                }
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, TypeSystemOverflow>>()?;
 
         let arm_states = arm_infos
             .iter()

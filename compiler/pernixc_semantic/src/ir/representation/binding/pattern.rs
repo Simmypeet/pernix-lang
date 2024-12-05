@@ -17,8 +17,9 @@ use crate::{
         FoundPackTuplePatternInReferenceBoundTupleType,
         MismatchedPatternBindingType, MismatchedQualifierForReferenceOf,
         MismatchedTuplePatternLength, MoreThanOnePackedTuplePattern,
-        PatternBindingType, SymbolIsNotAccessible, SymbolNotFound,
-        TooLargetNumericLiteral, UnboundFields, UnexpectedAssociatedPattern,
+        OverflowOperation, PatternBindingType, SymbolIsNotAccessible,
+        SymbolNotFound, TooLargetNumericLiteral, TypeSystemOverflow,
+        UnboundFields, UnexpectedAssociatedPattern,
     },
     ir::{
         self,
@@ -85,7 +86,7 @@ pub(super) trait Pattern:
         ty: &Type<infer::Model>,
         syntax_tree: &Self::SyntaxTree,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) -> Option<Self>;
+    ) -> Result<Option<Self>, TypeSystemOverflow>;
 
     fn insert_named_binding_point<
         S: table::State,
@@ -100,7 +101,7 @@ pub(super) trait Pattern:
         binding: Binding,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
-    );
+    ) -> Result<(), TypeSystemOverflow>;
 }
 
 impl Pattern for Refutable {
@@ -116,28 +117,30 @@ impl Pattern for Refutable {
         ty: &Type<infer::Model>,
         syntax_tree: &Self::SyntaxTree,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) -> Option<Self> {
+    ) -> Result<Option<Self>, TypeSystemOverflow> {
         match syntax_tree {
             syntax_tree::pattern::Refutable::Boolean(boolean) => {
-                binder.bind_boolean(boolean, ty, handler).map(Into::into)
+                Ok(binder.bind_boolean(boolean, ty, handler).map(Into::into))
             }
             syntax_tree::pattern::Refutable::Integer(integer) => {
-                binder.bind_integer(ty, integer, handler).map(Into::into)
+                Ok(binder.bind_integer(ty, integer, handler).map(Into::into))
             }
             syntax_tree::pattern::Refutable::Structural(structural) => {
-                binder.bind_structural(structural, ty, handler).map(Into::into)
+                Ok(binder
+                    .bind_structural(structural, ty, handler)?
+                    .map(Into::into))
             }
             syntax_tree::pattern::Refutable::Enum(syn) => {
-                binder.bind_enum(syn, ty, handler).map(Into::into)
+                Ok(binder.bind_enum(syn, ty, handler)?.map(Into::into))
             }
             syntax_tree::pattern::Refutable::Named(named) => {
-                Some(bind_named_pattern(named).into())
+                Ok(Some(bind_named_pattern(named).into()))
             }
             syntax_tree::pattern::Refutable::Tuple(tuple) => {
-                binder.bind_tuple(tuple, ty, handler).map(Into::into)
+                Ok(binder.bind_tuple(tuple, ty, handler)?.map(Into::into))
             }
             syntax_tree::pattern::Refutable::Wildcard(wildcard) => {
-                Some(Wildcard { span: wildcard.span() }.into())
+                Ok(Some(Wildcard { span: wildcard.span() }.into()))
             }
         }
     }
@@ -156,7 +159,7 @@ impl Pattern for Refutable {
         mut binding: Binding,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) {
+    ) -> Result<(), TypeSystemOverflow> {
         match pattern {
             Self::Named(pat) => {
                 match (pat.reference_binding, binding.kind) {
@@ -189,6 +192,8 @@ impl Pattern for Refutable {
                             pat.is_mutable,
                             handler,
                         );
+
+                        Ok(())
                     }
 
                     // normal value binding
@@ -237,6 +242,8 @@ impl Pattern for Refutable {
                             },
                             handler,
                         );
+
+                        Ok(())
                     }
 
                     (None, BindingKind::Reference) => {
@@ -251,33 +258,32 @@ impl Pattern for Refutable {
                             pat.is_mutable,
                             handler,
                         );
+
+                        Ok(())
                     }
                 }
             }
 
-            Self::Tuple(pat) => {
-                binder.insert_named_binding_point_tuple(
+            Self::Tuple(pat) => binder.insert_named_binding_point_tuple(
+                name_binding_point,
+                pat,
+                &address_span,
+                binding,
+                must_copy,
+                handler,
+            ),
+
+            Self::Structural(pat) => binder
+                .insert_named_binding_point_structural(
                     name_binding_point,
                     pat,
                     &address_span,
                     binding,
                     must_copy,
                     handler,
-                );
-            }
+                ),
 
-            Self::Structural(pat) => {
-                binder.insert_named_binding_point_structural(
-                    name_binding_point,
-                    pat,
-                    &address_span,
-                    binding,
-                    must_copy,
-                    handler,
-                );
-            }
-
-            Self::Wildcard(_) | Self::Boolean(_) | Self::Integer(_) => {}
+            Self::Wildcard(_) | Self::Boolean(_) | Self::Integer(_) => Ok(()),
 
             Self::Enum(variant) => {
                 if let Some(inner) = &variant.pattern {
@@ -329,8 +335,10 @@ impl Pattern for Refutable {
                         },
                         must_copy,
                         handler,
-                    );
+                    )?;
                 }
+
+                Ok(())
             }
         }
     }
@@ -377,19 +385,21 @@ impl Pattern for Irrefutable {
         ty: &Type<infer::Model>,
         syntax_tree: &Self::SyntaxTree,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) -> Option<Self> {
+    ) -> Result<Option<Self>, TypeSystemOverflow> {
         match syntax_tree {
             syntax_tree::pattern::Irrefutable::Structural(structural) => {
-                binder.bind_structural(structural, ty, handler).map(Into::into)
+                Ok(binder
+                    .bind_structural(structural, ty, handler)?
+                    .map(Into::into))
             }
             syntax_tree::pattern::Irrefutable::Named(named) => {
-                Some(bind_named_pattern(named).into())
+                Ok(Some(bind_named_pattern(named).into()))
             }
             syntax_tree::pattern::Irrefutable::Tuple(tuple) => {
-                binder.bind_tuple(tuple, ty, handler).map(Into::into)
+                Ok(binder.bind_tuple(tuple, ty, handler)?.map(Into::into))
             }
             syntax_tree::pattern::Irrefutable::Wildcard(wildcard) => {
-                Some(Wildcard { span: wildcard.span() }.into())
+                Ok(Some(Wildcard { span: wildcard.span() }.into()))
             }
         }
     }
@@ -408,7 +418,7 @@ impl Pattern for Irrefutable {
         binding: Binding,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) {
+    ) -> Result<(), TypeSystemOverflow> {
         match pattern {
             Self::Named(pat) => {
                 match (pat.reference_binding, binding.kind) {
@@ -443,6 +453,8 @@ impl Pattern for Irrefutable {
                             pat.is_mutable,
                             handler,
                         );
+
+                        Ok(())
                     }
 
                     // normal value binding
@@ -495,6 +507,8 @@ impl Pattern for Irrefutable {
                             },
                             handler,
                         );
+
+                        Ok(())
                     }
 
                     (None, BindingKind::Reference) => {
@@ -509,33 +523,32 @@ impl Pattern for Irrefutable {
                             pat.is_mutable,
                             handler,
                         );
+
+                        Ok(())
                     }
                 }
             }
 
-            Self::Tuple(pat) => {
-                binder.insert_named_binding_point_tuple(
+            Self::Tuple(pat) => binder.insert_named_binding_point_tuple(
+                name_binding_point,
+                pat,
+                &address_span,
+                binding,
+                must_copy,
+                handler,
+            ),
+
+            Self::Structural(pat) => binder
+                .insert_named_binding_point_structural(
                     name_binding_point,
                     pat,
                     &address_span,
                     binding,
                     must_copy,
                     handler,
-                );
-            }
+                ),
 
-            Self::Structural(pat) => {
-                binder.insert_named_binding_point_structural(
-                    name_binding_point,
-                    pat,
-                    &address_span,
-                    binding,
-                    must_copy,
-                    handler,
-                );
-            }
-
-            Self::Wildcard(_) => {}
+            Self::Wildcard(_) => Ok(()),
         }
     }
 }
@@ -569,7 +582,7 @@ impl<
         syntax_tree: &syntax_tree::pattern::Tuple<T::SyntaxTree>,
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) -> Option<Tuple<T>> {
+    ) -> Result<Option<Tuple<T>>, TypeSystemOverflow> {
         ty = ty.reduce_reference();
 
         let Type::Tuple(tuple_ty) = ty else {
@@ -578,7 +591,7 @@ impl<
                 found_type: ty.clone(),
                 pattern_span: syntax_tree.span(),
             }));
-            return None;
+            return Ok(None);
         };
 
         // find the position of the unpacked element in type
@@ -634,7 +647,7 @@ impl<
                         illegal_tuple_pattern_span: syntax_tree.span(),
                     }));
 
-                    return None;
+                    return Ok(None);
                 }
             }
         };
@@ -647,7 +660,7 @@ impl<
                     pattern_element_count: tuple_element_patterns.len(),
                     type_element_count: tuple_ty.elements.len(),
                 }));
-                return None;
+                return Ok(None);
             }
 
             let start_range = 0..packed_position_in_pattern;
@@ -668,7 +681,7 @@ impl<
                             .unwrap()
                             .span(),
                     }));
-                    return None;
+                    return Ok(None);
                 }
 
                 if !type_pack_range.contains(&unpacked_position_in_type) {
@@ -681,7 +694,7 @@ impl<
                             .unwrap()
                             .span(),
                     }));
-                    return None;
+                    return Ok(None);
                 }
             }
 
@@ -695,10 +708,15 @@ impl<
                 assert!(!tuple_ty.is_unpacked);
 
                 elements.push(TupleElement::new_non_packed(
-                    T::bind(self, &tuple_ty.term, tuple_pat.pattern(), handler)
-                        .unwrap_or_else(|| {
-                            Wildcard { span: tuple_pat.pattern().span() }.into()
-                        }),
+                    T::bind(
+                        self,
+                        &tuple_ty.term,
+                        tuple_pat.pattern(),
+                        handler,
+                    )?
+                    .unwrap_or_else(|| {
+                        Wildcard { span: tuple_pat.pattern().span() }.into()
+                    }),
                 ));
             }
 
@@ -712,7 +730,7 @@ impl<
                     tuple_element_patterns[packed_position_in_pattern]
                         .pattern(),
                     handler,
-                )
+                )?
                 .unwrap_or_else(|| {
                     Wildcard {
                         span: tuple_element_patterns
@@ -731,14 +749,14 @@ impl<
                 assert!(!ty_elem.is_unpacked);
 
                 elements.push(TupleElement::new_non_packed(
-                    T::bind(self, &ty_elem.term, pat_elem.pattern(), handler)
+                    T::bind(self, &ty_elem.term, pat_elem.pattern(), handler)?
                         .unwrap_or_else(|| {
                             Wildcard { span: pat_elem.pattern().span() }.into()
                         }),
                 ));
             }
 
-            Some(Tuple { elements, span: syntax_tree.span() })
+            Ok(Some(Tuple { elements, span: syntax_tree.span() }))
         } else {
             // count must exactly match
             if tuple_element_patterns.len() != tuple_ty.elements.len() {
@@ -747,7 +765,7 @@ impl<
                     pattern_element_count: tuple_element_patterns.len(),
                     type_element_count: tuple_ty.elements.len(),
                 }));
-                return None;
+                return Ok(None);
             }
 
             // must not have unpacked element
@@ -769,14 +787,14 @@ impl<
                 .zip(tuple_element_patterns.iter().copied())
             {
                 elements.push(TupleElement::new_non_packed(
-                    T::bind(self, tuple_ty, tuple_pat.pattern(), handler)
+                    T::bind(self, tuple_ty, tuple_pat.pattern(), handler)?
                         .unwrap_or_else(|| {
                             Wildcard { span: tuple_pat.pattern().span() }.into()
                         }),
                 ));
             }
 
-            Some(Tuple { elements, span: syntax_tree.span() })
+            Ok(Some(Tuple { elements, span: syntax_tree.span() }))
         }
     }
 
@@ -821,7 +839,7 @@ impl<
         syntax_tree: &syntax_tree::pattern::Structural<T::SyntaxTree>,
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) -> Option<Structural<T>> {
+    ) -> Result<Option<Structural<T>>, TypeSystemOverflow> {
         ty = ty.reduce_reference();
 
         // must be a struct type
@@ -835,7 +853,7 @@ impl<
                 found_type: ty.clone(),
                 pattern_span: syntax_tree.span(),
             }));
-            return None;
+            return Ok(None);
         };
 
         let struct_id = *struct_id;
@@ -904,13 +922,18 @@ impl<
 
             instantiation::instantiate(&mut field_ty, &instantiation);
             let simplification =
-                simplify::simplify(&field_ty, &self.create_environment());
+                simplify::simplify(&field_ty, &self.create_environment())
+                    .map_err(|overflow_error| TypeSystemOverflow {
+                        operation: OverflowOperation::TypeOf,
+                        overflow_span: field.span(),
+                        overflow_error,
+                    })?;
             field_ty = simplification.result;
 
             // the pattern for the field
             let pattern = match field {
                 syntax_tree::pattern::Field::Association(assoc) => {
-                    T::bind(self, &field_ty, assoc.pattern(), handler)
+                    T::bind(self, &field_ty, assoc.pattern(), handler)?
                         .unwrap_or_else(|| {
                             Wildcard { span: assoc.pattern().span() }.into()
                         })
@@ -966,11 +989,11 @@ impl<
             }));
         }
 
-        Some(Structural {
+        Ok(Some(Structural {
             struct_id,
             patterns_by_field_id,
             span: syntax_tree.span(),
-        })
+        }))
     }
 
     fn bind_enum(
@@ -978,7 +1001,7 @@ impl<
         syntax_tree: &syntax_tree::pattern::Enum,
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) -> Option<Enum> {
+    ) -> Result<Option<Enum>, TypeSystemOverflow> {
         ty = ty.reduce_reference();
 
         // must be an enum type
@@ -995,7 +1018,7 @@ impl<
                     .unwrap(),
                 pattern_span: syntax_tree.span(),
             }));
-            return None;
+            return Ok(None);
         };
 
         let enum_id = *enum_id;
@@ -1012,7 +1035,7 @@ impl<
                 resolution_span: syntax_tree.identifier().span.clone(),
             }));
 
-            return None;
+            return Ok(None);
         };
 
         // check if the variant is accessible
@@ -1048,42 +1071,47 @@ impl<
 
                 instantiation::instantiate(&mut variant_ty, &instantiation);
                 let simplification =
-                    simplify::simplify(&variant_ty, &self.create_environment());
+                    simplify::simplify(&variant_ty, &self.create_environment())
+                        .map_err(|overflow_error| TypeSystemOverflow {
+                            operation: OverflowOperation::TypeOf,
+                            overflow_span: pat.span(),
+                            overflow_error,
+                        })?;
 
                 let pattern = Refutable::bind(
                     self,
                     &simplification.result,
                     pat.tree(),
                     handler,
-                )
+                )?
                 .unwrap_or_else(|| {
                     Refutable::Wildcard(Wildcard { span: pat.span() })
                 });
 
-                Some(Enum {
+                Ok(Some(Enum {
                     variant_id,
                     pattern: Some(Box::new(pattern)),
                     span: syntax_tree.span(),
-                })
+                }))
             }
-            (None, None) => Some(Enum {
+            (None, None) => Ok(Some(Enum {
                 variant_id,
                 pattern: None,
                 span: syntax_tree.span(),
-            }),
+            })),
             (Some(_), None) => {
                 handler.receive(Box::new(ExpectAssociatedPattern {
                     variant_id,
                     pattern_span: syntax_tree.span(),
                 }));
-                None
+                Ok(None)
             }
             (None, Some(_)) => {
                 handler.receive(Box::new(UnexpectedAssociatedPattern {
                     associated_pattern_span: syntax_tree.span(),
                     variant_id,
                 }));
-                None
+                Ok(None)
             }
         }
     }
@@ -1141,7 +1169,7 @@ impl<
         ty: &Type<infer::Model>,
         syntax_tree: &T::SyntaxTree,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) -> Option<T> {
+    ) -> Result<Option<T>, TypeSystemOverflow> {
         T::bind(self, ty, syntax_tree, handler)
     }
 
@@ -1166,7 +1194,7 @@ impl<
         qualifier: Qualifier,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) {
+    ) -> Result<(), TypeSystemOverflow> {
         Irrefutable::insert_named_binding_point(
             self,
             name_binding_point,
@@ -1180,7 +1208,7 @@ impl<
             },
             must_copy,
             handler,
-        );
+        )
     }
 
     /// Finds the [`Named`] pattern and adds it to the [`NameBindingPoint`].
@@ -1204,7 +1232,7 @@ impl<
         qualifier: Qualifier,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) {
+    ) -> Result<(), TypeSystemOverflow> {
         Refutable::insert_named_binding_point(
             self,
             name_binding_point,
@@ -1218,7 +1246,7 @@ impl<
             },
             must_copy,
             handler,
-        );
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1287,7 +1315,7 @@ impl<
         mut binding: Binding,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) {
+    ) -> Result<(), TypeSystemOverflow> {
         binding = reduce_reference(binding);
 
         let Type::Tuple(tuple_ty) = binding.r#type else {
@@ -1325,7 +1353,7 @@ impl<
                         pattern_span: tuple_pat.span.clone(),
                     },
                 ));
-                return;
+                return Ok(());
             }
 
             let start_range = 0..packed_position;
@@ -1362,7 +1390,7 @@ impl<
                     },
                     must_copy,
                     handler,
-                );
+                )?;
             }
 
             // create a new alloca where all the elements will be stoered.
@@ -1533,7 +1561,7 @@ impl<
                 },
                 false,
                 handler,
-            );
+            )?;
 
             // match the end
             for ((ty_elem, pat_elem), ty_index) in tuple_ty.elements
@@ -1570,7 +1598,7 @@ impl<
                     },
                     must_copy,
                     handler,
-                );
+                )?;
             }
         } else {
             assert_eq!(
@@ -1603,9 +1631,10 @@ impl<
                     },
                     must_copy,
                     handler,
-                );
+                )?;
             }
         }
+        Ok(())
     }
 
     fn insert_named_binding_point_structural<T: Pattern>(
@@ -1616,7 +1645,7 @@ impl<
         mut binding: Binding,
         must_copy: bool,
         handler: &dyn Handler<Box<dyn Error>>,
-    ) {
+    ) -> Result<(), TypeSystemOverflow> {
         binding = reduce_reference(binding);
 
         // must be a struct type
@@ -1653,6 +1682,15 @@ impl<
             instantiation::instantiate(&mut field_ty, &instantiation);
             field_ty =
                 simplify::simplify(&field_ty, &self.create_environment())
+                    .map_err(|overflow_error| TypeSystemOverflow {
+                        operation: OverflowOperation::TypeOf,
+                        overflow_span: structural
+                            .patterns_by_field_id
+                            .get(&field_id)
+                            .unwrap()
+                            .span(),
+                        overflow_error,
+                    })?
                     .result;
 
             binding_cloned.r#type = &field_ty;
@@ -1669,8 +1707,10 @@ impl<
                 binding_cloned,
                 must_copy,
                 handler,
-            );
+            )?;
         }
+
+        Ok(())
     }
 }
 

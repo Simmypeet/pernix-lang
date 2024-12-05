@@ -10,7 +10,7 @@ use super::{
         constant::Constant, lifetime::Lifetime, r#type::Type, ModelOf, Term,
     },
     visitor::Mutable,
-    Environment, LifetimeConstraint, Succeeded,
+    Environment, LifetimeConstraint, OverflowError, Succeeded,
 };
 use crate::{
     symbol::table::State,
@@ -66,6 +66,7 @@ struct Visitor<
     environment: &'e Environment<'e, M, T, N, O>,
     simplified: &'s mut Simplified<M>,
     lifetime_constraints: BTreeSet<LifetimeConstraint<M>>,
+    overflow_error: Option<OverflowError>,
 }
 
 impl<
@@ -78,16 +79,25 @@ impl<
     > Mutable<U> for Visitor<'e, 's, T, N, O, U::Model>
 {
     fn visit(&mut self, term: &mut U, _: U::Location) -> bool {
-        let Some(Succeeded { result, constraints }) =
-            simplify_internal(term, self.environment, self.simplified)
-        else {
-            return true;
-        };
+        if self.overflow_error.is_some() {
+            return false;
+        }
 
-        *term = result;
-        self.lifetime_constraints.extend(constraints);
+        match simplify_internal(term, self.environment, self.simplified) {
+            Ok(Some(Succeeded { result, constraints })) => {
+                *term = result;
+                self.lifetime_constraints.extend(constraints);
 
-        true
+                true
+            }
+
+            Ok(None) => true,
+
+            Err(err) => {
+                self.overflow_error = Some(err);
+                false
+            }
+        }
     }
 }
 
@@ -101,9 +111,9 @@ fn simplify_internal<T: Term, S: State>(
         impl Observer<T::Model, S>,
     >,
     simplified: &mut Simplified<T::Model>,
-) -> Option<Succeeded<T, T::Model>> {
+) -> Result<Option<Succeeded<T, T::Model>>, OverflowError> {
     if !T::simplified_mut(simplified).insert(term.clone()) {
-        return None;
+        return Ok(None);
     }
 
     // recursively simplify the term
@@ -112,11 +122,20 @@ fn simplify_internal<T: Term, S: State>(
         environment,
         simplified,
         lifetime_constraints: BTreeSet::new(),
+        overflow_error: None,
     };
     let _ = new_term.accept_one_level_mut(&mut visitor);
 
     // extract out the lifetime constraints
-    let Visitor { lifetime_constraints: mut outside_constraints, .. } = visitor;
+    let Visitor {
+        lifetime_constraints: mut outside_constraints,
+        overflow_error,
+        ..
+    } = visitor;
+
+    if let Some(err) = overflow_error {
+        return Err(err);
+    }
 
     // check for trait type equality
     'out: {
@@ -153,13 +172,13 @@ fn simplify_internal<T: Term, S: State>(
                 .predicates
                 .remove(trait_type_equality));
 
-            if let Ok(Some(Succeeded { result: unifier, mut constraints })) =
+            if let Some(Succeeded { result: unifier, mut constraints }) =
                 Unification::new(
                     new_term.clone(),
                     lhs_trait_member,
                     Arc::new(LifetimeUnifyingPredicate),
                 )
-                .query(&environment_cloned)
+                .query(&environment_cloned)?
             {
                 for (j, another_trait_type_equality) in
                     all_trait_type_equalities.iter().enumerate()
@@ -190,7 +209,7 @@ fn simplify_internal<T: Term, S: State>(
                         ),
                         Arc::new(LifetimeUnifyingPredicate),
                     )
-                    .query(&environment_cloned);
+                    .query(&environment_cloned)?;
 
                     // add back the other trait type equality
                     environment_cloned
@@ -199,7 +218,7 @@ fn simplify_internal<T: Term, S: State>(
                         .insert(another_trait_type_equality.clone());
 
                     // skip if the unification is successful
-                    if matches!(unification, Ok(Some(_))) {
+                    if matches!(unification, Some(_)) {
                         environment_cloned
                             .premise
                             .predicates
@@ -256,7 +275,7 @@ fn simplify_internal<T: Term, S: State>(
             let Some(Succeeded {
                 result: equivalent,
                 constraints: new_constraints,
-            }) = simplify_internal(&equivalent_term, environment, simplified)
+            }) = simplify_internal(&equivalent_term, environment, simplified)?
             else {
                 break 'out;
             };
@@ -266,10 +285,10 @@ fn simplify_internal<T: Term, S: State>(
 
             assert!(T::simplified_mut(simplified).remove(term));
 
-            return Some(Succeeded {
+            return Ok(Some(Succeeded {
                 result: equivalent,
                 constraints: outside_constraints,
-            });
+            }));
         }
     }
 
@@ -284,7 +303,7 @@ fn simplify_internal<T: Term, S: State>(
         let Some(Succeeded {
             result: equivalent,
             constraints: new_constraints,
-        }) = simplify_internal(&normalized, environment, simplified)
+        }) = simplify_internal(&normalized, environment, simplified)?
         else {
             break 'out;
         };
@@ -293,14 +312,14 @@ fn simplify_internal<T: Term, S: State>(
         outside_constraints.extend(new_constraints);
 
         assert!(T::simplified_mut(simplified).remove(term));
-        return Some(Succeeded {
+        return Ok(Some(Succeeded {
             result: equivalent,
             constraints: outside_constraints,
-        });
+        }));
     }
 
     assert!(T::simplified_mut(simplified).remove(term));
-    Some(Succeeded { result: new_term, constraints: outside_constraints })
+    Ok(Some(Succeeded { result: new_term, constraints: outside_constraints }))
 }
 
 /// Simplifies a term by recursively applying the normalization and trait member
@@ -313,9 +332,9 @@ pub fn simplify<T: Term, S: State>(
         impl Normalizer<T::Model, S>,
         impl Observer<T::Model, S>,
     >,
-) -> Succeeded<T, T::Model> {
+) -> Result<Succeeded<T, T::Model>, OverflowError> {
     simplify_internal(term, environment, &mut Simplified::default())
-        .unwrap_or_else(|| Succeeded::new(term.clone()))
+        .map(|x| x.unwrap_or_else(|| Succeeded::new(term.clone())))
 }
 
 #[cfg(test)]
