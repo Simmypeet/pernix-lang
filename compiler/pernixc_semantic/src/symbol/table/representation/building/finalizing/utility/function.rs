@@ -122,19 +122,20 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 )
                 .unwrap_or(r#type::Type::Error(term::Error));
 
+            let parameter = Parameter {
+                r#type: environment.simplify_and_check_lifetime_constraints(
+                    &parameter_ty,
+                    &parameter.r#type().span(),
+                    handler,
+                ),
+                span: Some(parameter.span()),
+            };
+
             let mut function_write =
                 F::get_arena(self).get(function_id).unwrap().write();
 
             let parameter_id =
-                function_write.parameters_mut().insert(Parameter {
-                    r#type: environment
-                        .simplify_and_check_lifetime_constraints(
-                            &parameter_ty,
-                            &parameter.r#type().span(),
-                            handler,
-                        ),
-                    span: Some(parameter.span()),
-                });
+                function_write.parameters_mut().insert(parameter);
             function_write.parameter_order_mut().push(parameter_id);
         }
 
