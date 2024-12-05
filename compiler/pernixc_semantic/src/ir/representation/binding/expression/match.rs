@@ -10,7 +10,7 @@ use pernixc_base::{
 };
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::{Bind, Config, Expression, Path, Target};
+use super::{Bind, Config, Expression, Target};
 use crate::{
     arena::ID,
     error::{
@@ -28,6 +28,7 @@ use crate::{
         pattern::{NameBindingPoint, Refutable, Wildcard},
         representation::binding::{
             infer::{self},
+            pattern::Path,
             Binder, Error, InternalError,
         },
         scope::Scope,
