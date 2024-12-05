@@ -63,7 +63,7 @@ use crate::{
             },
             Value,
         },
-        Erased, TypeOfError,
+        Erased,
     },
     symbol::{
         table::{
@@ -1151,7 +1151,7 @@ impl<
         None
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::type_complexity)]
     fn search_trait_method_candidates(
         &mut self,
         method_ident: &syntax_tree::GenericIdentifier,

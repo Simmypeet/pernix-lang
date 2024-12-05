@@ -828,6 +828,7 @@ impl<
     ///
     /// If the type check fails, an error is returned with the span of
     /// `type_check_span`
+    #[allow(clippy::too_many_lines)]
     fn type_check(
         &mut self,
         ty: &Type<infer::Model>,
@@ -887,7 +888,7 @@ impl<
                                 simplified_expected,
                             )
                             .unwrap(),
-                        span: type_check_span.clone(),
+                        span: type_check_span,
                     })),
 
                     Err(
@@ -907,7 +908,7 @@ impl<
                             .inference_context
                             .transform_type_into_constraint_model(simplified_ty)
                             .unwrap(),
-                        span: type_check_span.clone(),
+                        span: type_check_span,
                     })),
                 };
 
@@ -945,7 +946,7 @@ impl<
                             .inference_context
                             .transform_type_into_constraint_model(simplified_ty)
                             .unwrap(),
-                        span: type_check_span.clone(),
+                        span: type_check_span,
                     });
 
                     if include_suboptimal_flag {
