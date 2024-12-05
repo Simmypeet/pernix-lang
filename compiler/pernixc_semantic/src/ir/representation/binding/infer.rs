@@ -1455,6 +1455,10 @@ impl Context {
     ///
     /// All type inference variables will be replaced with the constraints they
     /// currently infer.
+    ///
+    /// # Errors
+    /// 
+    /// See [`OverflowError`] for more information.
     pub fn transform_type_into_constraint_model(
         &self,
         ty: Type<Model>,
@@ -1490,8 +1494,8 @@ impl Context {
     /// currently infer.
     ///
     /// # Errors
-    ///
-    /// See [`IntoConstraintModelError`] for the possible errors.
+    /// 
+    /// See [`OverflowError`] for more information.
     pub fn transform_constant_into_constraint_model(
         &self,
         constant: Constant<Model>,

@@ -1063,6 +1063,7 @@ impl<
         )?))
     }
 
+    #[allow(clippy::too_many_lines)]
     fn handle_access(
         &mut self,
         access: &syntax_tree::expression::Access,

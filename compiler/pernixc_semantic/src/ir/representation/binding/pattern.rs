@@ -985,6 +985,7 @@ impl<
         }))
     }
 
+    #[allow(clippy::too_many_lines)]
     fn bind_enum(
         &mut self,
         syntax_tree: &syntax_tree::pattern::Enum,
