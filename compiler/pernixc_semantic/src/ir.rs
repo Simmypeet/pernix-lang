@@ -131,13 +131,13 @@ pub trait Transform<T: Term> {
     fn transform(&mut self, term: T) -> T::Rebind<Self::Target>;
 
     /// Inspects a term from the current model.
-    fn inspect(&mut self, _: &T, _: Option<Span>) {}
+    fn inspect(&mut self, _: &T, _: Span) {}
 
     /// Inspects and transforms a term from the current model.
     fn inspect_and_transform(
         &mut self,
         term: T,
-        span: Option<Span>,
+        span: Span,
     ) -> T::Rebind<Self::Target> {
         self.inspect(&term, span);
         self.transform(term)

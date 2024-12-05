@@ -330,11 +330,8 @@ impl ir::Representation<ir::Model> {
                                 .get(*id)
                                 .unwrap()
                                 .span
-                                .clone()
-                                .unwrap(),
-                            Value::Literal(literal) => {
-                                literal.span().cloned().unwrap()
-                            }
+                                .clone(),
+                            Value::Literal(literal) => literal.span().clone(),
                         },
                         stack,
                         environment.table(),
@@ -359,7 +356,7 @@ impl ir::Representation<ir::Model> {
                         Assignment::Load(load) => {
                             self.values.handle_load(
                                 load,
-                                register.span.clone().unwrap(),
+                                register.span.clone(),
                                 stack,
                                 current_site,
                                 environment,
@@ -372,7 +369,7 @@ impl ir::Representation<ir::Model> {
                         Assignment::ReferenceOf(reference_of) => {
                             Values::handle_reference_of(
                                 reference_of,
-                                register.span.clone().unwrap(),
+                                register.span.clone(),
                                 stack,
                                 handler,
                             );

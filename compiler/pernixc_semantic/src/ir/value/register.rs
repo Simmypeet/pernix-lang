@@ -499,7 +499,7 @@ pub struct Register<M: Model> {
     pub assignment: Assignment<M>,
 
     /// The span where the value was defined.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 impl<M: Model> Values<M> {

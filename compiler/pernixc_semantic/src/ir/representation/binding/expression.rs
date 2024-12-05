@@ -243,7 +243,7 @@ impl<
                 .as_ref()
                 .map(|x| x.numeric().span.str().to_owned()),
             r#type: numeric_ty,
-            span: Some(syntax_tree.span()),
+            span: (syntax_tree.span()),
         }))))
     }
 }
@@ -269,7 +269,7 @@ impl<
 
         Ok(Expression::RValue(Value::Literal(Literal::Boolean(Boolean {
             value,
-            span: Some(syntax_tree.span()),
+            span: (syntax_tree.span()),
         }))))
     }
 }
@@ -305,8 +305,8 @@ impl<
             Expression::RValue(value) => {
                 if create_temporary {
                     let type_of_value = self.type_of_value(&value)?;
-                    let alloca_id = self
-                        .create_alloca(type_of_value, Some(syntax_tree.span()));
+                    let alloca_id =
+                        self.create_alloca(type_of_value, syntax_tree.span());
 
                     // initialize
                     let _ = self.current_block_mut().insert_instruction(
@@ -405,7 +405,7 @@ impl<
                 }
                 let register_id = self.create_register_assignmnet(
                     Assignment::Prefix(Prefix { operand, operator }),
-                    Some(syntax_tree.span()),
+                    syntax_tree.span(),
                 );
 
                 Ok(Expression::RValue(Value::Register(register_id)))
@@ -453,7 +453,7 @@ impl<
                         qualifier,
                         lifetime: Lifetime::Inference(Erased),
                     }),
-                    Some(syntax_tree.span()),
+                    syntax_tree.span(),
                 );
 
                 Ok(Expression::RValue(Value::Register(register_id)))
@@ -532,7 +532,7 @@ impl<
 
                     Value::Literal(Literal::Error(literal::Error {
                         r#type: variant_type,
-                        span: Some(syntax_tree_span.clone()),
+                        span: (syntax_tree_span.clone()),
                     }))
                 }
                 len => {
@@ -567,7 +567,7 @@ impl<
                     associated_value: Some(associated_value),
                     generic_arguments: variant.generic_arguments,
                 }),
-                Some(syntax_tree_span),
+                syntax_tree_span,
             ))
         } else {
             if !arguments.is_empty() {
@@ -587,7 +587,7 @@ impl<
                     associated_value: None,
                     generic_arguments: variant.generic_arguments,
                 }),
-                Some(syntax_tree_span),
+                syntax_tree_span,
             ))
         }
     }
@@ -663,7 +663,7 @@ impl<
 
             let error_value = Value::Literal(Literal::Error(literal::Error {
                 r#type: parameter_ty,
-                span: Some(syntax_tree_span.clone()),
+                span: (syntax_tree_span.clone()),
             }));
 
             acutal_arguments.push(error_value);
@@ -680,7 +680,7 @@ impl<
                 arguments: acutal_arguments,
                 instantiation,
             }),
-            Some(syntax_tree_span),
+            syntax_tree_span,
         )
     }
 }
@@ -1087,7 +1087,7 @@ impl<
                             reference_address: Box::new(operand.address),
                         }),
                     }),
-                    Some(dereference.span()),
+                    dereference.span(),
                 );
 
                 Ok(Expression::RValue(Value::Register(register_id)))
@@ -1439,7 +1439,7 @@ impl<
             ) => {
                 let register_id = self.create_register_assignmnet(
                     Assignment::Load(Load { address }),
-                    Some(span),
+                    span,
                 );
 
                 Ok(Value::Register(register_id))
@@ -1457,13 +1457,11 @@ impl<
                         .get(*id)
                         .unwrap()
                         .span
-                        .clone()
-                        .unwrap(),
-                    Value::Literal(literal) => literal.span().unwrap().clone(),
+                        .clone(),
+                    Value::Literal(literal) => literal.span().clone(),
                 };
                 let type_of_value = self.type_of_value(&value)?;
-                let alloca_id =
-                    self.create_alloca(type_of_value, Some(span.clone()));
+                let alloca_id = self.create_alloca(type_of_value, span.clone());
 
                 // initialize
                 let _ = self.current_block_mut().insert_instruction(
@@ -1481,7 +1479,7 @@ impl<
                         qualifier: qualifieer,
                         lifetime: Lifetime::Inference(Erased),
                     }),
-                    Some(span),
+                    span,
                 )))
             }
 
@@ -1508,7 +1506,7 @@ impl<
                         qualifier,
                         lifetime: Lifetime::Inference(Erased),
                     }),
-                    Some(address.span),
+                    address.span,
                 );
 
                 Ok(Value::Register(reference_of))
@@ -1544,10 +1542,9 @@ impl<
                     .get(*register_id)
                     .unwrap()
                     .span
-                    .clone()
-                    .unwrap(),
+                    .clone(),
                 Expression::RValue(Value::Literal(literal)) => {
-                    literal.span().unwrap().clone()
+                    literal.span().clone()
                 }
                 Expression::LValue(lvalue) => lvalue.span.clone(),
             };
@@ -2164,7 +2161,7 @@ impl<
                 Ok(Expression::RValue(Value::Register(
                     self.create_register_assignmnet(
                         Assignment::Cast(Cast { value, r#type: cast_type }),
-                        Some(syntax_tree.span()),
+                        syntax_tree.span(),
                     ),
                 )))
             }
@@ -2479,7 +2476,7 @@ impl<
                         // will be optimized to move later
                         let register_id = self.create_register_assignmnet(
                             Assignment::Load(Load { address }),
-                            Some(syntax_tree.span()),
+                            syntax_tree.span(),
                         );
 
                         Ok(Expression::RValue(Value::Register(register_id)))
@@ -2567,7 +2564,7 @@ impl<
                     Target::RValue => {
                         let register_id = self.create_register_assignmnet(
                             Assignment::Load(Load { address }),
-                            Some(syntax_tree.span()),
+                            syntax_tree.span(),
                         );
 
                         return Ok(Expression::RValue(Value::Register(
@@ -2639,7 +2636,7 @@ impl<
                     let associated_value =
                         Value::Literal(Literal::Error(literal::Error {
                             r#type: associated_type,
-                            span: Some(syntax_tree.span()),
+                            span: (syntax_tree.span()),
                         }));
 
                     Some(associated_value)
@@ -2653,7 +2650,7 @@ impl<
                         associated_value,
                         generic_arguments: variant_res.generic_arguments,
                     }),
-                    Some(syntax_tree.span()),
+                    syntax_tree.span(),
                 );
 
                 Ok(Expression::RValue(Value::Register(register_id)))
@@ -2833,7 +2830,7 @@ impl<
                         .collect(),
                     generic_arguments,
                 }),
-                Some(syntax_tree.span()),
+                syntax_tree.span(),
             ),
         );
 
@@ -2860,7 +2857,7 @@ impl<
 
             Value::Literal(Literal::String(literal::String {
                 value,
-                span: Some(syntax_tree.span()),
+                span: (syntax_tree.span()),
             }))
         } else {
             let constant_inference = InferenceVariable::new();
@@ -2881,7 +2878,7 @@ impl<
                         )),
                     })),
                 }),
-                span: Some(syntax_tree.span()),
+                span: (syntax_tree.span()),
             }))
         };
 
@@ -2914,14 +2911,14 @@ impl<
             || {
                 Value::Literal(Literal::Error(literal::Error {
                     r#type: Type::Inference(inference_variable),
-                    span: Some(syntax_tree.span()),
+                    span: (syntax_tree.span()),
                 }))
             },
             |character| {
                 Value::Literal(Literal::Character(literal::Character {
                     character,
                     r#type: Type::Inference(inference_variable),
-                    span: Some(syntax_tree.span()),
+                    span: (syntax_tree.span()),
                 }))
             },
         );
@@ -3016,13 +3013,13 @@ impl<
                 let value = if elements.is_empty() {
                     // return unit Tuple
                     Value::Literal(Literal::Unit(literal::Unit {
-                        span: Some(syntax_tree.span()),
+                        span: (syntax_tree.span()),
                     }))
                 } else {
                     let create_register_assignmnet = self
                         .create_register_assignmnet(
                             Assignment::Tuple(register::Tuple { elements }),
-                            Some(syntax_tree.span()),
+                            syntax_tree.span(),
                         );
                     Value::Register(create_register_assignmnet)
                 };
@@ -3068,7 +3065,7 @@ impl<
         Ok(Expression::RValue(Value::Literal(Literal::Phantom(
             literal::Phantom {
                 r#type: Type::Inference(inference),
-                span: Some(syntax_tree.span()),
+                span: (syntax_tree.span()),
             },
         ))))
     }
@@ -3100,7 +3097,7 @@ impl<
                     elements: Vec::new(),
                     element_type: Type::Inference(inference),
                 }),
-                Some(syntax_tree.span()),
+                syntax_tree.span(),
             );
 
             return Ok(Expression::RValue(Value::Register(register_id)));
@@ -3132,9 +3129,8 @@ impl<
                         .get(*register_id)
                         .unwrap()
                         .span
-                        .clone()
-                        .unwrap(),
-                    Value::Literal(literal) => literal.span().cloned().unwrap(),
+                        .clone(),
+                    Value::Literal(literal) => literal.span().clone(),
                 },
                 true,
                 handler,
@@ -3143,7 +3139,7 @@ impl<
 
         let value = Value::Register(self.create_register_assignmnet(
             Assignment::Array(Array { elements, element_type: first_ty }),
-            Some(syntax_tree.span()),
+            syntax_tree.span(),
         ));
 
         Ok(Expression::RValue(value))
@@ -3455,7 +3451,7 @@ impl<
             Target::RValue => {
                 let register_id = self.create_register_assignmnet(
                     Assignment::Load(Load { address: lhs_address.address }),
-                    Some(tree.span()),
+                    tree.span(),
                 );
 
                 Expression::RValue(Value::Register(register_id))
@@ -3501,7 +3497,7 @@ impl<
                             None,
                             Value::Literal(Literal::Error(literal::Error {
                                 r#type: Type::Inference(inference),
-                                span: Some(span),
+                                span: (span),
                             })),
                         );
                     }
@@ -3515,7 +3511,7 @@ impl<
                     Assignment::Load(Load {
                         address: lhs_lvalue.address.clone(),
                     }),
-                    Some(syntax_tree.left.span()),
+                    syntax_tree.left.span(),
                 );
 
                 (Some(lhs_lvalue), Value::Register(lhs_register))
@@ -3712,7 +3708,7 @@ impl<
                 lhs: lhs_value,
                 rhs: rhs_value,
             }),
-            Some(syntax_tree.span()),
+            syntax_tree.span(),
         );
 
         if let (Some(lhs_address), true) = (lhs_address, is_compound) {
@@ -3830,7 +3826,7 @@ impl<
                     ) {
                         Value::Literal(Literal::Boolean(Boolean {
                             value: true,
-                            span: Some(syntax_tree.left.span()),
+                            span: (syntax_tree.left.span()),
                         }))
                     } else {
                         let rhs = self
@@ -3894,7 +3890,7 @@ impl<
                     ) {
                         Value::Literal(Literal::Boolean(Boolean {
                             value: false,
-                            span: Some(syntax_tree.left.span()),
+                            span: (syntax_tree.left.span()),
                         }))
                     } else {
                         let rhs = self
@@ -3956,7 +3952,7 @@ impl<
                                 r#type: Type::Primitive(
                                     r#type::Primitive::Bool,
                                 ),
-                                span: Some(syntax_tree.span()),
+                                span: (syntax_tree.span()),
                             },
                         ))
                     }
@@ -4000,7 +3996,7 @@ impl<
                                 .into_iter()
                                 .collect(),
                             }),
-                            Some(syntax_tree.span()),
+                            syntax_tree.span(),
                         );
 
                         Value::Register(register_id)
@@ -4092,7 +4088,7 @@ impl<
         let value = syntax_tree.binary().as_ref().map_or_else(
             || {
                 Ok(Value::Literal(Literal::Unit(Unit {
-                    span: Some(syntax_tree.span()),
+                    span: (syntax_tree.span()),
                 })))
             },
             |syn| self.bind_value_or_error(syn, handler),
@@ -4145,7 +4141,7 @@ impl<
 
                     Type::Inference(inference)
                 },
-                span: Some(syntax_tree.span()),
+                span: (syntax_tree.span()),
             }));
 
         Ok(Expression::RValue(value))
@@ -4280,7 +4276,7 @@ impl<
 
                 Type::Inference(inference)
             },
-            span: Some(syntax_tree.span()),
+            span: (syntax_tree.span()),
         }));
 
         Ok(Expression::RValue(value))
@@ -4371,7 +4367,7 @@ impl<
                 {
                     entry.insert(value.unwrap_or(Value::Literal(
                         Literal::Unit(literal::Unit {
-                            span: Some(syntax_tree.span()),
+                            span: (syntax_tree.span()),
                         }),
                     )));
                 }
@@ -4426,7 +4422,7 @@ impl<
 
                 Type::Inference(inference)
             },
-            span: Some(syntax_tree.span()),
+            span: (syntax_tree.span()),
         }));
 
         Ok(Expression::RValue(value))
@@ -4562,7 +4558,7 @@ impl<
             .entry(self.current_block_id)
         {
             entry.insert(value.unwrap_or(Value::Literal(Literal::Unit(
-                literal::Unit { span: Some(syntax_tree.span()) },
+                literal::Unit { span: (syntax_tree.span()) },
             ))));
         }
 
@@ -4612,7 +4608,7 @@ impl<
 
                     Type::Inference(inference)
                 },
-                span: Some(syntax_tree.span()),
+                span: (syntax_tree.span()),
             }));
 
         Ok(Expression::RValue(value))
@@ -4748,7 +4744,7 @@ impl<
             }
             None => (
                 Value::Literal(Literal::Unit(literal::Unit {
-                    span: Some(syntax_tree.span()),
+                    span: (syntax_tree.span()),
                 })),
                 self.current_block_id,
             ),
@@ -4780,7 +4776,7 @@ impl<
 
                     Type::Inference(inference)
                 },
-                span: Some(syntax_tree.span()),
+                span: (syntax_tree.span()),
             })),
             1 => {
                 if self
@@ -4845,7 +4841,7 @@ impl<
                             incoming_values
                         },
                     }),
-                    Some(syntax_tree.span()),
+                    syntax_tree.span(),
                 );
 
                 Value::Register(phi_register_id)
@@ -4984,7 +4980,7 @@ impl<
             match incoming_values.len() {
                 0 => Value::Literal(Literal::Unreachable(Unreachable {
                     r#type: break_type,
-                    span: Some(syntax_tree.span()),
+                    span: (syntax_tree.span()),
                 })),
 
                 // only one incoming value, just return it
@@ -4997,7 +4993,7 @@ impl<
                             r#type: break_type,
                             incoming_values,
                         }),
-                        Some(syntax_tree.span()),
+                        syntax_tree.span(),
                     );
 
                     Value::Register(phi_register_id)
@@ -5017,7 +5013,7 @@ impl<
 
                     Type::Inference(inference)
                 },
-                span: Some(syntax_tree.span()),
+                span: (syntax_tree.span()),
             }))
         };
 
@@ -5254,11 +5250,11 @@ impl<
 
                     Type::Inference(inference)
                 },
-                span: Some(syntax_tree.span()),
+                span: (syntax_tree.span()),
             }))
         } else {
             Value::Literal(Literal::Unit(literal::Unit {
-                span: Some(syntax_tree.span()),
+                span: (syntax_tree.span()),
             }))
         };
 
@@ -5340,7 +5336,7 @@ impl<
                         block_id,
                         Value::Literal(Literal::Error(literal::Error {
                             r#type: express_type.clone(),
-                            span: Some(block_state.span.clone()),
+                            span: (block_state.span.clone()),
                         })),
                     )
                     .is_none());
@@ -5358,7 +5354,7 @@ impl<
                 // no incoming values, unreachable
                 0 => Value::Literal(Literal::Unreachable(Unreachable {
                     r#type: express_type,
-                    span: Some(block_state.span.clone()),
+                    span: (block_state.span.clone()),
                 })),
 
                 // only one incoming value, just return it
@@ -5371,7 +5367,7 @@ impl<
                             r#type: express_type,
                             incoming_values: block_state.incoming_values,
                         }),
-                        Some(block_state.span.clone()),
+                        block_state.span.clone(),
                     );
 
                     Value::Register(phi_register_id)
@@ -5390,11 +5386,11 @@ impl<
 
                 Value::Literal(Literal::Unreachable(Unreachable {
                     r#type: Type::Inference(inference_variable),
-                    span: Some(block_state.span.clone()),
+                    span: (block_state.span.clone()),
                 }))
             } else {
                 Value::Literal(Literal::Unit(Unit {
-                    span: Some(block_state.span.clone()),
+                    span: (block_state.span.clone()),
                 }))
             }
         };
@@ -5551,7 +5547,7 @@ impl<
 
                 Ok(Value::Literal(Literal::Error(literal::Error {
                     r#type: Type::Inference(inference),
-                    span: Some(semantic_error.0),
+                    span: (semantic_error.0),
                 })))
             }
             Err(Error::Internal(internal_error)) => Err(internal_error),

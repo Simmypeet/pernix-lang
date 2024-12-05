@@ -371,10 +371,7 @@ impl<
             + type_system::observer::Observer<ir::Model, S>,
     > Binder<'t, S, RO, TO>
 {
-    fn create_unreachable(
-        &mut self,
-        span: Option<Span>,
-    ) -> Literal<infer::Model> {
+    fn create_unreachable(&mut self, span: Span) -> Literal<infer::Model> {
         Literal::Unreachable(Unreachable {
             r#type: {
                 let inference = InferenceVariable::<Type<_>>::new();
@@ -393,7 +390,7 @@ impl<
     fn create_alloca(
         &mut self,
         r#type: Type<infer::Model>,
-        span: Option<Span>,
+        span: Span,
     ) -> ID<Alloca<infer::Model>> {
         // the alloca allocation instructions will all be inserted after the
         // binding finishes
@@ -436,7 +433,7 @@ impl<
                 .unwrap()
                 .span
                 .clone(),
-            Value::Literal(literal) => literal.span().cloned(),
+            Value::Literal(literal) => literal.span().clone(),
         };
 
         let alloca_id = self.create_alloca(ty, span);
@@ -498,7 +495,7 @@ impl<
     fn create_register_assignmnet(
         &mut self,
         assignment: Assignment<infer::Model>,
-        span: Option<Span>,
+        span: Span,
     ) -> ID<Register<infer::Model>> {
         let register_id = self
             .intermediate_representation

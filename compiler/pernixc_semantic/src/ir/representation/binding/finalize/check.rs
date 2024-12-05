@@ -119,11 +119,7 @@ impl Representation<ir::Model> {
                     false,
                     environment,
                 ) {
-                    report_error(
-                        error,
-                        register.span.clone().unwrap(),
-                        handler,
-                    );
+                    report_error(error, register.span.clone(), handler);
                 }
             }
             register::Assignment::Variant(variant) => {
@@ -151,11 +147,7 @@ impl Representation<ir::Model> {
                     false,
                     environment,
                 ) {
-                    report_error(
-                        error,
-                        register.span.clone().unwrap(),
-                        handler,
-                    );
+                    report_error(error, register.span.clone(), handler);
                 }
             }
             register::Assignment::FunctionCall(function_call) => {
@@ -167,11 +159,7 @@ impl Representation<ir::Model> {
                             false,
                             environment,
                         ) {
-                            report_error(
-                                error,
-                                register.span.clone().unwrap(),
-                                handler,
-                            );
+                            report_error(error, register.span.clone(), handler);
                         }
                     }
 
@@ -215,11 +203,7 @@ impl Representation<ir::Model> {
                         ));
 
                         for error in errors {
-                            report_error(
-                                error,
-                                register.span.clone().unwrap(),
-                                handler,
-                            );
+                            report_error(error, register.span.clone(), handler);
                         }
                     }
 
@@ -265,11 +249,7 @@ impl Representation<ir::Model> {
                         ));
 
                         for error in errors {
-                            report_error(
-                                error,
-                                register.span.clone().unwrap(),
-                                handler,
-                            );
+                            report_error(error, register.span.clone(), handler);
                         }
                     }
                 }
@@ -314,11 +294,7 @@ impl Representation<ir::Model> {
                     );
 
                     for error in errors {
-                        report_error(
-                            error,
-                            register.span.clone().unwrap(),
-                            handler,
-                        );
+                        report_error(error, register.span.clone(), handler);
                     }
                 }
             }
@@ -354,10 +330,9 @@ impl Representation<ir::Model> {
                                     .get(*id)
                                     .unwrap()
                                     .span
-                                    .clone()
-                                    .unwrap(),
+                                    .clone(),
                                 ir::value::Value::Literal(literal) => {
-                                    literal.span().cloned().unwrap()
+                                    literal.span().clone()
                                 }
                             },
                             handler,

@@ -137,7 +137,7 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
     fn inspect_and_transform(
         &mut self,
         term: Type<infer::Model>,
-        span: Option<pernixc_base::source_file::Span>,
+        span: pernixc_base::source_file::Span,
     ) -> Type<ir::Model> {
         let mut ty = self
             .inference_context
@@ -149,13 +149,11 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
             term::Kind::Constant(a) => a.is_inference(),
         });
 
-        if let Some(span) = span {
-            if found_inference && self.should_report {
-                self.handler.receive(Box::new(TypeAnnotationRequired {
-                    span,
-                    r#type: ty.clone(),
-                }));
-            }
+        if found_inference && self.should_report {
+            self.handler.receive(Box::new(TypeAnnotationRequired {
+                span,
+                r#type: ty.clone(),
+            }));
         }
 
         let mut replace_inference = ReplaceInference;

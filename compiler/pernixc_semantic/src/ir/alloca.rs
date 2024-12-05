@@ -22,7 +22,7 @@ pub struct Alloca<M: Model> {
     pub declaration_order: usize,
 
     /// The span of the allocation.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 impl<M: Model> Alloca<M> {

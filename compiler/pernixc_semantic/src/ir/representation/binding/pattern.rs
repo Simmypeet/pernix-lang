@@ -201,21 +201,19 @@ impl Pattern for Refutable {
                         let load_address = if must_copy {
                             let alloca_id = binder.create_alloca(
                                 binding.r#type.clone(),
-                                Some(pat.span.clone()),
+                                pat.span.clone(),
                             );
 
                             // copy/move the value from the given address
-                            let load_value =
-                                Value::Register(
-                                    binder.create_register_assignmnet(
-                                        Assignment::Load(Load {
-                                            address: binding.address,
-                                        }),
-                                        Some(address_span.unwrap_or_else(
-                                            || pat.span.clone(),
-                                        )),
-                                    ),
-                                );
+                            let load_value = Value::Register(
+                                binder.create_register_assignmnet(
+                                    Assignment::Load(Load {
+                                        address: binding.address,
+                                    }),
+                                    address_span
+                                        .unwrap_or_else(|| pat.span.clone()),
+                                ),
+                            );
 
                             // store the value to the alloca
                             let _ =
@@ -462,25 +460,21 @@ impl Pattern for Irrefutable {
                         let load_address = if must_copy {
                             let alloca_id = binder.create_alloca(
                                 binding.r#type.clone(),
-                                Some(
-                                    address_span
-                                        .clone()
-                                        .unwrap_or_else(|| pat.span.clone()),
-                                ),
+                                address_span
+                                    .clone()
+                                    .unwrap_or_else(|| pat.span.clone()),
                             );
 
                             // copy/move the value from the given address
-                            let load_value =
-                                Value::Register(
-                                    binder.create_register_assignmnet(
-                                        Assignment::Load(Load {
-                                            address: binding.address,
-                                        }),
-                                        Some(address_span.unwrap_or_else(
-                                            || pat.span.clone(),
-                                        )),
-                                    ),
-                                );
+                            let load_value = Value::Register(
+                                binder.create_register_assignmnet(
+                                    Assignment::Load(Load {
+                                        address: binding.address,
+                                    }),
+                                    address_span
+                                        .unwrap_or_else(|| pat.span.clone()),
+                                ),
+                            );
 
                             // store the value to the alloca
                             let _ =
@@ -1269,7 +1263,7 @@ impl<
                 qualifier,
                 lifetime: Lifetime::Inference(Erased),
             }),
-            Some(address_span.unwrap_or_else(|| pattern_span.clone())),
+            address_span.unwrap_or_else(|| pattern_span.clone()),
         );
 
         let alloca_ty = Type::Reference(Reference {
@@ -1278,8 +1272,7 @@ impl<
             pointee: Box::new(address_type),
         });
 
-        let alloca_id =
-            self.create_alloca(alloca_ty, Some(pattern_span.clone()));
+        let alloca_id = self.create_alloca(alloca_ty, pattern_span.clone());
 
         let _ = self.current_block_mut().insert_instruction(
             instruction::Instruction::Store(Store {
@@ -1399,14 +1392,7 @@ impl<
             });
             let packed_alloca = self.create_alloca(
                 packed_type.clone(),
-                Some(
-                    tuple_pat
-                        .elements
-                        .get(packed_position)
-                        .unwrap()
-                        .pattern
-                        .span(),
-                ),
+                tuple_pat.elements.get(packed_position).unwrap().pattern.span(),
             );
 
             if let Some(unpacked_position_in_type) = unpacked_position_in_type {
@@ -1424,14 +1410,14 @@ impl<
 
                     let moved_reg = self.create_register_assignmnet(
                         Assignment::Load(Load { address: element_address }),
-                        Some(address_span.clone().unwrap_or_else(|| {
+                        address_span.clone().unwrap_or_else(|| {
                             tuple_pat
                                 .elements
                                 .get(packed_position)
                                 .unwrap()
                                 .pattern
                                 .span()
-                        })),
+                        }),
                     );
 
                     let _ = self.current_block_mut().insert_instruction(
@@ -1488,14 +1474,14 @@ impl<
 
                     let moved_reg = self.create_register_assignmnet(
                         Assignment::Load(Load { address: element_address }),
-                        Some(address_span.clone().unwrap_or_else(|| {
+                        address_span.clone().unwrap_or_else(|| {
                             tuple_pat
                                 .elements
                                 .get(packed_position)
                                 .unwrap()
                                 .pattern
                                 .span()
-                        })),
+                        }),
                     );
 
                     let _ = self.current_block_mut().insert_instruction(
@@ -1524,14 +1510,14 @@ impl<
 
                     let moved_reg = self.create_register_assignmnet(
                         Assignment::Load(Load { address: element_address }),
-                        Some(address_span.clone().unwrap_or_else(|| {
+                        address_span.clone().unwrap_or_else(|| {
                             tuple_pat
                                 .elements
                                 .get(packed_position)
                                 .unwrap()
                                 .pattern
                                 .span()
-                        })),
+                        }),
                     );
 
                     let _ = self.current_block_mut().insert_instruction(

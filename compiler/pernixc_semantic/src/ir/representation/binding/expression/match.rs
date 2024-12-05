@@ -266,7 +266,7 @@ impl<
 
                 let load_value = self.create_register_assignmnet(
                     Assignment::Load(Load { address: load_address }),
-                    Some(match_info.span.clone()),
+                    match_info.span.clone(),
                 );
 
                 match arm_states_by_value.len() {
@@ -414,14 +414,14 @@ impl<
                 let numeric_value = match main_leaf_refutable {
                     Refutable::Integer(_) => self.create_register_assignmnet(
                         Assignment::Load(Load { address: load_address }),
-                        Some(match_info.span.clone()),
+                        match_info.span.clone(),
                     ),
 
                     Refutable::Enum(_) => self.create_register_assignmnet(
                         Assignment::VariantNumber(VariantNumber {
                             address: match_info.address.clone(),
                         }),
-                        Some(match_info.span.clone()),
+                        match_info.span.clone(),
                     ),
 
                     _ => unreachable!(),
@@ -516,14 +516,14 @@ impl<
                                             r#type: self.type_of_register(
                                                 numeric_value,
                                             )?,
-                                            span: Some(match_info.span.clone()),
+                                            span: match_info.span.clone(),
                                         },
                                     )),
                                     operator: BinaryOperator::Relational(
                                         RelationalOperator::Equal,
                                     ),
                                 }),
-                                Some(match_info.span.clone()),
+                                match_info.span.clone(),
                             );
 
                         assert!(self
@@ -873,7 +873,7 @@ impl<
                             self.create_alloca_with_value(Value::Literal(
                                 Literal::Error(literal::Error {
                                     r#type: Type::Inference(ty_inference),
-                                    span: Some(semantic_error.0),
+                                    span: semantic_error.0,
                                 }),
                             ))
                         })),
@@ -1032,7 +1032,7 @@ impl<
             }
 
             Ok(Expression::RValue(Value::Literal(
-                self.create_unreachable(Some(syntax_tree.span())),
+                self.create_unreachable(syntax_tree.span()),
             )))
         } else {
             if !non_exhaustives.is_empty() {
@@ -1058,7 +1058,7 @@ impl<
                 assert!(self.current_block().predecessors().is_empty());
 
                 return Ok(Expression::RValue(Value::Literal(
-                    self.create_unreachable(Some(syntax_tree.span())),
+                    self.create_unreachable(syntax_tree.span()),
                 )));
             };
             let match_ty = self.type_of_value(
@@ -1101,7 +1101,7 @@ impl<
             Ok(Expression::RValue(Value::Register(
                 self.create_register_assignmnet(
                     Assignment::Phi(Phi { incoming_values, r#type: match_ty }),
-                    Some(syntax_tree.span()),
+                    syntax_tree.span(),
                 ),
             )))
         }

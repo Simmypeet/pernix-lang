@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 use pernixc_base::{
     handler::{Counter, Panic, Storage},
-    source_file::SourceFile,
+    source_file::{SourceElement, SourceFile},
 };
 use pernixc_lexical::token_stream::{TokenStream, Tree};
 use pernixc_syntax::{
@@ -172,12 +172,10 @@ impl<
 {
     fn bind_irrefutable(
         &mut self,
-        source: impl Display,
+        pattern_syn: syntax_tree::pattern::Irrefutable,
         ty: &Type<infer::Model>,
         address: Address<infer::Model>,
     ) -> (Irrefutable, NameBindingPoint<infer::Model>) {
-        let pattern_syn = create_pattern(source);
-
         let storage = Storage::<Box<dyn error::Error>>::default();
 
         let irrefutable =
@@ -228,10 +226,11 @@ fn value_bound_named() {
 
     assert!(storage.as_vec().is_empty());
 
-    let alloca_id = binder.create_alloca(Type::default(), None);
+    let syn = create_pattern(VALUE_BOUND_NAMED);
+    let alloca_id = binder.create_alloca(Type::default(), syn.span());
 
     let (pattern, binding_point) = binder.bind_irrefutable(
-        VALUE_BOUND_NAMED,
+        syn,
         &Type::default(),
         Address::Memory(Memory::Alloca(alloca_id)),
     );
@@ -267,9 +266,10 @@ fn reference_bound_named() {
     )
     .unwrap();
 
-    let alloca_id = binder.create_alloca(Type::default(), None);
+    let syn = create_pattern(SIMPLE_NAMED_REFERENCE_BOUND);
+    let alloca_id = binder.create_alloca(Type::default(), syn.span());
     let (pattern, binding_point) = binder.bind_irrefutable(
-        SIMPLE_NAMED_REFERENCE_BOUND,
+        syn,
         &Type::default(),
         Address::Memory(Memory::Alloca(alloca_id)),
     );
@@ -361,10 +361,11 @@ fn value_bound_struct() {
     )
     .unwrap();
 
-    let struct_alloca_id = binder.create_alloca(struct_ty.clone(), None);
+    let syn = create_pattern(VALUE_BOUND_STRUCT);
+    let struct_alloca_id = binder.create_alloca(struct_ty.clone(), syn.span());
 
     let (pattern, binding_point) = binder.bind_irrefutable(
-        VALUE_BOUND_STRUCT,
+        syn,
         &struct_ty,
         Address::Memory(Memory::Alloca(struct_alloca_id)),
     );
@@ -503,11 +504,12 @@ fn reference_bound_struct() {
     let b_field_id =
         table.get(struct_id).unwrap().fields().get_id("b").unwrap();
 
+    let syn = create_pattern(REFERENCE_BOUND_STRUCT);
     let struct_alloca_id =
-        binder.create_alloca(reference_struct_ty.clone(), None);
+        binder.create_alloca(reference_struct_ty.clone(), syn.span());
 
     let (pattern, binding_point) = binder.bind_irrefutable(
-        REFERENCE_BOUND_STRUCT,
+        syn,
         &reference_struct_ty,
         Address::Memory(Memory::Alloca(struct_alloca_id)),
     );
@@ -600,10 +602,11 @@ fn value_bound_tuple() {
     // no error
     assert!(storage.as_vec().is_empty());
 
-    let tuple_alloca_id = binder.create_alloca(tuple_ty.clone(), None);
+    let syn = create_pattern(VALUE_BOUND_TUPLE);
+    let tuple_alloca_id = binder.create_alloca(tuple_ty.clone(), syn.span());
 
     let (pattern, binding_point) = binder.bind_irrefutable(
-        VALUE_BOUND_TUPLE,
+        syn,
         &tuple_ty,
         Address::Memory(Memory::Alloca(tuple_alloca_id)),
     );
@@ -702,11 +705,12 @@ fn reference_bound_tuple() {
     )
     .unwrap();
 
+    let syn = create_pattern(REFERENCE_BOUND_TUPLE);
     let tuple_alloca_id =
-        binder.create_alloca(reference_tuple_ty.clone(), None);
+        binder.create_alloca(reference_tuple_ty.clone(), syn.span());
 
     let (pattern, binding_point) = binder.bind_irrefutable(
-        REFERENCE_BOUND_TUPLE,
+        syn,
         &reference_tuple_ty,
         Address::Memory(Memory::Alloca(tuple_alloca_id)),
     );
@@ -818,10 +822,11 @@ fn more_packed_tuple() {
     )
     .unwrap();
 
-    let tuple_alloca_id = binder.create_alloca(tuple_ty.clone(), None);
+    let syn = create_pattern(PACKED_TUPLE);
+    let tuple_alloca_id = binder.create_alloca(tuple_ty.clone(), syn.span());
 
     let (pattern, binding_point) = binder.bind_irrefutable(
-        PACKED_TUPLE,
+        syn,
         &tuple_ty,
         Address::Memory(Memory::Alloca(tuple_alloca_id)),
     );

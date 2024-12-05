@@ -157,7 +157,7 @@ impl<
                             self.create_alloca_with_value(Value::Literal(
                                 Literal::Error(literal::Error {
                                     r#type: Type::Inference(ty_inference),
-                                    span: Some(semantic_error.0),
+                                    span: semantic_error.0,
                                 }),
                             ))
                         })),

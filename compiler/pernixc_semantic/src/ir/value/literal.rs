@@ -31,7 +31,7 @@ pub struct Numeric<M: Model> {
     pub r#type: Type<M>,
 
     /// The span location of the numeric value.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 /// Represents a boolean value.
@@ -41,7 +41,7 @@ pub struct Boolean {
     pub value: bool,
 
     /// The span location of the boolean.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 /// A placeholder for a value that was failed to bind.
@@ -51,14 +51,14 @@ pub struct Error<M: Model> {
     pub r#type: Type<M>,
 
     /// The span location of the errornous expression.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 /// Represents a unit value (empty tuple).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Unit {
     /// The span location of the unit value.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 /// A placeholder for a value that can never be reached.
@@ -70,7 +70,7 @@ pub struct Unreachable<M: Model> {
     pub r#type: Type<M>,
 
     /// The span location of the unreachable value.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 /// Represents a string literal value.
@@ -80,7 +80,7 @@ pub struct String {
     pub value: Vec<u8>,
 
     /// The span location of the string.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 /// Represents a character literal value.
@@ -96,7 +96,7 @@ pub struct Character<M: Model> {
     pub r#type: Type<M>,
 
     /// The span location of the character.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 /// Represents a phantom value created by the `phantom` keyword.
@@ -109,7 +109,7 @@ pub struct Phantom<M: Model> {
     pub r#type: Type<M>,
 
     /// The span location of the phantom keyword.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 /// Represents a literal value.
@@ -215,16 +215,16 @@ impl<M: Model> Literal<M> {
     }
 
     /// Returns the span location of the literal value.
-    pub const fn span(&self) -> Option<&Span> {
+    pub const fn span(&self) -> &Span {
         match self {
-            Self::Numeric(n) => n.span.as_ref(),
-            Self::Boolean(b) => b.span.as_ref(),
-            Self::Error(e) => e.span.as_ref(),
-            Self::Unit(u) => u.span.as_ref(),
-            Self::String(s) => s.span.as_ref(),
-            Self::Character(c) => c.span.as_ref(),
-            Self::Unreachable(u) => u.span.as_ref(),
-            Self::Phantom(p) => p.span.as_ref(),
+            Self::Numeric(n) => &n.span,
+            Self::Boolean(b) => &b.span,
+            Self::Error(e) => &e.span,
+            Self::Unit(u) => &u.span,
+            Self::String(s) => &s.span,
+            Self::Character(c) => &c.span,
+            Self::Unreachable(u) => &u.span,
+            Self::Phantom(p) => &p.span,
         }
     }
 }
