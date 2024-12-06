@@ -1185,7 +1185,7 @@ impl Scope {
                 })
             }
 
-            Address::Index(_) => None,
+            Address::Index(index) => self.get_state(&index.array_address),
 
             Address::Variant(variant) => {
                 let state = self.get_state(&variant.enum_address)?;
@@ -1194,6 +1194,7 @@ impl Scope {
                     .as_projection()
                     .map_or(Some(state), |x| x.as_enum().map(|x| &*x.state))
             }
+
             Address::Reference(reference) => {
                 let state = self.get_state(&reference.reference_address)?;
 
