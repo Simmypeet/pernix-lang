@@ -4,7 +4,7 @@ use pernixc_syntax::syntax_tree;
 use super::marker;
 use crate::{
     arena::ID,
-    error::{self, NonFinalMarkerImplementation},
+    error::{self, ManualImplementationOfCopy, NonFinalMarkerImplementation},
     symbol::{
         table::{
             representation::{
@@ -12,7 +12,7 @@ use crate::{
                     state::Finalize, utility::occurrences::Occurrences,
                     Finalizer,
                 },
-                RwLockContainer,
+                Index, RwLockContainer,
             },
             Building, Table,
         },
@@ -77,6 +77,24 @@ impl Finalize for PositiveMarkerImplementation {
                         .span
                         .join(&syntax_tree.qualified_identifier().span())
                         .unwrap(),
+                }));
+            }
+
+            let copy_marker = table
+                .get_by_qualified_name(["core", "Copy"].into_iter())
+                .unwrap()
+                .into_marker()
+                .unwrap();
+
+            let this_implemented_id =
+                table.get(symbol_id).unwrap().implemented_id;
+
+            // can't be manually implemented
+            if this_implemented_id == copy_marker {
+                handler.receive(Box::new(ManualImplementationOfCopy {
+                    implementation_span: syntax_tree
+                        .qualified_identifier()
+                        .span(),
                 }));
             }
         }

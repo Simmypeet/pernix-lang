@@ -4367,6 +4367,29 @@ impl Report<&Table<Suboptimal>> for NonFinalMarkerImplementation {
     }
 }
 
+/// The `core::Copy` marker can't be manually implemented.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ManualImplementationOfCopy {
+    /// The span of the implementation.
+    pub implementation_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for ManualImplementationOfCopy {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.implementation_span.clone(),
+            message: "`core::Copy` marker can't be manually implemented, it \
+                      can only be `delete` at most"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
 /// Not all flow paths in the function return a value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NotAllFlowPathsReturnAValue {
