@@ -4,9 +4,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use infer::{
-    Constraint as _, Context, InferenceVariable, NoConstraint, UnifyError,
-};
+use infer::{Constraint as _, Context, InferenceVariable, UnifyError};
 use parking_lot::RwLock;
 use pernixc_base::{
     handler::Handler,
@@ -35,7 +33,7 @@ use crate::{
             register::{Assignment, Register},
             Value,
         },
-        Erased, TypeOfError,
+        Erased, NoConstraint, TypeOfError,
     },
     symbol::{
         table::{
@@ -63,11 +61,11 @@ use crate::{
 };
 
 pub mod expression;
-pub mod infer;
 pub mod stack;
 pub mod statement;
 
 mod finalize;
+mod infer;
 mod pattern;
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]

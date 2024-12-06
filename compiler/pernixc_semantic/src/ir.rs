@@ -20,8 +20,11 @@ use crate::{
         instantiation::MismatchedGenericArgumentCountError,
         model,
         term::{
-            self, constant::Constant, lifetime::Lifetime, r#type::Type, Never,
-            Term,
+            self,
+            constant::Constant,
+            lifetime::Lifetime,
+            r#type::{self, Type},
+            Never, Term,
         },
         OverflowError,
     },
@@ -148,6 +151,77 @@ pub trait Transform<T: Term> {
     ) -> Result<T::Rebind<Self::Target>, Self::Error> {
         self.inspect(&term, span.clone())?;
         self.transform(term, span)
+    }
+}
+
+/// The model that uses the [`r#type::Constraint`] as the inference type for
+/// type term and [`NoConstraint`]  as the inference type for constant and
+/// lifetime terms.
+///
+/// This is primarily used for reporting the type inference errors, which can
+/// display the current state of the inference context.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct ConstraintModel;
+
+impl From<Never> for NoConstraint {
+    fn from(never: Never) -> Self { match never {} }
+}
+
+impl<T: table::State> table::Display<T> for NoConstraint {
+    fn fmt(
+        &self,
+        _: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "_")
+    }
+}
+
+impl<T: table::State> table::Display<T> for r#type::Constraint {
+    #[allow(clippy::enum_glob_use)]
+    fn fmt(
+        &self,
+        _: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        use r#type::Constraint::*;
+
+        match self {
+            All(_) => write!(f, "{{any}}"),
+            Number => write!(f, "{{number}}"),
+            Signed => write!(f, "{{signed}}"),
+            Floating => write!(f, "{{floating}}"),
+            Integer => write!(f, "{{integer}}"),
+            SignedInteger => write!(f, "{{signedInteger}}"),
+            UnsignedInteger => write!(f, "{{unsignedInteger}}"),
+        }
+    }
+}
+
+/// The struct used for representing the absence of any constraint in inference
+/// variables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct NoConstraint;
+
+impl model::Model for ConstraintModel {
+    type LifetimeInference = NoConstraint;
+    type TypeInference = r#type::Constraint;
+    type ConstantInference = NoConstraint;
+
+    fn from_default_type(ty: Type<model::Default>) -> Type<Self> {
+        Type::from_other_model(ty)
+    }
+
+    fn from_default_lifetime(
+        lifetime: Lifetime<model::Default>,
+    ) -> Lifetime<Self> {
+        Lifetime::from_other_model(lifetime)
+    }
+
+    fn from_default_constant(
+        constant: Constant<model::Default>,
+    ) -> Constant<Self> {
+        Constant::from_other_model(constant)
     }
 }
 

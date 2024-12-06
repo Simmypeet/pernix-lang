@@ -30,7 +30,7 @@ use crate::{
         instruction::{Instruction, Store},
         representation::binding::{
             expression::Target,
-            infer::{self, InferenceVariable, NoConstraint},
+            infer::{self, InferenceVariable},
             Binder, Error, InferenceProvider, InternalError, SemanticError,
         },
         value::{
@@ -41,7 +41,7 @@ use crate::{
             },
             Value,
         },
-        Erased,
+        Erased, NoConstraint,
     },
     symbol::{
         table::{

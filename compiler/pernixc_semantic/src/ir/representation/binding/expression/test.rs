@@ -19,7 +19,7 @@ use crate::{
         instruction::Instruction,
         representation::binding::{
             expression::{Bind, Config, Target},
-            infer::{self, ConstraintModel},
+            infer,
             test::{parse_expression, parse_statement, TestTemplate},
             Binder,
         },
@@ -31,7 +31,7 @@ use crate::{
             },
             Value,
         },
-        Erased,
+        ConstraintModel, Erased,
     },
     symbol::{
         table::{

@@ -7,13 +7,14 @@ use crate::{
     ir::{
         self,
         representation::binding::{
-            infer::{self, InferenceVariable, NoConstraint},
+            infer::{self, InferenceVariable},
             Binder, Error,
         },
         value::{
             literal::{self, Literal},
             Value,
         },
+        NoConstraint,
     },
     symbol::table::{self, resolution},
     type_system::{

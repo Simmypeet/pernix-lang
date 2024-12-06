@@ -7,11 +7,8 @@ use crate::{
     error::{OverflowOperation, TypeAnnotationRequired, TypeSystemOverflow},
     ir::{
         self,
-        representation::binding::{
-            infer::{self, ConstraintModel, NoConstraint},
-            HandlerWrapper,
-        },
-        Erased, Transform,
+        representation::binding::{infer, HandlerWrapper},
+        ConstraintModel, Erased, NoConstraint, Transform,
     },
     symbol::table::{self, Table},
     type_system::{

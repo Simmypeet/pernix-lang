@@ -14,7 +14,7 @@ use lazy_static::lazy_static;
 
 use crate::{
     arena::{Arena, ID},
-    ir::Erased,
+    ir::{ConstraintModel, Erased, NoConstraint},
     symbol::table::{self, Building, Table},
     type_system::{
         environment::Environment,
@@ -492,10 +492,6 @@ pub struct CombineConstraintError<C> {
     pub rhs: C,
 }
 
-/// The struct implementing the [`Constraint`] trait for no restriction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct NoConstraint;
-
 impl<T> Constraint<T> for NoConstraint {
     fn satisfies(&self, _: &T) -> bool { true }
 
@@ -644,28 +640,6 @@ impl Context {
     ) -> Result<(), UnifyConstraintError<T, T::Constraint>> {
         T::get_context_mut(self)
             .unify_with_constraint(inference_variable, constraint)
-    }
-
-    /// Infers the given `contraint_id` to a known value.
-    ///
-    /// If the given known value satsifies the constraint, every occurrence of
-    /// the `constraint_id` in the inference context will be replaced with the
-    /// known value.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `constraint_id` is invalid.
-    ///
-    /// # Errors
-    ///
-    /// See [`AssignKnownValueError`] for more information.
-    #[allow(private_bounds)]
-    pub fn assign_infer_to_known<T: InferableSealed>(
-        &mut self,
-        constraint_id: ID<T::Constraint>,
-        known: T,
-    ) -> Result<(), AssignKnownValueError<T, T::Constraint>> {
-        T::get_context_mut(self).assign_infer_to_known(constraint_id, known)
     }
 }
 
@@ -1151,72 +1125,6 @@ impl Context {
     }
 }
 
-/// The model that uses the [`r#type::Constraint`] as the inference type for
-/// type term and [`NoConstraint`]  as the inference type for constant and
-/// lifetime terms.
-///
-/// This is primarily used for reporting the type inference errors, which can
-/// display the current state of the inference context.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct ConstraintModel;
-
-impl From<Never> for NoConstraint {
-    fn from(never: Never) -> Self { match never {} }
-}
-
-impl<T: table::State> table::Display<T> for NoConstraint {
-    fn fmt(
-        &self,
-        _: &Table<T>,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        write!(f, "_")
-    }
-}
-
-impl<T: table::State> table::Display<T> for r#type::Constraint {
-    #[allow(clippy::enum_glob_use)]
-    fn fmt(
-        &self,
-        _: &Table<T>,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        use r#type::Constraint::*;
-
-        match self {
-            All(_) => write!(f, "{{any}}"),
-            Number => write!(f, "{{number}}"),
-            Signed => write!(f, "{{signed}}"),
-            Floating => write!(f, "{{floating}}"),
-            Integer => write!(f, "{{integer}}"),
-            SignedInteger => write!(f, "{{signedInteger}}"),
-            UnsignedInteger => write!(f, "{{unsignedInteger}}"),
-        }
-    }
-}
-
-impl model::Model for ConstraintModel {
-    type LifetimeInference = NoConstraint;
-    type TypeInference = r#type::Constraint;
-    type ConstantInference = NoConstraint;
-
-    fn from_default_type(ty: Type<model::Default>) -> Type<Self> {
-        Type::from_other_model(ty)
-    }
-
-    fn from_default_lifetime(
-        lifetime: Lifetime<model::Default>,
-    ) -> Lifetime<Self> {
-        Lifetime::from_other_model(lifetime)
-    }
-
-    fn from_default_constant(
-        constant: Constant<model::Default>,
-    ) -> Constant<Self> {
-        Constant::from_other_model(constant)
-    }
-}
-
 #[derive(
     Debug,
     Clone,
@@ -1457,7 +1365,7 @@ impl Context {
     /// currently infer.
     ///
     /// # Errors
-    /// 
+    ///
     /// See [`OverflowError`] for more information.
     pub fn transform_type_into_constraint_model(
         &self,
@@ -1494,7 +1402,7 @@ impl Context {
     /// currently infer.
     ///
     /// # Errors
-    /// 
+    ///
     /// See [`OverflowError`] for more information.
     pub fn transform_constant_into_constraint_model(
         &self,
