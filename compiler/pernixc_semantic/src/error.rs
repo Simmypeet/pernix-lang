@@ -15,7 +15,7 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    ir::representation::binding::infer::ConstraintModel,
+    ir::ConstraintModel,
     symbol::{
         table::{
             self, representation::Index, Display, DisplayObject, State,
@@ -4339,6 +4339,31 @@ impl<T: State> Display<T> for UnknownExternCallingConvention {
         })?;
 
         Ok(())
+    }
+}
+
+/// Implementation on marker must always be `final`
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NonFinalMarkerImplementation {
+    /// The span of the implementation.
+    pub implementation_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for NonFinalMarkerImplementation {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.implementation_span.clone(),
+            message: "implementation on marker must always be `final`"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: Some(
+                "prefix the keyword `final` before the `implements` keyword"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        })
     }
 }
 

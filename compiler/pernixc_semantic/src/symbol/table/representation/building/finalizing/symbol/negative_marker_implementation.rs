@@ -1,10 +1,10 @@
-use pernixc_base::handler::Handler;
+use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree;
 
 use super::marker;
 use crate::{
     arena::ID,
-    error,
+    error::{self, NonFinalMarkerImplementation},
     symbol::{
         table::{
             representation::{
@@ -66,5 +66,18 @@ impl Finalize for NegativeMarkerImplementation {
             marker::WHERE_CLAUSE_STATE,
             handler,
         );
+
+        if state_flag == CHECK_STATE {
+            // marker implementation must always be final
+            if syntax_tree.final_keyword().is_none() {
+                handler.receive(Box::new(NonFinalMarkerImplementation {
+                    implementation_span: syntax_tree
+                        .implements_keyword()
+                        .span
+                        .join(&syntax_tree.qualified_identifier().span())
+                        .unwrap(),
+                }));
+            }
+        }
     }
 }
