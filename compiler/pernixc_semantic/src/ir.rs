@@ -123,24 +123,31 @@ pub trait Transform<T: Term> {
     /// The target model to transform the terms to.
     type Target: model::Model;
 
-    /// Transforms a term from the current model to the target model.
-    ///
-    /// # Parameters
-    ///
-    /// - `term`: The term to transform.
-    fn transform(&mut self, term: T) -> T::Rebind<Self::Target>;
+    /// The error that might occur when transforming the terms.
+    type Error;
 
-    /// Inspects a term from the current model.
-    fn inspect(&mut self, _: &T, _: Span) {}
+    /// Inspects the term. This is called before transforming the term.
+    ///
+    /// The method should report the error seen in the term. For exmple, if the
+    /// term contains an un-inferrable type. This is called at most onece per
+    /// expression/entity.
+    fn inspect(&mut self, term: &T, span: Span) -> Result<(), Self::Error>;
 
-    /// Inspects and transforms a term from the current model.
+    /// Transforms the term.
+    fn transform(
+        &mut self,
+        term: T,
+        span: Span,
+    ) -> Result<T::Rebind<Self::Target>, Self::Error>;
+
+    /// Inspects and transforms the term.
     fn inspect_and_transform(
         &mut self,
         term: T,
         span: Span,
-    ) -> T::Rebind<Self::Target> {
-        self.inspect(&term, span);
-        self.transform(term)
+    ) -> Result<T::Rebind<Self::Target>, Self::Error> {
+        self.inspect(&term, span.clone())?;
+        self.transform(term, span)
     }
 }
 

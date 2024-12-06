@@ -166,7 +166,7 @@ impl Finalize for AdtImplementationFunction {
                     .write()
                     .ir = match binder.finalize(handler) {
                     Ok(ir) => FunctionIR::Success(ir),
-                    Err(ir) => FunctionIR::Suboptimal(ir),
+                    Err(_) => return,
                 };
             }
 

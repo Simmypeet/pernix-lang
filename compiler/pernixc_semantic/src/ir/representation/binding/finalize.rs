@@ -4,7 +4,7 @@ use pernixc_base::handler::Handler;
 
 use super::{infer, Binder};
 use crate::{
-    error::{self, NotAllFlowPathsReturnAValue},
+    error::{self, NotAllFlowPathsReturnAValue, TypeSystemOverflow},
     ir::{
         self,
         instruction::{Instruction, ScopePop},
@@ -27,6 +27,12 @@ mod check;
 mod memory;
 mod transform_inference;
 
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::From)]
+pub enum FinalizeError {
+    TypeSystemOverflow(TypeSystemOverflow<ir::Model>),
+    Suboptimal(IR<Suboptimal>),
+}
+
 impl<
         't,
         S: table::State,
@@ -45,7 +51,7 @@ impl<
     pub fn finalize(
         mut self,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<IR<Success>, IR<Suboptimal>> {
+    ) -> Result<IR<Success>, FinalizeError> {
         let root_scope_id =
             self.intermediate_representation.scope_tree.root_scope_id();
         let _ = self
@@ -84,14 +90,14 @@ impl<
             &self.inference_context,
             self.table,
             &handler_wrapper,
-        );
+        )?;
 
         // stop now, it will produce useless errors
         if *handler_wrapper.suboptimal.read() {
-            return Err(IR {
+            return Err(FinalizeError::Suboptimal(IR {
                 representation: transformed_ir,
                 state: Suboptimal,
-            });
+            }));
         }
 
         let premise = self
@@ -111,14 +117,14 @@ impl<
             self.current_site,
             &environment,
             &handler_wrapper,
-        );
+        )?;
 
         // stop now, it will produce useless errors
         if *handler_wrapper.suboptimal.read() {
-            return Err(IR {
+            return Err(FinalizeError::Suboptimal(IR {
                 representation: transformed_ir,
                 state: Suboptimal,
-            });
+            }));
         }
 
         Ok(IR { representation: transformed_ir, state: Success(()) })

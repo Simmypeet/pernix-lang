@@ -41,15 +41,15 @@ impl<M: Model> Value<M> {
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
-    ) -> Value<T::Target> {
-        match self {
+    ) -> Result<Value<T::Target>, T::Error> {
+        Ok(match self {
             Self::Register(register) => {
                 Value::Register(ID::from_index(register.into_index()))
             }
             Self::Literal(literal) => {
-                Value::Literal(literal.transform_model(transformer))
+                Value::Literal(literal.transform_model(transformer)?)
             }
-        }
+        })
     }
 }
 

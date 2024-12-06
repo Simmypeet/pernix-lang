@@ -7,8 +7,8 @@ use super::state::{self, Scope, SetStateSucceeded, Summary};
 use crate::{
     arena::{Arena, ID},
     error::{
-        MoveInLoop, MovedOutValueFromMutableReference, UseAfterMove,
-        UseBeforeInitialization,
+        self, MoveInLoop, MovedOutValueFromMutableReference,
+        TypeSystemOverflow, UseAfterMove, UseBeforeInitialization,
     },
     ir::{
         self,
@@ -54,15 +54,27 @@ impl Stack {
 
     pub fn pop_scope(&mut self) -> Option<Scope> { self.scopes.pop() }
 
-    pub fn set_initialized(
+    pub fn set_initialized<S: table::State>(
         &mut self,
         address: &Address<ir::Model>,
-        table: &Table<impl table::State>,
-    ) -> SetStateSucceeded {
+        span: Span,
+        environment: &Environment<
+            ir::Model,
+            S,
+            impl Normalizer<ir::Model, S>,
+            impl Observer<ir::Model, S>,
+        >,
+    ) -> Result<SetStateSucceeded, TypeSystemOverflow<ir::Model>> {
         let root = address.get_root_memory();
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains(root) {
-                return scope.set_initialized(address, table).unwrap();
+                return scope.set_initialized(address, environment).map_err(
+                    |x| TypeSystemOverflow {
+                        operation: error::OverflowOperation::TypeCheck,
+                        overflow_span: span,
+                        overflow_error: x.into_overflow().unwrap(),
+                    },
+                );
             }
         }
 
@@ -83,18 +95,27 @@ impl Stack {
         panic!("Invalid address");
     }
 
-    pub fn set_uninitialized(
+    pub fn set_uninitialized<S: table::State>(
         &mut self,
         address: &Address<ir::Model>,
         move_span: Span,
-        table: &Table<impl table::State>,
-    ) -> SetStateSucceeded {
+        environment: &Environment<
+            ir::Model,
+            S,
+            impl Normalizer<ir::Model, S>,
+            impl Observer<ir::Model, S>,
+        >,
+    ) -> Result<SetStateSucceeded, TypeSystemOverflow<ir::Model>> {
         let root = address.get_root_memory();
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains(root) {
                 return scope
-                    .set_uninitialized(address, move_span, table)
-                    .unwrap();
+                    .set_uninitialized(address, move_span.clone(), environment)
+                    .map_err(|x| TypeSystemOverflow {
+                        operation: error::OverflowOperation::TypeCheck,
+                        overflow_span: move_span,
+                        overflow_error: x.into_overflow().unwrap(),
+                    });
             }
         }
 
@@ -146,10 +167,20 @@ impl Values<ir::Model> {
         store_address: &Address<ir::Model>,
         store_span: Span,
         stack: &mut Stack,
-        table: &Table<S>,
         handler: &HandlerWrapper,
-    ) -> Vec<Instruction<ir::Model>> {
-        let state = stack.set_initialized(store_address, table);
+        environment: &Environment<
+            ir::Model,
+            S,
+            impl Normalizer<ir::Model, S>,
+            impl Observer<ir::Model, S>,
+        >,
+    ) -> Result<Vec<Instruction<ir::Model>>, TypeSystemOverflow<ir::Model>>
+    {
+        let state = stack.set_initialized(
+            store_address,
+            store_span.clone(),
+            environment,
+        )?;
 
         let (state, target_address) = match state {
             SetStateSucceeded::Unchanged(initialized, address) => {
@@ -166,7 +197,9 @@ impl Values<ir::Model> {
             }));
         }
 
-        state.get_drop_instructions(&target_address, table).unwrap()
+        Ok(state
+            .get_drop_instructions(&target_address, environment.table())
+            .unwrap())
     }
 
     fn handle_load<S: table::State>(
@@ -182,7 +215,7 @@ impl Values<ir::Model> {
             impl Observer<ir::Model, S>,
         >,
         handler: &HandlerWrapper,
-    ) {
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let ty = self
             .type_of_address(&load.address, current_site, environment)
             .unwrap();
@@ -218,14 +251,14 @@ impl Values<ir::Model> {
             .iter()
             .all(well_formedness::Error::is_lifetime_constraints)
             {
-                return;
+                return Ok(());
             }
 
             let state = stack.set_uninitialized(
                 &load.address,
                 register_span.clone(),
-                environment.table(),
-            );
+                environment,
+            )?;
 
             match state {
                 SetStateSucceeded::Unchanged(initialized, _) => initialized
@@ -239,7 +272,7 @@ impl Values<ir::Model> {
             }
         };
 
-        match memory_state {
+        Ok(match memory_state {
             Summary::Uninitialized => {
                 handler.receive(Box::new(UseBeforeInitialization {
                     use_span: register_span,
@@ -254,7 +287,7 @@ impl Values<ir::Model> {
             }
 
             Summary::Initialized => {}
-        }
+        })
     }
 }
 
@@ -314,7 +347,7 @@ impl ir::Representation<ir::Model> {
             impl Observer<ir::Model, S>,
         >,
         handler: &HandlerWrapper,
-    ) {
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let mut current_index = 0;
         let block = self.control_flow_graph.get_block_mut(block_id).unwrap();
 
@@ -334,9 +367,9 @@ impl ir::Representation<ir::Model> {
                             Value::Literal(literal) => literal.span().clone(),
                         },
                         stack,
-                        environment.table(),
                         handler,
-                    );
+                        environment,
+                    )?;
 
                     let instructions_len = instructions.len();
 
@@ -361,7 +394,7 @@ impl ir::Representation<ir::Model> {
                                 current_site,
                                 environment,
                                 handler,
-                            );
+                            )?;
 
                             1
                         }
@@ -434,8 +467,8 @@ impl ir::Representation<ir::Model> {
                         let state = stack.set_uninitialized(
                             &address,
                             tuple_pack.packed_tuple_span.clone().unwrap(),
-                            environment.table(),
-                        );
+                            environment,
+                        )?;
 
                         let sumamry = match state {
                             SetStateSucceeded::Unchanged(initialized, _) => {
@@ -482,9 +515,9 @@ impl ir::Representation<ir::Model> {
                         &tuple_pack.store_address,
                         tuple_pack.packed_tuple_span.clone().unwrap(),
                         stack,
-                        environment.table(),
                         handler,
-                    );
+                        environment,
+                    )?;
 
                     let instructions_len = instructions.len();
 
@@ -598,6 +631,8 @@ impl ir::Representation<ir::Model> {
 
             current_index += step;
         }
+
+        Ok(())
     }
 
     #[allow(clippy::too_many_lines)]
@@ -614,10 +649,10 @@ impl ir::Representation<ir::Model> {
             impl Observer<ir::Model, S>,
         >,
         handler: &HandlerWrapper,
-    ) -> Option<Stack> {
+    ) -> Result<Option<Stack>, TypeSystemOverflow<ir::Model>> {
         // skip if already processed
         if let Some(stack) = stacks_by_block_id.get(&block_id) {
-            return stack.clone();
+            return Ok(stack.clone());
         }
 
         // mark as processing
@@ -642,7 +677,7 @@ impl ir::Representation<ir::Model> {
                     current_site,
                     environment,
                     handler,
-                ) {
+                )? {
                     merging_stakcs.push((predecessor_id, stack));
                 } else {
                     looped_block_ids.push(predecessor_id);
@@ -653,7 +688,7 @@ impl ir::Representation<ir::Model> {
                 // try again later
                 stacks_by_block_id.remove(&block_id);
 
-                return None;
+                return Ok(None);
             }
 
             // Sanity check
@@ -761,7 +796,7 @@ impl ir::Representation<ir::Model> {
             current_site,
             environment,
             handler,
-        );
+        )?;
 
         // handle loop
         if let Some(target_stack) = target_stacks_by_block_id.get(&block_id) {
@@ -833,7 +868,7 @@ impl ir::Representation<ir::Model> {
             .unwrap()
             .is_none());
 
-        Some(starting_stack)
+        Ok(Some(starting_stack))
     }
 
     pub(in super::super) fn memory_check<S: table::State>(
@@ -846,7 +881,7 @@ impl ir::Representation<ir::Model> {
             impl Observer<ir::Model, S>,
         >,
         handler: &HandlerWrapper,
-    ) {
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let mut stacks_by_block_id = HashMap::new();
         let mut target_stack_by_block_ids = HashMap::new();
 
@@ -861,9 +896,11 @@ impl ir::Representation<ir::Model> {
                 current_site,
                 environment,
                 handler,
-            );
+            )?;
         }
 
         assert!(stacks_by_block_id.values().all(Option::is_some));
+
+        Ok(())
     }
 }

@@ -166,7 +166,7 @@ impl Finalize for Function {
                         const_function: syntax_tree.const_keyword().is_some(),
                         ir: match binder.finalize(handler) {
                             Ok(ir) => FunctionIR::Success(ir),
-                            Err(ir) => FunctionIR::Suboptimal(ir),
+                            Err(_) => return,
                         },
                     });
                 }

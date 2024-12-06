@@ -30,13 +30,12 @@ impl<M: Model> Alloca<M> {
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
-    ) -> Alloca<T::Target> {
-        Alloca {
-            r#type: transformer
-                .inspect_and_transform(self.r#type, self.span.clone()),
+    ) -> Result<Alloca<T::Target>, T::Error> {
+        Ok(Alloca {
+            r#type: transformer.transform(self.r#type, self.span.clone())?,
             declared_in_scope_id: self.declared_in_scope_id,
             declaration_order: self.declaration_order,
             span: self.span,
-        }
+        })
     }
 }

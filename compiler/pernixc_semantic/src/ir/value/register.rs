@@ -590,36 +590,51 @@ impl<M: Model> Values<M> {
 }
 
 fn transform_instantiation<
+    E,
     FM: Model,
     TM: Model,
-    T: Transform<Lifetime<FM>, Target = TM>
-        + Transform<Type<FM>, Target = TM>
-        + Transform<Constant<FM>, Target = TM>,
+    T: Transform<Lifetime<FM>, Target = TM, Error = E>
+        + Transform<Type<FM>, Target = TM, Error = E>
+        + Transform<Constant<FM>, Target = TM, Error = E>,
 >(
     transformer: &mut T,
     instantiation: Instantiation<FM>,
-) -> Instantiation<TM> {
-    Instantiation {
+    span: Span,
+) -> Result<Instantiation<TM>, E> {
+    Ok(Instantiation {
         lifetimes: instantiation
             .lifetimes
             .into_iter()
-            .map(|(k, v)| (transformer.transform(k), transformer.transform(v)))
-            .collect(),
+            .map(|(k, v)| {
+                Ok((
+                    transformer.transform(k, span.clone())?,
+                    transformer.transform(v, span.clone())?,
+                ))
+            })
+            .collect::<Result<_, E>>()?,
         types: instantiation
             .types
             .into_iter()
-            .map(|(k, v)| (transformer.transform(k), transformer.transform(v)))
-            .collect(),
+            .map(|(k, v)| {
+                Ok((
+                    transformer.transform(k, span.clone())?,
+                    transformer.transform(v, span.clone())?,
+                ))
+            })
+            .collect::<Result<_, E>>()?,
         constants: {
             instantiation
                 .constants
                 .into_iter()
                 .map(|(k, v)| {
-                    (transformer.transform(k), transformer.transform(v))
+                    Ok((
+                        transformer.transform(k, span.clone())?,
+                        transformer.transform(v, span.clone())?,
+                    ))
                 })
-                .collect()
+                .collect::<Result<_, E>>()?
         },
-    }
+    })
 }
 
 impl<M: Model> Register<M> {
@@ -627,45 +642,48 @@ impl<M: Model> Register<M> {
     /// transformer.
     #[allow(clippy::too_many_lines)]
     pub fn transform_model<
+        E,
         U: Model,
-        T: Transform<Lifetime<M>, Target = U>
-            + Transform<Type<M>, Target = U>
-            + Transform<Constant<M>, Target = U>,
+        T: Transform<Lifetime<M>, Target = U, Error = E>
+            + Transform<Type<M>, Target = U, Error = E>
+            + Transform<Constant<M>, Target = U, Error = E>,
     >(
         self,
         transformer: &mut T,
         table: &Table<impl table::State>,
-    ) -> Register<U> {
-        Register {
+    ) -> Result<Register<U>, E> {
+        Ok(Register {
             span: self.span.clone(),
             assignment: match self.assignment {
                 Assignment::Tuple(tuple) => Assignment::Tuple(Tuple {
                     elements: tuple
                         .elements
                         .into_iter()
-                        .map(|x| TupleElement {
-                            value: x.value.transform_model(transformer),
-                            is_unpacked: x.is_unpacked,
+                        .map(|x| {
+                            Ok(TupleElement {
+                                value: x.value.transform_model(transformer)?,
+                                is_unpacked: x.is_unpacked,
+                            })
                         })
-                        .collect(),
+                        .collect::<Result<_, E>>()?,
                 }),
                 Assignment::Load(load) => Assignment::Load(Load {
-                    address: load.address.transform_model(transformer),
+                    address: load.address.transform_model(transformer)?,
                 }),
                 Assignment::ReferenceOf(reference_of) => {
                     Assignment::ReferenceOf(ReferenceOf {
                         address: reference_of
                             .address
-                            .transform_model(transformer),
+                            .transform_model(transformer)?,
                         qualifier: reference_of.qualifier,
                         lifetime: transformer.inspect_and_transform(
                             reference_of.lifetime,
                             self.span,
-                        ),
+                        )?,
                     })
                 }
                 Assignment::Prefix(prefix) => Assignment::Prefix(Prefix {
-                    operand: prefix.operand.transform_model(transformer),
+                    operand: prefix.operand.transform_model(transformer)?,
                     operator: prefix.operator,
                 }),
                 Assignment::Struct(st) => Assignment::Struct(Struct {
@@ -673,8 +691,8 @@ impl<M: Model> Register<M> {
                     initializers_by_field_id: st
                         .initializers_by_field_id
                         .into_iter()
-                        .map(|(k, v)| (k, v.transform_model(transformer)))
-                        .collect(),
+                        .map(|(k, v)| Ok((k, v.transform_model(transformer)?)))
+                        .collect::<Result<_, E>>()?,
                     generic_arguments: {
                         transformer
                             .inspect_and_transform(
@@ -685,7 +703,7 @@ impl<M: Model> Register<M> {
                                     generic_arguments: st.generic_arguments,
                                 }),
                                 self.span,
-                            )
+                            )?
                             .into_symbol()
                             .unwrap()
                             .generic_arguments
@@ -695,7 +713,8 @@ impl<M: Model> Register<M> {
                     variant_id: variant.variant_id,
                     associated_value: variant
                         .associated_value
-                        .map(|x| x.transform_model(transformer)),
+                        .map(|x| x.transform_model(transformer))
+                        .transpose()?,
                     generic_arguments: {
                         let enum_id = table
                             .get(variant.variant_id)
@@ -712,7 +731,7 @@ impl<M: Model> Register<M> {
                                         .generic_arguments,
                                 }),
                                 self.span,
-                            )
+                            )?
                             .into_symbol()
                             .unwrap()
                             .generic_arguments
@@ -727,7 +746,7 @@ impl<M: Model> Register<M> {
                             .arguments
                             .into_iter()
                             .map(|x| x.transform_model(transformer))
-                            .collect(),
+                            .collect::<Result<_, E>>()?,
                         instantiation: match function_call.callable_id {
                             CallableID::Function(id) => {
                                 let function_symbol = table.get(id).unwrap();
@@ -748,15 +767,16 @@ impl<M: Model> Register<M> {
                                             id: r#type::SymbolID::Function(id),
                                             generic_arguments,
                                         }),
-                                        self.span,
-                                    )
+                                        self.span.clone(),
+                                    )?
                                     .into_symbol()
                                     .unwrap();
 
                                 transform_instantiation(
                                     transformer,
                                     function_call.instantiation,
-                                )
+                                    self.span,
+                                )?
                             }
 
                             CallableID::TraitFunction(id) => {
@@ -784,21 +804,22 @@ impl<M: Model> Register<M> {
                                     )
                                     .unwrap();
 
-                                transformer.inspect_and_transform(
-                                    Type::MemberSymbol(MemberSymbol {
+                                transformer.inspect(
+                                    &Type::MemberSymbol(MemberSymbol {
                                         id: r#type::MemberSymbolID::Function(
                                             id.into(),
                                         ),
                                         member_generic_arguments,
                                         parent_generic_arguments,
                                     }),
-                                    self.span,
-                                );
+                                    self.span.clone(),
+                                )?;
 
                                 transform_instantiation(
                                     transformer,
                                     function_call.instantiation,
-                                )
+                                    self.span,
+                                )?
                             }
 
                             CallableID::TraitImplementationFunction(_)
@@ -848,8 +869,8 @@ impl<M: Model> Register<M> {
                                     )
                                     .unwrap();
 
-                                transformer.inspect_and_transform(
-                                    Type::MemberSymbol(MemberSymbol {
+                                transformer.inspect(
+                                    &Type::MemberSymbol(MemberSymbol {
                                         id: r#type::MemberSymbolID::Function(
                                             match function_call.callable_id {
                                                 CallableID::TraitImplementationFunction(id) => id.into(),
@@ -860,20 +881,21 @@ impl<M: Model> Register<M> {
                                         member_generic_arguments,
                                         parent_generic_arguments,
                                     }),
-                                    self.span,
-                                ).into_member_symbol().unwrap();
+                                    self.span.clone(),
+                                )?;
 
                                 transform_instantiation(
                                     transformer,
                                     function_call.instantiation,
-                                )
+                                    self.span,
+                                )?
                             }
                         },
                     })
                 }
                 Assignment::Binary(binary) => Assignment::Binary(Binary {
-                    lhs: binary.lhs.transform_model(transformer),
-                    rhs: binary.rhs.transform_model(transformer),
+                    lhs: binary.lhs.transform_model(transformer)?,
+                    rhs: binary.rhs.transform_model(transformer)?,
                     operator: binary.operator,
                 }),
                 Assignment::Array(array) => Assignment::Array(Array {
@@ -881,37 +903,37 @@ impl<M: Model> Register<M> {
                         .elements
                         .into_iter()
                         .map(|x| x.transform_model(transformer))
-                        .collect(),
+                        .collect::<Result<_, E>>()?,
                     element_type: transformer
-                        .inspect_and_transform(array.element_type, self.span),
+                        .inspect_and_transform(array.element_type, self.span)?,
                 }),
                 Assignment::Phi(phi) => Assignment::Phi(Phi {
                     incoming_values: phi
                         .incoming_values
                         .into_iter()
                         .map(|(k, v)| {
-                            (
+                            Ok((
                                 ID::from_index(k.into_index()),
-                                v.transform_model(transformer),
-                            )
+                                v.transform_model(transformer)?,
+                            ))
                         })
-                        .collect(),
+                        .collect::<Result<_, E>>()?,
                     r#type: transformer
-                        .inspect_and_transform(phi.r#type, self.span),
+                        .inspect_and_transform(phi.r#type, self.span)?,
                 }),
                 Assignment::Cast(cast) => Assignment::Cast(Cast {
-                    value: cast.value.transform_model(transformer),
+                    value: cast.value.transform_model(transformer)?,
                     r#type: transformer
-                        .inspect_and_transform(cast.r#type, self.span),
+                        .inspect_and_transform(cast.r#type, self.span)?,
                 }),
                 Assignment::VariantNumber(variant_number) => {
                     Assignment::VariantNumber(VariantNumber {
                         address: variant_number
                             .address
-                            .transform_model(transformer),
+                            .transform_model(transformer)?,
                     })
                 }
             },
-        }
+        })
     }
 }

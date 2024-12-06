@@ -323,6 +323,13 @@ impl<T, Idx: Key> IntoIterator for Arena<T, Idx> {
     fn into_iter(self) -> Self::IntoIter { self.items.into_iter() }
 }
 
+impl<T, Idx: Key> FromIterator<(Idx, T)> for Arena<T, Idx> {
+    fn from_iter<U: IntoIterator<Item = (Idx, T)>>(iter: U) -> Self {
+        let items = iter.into_iter().collect();
+        Self { items }
+    }
+}
+
 impl<'a, T, Idx: Key> IntoIterator for &'a Arena<T, Idx> {
     type IntoIter = std::collections::hash_map::Iter<'a, Idx, T>;
     type Item = (&'a Idx, &'a T);

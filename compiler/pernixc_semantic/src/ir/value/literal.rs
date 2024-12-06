@@ -144,50 +144,44 @@ impl<M: Model> Literal<M> {
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
-    ) -> Literal<T::Target> {
-        match self {
+    ) -> Result<Literal<T::Target>, T::Error> {
+        Ok(match self {
             Self::Numeric(numeric) => Literal::Numeric(Numeric {
                 integer_string: numeric.integer_string,
                 decimal_stirng: numeric.decimal_stirng,
-                r#type: transformer.inspect_and_transform(
-                    numeric.r#type,
-                    numeric.span.clone(),
-                ),
+                r#type: transformer
+                    .transform(numeric.r#type, numeric.span.clone())?,
                 span: numeric.span,
             }),
             Self::Boolean(boolean) => Literal::Boolean(boolean),
             Self::Error(error) => Literal::Error(Error {
                 r#type: transformer
-                    .inspect_and_transform(error.r#type, error.span.clone()),
+                    .transform(error.r#type, error.span.clone())?,
                 span: error.span,
             }),
             Self::Unit(unit) => Literal::Unit(unit),
             Self::String(s) => Literal::String(s),
             Self::Character(character) => Literal::Character(Character {
                 character: character.character,
-                r#type: transformer.inspect_and_transform(
-                    character.r#type,
-                    character.span.clone(),
-                ),
+                r#type: transformer
+                    .transform(character.r#type, character.span.clone())?,
                 span: character.span,
             }),
             Self::Unreachable(unreachable) => {
                 Literal::Unreachable(Unreachable {
-                    r#type: transformer.inspect_and_transform(
+                    r#type: transformer.transform(
                         unreachable.r#type,
                         unreachable.span.clone(),
-                    ),
+                    )?,
                     span: unreachable.span,
                 })
             }
             Self::Phantom(phantom) => Literal::Phantom(Phantom {
-                r#type: transformer.inspect_and_transform(
-                    phantom.r#type,
-                    phantom.span.clone(),
-                ),
+                r#type: transformer
+                    .transform(phantom.r#type, phantom.span.clone())?,
                 span: phantom.span,
             }),
-        }
+        })
     }
 
     /// Returns the type of the literal value.

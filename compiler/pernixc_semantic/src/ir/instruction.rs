@@ -66,8 +66,8 @@ impl<M: Model> Jump<M> {
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
-    ) -> Jump<T::Target> {
-        match self {
+    ) -> Result<Jump<T::Target>, T::Error> {
+        Ok(match self {
             Self::Unconditional(jump) => {
                 Jump::Unconditional(UnconditionalJump {
                     target: ID::from_index(jump.target.into_index()),
@@ -75,13 +75,13 @@ impl<M: Model> Jump<M> {
             }
 
             Self::Conditional(jump) => Jump::Conditional(ConditionalJump {
-                condition: jump.condition.transform_model(transformer),
+                condition: jump.condition.transform_model(transformer)?,
                 true_target: ID::from_index(jump.true_target.into_index()),
                 false_target: ID::from_index(jump.false_target.into_index()),
             }),
 
             Self::Select(jump) => Jump::Select(SelectJump {
-                integer: jump.integer.transform_model(transformer),
+                integer: jump.integer.transform_model(transformer)?,
                 branches: jump
                     .branches
                     .into_iter()
@@ -93,7 +93,7 @@ impl<M: Model> Jump<M> {
                     .otherwise
                     .map(|id| ID::from_index(id.into_index())),
             }),
-        }
+        })
     }
 
     /// Returns the block IDs that this jump goes to.
@@ -245,11 +245,11 @@ impl<M: Model> Instruction<M> {
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
-    ) -> Instruction<T::Target> {
-        match self {
+    ) -> Result<Instruction<T::Target>, T::Error> {
+        Ok(match self {
             Self::Store(store) => Instruction::Store(Store {
-                address: store.address.transform_model(transformer),
-                value: store.value.transform_model(transformer),
+                address: store.address.transform_model(transformer)?,
+                value: store.value.transform_model(transformer)?,
             }),
             Self::RegisterAssignment(register_assignment) => {
                 Instruction::RegisterAssignment(RegisterAssignment {
@@ -269,10 +269,10 @@ impl<M: Model> Instruction<M> {
             Self::TuplePack(tuple_pack) => Instruction::TuplePack(TuplePack {
                 store_address: tuple_pack
                     .store_address
-                    .transform_model(transformer),
+                    .transform_model(transformer)?,
                 tuple_address: tuple_pack
                     .tuple_address
-                    .transform_model(transformer),
+                    .transform_model(transformer)?,
                 before_packed_element_count: tuple_pack
                     .before_packed_element_count,
                 after_packed_element_count: tuple_pack
@@ -286,20 +286,20 @@ impl<M: Model> Instruction<M> {
                 Instruction::ScopePop(ScopePop(scope_pop.0))
             }
             Self::Drop(drop) => Instruction::Drop(Drop {
-                address: drop.address.transform_model(transformer),
+                address: drop.address.transform_model(transformer)?,
             }),
             Self::DropUnpackTuple(drop_unpack_tuple) => {
                 Instruction::DropUnpackTuple(DropUnpackTuple {
                     tuple_address: drop_unpack_tuple
                         .tuple_address
-                        .transform_model(transformer),
+                        .transform_model(transformer)?,
                     before_unpacked_element_count: drop_unpack_tuple
                         .before_unpacked_element_count,
                     after_unpacked_element_count: drop_unpack_tuple
                         .after_unpacked_element_count,
                 })
             }
-        }
+        })
     }
 }
 
@@ -323,15 +323,15 @@ impl<M: Model> Terminator<M> {
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
-    ) -> Terminator<T::Target> {
-        match self {
+    ) -> Result<Terminator<T::Target>, T::Error> {
+        Ok(match self {
             Self::Jump(jump) => {
-                Terminator::Jump(jump.transform_model(transformer))
+                Terminator::Jump(jump.transform_model(transformer)?)
             }
             Self::Return(r#return) => Terminator::Return(Return {
-                value: r#return.value.transform_model(transformer),
+                value: r#return.value.transform_model(transformer)?,
             }),
             Self::Panic => Terminator::Panic,
-        }
+        })
     }
 }

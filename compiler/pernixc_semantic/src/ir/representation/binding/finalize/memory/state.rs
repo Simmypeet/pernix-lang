@@ -18,14 +18,19 @@ use crate::{
         AdtID, GlobalID,
     },
     type_system::{
+        environment::Environment,
         instantiation::{
             self, Instantiation, MismatchedGenericArgumentCountError,
         },
+        normalizer::Normalizer,
+        observer::Observer,
+        simplify,
         term::{
             self,
             r#type::{self, Qualifier, SymbolID, Type},
             Symbol, Term,
         },
+        OverflowError,
     },
 };
 
@@ -926,6 +931,7 @@ impl Default for Memory {
     Hash,
     thiserror::Error,
     displaydoc::Display,
+    EnumAsInner,
 )]
 pub enum SetStateError {
     /**
@@ -944,6 +950,9 @@ pub enum SetStateError {
     MismatchedArgumentCount(
         #[from] MismatchedGenericArgumentCountError<ir::Model>,
     ),
+
+    /// Encountered an overflow error obtaining the type of the field/variant.
+    Overflow(#[from] OverflowError),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1069,14 +1078,19 @@ impl Scope {
     }
 
     /// Sets the state of the value in memory as uninitialized (moved out).
-    pub fn set_uninitialized(
+    pub fn set_uninitialized<S: table::State>(
         &mut self,
         address: &Address<ir::Model>,
         load_span: Span,
-        table: &Table<impl table::State>,
+        environment: &Environment<
+            ir::Model,
+            S,
+            impl Normalizer<ir::Model, S>,
+            impl Observer<ir::Model, S>,
+        >,
     ) -> Result<SetStateSucceeded, SetStateError> {
         let result = self
-            .set_state_internal(address, Some(load_span), true, table)
+            .set_state_internal(address, Some(load_span), true, environment)
             .map(|x| match x {
                 SetStateResultInternal::Unchanged(a, b) => {
                     SetStateSucceeded::Unchanged(a, b)
@@ -1102,13 +1116,19 @@ impl Scope {
     }
 
     /// Sets the state of the value in memory as initialized.
-    pub fn set_initialized(
+    pub fn set_initialized<S: table::State>(
         &mut self,
         address: &Address<ir::Model>,
-        table: &Table<impl table::State>,
+        environment: &Environment<
+            ir::Model,
+            S,
+            impl Normalizer<ir::Model, S>,
+            impl Observer<ir::Model, S>,
+        >,
     ) -> Result<SetStateSucceeded, SetStateError> {
-        let result = self.set_state_internal(address, None, true, table).map(
-            |x| match x {
+        let result = self
+            .set_state_internal(address, None, true, environment)
+            .map(|x| match x {
                 SetStateResultInternal::Unchanged(a, b) => {
                     SetStateSucceeded::Unchanged(a, b)
                 }
@@ -1118,8 +1138,7 @@ impl Scope {
                 SetStateResultInternal::Continue { .. } => {
                     unreachable!()
                 }
-            },
-        );
+            });
 
         if result.is_ok() {
             let state = self
@@ -1187,13 +1206,18 @@ impl Scope {
 
     // returns `Ok(None)` if the state is already satisfied
     #[allow(clippy::too_many_lines)]
-    fn set_state_internal(
+    fn set_state_internal<S: table::State>(
         &mut self,
         address: &Address<ir::Model>,
         // None, if set to initialize, Some if set to uninitialized
         initialized: Option<Span>,
         root: bool,
-        table: &Table<impl table::State>,
+        environment: &Environment<
+            ir::Model,
+            S,
+            impl Normalizer<ir::Model, S>,
+            impl Observer<ir::Model, S>,
+        >,
     ) -> Result<SetStateResultInternal, SetStateError> {
         let (target_state, ty, version) = match address {
             Address::Memory(memory) => self
@@ -1213,7 +1237,7 @@ impl Scope {
                     &field.struct_address,
                     initialized.clone(),
                     false,
-                    table,
+                    environment,
                 )? {
                     SetStateResultInternal::Continue { state, ty, version } => {
                         (state, ty, version)
@@ -1229,7 +1253,8 @@ impl Scope {
                     return Err(SetStateError::InvalidAddress);
                 };
 
-                let struct_symbol = table
+                let struct_symbol = environment
+                    .table()
                     .get(struct_id)
                     .ok_or(SetStateError::GlobalIDNotFound(struct_id.into()))?;
 
@@ -1285,7 +1310,7 @@ impl Scope {
 
                         instantiation::instantiate(&mut ty, &instantiation);
 
-                        ty
+                        simplify::simplify(&ty, environment)?.result
                     },
                     version,
                 )
@@ -1296,7 +1321,7 @@ impl Scope {
                     &tuple.tuple_address,
                     initialized.clone(),
                     false,
-                    table,
+                    environment,
                 )? {
                     SetStateResultInternal::Continue { state, ty, version } => {
                         (state, ty, version)
@@ -1365,7 +1390,7 @@ impl Scope {
                     &variant.enum_address,
                     initialized.clone(),
                     false,
-                    table,
+                    environment,
                 )? {
                     SetStateResultInternal::Continue { state, ty, version } => {
                         (state, ty, version)
@@ -1381,11 +1406,13 @@ impl Scope {
                     return Err(SetStateError::InvalidAddress);
                 };
 
-                let enum_symbol = table
+                let enum_symbol = environment
+                    .table()
                     .get(enum_id)
                     .ok_or(SetStateError::GlobalIDNotFound(enum_id.into()))?;
 
-                let variant_symbol = table
+                let variant_symbol = environment
+                    .table()
                     .get(variant.id)
                     .ok_or(SetStateError::InvalidAddress)?;
 
@@ -1428,7 +1455,7 @@ impl Scope {
 
                         instantiation::instantiate(&mut ty, &instantiation);
 
-                        ty
+                        simplify::simplify(&ty, environment)?.result
                     },
                     version,
                 )
@@ -1440,7 +1467,7 @@ impl Scope {
                     &reference.reference_address,
                     initialized.clone(),
                     false,
-                    table,
+                    environment,
                 )? {
                     SetStateResultInternal::Continue { state, ty, version } => {
                         (state, ty, version)

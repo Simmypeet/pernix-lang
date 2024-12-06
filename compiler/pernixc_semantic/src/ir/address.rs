@@ -226,8 +226,8 @@ impl<M: Model> Address<M> {
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
-    ) -> Address<T::Target> {
-        match self {
+    ) -> Result<Address<T::Target>, T::Error> {
+        Ok(match self {
             Self::Memory(memory) => match memory {
                 Memory::Parameter(id) => Address::Memory(Memory::Parameter(id)),
                 Memory::Alloca(id) => Address::Memory(Memory::Alloca(
@@ -236,27 +236,27 @@ impl<M: Model> Address<M> {
             },
             Self::Field(field) => Address::Field(Field {
                 struct_address: Box::new(
-                    field.struct_address.transform_model(transformer),
+                    field.struct_address.transform_model(transformer)?,
                 ),
                 id: field.id,
             }),
             Self::Tuple(tuple) => Address::Tuple(Tuple {
                 tuple_address: Box::new(
-                    tuple.tuple_address.transform_model(transformer),
+                    tuple.tuple_address.transform_model(transformer)?,
                 ),
                 offset: tuple.offset,
             }),
             Self::Index(index) => Address::Index(Index {
                 array_address: Box::new(
-                    index.array_address.transform_model(transformer),
+                    index.array_address.transform_model(transformer)?,
                 ),
                 indexing_value: index
                     .indexing_value
-                    .transform_model(transformer),
+                    .transform_model(transformer)?,
             }),
             Self::Variant(variant) => Address::Variant(Variant {
                 enum_address: Box::new(
-                    variant.enum_address.transform_model(transformer),
+                    variant.enum_address.transform_model(transformer)?,
                 ),
                 id: variant.id,
             }),
@@ -266,11 +266,11 @@ impl<M: Model> Address<M> {
                     reference_address: Box::new(
                         reference_address
                             .reference_address
-                            .transform_model(transformer),
+                            .transform_model(transformer)?,
                     ),
                 })
             }
-        }
+        })
     }
 }
 

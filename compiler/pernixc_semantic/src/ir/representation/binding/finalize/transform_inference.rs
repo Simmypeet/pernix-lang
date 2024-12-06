@@ -1,9 +1,10 @@
 use std::{collections::HashSet, convert::Infallible};
 
-use pernixc_base::handler::Handler;
+use pernixc_base::{handler::Handler, source_file::Span};
 
 use crate::{
-    error::TypeAnnotationRequired,
+    arena::{Key, ID},
+    error::{OverflowOperation, TypeAnnotationRequired, TypeSystemOverflow},
     ir::{
         self,
         representation::binding::{
@@ -96,53 +97,83 @@ pub struct Transformer<'a> {
 
 impl Transform<Lifetime<infer::Model>> for Transformer<'_> {
     type Target = ir::Model;
+    type Error = TypeSystemOverflow<ir::Model>;
 
     fn transform(
         &mut self,
         term: Lifetime<infer::Model>,
-    ) -> Lifetime<ir::Model> {
-        match term {
+        _: Span,
+    ) -> Result<Lifetime<ir::Model>, TypeSystemOverflow<ir::Model>> {
+        Ok(match term {
             Lifetime::Static => Lifetime::Static,
             Lifetime::Parameter(member_id) => Lifetime::Parameter(member_id),
             Lifetime::Inference(_) => Lifetime::Inference(Erased),
             Lifetime::Forall(forall) => Lifetime::Forall(forall),
             Lifetime::Error(error) => Lifetime::Error(error),
-        }
+        })
+    }
+
+    fn inspect(
+        &mut self,
+        _: &Lifetime<infer::Model>,
+        _: Span,
+    ) -> Result<(), Self::Error> {
+        Ok(())
     }
 }
 
 impl Transform<Constant<infer::Model>> for Transformer<'_> {
     type Target = ir::Model;
+    type Error = TypeSystemOverflow<ir::Model>;
+
+    fn inspect(
+        &mut self,
+        _: &Constant<infer::Model>,
+        _: Span,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
 
     fn transform(
         &mut self,
         term: Constant<infer::Model>,
-    ) -> Constant<ir::Model> {
+        span: Span,
+    ) -> Result<Constant<ir::Model>, TypeSystemOverflow<ir::Model>> {
         let mut constant = self
             .inference_context
             .transform_constant_into_constraint_model(term)
-            .unwrap();
+            .map_err(|overflow_error| TypeSystemOverflow {
+                operation: OverflowOperation::TypeOf,
+                overflow_span: span.clone(),
+                overflow_error,
+            })?;
         let mut replace_inference = ReplaceInference;
 
         visitor::accept_recursive_mut(&mut constant, &mut replace_inference);
 
-        Constant::try_from_other_model(constant)
-            .expect("all inference should've been replaced")
+        Ok(Constant::try_from_other_model(constant)
+            .expect("all inference should've been replaced"))
     }
 }
 
 impl Transform<Type<infer::Model>> for Transformer<'_> {
     type Target = ir::Model;
+    type Error = TypeSystemOverflow<ir::Model>;
 
-    fn inspect_and_transform(
+    fn inspect(
         &mut self,
-        term: Type<infer::Model>,
-        span: pernixc_base::source_file::Span,
-    ) -> Type<ir::Model> {
-        let mut ty = self
+        term: &Type<infer::Model>,
+        span: Span,
+    ) -> Result<(), Self::Error> {
+        let ty = self
             .inference_context
-            .transform_type_into_constraint_model(term)
-            .unwrap();
+            .transform_type_into_constraint_model(term.clone())
+            .map_err(|overflow_error| TypeSystemOverflow {
+                operation: OverflowOperation::TypeOf,
+                overflow_span: span.clone(),
+                overflow_error,
+            })?;
+
         let found_inference = RecursiveIterator::new(&ty).any(|x| match x.0 {
             term::Kind::Lifetime(_) => false,
             term::Kind::Type(a) => a.is_inference(),
@@ -156,26 +187,29 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
             }));
         }
 
-        let mut replace_inference = ReplaceInference;
-
-        visitor::accept_recursive_mut(&mut ty, &mut replace_inference);
-
-        Type::try_from_other_model(ty)
-            .expect("all inference should've been replaced")
+        Ok(())
     }
 
-    fn transform(&mut self, term: Type<infer::Model>) -> Type<ir::Model> {
+    fn transform(
+        &mut self,
+        term: Type<infer::Model>,
+        span: pernixc_base::source_file::Span,
+    ) -> Result<Type<ir::Model>, TypeSystemOverflow<ir::Model>> {
         let mut ty = self
             .inference_context
             .transform_type_into_constraint_model(term)
-            .unwrap();
+            .map_err(|overflow_error| TypeSystemOverflow {
+                operation: OverflowOperation::TypeOf,
+                overflow_span: span.clone(),
+                overflow_error,
+            })?;
 
         let mut replace_inference = ReplaceInference;
 
         visitor::accept_recursive_mut(&mut ty, &mut replace_inference);
 
-        Type::try_from_other_model(ty)
-            .expect("all inference should've been replaced")
+        Ok(Type::try_from_other_model(ty)
+            .expect("all inference should've been replaced"))
     }
 }
 
@@ -184,7 +218,7 @@ pub fn transform_inference(
     inference_context: &infer::Context,
     table: &Table<impl table::State>,
     handler: &HandlerWrapper,
-) -> ir::Representation<ir::Model> {
+) -> Result<ir::Representation<ir::Model>, TypeSystemOverflow<ir::Model>> {
     original.control_flow_graph.remove_unerachable_blocks();
 
     let used_allocas = original
@@ -210,20 +244,37 @@ pub fn transform_inference(
     let mut transformer =
         Transformer { inference_context, handler, should_report: false };
 
-    result.values.allocas =
-        original.values.allocas.map(|x| x.transform_model(&mut transformer));
+    result.values.allocas = original
+        .values
+        .allocas
+        .into_iter()
+        .map(|(id, x)| {
+            Ok((
+                ID::from_index(id.into_index()),
+                x.transform_model(&mut transformer)?,
+            ))
+        })
+        .collect::<Result<_, TypeSystemOverflow<ir::Model>>>()?;
 
     transformer.should_report = true;
 
     result.control_flow_graph =
-        original.control_flow_graph.transform_model(&mut transformer);
+        original.control_flow_graph.transform_model(&mut transformer)?;
     result.values.registers = original
         .values
         .registers
-        .map(|x| x.transform_model(&mut transformer, table));
+        .into_iter()
+        .map(|(id, x)| {
+            Ok((
+                ID::from_index(id.into_index()),
+                x.transform_model(&mut transformer, table)?,
+            ))
+        })
+        .collect::<Result<_, TypeSystemOverflow<ir::Model>>>()?;
+
     result.scope_tree = original.scope_tree;
 
-    result
+    Ok(result)
 }
 
 #[cfg(test)]

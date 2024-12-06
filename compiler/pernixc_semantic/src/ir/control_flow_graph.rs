@@ -37,21 +37,24 @@ impl<M: Model> Block<M> {
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
-    ) -> Block<T::Target> {
-        Block {
+    ) -> Result<Block<T::Target>, T::Error> {
+        Ok(Block {
             instructions: self
                 .instructions
                 .into_iter()
                 .map(|x| x.transform_model(transformer))
-                .collect(),
-            terminator: self.terminator.map(|x| x.transform_model(transformer)),
+                .collect::<Result<_, T::Error>>()?,
+            terminator: self
+                .terminator
+                .map(|x| x.transform_model(transformer))
+                .transpose()?,
             predecessors: self
                 .predecessors
                 .into_iter()
                 .map(|x| ID::from_index(x.into_index()))
                 .collect(),
             is_entry: self.is_entry,
-        }
+        })
     }
 
     /// Inserts a multiple instructions to the block at the given index.
@@ -213,11 +216,20 @@ impl<M: Model> ControlFlowGraph<M> {
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
-    ) -> ControlFlowGraph<T::Target> {
-        ControlFlowGraph {
-            blocks: self.blocks.map(|x| x.transform_model(transformer)),
+    ) -> Result<ControlFlowGraph<T::Target>, T::Error> {
+        Ok(ControlFlowGraph {
+            blocks: self
+                .blocks
+                .into_iter()
+                .map(|(id, x)| {
+                    Ok((
+                        ID::from_index(id.into_index()),
+                        x.transform_model(transformer)?,
+                    ))
+                })
+                .collect::<Result<_, T::Error>>()?,
             entry_block_id: ID::from_index(self.entry_block_id.into_index()),
-        }
+        })
     }
 
     /// Creates an iterator used for traversing through the control flow graph.
