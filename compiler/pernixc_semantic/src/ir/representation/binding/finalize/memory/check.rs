@@ -15,7 +15,7 @@ use crate::{
         address::{Address, Memory},
         alloca::Alloca,
         control_flow_graph::Block,
-        instruction::Instruction,
+        instruction::{Instruction, Terminator, UnconditionalJump},
         representation::{binding::HandlerWrapper, Values},
         scope,
         value::{
@@ -692,19 +692,25 @@ impl ir::Representation<ir::Model> {
             }
 
             // Sanity check
-            for i in merging_stakcs.iter().map(|x| x.0) {
-                for j in merging_stakcs.iter().map(|x| x.0) {
-                    if i != j {
-                        assert!(
-                            !self
-                                .control_flow_graph
-                                .is_reachable_from(i, j)
-                                .unwrap(),
-                            "ICE: two merging blocks shouldn't be reachable \
-                             to each other {:#?}",
-                            self.control_flow_graph
-                        );
-                    }
+            if merging_stakcs.len() > 1 {
+                for i in merging_stakcs.iter().map(|x| x.0) {
+                    assert_eq!(
+                        *self
+                            .control_flow_graph
+                            .blocks()
+                            .get(i)
+                            .unwrap()
+                            .terminator(),
+                        Some(Terminator::Jump(
+                            ir::instruction::Jump::Unconditional(
+                                UnconditionalJump { target: block_id }
+                            )
+                        )),
+                        "merging block `{i:#?}` should directly jump to the \
+                         `block_id` {:#?} {:#?}",
+                        self.control_flow_graph,
+                        self.values
+                    );
                 }
             }
 
