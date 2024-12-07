@@ -25,6 +25,7 @@ use crate::{
 mod borrow;
 mod check;
 mod memory;
+mod simplify_drop;
 mod transform_inference;
 
 #[derive(Debug, Clone, PartialEq, Eq, derive_more::From)]
@@ -126,6 +127,14 @@ impl<
                 state: Suboptimal,
             }));
         }
+
+        // simplify the drop
+        simplify_drop::simplfy_drop_in_cfg(
+            &mut transformed_ir.control_flow_graph,
+            &transformed_ir.values,
+            self.current_site,
+            &environment,
+        )?;
 
         Ok(IR { representation: transformed_ir, state: Success(()) })
     }

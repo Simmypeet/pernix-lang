@@ -1,6 +1,9 @@
 //! Contains the definition of [`Block`] and [`ControlFlowGraph`].
 
-use std::{collections::HashSet, ops::Not};
+use std::{
+    collections::HashSet,
+    ops::{Not, RangeBounds},
+};
 
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
@@ -55,6 +58,16 @@ impl<M: Model> Block<M> {
                 .collect(),
             is_entry: self.is_entry,
         })
+    }
+
+    /// Splices the instructions in the block with the given range with the
+    /// replacement instructions.
+    pub fn splice(
+        &mut self,
+        range: impl RangeBounds<usize>,
+        replacement: impl IntoIterator<Item = Instruction<M>>,
+    ) {
+        self.instructions.splice(range, replacement);
     }
 
     /// Inserts a multiple instructions to the block at the given index.
@@ -367,6 +380,16 @@ impl<M: Model> ControlFlowGraph<M> {
 
             Terminator::Return(_) | Terminator::Panic => Some(false),
         }
+    }
+
+    /// Returns an iterator that iterates through all the blocks in the control
+    /// flow graph.
+    pub fn block_muts(
+        &mut self,
+    ) -> impl Iterator<Item = (ID<Block<M>>, &mut Block<M>)> {
+        self.blocks
+            .iter_mut()
+            .map(|(id, x)| (ID::from_index(id.into_index()), x))
     }
 
     /// Gets the [`Block`] with the given ID.
