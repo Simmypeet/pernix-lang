@@ -10,9 +10,12 @@ use crate::{
         self,
         control_flow_graph::InsertTerminatorError,
         instruction::{Jump, Terminator, UnconditionalJump},
-        representation::binding::{
-            infer::{self, InferenceVariable},
-            Binder, Error,
+        representation::{
+            binding::{
+                infer::{self, InferenceVariable},
+                Binder, Error,
+            },
+            borrow,
         },
         value::{
             literal::{self, Literal, Unreachable},
@@ -35,7 +38,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Bind<&syntax_tree::expression::IfElse> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]

@@ -13,7 +13,7 @@ use pernixc_base::{
 use pernixc_syntax::syntax_tree;
 use stack::Stack;
 
-use super::Representation;
+use super::{borrow, Representation};
 use crate::{
     arena::ID,
     error::{
@@ -108,7 +108,8 @@ pub struct Binder<
     S: table::State,
     RO: resolution::Observer<S, infer::Model>,
     TO: type_system::observer::Observer<infer::Model, S>
-        + type_system::observer::Observer<ir::Model, S>,
+        + type_system::observer::Observer<ir::Model, S>
+        + type_system::observer::Observer<borrow::Model, S>,
 > {
     table: &'t Table<S>,
 
@@ -170,7 +171,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     /// Creates the binder for building the IR.
@@ -366,7 +368,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     fn create_unreachable(&mut self, span: Span) -> Literal<infer::Model> {

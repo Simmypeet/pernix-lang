@@ -39,7 +39,11 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<
+                ir::representation::borrow::Model,
+                S,
+            >,
     > Binder<'t, S, RO, TO>
 {
     /// Finalizes the current binder and returns the IR
@@ -134,6 +138,33 @@ impl<
             &transformed_ir.values,
             self.current_site,
             &environment,
+        )?;
+
+        // create new environment for borrow checking
+        let premise = self
+            .table
+            .get_active_premise::<ir::representation::borrow::Model>(
+                self.current_site,
+            )
+            .unwrap();
+        let (environment, _) = Environment::<
+            ir::representation::borrow::Model,
+            _,
+            _,
+            _,
+        >::new_with(
+            premise,
+            self.table,
+            normalizer::NO_OP,
+            &self.type_system_observer,
+        );
+
+        // perform the borrow checking
+        borrow::borrow_check(
+            transformed_ir.clone(),
+            self.current_site,
+            &environment,
+            handler,
         )?;
 
         Ok(IR { representation: transformed_ir, state: Success(()) })

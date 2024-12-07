@@ -28,10 +28,13 @@ use crate::{
         self,
         address::{self, Address, Memory},
         instruction::{Instruction, Store},
-        representation::binding::{
-            expression::Target,
-            infer::{self, InferenceVariable},
-            Binder, Error, InferenceProvider, InternalError, SemanticError,
+        representation::{
+            binding::{
+                expression::Target,
+                infer::{self, InferenceVariable},
+                Binder, Error, InferenceProvider, InternalError, SemanticError,
+            },
+            borrow,
         },
         value::{
             literal::{self, Literal},
@@ -71,7 +74,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Bind<&syntax_tree::expression::Postfix> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -198,7 +202,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     fn is_method(

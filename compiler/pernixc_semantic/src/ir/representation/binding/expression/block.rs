@@ -9,6 +9,7 @@ use crate::{
     ir::{
         self,
         representation::binding::{
+            borrow,
             infer::{self},
             Binder, Error,
         },
@@ -25,7 +26,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Bind<&syntax_tree::expression::Block> for Binder<'t, S, RO, TO>
 {
     fn bind(

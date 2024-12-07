@@ -7,59 +7,35 @@
 //! [`Polonius revisited, part 1`](https://smallcultfollowing.com/babysteps/blog/2023/09/22/polonius-part-1/).
 //! and [`Polonius revisited, part 2`](https://smallcultfollowing.com/babysteps/blog/2023/09/29/polonius-part-2/).
 
+use pernixc_base::handler::Handler;
+
+use super::memory;
 use crate::{
-    arena::ID,
-    ir::value::register::Register,
+    error::{self, TypeSystemOverflow},
+    ir::{self, representation::borrow},
+    symbol::{table, GlobalID},
     type_system::{
-        model,
-        term::{
-            constant::Constant,
-            lifetime::Lifetime,
-            r#type::{Qualifier, Type},
-            Never, Term,
-        },
+        environment::Environment, normalizer::Normalizer, observer::Observer,
     },
 };
 
-/// Represents an expression `&x` or `&mutable x` which creates a reference to a
-/// value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Loan {
-    /// The register to the `ReferenceOf` assignment.
-    pub reference_of_register_id: ID<Register<Model>>,
+mod state;
+mod transform;
 
-    /// The qualifier of the loan.
-    pub qualifier: Qualifier,
-}
+/// Main entry point for the borrow checking phase.
+pub(super) fn borrow_check<S: table::State>(
+    ir: ir::Representation<ir::Model>,
+    current_site: GlobalID,
+    environment: &Environment<
+        borrow::Model,
+        S,
+        impl Normalizer<borrow::Model, S>,
+        impl Observer<borrow::Model, S>,
+    >,
+    handler: &dyn Handler<Box<dyn error::Error>>,
+) -> Result<(), TypeSystemOverflow<ir::Model>> {
+    let (ir, origins) = transform::transform(ir, environment.table());
+    let state = state::State::new(memory::state::Stack::new(), origins);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Origin {}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Model;
-
-impl From<Never> for ID<Origin> {
-    fn from(value: Never) -> Self { match value {} }
-}
-
-impl model::Model for Model {
-    type LifetimeInference = ID<Origin>;
-    type TypeInference = Never;
-    type ConstantInference = Never;
-
-    fn from_default_type(ty: Type<model::Default>) -> Type<Self> {
-        Type::from_other_model(ty)
-    }
-
-    fn from_default_lifetime(
-        lifetime: Lifetime<model::Default>,
-    ) -> Lifetime<Self> {
-        Lifetime::from_other_model(lifetime)
-    }
-
-    fn from_default_constant(
-        constant: Constant<model::Default>,
-    ) -> Constant<Self> {
-        Constant::from_other_model(constant)
-    }
+    Ok(())
 }

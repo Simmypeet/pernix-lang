@@ -6,6 +6,7 @@ use pernixc_base::source_file::Span;
 
 use crate::{
     arena::ID,
+    error::{self, TypeSystemOverflow},
     ir::{
         self,
         address::{self, Address, Offset},
@@ -1549,6 +1550,103 @@ impl Scope {
                 ty,
                 version,
             })
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Getters)]
+pub struct Stack {
+    #[get = "pub"]
+    scopes: Vec<Scope>,
+}
+
+impl Stack {
+    pub const fn new() -> Self { Self { scopes: Vec::new() } }
+
+    pub fn new_scope(&mut self, scope_id: ID<scope::Scope>) {
+        self.scopes.push(Scope::new(scope_id));
+    }
+
+    pub fn pop_scope(&mut self) -> Option<Scope> { self.scopes.pop() }
+
+    pub fn set_initialized<S: table::State>(
+        &mut self,
+        address: &Address<ir::Model>,
+        span: Span,
+        environment: &Environment<
+            ir::Model,
+            S,
+            impl Normalizer<ir::Model, S>,
+            impl Observer<ir::Model, S>,
+        >,
+    ) -> Result<SetStateSucceeded, TypeSystemOverflow<ir::Model>> {
+        let root = address.get_root_memory();
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.contains(root) {
+                return scope.set_initialized(address, environment).map_err(
+                    |x| TypeSystemOverflow {
+                        operation: error::OverflowOperation::TypeCheck,
+                        overflow_span: span,
+                        overflow_error: x.into_overflow().unwrap(),
+                    },
+                );
+            }
+        }
+
+        // not found
+        panic!("Invalid address");
+    }
+
+    pub fn get_state(&self, address: &Address<ir::Model>) -> &State {
+        let root = address.get_root_memory();
+
+        for scope in self.scopes.iter().rev() {
+            if scope.contains(root) {
+                return scope.get_state(address).unwrap();
+            }
+        }
+
+        // not found
+        panic!("Invalid address");
+    }
+
+    pub fn set_uninitialized<S: table::State>(
+        &mut self,
+        address: &Address<ir::Model>,
+        move_span: Span,
+        environment: &Environment<
+            ir::Model,
+            S,
+            impl Normalizer<ir::Model, S>,
+            impl Observer<ir::Model, S>,
+        >,
+    ) -> Result<SetStateSucceeded, TypeSystemOverflow<ir::Model>> {
+        let root = address.get_root_memory();
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.contains(root) {
+                return scope
+                    .set_uninitialized(address, move_span.clone(), environment)
+                    .map_err(|x| TypeSystemOverflow {
+                        operation: error::OverflowOperation::TypeCheck,
+                        overflow_span: move_span,
+                        overflow_error: x.into_overflow().unwrap(),
+                    });
+            }
+        }
+
+        // not found
+        panic!("Invalid address");
+    }
+
+    pub fn current_mut(&mut self) -> &mut Scope {
+        self.scopes.last_mut().unwrap()
+    }
+
+    pub fn min_merge(&mut self, other: &Self) {
+        assert_eq!(self.scopes.len(), other.scopes.len());
+
+        for (lhs, rhs) in self.scopes.iter_mut().zip(other.scopes.iter()) {
+            take_mut::take(lhs, |lhs| lhs.min_merge(rhs).unwrap());
         }
     }
 }

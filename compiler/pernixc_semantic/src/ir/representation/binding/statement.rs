@@ -14,6 +14,7 @@ use crate::{
         address::{Address, Memory},
         instruction::{Instruction, RegisterDiscard},
         pattern::{NameBindingPoint, Wildcard},
+        representation::borrow,
         value::{
             literal::{self, Literal},
             Value,
@@ -31,7 +32,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     /// Binds the given [`syntax_tree::statement::Statement`] to the IR.

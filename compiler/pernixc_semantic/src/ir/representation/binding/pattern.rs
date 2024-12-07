@@ -29,6 +29,7 @@ use crate::{
             Boolean, Enum, Integer, Irrefutable, NameBinding, NameBindingPoint,
             Named, Refutable, Structural, Tuple, TupleElement, Wildcard,
         },
+        representation::borrow,
         value::{
             register::{Assignment, Load, ReferenceOf},
             Value,
@@ -80,7 +81,8 @@ pub(super) trait Pattern:
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     >(
         binder: &mut Binder<S, RO, TO>,
         ty: &Type<infer::Model>,
@@ -92,7 +94,8 @@ pub(super) trait Pattern:
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     >(
         binder: &mut Binder<S, RO, TO>,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
@@ -111,7 +114,8 @@ impl Pattern for Refutable {
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     >(
         binder: &mut Binder<S, RO, TO>,
         ty: &Type<infer::Model>,
@@ -150,7 +154,8 @@ impl Pattern for Refutable {
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     >(
         binder: &mut Binder<S, RO, TO>,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
@@ -377,7 +382,8 @@ impl Pattern for Irrefutable {
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     >(
         binder: &mut Binder<S, RO, TO>,
         ty: &Type<infer::Model>,
@@ -407,7 +413,8 @@ impl Pattern for Irrefutable {
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     >(
         binder: &mut Binder<S, RO, TO>,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
@@ -567,7 +574,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]
@@ -1700,7 +1708,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     fn replace_refutable_in_tuple_pack_internal(

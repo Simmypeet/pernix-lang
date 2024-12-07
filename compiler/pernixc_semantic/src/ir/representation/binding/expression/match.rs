@@ -26,10 +26,13 @@ use crate::{
             SelectJump, Terminator, UnconditionalJump,
         },
         pattern::{NameBindingPoint, Refutable, Wildcard},
-        representation::binding::{
-            infer::{self},
-            pattern::Path,
-            Binder, Error, InternalError,
+        representation::{
+            binding::{
+                infer::{self},
+                pattern::Path,
+                Binder, Error, InternalError,
+            },
+            borrow,
         },
         scope::Scope,
         value::{
@@ -87,7 +90,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Binder<'t, S, RO, TO>
 {
     #[allow(clippy::cast_sign_loss)]
@@ -832,7 +836,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Bind<&syntax_tree::expression::Match> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]

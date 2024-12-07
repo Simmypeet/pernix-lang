@@ -8,6 +8,7 @@ use super::{
 use crate::{arena::Arena, ir::alloca::Alloca, type_system::model::Model};
 
 pub mod binding;
+pub mod borrow;
 
 /// Contains all the registers and allocas used in the program.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Getters)]

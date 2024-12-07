@@ -10,10 +10,13 @@ use crate::{
         instruction::{
             Instruction, Jump, ScopePop, Terminator, UnconditionalJump,
         },
-        representation::binding::{
-            infer::{self, InferenceVariable},
-            stack::Scope,
-            Binder, Error,
+        representation::{
+            binding::{
+                infer::{self, InferenceVariable},
+                stack::Scope,
+                Binder, Error,
+            },
+            borrow,
         },
         value::{
             literal::{Literal, Unreachable},
@@ -32,7 +35,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Bind<&syntax_tree::expression::Continue> for Binder<'t, S, RO, TO>
 {
     fn bind(

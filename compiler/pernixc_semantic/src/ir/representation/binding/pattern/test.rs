@@ -20,7 +20,7 @@ use crate::{
         pattern::{Irrefutable, NameBindingPoint, Named},
         representation::{
             binding::{infer, Binder},
-            Representation,
+            borrow, Representation,
         },
         value::{register::Assignment, Value},
         Erased,
@@ -167,7 +167,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Binder<'_, S, RO, TO>
 {
     fn bind_irrefutable(

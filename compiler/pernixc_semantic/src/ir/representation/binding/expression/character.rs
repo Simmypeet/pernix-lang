@@ -6,9 +6,12 @@ use crate::{
     error,
     ir::{
         self,
-        representation::binding::{
-            infer::{self, InferenceVariable},
-            Binder, Error,
+        representation::{
+            binding::{
+                infer::{self, InferenceVariable},
+                Binder, Error,
+            },
+            borrow,
         },
         value::{
             literal::{self, Literal},
@@ -27,7 +30,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Bind<&token::Character> for Binder<'t, S, RO, TO>
 {
     fn bind(

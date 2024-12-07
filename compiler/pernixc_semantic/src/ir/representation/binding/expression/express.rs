@@ -12,10 +12,13 @@ use crate::{
         instruction::{
             Instruction, Jump, ScopePop, Terminator, UnconditionalJump,
         },
-        representation::binding::{
-            infer::{self},
-            stack::Scope,
-            Binder, Error, SemanticError,
+        representation::{
+            binding::{
+                infer::{self},
+                stack::Scope,
+                Binder, Error, SemanticError,
+            },
+            borrow,
         },
         value::{
             literal::{self, Literal},
@@ -37,7 +40,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Bind<&syntax_tree::expression::Express> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]

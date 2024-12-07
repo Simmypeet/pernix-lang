@@ -13,9 +13,12 @@ use crate::{
             Instruction, Jump, ScopePop, ScopePush, Terminator,
             UnconditionalJump,
         },
-        representation::binding::{
-            infer::{self, InferenceVariable},
-            Binder, Error, LoopKind, LoopState,
+        representation::{
+            binding::{
+                infer::{self, InferenceVariable},
+                Binder, Error, LoopKind, LoopState,
+            },
+            borrow,
         },
         value::{
             literal::{self, Literal, Unreachable},
@@ -37,7 +40,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Bind<&syntax_tree::expression::While> for Binder<'t, S, RO, TO>
 {
     #[allow(clippy::too_many_lines)]

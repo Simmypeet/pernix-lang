@@ -6,8 +6,14 @@ use crate::{
     error,
     ir::{
         self,
-        representation::binding::{infer, Binder, Error},
-        value::{literal::{Boolean, Literal}, Value},
+        representation::{
+            binding::{infer, Binder, Error},
+            borrow,
+        },
+        value::{
+            literal::{Boolean, Literal},
+            Value,
+        },
     },
     symbol::table::{self, resolution},
     type_system,
@@ -18,7 +24,8 @@ impl<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
         TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>,
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
     > Bind<&syntax_tree::expression::Boolean> for Binder<'t, S, RO, TO>
 {
     fn bind(
