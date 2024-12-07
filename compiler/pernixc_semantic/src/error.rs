@@ -3181,6 +3181,14 @@ pub enum FunctionSignatureIncompatibilityReason {
     IncompatibleType,
 }
 
+/// An enumeration of the function signature part.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum FunctionSignaturePart {
+    Parameter,
+    Return,
+}
+
 /// The trait implementation function contains an incompatible parameter type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IncompatibleFunctionParameterTypeInImplementation {
@@ -3192,6 +3200,9 @@ pub struct IncompatibleFunctionParameterTypeInImplementation {
 
     /// The reason why the function signature is incompatible.
     pub reason: FunctionSignatureIncompatibilityReason,
+
+    /// In which part of the function signature the incompatibility happened.
+    pub part: FunctionSignaturePart,
 
     /// The span of the trait implementation function parameter
     pub span: Span,
@@ -3206,14 +3217,19 @@ impl Report<&Table<Suboptimal>>
         &self,
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
+        let part = match self.part {
+            FunctionSignaturePart::Parameter => "parameter type",
+            FunctionSignaturePart::Return => "return type",
+        };
+
         Ok(Diagnostic {
             span: self.span.clone(),
             message: match &self.reason {
                 FunctionSignatureIncompatibilityReason::Outlives(vec) => {
                     format!(
-                        "the parameter type `{}` isn't compatible with the \
-                         expected type `{}` because the outlives \
-                         constraint(s) are not satisfied: {}",
+                        "the {part} `{}` isn't compatible with the expected \
+                         type `{}` because the outlives constraint(s) are not \
+                         satisfied: {}",
                         DisplayObject {
                             display: &self.found_parameter_type,
                             table
@@ -3234,9 +3250,8 @@ impl Report<&Table<Suboptimal>>
 
                 FunctionSignatureIncompatibilityReason::IncompatibleType => {
                     format!(
-                        "the trait declared a function with parameter of type \
-                         `{}` but the implementation function has parameter \
-                         of type `{}`",
+                        "the trait declared a function with {part} `{}` but \
+                         the implementation function has {part} `{}`",
                         DisplayObject {
                             display: &self.expected_parameter_type,
                             table

@@ -1,4 +1,7 @@
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_base::{
+    handler::Handler,
+    source_file::{SourceElement, Span},
+};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
 use self::builder::TypeSystem;
@@ -6,7 +9,7 @@ use super::{positive_trait_implementation, trait_function};
 use crate::{
     arena::ID,
     error::{
-        self, FunctionSignatureIncompatibilityReason,
+        self, FunctionSignatureIncompatibilityReason, FunctionSignaturePart,
         IncompatibleFunctionParameterTypeInImplementation,
         MismatchedFunctionParameterCountInImplementation, OverflowOperation,
         TypeSystemOverflow,
@@ -31,7 +34,7 @@ use crate::{
         compatible::Compatible,
         environment::Environment,
         instantiation::{self, Instantiation},
-        model, normalizer,
+        model, normalizer, observer,
         term::{constant::Constant, lifetime::Lifetime, r#type::Type},
         variance::Variance,
         Compute, LifetimeConstraint, OverflowError, Succeeded,
@@ -411,13 +414,19 @@ fn function_signature_check(
             })
             .collect::<Vec<_>>();
 
-    let trait_return_type = trait_function_sym.return_type.clone();
+    let mut trait_return_type = trait_function_sym.return_type.clone();
+    instantiation::instantiate(
+        &mut trait_return_type,
+        &implementation_instantiation,
+    );
+
     let trait_implementation_function_return_type =
         trait_implementation_function_sym.return_type.clone();
 
     drop(trait_function_sym);
     drop(trait_implementation_function_sym);
 
+    // function parameter type compatibility check
     for (trait_function_parameter, trait_implementation_parameter) in
         trait_function_parameters
             .into_iter()
@@ -431,95 +440,121 @@ fn function_signature_check(
             &implementation_instantiation,
         );
 
-        use FunctionSignatureIncompatibilityReason::*;
-
-        match trait_implementation_parameter.r#type.compatible(
-            &trait_parameter_type,
+        compatibility_check(
+            trait_implementation_parameter.r#type,
+            trait_parameter_type,
             Variance::Contravariant,
+            FunctionSignaturePart::Parameter,
+            trait_implementation_parameter.span.clone().unwrap(),
             &environment,
-        ) {
-            Ok(Some(Succeeded { result, constraints })) => {
-                assert!(
-                    result.forall_lifetime_errors.is_empty(),
-                    "should have no forall lifetime involved"
-                );
-                assert!(
-                    result
-                        .forall_lifetime_instantiations
-                        .lifetimes_by_forall
-                        .is_empty(),
-                    "should have no forall lifetime involved"
-                );
+            handler,
+        );
+    }
 
-                let unsatisfied_outlives = constraints
-                    .into_iter()
-                    .filter_map(
-                        |LifetimeConstraint::LifetimeOutlives(outlives)| {
-                            match outlives.query(&environment) {
-                                Ok(Some(_)) => None,
-                                result => Some(result.map(|_| outlives)),
-                            }
-                        },
-                    )
-                    .collect::<Result<Vec<_>, OverflowError>>();
+    // function return type compatibility check
+    compatibility_check(
+        trait_implementation_function_return_type,
+        trait_return_type,
+        Variance::Covariant,
+        FunctionSignaturePart::Return,
+        syntax_tree
+            .signature()
+            .return_type()
+            .as_ref()
+            .map_or_else(|| syntax_tree.signature().span(), |x| x.span()),
+        &environment,
+        handler,
+    );
+}
 
-                match unsatisfied_outlives {
-                    Ok(unsatisfied_outlives) => {
-                        if !unsatisfied_outlives.is_empty() {
-                            handler.receive(Box::new(
-                                IncompatibleFunctionParameterTypeInImplementation {
-                                    expected_parameter_type: trait_parameter_type,
-                                    found_parameter_type: trait_implementation_parameter
-                                        .r#type,
-                                    span: trait_implementation_parameter
-                                        .span
-                                        .clone()
-                                        .unwrap(),
-                                    reason: Outlives(unsatisfied_outlives),
-                                },
-                            ));
-                        }
+fn compatibility_check(
+    implementation_type: Type<model::Default>,
+    trait_type: Type<model::Default>,
+    variance: Variance,
+    part: FunctionSignaturePart,
+    span: Span,
+    environment: &Environment<
+        model::Default,
+        Building<RwLockContainer, Finalizer>,
+        impl normalizer::Normalizer<
+            model::Default,
+            Building<RwLockContainer, Finalizer>,
+        >,
+        impl observer::Observer<
+            model::Default,
+            Building<RwLockContainer, Finalizer>,
+        >,
+    >,
+    handler: &dyn Handler<Box<dyn error::Error>>,
+) {
+    use FunctionSignatureIncompatibilityReason::*;
+
+    match implementation_type.compatible(&trait_type, variance, &environment) {
+        Ok(Some(Succeeded { result, constraints })) => {
+            assert!(
+                result.forall_lifetime_errors.is_empty(),
+                "should have no forall lifetime involved"
+            );
+            assert!(
+                result
+                    .forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty(),
+                "should have no forall lifetime involved"
+            );
+
+            let unsatisfied_outlives = constraints
+                .into_iter()
+                .filter_map(|LifetimeConstraint::LifetimeOutlives(outlives)| {
+                    match outlives.query(&environment) {
+                        Ok(Some(_)) => None,
+                        result => Some(result.map(|_| outlives)),
                     }
-                    Err(OverflowError) => {
-                        handler.receive(Box::new(TypeSystemOverflow::<
-                            model::Default,
-                        > {
-                            operation: OverflowOperation::TypeCheck,
-                            overflow_span: trait_implementation_parameter
-                                .span
-                                .clone()
-                                .unwrap(),
-                            overflow_error: OverflowError,
-                        }));
+                })
+                .collect::<Result<Vec<_>, OverflowError>>();
+
+            match unsatisfied_outlives {
+                Ok(unsatisfied_outlives) => {
+                    if !unsatisfied_outlives.is_empty() {
+                        handler.receive(Box::new(
+                            IncompatibleFunctionParameterTypeInImplementation {
+                                expected_parameter_type: trait_type,
+                                found_parameter_type: implementation_type,
+                                span,
+                                part,
+                                reason: Outlives(unsatisfied_outlives),
+                            },
+                        ));
                     }
                 }
-            }
-            Ok(None) => {
-                handler.receive(Box::new(
-                    IncompatibleFunctionParameterTypeInImplementation {
-                        expected_parameter_type: trait_parameter_type,
-                        found_parameter_type: trait_implementation_parameter
-                            .r#type,
-                        span: trait_implementation_parameter
-                            .span
-                            .clone()
-                            .unwrap(),
-                        reason: IncompatibleType,
-                    },
-                ));
-            }
-            Err(overflow_error) => {
-                handler.receive(Box::new(
-                    TypeSystemOverflow::<model::Default> {
+                Err(OverflowError) => {
+                    handler.receive(Box::new(TypeSystemOverflow::<
+                        model::Default,
+                    > {
                         operation: OverflowOperation::TypeCheck,
-                        overflow_span: trait_implementation_parameter
-                            .span
-                            .clone()
-                            .unwrap(),
-                        overflow_error,
-                    },
-                ));
+                        overflow_span: span,
+                        overflow_error: OverflowError,
+                    }));
+                }
             }
+        }
+        Ok(None) => {
+            handler.receive(Box::new(
+                IncompatibleFunctionParameterTypeInImplementation {
+                    expected_parameter_type: trait_type,
+                    found_parameter_type: implementation_type,
+                    span,
+                    part,
+                    reason: IncompatibleType,
+                },
+            ));
+        }
+        Err(overflow_error) => {
+            handler.receive(Box::new(TypeSystemOverflow::<model::Default> {
+                operation: OverflowOperation::TypeCheck,
+                overflow_span: span,
+                overflow_error,
+            }));
         }
     }
 }
