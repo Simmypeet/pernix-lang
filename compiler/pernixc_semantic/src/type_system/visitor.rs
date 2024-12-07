@@ -503,12 +503,6 @@ macro_rules! implements_type {
                     )
                 )),
             Self::Tuple(tuple) => Ok(tuple.$accept_one_level($visitor)),
-            Self::Local(local) => Ok($visitor
-                .$visit_type(
-                    &$($ref)?*local.0,
-                    SubTypeLocation::FromType(r#type::SubTypeLocation::Local)
-                )
-            ),
             Self::MemberSymbol(member_symbol) => Ok(
                 member_symbol
                     .parent_generic_arguments
@@ -759,12 +753,6 @@ macro_rules! implements_constant {
             }
 
             Self::Tuple(tuple) => Ok(tuple.$accept_one_level($visitor)),
-            Self::Local(local) => Ok($visitor.$visit_constant(
-                &$($ref)?*local.0,
-                SubConstantLocation::FromConstant(
-                    constant::SubConstantLocation::Local
-                )
-            )),
         }
     };
 }

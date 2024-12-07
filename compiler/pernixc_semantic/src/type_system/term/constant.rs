@@ -11,7 +11,7 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     lifetime::Lifetime, r#type::Type, Error, GenericArguments, Kind, KindMut,
-    Local, ModelOf, Never, Term,
+    ModelOf, Never, Term,
 };
 use crate::{
     arena::ID,
@@ -108,9 +108,6 @@ pub enum SubConstantLocation {
 
     /// The index of the element in an [`Array`] constant.
     Array(usize),
-
-    /// The inner constant of a [`Local`] constant.
-    Local,
 }
 
 impl From<SubConstantLocation> for TermLocation {
@@ -147,8 +144,6 @@ impl<M: Model> Location<Constant<M>, Constant<M>> for SubConstantLocation {
                 .get_mut(location)
                 .ok_or(AssignSubTermError::InvalidLocation)?,
 
-            (Self::Local, Constant::Local(local)) => &mut local.0,
-
             _ => return Err(AssignSubTermError::InvalidLocation),
         };
 
@@ -184,10 +179,6 @@ impl<M: Model> Location<Constant<M>, Constant<M>> for SubConstantLocation {
                 constant.elements.get(location).cloned()
             }
 
-            (Self::Local, Constant::Local(local)) => {
-                Some(local.0.deref().clone())
-            }
-
             _ => None,
         }
     }
@@ -215,8 +206,6 @@ impl<M: Model> Location<Constant<M>, Constant<M>> for SubConstantLocation {
             (Self::Array(location), Constant::Array(constant)) => {
                 constant.elements.get(location)
             }
-
-            (Self::Local, Constant::Local(local)) => Some(&*local.0),
 
             _ => None,
         }
@@ -249,8 +238,6 @@ impl<M: Model> Location<Constant<M>, Constant<M>> for SubConstantLocation {
                 constant.elements.get_mut(location)
             }
 
-            (Self::Local, Constant::Local(local)) => Some(&mut *local.0),
-
             _ => None,
         }
     }
@@ -282,8 +269,6 @@ pub enum Constant<M: Model> {
     Array(Array<M>),
     #[from]
     Parameter(ConstantParameterID),
-    #[from]
-    Local(Local<Self>),
     #[from]
     Tuple(Tuple<M>),
 
@@ -445,19 +430,6 @@ impl<M: Model> Match for Constant<M> {
                 })
             }
 
-            (Self::Local(lhs), Self::Local(rhs)) => {
-                Some(matching::Substructural {
-                    lifetimes: Vec::new(),
-                    types: Vec::new(),
-                    constants: vec![matching::Matching {
-                        lhs: lhs.0.deref().clone(),
-                        rhs: rhs.0.deref().clone(),
-                        lhs_location: SubConstantLocation::Local,
-                        rhs_location: SubConstantLocation::Local,
-                    }],
-                })
-            }
-
             (Self::Tuple(lhs), Self::Tuple(rhs)) => {
                 lhs.substructural_match(rhs)
             }
@@ -531,9 +503,6 @@ where
                     .collect(),
             }),
             Constant::Parameter(parameter) => Self::Parameter(parameter),
-            Constant::Local(local) => {
-                Self::Local(Local::from_other_model(local))
-            }
             Constant::Tuple(tuple) => {
                 Self::Tuple(Tuple::from_other_model(tuple))
             }
@@ -586,9 +555,6 @@ where
                     .collect::<Result<Vec<_>, _>>()?,
             }),
             Constant::Parameter(parameter) => Self::Parameter(parameter),
-            Constant::Local(local) => {
-                Self::Local(Local::try_from_other_model(local)?)
-            }
             Constant::Tuple(tuple) => {
                 Self::Tuple(Tuple::try_from_other_model(tuple)?)
             }
@@ -769,7 +735,6 @@ where
             Self::Struct(_)
             | Self::Enum(_)
             | Self::Array(_)
-            | Self::Local(_)
             | Self::Tuple(_) => Satisfiability::Congruent,
         }
     }
@@ -876,7 +841,6 @@ impl<M: Model> Constant<M> {
 
                 occurrences
             }
-            Self::Local(local) => local.0.get_global_id_dependencies(table)?,
             Self::Tuple(tuple) => {
                 let mut occurrences = Vec::new();
 
@@ -980,12 +944,6 @@ where
                         .as_deref()
                         .unwrap_or("{unknown}")
                 )
-            }
-            Self::Local(local) => {
-                write!(f, "local {}", DisplayObject {
-                    display: &*local.0,
-                    table
-                })
             }
             Self::Tuple(tuple) => {
                 write!(f, "{}", DisplayObject { display: tuple, table })

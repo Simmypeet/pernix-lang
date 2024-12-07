@@ -51,7 +51,7 @@ use crate::{
         term::{
             lifetime::Lifetime,
             r#type::{self, Constraint, Primitive, Qualifier, Reference, Type},
-            GenericArguments, Local, Symbol,
+            GenericArguments, Symbol,
         },
         Compute,
     },
@@ -398,22 +398,13 @@ fn bind_boolean_literal() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn bind_prefix_operator() {
-    const LOCAL_SOURCE: &str = "local 32";
     const LOGICAL_NOT_SOURCE: &str = "!false";
     const NEGATE_SOURCE: &str = "-32";
     const BITWISE_NOT_SOURCE: &str = "~32";
-    const UNLOCAL_SOURCE: &str = "unlocal local 32";
 
     let (table, function_id) = create_dummy_function();
     let storage: Storage<Box<dyn Error>> = Storage::default();
 
-    let local_expression = parse_expression(LOCAL_SOURCE)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_prefix()
-        .unwrap();
     let logical_not_expression = parse_expression(LOGICAL_NOT_SOURCE)
         .into_binary()
         .unwrap()
@@ -435,13 +426,6 @@ fn bind_prefix_operator() {
         .0
         .into_prefix()
         .unwrap();
-    let unlocal_expression = parse_expression(UNLOCAL_SOURCE)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_prefix()
-        .unwrap();
 
     let mut binder = Binder::new_function(
         &table,
@@ -452,23 +436,6 @@ fn bind_prefix_operator() {
         &storage,
     )
     .unwrap();
-
-    let local = binder
-        .bind(&local_expression, Config { target: Target::RValue }, &storage)
-        .unwrap()
-        .into_r_value()
-        .unwrap()
-        .into_register()
-        .unwrap();
-
-    assert!(binder
-        .intermediate_representation
-        .values
-        .registers
-        .get(local)
-        .unwrap()
-        .assignment
-        .is_prefix());
 
     let logical_not = binder
         .bind(
@@ -529,23 +496,6 @@ fn bind_prefix_operator() {
         .assignment
         .is_prefix());
 
-    let unlocal = binder
-        .bind(&unlocal_expression, Config { target: Target::RValue }, &storage)
-        .unwrap()
-        .into_r_value()
-        .unwrap()
-        .into_register()
-        .unwrap();
-
-    assert!(binder
-        .intermediate_representation
-        .values
-        .registers
-        .get(unlocal)
-        .unwrap()
-        .assignment
-        .is_prefix());
-
     assert!(storage.as_vec().is_empty());
 }
 
@@ -555,7 +505,6 @@ fn prefix_type_mismatched_error() {
     const LOGICAL_NOT_SOURCE: &str = "!64";
     const NEGATE_SOURCE: &str = "-32u32";
     const BITWISE_NOT_SOURCE: &str = "~32.0";
-    const UNLOCAL_SOURCE: &str = "unlocal 64";
 
     let (table, function_id) = create_dummy_function();
     let storage: Storage<Box<dyn Error>> = Storage::default();
@@ -575,13 +524,6 @@ fn prefix_type_mismatched_error() {
         .into_prefix()
         .unwrap();
     let bitwise_not_expression = parse_expression(BITWISE_NOT_SOURCE)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_prefix()
-        .unwrap();
-    let unlocal_expression = parse_expression(UNLOCAL_SOURCE)
         .into_binary()
         .unwrap()
         .destruct()
@@ -615,9 +557,6 @@ fn prefix_type_mismatched_error() {
             Config { target: Target::RValue },
             &storage,
         )
-        .is_err());
-    assert!(binder
-        .bind(&unlocal_expression, Config { target: Target::RValue }, &storage,)
         .is_err());
 
     let storage = storage.into_vec();
@@ -668,24 +607,6 @@ fn prefix_type_mismatched_error() {
                 .found_type
                 .as_inference()
                 .map_or(false, |constraint| *constraint == Constraint::Floating)
-    }));
-
-    // "unlocal 64" for unlocal 64
-    assert!(storage.iter().any(|error| {
-        let Some(error) =
-            error.as_any().downcast_ref::<MismatchedType<ConstraintModel>>()
-        else {
-            return false;
-        };
-
-        error.expected_type
-            == Type::Local(Local(Box::new(Type::Inference(Constraint::All(
-                false,
-            )))))
-            && error
-                .found_type
-                .as_inference()
-                .map_or(false, |constraint| *constraint == Constraint::Number)
     }));
 }
 

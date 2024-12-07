@@ -1510,8 +1510,6 @@ impl SourceElement for Postfixable {
 ///     | '-'
 ///     | '~'
 ///     | '*'
-///     | 'local'
-///     | 'unlocal'
 ///     | ReferenceOf
 ///     ;
 /// ```
@@ -1521,8 +1519,6 @@ pub enum PrefixOperator {
     Negate(Punctuation),
     BitwiseNot(Punctuation),
     Dereference(Punctuation),
-    Local(Keyword),
-    Unlocal(Keyword),
     ReferenceOf(ReferenceOf),
 }
 
@@ -1536,8 +1532,6 @@ impl SyntaxTree for PrefixOperator {
             '-'.to_owned().map(Self::Negate),
             '~'.to_owned().map(Self::BitwiseNot),
             '*'.to_owned().map(Self::Dereference),
-            KeywordKind::Local.to_owned().map(Self::Local),
-            KeywordKind::Unlocal.to_owned().map(Self::Unlocal),
             ReferenceOf::parse.map(Self::ReferenceOf),
         )
             .branch()
@@ -1552,7 +1546,6 @@ impl SourceElement for PrefixOperator {
             | Self::BitwiseNot(p)
             | Self::Dereference(p)
             | Self::LogicalNot(p) => p.span.clone(),
-            Self::Local(k) | Self::Unlocal(k) => k.span(),
             Self::ReferenceOf(k) => k.span(),
         }
     }

@@ -54,7 +54,7 @@ public struct A[B, C, I]
 where
     I: 'static
 {
-    public covariant: local C,
+    public covariant: (C,),
     public invariant: &'static mutable I
 }
 ";

@@ -349,17 +349,6 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                         )
                     }
 
-                    (r#type::SubTypeLocation::Local, Type::Local(local)) => {
-                        let current_variance =
-                            parent_variance.xfrom(Variance::Covariant);
-
-                        self.get_variance_of(
-                            &local.0,
-                            current_variance,
-                            locations,
-                        )
-                    }
-
                     (
                         r#type::SubTypeLocation::Phantom,
                         Type::Phantom(phantom),

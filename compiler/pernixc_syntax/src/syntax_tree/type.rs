@@ -342,38 +342,6 @@ impl SourceElement for Phantom {
 }
 
 /// Syntax Synopsis:
-///
-/// ``` txt
-/// Local:
-///     'local' Type
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Local {
-    #[get = "pub"]
-    local_keyword: Keyword,
-    #[get = "pub"]
-    r#type: Box<Type>,
-}
-
-impl SyntaxTree for Local {
-    fn parse(
-        state_machine: &mut StateMachine,
-        handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<Self> {
-        (KeywordKind::Local.to_owned(), Type::parse.map(Box::new))
-            .map(|(local_keyword, r#type)| Self { local_keyword, r#type })
-            .parse(state_machine, handler)
-    }
-}
-
-impl SourceElement for Local {
-    fn span(&self) -> Span {
-        self.local_keyword.span.join(&self.r#type.span()).unwrap()
-    }
-}
-
-/// Syntax Synopsis:
 /// ``` txt
 /// Type:
 ///     Primitive
@@ -405,7 +373,6 @@ pub enum Type {
     Reference(Reference),
     Pointer(Pointer),
     Tuple(Tuple),
-    Local(Local),
     Array(Array),
     Phantom(Phantom),
     Elided(Elided),
@@ -422,7 +389,6 @@ impl SyntaxTree for Type {
             Reference::parse.map(Self::Reference),
             Pointer::parse.map(Self::Pointer),
             Tuple::parse.map(Self::Tuple),
-            Local::parse.map(Self::Local),
             Array::parse.map(Self::Array),
             Phantom::parse.map(Self::Phantom),
             Elided::parse.map(Self::Elided),
@@ -437,7 +403,6 @@ impl SourceElement for Type {
         match self {
             Self::Primitive(primitive) => primitive.span(),
             Self::QualifiedIdentifier(qualified) => qualified.span(),
-            Self::Local(local) => local.span(),
             Self::Reference(reference) => reference.span(),
             Self::Pointer(pointer) => pointer.span(),
             Self::Tuple(tuple) => tuple.span(),

@@ -921,8 +921,6 @@ impl<T: Container> Representation<T> {
         ty: &r#type::Type<Default>,
     ) -> Result<Accessibility, GetTermAccessibilityError> {
         match ty {
-            r#type::Type::Local(local) => self.get_type_accessibility(&local.0),
-
             r#type::Type::Inference(never) => match *never {},
 
             r#type::Type::MemberSymbol(member_symbol) => {
@@ -1063,9 +1061,6 @@ impl<T: Container> Representation<T> {
         constant: &constant::Constant<Default>,
     ) -> Result<Accessibility, GetTermAccessibilityError> {
         match constant {
-            constant::Constant::Local(local) => {
-                self.get_constant_accessibility(&local.0)
-            }
             constant::Constant::Inference(never) => match *never {},
 
             constant::Constant::Struct(constant) => {

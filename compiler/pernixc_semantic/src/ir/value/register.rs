@@ -32,7 +32,7 @@ use crate::{
             constant::{self, Constant},
             lifetime::Lifetime,
             r#type::{self, Qualifier, Type},
-            GenericArguments, Local, MemberSymbol, Symbol,
+            GenericArguments, MemberSymbol, Symbol,
         },
         Succeeded,
     },
@@ -169,12 +169,6 @@ pub enum PrefixOperator {
 
     /// The value must be integers.
     BitwiseNot,
-
-    /// The value can be any type.
-    Local,
-
-    /// The value must be a type of `local`.
-    Unlocal,
 }
 
 /// A value applied with a prefix operator.
@@ -199,28 +193,13 @@ impl<M: Model> Values<M> {
             impl Observer<M, S>,
         >,
     ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
-        let mut operand_type =
+        let operand_type =
             self.type_of_value(&prefix.operand, current_site, environment)?;
 
         match prefix.operator {
             PrefixOperator::Negate
             | PrefixOperator::LogicalNot
             | PrefixOperator::BitwiseNot => Ok(operand_type),
-
-            PrefixOperator::Local => {
-                operand_type.result =
-                    Type::Local(Local(Box::new(operand_type.result)));
-
-                Ok(operand_type)
-            }
-
-            PrefixOperator::Unlocal => operand_type.try_map(|x| match x {
-                Type::Local(x) => Ok(*x.0),
-                _ => Err(TypeOfError::NonLocalAssignmentType {
-                    value: prefix.operand.clone(),
-                    r#type: x,
-                }),
-            }),
         }
     }
 }

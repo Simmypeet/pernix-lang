@@ -11,7 +11,7 @@ use strum_macros::EnumIter;
 
 use super::{
     constant::Constant, lifetime::Lifetime, Error, GenericArguments, Kind,
-    KindMut, Local, MemberSymbol, ModelOf, Never, Symbol, Term,
+    KindMut, MemberSymbol, ModelOf, Never, Symbol, Term,
 };
 use crate::{
     arena::ID,
@@ -313,9 +313,6 @@ pub enum SubTypeLocation {
     #[from]
     Tuple(SubTupleLocation),
 
-    /// The inner type of a [`Type::Local`] type.
-    Local,
-
     /// The inner type of a [`Type::Phantom`] type.
     Phantom,
 
@@ -358,8 +355,6 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
             (Self::Tuple(location), Type::Tuple(tuple)) => {
                 return tuple.assign_sub_term(location, sub_term)
             }
-
-            (Self::Local, Type::Local(local)) => &mut *local.0,
 
             (
                 Self::MemberSymbol(location),
@@ -407,8 +402,6 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
                     .map(|x| Type::Tuple(Tuple { elements: x.to_vec() })),
             },
 
-            (Self::Local, Type::Local(local)) => Some((*local.0).clone()),
-
             (
                 Self::MemberSymbol(location),
                 Type::MemberSymbol(trait_member),
@@ -442,8 +435,6 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
                 }
                 SubTupleLocation::Range { .. } => None,
             },
-
-            (Self::Local, Type::Local(local)) => Some(&*local.0),
 
             (
                 Self::MemberSymbol(location),
@@ -480,8 +471,6 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
                 }
                 SubTupleLocation::Range { .. } => None,
             },
-
-            (Self::Local, Type::Local(local)) => Some(&mut *local.0),
 
             (
                 Self::MemberSymbol(location),
@@ -703,19 +692,6 @@ impl<M: Model> Match for Type<M> {
                 })
             }
 
-            (Self::Local(lhs), Self::Local(rhs)) => {
-                Some(matching::Substructural {
-                    lifetimes: Vec::new(),
-                    types: vec![Matching {
-                        lhs: (*lhs.0).clone(),
-                        rhs: (*rhs.0).clone(),
-                        lhs_location: SubTypeLocation::Local,
-                        rhs_location: SubTypeLocation::Local,
-                    }],
-                    constants: Vec::new(),
-                })
-            }
-
             (Self::Tuple(lhs), Self::Tuple(rhs)) => {
                 lhs.substructural_match(rhs)
             }
@@ -867,8 +843,6 @@ pub enum Type<M: Model> {
     #[from]
     Tuple(Tuple<M>),
     #[from]
-    Local(Local<Self>),
-    #[from]
     Phantom(Phantom<M>),
     #[from]
     MemberSymbol(MemberSymbol<M, MemberSymbolID>),
@@ -1003,7 +977,6 @@ where
                 r#type: Box::new(Self::from_other_model(*array.r#type)),
             }),
             Type::Tuple(tuple) => Self::Tuple(Tuple::from_other_model(tuple)),
-            Type::Local(local) => Self::Local(Local::from_other_model(local)),
             Type::Phantom(phantom) => Self::Phantom(Phantom(Box::new(
                 Self::from_other_model(*phantom.0),
             ))),
@@ -1053,9 +1026,6 @@ where
             }),
             Type::Tuple(tuple) => {
                 Self::Tuple(Tuple::try_from_other_model(tuple)?)
-            }
-            Type::Local(local) => {
-                Self::Local(Local::try_from_other_model(local)?)
             }
             Type::Phantom(phantom) => Self::Phantom(Phantom(Box::new(
                 Self::try_from_other_model(*phantom.0)?,
@@ -1258,7 +1228,6 @@ where
 
             Self::TraitMember(_)
             | Self::MemberSymbol(_)
-            | Self::Local(_)
             | Self::Symbol(_)
             | Self::Pointer(_)
             | Self::Reference(_)
@@ -1483,8 +1452,7 @@ where
 
             Self::Primitive(_) => Satisfiability::Satisfied,
 
-            Self::Local(_)
-            | Self::MemberSymbol(_)
+            Self::MemberSymbol(_)
             | Self::Pointer(_)
             | Self::Symbol(_)
             | Self::Reference(_)
@@ -1622,9 +1590,6 @@ where
             Self::Tuple(tuple) => {
                 write!(f, "{}", DisplayObject { table, display: tuple })
             }
-            Self::Local(ty) => {
-                write!(f, "local {}", DisplayObject { table, display: &*ty.0 })
-            }
             Self::TraitMember(ty) => {
                 write!(f, "{}", DisplayObject { table, display: ty })
             }
@@ -1719,10 +1684,6 @@ impl<M: Model> Type<M> {
                     );
                 }
                 occurrences
-            }
-
-            Self::Local(local) => {
-                return local.0.get_global_id_dependencies(table);
             }
 
             Self::TraitMember(member_symbol) => {

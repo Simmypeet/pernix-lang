@@ -119,10 +119,6 @@ pub enum KeywordKind {
     For,
     /// `delete` keyword
     Delete,
-    /// `local` keyword
-    Local,
-    /// `unlocal` keyword
-    Unlocal,
     /// `tuple` keyword
     Tuple,
     /// `case` keyword
@@ -240,9 +236,7 @@ impl KeywordKind {
             Self::Trait => "trait",
             Self::Using => "using",
             Self::Unsafe => "unsafe",
-            Self::Local => "local",
             Self::Match => "match",
-            Self::Unlocal => "unlocal",
             Self::Tuple => "tuple",
             Self::Case => "case",
             Self::Phantom => "phantom",

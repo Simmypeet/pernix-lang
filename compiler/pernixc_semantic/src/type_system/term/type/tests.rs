@@ -13,8 +13,7 @@ use crate::{
     type_system::{
         model::Default,
         term::{
-            constant::Constant, lifetime::Lifetime, Local, MemberSymbol,
-            Symbol, Tuple,
+            constant::Constant, lifetime::Lifetime, MemberSymbol, Symbol, Tuple,
         },
     },
 };
@@ -179,7 +178,6 @@ impl Arbitrary for Type<Default> {
                 1 => Pointer::arbitrary_with(Some(inner.clone())).prop_map(Self::Pointer),
                 2 => Reference::arbitrary_with((Some(lt_strat), Some(inner.clone()))).prop_map(Self::Reference),
                 2 => Tuple::arbitrary_with(Some(inner.clone())).prop_map(Self::Tuple),
-                1 => inner.clone().prop_map(|x| Self::Local(Local(Box::new(x)))),
                 2 => Array::arbitrary_with((Some(inner), Some(const_strat))).prop_map(Self::Array),
             ]
         })

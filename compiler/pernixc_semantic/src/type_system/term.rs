@@ -482,51 +482,6 @@ pub trait ModelOf {
     type Model: Model;
 }
 
-/// The term under the `local` modifier.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Local<T: Term>(pub Box<T>)
-where
-    Self: Into<T>;
-
-impl<T: Term> Local<T>
-where
-    Self: Into<T>,
-{
-    /// Converts a local term from model `U` to model `M`.
-    #[must_use]
-    pub fn from_other_model<U: Model>(local: Local<T::Rebind<U>>) -> Self
-    where
-        Local<T::Rebind<U>>: Into<T::Rebind<U>>,
-
-        <T::Model as Model>::LifetimeInference: From<U::LifetimeInference>,
-        <T::Model as Model>::TypeInference: From<U::TypeInference>,
-        <T::Model as Model>::ConstantInference: From<U::ConstantInference>,
-    {
-        Self(Box::new(T::from_other_model(*local.0)))
-    }
-
-    /// Tries to convert a local term from model `U` to model `M`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error returned by the `TryFrom` implementation of the model.
-    pub fn try_from_other_model<U: Model, E>(
-        local: Local<T::Rebind<U>>,
-    ) -> Result<Self, E>
-    where
-        Local<T::Rebind<U>>: Into<T::Rebind<U>>,
-
-        <T::Model as Model>::LifetimeInference:
-            TryFrom<U::LifetimeInference, Error = E>,
-        <T::Model as Model>::TypeInference:
-            TryFrom<U::TypeInference, Error = E>,
-        <T::Model as Model>::ConstantInference:
-            TryFrom<U::ConstantInference, Error = E>,
-    {
-        Ok(Self(Box::new(T::try_from_other_model(*local.0)?)))
-    }
-}
-
 /// A trait implemented by all three fundamental terms of the language:
 /// [`Lifetime`], [`Type`], and [`Constant`].
 ///

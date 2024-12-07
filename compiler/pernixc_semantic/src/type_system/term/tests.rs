@@ -8,7 +8,7 @@ use proptest::{
 
 use super::{
     constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
-    Local, MemberSymbol, Symbol, Term, Tuple,
+    MemberSymbol, Symbol, Tuple,
 };
 use crate::{
     arena::ID,
@@ -101,21 +101,6 @@ where
                 },
             })
             .boxed()
-    }
-}
-
-impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + Term + 'static> Arbitrary
-    for Local<T>
-where
-    Self: Into<T>,
-{
-    type Parameters = Option<BoxedStrategy<T>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
-        let strat = strat.unwrap_or_else(T::arbitrary);
-
-        (strat).prop_map(|x| Self(Box::new(x))).boxed()
     }
 }
 

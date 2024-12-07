@@ -464,12 +464,6 @@ impl<M: Model> Compute for TypeCheck<M> {
                     .query_with_context(environment, context)?)
                 }
 
-                // the local type and local constant
-                (Type::Local(local_type), Constant::Local(local_const)) => {
-                    Self::new((*local_const.0).clone(), (*local_type.0).clone())
-                        .query_with_context(environment, context)
-                }
-
                 (Type::Tuple(tuple_type), Constant::Tuple(tuple_const)) => {
                     'out: {
                         // check the element one by one

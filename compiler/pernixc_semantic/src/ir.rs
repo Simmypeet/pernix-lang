@@ -4,6 +4,7 @@ use std::{fmt::Debug, hash::Hash};
 
 use address::Address;
 use alloca::Alloca;
+use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
 use value::{register::Register, Value};
 
@@ -228,7 +229,15 @@ impl model::Model for ConstraintModel {
 /// An error returned calling [`representation::Values::type_of_register`] and
 /// [`representation::Values::type_of_address`].
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    thiserror::Error,
+    EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum TypeOfError<M: model::Model> {
@@ -311,19 +320,6 @@ pub enum TypeOfError<M: model::Model> {
         address: Address<M>,
 
         /// The type of the [`address::Tuple::tuple_address`].
-        r#type: Type<M>,
-    },
-
-    #[error(
-        "the `Prefix` assignment requires the field `operand` to have an \
-         assignment of type `local` when its prefix operator is `unlocal` but \
-         found the other type"
-    )]
-    NonLocalAssignmentType {
-        /// The value that doesn't have the local type.
-        value: Value<M>,
-
-        /// The type of the [`value::register::Prefix::operand`].
         r#type: Type<M>,
     },
 
@@ -412,5 +408,5 @@ pub enum TypeOfError<M: model::Model> {
     },
 
     #[error(transparent)]
-    OverflowError(#[from] OverflowError),
+    Overflow(#[from] OverflowError),
 }

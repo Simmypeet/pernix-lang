@@ -313,34 +313,6 @@ impl Display for Tuple {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Local {
-    pub r#type: Box<Type>,
-}
-
-impl Input<&super::Local> for &Local {
-    fn assert(self, output: &super::Local) -> TestCaseResult {
-        self.r#type.assert(output.r#type())
-    }
-}
-
-impl Arbitrary for Local {
-    type Parameters = Option<BoxedStrategy<Type>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        args.unwrap_or_else(Type::arbitrary)
-            .prop_map(|ty| Self { r#type: Box::new(ty) })
-            .boxed()
-    }
-}
-
-impl Display for Local {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "local {}", &self.r#type)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Phantom {
     r#type: Box<Type>,
 }
@@ -387,7 +359,6 @@ pub enum Type {
     Array(Array),
     Pointer(Pointer),
     Tuple(Tuple),
-    Local(Local),
     Phantom(Phantom),
     Elided,
 }
@@ -397,7 +368,6 @@ impl Input<&super::Type> for &Type {
         match (self, output) {
             (Type::Primitive(i), super::Type::Primitive(o)) => i.assert(o),
             (Type::Reference(i), super::Type::Reference(o)) => i.assert(o),
-            (Type::Local(i), super::Type::Local(o)) => i.assert(o),
             (
                 Type::QualifiedIdentifier(i),
                 super::Type::QualifiedIdentifier(o),
@@ -428,8 +398,6 @@ impl Arbitrary for Type {
             prop_oneof![
                 Reference::arbitrary_with(Some(inner.clone()))
                     .prop_map(Self::Reference),
-                Local::arbitrary_with(Some(inner.clone()))
-                    .prop_map(Self::Local),
                 Pointer::arbitrary_with(Some(inner.clone()))
                     .prop_map(Self::Pointer),
                 Tuple::arbitrary_with(Some(inner.clone()))
@@ -463,7 +431,6 @@ impl Display for Type {
             Self::Array(i) => Display::fmt(i, f),
             Self::Pointer(i) => Display::fmt(i, f),
             Self::Tuple(i) => Display::fmt(i, f),
-            Self::Local(i) => Display::fmt(i, f),
             Self::Phantom(i) => Display::fmt(i, f),
             Self::Elided => f.write_str(".."),
         }

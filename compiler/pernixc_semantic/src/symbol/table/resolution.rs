@@ -42,7 +42,7 @@ use crate::{
             self, constant,
             lifetime::{Forall, Lifetime},
             r#type::{self, Qualifier},
-            GenericArguments, Local, Term, TupleElement,
+            GenericArguments, Term, TupleElement,
         },
     },
 };
@@ -1381,14 +1381,6 @@ impl<S: State> Table<S> {
                         r#type::Primitive::Isize
                     }
                 })
-            }
-            syntax_tree::r#type::Type::Local(local) => {
-                r#type::Type::Local(Local(Box::new(self.resolve_type(
-                    local.r#type(),
-                    referring_site,
-                    config.reborrow(),
-                    handler,
-                )?)))
             }
             syntax_tree::r#type::Type::QualifiedIdentifier(
                 qualified_identifier,

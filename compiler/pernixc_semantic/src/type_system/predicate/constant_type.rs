@@ -181,8 +181,7 @@ impl<M: Model> Compute for ConstantType<M> {
             | Type::Reference(_)
             | Type::Array(_)
             | Type::Tuple(_)
-            | Type::Phantom(_)
-            | Type::Local(_) => Satisfiability::Congruent,
+            | Type::Phantom(_) => Satisfiability::Congruent,
         };
 
         // trivially satisfiable

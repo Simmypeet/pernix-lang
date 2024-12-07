@@ -924,7 +924,6 @@ where
         match ty {
             r#type::Type::Error(_)
             | term::r#type::Type::Tuple(_)
-            | term::r#type::Type::Local(_)
             | term::r#type::Type::Phantom(_)
             | term::r#type::Type::Pointer(_)
             | term::r#type::Type::Primitive(_)
@@ -1358,9 +1357,6 @@ impl UnusedGenericParameters {
                     self.check_in_type(&ty.term);
                 }
             }
-            r#type::Type::Local(local) => {
-                self.check_in_type(&local.0);
-            }
             r#type::Type::Phantom(phantom) => {
                 self.check_in_type(&phantom.0);
             }
@@ -1412,10 +1408,6 @@ impl UnusedGenericParameters {
                 for element in &array.elements {
                     self.check_in_constant(element);
                 }
-            }
-
-            constant::Constant::Local(local) => {
-                self.check_in_constant(&local.0);
             }
 
             constant::Constant::Tuple(tuple) => {

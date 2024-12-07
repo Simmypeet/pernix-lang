@@ -1637,8 +1637,6 @@ pub enum PrefixOperator {
     Negate,
     BitwiseNot,
     Dereference,
-    Local,
-    Unlocal,
     ReferenceOf(ReferenceOf),
 }
 
@@ -1657,11 +1655,7 @@ impl Input<&super::PrefixOperator> for &PrefixOperator {
             | (
                 PrefixOperator::Dereference,
                 super::PrefixOperator::Dereference(_),
-            )
-            | (PrefixOperator::Local, super::PrefixOperator::Local(_))
-            | (PrefixOperator::Unlocal, super::PrefixOperator::Unlocal(_)) => {
-                Ok(())
-            }
+            ) => Ok(()),
 
             (
                 PrefixOperator::ReferenceOf(input),
@@ -1685,8 +1679,6 @@ impl Arbitrary for PrefixOperator {
             Just(Self::Negate),
             Just(Self::BitwiseNot),
             Just(Self::Dereference),
-            Just(Self::Local),
-            Just(Self::Unlocal),
             ReferenceOf::arbitrary_with(()).prop_map(Self::ReferenceOf),
         ]
         .boxed()
@@ -1700,8 +1692,6 @@ impl Display for PrefixOperator {
             Self::Negate => f.write_char('-'),
             Self::BitwiseNot => f.write_char('~'),
             Self::Dereference => f.write_char('*'),
-            Self::Local => f.write_str("local "),
-            Self::Unlocal => f.write_str("unlocal "),
             Self::ReferenceOf(reference_of) => Display::fmt(reference_of, f),
         }
     }

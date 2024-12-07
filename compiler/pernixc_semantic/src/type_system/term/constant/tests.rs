@@ -8,10 +8,7 @@ use super::{Array, Constant, Enum, Primitive, Struct};
 use crate::{
     arena::ID,
     symbol::ConstantParameterID,
-    type_system::{
-        model::Default,
-        term::{Local, Tuple},
-    },
+    type_system::{model::Default, term::Tuple},
 };
 
 impl Arbitrary for Primitive {
@@ -89,7 +86,6 @@ impl Arbitrary for Constant<Default> {
             prop_oneof![
                 2 => Struct::arbitrary_with(Some(inner.clone())).prop_map(Self::Struct),
                 1 => Enum::arbitrary_with(Some(inner.clone())).prop_map(Self::Enum),
-                1 => inner.clone().prop_map(|x| Self::Local(Local(Box::new(x)))),
                 2 => Array::arbitrary_with(Some(inner.clone())).prop_map(Self::Array),
                 2 => Tuple::arbitrary_with(Some(inner))
                     .prop_map(Self::Tuple),

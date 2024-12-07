@@ -22,7 +22,7 @@ use crate::{
             constant::Constant,
             lifetime::Lifetime,
             r#type::{self, Primitive, TraitMember, Type},
-            GenericArguments, Local, Symbol, Term,
+            GenericArguments, Symbol, Term,
         },
         Compute, Environment, OverflowError, Premise,
     },
@@ -279,7 +279,6 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
                     Some(constant_strategy)
                 ))
                 .prop_map(|x| Box::new(x) as _),
-                1 => LocalCongruence::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
             ]
         })
             .boxed()
@@ -300,14 +299,7 @@ impl Arbitrary for Box<dyn Property<Constant<Default>>> {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
-
-        leaf.prop_recursive(10, 60, 6, move |inner| {
-            prop_oneof![
-                1 => LocalCongruence::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _),
-            ]
-        })
-            .boxed()
+        Identity::arbitrary().prop_map(|x| Box::new(x) as _).boxed()
     }
 }
 
@@ -432,49 +424,6 @@ where
     }
 
     fn node_count(&self) -> usize { 1 + self.property.node_count() }
-}
-
-/// A property that generates `local` terms which will be used to test the
-/// congruence.
-#[derive(Debug)]
-pub struct LocalCongruence<T> {
-    strategy: Box<dyn Property<T>>,
-}
-
-impl<T: 'static + Debug + Term> Arbitrary for LocalCongruence<T>
-where
-    Local<T>: Into<T>,
-    Box<dyn Property<T>>:
-        Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
-{
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let strategy = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
-
-        strategy.prop_map(|strategy| Self { strategy }).boxed()
-    }
-}
-
-impl<T: Term<Model = Default> + Debug + 'static> Property<T>
-    for LocalCongruence<T>
-where
-    Local<T>: Into<T>,
-{
-    fn generate(
-        &self,
-        table: &mut Table<Building>,
-        premise: &mut Premise<Default>,
-        root_module_id: ID<Module>,
-    ) -> Result<(T, T), OverflowError> {
-        let (lhs, rhs) =
-            self.strategy.generate(table, premise, root_module_id)?;
-
-        Ok((Local(Box::new(lhs)).into(), Local(Box::new(rhs)).into()))
-    }
-
-    fn node_count(&self) -> usize { 1 + self.strategy.node_count() }
 }
 
 #[derive(Debug)]

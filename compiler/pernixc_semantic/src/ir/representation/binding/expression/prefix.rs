@@ -19,7 +19,6 @@ use crate::{
         term::{
             lifetime::Lifetime,
             r#type::{self, Expected, Qualifier, Type},
-            Local,
         },
     },
 };
@@ -40,28 +39,15 @@ impl<
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
         match syntax_tree.operator() {
-            syntax_tree::expression::PrefixOperator::Local(_)
-            | syntax_tree::expression::PrefixOperator::LogicalNot(_)
+            syntax_tree::expression::PrefixOperator::LogicalNot(_)
             | syntax_tree::expression::PrefixOperator::Negate(_)
-            | syntax_tree::expression::PrefixOperator::Unlocal(_)
             | syntax_tree::expression::PrefixOperator::BitwiseNot(_) => {
                 let (expected_type, operator) = match syntax_tree.operator() {
-                    syntax_tree::expression::PrefixOperator::Local(_) => {
-                        (None, PrefixOperator::Local)
-                    }
                     syntax_tree::expression::PrefixOperator::LogicalNot(_) => (
                         Some(Expected::Known(Type::Primitive(
                             r#type::Primitive::Bool,
                         ))),
                         PrefixOperator::LogicalNot,
-                    ),
-                    syntax_tree::expression::PrefixOperator::Unlocal(_) => (
-                        Some(Expected::Known(Type::Local(Local(Box::new(
-                            Type::Inference(self.create_type_inference(
-                                r#type::Constraint::All(false),
-                            )),
-                        ))))),
-                        PrefixOperator::Unlocal,
                     ),
                     syntax_tree::expression::PrefixOperator::Negate(_) => (
                         Some(Expected::Constraint(r#type::Constraint::Signed)),
