@@ -1,10 +1,10 @@
-use pernixc_base::handler::Handler;
+use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
 use super::{positive_trait_implementation, trait_function};
 use crate::{
     arena::ID,
-    error,
+    error::{self, MismatchedFunctionParameterCountInImplementation},
     ir::representation::binding::Binder,
     symbol::{
         table::{
@@ -143,17 +143,15 @@ impl Finalize for TraitImplementationFunction {
                     trait_implementation_sym.implemented_id
                 };
 
-                let trait_implementation_function_sym =
-                    table.get(symbol_id).unwrap();
-                let trait_implementation_sym = table
-                    .get(trait_implementation_function_sym.parent_id)
-                    .unwrap();
-                let trait_sym = table.get(trait_id).unwrap();
+                let trait_implementation_id =
+                    table.get(symbol_id).unwrap().parent_id;
 
-                // get the trait type id equivalent
-                let Some(trait_function_id) = trait_sym
+                // get the trait function id equivalent
+                let Some(trait_function_id) = table
+                    .get(trait_id)
+                    .unwrap()
                     .member_ids_by_name
-                    .get(trait_implementation_function_sym.name())
+                    .get(table.get(symbol_id).unwrap().name())
                     .copied()
                     .and_then(|x| x.into_function().ok())
                 else {
@@ -163,25 +161,62 @@ impl Finalize for TraitImplementationFunction {
                 let _ = table.build_to(
                     trait_function_id,
                     Some(symbol_id.into()),
-                    trait_function::WHERE_CLAUSE_STATE,
+                    trait_function::DEFINITION_STATE,
                     handler,
                 );
 
+                // do basic check, generic parameters and where caluse.
+                let implementation_generic_arguments = table
+                    .get(trait_implementation_id)
+                    .unwrap()
+                    .arguments
+                    .clone();
+                let implementation_instantiation =
+                    Instantiation::from_generic_arguments(
+                        implementation_generic_arguments,
+                        trait_id.into(),
+                        &table
+                            .get(trait_id)
+                            .unwrap()
+                            .generic_declaration
+                            .parameters,
+                    )
+                    .unwrap_or_default();
                 table.implementation_member_check(
                     symbol_id.into(),
                     trait_function_id.into(),
-                    Instantiation::from_generic_arguments(
-                        trait_implementation_sym.arguments.clone(),
-                        trait_implementation_sym.implemented_id.into(),
-                        &trait_sym.generic_declaration.parameters,
-                    )
-                    .unwrap_or_default(),
+                    implementation_instantiation,
                     handler,
                 );
 
-                drop(trait_sym);
-                drop(trait_implementation_function_sym);
-                drop(trait_implementation_sym);
+                // do function signature match check
+                {
+                    let trait_function_sym =
+                        table.get(trait_function_id).unwrap();
+
+                    let trait_implementation_function_sym =
+                        table.get(symbol_id).unwrap();
+
+                    // mismatched parameter count
+                    if trait_function_sym.parameter_order.len()
+                        != trait_implementation_function_sym
+                            .parameter_order
+                            .len()
+                    {
+                        handler.receive(Box::new(
+                            MismatchedFunctionParameterCountInImplementation {
+                                trait_function_id,
+                                expected_count: trait_function_sym
+                                    .parameter_order
+                                    .len(),
+                                found_count: trait_implementation_function_sym
+                                    .parameter_order
+                                    .len(),
+                                span: syntax_tree.signature().span(),
+                            },
+                        ));
+                    }
+                }
 
                 #[allow(clippy::needless_collect)]
                 let irrefutable_patterns = syntax_tree

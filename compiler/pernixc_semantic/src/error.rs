@@ -25,7 +25,7 @@ use crate::{
         CallableID, ConstantParameterID, Field, GenericID, GenericKind,
         GenericParameter, GlobalID, LocalGenericParameterID, MemberID, Module,
         PositiveTraitImplementation, ResolvableImplementationID, Struct, Trait,
-        TraitImplementationMemberID, TraitMemberID, Variant,
+        TraitFunction, TraitImplementationMemberID, TraitMemberID, Variant,
     },
     type_system::{
         equality,
@@ -3114,6 +3114,57 @@ impl Report<&Table<Suboptimal>> for ExpectStruct {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
+        })
+    }
+}
+
+/// The trait implementation function contains a mismatched parameter count.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedFunctionParameterCountInImplementation {
+    /// The ID of the trait  function.
+    pub trait_function_id: ID<TraitFunction>,
+
+    /// The expected parameter count.
+    pub expected_count: usize,
+
+    /// The found parameter count.
+    pub found_count: usize,
+
+    /// The span of the trait implementation function signature.
+    pub span: Span,
+}
+
+impl Report<&Table<Suboptimal>>
+    for MismatchedFunctionParameterCountInImplementation
+{
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        let trait_function_symbol =
+            table.get(self.trait_function_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the trait declared a function with {} parameter(s) but the \
+                 implementation function has {} parameter(s)",
+                trait_function_symbol.parameters().len(),
+                self.found_count,
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: trait_function_symbol
+                .span()
+                .as_ref()
+                .map(|x| Related {
+                    span: x.clone(),
+                    message: "the trait function is declared here".to_string(),
+                })
+                .into_iter()
+                .collect(),
         })
     }
 }
