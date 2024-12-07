@@ -657,7 +657,7 @@
 				{
 					"comment": "control flow keywords",
 					"name": "keyword.control.pernix",
-					"match": "\\b(await|break|continue|do|resume|with|else|for|if|loop|match|return|try|while|yield|case|express|from)\\b"
+					"match": "\\b(await|break|continue|do|resume|with|else|for|if|loop|match|return|panic|try|while|yield|case|express|from)\\b"
 				},
 				{
 					"comment": "storage keywords",

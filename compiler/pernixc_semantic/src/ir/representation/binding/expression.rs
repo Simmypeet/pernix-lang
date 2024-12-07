@@ -125,6 +125,7 @@ mod if_else;
 mod r#loop;
 mod r#match;
 mod numeric;
+mod panic;
 mod parenthesized;
 mod phantom;
 mod postfix;
@@ -365,6 +366,9 @@ impl<
                 self.bind(syn, config, handler)
             }
             syntax_tree::expression::Unit::Character(syn) => {
+                self.bind(syn, config, handler)
+            }
+            syntax_tree::expression::Unit::Panic(syn) => {
                 self.bind(syn, config, handler)
             }
         }

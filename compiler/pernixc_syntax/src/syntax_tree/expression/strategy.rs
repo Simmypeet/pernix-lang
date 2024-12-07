@@ -1136,6 +1136,7 @@ pub enum Unit {
     Struct(Struct),
     Array(Array),
     Phantom(Phantom),
+    Panic,
 }
 
 impl Arbitrary for Unit {
@@ -1171,6 +1172,7 @@ impl Arbitrary for Unit {
             .prop_map(Unit::Struct),
             Array::arbitrary_with(expr_strategy).prop_map(Unit::Array),
             Just(Self::Phantom(Phantom)),
+            Just(Self::Panic)
         ]
         .boxed()
     }
@@ -1203,6 +1205,8 @@ impl Input<&super::Unit> for &Unit {
                 input.assert(output)
             }
 
+            (Unit::Panic, super::Unit::Panic(_)) => Ok(()),
+
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
             ))),
@@ -1224,6 +1228,7 @@ impl Display for Unit {
             Self::Struct(struct_literal) => Display::fmt(struct_literal, f),
             Self::Array(array_literal) => Display::fmt(array_literal, f),
             Self::Phantom(phantom) => Display::fmt(phantom, f),
+            Self::Panic => f.write_str("panic"),
         }
     }
 }

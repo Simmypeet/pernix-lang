@@ -153,6 +153,8 @@ pub enum KeywordKind {
     From,
     /// `marker` keyword.
     Marker,
+    /// `panic` keyword.
+    Panic,
 }
 
 impl std::fmt::Display for KeywordKind {
@@ -256,6 +258,7 @@ impl KeywordKind {
             Self::This => "this",
             Self::From => "from",
             Self::Marker => "marker",
+            Self::Panic => "panic",
         }
     }
 }

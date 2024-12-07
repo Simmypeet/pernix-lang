@@ -1061,6 +1061,34 @@ impl SourceElement for Phantom {
 }
 
 /// Syntax Synopsis:
+/// ``` txt
+/// Panic:
+///     "panic"
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Panic {
+    #[get = "pub"]
+    panic_keyword: Keyword,
+}
+
+impl SyntaxTree for Panic {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        KeywordKind::Panic
+            .to_owned()
+            .map(|panic_keyword| Self { panic_keyword })
+            .parse(state_machine, handler)
+    }
+}
+
+impl SourceElement for Panic {
+    fn span(&self) -> Span { self.panic_keyword.span() }
+}
+
+/// Syntax Synopsis:
 ///
 /// ``` txt
 /// Unit:
@@ -1073,6 +1101,7 @@ impl SourceElement for Phantom {
 ///     | Phantom
 ///     | String
 ///     | Character
+///     | "panic"
 ///    ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
@@ -1086,6 +1115,7 @@ pub enum Unit {
     Phantom(Phantom),
     String(token::String),
     Character(Character),
+    Panic(Panic),
 }
 
 impl SyntaxTree for Unit {
@@ -1103,6 +1133,7 @@ impl SyntaxTree for Unit {
             Numeric::parse.map(Self::Numeric),
             Boolean::parse.map(Self::Boolean),
             Parenthesized::parse.map(Self::Parenthesized),
+            Panic::parse.map(Self::Panic),
         )
             .branch()
             .parse(state_machine, handler)
@@ -1121,6 +1152,7 @@ impl SourceElement for Unit {
             Self::Phantom(unit) => unit.span(),
             Self::String(unit) => unit.span(),
             Self::Character(unit) => unit.span(),
+            Self::Panic(unit) => unit.span(),
         }
     }
 }
