@@ -5,7 +5,7 @@ use crate::{
         compatible::{Compatibility, Compatible},
         equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
-        model::Model,
+        model::{Default, Model},
         normalizer::Normalizer,
         observer::Observer,
         query::{self, Context, Sealed},
@@ -311,5 +311,38 @@ impl<M: Model> ConstantType<M> {
     /// Applies the instantiation to the type.
     pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
         instantiation::instantiate(&mut self.0, instantiation);
+    }
+
+    /// Converts a constant type with the model `U` into the model `M`.
+    pub fn from_other_model<U: Model>(term: ConstantType<U>) -> Self
+    where
+        M::LifetimeInference: From<U::LifetimeInference>,
+        M::TypeInference: From<U::TypeInference>,
+        M::ConstantInference: From<U::ConstantInference>,
+    {
+        Self(Type::from_other_model(term.0))
+    }
+
+    /// Tries to convert a negative marker with the model `U` into the model
+    /// `M`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error returned by the `TryFrom` implementation of the model.
+    pub fn try_from_other_model<U: Model, E>(
+        term: ConstantType<U>,
+    ) -> Result<Self, E>
+    where
+        M::LifetimeInference: TryFrom<U::LifetimeInference, Error = E>,
+        M::TypeInference: TryFrom<U::TypeInference, Error = E>,
+        M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
+    {
+        Ok(Self(Type::try_from_other_model(term.0)?))
+    }
+
+    /// Converts the [`ConstantType`] with [`Default`] model to the model `M`.
+    #[must_use]
+    pub fn from_default_model(predicate: ConstantType<Default>) -> Self {
+        Self(Type::from_default_model(predicate.0))
     }
 }

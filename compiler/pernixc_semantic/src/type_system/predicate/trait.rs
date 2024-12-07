@@ -127,6 +127,45 @@ impl<M: Model> Positive<M> {
     pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
         self.generic_arguments.instantiate(instantiation);
     }
+
+    /// Converts a positive trait with the model `U` into the model `M`.
+    pub fn from_other_model<U: Model>(term: Positive<U>) -> Self
+    where
+        M::LifetimeInference: From<U::LifetimeInference>,
+        M::TypeInference: From<U::TypeInference>,
+        M::ConstantInference: From<U::ConstantInference>,
+    {
+        Self {
+            id: term.id,
+            is_const: term.is_const,
+            generic_arguments: GenericArguments::from_other_model(
+                term.generic_arguments,
+            ),
+        }
+    }
+
+    /// Tries to convert a positive trait with the model `U` into the model
+    /// `M`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error returned by the `TryFrom` implementation of the model.
+    pub fn try_from_other_model<U: Model, E>(
+        term: Positive<U>,
+    ) -> Result<Self, E>
+    where
+        M::LifetimeInference: TryFrom<U::LifetimeInference, Error = E>,
+        M::TypeInference: TryFrom<U::TypeInference, Error = E>,
+        M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
+    {
+        Ok(Self {
+            id: term.id,
+            is_const: term.is_const,
+            generic_arguments: GenericArguments::try_from_other_model(
+                term.generic_arguments,
+            )?,
+        })
+    }
 }
 
 impl<T: State, M: Model> table::Display<T> for Positive<M>
@@ -307,6 +346,43 @@ impl<M: Model> Negative<M> {
     /// Applies an instantiation to the generic arguments.
     pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
         self.generic_arguments.instantiate(instantiation);
+    }
+
+    /// Converts a negative trait with the model `U` into the model `M`.
+    pub fn from_other_model<U: Model>(term: Negative<U>) -> Self
+    where
+        M::LifetimeInference: From<U::LifetimeInference>,
+        M::TypeInference: From<U::TypeInference>,
+        M::ConstantInference: From<U::ConstantInference>,
+    {
+        Self {
+            id: term.id,
+            generic_arguments: GenericArguments::from_other_model(
+                term.generic_arguments,
+            ),
+        }
+    }
+
+    /// Tries to convert a negative trait with the model `U` into the model
+    /// `M`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error returned by the `TryFrom` implementation of the model.
+    pub fn try_from_other_model<U: Model, E>(
+        term: Negative<U>,
+    ) -> Result<Self, E>
+    where
+        M::LifetimeInference: TryFrom<U::LifetimeInference, Error = E>,
+        M::TypeInference: TryFrom<U::TypeInference, Error = E>,
+        M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
+    {
+        Ok(Self {
+            id: term.id,
+            generic_arguments: GenericArguments::try_from_other_model(
+                term.generic_arguments,
+            )?,
+        })
     }
 }
 

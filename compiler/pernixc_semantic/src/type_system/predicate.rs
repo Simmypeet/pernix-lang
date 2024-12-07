@@ -260,6 +260,127 @@ impl<M: Model> Predicate<M> {
             Self::NegativeMarker(marker) => marker.instantiate(substitution),
         }
     }
+
+    /// Converts a predicate with the model `U` into the model `M`.
+    pub fn from_other_model<U: Model>(predicate: Predicate<U>) -> Self
+    where
+        M::LifetimeInference: From<U::LifetimeInference>,
+        M::TypeInference: From<U::TypeInference>,
+        M::ConstantInference: From<U::ConstantInference>,
+    {
+        match predicate {
+            Predicate::TraitTypeEquality(equality) => {
+                Self::TraitTypeEquality(Equality::new(
+                    MemberSymbol {
+                        id: equality.lhs.id,
+                        member_generic_arguments:
+                            GenericArguments::from_other_model(
+                                equality.lhs.member_generic_arguments,
+                            ),
+                        parent_generic_arguments:
+                            GenericArguments::from_other_model(
+                                equality.lhs.parent_generic_arguments,
+                            ),
+                    },
+                    Type::from_other_model(equality.rhs),
+                ))
+            }
+            Predicate::ConstantType(constant_type) => Self::ConstantType(
+                ConstantType::from_other_model(constant_type),
+            ),
+            Predicate::LifetimeOutlives(outlives) => {
+                Self::LifetimeOutlives(Outlives::new(
+                    Lifetime::from_other_model(outlives.operand),
+                    Lifetime::from_other_model(outlives.bound),
+                ))
+            }
+            Predicate::TypeOutlives(outlives) => {
+                Self::TypeOutlives(Outlives::new(
+                    Type::from_other_model(outlives.operand),
+                    Lifetime::from_other_model(outlives.bound),
+                ))
+            }
+            Predicate::TupleType(tuple) => {
+                Self::TupleType(Tuple(Type::from_other_model(tuple.0)))
+            }
+            Predicate::PositiveTrait(positive) => {
+                Self::PositiveTrait(PositiveTrait::from_other_model(positive))
+            }
+            Predicate::NegativeTrait(negative) => {
+                Self::NegativeTrait(NegativeTrait::from_other_model(negative))
+            }
+            Predicate::PositiveMarker(positive) => {
+                Self::PositiveMarker(PositiveMarker::from_other_model(positive))
+            }
+            Predicate::NegativeMarker(negative) => {
+                Self::NegativeMarker(NegativeMarker::from_other_model(negative))
+            }
+        }
+    }
+
+    /// Tries to convert a predicate with the model `U` into the model
+    /// `M`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error returned by the `TryFrom` implementation of the model.
+    pub fn try_from_other_model<U: Model, E>(
+        predicate: Predicate<U>,
+    ) -> Result<Self, E>
+    where
+        M::LifetimeInference: TryFrom<U::LifetimeInference, Error = E>,
+        M::TypeInference: TryFrom<U::TypeInference, Error = E>,
+        M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
+    {
+        Ok(match predicate {
+            Predicate::TraitTypeEquality(equality) => {
+                Self::TraitTypeEquality(Equality::new(
+                    MemberSymbol {
+                        id: equality.lhs.id,
+                        member_generic_arguments:
+                            GenericArguments::try_from_other_model(
+                                equality.lhs.member_generic_arguments,
+                            )?,
+                        parent_generic_arguments:
+                            GenericArguments::try_from_other_model(
+                                equality.lhs.parent_generic_arguments,
+                            )?,
+                    },
+                    Type::try_from_other_model(equality.rhs)?,
+                ))
+            }
+            Predicate::ConstantType(constant_type) => Self::ConstantType(
+                ConstantType::try_from_other_model(constant_type)?,
+            ),
+            Predicate::LifetimeOutlives(outlives) => {
+                Self::LifetimeOutlives(Outlives::new(
+                    Lifetime::try_from_other_model(outlives.operand)?,
+                    Lifetime::try_from_other_model(outlives.bound)?,
+                ))
+            }
+            Predicate::TypeOutlives(outlives) => {
+                Self::TypeOutlives(Outlives::new(
+                    Type::try_from_other_model(outlives.operand)?,
+                    Lifetime::try_from_other_model(outlives.bound)?,
+                ))
+            }
+            Predicate::TupleType(tuple) => {
+                Self::TupleType(Tuple(Type::try_from_other_model(tuple.0)?))
+            }
+            Predicate::PositiveTrait(positive) => Self::PositiveTrait(
+                PositiveTrait::try_from_other_model(positive)?,
+            ),
+            Predicate::NegativeTrait(negative) => Self::NegativeTrait(
+                NegativeTrait::try_from_other_model(negative)?,
+            ),
+            Predicate::PositiveMarker(positive) => Self::PositiveMarker(
+                PositiveMarker::try_from_other_model(positive)?,
+            ),
+            Predicate::NegativeMarker(negative) => Self::NegativeMarker(
+                NegativeMarker::try_from_other_model(negative)?,
+            ),
+        })
+    }
 }
 
 impl<T: Term> Equality<T::TraitMember, T> {
