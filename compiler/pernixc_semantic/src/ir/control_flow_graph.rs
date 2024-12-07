@@ -62,23 +62,35 @@ impl<M: Model> Block<M> {
 
     /// Splices the instructions in the block with the given range with the
     /// replacement instructions.
+    #[must_use]
     pub fn splice(
         &mut self,
         range: impl RangeBounds<usize>,
         replacement: impl IntoIterator<Item = Instruction<M>>,
-    ) {
-        self.instructions.splice(range, replacement);
+    ) -> bool {
+        if self.is_unreachable_or_terminated() {
+            false
+        } else {
+            self.instructions.splice(range, replacement);
+            true
+        }
     }
 
     /// Inserts a multiple instructions to the block at the given index.
     ///
     /// The instructions are inserted in the order they are given.
+    #[must_use]
     pub fn insert_instructions(
         &mut self,
         index: usize,
         instructions: impl IntoIterator<Item = Instruction<M>>,
-    ) {
-        self.instructions.splice(index..index, instructions);
+    ) -> bool {
+        if self.is_unreachable_or_terminated() {
+            false
+        } else {
+            self.instructions.splice(index..index, instructions);
+            true
+        }
     }
 
     /// Returns `true` if any of the instructions that will be added in the

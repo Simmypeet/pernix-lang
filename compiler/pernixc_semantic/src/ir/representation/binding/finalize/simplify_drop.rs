@@ -255,7 +255,7 @@ pub(super) fn simplfy_drop_in_cfg<S: table::State>(
                     simplify_drop(inst, values, current_site, environment)?;
 
                 let len = instructions.len();
-                block.splice(i..=i, instructions);
+                let _ = block.splice(i..=i, instructions);
 
                 i += len;
             } else {

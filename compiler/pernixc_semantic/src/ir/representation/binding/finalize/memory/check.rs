@@ -373,7 +373,8 @@ impl ir::Representation<ir::Model> {
 
                     let instructions_len = instructions.len();
 
-                    block.insert_instructions(current_index, instructions);
+                    let _ =
+                        block.insert_instructions(current_index, instructions);
 
                     instructions_len + 1
                 }
@@ -521,7 +522,8 @@ impl ir::Representation<ir::Model> {
 
                     let instructions_len = instructions.len();
 
-                    block.insert_instructions(current_index, instructions);
+                    let _ =
+                        block.insert_instructions(current_index, instructions);
 
                     instructions_len + 1
                 }
@@ -623,7 +625,9 @@ impl ir::Representation<ir::Model> {
                     }
 
                     let len = drop_instructions.len();
-                    block.insert_instructions(current_index, drop_instructions);
+
+                    let _ = block
+                        .insert_instructions(current_index, drop_instructions);
 
                     1 + len
                 }
@@ -787,7 +791,7 @@ impl ir::Representation<ir::Model> {
                 let block =
                     self.control_flow_graph.get_block_mut(predecessor).unwrap();
 
-                block.insert_instructions(
+                let _ = block.insert_instructions(
                     block.instructions().len(),
                     drop_instructions,
                 );
@@ -847,7 +851,7 @@ impl ir::Representation<ir::Model> {
                         .control_flow_graph
                         .get_block_mut(block_id)
                         .unwrap();
-                    block.insert_instructions(
+                    let _ = block.insert_instructions(
                         block.instructions().len(),
                         drop_instructions,
                     );
