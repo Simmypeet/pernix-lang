@@ -1,10 +1,16 @@
 use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
+use self::builder::TypeSystem;
 use super::{positive_trait_implementation, trait_function};
 use crate::{
     arena::ID,
-    error::{self, MismatchedFunctionParameterCountInImplementation},
+    error::{
+        self, FunctionSignatureIncompatibilityReason,
+        IncompatibleFunctionParameterTypeInImplementation,
+        MismatchedFunctionParameterCountInImplementation, OverflowOperation,
+        TypeSystemOverflow,
+    },
     ir::representation::binding::Binder,
     symbol::{
         table::{
@@ -18,9 +24,18 @@ use crate::{
             },
             Building,
         },
-        FunctionIR, TraitImplementationFunction,
+        ConstantParameterID, FunctionIR, LifetimeParameterID, TraitFunction,
+        TraitImplementationFunction, TypeParameterID,
     },
-    type_system::instantiation::Instantiation,
+    type_system::{
+        compatible::Compatible,
+        environment::Environment,
+        instantiation::{self, Instantiation},
+        model, normalizer,
+        term::{constant::Constant, lifetime::Lifetime, r#type::Type},
+        variance::Variance,
+        Compute, LifetimeConstraint, OverflowError, Succeeded,
+    },
 };
 
 /// Generic parameters are built
@@ -182,41 +197,23 @@ impl Finalize for TraitImplementationFunction {
                             .parameters,
                     )
                     .unwrap_or_default();
+
                 table.implementation_member_check(
                     symbol_id.into(),
                     trait_function_id.into(),
-                    implementation_instantiation,
+                    implementation_instantiation.clone(),
                     handler,
                 );
 
                 // do function signature match check
-                {
-                    let trait_function_sym =
-                        table.get(trait_function_id).unwrap();
-
-                    let trait_implementation_function_sym =
-                        table.get(symbol_id).unwrap();
-
-                    // mismatched parameter count
-                    if trait_function_sym.parameter_order.len()
-                        != trait_implementation_function_sym
-                            .parameter_order
-                            .len()
-                    {
-                        handler.receive(Box::new(
-                            MismatchedFunctionParameterCountInImplementation {
-                                trait_function_id,
-                                expected_count: trait_function_sym
-                                    .parameter_order
-                                    .len(),
-                                found_count: trait_implementation_function_sym
-                                    .parameter_order
-                                    .len(),
-                                span: syntax_tree.signature().span(),
-                            },
-                        ));
-                    }
-                }
+                function_signature_check(
+                    symbol_id,
+                    trait_function_id,
+                    table,
+                    syntax_tree,
+                    implementation_instantiation,
+                    handler,
+                );
 
                 #[allow(clippy::needless_collect)]
                 let irrefutable_patterns = syntax_tree
@@ -256,6 +253,273 @@ impl Finalize for TraitImplementationFunction {
             }
 
             _ => panic!("invalid state flag"),
+        }
+    }
+}
+
+fn function_signature_check(
+    symbol_id: ID<TraitImplementationFunction>,
+    trait_function_id: ID<TraitFunction>,
+    table: &Table<Building<RwLockContainer, Finalizer>>,
+    syntax_tree: &syntax_tree::item::Function,
+    mut implementation_instantiation: Instantiation<model::Default>,
+    handler: &dyn Handler<Box<dyn error::Error>>,
+) {
+    let observer = TypeSystem::new(symbol_id.into(), handler);
+    let (environment, _) = Environment::new_with(
+        table.get_active_premise::<model::Default>(symbol_id.into()).unwrap(),
+        table,
+        normalizer::NO_OP,
+        &observer,
+    );
+
+    let trait_function_sym = table.get(trait_function_id).unwrap();
+
+    let trait_implementation_function_sym = table.get(symbol_id).unwrap();
+
+    // mismatched parameter count
+    if trait_function_sym.parameter_order.len()
+        != trait_implementation_function_sym.parameter_order.len()
+    {
+        handler.receive(Box::new(
+            MismatchedFunctionParameterCountInImplementation {
+                trait_function_id,
+                expected_count: trait_function_sym.parameter_order.len(),
+                found_count: trait_implementation_function_sym
+                    .parameter_order
+                    .len(),
+                span: syntax_tree.signature().span(),
+            },
+        ));
+    }
+
+    // check if the generic parameter count matches
+    if trait_function_sym.generic_declaration.parameters.lifetimes.len()
+        != trait_implementation_function_sym
+            .generic_declaration
+            .parameters
+            .lifetimes
+            .len()
+        || trait_function_sym.generic_declaration.parameters.types.len()
+            != trait_implementation_function_sym
+                .generic_declaration
+                .parameters
+                .types
+                .len()
+        || trait_function_sym.generic_declaration.parameters.constants.len()
+            != trait_implementation_function_sym
+                .generic_declaration
+                .parameters
+                .constants
+                .len()
+    {
+        // stop doing any further check, it would likely produce
+        // useless errors.
+        return;
+    }
+
+    implementation_instantiation.lifetimes.extend(
+        trait_function_sym
+            .generic_declaration
+            .parameters
+            .lifetime_parameters_as_order()
+            .zip(
+                trait_implementation_function_sym
+                    .generic_declaration
+                    .parameters
+                    .lifetime_parameters_as_order(),
+            )
+            .map(|(x, y)| {
+                (
+                    Lifetime::Parameter(LifetimeParameterID {
+                        parent: trait_function_id.into(),
+                        id: x.0,
+                    }),
+                    Lifetime::Parameter(LifetimeParameterID {
+                        parent: symbol_id.into(),
+                        id: y.0,
+                    }),
+                )
+            }),
+    );
+    implementation_instantiation.types.extend(
+        trait_function_sym
+            .generic_declaration
+            .parameters
+            .type_parameters_as_order()
+            .zip(
+                trait_implementation_function_sym
+                    .generic_declaration
+                    .parameters
+                    .type_parameters_as_order(),
+            )
+            .map(|(x, y)| {
+                (
+                    Type::Parameter(TypeParameterID {
+                        parent: trait_function_id.into(),
+                        id: x.0,
+                    }),
+                    Type::Parameter(TypeParameterID {
+                        parent: symbol_id.into(),
+                        id: y.0,
+                    }),
+                )
+            }),
+    );
+    implementation_instantiation.constants.extend(
+        trait_function_sym
+            .generic_declaration
+            .parameters
+            .constant_parameters_as_order()
+            .zip(
+                trait_implementation_function_sym
+                    .generic_declaration
+                    .parameters
+                    .constant_parameters_as_order(),
+            )
+            .map(|(x, y)| {
+                (
+                    Constant::Parameter(ConstantParameterID {
+                        parent: trait_function_id.into(),
+                        id: x.0,
+                    }),
+                    Constant::Parameter(ConstantParameterID {
+                        parent: symbol_id.into(),
+                        id: y.0,
+                    }),
+                )
+            }),
+    );
+
+    let trait_function_parameters = trait_function_sym
+        .parameter_order
+        .iter()
+        .copied()
+        .map(|x| trait_function_sym.parameters.get(x).unwrap().clone())
+        .collect::<Vec<_>>();
+    let trait_implementation_function_parameters =
+        trait_implementation_function_sym
+            .parameter_order
+            .iter()
+            .copied()
+            .map(|x| {
+                trait_implementation_function_sym
+                    .parameters
+                    .get(x)
+                    .unwrap()
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+
+    let trait_return_type = trait_function_sym.return_type.clone();
+    let trait_implementation_function_return_type =
+        trait_implementation_function_sym.return_type.clone();
+
+    drop(trait_function_sym);
+    drop(trait_implementation_function_sym);
+
+    for (trait_function_parameter, trait_implementation_parameter) in
+        trait_function_parameters
+            .into_iter()
+            .zip(trait_implementation_function_parameters.into_iter())
+    {
+        // instantiate the type before checking
+        let mut trait_parameter_type = trait_function_parameter.r#type;
+
+        instantiation::instantiate(
+            &mut trait_parameter_type,
+            &implementation_instantiation,
+        );
+
+        use FunctionSignatureIncompatibilityReason::*;
+
+        match trait_implementation_parameter.r#type.compatible(
+            &trait_parameter_type,
+            Variance::Contravariant,
+            &environment,
+        ) {
+            Ok(Some(Succeeded { result, constraints })) => {
+                assert!(
+                    result.forall_lifetime_errors.is_empty(),
+                    "should have no forall lifetime involved"
+                );
+                assert!(
+                    result
+                        .forall_lifetime_instantiations
+                        .lifetimes_by_forall
+                        .is_empty(),
+                    "should have no forall lifetime involved"
+                );
+
+                let unsatisfied_outlives = constraints
+                    .into_iter()
+                    .filter_map(
+                        |LifetimeConstraint::LifetimeOutlives(outlives)| {
+                            match outlives.query(&environment) {
+                                Ok(Some(_)) => None,
+                                result => Some(result.map(|_| outlives)),
+                            }
+                        },
+                    )
+                    .collect::<Result<Vec<_>, OverflowError>>();
+
+                match unsatisfied_outlives {
+                    Ok(unsatisfied_outlives) => {
+                        if !unsatisfied_outlives.is_empty() {
+                            handler.receive(Box::new(
+                                IncompatibleFunctionParameterTypeInImplementation {
+                                    expected_parameter_type: trait_parameter_type,
+                                    found_parameter_type: trait_implementation_parameter
+                                        .r#type,
+                                    span: trait_implementation_parameter
+                                        .span
+                                        .clone()
+                                        .unwrap(),
+                                    reason: Outlives(unsatisfied_outlives),
+                                },
+                            ));
+                        }
+                    }
+                    Err(OverflowError) => {
+                        handler.receive(Box::new(TypeSystemOverflow::<
+                            model::Default,
+                        > {
+                            operation: OverflowOperation::TypeCheck,
+                            overflow_span: trait_implementation_parameter
+                                .span
+                                .clone()
+                                .unwrap(),
+                            overflow_error: OverflowError,
+                        }));
+                    }
+                }
+            }
+            Ok(None) => {
+                handler.receive(Box::new(
+                    IncompatibleFunctionParameterTypeInImplementation {
+                        expected_parameter_type: trait_parameter_type,
+                        found_parameter_type: trait_implementation_parameter
+                            .r#type,
+                        span: trait_implementation_parameter
+                            .span
+                            .clone()
+                            .unwrap(),
+                        reason: IncompatibleType,
+                    },
+                ));
+            }
+            Err(overflow_error) => {
+                handler.receive(Box::new(
+                    TypeSystemOverflow::<model::Default> {
+                        operation: OverflowOperation::TypeCheck,
+                        overflow_span: trait_implementation_parameter
+                            .span
+                            .clone()
+                            .unwrap(),
+                        overflow_error,
+                    },
+                ));
+            }
         }
     }
 }

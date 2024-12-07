@@ -30,9 +30,10 @@ use crate::{
     type_system::{
         equality,
         model::{self, Model},
-        predicate::Predicate,
+        predicate::{Outlives, Predicate},
         term::{
             constant,
+            lifetime::Lifetime,
             r#type::{self, Qualifier, Type},
             GenericArguments,
         },
@@ -3165,6 +3166,91 @@ impl Report<&Table<Suboptimal>>
                 })
                 .into_iter()
                 .collect(),
+        })
+    }
+}
+
+/// The reason why [`IncompatibleFunctionParameterTypeInImplementation`]
+/// happened.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FunctionSignatureIncompatibilityReason {
+    /// The outlives constraints are not satisfied.
+    Outlives(Vec<Outlives<Lifetime<model::Default>>>),
+
+    /// The type is not compatible with the expected type.
+    IncompatibleType,
+}
+
+/// The trait implementation function contains an incompatible parameter type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct IncompatibleFunctionParameterTypeInImplementation {
+    /// The type of function parameter that is expected.
+    pub expected_parameter_type: Type<model::Default>,
+
+    /// The type of function parameter that is found.
+    pub found_parameter_type: Type<model::Default>,
+
+    /// The reason why the function signature is incompatible.
+    pub reason: FunctionSignatureIncompatibilityReason,
+
+    /// The span of the trait implementation function parameter
+    pub span: Span,
+}
+
+impl Report<&Table<Suboptimal>>
+    for IncompatibleFunctionParameterTypeInImplementation
+{
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: match &self.reason {
+                FunctionSignatureIncompatibilityReason::Outlives(vec) => {
+                    format!(
+                        "the parameter type `{}` isn't compatible with the \
+                         expected type `{}` because the outlives \
+                         constraint(s) are not satisfied: {}",
+                        DisplayObject {
+                            display: &self.found_parameter_type,
+                            table
+                        },
+                        DisplayObject {
+                            display: &self.expected_parameter_type,
+                            table
+                        },
+                        vec.iter()
+                            .map(|x| format!("`{}`", DisplayObject {
+                                display: x,
+                                table
+                            }))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                }
+
+                FunctionSignatureIncompatibilityReason::IncompatibleType => {
+                    format!(
+                        "the trait declared a function with parameter of type \
+                         `{}` but the implementation function has parameter \
+                         of type `{}`",
+                        DisplayObject {
+                            display: &self.expected_parameter_type,
+                            table
+                        },
+                        DisplayObject {
+                            display: &self.found_parameter_type,
+                            table
+                        },
+                    )
+                }
+            },
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
         })
     }
 }
