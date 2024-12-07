@@ -240,7 +240,7 @@ impl<
         let root_scope_id =
             binder.intermediate_representation.scope_tree.root_scope_id();
 
-        let _ = binder.current_block_mut().insert_instruction(
+        let _ = binder.current_block_mut().add_instruction(
             instruction::Instruction::ScopePush(ScopePush(root_scope_id)),
         );
 
@@ -408,7 +408,7 @@ impl<
                 span,
             });
 
-        let _ = self.current_block_mut().insert_instruction(
+        let _ = self.current_block_mut().add_instruction(
             instruction::Instruction::AllocaDeclaration(
                 instruction::AllocaDeclaration { id: alloca_id },
             ),
@@ -440,7 +440,7 @@ impl<
         let alloca_id = self.create_alloca(ty, span);
         let alloca_address = Address::Memory(Memory::Alloca(alloca_id));
 
-        let _ = self.current_block_mut().insert_instruction(
+        let _ = self.current_block_mut().add_instruction(
             instruction::Instruction::Store(instruction::Store {
                 address: alloca_address,
                 value,
@@ -504,7 +504,7 @@ impl<
             .registers
             .insert(Register { assignment, span });
 
-        let _ = self.current_block_mut().insert_instruction(
+        let _ = self.current_block_mut().add_instruction(
             instruction::Instruction::RegisterAssignment(
                 instruction::RegisterAssignment { id: register_id },
             ),
@@ -706,7 +706,7 @@ impl<
         self.stack.push_scope(scope_id);
         let _ = self
             .current_block_mut()
-            .insert_instruction(Instruction::ScopePush(ScopePush(scope_id)));
+            .add_instruction(Instruction::ScopePush(ScopePush(scope_id)));
 
         scope_id
     }
@@ -719,7 +719,7 @@ impl<
         );
         let _ = self
             .current_block_mut()
-            .insert_instruction(Instruction::ScopePop(ScopePop(scope_id)));
+            .add_instruction(Instruction::ScopePop(ScopePop(scope_id)));
     }
 
     /// Resolves the given `syntax_tree` to a type where inference is allowed.

@@ -116,9 +116,9 @@ impl<
 
         // set the current block to the loop header block
         self.current_block_id = loop_block_id;
-        let _ = self.current_block_mut().insert_instruction(
-            Instruction::ScopePush(ScopePush(while_scope_id)),
-        );
+        let _ = self
+            .current_block_mut()
+            .add_instruction(Instruction::ScopePush(ScopePush(while_scope_id)));
         self.stack.push_scope(while_scope_id);
         self.loop_states_by_scope_id.insert(while_scope_id, LoopState {
             label,
@@ -164,9 +164,9 @@ impl<
         self.current_block_id = condition_fail_block_id;
 
         // pop the loop scope
-        let _ = self.current_block_mut().insert_instruction(
-            Instruction::ScopePop(ScopePop(while_scope_id)),
-        );
+        let _ = self
+            .current_block_mut()
+            .add_instruction(Instruction::ScopePop(ScopePop(while_scope_id)));
         // jump to the exit block
         assert!(
             !self
@@ -192,9 +192,9 @@ impl<
         }
 
         // pop the loop scope
-        let _ = self.current_block_mut().insert_instruction(
-            Instruction::ScopePop(ScopePop(while_scope_id)),
-        );
+        let _ = self
+            .current_block_mut()
+            .add_instruction(Instruction::ScopePop(ScopePop(while_scope_id)));
 
         // jump to the loop header block
         assert!(

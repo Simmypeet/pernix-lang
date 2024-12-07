@@ -730,7 +730,7 @@ impl<
 
         self.stack.push_scope(arm_info.scope_id);
 
-        let _ = self.current_block_mut().insert_instruction(
+        let _ = self.current_block_mut().add_instruction(
             Instruction::ScopePush(ScopePush(arm_info.scope_id)),
         );
 
@@ -757,7 +757,7 @@ impl<
             self.stack.pop_scope().map(|x| x.scope_id()),
             Some(arm_info.scope_id),
         );
-        let _ = self.current_block_mut().insert_instruction(
+        let _ = self.current_block_mut().add_instruction(
             Instruction::ScopePop(ScopePop(arm_info.scope_id)),
         );
 

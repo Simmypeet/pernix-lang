@@ -92,9 +92,9 @@ impl<
 
         // set the current block to the loop header block
         self.current_block_id = loop_block_id;
-        let _ = self.current_block_mut().insert_instruction(
-            Instruction::ScopePush(ScopePush(loop_scope_id)),
-        );
+        let _ = self
+            .current_block_mut()
+            .add_instruction(Instruction::ScopePush(ScopePush(loop_scope_id)));
         self.stack.push_scope(loop_scope_id);
         self.loop_states_by_scope_id.insert(loop_scope_id, LoopState {
             label,
@@ -119,7 +119,7 @@ impl<
         );
         let _ = self
             .current_block_mut()
-            .insert_instruction(Instruction::ScopePop(ScopePop(loop_scope_id)));
+            .add_instruction(Instruction::ScopePop(ScopePop(loop_scope_id)));
         let loop_state =
             self.loop_states_by_scope_id.remove(&loop_scope_id).unwrap();
 

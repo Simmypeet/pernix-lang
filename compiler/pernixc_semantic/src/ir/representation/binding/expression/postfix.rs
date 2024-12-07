@@ -542,7 +542,7 @@ impl<
                 let alloca_id = self.create_alloca(type_of_value, span.clone());
 
                 // initialize
-                let _ = self.current_block_mut().insert_instruction(
+                let _ = self.current_block_mut().add_instruction(
                     Instruction::Store(Store {
                         address: Address::Memory(Memory::Alloca(alloca_id)),
                         value,

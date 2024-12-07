@@ -308,7 +308,7 @@ impl<
             ));
         }
 
-        let _ = self.current_block_mut().insert_instruction(
+        let _ = self.current_block_mut().add_instruction(
             Instruction::Store(Store {
                 address: lhs_address.address.clone(),
                 value: rhs_value,
@@ -700,7 +700,7 @@ impl<
 
                     // push the scope
                     self.stack.push_scope(true_branch);
-                    let _ = self.current_block_mut().insert_instruction(
+                    let _ = self.current_block_mut().add_instruction(
                         Instruction::ScopePush(ScopePush(true_branch)),
                     );
 
@@ -735,7 +735,7 @@ impl<
                         self.stack.pop_scope().map(|x| x.scope_id()),
                         Some(true_branch)
                     );
-                    let _ = self.current_block_mut().insert_instruction(
+                    let _ = self.current_block_mut().add_instruction(
                         Instruction::ScopePop(ScopePop(true_branch)),
                     );
 
@@ -764,7 +764,7 @@ impl<
 
                     // push the scope
                     self.stack.push_scope(false_branch);
-                    let _ = self.current_block_mut().insert_instruction(
+                    let _ = self.current_block_mut().add_instruction(
                         Instruction::ScopePush(ScopePush(false_branch)),
                     );
 
@@ -799,7 +799,7 @@ impl<
                         self.stack.pop_scope().map(|x| x.scope_id()),
                         Some(false_branch)
                     );
-                    let _ = self.current_block_mut().insert_instruction(
+                    let _ = self.current_block_mut().add_instruction(
                         Instruction::ScopePop(ScopePop(false_branch)),
                     );
 

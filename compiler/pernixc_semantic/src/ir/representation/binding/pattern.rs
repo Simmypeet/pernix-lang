@@ -222,7 +222,7 @@ impl Pattern for Refutable {
 
                             // store the value to the alloca
                             let _ =
-                                binder.current_block_mut().insert_instruction(
+                                binder.current_block_mut().add_instruction(
                                     Instruction::Store(Store {
                                         address: Address::Memory(
                                             Memory::Alloca(alloca_id),
@@ -485,7 +485,7 @@ impl Pattern for Irrefutable {
 
                             // store the value to the alloca
                             let _ =
-                                binder.current_block_mut().insert_instruction(
+                                binder.current_block_mut().add_instruction(
                                     Instruction::Store(Store {
                                         address: Address::Memory(
                                             Memory::Alloca(alloca_id),
@@ -1277,7 +1277,7 @@ impl<
 
         let alloca_id = self.create_alloca(alloca_ty, pattern_span.clone());
 
-        let _ = self.current_block_mut().insert_instruction(
+        let _ = self.current_block_mut().add_instruction(
             instruction::Instruction::Store(Store {
                 address: Address::Memory(Memory::Alloca(alloca_id)),
                 value: Value::Register(register_id),
@@ -1423,7 +1423,7 @@ impl<
                         }),
                     );
 
-                    let _ = self.current_block_mut().insert_instruction(
+                    let _ = self.current_block_mut().add_instruction(
                         Instruction::Store(Store {
                             address: Address::Tuple(address::Tuple {
                                 tuple_address: Box::new(Address::Memory(
@@ -1437,7 +1437,7 @@ impl<
                 }
 
                 // use dedicated instruction to pack the unpacked element
-                let _ = self.current_block_mut().insert_instruction(
+                let _ = self.current_block_mut().add_instruction(
                     Instruction::TuplePack(TuplePack {
                         packed_tuple_span: Some(
                             tuple_pat
@@ -1487,7 +1487,7 @@ impl<
                         }),
                     );
 
-                    let _ = self.current_block_mut().insert_instruction(
+                    let _ = self.current_block_mut().add_instruction(
                         Instruction::Store(Store {
                             address: Address::Tuple(address::Tuple {
                                 tuple_address: Box::new(Address::Memory(
@@ -1523,7 +1523,7 @@ impl<
                         }),
                     );
 
-                    let _ = self.current_block_mut().insert_instruction(
+                    let _ = self.current_block_mut().add_instruction(
                         Instruction::Store(Store {
                             address: Address::Tuple(address::Tuple {
                                 tuple_address: Box::new(Address::Memory(

@@ -175,7 +175,7 @@ impl<
                         self.create_alloca(type_of_value, syntax_tree.span());
 
                     // initialize
-                    let _ = self.current_block_mut().insert_instruction(
+                    let _ = self.current_block_mut().add_instruction(
                         Instruction::Store(Store {
                             address: Address::Memory(Memory::Alloca(alloca_id)),
                             value,
@@ -677,7 +677,7 @@ impl<
         // add the scope push instruction
         let _ = self
             .current_block_mut()
-            .insert_instruction(Instruction::ScopePush(ScopePush(scope_id)));
+            .add_instruction(Instruction::ScopePush(ScopePush(scope_id)));
 
         self.block_states_by_scope_id.insert(scope_id, BlockState {
             label: syntax_tree
@@ -705,7 +705,7 @@ impl<
         );
         let _ = self
             .current_block_mut()
-            .insert_instruction(Instruction::ScopePop(ScopePop(scope_id)));
+            .add_instruction(Instruction::ScopePop(ScopePop(scope_id)));
 
         if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
             .intermediate_representation

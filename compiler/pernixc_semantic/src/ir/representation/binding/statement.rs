@@ -86,7 +86,7 @@ impl<
 
                 let result = match result {
                     Ok(Expression::RValue(Value::Register(register_id))) => {
-                        let _ = self.current_block_mut().insert_instruction(
+                        let _ = self.current_block_mut().add_instruction(
                             Instruction::RegisterDiscard(RegisterDiscard {
                                 id: register_id,
                             }),

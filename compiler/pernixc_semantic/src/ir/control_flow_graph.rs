@@ -108,7 +108,7 @@ impl<M: Model> Block<M> {
 
     /// Adds a basic instruction to the block.
     #[must_use]
-    pub fn insert_instruction(&mut self, instruction: Instruction<M>) -> bool {
+    pub fn add_instruction(&mut self, instruction: Instruction<M>) -> bool {
         if self.is_unreachable_or_terminated() {
             false
         } else {

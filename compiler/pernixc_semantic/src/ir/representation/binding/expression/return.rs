@@ -88,7 +88,7 @@ impl<
                 .control_flow_graph
                 .get_block_mut(self.current_block_id)
                 .unwrap()
-                .insert_instruction(Instruction::ScopePop(ScopePop(
+                .add_instruction(Instruction::ScopePop(ScopePop(
                     popping_scope,
                 )));
         }

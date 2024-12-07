@@ -8,6 +8,7 @@ use crate::{
     ir::{
         self,
         instruction::{Instruction, ScopePop},
+        representation::borrow::Model as BorrowModel,
         Suboptimal, Success, IR,
     },
     symbol::{
@@ -24,7 +25,6 @@ use crate::{
 
 mod borrow;
 mod check;
-mod memory;
 mod simplify_drop;
 mod transform_inference;
 
@@ -61,7 +61,7 @@ impl<
             self.intermediate_representation.scope_tree.root_scope_id();
         let _ = self
             .current_block_mut()
-            .insert_instruction(Instruction::ScopePop(ScopePop(root_scope_id)));
+            .add_instruction(Instruction::ScopePop(ScopePop(root_scope_id)));
         self.inference_context.fill_default_inferences();
 
         // we're in the function, check if all paths return the value
@@ -118,53 +118,22 @@ impl<
 
         // perform the well-formedness check
         transformed_ir.check(self.current_site, &environment, &handler_wrapper);
-        transformed_ir.memory_check(
-            self.current_site,
-            &environment,
-            &handler_wrapper,
-        )?;
-
-        // stop now, it will produce useless errors
-        if *handler_wrapper.suboptimal.read() {
-            return Err(FinalizeError::Suboptimal(IR {
-                representation: transformed_ir,
-                state: Suboptimal,
-            }));
-        }
-
-        // simplify the drop
-        simplify_drop::simplfy_drop_in_cfg(
-            &mut transformed_ir.control_flow_graph,
-            &transformed_ir.values,
-            self.current_site,
-            &environment,
-        )?;
 
         // create new environment for borrow checking
         let premise = self
             .table
-            .get_active_premise::<ir::representation::borrow::Model>(
-                self.current_site,
-            )
+            .get_active_premise::<BorrowModel>(self.current_site)
             .unwrap();
-        let (environment, _) = Environment::<
-            ir::representation::borrow::Model,
-            _,
-            _,
-            _,
-        >::new_with(
+        let (environment, _) = Environment::new_with(
             premise,
             self.table,
             normalizer::NO_OP,
             &self.type_system_observer,
         );
-
-        // perform the borrow checking
-        borrow::borrow_check(
-            transformed_ir.clone(),
+        transformed_ir.borrow_checker(
             self.current_site,
             &environment,
-            handler,
+            &handler_wrapper,
         )?;
 
         Ok(IR { representation: transformed_ir, state: Success(()) })
