@@ -3170,7 +3170,7 @@ impl Report<&Table<Suboptimal>>
     }
 }
 
-/// The reason why [`IncompatibleFunctionParameterTypeInImplementation`]
+/// The reason why [`IncompatibleFunctionSignatureInImplementation`]
 /// happened.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FunctionSignatureIncompatibilityReason {
@@ -3191,7 +3191,7 @@ pub enum FunctionSignaturePart {
 
 /// The trait implementation function contains an incompatible parameter type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IncompatibleFunctionParameterTypeInImplementation {
+pub struct IncompatibleFunctionSignatureInImplementation {
     /// The type of function parameter that is expected.
     pub expected_parameter_type: Type<model::Default>,
 
@@ -3209,7 +3209,7 @@ pub struct IncompatibleFunctionParameterTypeInImplementation {
 }
 
 impl Report<&Table<Suboptimal>>
-    for IncompatibleFunctionParameterTypeInImplementation
+    for IncompatibleFunctionSignatureInImplementation
 {
     type Error = ReportError;
 

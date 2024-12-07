@@ -738,7 +738,7 @@ impl<T: Container> Representation<T> {
     ///   empty.
     pub fn get_by_qualified_name<'a>(
         &self,
-        qualified_names: impl Iterator<Item = &'a str>,
+        qualified_names: impl IntoIterator<Item = &'a str>,
     ) -> Result<GlobalID, GetByQualifiedNameError<'a>> {
         let mut current_id: Option<GlobalID> = None;
 
@@ -2266,3 +2266,6 @@ impl<T: State + std::default::Default> std::default::Default for Table<T> {
         Self { representation, state: T::default() }
     }
 }
+
+#[cfg(test)]
+pub(super) mod test;

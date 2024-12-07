@@ -10,7 +10,7 @@ use crate::{
     arena::ID,
     error::{
         self, FunctionSignatureIncompatibilityReason, FunctionSignaturePart,
-        IncompatibleFunctionParameterTypeInImplementation,
+        IncompatibleFunctionSignatureInImplementation,
         MismatchedFunctionParameterCountInImplementation, OverflowOperation,
         TypeSystemOverflow,
     },
@@ -517,7 +517,7 @@ fn compatibility_check(
                 Ok(unsatisfied_outlives) => {
                     if !unsatisfied_outlives.is_empty() {
                         handler.receive(Box::new(
-                            IncompatibleFunctionParameterTypeInImplementation {
+                            IncompatibleFunctionSignatureInImplementation {
                                 expected_parameter_type: trait_type,
                                 found_parameter_type: implementation_type,
                                 span,
@@ -540,7 +540,7 @@ fn compatibility_check(
         }
         Ok(None) => {
             handler.receive(Box::new(
-                IncompatibleFunctionParameterTypeInImplementation {
+                IncompatibleFunctionSignatureInImplementation {
                     expected_parameter_type: trait_type,
                     found_parameter_type: implementation_type,
                     span,
@@ -558,3 +558,6 @@ fn compatibility_check(
         }
     }
 }
+
+#[cfg(test)]
+mod test;
