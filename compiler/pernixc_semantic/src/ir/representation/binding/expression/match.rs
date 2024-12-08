@@ -726,6 +726,20 @@ impl<
             return Ok(());
         }
 
+        let new_block =
+            self.intermediate_representation.control_flow_graph.new_block();
+        assert!(self
+            .intermediate_representation
+            .control_flow_graph
+            .insert_terminator(
+                self.current_block_id,
+                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                    target: new_block,
+                })),
+            )
+            .map_or_else(|x| !x.is_invalid_block_id(), |()| true));
+
+        self.current_block_id = new_block;
         let starting_block_id = self.current_block_id;
 
         self.stack.push_scope(arm_info.scope_id);
