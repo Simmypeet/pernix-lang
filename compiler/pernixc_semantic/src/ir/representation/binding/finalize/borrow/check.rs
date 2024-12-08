@@ -45,10 +45,14 @@ use crate::{
         normalizer::Normalizer,
         observer::Observer,
         predicate::{PositiveMarker, Predicate},
+        sub_term::TermLocation,
         term::{
+            constant::Constant,
+            lifetime::Lifetime,
             r#type::{Qualifier, Type},
             GenericArguments, Term,
         },
+        visitor::{self, MutableRecursive},
         well_formedness,
     },
 };
@@ -320,6 +324,12 @@ impl<
                         self.ty_environment,
                     )?;
 
+                    let instructions = simplify_drop::simplify_drops(
+                        instructions,
+                        &self.representation.values,
+                        self.current_site,
+                        self.ty_environment,
+                    )?;
                     let instructions_len = instructions.len();
 
                     let _ =
@@ -472,6 +482,12 @@ impl<
                         self.ty_environment,
                     )?;
 
+                    let instructions = simplify_drop::simplify_drops(
+                        instructions,
+                        &self.representation.values,
+                        self.current_site,
+                        self.ty_environment,
+                    )?;
                     let instructions_len = instructions.len();
 
                     let _ =
@@ -582,6 +598,12 @@ impl<
                         );
                     }
 
+                    let drop_instructions = simplify_drop::simplify_drops(
+                        drop_instructions,
+                        &self.representation.values,
+                        self.current_site,
+                        self.ty_environment,
+                    )?;
                     let len = drop_instructions.len();
 
                     let _ = block
@@ -741,26 +763,15 @@ impl<
                     .get_block_mut(predecessor)
                     .unwrap();
 
-                for drop_instruction in drop_instructions {
-                    if let Instruction::Drop(drop) = &drop_instruction {
-                        let simplified_drop_instructions =
-                            simplify_drop::simplify_drop(
-                                drop,
-                                &self.representation.values,
-                                self.current_site,
-                                self.ty_environment,
-                            )?;
-                        let _ = block.insert_instructions(
-                            block.instructions().len(),
-                            simplified_drop_instructions,
-                        );
-                    } else {
-                        let _ = block.insert_instructions(
-                            block.instructions().len(),
-                            std::iter::once(drop_instruction),
-                        );
-                    }
-                }
+                let _ = block.insert_instructions(
+                    block.instructions().len(),
+                    simplify_drop::simplify_drops(
+                        drop_instructions,
+                        &self.representation.values,
+                        self.current_site,
+                        self.ty_environment,
+                    )?,
+                );
             }
 
             env
@@ -822,7 +833,12 @@ impl<
                         .unwrap();
                     let _ = block.insert_instructions(
                         block.instructions().len(),
-                        drop_instructions,
+                        simplify_drop::simplify_drops(
+                            drop_instructions,
+                            &self.representation.values,
+                            self.current_site,
+                            self.ty_environment,
+                        )?,
                     );
 
                     for move_span in target_state
@@ -852,6 +868,81 @@ impl<
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct ReplaceWithFreshInference<'a> {
+    origins: &'a mut Arena<Origin>,
+}
+
+impl MutableRecursive<Lifetime<BorrowModel>> for ReplaceWithFreshInference<'_> {
+    fn visit(
+        &mut self,
+        term: &mut Lifetime<BorrowModel>,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        if !term.is_inference() {
+            return true;
+        }
+
+        *term = Lifetime::Inference(self.origins.insert(Origin::default()));
+
+        true
+    }
+}
+
+impl MutableRecursive<Type<BorrowModel>> for ReplaceWithFreshInference<'_> {
+    fn visit(
+        &mut self,
+        _: &mut Type<BorrowModel>,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        true
+    }
+}
+
+impl MutableRecursive<Constant<BorrowModel>> for ReplaceWithFreshInference<'_> {
+    fn visit(
+        &mut self,
+        _: &mut Constant<BorrowModel>,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        true
+    }
+}
+
+impl ir::Representation<BorrowModel> {
+    fn replace_with_fresh_lifetimes(&mut self, origins: &mut Arena<Origin>) {
+        let mut visitor = ReplaceWithFreshInference { origins };
+
+        // replace the lifetime in allocas
+        for alloca in self.values.allocas.items_mut() {
+            visitor::accept_recursive_mut(&mut alloca.r#type, &mut visitor);
+        }
+
+        // replace the lifetime in registers
+        for register in self.values.registers.items_mut() {
+            // these assignments merge multiple lifetimes, therefore we create
+            // a new lifetime for each of them
+            match &mut register.assignment {
+                Assignment::Phi(phi) => {
+                    visitor::accept_recursive_mut(
+                        &mut phi.r#type,
+                        &mut visitor,
+                    );
+                }
+
+                Assignment::Array(array) => {
+                    visitor::accept_recursive_mut(
+                        &mut array.element_type,
+                        &mut visitor,
+                    );
+                }
+
+                _ => {}
+            }
+        }
+    }
+}
+
 impl ir::Representation<ir::Model> {
     /// The entry point of the borrow checker.
     pub(in super::super) fn borrow_checker<S: table::State>(
@@ -865,11 +956,13 @@ impl ir::Representation<ir::Model> {
         >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        let (ir, arena) =
+        let (mut ir, mut arena) =
             transform_to_borrow_model(self.clone(), ty_environment.table());
 
         let all_block_ids =
             ir.control_flow_graph.blocks().ids().collect::<Vec<_>>();
+
+        ir.replace_with_fresh_lifetimes(&mut arena);
 
         let mut checker = Checker {
             representation: ir,

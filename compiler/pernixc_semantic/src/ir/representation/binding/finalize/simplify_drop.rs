@@ -33,6 +33,36 @@ use crate::{
     },
 };
 
+pub(super) fn simplify_drops<
+    S: table::State,
+    M: model::Model<TypeInference = Never, ConstantInference = Never>,
+>(
+    drop_instructions: impl IntoIterator<Item = Instruction<M>>,
+    values: &Values<M>,
+    current_site: GlobalID,
+    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
+) -> Result<Vec<Instruction<M>>, TypeSystemOverflow<ir::Model>>
+where
+    Erased: From<M::LifetimeInference>,
+{
+    let mut results = Vec::new();
+
+    for instruction in drop_instructions {
+        if let Instruction::Drop(drop) = instruction {
+            results.extend(simplify_drop(
+                &drop,
+                values,
+                current_site,
+                environment,
+            )?);
+        } else {
+            results.push(instruction);
+        }
+    }
+
+    Ok(results)
+}
+
 pub(super) fn simplify_drop<
     S: table::State,
     M: model::Model<TypeInference = Never, ConstantInference = Never>,

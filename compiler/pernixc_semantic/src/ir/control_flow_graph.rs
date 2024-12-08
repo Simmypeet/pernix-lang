@@ -67,13 +67,8 @@ impl<M: Model> Block<M> {
         &mut self,
         range: impl RangeBounds<usize>,
         replacement: impl IntoIterator<Item = Instruction<M>>,
-    ) -> bool {
-        if self.is_unreachable_or_terminated() {
-            false
-        } else {
-            self.instructions.splice(range, replacement);
-            true
-        }
+    ) {
+        self.instructions.splice(range, replacement);
     }
 
     /// Inserts a multiple instructions to the block at the given index.
@@ -84,13 +79,8 @@ impl<M: Model> Block<M> {
         &mut self,
         index: usize,
         instructions: impl IntoIterator<Item = Instruction<M>>,
-    ) -> bool {
-        if self.is_unreachable_or_terminated() {
-            false
-        } else {
-            self.instructions.splice(index..index, instructions);
-            true
-        }
+    ) {
+        self.instructions.splice(index..index, instructions);
     }
 
     /// Returns `true` if any of the instructions that will be added in the
