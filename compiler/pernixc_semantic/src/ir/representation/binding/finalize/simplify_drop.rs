@@ -11,9 +11,9 @@ use crate::{
     ir::{
         self,
         address::{self, Address, Field, Memory},
-        control_flow_graph::ControlFlowGraph,
         instruction::{Drop, DropUnpackTuple, Instruction},
         representation::Values,
+        Erased,
     },
     symbol::{
         table::{self, representation::Index},
@@ -21,28 +21,30 @@ use crate::{
     },
     type_system::{
         environment::Environment,
+        model,
         normalizer::Normalizer,
         observer::Observer,
         predicate::{PositiveTrait, Predicate},
         term::{
             r#type::{SymbolID, Type},
-            GenericArguments,
+            GenericArguments, Never,
         },
         Compute,
     },
 };
 
-fn simplify_drop<S: table::State>(
-    drop: &Drop<ir::Model>,
-    values: &Values<ir::Model>,
+pub(super) fn simplify_drop<
+    S: table::State,
+    M: model::Model<TypeInference = Never, ConstantInference = Never>,
+>(
+    drop: &Drop<M>,
+    values: &Values<M>,
     current_site: GlobalID,
-    environment: &Environment<
-        ir::Model,
-        S,
-        impl Normalizer<ir::Model, S>,
-        impl Observer<ir::Model, S>,
-    >,
-) -> Result<Vec<Instruction<ir::Model>>, TypeSystemOverflow<ir::Model>> {
+    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
+) -> Result<Vec<Instruction<M>>, TypeSystemOverflow<ir::Model>>
+where
+    Erased: From<M::LifetimeInference>,
+{
     let get_span_of = || match drop.address.get_root_memory() {
         Memory::Parameter(id) => {
             let callable = CallableID::try_from(current_site).unwrap();
@@ -103,7 +105,9 @@ fn simplify_drop<S: table::State>(
                     Err(overflow_error) => {
                         return Err(TypeSystemOverflow {
                             operation: OverflowOperation::Predicate(
-                                Predicate::PositiveTrait(predicate),
+                                Predicate::from_other_model(
+                                    Predicate::PositiveTrait(predicate),
+                                ),
                             ),
                             overflow_span: get_span_of(),
                             overflow_error,
@@ -233,36 +237,4 @@ fn simplify_drop<S: table::State>(
 
         Type::Inference(never) => match *never {},
     }
-}
-
-pub(super) fn simplfy_drop_in_cfg<S: table::State>(
-    control_flow_graph: &mut ControlFlowGraph<ir::Model>,
-    values: &Values<ir::Model>,
-    current_site: GlobalID,
-    environment: &Environment<
-        ir::Model,
-        S,
-        impl Normalizer<ir::Model, S>,
-        impl Observer<ir::Model, S>,
-    >,
-) -> Result<(), TypeSystemOverflow<ir::Model>> {
-    for (_, block) in control_flow_graph.block_muts() {
-        let mut i = 0;
-
-        while i < block.instructions().len() {
-            if let Instruction::Drop(inst) = &block.instructions()[i] {
-                let instructions =
-                    simplify_drop(inst, values, current_site, environment)?;
-
-                let len = instructions.len();
-                let _ = block.splice(i..=i, instructions);
-
-                i += len;
-            } else {
-                i += 1;
-            }
-        }
-    }
-
-    Ok(())
 }

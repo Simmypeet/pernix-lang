@@ -11,6 +11,7 @@ use crate::{
         self,
         address::{self, Address, Offset},
         instruction::{Drop, DropUnpackTuple, Instruction},
+        representation::borrow::Model as BorrowModel,
         scope,
     },
     symbol::{
@@ -434,9 +435,9 @@ impl State {
     pub fn get_alternate_drop_instructions(
         &self,
         alternate: &Self,
-        address: &Address<ir::Model>,
+        address: &Address<BorrowModel>,
         table: &Table<impl table::State>,
-    ) -> Option<Vec<Instruction<ir::Model>>> {
+    ) -> Option<Vec<Instruction<BorrowModel>>> {
         match (self, alternate) {
             (Self::Total(Initialized::False(_)), other) => {
                 other.get_drop_instructions(address, table)
@@ -558,11 +559,11 @@ impl State {
     #[allow(clippy::too_many_lines)]
     fn get_drop_instructions_interanl(
         &self,
-        address: &Address<ir::Model>,
+        address: &Address<BorrowModel>,
         table: &Table<impl table::State>,
         negative: bool,
         should_drop_mutable_reference: bool,
-    ) -> Option<Vec<Instruction<ir::Model>>> {
+    ) -> Option<Vec<Instruction<BorrowModel>>> {
         match self {
             Self::Total(Initialized::True) => Some(if negative {
                 Vec::new()
@@ -697,9 +698,9 @@ impl State {
     /// values in the memory.
     pub fn get_drop_instructions(
         &self,
-        address: &Address<ir::Model>,
+        address: &Address<BorrowModel>,
         table: &Table<impl table::State>,
-    ) -> Option<Vec<Instruction<ir::Model>>> {
+    ) -> Option<Vec<Instruction<BorrowModel>>> {
         self.get_drop_instructions_interanl(address, table, false, false)
     }
 
@@ -899,7 +900,7 @@ pub struct Scope {
     scope_id: ID<scope::Scope>,
 
     #[get = "pub"]
-    memories_by_address: HashMap<address::Memory<ir::Model>, Memory>,
+    memories_by_address: HashMap<address::Memory<BorrowModel>, Memory>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
@@ -907,7 +908,7 @@ pub struct Memory {
     #[get = "pub"]
     state: State,
     #[get = "pub"]
-    r#type: Type<ir::Model>,
+    r#type: Type<BorrowModel>,
 
     version: usize,
 }
@@ -949,7 +950,7 @@ pub enum SetStateError {
 
     /// An error that occurs when isntantiating the struct field's type.
     MismatchedArgumentCount(
-        #[from] MismatchedGenericArgumentCountError<ir::Model>,
+        #[from] MismatchedGenericArgumentCountError<BorrowModel>,
     ),
 
     /// Encountered an overflow error obtaining the type of the field/variant.
@@ -958,11 +959,11 @@ pub enum SetStateError {
 
 #[derive(Debug, PartialEq, Eq)]
 enum SetStateResultInternal<'a> {
-    Unchanged(Initialized, Address<ir::Model>),
+    Unchanged(Initialized, Address<BorrowModel>),
     Done(State),
     Continue {
         state: &'a mut State,
-        ty: Type<ir::Model>,
+        ty: Type<BorrowModel>,
         version: &'a mut usize,
     },
 }
@@ -971,7 +972,7 @@ enum SetStateResultInternal<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetStateSucceeded {
     /// The state was not changed. The state was already satisfied.
-    Unchanged(Initialized, Address<ir::Model>),
+    Unchanged(Initialized, Address<BorrowModel>),
 
     /// The state was changed. The variant holds the state that was replaced.
     Updated(State),
@@ -996,7 +997,7 @@ pub enum ScopeMergeError {
     DifferentMemoryCount,
 
     /// The memory address of one scope is not found in the other scope.
-    MemoryNotFound(address::Memory<ir::Model>),
+    MemoryNotFound(address::Memory<BorrowModel>),
 
     /// The memory state is not compatible.
     #[error(transparent)]
@@ -1048,9 +1049,9 @@ impl Scope {
     #[must_use]
     pub fn new_state(
         &mut self,
-        memory: address::Memory<ir::Model>,
+        memory: address::Memory<BorrowModel>,
         initialized: bool,
-        ty: Type<ir::Model>,
+        ty: Type<BorrowModel>,
     ) -> bool {
         match self.memories_by_address.entry(memory) {
             Entry::Occupied(_) => false,
@@ -1074,20 +1075,20 @@ impl Scope {
     }
 
     /// Checks if the memory state is contained in this scope.
-    pub fn contains(&self, memory: &address::Memory<ir::Model>) -> bool {
+    pub fn contains(&self, memory: &address::Memory<BorrowModel>) -> bool {
         self.memories_by_address.contains_key(memory)
     }
 
     /// Sets the state of the value in memory as uninitialized (moved out).
     pub fn set_uninitialized<S: table::State>(
         &mut self,
-        address: &Address<ir::Model>,
+        address: &Address<BorrowModel>,
         load_span: Span,
         environment: &Environment<
-            ir::Model,
+            BorrowModel,
             S,
-            impl Normalizer<ir::Model, S>,
-            impl Observer<ir::Model, S>,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
         >,
     ) -> Result<SetStateSucceeded, SetStateError> {
         let result = self
@@ -1119,12 +1120,12 @@ impl Scope {
     /// Sets the state of the value in memory as initialized.
     pub fn set_initialized<S: table::State>(
         &mut self,
-        address: &Address<ir::Model>,
+        address: &Address<BorrowModel>,
         environment: &Environment<
-            ir::Model,
+            BorrowModel,
             S,
-            impl Normalizer<ir::Model, S>,
-            impl Observer<ir::Model, S>,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
         >,
     ) -> Result<SetStateSucceeded, SetStateError> {
         let result = self
@@ -1154,7 +1155,7 @@ impl Scope {
     }
 
     /// Gets the state of the value in memory with the given address.
-    pub fn get_state(&self, address: &Address<ir::Model>) -> Option<&State> {
+    pub fn get_state(&self, address: &Address<BorrowModel>) -> Option<&State> {
         match address {
             Address::Memory(memory) => {
                 self.memories_by_address.get(memory).map(|x| &x.state)
@@ -1210,15 +1211,15 @@ impl Scope {
     #[allow(clippy::too_many_lines)]
     fn set_state_internal<S: table::State>(
         &mut self,
-        address: &Address<ir::Model>,
+        address: &Address<BorrowModel>,
         // None, if set to initialize, Some if set to uninitialized
         initialized: Option<Span>,
         root: bool,
         environment: &Environment<
-            ir::Model,
+            BorrowModel,
             S,
-            impl Normalizer<ir::Model, S>,
-            impl Observer<ir::Model, S>,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
         >,
     ) -> Result<SetStateResultInternal, SetStateError> {
         let (target_state, ty, version) = match address {
@@ -1554,6 +1555,7 @@ impl Scope {
     }
 }
 
+/// Represents the stack of the state.
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
 pub struct Stack {
     #[get = "pub"]
@@ -1571,13 +1573,13 @@ impl Stack {
 
     pub fn set_initialized<S: table::State>(
         &mut self,
-        address: &Address<ir::Model>,
+        address: &Address<BorrowModel>,
         span: Span,
         environment: &Environment<
-            ir::Model,
+            BorrowModel,
             S,
-            impl Normalizer<ir::Model, S>,
-            impl Observer<ir::Model, S>,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
         >,
     ) -> Result<SetStateSucceeded, TypeSystemOverflow<ir::Model>> {
         let root = address.get_root_memory();
@@ -1597,7 +1599,7 @@ impl Stack {
         panic!("Invalid address");
     }
 
-    pub fn get_state(&self, address: &Address<ir::Model>) -> &State {
+    pub fn get_state(&self, address: &Address<BorrowModel>) -> &State {
         let root = address.get_root_memory();
 
         for scope in self.scopes.iter().rev() {
@@ -1612,13 +1614,13 @@ impl Stack {
 
     pub fn set_uninitialized<S: table::State>(
         &mut self,
-        address: &Address<ir::Model>,
+        address: &Address<BorrowModel>,
         move_span: Span,
         environment: &Environment<
-            ir::Model,
+            BorrowModel,
             S,
-            impl Normalizer<ir::Model, S>,
-            impl Observer<ir::Model, S>,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
         >,
     ) -> Result<SetStateSucceeded, TypeSystemOverflow<ir::Model>> {
         let root = address.get_root_memory();
