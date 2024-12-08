@@ -136,7 +136,14 @@ impl<
             &handler_wrapper,
         )?;
 
-        Ok(IR { representation: transformed_ir, state: Success(()) })
+        if *handler_wrapper.suboptimal.as_ref().read() {
+            Err(FinalizeError::Suboptimal(IR {
+                representation: transformed_ir,
+                state: Suboptimal,
+            }))
+        } else {
+            Ok(IR { representation: transformed_ir, state: Success(()) })
+        }
     }
 }
 
