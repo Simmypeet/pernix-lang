@@ -1,4 +1,8 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeSet, HashMap, HashSet},
+    ops::Not,
+};
 
 use pernixc_base::{handler::Handler, source_file::Span};
 
@@ -36,17 +40,18 @@ use crate::{
             Values,
         },
         value::{
-            register::{Assignment, Load, ReferenceOf, Register},
+            register::{Assignment, FunctionCall, Load, ReferenceOf, Register},
             Value,
         },
     },
     symbol::{
-        table::{self, Table},
+        table::{self, representation::Index, Table},
         CallableID, GlobalID,
     },
     type_system::{
         compatible::{Compatibility, Compatible},
         environment::Environment as TyEnvironment,
+        instantiation,
         normalizer::Normalizer,
         observer::Observer,
         predicate::{Outlives, PositiveMarker, Predicate},
@@ -59,7 +64,7 @@ use crate::{
         },
         variance::Variance,
         visitor::{self, MutableRecursive, RecursiveIterator},
-        well_formedness, OverflowError, Succeeded,
+        well_formedness, LifetimeConstraint, OverflowError, Succeeded,
     },
 };
 
@@ -96,20 +101,9 @@ impl Values<BorrowModel> {
         >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        // recursively search for reference address usage
-        let Some(reference_usage) = find_reference_address_usage(&address)
-        else {
-            // no need to check liveness
-            return Ok(());
-        };
-
         // check if the variable is still alive
         let Succeeded { result: address_ty, constraints } = self
-            .type_of_address(
-                &reference_usage.reference_address,
-                current_site,
-                ty_environment,
-            )
+            .type_of_address(&address, current_site, ty_environment)
             .map_err(|x| TypeSystemOverflow::<ir::Model> {
                 operation: OverflowOperation::TypeOf,
                 overflow_span: access_span.clone(),
@@ -117,6 +111,8 @@ impl Values<BorrowModel> {
             })?;
 
         let loans = context.environment.get_loans(&address_ty);
+
+        dbg!(&access_span, &loans, &address_ty);
 
         for borrow in loans.iter().filter_map(|x| x.as_borrow()) {
             // check if the variable is still alive
@@ -170,9 +166,11 @@ impl Values<BorrowModel> {
         Ok(())
     }
 
-    fn handle_outlives<S: table::State>(
+    fn handle_outlives<'a, S: table::State>(
         &self,
-        outlives: impl IntoIterator<Item = Outlives<Lifetime<BorrowModel>>>,
+        outlives: impl IntoIterator<Item = &'a Outlives<Lifetime<BorrowModel>>>
+            + Clone,
+        priority_lifetimes: Option<HashSet<Lifetime<BorrowModel>>>,
         checking_span: Span,
         context: &mut Context,
         current_site: GlobalID,
@@ -184,16 +182,202 @@ impl Values<BorrowModel> {
         >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        for outlive in outlives {
-            context.environment.handle_outlives(
-                &outlive,
-                checking_span.clone(),
-                current_site,
-                self,
-                ty_environment,
-                handler,
-            )?;
+        if let Some(priority_lifetimes) = priority_lifetimes {
+            for outlive in outlives
+                .clone()
+                .into_iter()
+                .filter(|x| priority_lifetimes.contains(&x.bound))
+            {
+                context.environment.handle_outlives(
+                    &outlive,
+                    checking_span.clone(),
+                    current_site,
+                    self,
+                    ty_environment,
+                    handler,
+                )?;
+            }
+
+            for outlive in outlives
+                .into_iter()
+                .filter(|x| !priority_lifetimes.contains(&x.bound))
+            {
+                context.environment.handle_outlives(
+                    &outlive,
+                    checking_span.clone(),
+                    current_site,
+                    self,
+                    ty_environment,
+                    handler,
+                )?;
+            }
+        } else {
+            for outlive in outlives {
+                context.environment.handle_outlives(
+                    &outlive,
+                    checking_span.clone(),
+                    current_site,
+                    self,
+                    ty_environment,
+                    handler,
+                )?;
+            }
         }
+
+        Ok(())
+    }
+
+    fn handle_function_call<S: table::State>(
+        &self,
+        register_id: ID<Register<BorrowModel>>,
+        function_call: &FunctionCall<BorrowModel>,
+        register_span: Span,
+        context: &mut Context,
+        current_site: GlobalID,
+        ty_environment: &TyEnvironment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+        handler: &HandlerWrapper,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        let callable = ty_environment
+            .table()
+            .get_callable(function_call.callable_id)
+            .unwrap();
+
+        let mut lifetime_constraints = BTreeSet::new();
+
+        for (parameter, argument) in callable
+            .parameter_order()
+            .iter()
+            .copied()
+            .map(|x| callable.parameters().get(x).unwrap())
+            .zip(&function_call.arguments)
+        {
+            assert_eq!(
+                callable.parameter_order().len(),
+                function_call.arguments.len()
+            );
+
+            let mut parameter_ty =
+                Type::from_other_model(parameter.r#type.clone());
+            instantiation::instantiate(
+                &mut parameter_ty,
+                &function_call.instantiation,
+            );
+
+            // obtains the type of argument ty
+            let argument_span = match argument {
+                Value::Register(id) => {
+                    self.registers.get(*id).unwrap().span.clone()
+                }
+                Value::Literal(literal) => literal.span().clone(),
+            };
+            let Succeeded {
+                result: argument_ty,
+                constraints: argument_ty_constraints,
+            } = self
+                .type_of_value(argument, current_site, ty_environment)
+                .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeOf,
+                    overflow_span: argument_span.clone(),
+                    overflow_error: x.into_overflow().unwrap(),
+                })?;
+
+            lifetime_constraints.extend(argument_ty_constraints);
+
+            let copmatibility = argument_ty
+                .compatible(&parameter_ty, Variance::Covariant, ty_environment)
+                .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeCheck,
+                    overflow_span: argument_span,
+                    overflow_error,
+                })?;
+
+            // append the lifetime constraints
+            if let Some(Succeeded {
+                result,
+                constraints: compatibility_constraints,
+            }) = copmatibility
+            {
+                assert!(result.forall_lifetime_errors.is_empty());
+                assert!(result
+                    .forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
+
+                lifetime_constraints.extend(compatibility_constraints);
+            }
+        }
+
+        for predicate in ty_environment
+            .table()
+            .get_active_premise(function_call.callable_id.into())
+            .unwrap()
+            .predicates
+            .into_iter()
+            .map(|x| {
+                let mut x = Predicate::from_default_model(x.clone());
+                x.instantiate(&function_call.instantiation);
+
+                x
+            })
+        {
+            match predicate {
+                Predicate::LifetimeOutlives(outlives) => {
+                    lifetime_constraints.insert(
+                        LifetimeConstraint::LifetimeOutlives(outlives.clone()),
+                    );
+                }
+                Predicate::TypeOutlives(outlives) => {
+                    for lt in RecursiveIterator::new(&outlives.operand)
+                        .filter_map(|x| x.0.into_lifetime().ok())
+                    {
+                        lifetime_constraints.insert(
+                            LifetimeConstraint::LifetimeOutlives(Outlives {
+                                operand: lt.clone(),
+                                bound: outlives.bound.clone(),
+                            }),
+                        );
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        let function_lifetimes = function_call
+            .instantiation
+            .lifetimes
+            .values()
+            .cloned()
+            .chain(function_call.instantiation.types.values().flat_map(|x| {
+                RecursiveIterator::new(x)
+                    .filter_map(|x| x.0.into_lifetime().ok())
+                    .cloned()
+            }))
+            .chain(function_call.instantiation.constants.values().flat_map(
+                |x| {
+                    RecursiveIterator::new(x)
+                        .filter_map(|x| x.0.into_lifetime().ok())
+                        .cloned()
+                },
+            ))
+            .collect::<HashSet<_>>();
+
+        self.handle_outlives(
+            lifetime_constraints
+                .iter()
+                .map(|x| x.as_lifetime_outlives().unwrap()),
+            Some(function_lifetimes),
+            register_span,
+            context,
+            current_site,
+            ty_environment,
+            handler,
+        )?;
 
         Ok(())
     }
@@ -250,9 +434,8 @@ impl Values<BorrowModel> {
 
         // handle outlives constraints of the reference
         self.handle_outlives(
-            constraints
-                .into_iter()
-                .map(|x| x.into_lifetime_outlives().unwrap()),
+            constraints.iter().map(|x| x.as_lifetime_outlives().unwrap()),
+            None,
             register_span.clone(),
             context,
             current_site,
@@ -363,10 +546,14 @@ impl Values<BorrowModel> {
                     assert!(forall_lifetime_errors.is_empty());
 
                     // reset all the origin that appears in the store address
-                    for origin_id in RecursiveIterator::new(&address_ty)
-                        .filter_map(|x| {
-                            x.0.as_lifetime().and_then(|x| x.as_inference())
-                        })
+                    let address_lifetimes = RecursiveIterator::new(&address_ty)
+                        .filter_map(|x| x.0.into_lifetime().ok())
+                        .cloned()
+                        .collect::<HashSet<_>>();
+
+                    for origin_id in address_lifetimes
+                        .iter()
+                        .filter_map(|x| x.as_inference())
                         .copied()
                     {
                         context
@@ -381,10 +568,11 @@ impl Values<BorrowModel> {
                     // apply the compatibility constraints
                     self.handle_outlives(
                         value_constraints
-                            .into_iter()
-                            .chain(address_constraints.into_iter())
-                            .chain(compatibility_constraints.into_iter())
-                            .map(|x| x.into_lifetime_outlives().unwrap()),
+                            .iter()
+                            .chain(address_constraints.iter())
+                            .chain(compatibility_constraints.iter())
+                            .map(|x| x.as_lifetime_outlives().unwrap()),
+                        Some(address_lifetimes),
                         store_span,
                         context,
                         current_site,
@@ -695,11 +883,24 @@ impl<
                             1
                         }
 
+                        Assignment::FunctionCall(function_call) => {
+                            self.representation.values.handle_function_call(
+                                register_assignment.id,
+                                function_call,
+                                register.span.clone(),
+                                context,
+                                self.current_site,
+                                self.ty_environment,
+                                handler,
+                            )?;
+
+                            1
+                        }
+
                         Assignment::Prefix(_)
                         | Assignment::Tuple(_)
                         | Assignment::Struct(_)
                         | Assignment::Variant(_)
-                        | Assignment::FunctionCall(_)
                         | Assignment::Binary(_)
                         | Assignment::Array(_)
                         | Assignment::Phi(_)
