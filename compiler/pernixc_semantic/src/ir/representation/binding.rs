@@ -1,6 +1,6 @@
 //! Contains the definition of [`Binder`], the struct used for building the IR.
 
-use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
+use std::{collections::HashMap, num::NonZeroUsize, slice::SplitN, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -423,9 +423,10 @@ impl<
     fn create_alloca_with_value(
         &mut self,
         value: Value<infer::Model>,
+        span: Option<Span>,
     ) -> ID<Alloca<infer::Model>> {
         let ty = self.type_of_value(&value).unwrap();
-        let span = match &value {
+        let span = span.unwrap_or_else(|| match &value {
             Value::Register(id) => self
                 .intermediate_representation
                 .values
@@ -435,7 +436,7 @@ impl<
                 .span
                 .clone(),
             Value::Literal(literal) => literal.span().clone(),
-        };
+        });
 
         let alloca_id = self.create_alloca(ty, span);
         let alloca_address = Address::Memory(Memory::Alloca(alloca_id));

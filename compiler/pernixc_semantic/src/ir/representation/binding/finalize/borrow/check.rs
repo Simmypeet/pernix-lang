@@ -1167,6 +1167,8 @@ impl ir::Representation<ir::Model> {
             ty_environment.table(),
         );
 
+        dbg!(self);
+
         Ok(())
     }
 }

@@ -221,15 +221,14 @@ impl Pattern for Refutable {
                             );
 
                             // store the value to the alloca
-                            let _ =
-                                binder.current_block_mut().add_instruction(
-                                    Instruction::Store(Store {
-                                        address: Address::Memory(
-                                            Memory::Alloca(alloca_id),
-                                        ),
-                                        value: load_value,
-                                    }),
-                                );
+                            let _ = binder.current_block_mut().add_instruction(
+                                Instruction::Store(Store {
+                                    address: Address::Memory(Memory::Alloca(
+                                        alloca_id,
+                                    )),
+                                    value: load_value,
+                                }),
+                            );
 
                             Address::Memory(Memory::Alloca(alloca_id))
                         } else {
@@ -467,9 +466,7 @@ impl Pattern for Irrefutable {
                         let load_address = if must_copy {
                             let alloca_id = binder.create_alloca(
                                 binding.r#type.clone(),
-                                address_span
-                                    .clone()
-                                    .unwrap_or_else(|| pat.span.clone()),
+                                pat.span.clone(),
                             );
 
                             // copy/move the value from the given address
@@ -484,15 +481,14 @@ impl Pattern for Irrefutable {
                             );
 
                             // store the value to the alloca
-                            let _ =
-                                binder.current_block_mut().add_instruction(
-                                    Instruction::Store(Store {
-                                        address: Address::Memory(
-                                            Memory::Alloca(alloca_id),
-                                        ),
-                                        value: load_value,
-                                    }),
-                                );
+                            let _ = binder.current_block_mut().add_instruction(
+                                Instruction::Store(Store {
+                                    address: Address::Memory(Memory::Alloca(
+                                        alloca_id,
+                                    )),
+                                    value: load_value,
+                                }),
+                            );
 
                             Address::Memory(Memory::Alloca(alloca_id))
                         } else {

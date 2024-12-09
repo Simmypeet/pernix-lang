@@ -876,7 +876,7 @@ impl<
             Ok(Expression::RValue(value)) => {
                 (
                     Address::Memory(Memory::Alloca(
-                        self.create_alloca_with_value(value),
+                        self.create_alloca_with_value(value, None),
                     )),
                     Qualifier::Mutable, /* has the highest mutability */
                     false,
@@ -890,12 +890,15 @@ impl<
                             let ty_inference = self.create_type_inference(
                                 r#type::Constraint::All(false),
                             );
-                            self.create_alloca_with_value(Value::Literal(
-                                Literal::Error(literal::Error {
-                                    r#type: Type::Inference(ty_inference),
-                                    span: semantic_error.0,
-                                }),
-                            ))
+                            self.create_alloca_with_value(
+                                Value::Literal(Literal::Error(
+                                    literal::Error {
+                                        r#type: Type::Inference(ty_inference),
+                                        span: semantic_error.0,
+                                    },
+                                )),
+                                None,
+                            )
                         })),
                         Qualifier::Mutable, /* has the highest mutability */
                         false,
