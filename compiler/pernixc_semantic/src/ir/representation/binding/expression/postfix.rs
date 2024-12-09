@@ -1429,17 +1429,6 @@ impl<
         syntax_tree: &syntax_tree::expression::Postfix,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Expression, Error> {
-        let arguments = call
-            .arguments()
-            .connected_list()
-            .iter()
-            .flat_map(ConnectedList::elements)
-            .map(|arg| {
-                self.bind_value_or_error(&**arg, handler)
-                    .map(|x| (arg.span(), x))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
         match &**syntax_tree.postfixable() {
             // possibly method call
             syntax_tree::expression::Postfixable::Postfix(postfix)
@@ -1466,6 +1455,17 @@ impl<
                     qualified_identifier,
                 ),
             ) => {
+                let arguments = call
+                    .arguments()
+                    .connected_list()
+                    .iter()
+                    .flat_map(ConnectedList::elements)
+                    .map(|arg| {
+                        self.bind_value_or_error(&**arg, handler)
+                            .map(|x| (arg.span(), x))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
                 let resolution = self
                     .resolve_with_inference(
                         qualified_identifier,
