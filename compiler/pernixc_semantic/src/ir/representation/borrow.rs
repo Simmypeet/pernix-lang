@@ -3,42 +3,28 @@
 //! This model doesn't contain the logic for borrow checking, but only the
 //! data structures used in the borrow checking.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, fmt::Display};
 
 use enum_as_inner::EnumAsInner;
 
 use crate::{
-    arena::ID,
+    arena::{Key, ID},
     ir::value::register::Register,
-    symbol::LifetimeParameterID,
+    symbol::{table, LifetimeParameterID},
     type_system::{
         model,
         term::{
-            constant::Constant,
-            lifetime::Lifetime,
-            r#type::{Qualifier, Type},
-            Never, Term,
+            constant::Constant, lifetime::Lifetime, r#type::Type, Never, Term,
         },
     },
 };
-
-/// Represents an expression `&x` or `&mutable x` which creates a reference to a
-/// value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Borrow {
-    /// The register to the `ReferenceOf` assignment.
-    pub reference_of_register_id: ID<Register<Model>>,
-
-    /// The qualifier of the loan.
-    pub qualifier: Qualifier,
-}
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum Loan {
-    Borrow(Borrow),
+    Borrow(ID<Register<Model>>),
     LifetimeParameter(LifetimeParameterID),
     Static,
 }
@@ -55,6 +41,22 @@ pub struct Model;
 
 impl From<Never> for ID<Origin> {
     fn from(value: Never) -> Self { match value {} }
+}
+
+impl Display for ID<Origin> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "'{}", self.into_index())
+    }
+}
+
+impl<S: table::State> table::Display<S> for ID<Origin> {
+    fn fmt(
+        &self,
+        _: &table::Table<S>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "'{}", self.into_index())
+    }
 }
 
 impl model::Model for Model {

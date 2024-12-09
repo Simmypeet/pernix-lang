@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 
+use enum_as_inner::EnumAsInner;
 use environment::Environment;
 use observer::Observer;
 use predicate::Outlives;
@@ -105,7 +106,7 @@ pub struct OverflowError;
 pub struct Satisfied;
 
 /// Contains constraints related to lifetimes.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum LifetimeConstraint<M: Model> {
     LifetimeOutlives(Outlives<Lifetime<M>>),

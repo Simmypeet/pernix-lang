@@ -3,14 +3,14 @@ use std::{cmp::Ordering, collections::HashMap};
 use pernixc_base::{handler::Handler, source_file::Span};
 
 use super::{
-    environment::Environment,
+    context::Context,
     state::{self, SetStateSucceeded, Stack, Summary},
 };
 use crate::{
     arena::{Arena, ID},
     error::{
-        MoveInLoop, MovedOutValueFromMutableReference, TypeSystemOverflow,
-        UseAfterMove, UseBeforeInitialization,
+        MoveInLoop, MovedOutValueFromMutableReference, OverflowOperation,
+        TypeSystemOverflow, UseAfterMove, UseBeforeInitialization,
     },
     ir::{
         self,
@@ -21,18 +21,21 @@ use crate::{
         representation::{
             binding::{
                 finalize::{
-                    borrow::transform::{
-                        transform_to_borrow_model, transform_to_ir_model,
+                    borrow::{
+                        environment::Environment,
+                        transform::{
+                            transform_to_borrow_model, transform_to_ir_model,
+                        },
                     },
                     simplify_drop,
                 },
                 HandlerWrapper,
             },
-            borrow::{Model as BorrowModel, Origin},
+            borrow::{Loan, Model as BorrowModel, Origin},
             Values,
         },
         value::{
-            register::{Assignment, Load, ReferenceOf},
+            register::{Assignment, Load, ReferenceOf, Register},
             Value,
         },
     },
@@ -41,10 +44,11 @@ use crate::{
         CallableID, GlobalID,
     },
     type_system::{
+        compatible::{Compatibility, Compatible},
         environment::Environment as TyEnvironment,
         normalizer::Normalizer,
         observer::Observer,
-        predicate::{PositiveMarker, Predicate},
+        predicate::{Outlives, PositiveMarker, Predicate},
         sub_term::TermLocation,
         term::{
             constant::Constant,
@@ -52,52 +56,132 @@ use crate::{
             r#type::{Qualifier, Type},
             GenericArguments, Term,
         },
-        visitor::{self, MutableRecursive},
-        well_formedness,
+        variance::Variance,
+        visitor::{self, MutableRecursive, RecursiveIterator},
+        well_formedness, OverflowError, Succeeded,
     },
 };
 
 impl Values<BorrowModel> {
-    fn handle_reference_of(
-        reference_of: &ReferenceOf<BorrowModel>,
-        register_span: Span,
-        stack: &mut Stack,
-        handler: &HandlerWrapper,
-    ) {
-        let state = stack.get_state(&reference_of.address).get_state_summary();
-
-        match state {
-            Summary::Uninitialized => {
-                handler.receive(Box::new(UseBeforeInitialization {
-                    use_span: register_span,
-                }));
-            }
-
-            Summary::Moved(span) => {
-                handler.receive(Box::new(UseAfterMove {
-                    use_span: register_span,
-                    move_span: span,
-                }));
-            }
-
-            Summary::Initialized => {}
-        }
-    }
-
-    fn handle_store<S: table::State>(
-        store_address: &Address<BorrowModel>,
-        store_span: Span,
-        stack: &mut Stack,
-        handler: &HandlerWrapper,
+    fn handle_outlives<S: table::State>(
+        &self,
+        outlives: impl IntoIterator<Item = Outlives<Lifetime<BorrowModel>>>,
+        checking_span: Span,
+        context: &mut Context,
+        current_site: GlobalID,
         ty_environment: &TyEnvironment<
             BorrowModel,
             S,
             impl Normalizer<BorrowModel, S>,
             impl Observer<BorrowModel, S>,
         >,
+        handler: &HandlerWrapper,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        for outlive in outlives {
+            context.environment.handle_outlives(
+                &outlive,
+                checking_span.clone(),
+                current_site,
+                self,
+                ty_environment,
+                handler,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn handle_reference_of<S: table::State>(
+        &self,
+        register_id: ID<Register<BorrowModel>>,
+        reference_of: &ReferenceOf<BorrowModel>,
+        register_span: Span,
+        context: &mut Context,
+        current_site: GlobalID,
+        ty_environment: &TyEnvironment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+        handler: &HandlerWrapper,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        let state =
+            context.stack.get_state(&reference_of.address).get_state_summary();
+
+        match state {
+            Summary::Uninitialized => {
+                handler.receive(Box::new(UseBeforeInitialization {
+                    use_span: register_span.clone(),
+                }));
+            }
+
+            Summary::Moved(span) => {
+                handler.receive(Box::new(UseAfterMove {
+                    use_span: register_span.clone(),
+                    move_span: span,
+                }));
+            }
+
+            Summary::Initialized => {}
+        }
+        let Succeeded { result: ty, constraints } = self
+            .type_of_address(
+                &reference_of.address,
+                current_site,
+                ty_environment,
+            )
+            .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                operation: OverflowOperation::TypeOf,
+                overflow_span: register_span.clone(),
+                overflow_error: x.into_overflow().unwrap(),
+            })?;
+
+        // handle outlives constraints of the reference
+        self.handle_outlives(
+            constraints
+                .into_iter()
+                .map(|x| x.into_lifetime_outlives().unwrap()),
+            register_span,
+            context,
+            current_site,
+            ty_environment,
+            handler,
+        )?;
+
+        let reference_of_origin_id =
+            reference_of.lifetime.clone().into_inference().unwrap();
+
+        let mut loans = context.environment.get_loans(&ty);
+        loans.insert(Loan::Borrow(register_id));
+
+        context
+            .environment
+            .origins
+            .get_mut(reference_of_origin_id)
+            .unwrap()
+            .loans = loans;
+
+        Ok(())
+    }
+
+    fn handle_store<S: table::State>(
+        &self,
+        store_address: &Address<BorrowModel>,
+        value_type: Option<Succeeded<Type<BorrowModel>, BorrowModel>>,
+        store_span: Span,
+        context: &mut Context,
+        current_site: GlobalID,
+        ty_environment: &TyEnvironment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+        handler: &HandlerWrapper,
     ) -> Result<Vec<Instruction<BorrowModel>>, TypeSystemOverflow<ir::Model>>
     {
-        let state = stack.set_initialized(
+        let state = context.stack.set_initialized(
             store_address,
             store_span.clone(),
             ty_environment,
@@ -114,13 +198,90 @@ impl Values<BorrowModel> {
         if let Some(span) = state.get_moved_out_mutable_reference() {
             handler.receive(Box::new(MovedOutValueFromMutableReference {
                 moved_out_value_span: span.clone(),
-                reassignment_span: Some(store_span),
+                reassignment_span: Some(store_span.clone()),
             }));
         }
 
-        Ok(state
+        let drop_instructions = state
             .get_drop_instructions(&target_address, ty_environment.table())
-            .unwrap())
+            .unwrap();
+
+        if let Some(Succeeded {
+            result: value_ty,
+            constraints: value_constraints,
+        }) = value_type
+        {
+            let Succeeded {
+                result: address_ty,
+                constraints: address_constraints,
+            } = self
+                .type_of_address(store_address, current_site, ty_environment)
+                .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeOf,
+                    overflow_span: store_span.clone(),
+                    overflow_error: x.into_overflow().unwrap(),
+                })?;
+
+            match value_ty.compatible(
+                &address_ty,
+                Variance::Covariant,
+                ty_environment,
+            ) {
+                Ok(Some(Succeeded {
+                    result:
+                        Compatibility {
+                            forall_lifetime_instantiations,
+                            forall_lifetime_errors,
+                        },
+                    constraints: compatibility_constraints,
+                })) => {
+                    assert!(forall_lifetime_instantiations
+                        .lifetimes_by_forall
+                        .is_empty());
+                    assert!(forall_lifetime_errors.is_empty());
+
+                    // reset all the origin that appears in the store address
+                    for origin_id in RecursiveIterator::new(&address_ty)
+                        .filter_map(|x| {
+                            x.0.as_lifetime().and_then(|x| x.as_inference())
+                        })
+                        .copied()
+                    {
+                        context
+                            .environment
+                            .origins
+                            .get_mut(origin_id)
+                            .unwrap()
+                            .loans
+                            .clear();
+                    }
+
+                    // apply the compatibility constraints
+                    self.handle_outlives(
+                        value_constraints
+                            .into_iter()
+                            .chain(address_constraints.into_iter())
+                            .chain(compatibility_constraints.into_iter())
+                            .map(|x| x.into_lifetime_outlives().unwrap()),
+                        store_span,
+                        context,
+                        current_site,
+                        ty_environment,
+                        handler,
+                    )?;
+                }
+                Ok(None) => {}
+                Err(OverflowError) => {
+                    return Err(TypeSystemOverflow {
+                        operation: OverflowOperation::TypeCheck,
+                        overflow_span: store_span.clone(),
+                        overflow_error: OverflowError,
+                    })
+                }
+            }
+        }
+
+        Ok(drop_instructions)
     }
 
     fn handle_load<S: table::State>(
@@ -268,13 +429,11 @@ struct Checker<
     /// - `None` value means the block is being processed.
     /// - `Some` value means the block has been processed
     /// - No value means the block has not been explored
-    environment_by_block_id:
-        HashMap<ID<Block<BorrowModel>>, Option<Environment>>,
+    contexts_by_block_id: HashMap<ID<Block<BorrowModel>>, Option<Context>>,
 
     /// If the block id appears in this map, it means the block is a looped
     /// block and the value is the starting environment of the looped block.
-    target_environments_by_block_id:
-        HashMap<ID<Block<BorrowModel>>, Environment>,
+    target_contexts_by_block_id: HashMap<ID<Block<BorrowModel>>, Context>,
 
     /// Contains the starting borrow origins. (Contains all the id with empty
     /// values)
@@ -293,7 +452,7 @@ impl<
     fn walk_instructions(
         &mut self,
         block_id: ID<Block<BorrowModel>>,
-        environment: &mut Environment,
+        context: &mut Context,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let mut current_index = 0;
@@ -306,23 +465,40 @@ impl<
         while current_index < block.instructions().len() {
             let step = match &block.instructions()[current_index] {
                 Instruction::Store(store) => {
-                    let instructions = Values::handle_store(
-                        &store.address,
-                        match &store.value {
-                            Value::Register(id) => self
-                                .representation
-                                .values
-                                .registers
-                                .get(*id)
-                                .unwrap()
-                                .span
-                                .clone(),
-                            Value::Literal(literal) => literal.span().clone(),
-                        },
-                        &mut environment.stack,
-                        handler,
-                        self.ty_environment,
-                    )?;
+                    let span = match &store.value {
+                        Value::Register(id) => self
+                            .representation
+                            .values
+                            .registers
+                            .get(*id)
+                            .unwrap()
+                            .span
+                            .clone(),
+                        Value::Literal(literal) => literal.span().clone(),
+                    };
+                    let value_type = self
+                        .representation
+                        .values
+                        .type_of_value(
+                            &store.value,
+                            self.current_site,
+                            self.ty_environment,
+                        )
+                        .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                            operation: OverflowOperation::TypeOf,
+                            overflow_span: span.clone(),
+                            overflow_error: x.into_overflow().unwrap(),
+                        })?;
+                    let instructions =
+                        self.representation.values.handle_store(
+                            &store.address,
+                            Some(value_type),
+                            span,
+                            context,
+                            self.current_site,
+                            self.ty_environment,
+                            handler,
+                        )?;
 
                     let instructions = simplify_drop::simplify_drops(
                         instructions,
@@ -351,7 +527,7 @@ impl<
                             self.representation.values.handle_load(
                                 load,
                                 register.span.clone(),
-                                &mut environment.stack,
+                                &mut context.stack,
                                 self.current_site,
                                 self.ty_environment,
                                 handler,
@@ -361,12 +537,15 @@ impl<
                         }
 
                         Assignment::ReferenceOf(reference_of) => {
-                            Values::handle_reference_of(
+                            self.representation.values.handle_reference_of(
+                                register_assignment.id,
                                 reference_of,
                                 register.span.clone(),
-                                &mut environment.stack,
+                                context,
+                                self.current_site,
+                                self.ty_environment,
                                 handler,
-                            );
+                            )?;
 
                             1
                         }
@@ -385,7 +564,7 @@ impl<
                 }
 
                 Instruction::AllocaDeclaration(alloca_declaration) => {
-                    assert!(environment.stack.current_mut().new_state(
+                    assert!(context.stack.current_mut().new_state(
                         Memory::Alloca(alloca_declaration.id),
                         false,
                         self.representation
@@ -427,7 +606,7 @@ impl<
                         });
 
                         // mark as moved out
-                        let state = environment.stack.set_uninitialized(
+                        let state = context.stack.set_uninitialized(
                             &address,
                             tuple_pack.packed_tuple_span.clone().unwrap(),
                             self.ty_environment,
@@ -474,13 +653,16 @@ impl<
                         }
                     }
 
-                    let instructions = Values::handle_store(
-                        &tuple_pack.store_address,
-                        tuple_pack.packed_tuple_span.clone().unwrap(),
-                        &mut environment.stack,
-                        handler,
-                        self.ty_environment,
-                    )?;
+                    let instructions =
+                        self.representation.values.handle_store(
+                            &tuple_pack.store_address,
+                            None,
+                            tuple_pack.packed_tuple_span.clone().unwrap(),
+                            context,
+                            self.current_site,
+                            self.ty_environment,
+                            handler,
+                        )?;
 
                     let instructions = simplify_drop::simplify_drops(
                         instructions,
@@ -501,7 +683,7 @@ impl<
                 | Instruction::Drop(_) => 1,
 
                 Instruction::ScopePush(scope_push) => {
-                    environment.stack.new_scope(scope_push.0);
+                    context.stack.new_scope(scope_push.0);
 
                     'out: {
                         // if we're in the function and at the root scope,
@@ -535,16 +717,13 @@ impl<
                                     )
                                 })
                             {
-                                assert!(environment
-                                    .stack
-                                    .current_mut()
-                                    .new_state(
-                                        Memory::Parameter(parameter_id),
-                                        true,
-                                        Type::from_default_model(
-                                            parameter.r#type.clone(),
-                                        ),
-                                    ));
+                                assert!(context.stack.current_mut().new_state(
+                                    Memory::Parameter(parameter_id),
+                                    true,
+                                    Type::from_default_model(
+                                        parameter.r#type.clone(),
+                                    ),
+                                ));
                             }
                         }
                     }
@@ -554,7 +733,7 @@ impl<
 
                 Instruction::ScopePop(scope_pop) => {
                     // record the stack state
-                    let poped_scope = environment.stack.pop_scope().unwrap();
+                    let poped_scope = context.stack.pop_scope().unwrap();
                     assert_eq!(poped_scope.scope_id(), scope_pop.0);
 
                     let mut memories = poped_scope
@@ -623,49 +802,50 @@ impl<
         &mut self,
         block_id: ID<Block<BorrowModel>>,
         handler: &HandlerWrapper,
-    ) -> Result<Option<Environment>, TypeSystemOverflow<ir::Model>> {
+    ) -> Result<Option<Context>, TypeSystemOverflow<ir::Model>> {
         // skip if already processed
-        if let Some(stack) = self.environment_by_block_id.get(&block_id) {
+        if let Some(stack) = self.contexts_by_block_id.get(&block_id) {
             return Ok(stack.clone());
         }
 
         // mark as processing
-        self.environment_by_block_id.insert(block_id, None);
+        self.contexts_by_block_id.insert(block_id, None);
 
         let block =
             self.representation.control_flow_graph.get_block(block_id).unwrap();
 
-        let mut starting_environment = if block.is_entry() {
-            Environment {
+        let mut starting_context = if block.is_entry() {
+            Context {
                 stack: Stack::new(),
-                origins: self.starting_origin.clone(),
-                unchecked_accesses: Vec::new(),
+                environment: Environment {
+                    origins: self.starting_origin.clone(),
+                },
             }
         } else {
             let predecessors =
                 block.predecessors().iter().copied().collect::<Vec<_>>();
 
-            let mut merging_envs = Vec::new();
+            let mut merging_contexts = Vec::new();
             let mut looped_block_ids = Vec::new();
 
             for predecessor_id in predecessors.iter().copied() {
                 if let Some(stack) = self.walk_block(predecessor_id, handler)? {
-                    merging_envs.push((predecessor_id, stack));
+                    merging_contexts.push((predecessor_id, stack));
                 } else {
                     looped_block_ids.push(predecessor_id);
                 }
             }
 
-            if merging_envs.is_empty() {
+            if merging_contexts.is_empty() {
                 // try again later
-                self.environment_by_block_id.remove(&block_id);
+                self.contexts_by_block_id.remove(&block_id);
 
                 return Ok(None);
             }
 
             // Sanity check
-            if merging_envs.len() > 1 {
-                for i in merging_envs.iter().map(|x| x.0) {
+            if merging_contexts.len() > 1 {
+                for i in merging_contexts.iter().map(|x| x.0) {
                     assert_eq!(
                         *self
                             .representation
@@ -687,17 +867,20 @@ impl<
                 }
             }
 
-            // merge the stacks
-            let mut env = merging_envs.pop().unwrap().1;
-            env = merging_envs.into_iter().fold(env, |mut acc, (_, env)| {
-                acc.merge(&env);
-                acc
-            });
+            // merge the contexts
+            let mut context = merging_contexts.pop().unwrap().1;
+            context = merging_contexts.into_iter().fold(
+                context,
+                |mut acc, (_, env)| {
+                    acc.merge(&env);
+                    acc
+                },
+            );
 
             // mark the looped block
             for looped in looped_block_ids.iter().copied() {
-                self.target_environments_by_block_id
-                    .insert(looped, env.clone());
+                self.target_contexts_by_block_id
+                    .insert(looped, context.clone());
             }
 
             for predecessor in predecessors
@@ -706,7 +889,7 @@ impl<
                 .filter(|x| !looped_block_ids.contains(x))
             {
                 let alternate_environment = self
-                    .environment_by_block_id
+                    .contexts_by_block_id
                     .get(&predecessor)
                     .unwrap()
                     .as_ref()
@@ -715,7 +898,7 @@ impl<
                 // drop instructions to insert at the end of the block
                 let mut drop_instructions = Vec::new();
 
-                for (this, alternate) in env
+                for (this, alternate) in context
                     .stack
                     .scopes()
                     .iter()
@@ -774,21 +957,21 @@ impl<
                 );
             }
 
-            env
+            context
         };
 
-        self.walk_instructions(block_id, &mut starting_environment, handler)?;
+        self.walk_instructions(block_id, &mut starting_context, handler)?;
 
         // handle loop
         if let Some(target_stack) =
-            self.target_environments_by_block_id.get(&block_id)
+            self.target_contexts_by_block_id.get(&block_id)
         {
             assert_eq!(
                 target_stack.stack.scopes().len(),
-                starting_environment.stack.scopes().len()
+                starting_context.stack.scopes().len()
             );
 
-            for (this_scope, target_scope) in starting_environment
+            for (this_scope, target_scope) in starting_context
                 .stack
                 .scopes()
                 .iter()
@@ -854,17 +1037,17 @@ impl<
                 }
             }
 
-            starting_environment = target_stack.clone();
+            starting_context = target_stack.clone();
         }
 
         // mark as done
         assert!(self
-            .environment_by_block_id
-            .insert(block_id, Some(starting_environment.clone()))
+            .contexts_by_block_id
+            .insert(block_id, Some(starting_context.clone()))
             .unwrap()
             .is_none());
 
-        Ok(Some(starting_environment))
+        Ok(Some(starting_context))
     }
 }
 
@@ -879,7 +1062,7 @@ impl MutableRecursive<Lifetime<BorrowModel>> for ReplaceWithFreshInference<'_> {
         term: &mut Lifetime<BorrowModel>,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
-        if !term.is_inference() {
+        if term.is_inference() {
             return true;
         }
 
@@ -966,8 +1149,8 @@ impl ir::Representation<ir::Model> {
 
         let mut checker = Checker {
             representation: ir,
-            environment_by_block_id: HashMap::new(),
-            target_environments_by_block_id: HashMap::new(),
+            contexts_by_block_id: HashMap::new(),
+            target_contexts_by_block_id: HashMap::new(),
             starting_origin: arena,
             current_site,
             ty_environment,
@@ -977,7 +1160,7 @@ impl ir::Representation<ir::Model> {
             checker.walk_block(block_id, handler)?;
         }
 
-        assert!(checker.environment_by_block_id.values().all(Option::is_some));
+        assert!(checker.contexts_by_block_id.values().all(Option::is_some));
 
         *self = transform_to_ir_model(
             checker.representation,

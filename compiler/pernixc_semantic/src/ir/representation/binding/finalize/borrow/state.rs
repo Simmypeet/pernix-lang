@@ -1556,6 +1556,9 @@ impl Scope {
 }
 
 /// Represents the stack of the state.
+///
+/// This is used to keep track the state of the memory e.g. whether the value
+/// is moved out or not.
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
 pub struct Stack {
     #[get = "pub"]

@@ -3170,6 +3170,46 @@ impl Report<&Table<Suboptimal>>
     }
 }
 
+/// The variable doesn't live long enough to outlives the given lifetime.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct VariableDoesNotLiveLongEnough<M: Model> {
+    /// The span of the variable declaration.
+    pub variable_span: Span,
+
+    /// The lifetime that the variable doesn't outlives.
+    pub for_lifetime: Lifetime<M>,
+
+    /// The span that invokes the check.
+    pub instantiation_span: Span,
+}
+
+impl<M: Model> Report<&Table<Suboptimal>> for VariableDoesNotLiveLongEnough<M>
+where
+    Lifetime<M>: table::Display<Suboptimal>,
+{
+    type Error = ReportError;
+
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.variable_span.clone(),
+            message: format!(
+                "the variable doesn't live long enough to outlives the given \
+                 lifetime `{}`",
+                DisplayObject { display: &self.for_lifetime, table }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: vec![Related {
+                span: self.instantiation_span.clone(),
+                message: "the requirement is invoked here".to_string(),
+            }],
+        })
+    }
+}
+
 /// The reason why [`IncompatibleFunctionSignatureInImplementation`]
 /// happened.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
