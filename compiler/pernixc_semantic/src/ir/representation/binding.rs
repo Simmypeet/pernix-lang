@@ -1,6 +1,6 @@
 //! Contains the definition of [`Binder`], the struct used for building the IR.
 
-use std::{collections::HashMap, num::NonZeroUsize, slice::SplitN, sync::Arc};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;

@@ -3170,6 +3170,35 @@ impl Report<&Table<Suboptimal>>
     }
 }
 
+/// The value is moved out from the variabl while it is borrowed.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MovedOutWhileBorrowed {
+    /// The span of the borrow usage.
+    pub borrow_usage_span: Span,
+
+    /// The span where the value is moved out
+    pub moved_out_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for MovedOutWhileBorrowed {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.moved_out_span.clone(),
+            message: "the value is moved out from the variable while it is \
+                      borrowed"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: vec![Related {
+                span: self.borrow_usage_span.clone(),
+                message: "the borrow is used here".to_string(),
+            }],
+        })
+    }
+}
+
 /// The variable doesn't live long enough to outlives the given lifetime.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariableDoesNotLiveLongEnough<M: Model> {
@@ -3177,7 +3206,7 @@ pub struct VariableDoesNotLiveLongEnough<M: Model> {
     pub variable_span: Span,
 
     /// The lifetime that the variable doesn't outlives.
-    pub for_lifetime: Lifetime<M>,
+    pub for_lifetime: Option<Lifetime<M>>,
 
     /// The span that invokes the check.
     pub instantiation_span: Span,
@@ -3195,11 +3224,15 @@ where
     ) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             span: self.variable_span.clone(),
-            message: format!(
-                "the variable doesn't live long enough to outlives the given \
-                 lifetime `{}`",
-                DisplayObject { display: &self.for_lifetime, table }
-            ),
+            message: if let Some(lifetime) = &self.for_lifetime {
+                format!(
+                    "the variable doesn't live long enough to outlives the \
+                     lifetime `{}`",
+                    DisplayObject { display: lifetime, table }
+                )
+            } else {
+                "the variable doesn't live long enough".to_string()
+            },
             severity: Severity::Error,
             help_message: None,
             related: vec![Related {

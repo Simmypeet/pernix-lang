@@ -1602,17 +1602,17 @@ impl Stack {
         panic!("Invalid address");
     }
 
-    pub fn get_state(&self, address: &Address<BorrowModel>) -> &State {
+    pub fn get_state(&self, address: &Address<BorrowModel>) -> Option<&State> {
         let root = address.get_root_memory();
 
         for scope in self.scopes.iter().rev() {
             if scope.contains(root) {
-                return scope.get_state(address).unwrap();
+                return Some(scope.get_state(address).unwrap());
             }
         }
 
         // not found
-        panic!("Invalid address");
+        None
     }
 
     pub fn set_uninitialized<S: table::State>(

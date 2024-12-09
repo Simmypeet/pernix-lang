@@ -9,12 +9,13 @@ use super::{
 use crate::{
     arena::{Arena, ID},
     error::{
-        MoveInLoop, MovedOutValueFromMutableReference, OverflowOperation,
-        TypeSystemOverflow, UseAfterMove, UseBeforeInitialization,
+        MoveInLoop, MovedOutValueFromMutableReference, MovedOutWhileBorrowed,
+        OverflowOperation, TypeSystemOverflow, UseAfterMove,
+        UseBeforeInitialization, VariableDoesNotLiveLongEnough,
     },
     ir::{
         self,
-        address::{Address, Memory},
+        address::{self, Address, Memory},
         alloca::Alloca,
         control_flow_graph::Block,
         instruction::{Instruction, Terminator, UnconditionalJump},
@@ -62,7 +63,113 @@ use crate::{
     },
 };
 
+fn find_reference_address_usage(
+    mut address: &Address<BorrowModel>,
+) -> Option<&address::Reference<BorrowModel>> {
+    loop {
+        match address {
+            Address::Memory(_) => return None,
+            Address::Field(field) => address = &field.struct_address,
+            Address::Tuple(tuple) => address = &tuple.tuple_address,
+            Address::Index(index) => address = &index.array_address,
+            Address::Variant(variant) => address = &variant.enum_address,
+            Address::Reference(reference) => return Some(reference),
+        }
+    }
+}
+
 impl Values<BorrowModel> {
+    /// Checks if the access is allowed e.g., access to droped value, mutably
+    /// borrow more than once.
+    fn handle_access<S: table::State>(
+        &self,
+        address: &Address<BorrowModel>,
+        qualifier: Qualifier,
+        access_span: Span,
+        context: &Context,
+        current_site: GlobalID,
+        ty_environment: &TyEnvironment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+        handler: &HandlerWrapper,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        // recursively search for reference address usage
+        let Some(reference_usage) = find_reference_address_usage(&address)
+        else {
+            // no need to check liveness
+            return Ok(());
+        };
+
+        // check if the variable is still alive
+        let Succeeded { result: address_ty, constraints } = self
+            .type_of_address(
+                &reference_usage.reference_address,
+                current_site,
+                ty_environment,
+            )
+            .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                operation: OverflowOperation::TypeOf,
+                overflow_span: access_span.clone(),
+                overflow_error: x.into_overflow().unwrap(),
+            })?;
+
+        let loans = context.environment.get_loans(&address_ty);
+
+        for borrow in loans.iter().filter_map(|x| x.as_borrow()) {
+            // check if the variable is still alive
+            let borrow_address = &self
+                .registers
+                .get(*borrow)
+                .unwrap()
+                .assignment
+                .as_reference_of()
+                .unwrap()
+                .address;
+
+            let Some(state) = context.stack.get_state(borrow_address) else {
+                // the variable has been dropped
+                handler.receive(Box::new(VariableDoesNotLiveLongEnough::<
+                    ir::Model,
+                > {
+                    variable_span: match *borrow_address.get_root_memory() {
+                        Memory::Parameter(id) => ty_environment
+                            .table()
+                            .get_callable(current_site.try_into().unwrap())
+                            .unwrap()
+                            .parameters()
+                            .get(id)
+                            .unwrap()
+                            .span
+                            .clone()
+                            .unwrap(),
+                        Memory::Alloca(id) => {
+                            self.allocas.get(id).unwrap().span.clone()
+                        }
+                    },
+                    for_lifetime: None,
+                    instantiation_span: access_span.clone(),
+                }));
+                continue;
+            };
+
+            match state.get_state_summary() {
+                Summary::Initialized => {}
+                Summary::Uninitialized => {}
+                Summary::Moved(span) => {
+                    handler.receive(Box::new(MovedOutWhileBorrowed {
+                        borrow_usage_span: access_span.clone(),
+                        moved_out_span: span,
+                    }));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn handle_outlives<S: table::State>(
         &self,
         outlives: impl IntoIterator<Item = Outlives<Lifetime<BorrowModel>>>,
@@ -106,8 +213,11 @@ impl Values<BorrowModel> {
         >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        let state =
-            context.stack.get_state(&reference_of.address).get_state_summary();
+        let state = context
+            .stack
+            .get_state(&reference_of.address)
+            .expect("should found")
+            .get_state_summary();
 
         match state {
             Summary::Uninitialized => {
@@ -125,6 +235,7 @@ impl Values<BorrowModel> {
 
             Summary::Initialized => {}
         }
+
         let Succeeded { result: ty, constraints } = self
             .type_of_address(
                 &reference_of.address,
@@ -142,7 +253,7 @@ impl Values<BorrowModel> {
             constraints
                 .into_iter()
                 .map(|x| x.into_lifetime_outlives().unwrap()),
-            register_span,
+            register_span.clone(),
             context,
             current_site,
             ty_environment,
@@ -161,6 +272,17 @@ impl Values<BorrowModel> {
             .get_mut(reference_of_origin_id)
             .unwrap()
             .loans = loans;
+
+        // check the access
+        self.handle_access(
+            &reference_of.address,
+            reference_of.qualifier,
+            register_span,
+            context,
+            current_site,
+            ty_environment,
+            handler,
+        )?;
 
         Ok(())
     }
@@ -288,7 +410,7 @@ impl Values<BorrowModel> {
         &self,
         load: &Load<BorrowModel>,
         register_span: Span,
-        stack: &mut Stack,
+        context: &mut Context,
         current_site: GlobalID,
         ty_environment: &TyEnvironment<
             BorrowModel,
@@ -307,7 +429,11 @@ impl Values<BorrowModel> {
             == Some(Qualifier::Immutable)
             || load.address.is_behind_index()
         {
-            stack.get_state(&load.address).get_state_summary()
+            context
+                .stack
+                .get_state(&load.address)
+                .expect("should found")
+                .get_state_summary()
         } else {
             let copy_marker = ty_environment
                 .table()
@@ -333,10 +459,19 @@ impl Values<BorrowModel> {
             .iter()
             .all(well_formedness::Error::is_lifetime_constraints)
             {
+                self.handle_access(
+                    &load.address,
+                    Qualifier::Immutable,
+                    register_span,
+                    context,
+                    current_site,
+                    ty_environment,
+                    handler,
+                )?;
                 return Ok(());
             }
 
-            let state = stack.set_uninitialized(
+            let state = context.stack.set_uninitialized(
                 &load.address,
                 register_span.clone(),
                 ty_environment,
@@ -354,22 +489,32 @@ impl Values<BorrowModel> {
             }
         };
 
-        Ok(match memory_state {
+        match memory_state {
             Summary::Uninitialized => {
                 handler.receive(Box::new(UseBeforeInitialization {
-                    use_span: register_span,
+                    use_span: register_span.clone(),
                 }));
             }
 
             Summary::Moved(span) => {
                 handler.receive(Box::new(UseAfterMove {
-                    use_span: register_span,
+                    use_span: register_span.clone(),
                     move_span: span,
                 }));
             }
 
             Summary::Initialized => {}
-        })
+        };
+
+        self.handle_access(
+            &load.address,
+            Qualifier::Immutable,
+            register_span,
+            context,
+            current_site,
+            ty_environment,
+            handler,
+        )
     }
 }
 
@@ -527,7 +672,7 @@ impl<
                             self.representation.values.handle_load(
                                 load,
                                 register.span.clone(),
-                                &mut context.stack,
+                                context,
                                 self.current_site,
                                 self.ty_environment,
                                 handler,

@@ -198,7 +198,7 @@ impl Environment {
                         handler.receive(Box::new(
                             VariableDoesNotLiveLongEnough {
                                 variable_span,
-                                for_lifetime: bound.clone(),
+                                for_lifetime: Some(bound.clone()),
                                 instantiation_span: checking_span.clone(),
                             },
                         ));
