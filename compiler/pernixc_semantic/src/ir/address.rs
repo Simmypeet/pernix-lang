@@ -131,6 +131,27 @@ pub enum Address<M: Model> {
 }
 
 impl<M: Model> Address<M> {
+    /// Checks if the `self` address is the child of the `parent` address.
+    pub fn is_child_of(mut self: &Self, parent: &Self) -> bool {
+        loop {
+            if self == parent {
+                return true;
+            }
+
+            match self {
+                Self::Memory(_) => return false,
+
+                Self::Field(field) => self = &*field.struct_address,
+                Self::Tuple(tuple) => self = &*tuple.tuple_address,
+                Self::Index(index) => self = &*index.array_address,
+                Self::Variant(variant) => self = &*variant.enum_address,
+                Self::Reference(reference) => {
+                    self = &*reference.reference_address;
+                }
+            }
+        }
+    }
+
     /// Checks if the address has a root that is a reference.
     ///
     /// This checks if the address contains [`Address::Reference`].

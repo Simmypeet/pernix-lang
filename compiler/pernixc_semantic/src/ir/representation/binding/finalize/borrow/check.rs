@@ -1,13 +1,12 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeSet, HashMap, HashSet},
-    ops::Not,
 };
 
 use pernixc_base::{handler::Handler, source_file::Span};
 
 use super::{
-    context::Context,
+    context::{Access, Context},
     state::{self, SetStateSucceeded, Stack, Summary},
 };
 use crate::{
@@ -19,7 +18,7 @@ use crate::{
     },
     ir::{
         self,
-        address::{self, Address, Memory},
+        address::{Address, Memory},
         alloca::Alloca,
         control_flow_graph::Block,
         instruction::{Instruction, Terminator, UnconditionalJump},
@@ -45,7 +44,7 @@ use crate::{
         },
     },
     symbol::{
-        table::{self, representation::Index, Table},
+        table::{self, Table},
         CallableID, GlobalID,
     },
     type_system::{
@@ -68,21 +67,6 @@ use crate::{
     },
 };
 
-fn find_reference_address_usage(
-    mut address: &Address<BorrowModel>,
-) -> Option<&address::Reference<BorrowModel>> {
-    loop {
-        match address {
-            Address::Memory(_) => return None,
-            Address::Field(field) => address = &field.struct_address,
-            Address::Tuple(tuple) => address = &tuple.tuple_address,
-            Address::Index(index) => address = &index.array_address,
-            Address::Variant(variant) => address = &variant.enum_address,
-            Address::Reference(reference) => return Some(reference),
-        }
-    }
-}
-
 impl Values<BorrowModel> {
     /// Checks if the access is allowed e.g., access to droped value, mutably
     /// borrow more than once.
@@ -91,7 +75,8 @@ impl Values<BorrowModel> {
         address: &Address<BorrowModel>,
         qualifier: Qualifier,
         access_span: Span,
-        context: &Context,
+        context: &mut Context,
+        accesses: &mut Arena<Access>,
         current_site: GlobalID,
         ty_environment: &TyEnvironment<
             BorrowModel,
@@ -101,6 +86,13 @@ impl Values<BorrowModel> {
         >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        let access_id = accesses.insert(Access {
+            address: address.clone(),
+            qualifier,
+            span: access_span.clone(),
+        });
+        context.environment.occurred_accesses.insert(access_id);
+
         // check if the variable is still alive
         let Succeeded { result: address_ty, constraints } = self
             .type_of_address(&address, current_site, ty_environment)
@@ -110,9 +102,17 @@ impl Values<BorrowModel> {
                 overflow_error: x.into_overflow().unwrap(),
             })?;
 
-        let loans = context.environment.get_loans(&address_ty);
+        self.handle_outlives(
+            constraints.iter().map(|x| x.as_lifetime_outlives().unwrap()),
+            None,
+            access_span.clone(),
+            context,
+            current_site,
+            ty_environment,
+            handler,
+        )?;
 
-        dbg!(&access_span, &loans, &address_ty);
+        let loans = context.environment.get_loans(&address_ty);
 
         for borrow in loans.iter().filter_map(|x| x.as_borrow()) {
             // check if the variable is still alive
@@ -229,7 +229,6 @@ impl Values<BorrowModel> {
 
     fn handle_function_call<S: table::State>(
         &self,
-        register_id: ID<Register<BorrowModel>>,
         function_call: &FunctionCall<BorrowModel>,
         register_span: Span,
         context: &mut Context,
@@ -388,6 +387,7 @@ impl Values<BorrowModel> {
         reference_of: &ReferenceOf<BorrowModel>,
         register_span: Span,
         context: &mut Context,
+        accesses: &mut Arena<Access>,
         current_site: GlobalID,
         ty_environment: &TyEnvironment<
             BorrowModel,
@@ -420,6 +420,9 @@ impl Values<BorrowModel> {
             Summary::Initialized => {}
         }
 
+        let reference_of_origin_id =
+            reference_of.lifetime.clone().into_inference().unwrap();
+
         let Succeeded { result: ty, constraints } = self
             .type_of_address(
                 &reference_of.address,
@@ -443,9 +446,6 @@ impl Values<BorrowModel> {
             handler,
         )?;
 
-        let reference_of_origin_id =
-            reference_of.lifetime.clone().into_inference().unwrap();
-
         let mut loans = context.environment.get_loans(&ty);
         loans.insert(Loan::Borrow(register_id));
 
@@ -462,6 +462,7 @@ impl Values<BorrowModel> {
             reference_of.qualifier,
             register_span,
             context,
+            accesses,
             current_site,
             ty_environment,
             handler,
@@ -599,6 +600,7 @@ impl Values<BorrowModel> {
         load: &Load<BorrowModel>,
         register_span: Span,
         context: &mut Context,
+        accesses: &mut Arena<Access>,
         current_site: GlobalID,
         ty_environment: &TyEnvironment<
             BorrowModel,
@@ -652,6 +654,7 @@ impl Values<BorrowModel> {
                     Qualifier::Immutable,
                     register_span,
                     context,
+                    accesses,
                     current_site,
                     ty_environment,
                     handler,
@@ -699,6 +702,7 @@ impl Values<BorrowModel> {
             Qualifier::Immutable,
             register_span,
             context,
+            accesses,
             current_site,
             ty_environment,
             handler,
@@ -748,6 +752,13 @@ fn sort_drop_addresses(
     });
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WalkResult {
+    /// The context after checking the whole block
+    context: Context,
+    looped_blocks: Vec<ID<BorrowModel>>,
+}
+
 #[derive(Debug, Clone)]
 struct Checker<
     'a,
@@ -767,6 +778,9 @@ struct Checker<
     /// If the block id appears in this map, it means the block is a looped
     /// block and the value is the starting environment of the looped block.
     target_contexts_by_block_id: HashMap<ID<Block<BorrowModel>>, Context>,
+
+    /// List of access to the address occurred so far.
+    accesses: Arena<Access>,
 
     /// Contains the starting borrow origins. (Contains all the id with empty
     /// values)
@@ -861,6 +875,7 @@ impl<
                                 load,
                                 register.span.clone(),
                                 context,
+                                &mut self.accesses,
                                 self.current_site,
                                 self.ty_environment,
                                 handler,
@@ -875,6 +890,7 @@ impl<
                                 reference_of,
                                 register.span.clone(),
                                 context,
+                                &mut self.accesses,
                                 self.current_site,
                                 self.ty_environment,
                                 handler,
@@ -885,7 +901,6 @@ impl<
 
                         Assignment::FunctionCall(function_call) => {
                             self.representation.values.handle_function_call(
-                                register_assignment.id,
                                 function_call,
                                 register.span.clone(),
                                 context,
@@ -1165,6 +1180,8 @@ impl<
                 stack: Stack::new(),
                 environment: Environment {
                     origins: self.starting_origin.clone(),
+                    invalidated_loans: HashMap::new(),
+                    occurred_accesses: HashSet::new(),
                 },
             }
         } else {
@@ -1498,6 +1515,7 @@ impl ir::Representation<ir::Model> {
             contexts_by_block_id: HashMap::new(),
             target_contexts_by_block_id: HashMap::new(),
             starting_origin: arena,
+            accesses: Arena::new(),
             current_site,
             ty_environment,
         };

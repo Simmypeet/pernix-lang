@@ -1,9 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use pernixc_base::{handler::Handler, source_file::Span};
 
+use super::context::Access;
 use crate::{
-    arena::Arena,
+    arena::{Arena, ID},
     error::{
         self, OverflowOperation, TypeSystemOverflow, UnsatisifedPredicate,
         VariableDoesNotLiveLongEnough,
@@ -37,6 +38,9 @@ use crate::{
 pub struct Environment {
     /// Contains the borrow origins.
     pub origins: Arena<Origin>,
+
+    pub invalidated_loans: HashMap<Loan, HashSet<ID<Access>>>,
+    pub occurred_accesses: HashSet<ID<Access>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +106,15 @@ impl Environment {
                 .loans
                 .extend(other.origins.get(id).unwrap().loans.iter().cloned());
         }
+
+        for (loan, accesses) in &other.invalidated_loans {
+            self.invalidated_loans
+                .entry(*loan)
+                .or_insert_with(HashSet::new)
+                .extend(accesses.iter().cloned());
+        }
+
+        self.occurred_accesses.extend(other.occurred_accesses.iter().cloned());
     }
 
     /// Gets the loans existing in the given type.
@@ -112,6 +125,112 @@ impl Environment {
         visitor::accept_recursive(ty, &mut visitor);
 
         visitor.loans
+    }
+
+    fn simplify_loan<S: table::State>(
+        &self,
+        loan: Loan,
+        checking_span: Span,
+        values: &Values<BorrowModel>,
+        current_site: GlobalID,
+        ty_environment: &TyEnvironment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<HashSet<Loan>, TypeSystemOverflow<ir::Model>> {
+        match loan {
+            Loan::Borrow(id) => {
+                let mut borrowed_address = &values
+                    .registers
+                    .get(id)
+                    .unwrap()
+                    .assignment
+                    .as_reference_of()
+                    .unwrap()
+                    .address;
+
+                loop {
+                    match borrowed_address {
+                        ir::address::Address::Memory(_) => {
+                            return Ok(
+                                std::iter::once(Loan::Borrow(id)).collect()
+                            );
+                        }
+                        ir::address::Address::Field(field) => {
+                            borrowed_address = &field.struct_address;
+                        }
+                        ir::address::Address::Tuple(tuple) => {
+                            borrowed_address = &tuple.tuple_address;
+                        }
+                        ir::address::Address::Index(index) => {
+                            borrowed_address = &index.array_address;
+                        }
+                        ir::address::Address::Variant(variant) => {
+                            borrowed_address = &variant.enum_address;
+                        }
+                        ir::address::Address::Reference(reference) => {
+                            let reference_ty = values
+                                .type_of_address(
+                                    &reference.reference_address,
+                                    current_site,
+                                    ty_environment,
+                                )
+                                .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                                    operation: OverflowOperation::TypeOf,
+                                    overflow_span: checking_span.clone(),
+                                    overflow_error: x.into_overflow().unwrap(),
+                                })?
+                                .result
+                                .into_reference()
+                                .unwrap();
+
+                            match reference_ty.lifetime {
+                                Lifetime::Static => {
+                                    return Ok(
+                                        std::iter::once(Loan::Static).collect()
+                                    )
+                                }
+                                Lifetime::Parameter(member_id) => {
+                                    return Ok(std::iter::once(
+                                        Loan::LifetimeParameter(member_id),
+                                    )
+                                    .collect());
+                                }
+                                Lifetime::Inference(origin) => {
+                                    let mut final_loans = HashSet::new();
+                                    for loan in
+                                        &self.origins.get(origin).unwrap().loans
+                                    {
+                                        final_loans.extend(
+                                            self.simplify_loan(
+                                                loan.clone(),
+                                                checking_span.clone(),
+                                                values,
+                                                current_site,
+                                                ty_environment,
+                                                handler,
+                                            )?,
+                                        );
+                                    }
+
+                                    return Ok(final_loans);
+                                }
+                                Lifetime::Forall(_) => unreachable!(),
+                                Lifetime::Error(_) => return Ok(HashSet::new()),
+                            }
+                        }
+                    }
+                }
+            }
+            Loan::LifetimeParameter(member_id) => {
+                Ok(std::iter::once(Loan::LifetimeParameter(member_id))
+                    .collect())
+            }
+            Loan::Static => Ok(std::iter::once(Loan::Static).collect()),
+        }
     }
 
     pub fn handle_outlives<S: table::State>(
@@ -165,19 +284,32 @@ impl Environment {
             },
 
             (Lifetime::Inference(origin_id), bound) => {
+                let mut final_origins = HashSet::new();
                 let origin = self.origins.get(*origin_id).unwrap();
 
                 for loan in &origin.loans {
+                    final_origins.extend(self.simplify_loan(
+                        loan.clone(),
+                        checking_span.clone(),
+                        values,
+                        current_site,
+                        ty_environment,
+                        handler,
+                    )?);
+                }
+
+                for loan in final_origins {
                     if let Loan::Borrow(borrow) = loan {
-                        let root_memory = values
+                        let borrowed_address = &values
                             .registers
-                            .get(*borrow)
+                            .get(borrow)
                             .unwrap()
                             .assignment
                             .as_reference_of()
                             .unwrap()
-                            .address
-                            .get_root_memory();
+                            .address;
+
+                        let root_memory = borrowed_address.get_root_memory();
 
                         let variable_span = match root_memory {
                             Memory::Parameter(id) => ty_environment
@@ -208,7 +340,7 @@ impl Environment {
                             match loan {
                                 Loan::Borrow(_) => unreachable!(),
                                 Loan::LifetimeParameter(member_id) => {
-                                    Lifetime::Parameter(*member_id)
+                                    Lifetime::Parameter(member_id)
                                 }
                                 Loan::Static => Lifetime::Static,
                             },
