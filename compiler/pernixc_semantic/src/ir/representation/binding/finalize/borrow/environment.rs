@@ -152,6 +152,24 @@ impl Environment {
         self.occurred_accesses.extend(other.occurred_accesses.iter().cloned());
     }
 
+    /// Gets the loans existing in the given lifetime.
+    pub fn get_loans_of_lifetime(
+        &self,
+        lifetime: &Lifetime<BorrowModel>,
+    ) -> HashSet<Loan> {
+        match lifetime {
+            Lifetime::Static => std::iter::once(Loan::Static).collect(),
+            Lifetime::Parameter(member_id) => {
+                std::iter::once(Loan::LifetimeParameter(*member_id)).collect()
+            }
+            Lifetime::Inference(origin) => {
+                self.origins.get(*origin).unwrap().loans.clone()
+            }
+            Lifetime::Forall(_) => unreachable!(),
+            Lifetime::Error(_) => HashSet::new(),
+        }
+    }
+
     /// Gets the loans existing in the given type.
     pub fn get_loans(&self, ty: &Type<BorrowModel>) -> HashSet<Loan> {
         let mut visitor =

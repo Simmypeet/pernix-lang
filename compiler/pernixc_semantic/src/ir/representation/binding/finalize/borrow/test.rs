@@ -494,3 +494,49 @@ public function test(cond: bool) {
 fn reset_borrowed_reference_when_break() {
     assert!(build_table(RESET_BORROWED_REFERENCE_WHEN_BREAK).is_ok());
 }
+
+const MUTABLY_ACCESS_MORE_THAN_ONCE_IN_FUNCTION: &str = r#"
+// fake vector
+public struct Vector[T] {}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    { 
+        panic; 
+    }
+}
+
+public function main() {
+    let mutable number = 0;
+    let mutable vector = Vector::new();
+
+    Vector::push(&mutable vector, &mutable number);
+    Vector::push(&mutable vector, &mutable number);
+}
+"#;
+
+#[test]
+fn mutably_access_more_than_once_in_function() {
+    let (_, errs) =
+        build_table(MUTABLY_ACCESS_MORE_THAN_ONCE_IN_FUNCTION).unwrap_err();
+
+    dbg!(&errs);
+
+    assert_eq!(errs.len(), 1);
+
+    let error =
+        &errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+
+    assert_eq!(
+        error.borrow_span.as_ref().map(|x| x.str()),
+        Some("&mutable number")
+    );
+    assert_eq!(error.mutable_access.str(), "&mutable number");
+    assert_eq!(
+        error.borrow_usage_span.str(),
+        "Vector::push(&mutable vector, &mutable number)"
+    );
+}

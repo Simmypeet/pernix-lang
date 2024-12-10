@@ -1,6 +1,7 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeSet, HashMap, HashSet},
+    ops::Not,
 };
 
 use pernixc_base::{handler::Handler, source_file::Span};
@@ -299,10 +300,12 @@ impl Values<BorrowModel> {
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         if let Some(priority_lifetimes) = priority_lifetimes {
-            for outlive in outlives
-                .clone()
-                .into_iter()
-                .filter(|x| priority_lifetimes.contains(&x.bound))
+            let is_flow_into = |x: &Outlives<Lifetime<BorrowModel>>| {
+                !priority_lifetimes.contains(&x.operand)
+                    && priority_lifetimes.contains(&x.bound)
+            };
+            for outlive in
+                outlives.clone().into_iter().filter(|x| is_flow_into(x))
             {
                 context.environment.handle_outlives(
                     &outlive,
@@ -314,10 +317,7 @@ impl Values<BorrowModel> {
                 )?;
             }
 
-            for outlive in outlives
-                .into_iter()
-                .filter(|x| !priority_lifetimes.contains(&x.bound))
-            {
+            for outlive in outlives.into_iter().filter(|x| !is_flow_into(x)) {
                 context.environment.handle_outlives(
                     &outlive,
                     checking_span.clone(),
@@ -348,6 +348,7 @@ impl Values<BorrowModel> {
         function_call: &FunctionCall<BorrowModel>,
         register_span: Span,
         context: &mut Context,
+        accesses: &Arena<Access>,
         current_site: GlobalID,
         ty_environment: &TyEnvironment<
             BorrowModel,
@@ -501,12 +502,44 @@ impl Values<BorrowModel> {
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
             Some(&function_lifetimes),
-            register_span,
+            register_span.clone(),
             context,
             current_site,
             ty_environment,
             handler,
         )?;
+
+        let mut loans = HashSet::new();
+
+        // check if the loans used by the function call are still valid
+        for lifetime in function_lifetimes {
+            loans.extend(context.environment.get_loans_of_lifetime(&lifetime));
+        }
+
+        for loan in loans {
+            for invalidated in context
+                .environment
+                .invalidated_loans
+                .get(&loan)
+                .into_iter()
+                .flat_map(|x| x.iter())
+            {
+                handler.receive(Box::new(MutablyAccessWhileBorrowed {
+                    mutable_access: accesses
+                        .get(*invalidated)
+                        .unwrap()
+                        .span
+                        .clone(),
+                    borrow_span: match loan {
+                        Loan::Borrow(id) => {
+                            Some(self.registers.get(id).unwrap().span.clone())
+                        }
+                        Loan::LifetimeParameter(_) | Loan::Static => None,
+                    },
+                    borrow_usage_span: register_span.clone(),
+                }));
+            }
+        }
 
         Ok(())
     }
@@ -1048,6 +1081,7 @@ impl<
                                 function_call,
                                 register.span.clone(),
                                 context,
+                                &self.accesses,
                                 self.current_site,
                                 self.ty_environment,
                                 handler,
