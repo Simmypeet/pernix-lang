@@ -3,21 +3,42 @@
 //! This model doesn't contain the logic for borrow checking, but only the
 //! data structures used in the borrow checking.
 
-use std::{collections::HashSet, fmt::Display};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 use enum_as_inner::EnumAsInner;
+use pernixc_base::source_file::Span;
 
 use crate::{
     arena::{Key, ID},
-    ir::value::register::Register,
+    ir::{address::Address, value::register::Register},
     symbol::{table, LifetimeParameterID},
     type_system::{
         model,
         term::{
-            constant::Constant, lifetime::Lifetime, r#type::Type, Never, Term,
+            constant::Constant,
+            lifetime::Lifetime,
+            r#type::{Qualifier, Type},
+            Never, Term,
         },
     },
 };
+
+/// Represents an access to a particular memory location. This is subjected to
+/// check by the borrow checker whether it is safe or not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Access {
+    /// The address of the memory location.
+    pub address: Address<Model>,
+
+    /// The qualifier of the access.
+    pub qualifier: Qualifier,
+
+    /// The span of the access.
+    pub span: Span,
+}
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
@@ -32,7 +53,7 @@ pub enum Loan {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[allow(missing_docs)]
 pub struct Origin {
-    pub loans: HashSet<Loan>,
+    pub loans: HashMap<Loan, HashSet<ID<Access>>>,
 }
 
 /// The model used in borrow checking phase.

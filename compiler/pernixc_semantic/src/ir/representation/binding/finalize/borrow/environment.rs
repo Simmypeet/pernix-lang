@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use pernixc_base::{handler::Handler, source_file::Span};
 
-use super::context::Access;
 use crate::{
     arena::{Arena, ID},
     error::{
@@ -13,7 +12,7 @@ use crate::{
         self,
         address::{Address, Memory},
         representation::{
-            borrow::{Loan, Model as BorrowModel, Origin},
+            borrow::{Access, Loan, Model as BorrowModel, Origin},
             Values,
         },
     },
@@ -39,14 +38,13 @@ pub struct Environment {
     /// Contains the borrow origins.
     pub origins: Arena<Origin>,
 
-    pub invalidated_loans: HashMap<Loan, HashSet<ID<Access>>>,
     pub occurred_accesses: HashSet<ID<Access>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LoanVisitor<'a> {
     origins: &'a Arena<Origin>,
-    loans: HashSet<Loan>,
+    loans: HashMap<Loan, HashSet<ID<Access>>>,
 }
 
 impl Recursive<'_, Lifetime<BorrowModel>> for LoanVisitor<'_> {
@@ -57,15 +55,24 @@ impl Recursive<'_, Lifetime<BorrowModel>> for LoanVisitor<'_> {
     ) -> bool {
         match term {
             Lifetime::Static => {
-                self.loans.insert(Loan::Static);
+                self.loans.entry(Loan::Static).or_insert_with(HashSet::new);
             }
             Lifetime::Parameter(member_id) => {
-                self.loans.insert(Loan::LifetimeParameter(*member_id));
+                self.loans
+                    .entry(Loan::LifetimeParameter(*member_id))
+                    .or_insert_with(HashSet::new);
             }
             Lifetime::Inference(origin) => {
-                self.loans.extend(
-                    self.origins.get(*origin).unwrap().loans.iter().copied(),
-                );
+                let loans =
+                    self.origins.get(*origin).unwrap().loans.keys().copied();
+
+                for loan in loans {
+                    self.loans.entry(loan).or_insert_with(HashSet::new).extend(
+                        self.origins.get(*origin).unwrap().loans[&loan]
+                            .iter()
+                            .cloned(),
+                    );
+                }
             }
             Lifetime::Forall(_) => unreachable!(),
             Lifetime::Error(_) => {}
@@ -104,8 +111,8 @@ impl Environment {
         values: &Values<BorrowModel>,
         by_access_id: ID<Access>,
     ) {
-        for (_, origin) in &self.origins {
-            for loan in &origin.loans {
+        for (_, origin) in &mut self.origins {
+            for (loan, invalidations) in &mut origin.loans {
                 let Loan::Borrow(borrow) = loan else {
                     continue;
                 };
@@ -122,10 +129,7 @@ impl Environment {
                 // put the loan in the invalidated loans if the address is a
                 // child
                 if borrowed_address.is_child_of(&address) {
-                    self.invalidated_loans.insert(
-                        loan.clone(),
-                        std::iter::once(by_access_id).collect(),
-                    );
+                    invalidations.insert(by_access_id);
                 }
             }
         }
@@ -135,18 +139,16 @@ impl Environment {
         assert_eq!(self.origins.len(), other.origins.len());
 
         for id in other.origins.ids() {
-            self.origins
-                .get_mut(id)
-                .unwrap()
-                .loans
-                .extend(other.origins.get(id).unwrap().loans.iter().cloned());
-        }
+            let other_origin = other.origins.get(id).unwrap();
+            let this_origin = self.origins.get_mut(id).unwrap();
 
-        for (loan, accesses) in &other.invalidated_loans {
-            self.invalidated_loans
-                .entry(*loan)
-                .or_insert_with(HashSet::new)
-                .extend(accesses.iter().cloned());
+            for (loan, invalidation) in &other_origin.loans {
+                this_origin
+                    .loans
+                    .entry(loan.clone())
+                    .or_insert_with(HashSet::new)
+                    .extend(invalidation.iter().cloned());
+            }
         }
 
         self.occurred_accesses.extend(other.occurred_accesses.iter().cloned());
@@ -156,24 +158,31 @@ impl Environment {
     pub fn get_loans_of_lifetime(
         &self,
         lifetime: &Lifetime<BorrowModel>,
-    ) -> HashSet<Loan> {
+    ) -> HashMap<Loan, HashSet<ID<Access>>> {
         match lifetime {
-            Lifetime::Static => std::iter::once(Loan::Static).collect(),
-            Lifetime::Parameter(member_id) => {
-                std::iter::once(Loan::LifetimeParameter(*member_id)).collect()
+            Lifetime::Static => {
+                std::iter::once((Loan::Static, HashSet::new())).collect()
             }
+            Lifetime::Parameter(member_id) => std::iter::once((
+                Loan::LifetimeParameter(*member_id),
+                HashSet::new(),
+            ))
+            .collect(),
             Lifetime::Inference(origin) => {
                 self.origins.get(*origin).unwrap().loans.clone()
             }
             Lifetime::Forall(_) => unreachable!(),
-            Lifetime::Error(_) => HashSet::new(),
+            Lifetime::Error(_) => HashMap::new(),
         }
     }
 
     /// Gets the loans existing in the given type.
-    pub fn get_loans(&self, ty: &Type<BorrowModel>) -> HashSet<Loan> {
+    pub fn get_loans(
+        &self,
+        ty: &Type<BorrowModel>,
+    ) -> HashMap<Loan, HashSet<ID<Access>>> {
         let mut visitor =
-            LoanVisitor { origins: &self.origins, loans: HashSet::new() };
+            LoanVisitor { origins: &self.origins, loans: HashMap::new() };
 
         visitor::accept_recursive(ty, &mut visitor);
 
@@ -254,8 +263,12 @@ impl Environment {
                                 }
                                 Lifetime::Inference(origin) => {
                                     let mut final_loans = HashSet::new();
-                                    for loan in
-                                        &self.origins.get(origin).unwrap().loans
+                                    for loan in self
+                                        .origins
+                                        .get(origin)
+                                        .unwrap()
+                                        .loans
+                                        .keys()
                                     {
                                         final_loans.extend(
                                             self.simplify_loan(
@@ -308,14 +321,26 @@ impl Environment {
                         .get(*operand_inference)
                         .unwrap()
                         .loans
-                        .iter()
+                        .keys()
                         .copied()
                         .collect::<Vec<_>>();
 
-                    let bound_origin =
-                        self.origins.get_mut(*bound_origin).unwrap();
+                    for operand_loan in operand_loans {
+                        let invalidations =
+                            self.origins.get(*operand_inference).unwrap().loans
+                                [&operand_loan]
+                                .iter()
+                                .cloned()
+                                .collect::<Vec<_>>();
 
-                    bound_origin.loans.extend(operand_loans);
+                        self.origins
+                            .get_mut(*bound_origin)
+                            .unwrap()
+                            .loans
+                            .entry(operand_loan)
+                            .or_insert_with(HashSet::new)
+                            .extend(invalidations);
+                    }
                 }
 
                 Lifetime::Static => {
@@ -323,14 +348,16 @@ impl Environment {
                         .get_mut(*bound_origin)
                         .unwrap()
                         .loans
-                        .insert(Loan::Static);
+                        .entry(Loan::Static)
+                        .or_insert_with(HashSet::new);
                 }
                 Lifetime::Parameter(member_id) => {
                     self.origins
                         .get_mut(*bound_origin)
                         .unwrap()
                         .loans
-                        .insert(Loan::LifetimeParameter(*member_id));
+                        .entry(Loan::LifetimeParameter(*member_id))
+                        .or_insert_with(HashSet::new);
                 }
                 Lifetime::Forall(_) => unreachable!(),
                 Lifetime::Error(_) => {}
@@ -340,9 +367,9 @@ impl Environment {
                 let mut final_origins = HashSet::new();
                 let origin = self.origins.get(*origin_id).unwrap();
 
-                for loan in &origin.loans {
+                for loan in origin.loans.keys().cloned() {
                     final_origins.extend(self.simplify_loan(
-                        loan.clone(),
+                        loan,
                         checking_span.clone(),
                         values,
                         current_site,

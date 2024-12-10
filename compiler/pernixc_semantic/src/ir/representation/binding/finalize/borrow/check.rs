@@ -1,13 +1,12 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeSet, HashMap, HashSet},
-    ops::Not,
 };
 
 use pernixc_base::{handler::Handler, source_file::Span};
 
 use super::{
-    context::{Access, Context},
+    context::Context,
     state::{self, SetStateSucceeded, Stack, Summary},
 };
 use crate::{
@@ -36,7 +35,7 @@ use crate::{
                 },
                 HandlerWrapper,
             },
-            borrow::{Loan, Model as BorrowModel, Origin},
+            borrow::{Access, Loan, Model as BorrowModel, Origin},
             Values,
         },
         value::{
@@ -72,7 +71,7 @@ impl Values<BorrowModel> {
     fn add_hidden_loan<S: table::State>(
         &self,
         mut address: &Address<BorrowModel>,
-        loans: &mut HashSet<Loan>,
+        loans: &mut HashMap<Loan, HashSet<ID<Access>>>,
         context: &Context,
         current_site: GlobalID,
         checking_span: Span,
@@ -118,22 +117,28 @@ impl Values<BorrowModel> {
 
                     match reference_ty.lifetime {
                         Lifetime::Static => {
-                            loans.insert(Loan::Static);
+                            loans.entry(Loan::Static).or_default();
                         }
                         Lifetime::Parameter(member_id) => {
-                            loans.insert(Loan::LifetimeParameter(member_id));
+                            loans
+                                .entry(Loan::LifetimeParameter(member_id))
+                                .or_default();
                         }
                         Lifetime::Inference(origin_id) => {
-                            loans.extend(
-                                context
-                                    .environment
-                                    .origins
-                                    .get(origin_id)
-                                    .unwrap()
-                                    .loans
-                                    .iter()
-                                    .copied(),
-                            );
+                            let new_loans = context
+                                .environment
+                                .origins
+                                .get(origin_id)
+                                .unwrap()
+                                .loans
+                                .clone();
+
+                            for (loan, accesses) in new_loans {
+                                loans
+                                    .entry(loan)
+                                    .or_insert_with(HashSet::new)
+                                    .extend(accesses);
+                            }
                         }
                         Lifetime::Forall(_) => unreachable!(),
                         Lifetime::Error(_) => {}
@@ -202,15 +207,10 @@ impl Values<BorrowModel> {
         )?;
 
         // check if the loan is already invalidated
-        for loan in loans.iter() {
-            let Some(mutable_accesses) =
-                context.environment.invalidated_loans.get(loan)
-            else {
-                continue;
-            };
-
-            for access in mutable_accesses.iter().copied() {
-                let mutable_access = accesses.get(access).unwrap().span.clone();
+        for (loan, invalidations) in loans.iter() {
+            for invalidation in invalidations {
+                let mutable_access =
+                    accesses.get(*invalidation).unwrap().span.clone();
 
                 handler.receive(Box::new(MutablyAccessWhileBorrowed {
                     mutable_access,
@@ -226,7 +226,7 @@ impl Values<BorrowModel> {
         }
 
         // check if the variable is still alive
-        for borrow in loans.iter().filter_map(|x| x.as_borrow()) {
+        for borrow in loans.keys().filter_map(|x| x.as_borrow()) {
             // check if the variable is still alive
             let borrow_address = &self
                 .registers
@@ -509,24 +509,26 @@ impl Values<BorrowModel> {
             handler,
         )?;
 
-        let mut loans = HashSet::new();
+        let mut loans = HashMap::new();
 
         // check if the loans used by the function call are still valid
         for lifetime in function_lifetimes {
-            loans.extend(context.environment.get_loans_of_lifetime(&lifetime));
+            let current_loan =
+                context.environment.get_loans_of_lifetime(&lifetime);
+
+            for (loan, invalidated) in current_loan {
+                loans
+                    .entry(loan)
+                    .or_insert_with(HashSet::new)
+                    .extend(invalidated);
+            }
         }
 
-        for loan in loans {
-            for invalidated in context
-                .environment
-                .invalidated_loans
-                .get(&loan)
-                .into_iter()
-                .flat_map(|x| x.iter())
-            {
+        for (loan, invalidations) in loans {
+            for invalidated in invalidations {
                 handler.receive(Box::new(MutablyAccessWhileBorrowed {
                     mutable_access: accesses
-                        .get(*invalidated)
+                        .get(invalidated)
                         .unwrap()
                         .span
                         .clone(),
@@ -622,7 +624,7 @@ impl Values<BorrowModel> {
         )?;
 
         let mut loans = context.environment.get_loans(&ty);
-        loans.insert(Loan::Borrow(register_id));
+        loans.insert(Loan::Borrow(register_id), HashSet::new());
 
         context
             .environment
@@ -1385,7 +1387,6 @@ impl<
                     stack: Stack::new(),
                     environment: Environment {
                         origins: self.starting_origin.clone(),
-                        invalidated_loans: HashMap::new(),
                         occurred_accesses: HashSet::new(),
                     },
                 },
@@ -1695,6 +1696,34 @@ impl ir::Representation<BorrowModel> {
                         &mut array.element_type,
                         &mut visitor,
                     );
+                }
+
+                Assignment::Struct(structure) => {
+                    for lifetime in &mut structure.generic_arguments.lifetimes {
+                        visitor::accept_recursive_mut(lifetime, &mut visitor);
+                    }
+
+                    for ty in &mut structure.generic_arguments.types {
+                        visitor::accept_recursive_mut(ty, &mut visitor);
+                    }
+
+                    for con in &mut structure.generic_arguments.constants {
+                        visitor::accept_recursive_mut(con, &mut visitor);
+                    }
+                }
+
+                Assignment::Variant(variant) => {
+                    for lifetime in &mut variant.generic_arguments.lifetimes {
+                        visitor::accept_recursive_mut(lifetime, &mut visitor);
+                    }
+
+                    for ty in &mut variant.generic_arguments.types {
+                        visitor::accept_recursive_mut(ty, &mut visitor);
+                    }
+
+                    for con in &mut variant.generic_arguments.constants {
+                        visitor::accept_recursive_mut(con, &mut visitor);
+                    }
                 }
 
                 _ => {}

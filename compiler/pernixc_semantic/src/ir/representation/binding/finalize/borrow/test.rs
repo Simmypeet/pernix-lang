@@ -540,3 +540,38 @@ fn mutably_access_more_than_once_in_function() {
         "Vector::push(&mutable vector, &mutable number)"
     );
 }
+
+// the test case is lifted from
+// https://smallcultfollowing.com/babysteps/blog/2023/09/22/polonius-part-1/
+const POLONIUS_ONE_EXAMPLE: &str = r#"
+// only (D) is an error
+public function main() {
+    let mutable x = 22;
+    let mutable y = 44;
+    let mutable p = &x; // Loan L0, borrowing `x`
+    y += 1;                  // (A) Mutate `y` -- is this ok?
+    let mutable q = &y; // Loan L1, borrowing `y`
+    if (true) {
+        p = q;               // `p` now points at `y`
+        x += 1;              // (B) Mutate `x` -- is this ok?
+    } else {
+        y += 1;              // (C) Mutate `y` -- is this ok?
+    }
+    y += 1;                  // (D) Mutate `y` -- is this ok?
+    let a = *p;           // use `p` again here
+}
+"#;
+
+#[test]
+fn polonius_one_example() {
+    let (_, errs) = build_table(POLONIUS_ONE_EXAMPLE).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error =
+        errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+
+    assert_eq!(error.borrow_span.as_ref().map(|x| x.str()), Some("&y"));
+    assert_eq!(error.mutable_access.str(), "y += 1");
+    assert_eq!(error.borrow_usage_span.str(), "*p");
+}
