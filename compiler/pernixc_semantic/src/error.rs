@@ -3170,6 +3170,48 @@ impl Report<&Table<Suboptimal>>
     }
 }
 
+/// The mutable access is done while the value is borrowed.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MutablyAccessWhileBorrowed {
+    /// The span of the mutable access.
+    pub mutable_access: Span,
+
+    /// The span of the prior borrow.
+    pub borrow_span: Option<Span>,
+
+    /// The usage span of the prior borrow.
+    pub borrow_usage_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for MutablyAccessWhileBorrowed {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.mutable_access.clone(),
+            message: format!(
+                "mutable access to `{}` is done while it is borrowed",
+                self.mutable_access.str()
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: self
+                .borrow_span
+                .as_ref()
+                .map(|x| Related {
+                    span: x.clone(),
+                    message: "the borrow starts here".to_string(),
+                })
+                .into_iter()
+                .chain(std::iter::once(Related {
+                    span: self.borrow_usage_span.clone(),
+                    message: "the borrow is used here".to_string(),
+                }))
+                .collect(),
+        })
+    }
+}
+
 /// The value is moved out from the variabl while it is borrowed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MovedOutWhileBorrowed {

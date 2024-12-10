@@ -280,7 +280,7 @@ impl<
                             reference_address: Box::new(operand.address),
                         }),
                     }),
-                    dereference.span(),
+                    final_span,
                 );
 
                 Ok(Expression::RValue(Value::Register(register_id)))

@@ -13,8 +13,8 @@ use crate::{
     arena::{Arena, ID},
     error::{
         MoveInLoop, MovedOutValueFromMutableReference, MovedOutWhileBorrowed,
-        OverflowOperation, TypeSystemOverflow, UseAfterMove,
-        UseBeforeInitialization, VariableDoesNotLiveLongEnough,
+        MutablyAccessWhileBorrowed, OverflowOperation, TypeSystemOverflow,
+        UseAfterMove, UseBeforeInitialization, VariableDoesNotLiveLongEnough,
     },
     ir::{
         self,
@@ -68,6 +68,84 @@ use crate::{
 };
 
 impl Values<BorrowModel> {
+    fn add_hidden_loan<S: table::State>(
+        &self,
+        mut address: &Address<BorrowModel>,
+        loans: &mut HashSet<Loan>,
+        context: &Context,
+        current_site: GlobalID,
+        checking_span: Span,
+        ty_environment: &TyEnvironment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        loop {
+            match address {
+                Address::Memory(_) => break,
+
+                Address::Field(field) => {
+                    address = &field.struct_address;
+                }
+                Address::Tuple(tuple) => {
+                    address = &tuple.tuple_address;
+                }
+                Address::Index(index) => {
+                    address = &index.array_address;
+                }
+                Address::Variant(variant) => {
+                    address = &variant.enum_address;
+                }
+
+                Address::Reference(reference) => {
+                    let reference_ty = self
+                        .type_of_address(
+                            &reference.reference_address,
+                            current_site,
+                            ty_environment,
+                        )
+                        .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                            operation: OverflowOperation::TypeOf,
+                            overflow_span: checking_span.clone(),
+                            overflow_error: x.into_overflow().unwrap(),
+                        })?
+                        .result
+                        .into_reference()
+                        .unwrap();
+
+                    match reference_ty.lifetime {
+                        Lifetime::Static => {
+                            loans.insert(Loan::Static);
+                        }
+                        Lifetime::Parameter(member_id) => {
+                            loans.insert(Loan::LifetimeParameter(member_id));
+                        }
+                        Lifetime::Inference(origin_id) => {
+                            loans.extend(
+                                context
+                                    .environment
+                                    .origins
+                                    .get(origin_id)
+                                    .unwrap()
+                                    .loans
+                                    .iter()
+                                    .copied(),
+                            );
+                        }
+                        Lifetime::Forall(_) => unreachable!(),
+                        Lifetime::Error(_) => {}
+                    }
+
+                    address = &reference.reference_address;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Checks if the access is allowed e.g., access to droped value, mutably
     /// borrow more than once.
     fn handle_access<S: table::State>(
@@ -112,8 +190,41 @@ impl Values<BorrowModel> {
             handler,
         )?;
 
-        let loans = context.environment.get_loans(&address_ty);
+        let mut loans = context.environment.get_loans(&address_ty);
+        self.add_hidden_loan(
+            address,
+            &mut loans,
+            context,
+            current_site,
+            access_span.clone(),
+            ty_environment,
+        )?;
 
+        // check if the loan is already invalidated
+        for loan in loans.iter() {
+            let Some(mutable_accesses) =
+                context.environment.invalidated_loans.get(loan)
+            else {
+                continue;
+            };
+
+            for access in mutable_accesses.iter().copied() {
+                let mutable_access = accesses.get(access).unwrap().span.clone();
+
+                handler.receive(Box::new(MutablyAccessWhileBorrowed {
+                    mutable_access,
+                    borrow_span: match loan {
+                        Loan::Borrow(id) => {
+                            Some(self.registers.get(*id).unwrap().span.clone())
+                        }
+                        Loan::LifetimeParameter(_) | Loan::Static => None,
+                    },
+                    borrow_usage_span: access_span.clone(),
+                }));
+            }
+        }
+
+        // check if the variable is still alive
         for borrow in loans.iter().filter_map(|x| x.as_borrow()) {
             // check if the variable is still alive
             let borrow_address = &self
@@ -163,6 +274,11 @@ impl Values<BorrowModel> {
             }
         }
 
+        // invalidate the mutable borrow
+        if qualifier == Qualifier::Mutable {
+            context.environment.invalidate(address, self, access_id);
+        }
+
         Ok(())
     }
 
@@ -170,7 +286,7 @@ impl Values<BorrowModel> {
         &self,
         outlives: impl IntoIterator<Item = &'a Outlives<Lifetime<BorrowModel>>>
             + Clone,
-        priority_lifetimes: Option<HashSet<Lifetime<BorrowModel>>>,
+        priority_lifetimes: Option<&HashSet<Lifetime<BorrowModel>>>,
         checking_span: Span,
         context: &mut Context,
         current_site: GlobalID,
@@ -311,6 +427,39 @@ impl Values<BorrowModel> {
             }
         }
 
+        let function_lifetimes = function_call
+            .instantiation
+            .lifetimes
+            .values()
+            .cloned()
+            .chain(function_call.instantiation.types.values().flat_map(|x| {
+                RecursiveIterator::new(x)
+                    .filter_map(|x| x.0.into_lifetime().ok())
+                    .cloned()
+            }))
+            .chain(function_call.instantiation.constants.values().flat_map(
+                |x| {
+                    RecursiveIterator::new(x)
+                        .filter_map(|x| x.0.into_lifetime().ok())
+                        .cloned()
+                },
+            ))
+            .collect::<HashSet<_>>();
+
+        self.handle_outlives(
+            lifetime_constraints
+                .iter()
+                .map(|x| x.as_lifetime_outlives().unwrap()),
+            Some(&function_lifetimes),
+            register_span.clone(),
+            context,
+            current_site,
+            ty_environment,
+            handler,
+        )?;
+
+        lifetime_constraints.clear();
+
         for predicate in ty_environment
             .table()
             .get_active_premise(function_call.callable_id.into())
@@ -347,30 +496,11 @@ impl Values<BorrowModel> {
             }
         }
 
-        let function_lifetimes = function_call
-            .instantiation
-            .lifetimes
-            .values()
-            .cloned()
-            .chain(function_call.instantiation.types.values().flat_map(|x| {
-                RecursiveIterator::new(x)
-                    .filter_map(|x| x.0.into_lifetime().ok())
-                    .cloned()
-            }))
-            .chain(function_call.instantiation.constants.values().flat_map(
-                |x| {
-                    RecursiveIterator::new(x)
-                        .filter_map(|x| x.0.into_lifetime().ok())
-                        .cloned()
-                },
-            ))
-            .collect::<HashSet<_>>();
-
         self.handle_outlives(
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            Some(function_lifetimes),
+            Some(&function_lifetimes),
             register_span,
             context,
             current_site,
@@ -420,6 +550,18 @@ impl Values<BorrowModel> {
             Summary::Initialized => {}
         }
 
+        // check the access
+        self.handle_access(
+            &reference_of.address,
+            reference_of.qualifier,
+            register_span.clone(),
+            context,
+            accesses,
+            current_site,
+            ty_environment,
+            handler,
+        )?;
+
         let reference_of_origin_id =
             reference_of.lifetime.clone().into_inference().unwrap();
 
@@ -439,7 +581,7 @@ impl Values<BorrowModel> {
         self.handle_outlives(
             constraints.iter().map(|x| x.as_lifetime_outlives().unwrap()),
             None,
-            register_span.clone(),
+            register_span,
             context,
             current_site,
             ty_environment,
@@ -456,18 +598,6 @@ impl Values<BorrowModel> {
             .unwrap()
             .loans = loans;
 
-        // check the access
-        self.handle_access(
-            &reference_of.address,
-            reference_of.qualifier,
-            register_span,
-            context,
-            accesses,
-            current_site,
-            ty_environment,
-            handler,
-        )?;
-
         Ok(())
     }
 
@@ -477,6 +607,7 @@ impl Values<BorrowModel> {
         value_type: Option<Succeeded<Type<BorrowModel>, BorrowModel>>,
         store_span: Span,
         context: &mut Context,
+        accesses: &mut Arena<Access>,
         current_site: GlobalID,
         ty_environment: &TyEnvironment<
             BorrowModel,
@@ -573,8 +704,8 @@ impl Values<BorrowModel> {
                             .chain(address_constraints.iter())
                             .chain(compatibility_constraints.iter())
                             .map(|x| x.as_lifetime_outlives().unwrap()),
-                        Some(address_lifetimes),
-                        store_span,
+                        Some(&address_lifetimes),
+                        store_span.clone(),
                         context,
                         current_site,
                         ty_environment,
@@ -591,6 +722,17 @@ impl Values<BorrowModel> {
                 }
             }
         }
+
+        self.handle_access(
+            store_address,
+            Qualifier::Mutable,
+            store_span,
+            context,
+            accesses,
+            current_site,
+            ty_environment,
+            handler,
+        )?;
 
         Ok(drop_instructions)
     }
@@ -756,7 +898,7 @@ fn sort_drop_addresses(
 struct WalkResult {
     /// The context after checking the whole block
     context: Context,
-    looped_blocks: Vec<ID<BorrowModel>>,
+    looped_blocks: Vec<ID<Block<BorrowModel>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -773,7 +915,8 @@ struct Checker<
     /// - `None` value means the block is being processed.
     /// - `Some` value means the block has been processed
     /// - No value means the block has not been explored
-    contexts_by_block_id: HashMap<ID<Block<BorrowModel>>, Option<Context>>,
+    walk_results_by_block_id:
+        HashMap<ID<Block<BorrowModel>>, Option<WalkResult>>,
 
     /// If the block id appears in this map, it means the block is a looped
     /// block and the value is the starting environment of the looped block.
@@ -842,6 +985,7 @@ impl<
                             Some(value_type),
                             span,
                             context,
+                            &mut self.accesses,
                             self.current_site,
                             self.ty_environment,
                             handler,
@@ -1020,6 +1164,7 @@ impl<
                             None,
                             tuple_pack.packed_tuple_span.clone().unwrap(),
                             context,
+                            &mut self.accesses,
                             self.current_site,
                             self.ty_environment,
                             handler,
@@ -1159,31 +1304,59 @@ impl<
         Ok(())
     }
 
-    fn walk_block(
+    fn get_predecessor_context(
         &mut self,
         block_id: ID<Block<BorrowModel>>,
         handler: &HandlerWrapper,
     ) -> Result<Option<Context>, TypeSystemOverflow<ir::Model>> {
+        let Some(mut walk_result) = self.walk_block(block_id, handler)? else {
+            return Ok(None);
+        };
+
+        for block_id in walk_result.looped_blocks {
+            let Some(looped_context) =
+                self.get_predecessor_context(block_id, handler)?
+            else {
+                continue;
+            };
+
+            walk_result.context.environment.merge(&looped_context.environment);
+        }
+
+        Ok(Some(walk_result.context))
+    }
+
+    fn walk_block(
+        &mut self,
+        block_id: ID<Block<BorrowModel>>,
+        handler: &HandlerWrapper,
+    ) -> Result<Option<WalkResult>, TypeSystemOverflow<ir::Model>> {
         // skip if already processed
-        if let Some(stack) = self.contexts_by_block_id.get(&block_id) {
-            return Ok(stack.clone());
+        if let Some(walk_result) = self.walk_results_by_block_id.get(&block_id)
+        {
+            return Ok(walk_result.clone());
         }
 
         // mark as processing
-        self.contexts_by_block_id.insert(block_id, None);
+        self.walk_results_by_block_id.insert(block_id, None);
 
         let block =
             self.representation.control_flow_graph.get_block(block_id).unwrap();
 
-        let mut starting_context = if block.is_entry() {
-            Context {
-                stack: Stack::new(),
-                environment: Environment {
-                    origins: self.starting_origin.clone(),
-                    invalidated_loans: HashMap::new(),
-                    occurred_accesses: HashSet::new(),
+        let (mut context, looped_blocks) = if block.is_entry() {
+            assert!(block.predecessors().is_empty());
+
+            (
+                Context {
+                    stack: Stack::new(),
+                    environment: Environment {
+                        origins: self.starting_origin.clone(),
+                        invalidated_loans: HashMap::new(),
+                        occurred_accesses: HashSet::new(),
+                    },
                 },
-            }
+                Vec::new(),
+            )
         } else {
             let predecessors =
                 block.predecessors().iter().copied().collect::<Vec<_>>();
@@ -1192,7 +1365,9 @@ impl<
             let mut looped_block_ids = Vec::new();
 
             for predecessor_id in predecessors.iter().copied() {
-                if let Some(stack) = self.walk_block(predecessor_id, handler)? {
+                if let Some(stack) =
+                    self.get_predecessor_context(predecessor_id, handler)?
+                {
                     merging_contexts.push((predecessor_id, stack));
                 } else {
                     looped_block_ids.push(predecessor_id);
@@ -1201,7 +1376,7 @@ impl<
 
             if merging_contexts.is_empty() {
                 // try again later
-                self.contexts_by_block_id.remove(&block_id);
+                self.walk_results_by_block_id.remove(&block_id);
 
                 return Ok(None);
             }
@@ -1252,7 +1427,7 @@ impl<
                 .filter(|x| !looped_block_ids.contains(x))
             {
                 let alternate_environment = self
-                    .contexts_by_block_id
+                    .walk_results_by_block_id
                     .get(&predecessor)
                     .unwrap()
                     .as_ref()
@@ -1261,12 +1436,15 @@ impl<
                 // drop instructions to insert at the end of the block
                 let mut drop_instructions = Vec::new();
 
-                for (this, alternate) in context
-                    .stack
-                    .scopes()
-                    .iter()
-                    .rev()
-                    .zip(alternate_environment.stack.scopes().iter().rev())
+                for (this, alternate) in
+                    context.stack.scopes().iter().rev().zip(
+                        alternate_environment
+                            .context
+                            .stack
+                            .scopes()
+                            .iter()
+                            .rev(),
+                    )
                 {
                     assert_eq!(this.scope_id(), alternate.scope_id());
 
@@ -1320,10 +1498,10 @@ impl<
                 );
             }
 
-            context
+            (context, looped_block_ids)
         };
 
-        self.walk_instructions(block_id, &mut starting_context, handler)?;
+        self.walk_instructions(block_id, &mut context, handler)?;
 
         // handle loop
         if let Some(target_stack) =
@@ -1331,10 +1509,10 @@ impl<
         {
             assert_eq!(
                 target_stack.stack.scopes().len(),
-                starting_context.stack.scopes().len()
+                context.stack.scopes().len()
             );
 
-            for (this_scope, target_scope) in starting_context
+            for (this_scope, target_scope) in context
                 .stack
                 .scopes()
                 .iter()
@@ -1400,17 +1578,19 @@ impl<
                 }
             }
 
-            starting_context = target_stack.clone();
+            context.stack = target_stack.stack.clone();
         }
+
+        let result = WalkResult { context, looped_blocks };
 
         // mark as done
         assert!(self
-            .contexts_by_block_id
-            .insert(block_id, Some(starting_context.clone()))
+            .walk_results_by_block_id
+            .insert(block_id, Some(result.clone()))
             .unwrap()
             .is_none());
 
-        Ok(Some(starting_context))
+        Ok(Some(result))
     }
 }
 
@@ -1512,7 +1692,7 @@ impl ir::Representation<ir::Model> {
 
         let mut checker = Checker {
             representation: ir,
-            contexts_by_block_id: HashMap::new(),
+            walk_results_by_block_id: HashMap::new(),
             target_contexts_by_block_id: HashMap::new(),
             starting_origin: arena,
             accesses: Arena::new(),
@@ -1524,14 +1704,12 @@ impl ir::Representation<ir::Model> {
             checker.walk_block(block_id, handler)?;
         }
 
-        assert!(checker.contexts_by_block_id.values().all(Option::is_some));
+        assert!(checker.walk_results_by_block_id.values().all(Option::is_some));
 
         *self = transform_to_ir_model(
             checker.representation,
             ty_environment.table(),
         );
-
-        dbg!(self);
 
         Ok(())
     }

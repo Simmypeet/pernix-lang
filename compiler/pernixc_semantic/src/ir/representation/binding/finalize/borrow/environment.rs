@@ -11,7 +11,7 @@ use crate::{
     },
     ir::{
         self,
-        address::Memory,
+        address::{Address, Memory},
         representation::{
             borrow::{Loan, Model as BorrowModel, Origin},
             Values,
@@ -96,6 +96,41 @@ impl Recursive<'_, Constant<BorrowModel>> for LoanVisitor<'_> {
 }
 
 impl Environment {
+    /// Invalidates the other loans because of the mutable access to the given
+    /// address.
+    pub fn invalidate(
+        &mut self,
+        address: &Address<BorrowModel>,
+        values: &Values<BorrowModel>,
+        by_access_id: ID<Access>,
+    ) {
+        for (_, origin) in &self.origins {
+            for loan in &origin.loans {
+                let Loan::Borrow(borrow) = loan else {
+                    continue;
+                };
+
+                let borrowed_address = &values
+                    .registers
+                    .get(*borrow)
+                    .unwrap()
+                    .assignment
+                    .as_reference_of()
+                    .unwrap()
+                    .address;
+
+                // put the loan in the invalidated loans if the address is a
+                // child
+                if borrowed_address.is_child_of(&address) {
+                    self.invalidated_loans.insert(
+                        loan.clone(),
+                        std::iter::once(by_access_id).collect(),
+                    );
+                }
+            }
+        }
+    }
+
     pub fn merge(&mut self, other: &Self) {
         assert_eq!(self.origins.len(), other.origins.len());
 

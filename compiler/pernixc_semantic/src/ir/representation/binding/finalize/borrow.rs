@@ -1,6 +1,8 @@
 mod check;
 mod context;
+mod environment;
 mod state;
 mod transform;
-mod environment;
 
+#[cfg(test)]
+mod test;

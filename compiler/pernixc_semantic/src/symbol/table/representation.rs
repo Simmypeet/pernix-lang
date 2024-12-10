@@ -2263,4 +2263,4 @@ impl<T: State + std::default::Default> std::default::Default for Table<T> {
 }
 
 #[cfg(test)]
-pub(super) mod test;
+pub(crate) mod test;
