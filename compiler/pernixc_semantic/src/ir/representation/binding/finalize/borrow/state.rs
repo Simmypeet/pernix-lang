@@ -1640,7 +1640,7 @@ impl Stack {
         }
 
         // not found
-        panic!("Invalid address");
+        panic!("Invalid address {root:#?} {:#?}", self.scopes);
     }
 
     pub fn current_mut(&mut self) -> &mut Scope {

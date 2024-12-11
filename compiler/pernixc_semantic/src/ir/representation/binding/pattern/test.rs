@@ -197,6 +197,7 @@ impl<
             None,
             Qualifier::Mutable,
             false,
+            self.stack.current_scope().scope_id(),
             &storage,
         )
         .unwrap();

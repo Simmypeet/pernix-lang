@@ -126,13 +126,19 @@ impl<
         syntax_tree: &syntax_tree::statement::VariableDeclaration,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(Address<infer::Model>, bool), InternalError> {
+        // capture the current scope id first, since we will be working in
+        // a new temporary scope from now on
+        let variable_scope_id = self.stack.current_scope().scope_id();
+
         let scope_id = self.push_scope();
+
+        assert_ne!(variable_scope_id, scope_id);
+
         let binding_result = self.bind(
             syntax_tree.expression(),
             Config { target: Target::LValue },
             handler,
         );
-        self.pop_scope(scope_id);
 
         let (address, qualifier, from_lvalue) = match binding_result {
             Ok(Expression::LValue(lvalue)) => {
@@ -144,6 +150,7 @@ impl<
                     Address::Memory(Memory::Alloca(
                         self.create_alloca_with_value(
                             value,
+                            variable_scope_id,
                             Some(syntax_tree.irrefutable_pattern().span()),
                         ),
                     )),
@@ -166,6 +173,7 @@ impl<
                                         span: semantic_error.0,
                                     },
                                 )),
+                                variable_scope_id,
                                 Some(syntax_tree.irrefutable_pattern().span()),
                             )
                         })),
@@ -228,10 +236,16 @@ impl<
             Some(syntax_tree.expression().span()),
             qualifier,
             from_lvalue,
+            variable_scope_id,
             &self.create_handler_wrapper(handler),
         )?;
 
-        // add the variable to the stack
+        // pop temporary scope
+        self.pop_scope(scope_id);
+
+        // add the variable to the stack to the captured `variable_scope_id`
+        assert_eq!(variable_scope_id, self.stack.current_scope().scope_id());
+
         self.stack
             .current_scope_mut()
             .add_named_binding_point(name_binding_point);

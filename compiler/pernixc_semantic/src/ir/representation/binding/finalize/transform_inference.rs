@@ -218,15 +218,6 @@ pub fn transform_inference(
 ) -> Result<ir::Representation<ir::Model>, TypeSystemOverflow<ir::Model>> {
     original.control_flow_graph.remove_unerachable_blocks();
 
-    let used_allocas = original
-        .control_flow_graph
-        .traverse()
-        .flat_map(|x| x.1.instructions())
-        .filter_map(|x| x.as_alloca_declaration().map(|x| x.id))
-        .collect::<HashSet<_>>();
-
-    original.values.allocas.retain(|id, _| used_allocas.contains(&id));
-
     let used_registers = original
         .control_flow_graph
         .traverse()

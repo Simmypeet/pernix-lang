@@ -7,7 +7,6 @@ use pernixc_base::source_file::Span;
 
 use super::{
     address::Address,
-    alloca::Alloca,
     control_flow_graph::Block,
     scope::Scope,
     value::{register::Register, Value},
@@ -142,17 +141,6 @@ pub struct Store<M: Model> {
     pub value: Value<M>,
 }
 
-/// An instruction specifying when an `alloca` is declared.
-///
-/// This is kind of a pseudo-instruction, as it doesn't actually do anything.
-/// It is used to keep track of when an `alloca` is declared so that the ir
-/// knows when to drop it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AllocaDeclaration<M: Model> {
-    /// The ID of the `alloca` that is being declared.
-    pub id: ID<Alloca<M>>,
-}
-
 /// An instructions that packs the unpacked elements of a tuple into a packed
 /// element.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -230,7 +218,6 @@ pub struct RegisterDiscard<M: Model> {
 pub enum Instruction<M: Model> {
     Store(Store<M>),
     RegisterAssignment(RegisterAssignment<M>),
-    AllocaDeclaration(AllocaDeclaration<M>),
     RegisterDiscard(RegisterDiscard<M>),
     TuplePack(TuplePack<M>),
     ScopePush(ScopePush),
@@ -254,11 +241,6 @@ impl<M: Model> Instruction<M> {
             Self::RegisterAssignment(register_assignment) => {
                 Instruction::RegisterAssignment(RegisterAssignment {
                     id: ID::from_index(register_assignment.id.into_index()),
-                })
-            }
-            Self::AllocaDeclaration(alloca_declaration) => {
-                Instruction::AllocaDeclaration(AllocaDeclaration {
-                    id: ID::from_index(alloca_declaration.id.into_index()),
                 })
             }
             Self::RegisterDiscard(register_discard) => {

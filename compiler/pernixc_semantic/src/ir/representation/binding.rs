@@ -267,6 +267,7 @@ impl<
                 None,
                 Qualifier::Mutable,
                 false,
+                root_scope_id,
                 &handler,
             )?;
         }
@@ -387,15 +388,51 @@ impl<
         })
     }
 
+    /// Creates a new alloca with explicitly specified scope that the alloca
+    /// will be in .
+    ///
+    /// Unlike `create_alloca` which use the current scope of the binder, this
+    /// function allows the caller to specify the scope explicitly.
+    fn create_alloca_with_scope_id(
+        &mut self,
+        r#type: Type<infer::Model>,
+        scope_id: ID<Scope>,
+        span: Span,
+    ) -> ID<Alloca<infer::Model>> {
+        let alloca_id =
+            self.intermediate_representation.values.allocas.insert(Alloca {
+                r#type,
+                declared_in_scope_id: scope_id,
+                declaration_order: self
+                    .stack
+                    .scopes()
+                    .iter()
+                    .rev()
+                    .find_map(|x| {
+                        (x.scope_id() == scope_id)
+                            .then(|| x.variable_declarations().len())
+                    })
+                    .expect("scope not found"),
+                span,
+            });
+
+        self.stack
+            .scopes_mut()
+            .iter_mut()
+            .rev()
+            .find(|x| x.scope_id() == scope_id)
+            .unwrap()
+            .add_variable_declaration(alloca_id);
+
+        alloca_id
+    }
+
     /// Creates a new alloca and adds it to the current scope.
     fn create_alloca(
         &mut self,
         r#type: Type<infer::Model>,
         span: Span,
     ) -> ID<Alloca<infer::Model>> {
-        // the alloca allocation instructions will all be inserted after the
-        // binding finishes
-
         let alloca_id =
             self.intermediate_representation.values.allocas.insert(Alloca {
                 r#type,
@@ -408,11 +445,6 @@ impl<
                 span,
             });
 
-        let _ = self.current_block_mut().add_instruction(
-            instruction::Instruction::AllocaDeclaration(
-                instruction::AllocaDeclaration { id: alloca_id },
-            ),
-        );
         self.stack.current_scope_mut().add_variable_declaration(alloca_id);
 
         alloca_id
@@ -423,6 +455,7 @@ impl<
     fn create_alloca_with_value(
         &mut self,
         value: Value<infer::Model>,
+        scope_id: ID<Scope>,
         span: Option<Span>,
     ) -> ID<Alloca<infer::Model>> {
         let ty = self.type_of_value(&value).unwrap();
@@ -438,7 +471,8 @@ impl<
             Value::Literal(literal) => literal.span().clone(),
         });
 
-        let alloca_id = self.create_alloca(ty, span);
+        let alloca_id =
+            self.create_alloca_with_scope_id(ty, scope_id, span);
         let alloca_address = Address::Memory(Memory::Alloca(alloca_id));
 
         let _ = self.current_block_mut().add_instruction(

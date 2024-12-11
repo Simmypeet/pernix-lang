@@ -107,6 +107,9 @@ impl Stack {
     #[must_use]
     pub fn scopes(&self) -> &[Scope] { &self.scopes }
 
+    /// List of scopes in the stack mutably.
+    pub fn scopes_mut(&mut self) -> &mut [Scope] { &mut self.scopes }
+
     /// Searches for a named binding point in the stack.
     #[must_use]
     pub fn search(&self, name: &str) -> Option<&NameBinding<infer::Model>> {

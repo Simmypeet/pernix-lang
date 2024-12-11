@@ -757,6 +757,7 @@ impl<
             Some(match_info.address_span.clone()),
             match_info.qualifier,
             match_info.from_lvalue,
+            self.stack.current_scope().scope_id(),
             handler,
         )?;
 
@@ -876,7 +877,11 @@ impl<
             Ok(Expression::RValue(value)) => {
                 (
                     Address::Memory(Memory::Alloca(
-                        self.create_alloca_with_value(value, None),
+                        self.create_alloca_with_value(
+                            value,
+                            self.stack.current_scope().scope_id(),
+                            None,
+                        ),
                     )),
                     Qualifier::Mutable, /* has the highest mutability */
                     false,
@@ -897,6 +902,7 @@ impl<
                                         span: semantic_error.0,
                                     },
                                 )),
+                                self.stack.current_scope().scope_id(),
                                 None,
                             )
                         })),

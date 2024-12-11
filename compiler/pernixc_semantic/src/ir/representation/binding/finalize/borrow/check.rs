@@ -378,7 +378,6 @@ impl Values<BorrowModel> {
         struct_lit: &Struct<BorrowModel>,
         register_span: Span,
         context: &mut Context,
-        accesses: &Arena<Access>,
         current_site: GlobalID,
         ty_environment: &TyEnvironment<
             BorrowModel,
@@ -1274,7 +1273,6 @@ impl<
                                 struct_lit,
                                 register.span.clone(),
                                 context,
-                                &self.accesses,
                                 self.current_site,
                                 self.ty_environment,
                                 handler,
@@ -1292,22 +1290,6 @@ impl<
                         | Assignment::Cast(_)
                         | Assignment::VariantNumber(_) => 1,
                     }
-                }
-
-                Instruction::AllocaDeclaration(alloca_declaration) => {
-                    assert!(context.stack.current_mut().new_state(
-                        Memory::Alloca(alloca_declaration.id),
-                        false,
-                        self.representation
-                            .values
-                            .allocas
-                            .get(alloca_declaration.id)
-                            .unwrap()
-                            .r#type
-                            .clone(),
-                    ));
-
-                    1
                 }
 
                 Instruction::TuplePack(tuple_pack) => {
@@ -1458,6 +1440,31 @@ impl<
                                 ));
                             }
                         }
+                    }
+
+                    let allocas = self
+                        .representation
+                        .values
+                        .allocas
+                        .iter()
+                        .filter_map(|(id, alloca)| {
+                            (alloca.declared_in_scope_id == scope_push.0)
+                                .then_some(id)
+                        })
+                        .collect::<Vec<_>>();
+
+                    for id in dbg!(allocas) {
+                        assert!(context.stack.current_mut().new_state(
+                            Memory::Alloca(id),
+                            false,
+                            self.representation
+                                .values
+                                .allocas
+                                .get(id)
+                                .unwrap()
+                                .r#type
+                                .clone(),
+                        ));
                     }
 
                     1

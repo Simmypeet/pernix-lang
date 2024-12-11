@@ -124,8 +124,6 @@ fn reassigned_moved_out_of_reference() {
 
     assert_eq!(errs.len(), 1);
 
-    dbg!(&errs);
-
     let error = errs[0]
         .as_any()
         .downcast_ref::<MovedOutValueFromMutableReference>()
@@ -522,8 +520,6 @@ public function main() {
 fn mutably_access_more_than_once_in_function() {
     let (_, errs) =
         build_table(MUTABLY_ACCESS_MORE_THAN_ONCE_IN_FUNCTION).unwrap_err();
-
-    dbg!(&errs);
 
     assert_eq!(errs.len(), 1);
 

@@ -30,6 +30,7 @@ use crate::{
             Named, Refutable, Structural, Tuple, TupleElement, Wildcard,
         },
         representation::borrow,
+        scope::Scope,
         value::{
             register::{Assignment, Load, ReferenceOf},
             Value,
@@ -103,6 +104,7 @@ pub(super) trait Pattern:
         address_span: Option<Span>,
         binding: Binding,
         must_copy: bool,
+        scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<(), TypeSystemOverflow>;
 }
@@ -163,6 +165,7 @@ impl Pattern for Refutable {
         address_span: Option<Span>,
         mut binding: Binding,
         must_copy: bool,
+        scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<(), TypeSystemOverflow> {
         match pattern {
@@ -195,6 +198,7 @@ impl Pattern for Refutable {
                             pat.span.clone(),
                             pat.name.clone(),
                             pat.is_mutable,
+                            scope_id,
                             handler,
                         );
 
@@ -204,8 +208,9 @@ impl Pattern for Refutable {
                     // normal value binding
                     (None, BindingKind::Value) => {
                         let load_address = if must_copy {
-                            let alloca_id = binder.create_alloca(
+                            let alloca_id = binder.create_alloca_with_scope_id(
                                 binding.r#type.clone(),
+                                scope_id,
                                 pat.span.clone(),
                             );
 
@@ -258,6 +263,7 @@ impl Pattern for Refutable {
                             pat.span.clone(),
                             pat.name.clone(),
                             pat.is_mutable,
+                            scope_id,
                             handler,
                         );
 
@@ -272,6 +278,7 @@ impl Pattern for Refutable {
                 &address_span,
                 binding,
                 must_copy,
+                scope_id,
                 handler,
             ),
 
@@ -282,6 +289,7 @@ impl Pattern for Refutable {
                     &address_span,
                     binding,
                     must_copy,
+                    scope_id,
                     handler,
                 ),
 
@@ -336,6 +344,7 @@ impl Pattern for Refutable {
                             qualifier: binding.qualifier,
                         },
                         must_copy,
+                        scope_id,
                         handler,
                     )?;
                 }
@@ -421,6 +430,7 @@ impl Pattern for Irrefutable {
         address_span: Option<Span>,
         binding: Binding,
         must_copy: bool,
+        scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<(), TypeSystemOverflow> {
         match pattern {
@@ -455,6 +465,7 @@ impl Pattern for Irrefutable {
                             pat.span.clone(),
                             pat.name.clone(),
                             pat.is_mutable,
+                            scope_id,
                             handler,
                         );
 
@@ -464,8 +475,9 @@ impl Pattern for Irrefutable {
                     // normal value binding
                     (None, BindingKind::Value) => {
                         let load_address = if must_copy {
-                            let alloca_id = binder.create_alloca(
+                            let alloca_id = binder.create_alloca_with_scope_id(
                                 binding.r#type.clone(),
+                                scope_id,
                                 pat.span.clone(),
                             );
 
@@ -518,6 +530,7 @@ impl Pattern for Irrefutable {
                             pat.span.clone(),
                             pat.name.clone(),
                             pat.is_mutable,
+                            scope_id,
                             handler,
                         );
 
@@ -532,6 +545,7 @@ impl Pattern for Irrefutable {
                 &address_span,
                 binding,
                 must_copy,
+                scope_id,
                 handler,
             ),
 
@@ -542,6 +556,7 @@ impl Pattern for Irrefutable {
                     &address_span,
                     binding,
                     must_copy,
+                    scope_id,
                     handler,
                 ),
 
@@ -1186,6 +1201,7 @@ impl<
         address_span: Option<Span>,
         qualifier: Qualifier,
         must_copy: bool,
+        scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<(), TypeSystemOverflow> {
         Irrefutable::insert_named_binding_point(
@@ -1200,6 +1216,7 @@ impl<
                 address,
             },
             must_copy,
+            scope_id,
             handler,
         )
     }
@@ -1224,6 +1241,7 @@ impl<
         address_span: Option<Span>,
         qualifier: Qualifier,
         must_copy: bool,
+        scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<(), TypeSystemOverflow> {
         Refutable::insert_named_binding_point(
@@ -1238,6 +1256,7 @@ impl<
                 address,
             },
             must_copy,
+            scope_id,
             handler,
         )
     }
@@ -1253,6 +1272,7 @@ impl<
         pattern_span: Span,
         name: String,
         mutable: bool,
+        scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) {
         // address_type <= alloca_type <= named_type
@@ -1271,7 +1291,11 @@ impl<
             pointee: Box::new(address_type),
         });
 
-        let alloca_id = self.create_alloca(alloca_ty, pattern_span.clone());
+        let alloca_id = self.create_alloca_with_scope_id(
+            alloca_ty,
+            scope_id,
+            pattern_span.clone(),
+        );
 
         let _ = self.current_block_mut().add_instruction(
             instruction::Instruction::Store(Store {
@@ -1306,6 +1330,7 @@ impl<
         address_span: &Option<Span>,
         mut binding: Binding,
         must_copy: bool,
+        scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<(), TypeSystemOverflow> {
         binding = reduce_reference(binding);
@@ -1381,6 +1406,7 @@ impl<
                         qualifier: binding.qualifier,
                     },
                     must_copy,
+                    scope_id,
                     handler,
                 )?;
             }
@@ -1389,8 +1415,9 @@ impl<
             let packed_type = Type::Tuple(term::Tuple {
                 elements: tuple_ty.elements[type_pack_range.clone()].to_vec(),
             });
-            let packed_alloca = self.create_alloca(
+            let packed_alloca = self.create_alloca_with_scope_id(
                 packed_type.clone(),
+                scope_id,
                 tuple_pat.elements.get(packed_position).unwrap().pattern.span(),
             );
 
@@ -1545,6 +1572,7 @@ impl<
                     qualifier: Qualifier::Mutable,
                 },
                 false,
+                scope_id,
                 handler,
             )?;
 
@@ -1582,6 +1610,7 @@ impl<
                         qualifier: binding.qualifier,
                     },
                     must_copy,
+                    scope_id,
                     handler,
                 )?;
             }
@@ -1615,6 +1644,7 @@ impl<
                         qualifier: binding.qualifier,
                     },
                     must_copy,
+                    scope_id,
                     handler,
                 )?;
             }
@@ -1629,6 +1659,7 @@ impl<
         address_span: &Option<Span>,
         mut binding: Binding,
         must_copy: bool,
+        scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<(), TypeSystemOverflow> {
         binding = reduce_reference(binding);
@@ -1691,6 +1722,7 @@ impl<
                 address_span.clone(),
                 binding_cloned,
                 must_copy,
+                scope_id,
                 handler,
             )?;
         }
