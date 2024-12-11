@@ -53,6 +53,9 @@ pub enum Loan {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[allow(missing_docs)]
 pub struct Origin {
+    /// The keys represent the loans that are borrowed, and the values
+    /// represent mutable accesses to the loan, which makes the loan
+    /// invalidated.
     pub loans: HashMap<Loan, HashSet<ID<Access>>>,
 }
 

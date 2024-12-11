@@ -39,18 +39,20 @@ use crate::{
             Values,
         },
         value::{
-            register::{Assignment, FunctionCall, Load, ReferenceOf, Register},
+            register::{
+                Assignment, FunctionCall, Load, ReferenceOf, Register, Struct,
+            },
             Value,
         },
     },
     symbol::{
-        table::{self, Table},
+        table::{self, representation::Index, Table},
         CallableID, GlobalID,
     },
     type_system::{
         compatible::{Compatibility, Compatible},
         environment::Environment as TyEnvironment,
-        instantiation,
+        instantiation::{self, Instantiation},
         normalizer::Normalizer,
         observer::Observer,
         predicate::{Outlives, PositiveMarker, Predicate},
@@ -66,6 +68,26 @@ use crate::{
         well_formedness, LifetimeConstraint, OverflowError, Succeeded,
     },
 };
+
+fn get_lifetimes_from_instantiation(
+    instantiation: &Instantiation<BorrowModel>,
+) -> HashSet<Lifetime<BorrowModel>> {
+    instantiation
+        .lifetimes
+        .values()
+        .cloned()
+        .chain(instantiation.types.values().flat_map(|x| {
+            RecursiveIterator::new(x)
+                .filter_map(|x| x.0.into_lifetime().ok())
+                .cloned()
+        }))
+        .chain(instantiation.constants.values().flat_map(|x| {
+            RecursiveIterator::new(x)
+                .filter_map(|x| x.0.into_lifetime().ok())
+                .cloned()
+        }))
+        .collect::<HashSet<_>>()
+}
 
 impl Values<BorrowModel> {
     fn add_hidden_loan<S: table::State>(
@@ -283,6 +305,14 @@ impl Values<BorrowModel> {
         Ok(())
     }
 
+    /// Handles a list of outlives constraints to populate the loans in the
+    /// inference variables.
+    ///
+    /// # Parameters
+    ///
+    /// - `outlives`: The list of outlives constraints.
+    /// - `priority_lifetimes`: If specified, these lifetimes will be flowed
+    ///   into first.
     fn handle_outlives<'a, S: table::State>(
         &self,
         outlives: impl IntoIterator<Item = &'a Outlives<Lifetime<BorrowModel>>>
@@ -339,6 +369,169 @@ impl Values<BorrowModel> {
                 )?;
             }
         }
+
+        Ok(())
+    }
+
+    fn handle_struct<S: table::State>(
+        &self,
+        struct_lit: &Struct<BorrowModel>,
+        register_span: Span,
+        context: &mut Context,
+        accesses: &Arena<Access>,
+        current_site: GlobalID,
+        ty_environment: &TyEnvironment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+        handler: &HandlerWrapper,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        let instantiation = Instantiation::from_generic_arguments(
+            struct_lit.generic_arguments.clone(),
+            struct_lit.struct_id.into(),
+            &ty_environment
+                .table()
+                .get(struct_lit.struct_id)
+                .unwrap()
+                .generic_declaration
+                .parameters,
+        )
+        .unwrap();
+
+        let mut lifetime_constraints = BTreeSet::new();
+
+        let struct_lifetimes = get_lifetimes_from_instantiation(&instantiation);
+        let struct_sym =
+            ty_environment.table().get(struct_lit.struct_id).unwrap();
+
+        // compare each values in the field to the struct's field type
+        for field_id in struct_sym.field_declaration_order().iter().copied() {
+            let mut field_ty = Type::from_other_model(
+                struct_sym.fields().get(field_id).unwrap().r#type.clone(),
+            );
+            instantiation::instantiate(&mut field_ty, &instantiation);
+
+            let value_span =
+                match &struct_lit.initializers_by_field_id.get(&field_id) {
+                    Some(Value::Register(id)) => {
+                        self.registers.get(*id).unwrap().span.clone()
+                    }
+                    Some(Value::Literal(literal)) => literal.span().clone(),
+                    None => unreachable!(),
+                };
+
+            let Succeeded { result: value_ty, constraints: value_constraints } =
+                self.type_of_value(
+                    &struct_lit
+                        .initializers_by_field_id
+                        .get(&field_id)
+                        .unwrap(),
+                    current_site,
+                    ty_environment,
+                )
+                .map_err(|x| TypeSystemOverflow::<
+                    ir::Model,
+                > {
+                    operation: OverflowOperation::TypeOf,
+                    overflow_span: value_span.clone(),
+                    overflow_error: x.into_overflow().unwrap(),
+                })?;
+
+            lifetime_constraints.extend(value_constraints);
+
+            let copmatibility = value_ty
+                .compatible(&field_ty, Variance::Covariant, ty_environment)
+                .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeCheck,
+                    overflow_span: value_span.clone(),
+                    overflow_error,
+                })?;
+
+            // append the lifetime constraints
+            if let Some(Succeeded {
+                result,
+                constraints: compatibility_constraints,
+            }) = copmatibility
+            {
+                assert!(result.forall_lifetime_errors.is_empty());
+                assert!(result
+                    .forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
+
+                lifetime_constraints.extend(compatibility_constraints);
+            }
+        }
+
+        // handle the constraints introduced by instantiating the struct
+        self.handle_outlives(
+            lifetime_constraints
+                .iter()
+                .map(|x| x.as_lifetime_outlives().unwrap()),
+            Some(&struct_lifetimes),
+            register_span.clone(),
+            context,
+            current_site,
+            ty_environment,
+            handler,
+        )?;
+
+        lifetime_constraints.clear();
+
+        // handle the constraints introduced by the outlive predicates of the
+        // struct
+
+        for predicate in ty_environment
+            .table()
+            .get_active_premise(struct_lit.struct_id.into())
+            .unwrap()
+            .predicates
+            .into_iter()
+            .map(|x| {
+                let mut x = Predicate::from_default_model(x.clone());
+                x.instantiate(&instantiation);
+
+                x
+            })
+        {
+            match predicate {
+                Predicate::LifetimeOutlives(outlives) => {
+                    lifetime_constraints.insert(
+                        LifetimeConstraint::LifetimeOutlives(outlives.clone()),
+                    );
+                }
+                Predicate::TypeOutlives(outlives) => {
+                    for lt in RecursiveIterator::new(&outlives.operand)
+                        .filter_map(|x| x.0.into_lifetime().ok())
+                    {
+                        lifetime_constraints.insert(
+                            LifetimeConstraint::LifetimeOutlives(Outlives {
+                                operand: lt.clone(),
+                                bound: outlives.bound.clone(),
+                            }),
+                        );
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        self.handle_outlives(
+            lifetime_constraints
+                .iter()
+                .map(|x| x.as_lifetime_outlives().unwrap()),
+            Some(&struct_lifetimes), // is it needed here?
+            register_span.clone(),
+            context,
+            current_site,
+            ty_environment,
+            handler,
+        )?;
+
+        // invalidated lifetimes will not be checked here; unlike function call
 
         Ok(())
     }
@@ -428,24 +621,8 @@ impl Values<BorrowModel> {
             }
         }
 
-        let function_lifetimes = function_call
-            .instantiation
-            .lifetimes
-            .values()
-            .cloned()
-            .chain(function_call.instantiation.types.values().flat_map(|x| {
-                RecursiveIterator::new(x)
-                    .filter_map(|x| x.0.into_lifetime().ok())
-                    .cloned()
-            }))
-            .chain(function_call.instantiation.constants.values().flat_map(
-                |x| {
-                    RecursiveIterator::new(x)
-                        .filter_map(|x| x.0.into_lifetime().ok())
-                        .cloned()
-                },
-            ))
-            .collect::<HashSet<_>>();
+        let function_lifetimes =
+            get_lifetimes_from_instantiation(&function_call.instantiation);
 
         self.handle_outlives(
             lifetime_constraints
@@ -1092,9 +1269,22 @@ impl<
                             1
                         }
 
+                        Assignment::Struct(struct_lit) => {
+                            self.representation.values.handle_struct(
+                                struct_lit,
+                                register.span.clone(),
+                                context,
+                                &self.accesses,
+                                self.current_site,
+                                self.ty_environment,
+                                handler,
+                            )?;
+
+                            1
+                        }
+
                         Assignment::Prefix(_)
                         | Assignment::Tuple(_)
-                        | Assignment::Struct(_)
                         | Assignment::Variant(_)
                         | Assignment::Binary(_)
                         | Assignment::Array(_)
