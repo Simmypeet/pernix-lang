@@ -10,7 +10,6 @@ use crate::{
             representation::{
                 building::finalizing::{
                     state::Finalize,
-                    symbol::r#enum,
                     utility::{builder, occurrences::Occurrences},
                     Finalizer,
                 },
