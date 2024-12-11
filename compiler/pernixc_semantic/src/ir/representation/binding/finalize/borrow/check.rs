@@ -464,6 +464,8 @@ impl Values<BorrowModel> {
                     .is_empty());
 
                 lifetime_constraints.extend(compatibility_constraints);
+            } else {
+                panic!("{value_ty:#?} => {associated_type:#?}")
             }
         }
 
@@ -626,6 +628,8 @@ impl Values<BorrowModel> {
                     .is_empty());
 
                 lifetime_constraints.extend(compatibility_constraints);
+            } else {
+                panic!("{value_ty:#?} => {field_ty:#?}")
             }
         }
 
@@ -782,6 +786,8 @@ impl Values<BorrowModel> {
                     .is_empty());
 
                 lifetime_constraints.extend(compatibility_constraints);
+            } else {
+                panic!("{argument_ty:#?} => {parameter_ty:#?}")
             }
         }
 
@@ -1074,6 +1080,7 @@ impl Values<BorrowModel> {
                     }
 
                     // apply the compatibility constraints
+
                     self.handle_outlives(
                         value_constraints
                             .iter()
@@ -1087,8 +1094,21 @@ impl Values<BorrowModel> {
                         ty_environment,
                         handler,
                     )?;
+
+                    dbg!(
+                        value_ty,
+                        address_ty,
+                        value_constraints,
+                        address_constraints,
+                        compatibility_constraints,
+                        &context,
+                        store_span.str(),
+                    );
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    println!("check failed!");
+                    panic!("{value_ty:#?} => {address_ty:#?}")
+                }
                 Err(OverflowError) => {
                     return Err(TypeSystemOverflow {
                         operation: OverflowOperation::TypeCheck,

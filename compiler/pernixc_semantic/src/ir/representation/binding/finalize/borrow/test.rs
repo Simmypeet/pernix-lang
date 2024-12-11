@@ -388,7 +388,7 @@ fn mutably_access_while_borrowed() {
         &errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
 
     assert_eq!(error.borrow_span.as_ref().map(|x| x.str()), Some("&number"));
-    assert_eq!(error.mutable_access.str(), "2");
+    assert_eq!(error.mutable_access.str(), "number = 2");
     assert_eq!(error.borrow_usage_span.str(), "*numberRef");
 }
 
@@ -495,7 +495,8 @@ fn reset_borrowed_reference_when_break() {
 
 const MUTABLY_ACCESS_MORE_THAN_ONCE_IN_FUNCTION: &str = r#"
 // fake vector
-public struct Vector[T] {}
+public struct Vector[T] {
+}
 
 implements[T] Vector[T] {
     public function new(): this { panic; }
@@ -535,6 +536,96 @@ fn mutably_access_more_than_once_in_function() {
         error.borrow_usage_span.str(),
         "Vector::push(&mutable vector, &mutable number)"
     );
+}
+
+const MUTABLY_ACCESS_MORE_THAN_ONCE_IN_FUNCTION_WITH_VARIABLE: &str = r#"
+// fake vector
+public struct Vector[T] {
+}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function main() {
+    let mutable number = 0;
+    let mutable vector = Vector::new();
+
+    let v = &mutable vector;
+    let n = &mutable number;
+    Vector::push(v, n);
+
+    let v = &mutable vector;
+    let n = &mutable number;
+    Vector::push(v, n);
+}
+"#;
+
+#[test]
+fn mutably_access_more_than_once_in_function_with_variable() {
+    let (_, errs) =
+        build_table(MUTABLY_ACCESS_MORE_THAN_ONCE_IN_FUNCTION_WITH_VARIABLE)
+            .unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error =
+        errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+
+    assert_eq!(
+        error.borrow_span.as_ref().map(|x| x.str()),
+        Some("&mutable number")
+    );
+    assert_eq!(error.mutable_access.str(), "&mutable number");
+    assert_eq!(error.borrow_usage_span.str(), "Vector::push(v, n)");
+}
+
+const AN_ALIASED_FORMULATION: &str = r#"
+// fake vector
+public struct Vector[T] {
+}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function take[T](..: T) {}
+
+public function main() {
+    let mutable x = 22;
+    let mutable v = Vector::new();
+    let r = &mutable v;
+    let p = &x;       // 1. `x` is borrowed here to create `p`
+    r->push(p);        // 2. `p` is stored into `v`, but through `r`
+    x += 1;           // <-- Error! can't mutate `x` while borrowed
+    take(v);          // 3. the reference to `x` is later used here
+}
+"#;
+
+#[test]
+fn an_aliased_formulation() {
+    let (_, errs) = dbg!(build_table(AN_ALIASED_FORMULATION).unwrap_err());
+
+    assert_eq!(errs.len(), 1);
+
+    let error =
+        errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+
+    assert_eq!(error.borrow_span.as_ref().map(|x| x.str()), Some("&x"));
+    assert_eq!(error.mutable_access.str(), "x += 1");
+    assert_eq!(error.borrow_usage_span.str(), "take(v)");
 }
 
 // the test case is lifted from
