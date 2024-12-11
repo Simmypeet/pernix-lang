@@ -308,12 +308,13 @@ impl<
             ));
         }
 
-        let _ = self.current_block_mut().add_instruction(
-            Instruction::Store(Store {
+        let _ = self.current_block_mut().add_instruction(Instruction::Store(
+            Store {
                 address: lhs_address.address.clone(),
                 value: rhs_value,
-            }),
-        );
+                span: tree.span(),
+            },
+        ));
 
         Ok(match config.target {
             Target::RValue => {

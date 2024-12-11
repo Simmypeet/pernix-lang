@@ -232,6 +232,7 @@ impl Pattern for Refutable {
                                         alloca_id,
                                     )),
                                     value: load_value,
+                                    span: pat.span.clone(),
                                 }),
                             );
 
@@ -499,6 +500,7 @@ impl Pattern for Irrefutable {
                                         alloca_id,
                                     )),
                                     value: load_value,
+                                    span: pat.span.clone(),
                                 }),
                             );
 
@@ -1301,6 +1303,7 @@ impl<
             instruction::Instruction::Store(Store {
                 address: Address::Memory(Memory::Alloca(alloca_id)),
                 value: Value::Register(register_id),
+                span: pattern_span.clone(),
             }),
         );
 
@@ -1455,6 +1458,12 @@ impl<
                                 offset: address::Offset::FromStart(offset),
                             }),
                             value: Value::Register(moved_reg),
+                            span: tuple_pat
+                                .elements
+                                .get(packed_position)
+                                .unwrap()
+                                .pattern
+                                .span(),
                         }),
                     );
                 }
@@ -1523,6 +1532,12 @@ impl<
                                 ),
                             }),
                             value: Value::Register(moved_reg),
+                            span: tuple_pat
+                                .elements
+                                .get(packed_position)
+                                .unwrap()
+                                .pattern
+                                .span(),
                         }),
                     );
                 }
@@ -1555,6 +1570,12 @@ impl<
                                 offset: address::Offset::FromStart(offset),
                             }),
                             value: Value::Register(moved_reg),
+                            span: tuple_pat
+                                .elements
+                                .get(packed_position)
+                                .unwrap()
+                                .pattern
+                                .span(),
                         }),
                     );
                 }

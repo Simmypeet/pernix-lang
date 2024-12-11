@@ -456,10 +456,11 @@ impl<
         &mut self,
         value: Value<infer::Model>,
         scope_id: ID<Scope>,
-        span: Option<Span>,
+        address_span: Option<Span>,
+        store_span: Span,
     ) -> ID<Alloca<infer::Model>> {
         let ty = self.type_of_value(&value).unwrap();
-        let span = span.unwrap_or_else(|| match &value {
+        let span = address_span.unwrap_or_else(|| match &value {
             Value::Register(id) => self
                 .intermediate_representation
                 .values
@@ -471,14 +472,14 @@ impl<
             Value::Literal(literal) => literal.span().clone(),
         });
 
-        let alloca_id =
-            self.create_alloca_with_scope_id(ty, scope_id, span);
+        let alloca_id = self.create_alloca_with_scope_id(ty, scope_id, span);
         let alloca_address = Address::Memory(Memory::Alloca(alloca_id));
 
         let _ = self.current_block_mut().add_instruction(
             instruction::Instruction::Store(instruction::Store {
                 address: alloca_address,
                 value,
+                span: store_span,
             }),
         );
 

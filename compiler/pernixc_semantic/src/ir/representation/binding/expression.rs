@@ -178,6 +178,7 @@ impl<
                     let _ = self.current_block_mut().add_instruction(
                         Instruction::Store(Store {
                             address: Address::Memory(Memory::Alloca(alloca_id)),
+                            span: syntax_tree.span(),
                             value,
                         }),
                     );

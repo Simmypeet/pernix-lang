@@ -881,6 +881,7 @@ impl<
                             value,
                             self.stack.current_scope().scope_id(),
                             None,
+                            syntax_tree.parenthesized().span(),
                         ),
                     )),
                     Qualifier::Mutable, /* has the highest mutability */
@@ -904,6 +905,7 @@ impl<
                                 )),
                                 self.stack.current_scope().scope_id(),
                                 None,
+                                syntax_tree.parenthesized().span(),
                             )
                         })),
                         Qualifier::Mutable, /* has the highest mutability */

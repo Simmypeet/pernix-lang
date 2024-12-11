@@ -41,6 +41,7 @@ use crate::{
         value::{
             register::{
                 Assignment, FunctionCall, Load, ReferenceOf, Register, Struct,
+                Variant,
             },
             Value,
         },
@@ -369,6 +370,170 @@ impl Values<BorrowModel> {
                 )?;
             }
         }
+
+        Ok(())
+    }
+
+    fn handle_variant<S: table::State>(
+        &self,
+        variant: &Variant<BorrowModel>,
+        register_span: Span,
+        context: &mut Context,
+        current_site: GlobalID,
+        ty_environment: &TyEnvironment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+        handler: &HandlerWrapper,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        let variant_sym =
+            ty_environment.table().get(variant.variant_id).unwrap();
+        let enum_id = ty_environment
+            .table()
+            .get(variant.variant_id)
+            .unwrap()
+            .parent_enum_id();
+        let enum_sym = ty_environment.table().get(enum_id).unwrap();
+
+        let instantiation = Instantiation::from_generic_arguments(
+            variant.generic_arguments.clone(),
+            enum_id.into(),
+            &enum_sym.generic_declaration.parameters,
+        )
+        .unwrap();
+
+        let mut lifetime_constraints = BTreeSet::new();
+
+        let enum_lifetimes = get_lifetimes_from_instantiation(&instantiation);
+
+        // compare each values in the field to the struct's field type
+        if let Some(mut associated_type) = variant_sym
+            .associated_type
+            .as_ref()
+            .map(|x| Type::from_default_model(x.clone()))
+        {
+            instantiation::instantiate(&mut associated_type, &instantiation);
+            let associated_value = variant.associated_value.as_ref().unwrap();
+            let value_span = match associated_value {
+                Value::Register(id) => {
+                    self.registers.get(*id).unwrap().span.clone()
+                }
+                Value::Literal(literal) => literal.span().clone(),
+            };
+
+            let Succeeded { result: value_ty, constraints: value_constraints } =
+                self.type_of_value(
+                    associated_value,
+                    current_site,
+                    ty_environment,
+                )
+                .map_err(|x| TypeSystemOverflow::<
+                    ir::Model,
+                > {
+                    operation: OverflowOperation::TypeOf,
+                    overflow_span: value_span.clone(),
+                    overflow_error: x.into_overflow().unwrap(),
+                })?;
+
+            lifetime_constraints.extend(value_constraints);
+
+            let copmatibility = value_ty
+                .compatible(
+                    &associated_type,
+                    Variance::Covariant,
+                    ty_environment,
+                )
+                .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeCheck,
+                    overflow_span: value_span.clone(),
+                    overflow_error,
+                })?;
+
+            // append the lifetime constraints
+            if let Some(Succeeded {
+                result,
+                constraints: compatibility_constraints,
+            }) = copmatibility
+            {
+                assert!(result.forall_lifetime_errors.is_empty());
+                assert!(result
+                    .forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
+
+                lifetime_constraints.extend(compatibility_constraints);
+            }
+        }
+
+        // handle the constraints introduced by instantiating the struct
+        self.handle_outlives(
+            lifetime_constraints
+                .iter()
+                .map(|x| x.as_lifetime_outlives().unwrap()),
+            Some(&enum_lifetimes),
+            register_span.clone(),
+            context,
+            current_site,
+            ty_environment,
+            handler,
+        )?;
+
+        lifetime_constraints.clear();
+
+        // handle the constraints introduced by the outlive predicates of the
+        // struct
+
+        for predicate in ty_environment
+            .table()
+            .get_active_premise(variant.variant_id.into())
+            .unwrap()
+            .predicates
+            .into_iter()
+            .map(|x| {
+                let mut x = Predicate::from_default_model(x.clone());
+                x.instantiate(&instantiation);
+
+                x
+            })
+        {
+            match predicate {
+                Predicate::LifetimeOutlives(outlives) => {
+                    lifetime_constraints.insert(
+                        LifetimeConstraint::LifetimeOutlives(outlives.clone()),
+                    );
+                }
+                Predicate::TypeOutlives(outlives) => {
+                    for lt in RecursiveIterator::new(&outlives.operand)
+                        .filter_map(|x| x.0.into_lifetime().ok())
+                    {
+                        lifetime_constraints.insert(
+                            LifetimeConstraint::LifetimeOutlives(Outlives {
+                                operand: lt.clone(),
+                                bound: outlives.bound.clone(),
+                            }),
+                        );
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        self.handle_outlives(
+            lifetime_constraints
+                .iter()
+                .map(|x| x.as_lifetime_outlives().unwrap()),
+            Some(&enum_lifetimes), // is it needed here?
+            register_span.clone(),
+            context,
+            current_site,
+            ty_environment,
+            handler,
+        )?;
+
+        // invalidated lifetimes will not be checked here; unlike function call
 
         Ok(())
     }
@@ -1194,7 +1359,7 @@ impl<
                         self.representation.values.handle_store(
                             &store.address,
                             Some(value_type),
-                            span,
+                            store.span.clone(),
                             context,
                             &mut self.accesses,
                             self.current_site,
@@ -1281,9 +1446,21 @@ impl<
                             1
                         }
 
+                        Assignment::Variant(variant) => {
+                            self.representation.values.handle_variant(
+                                variant,
+                                register.span.clone(),
+                                context,
+                                self.current_site,
+                                self.ty_environment,
+                                handler,
+                            )?;
+
+                            1
+                        }
+
                         Assignment::Prefix(_)
                         | Assignment::Tuple(_)
-                        | Assignment::Variant(_)
                         | Assignment::Binary(_)
                         | Assignment::Array(_)
                         | Assignment::Phi(_)
@@ -1453,7 +1630,7 @@ impl<
                         })
                         .collect::<Vec<_>>();
 
-                    for id in dbg!(allocas) {
+                    for id in allocas {
                         assert!(context.stack.current_mut().new_state(
                             Memory::Alloca(id),
                             false,

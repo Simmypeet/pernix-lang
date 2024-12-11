@@ -35,7 +35,7 @@ public function consume[T](x: T) {}
 public function partialMove[T](x: (T, T)) {
     if (true) {
         consume(x.0);
-    } 
+    }
 
     consume(x);
 }
@@ -132,7 +132,7 @@ fn reassigned_moved_out_of_reference() {
     assert_eq!(error.moved_out_value_span.str(), "*z");
     assert_eq!(
         error.reassignment_span.as_ref().map(|x| x.str()),
-        Some("&mutable y")
+        Some("z = &mutable y")
     );
 }
 
@@ -165,7 +165,7 @@ fn restored_moved_out_of_reference() {
 const MOVED_OUT_IN_LOOP: &str = r#"
 public function consume[T](x: T) {}
 
-public function test[T](mutable x: T, cond: bool) { 
+public function test[T](mutable x: T, cond: bool) {
     while (cond) {
         consume(x);
     }
@@ -188,7 +188,7 @@ public function create[T](): T { panic; }
 
 public function consume[T](x: T) {}
 
-public function test[T](mutable x: (T, T), cond: bool) { 
+public function test[T](mutable x: (T, T), cond: bool) {
     while (cond) {
         consume(x);
 
@@ -208,7 +208,7 @@ public function create[T](): T { panic; }
 
 public function consume[T](x: T) {}
 
-public function test[T](cond: bool) { 
+public function test[T](cond: bool) {
     while (cond) {
         let value = create[T]();
 
@@ -235,7 +235,7 @@ public function create[T](): T { panic; }
 
 public function consume[T](x: T) {}
 
-public function test[T](cond: bool) { 
+public function test[T](cond: bool) {
     while (cond) {
         let x = create[T]();
         consume(x);
@@ -286,7 +286,7 @@ public function consume[T](x: T) {}
 
 public function test[T](mutable x: (T, T)) {
     let y = &x;
-    
+
     consume(x.0);
     consume(y);
 }
@@ -474,7 +474,7 @@ public function test(cond: bool) {
     let outer = 1;
     let mutable numberRef = &outer;
 
-    loop {    
+    loop {
         let inner = 2;
         numberRef = &inner;
 
@@ -502,8 +502,8 @@ implements[T] Vector[T] {
     public function push['a](self: &'a mutable this, value: T)
     where
         T: 'a
-    { 
-        panic; 
+    {
+        panic;
     }
 }
 
@@ -570,4 +570,119 @@ fn polonius_one_example() {
     assert_eq!(error.borrow_span.as_ref().map(|x| x.str()), Some("&y"));
     assert_eq!(error.mutable_access.str(), "y += 1");
     assert_eq!(error.borrow_usage_span.str(), "*p");
+}
+
+const STRUCT_INFERENCE_NO_ERROR: &str = r#"
+public struct MyPair[T, U] {
+    public first: T,
+    public second: U,
+}
+
+public function print[T](value: T) {}
+
+public function main() {
+    let mutable outer = 32;
+    {
+        let mutable inner = 64;
+
+        let pair = MyPair {
+            first: &outer,
+            second: &inner,
+        };
+
+        outer = 32;
+
+        print(*pair.second);
+    }
+}
+"#;
+
+#[test]
+fn struct_inference_no_error() {
+    assert!(dbg!(build_table(STRUCT_INFERENCE_NO_ERROR)).is_ok());
+}
+
+const STRUCT_INFERENCE_WITH_ERROR: &str = r#"
+public struct MyPair[T, U] {
+    public first: T,
+    public second: U,
+}
+
+public function print[T](value: T) {}
+
+public function main() {
+    let mutable outer = 32;
+    {
+        let mutable inner = 64;
+
+        let pair = MyPair {
+            first: &outer,
+            second: &inner,
+        };
+
+        outer = 32;
+
+        print(*pair.first);
+    }
+}
+"#;
+
+#[test]
+fn struct_inference_with_error() {
+    let (_, errs) = build_table(STRUCT_INFERENCE_WITH_ERROR).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error =
+        errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+
+    assert_eq!(error.borrow_span.as_ref().map(|x| x.str()), Some("&outer"));
+    assert_eq!(error.mutable_access.str(), "outer = 32");
+    assert_eq!(error.borrow_usage_span.str(), "*pair.first");
+}
+
+const STRUCT_INFERENCE_WITH_LIFETIME_FLOW: &str = r#"
+public struct MyPair['a, 'b, T, U]
+where
+    T: 'a,
+    U: 'b,
+    'a: 'b, // 'a flows into 'b
+{
+    public first: &'a T,
+    public second: &'b U,
+}
+
+public function print[T](value: T) {}
+
+public function main() {
+    let mutable outer = 32;
+    {
+        let mutable inner = 64;
+
+        let pair = MyPair {
+            first: &outer,
+            second: &inner,
+        };
+
+        outer = 32;
+
+        // since 'first' flows into 'second', this will error
+        print(*pair.second);
+    }
+}
+"#;
+
+#[test]
+fn struct_inference_with_lifetime_flow() {
+    let (_, errs) =
+        build_table(STRUCT_INFERENCE_WITH_LIFETIME_FLOW).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error =
+        errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+
+    assert_eq!(error.borrow_span.as_ref().map(|x| x.str()), Some("&outer"));
+    assert_eq!(error.mutable_access.str(), "outer = 32");
+    assert_eq!(error.borrow_usage_span.str(), "*pair.second");
 }

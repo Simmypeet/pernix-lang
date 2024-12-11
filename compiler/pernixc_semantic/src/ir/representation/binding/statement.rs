@@ -152,6 +152,7 @@ impl<
                             value,
                             variable_scope_id,
                             Some(syntax_tree.irrefutable_pattern().span()),
+                            syntax_tree.span(),
                         ),
                     )),
                     Qualifier::Mutable, /* has the highest mutability */
@@ -175,6 +176,7 @@ impl<
                                 )),
                                 variable_scope_id,
                                 Some(syntax_tree.irrefutable_pattern().span()),
+                                syntax_tree.span(),
                             )
                         })),
                         Qualifier::Mutable, /* has the highest mutability */

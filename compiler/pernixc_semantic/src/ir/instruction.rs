@@ -139,6 +139,9 @@ pub struct Store<M: Model> {
 
     /// The value to store.
     pub value: Value<M>,
+
+    /// The span where the store instruction is generated.
+    pub span: Span,
 }
 
 /// An instructions that packs the unpacked elements of a tuple into a packed
@@ -237,6 +240,7 @@ impl<M: Model> Instruction<M> {
             Self::Store(store) => Instruction::Store(Store {
                 address: store.address.transform_model(transformer)?,
                 value: store.value.transform_model(transformer)?,
+                span: store.span,
             }),
             Self::RegisterAssignment(register_assignment) => {
                 Instruction::RegisterAssignment(RegisterAssignment {
