@@ -23,7 +23,7 @@ use crate::{
         Field, GenericParameterVariances, GlobalID, HierarchyRelationship,
         Struct,
     },
-    type_system::{environment::Environment, normalizer},
+    type_system::{environment::Environment, normalizer, variance::Variance},
 };
 
 /// Generic parameters are built
@@ -335,6 +335,49 @@ impl Finalize for Struct {
                     .get(symbol_id)
                     .unwrap()
                     .write();
+
+                for (lt, _) in struct_sym
+                    .generic_declaration
+                    .parameters
+                    .lifetime_parameters_as_order()
+                {
+                    generic_parameter_variances
+                        .variances_by_lifetime_ids
+                        .entry(lt)
+                        .or_insert_with(|| Variance::Covariant);
+                }
+                for (ty, _) in struct_sym
+                    .generic_declaration
+                    .parameters
+                    .type_parameters_as_order()
+                {
+                    generic_parameter_variances
+                        .variances_by_type_ids
+                        .entry(ty)
+                        .or_insert_with(|| Variance::Covariant);
+                }
+
+                // make sure every parameters has a variance
+                assert!(
+                    struct_sym
+                        .generic_declaration
+                        .parameters
+                        .lifetime_parameters_as_order()
+                        .all(|(lt, _)| {
+                            generic_parameter_variances
+                                .variances_by_lifetime_ids
+                                .contains_key(&lt)
+                        })
+                        && struct_sym
+                            .generic_declaration
+                            .parameters
+                            .type_parameters_as_order()
+                            .all(|(ty, _)| {
+                                generic_parameter_variances
+                                    .variances_by_type_ids
+                                    .contains_key(&ty)
+                            }),
+                );
 
                 struct_sym.generic_parameter_variances =
                     generic_parameter_variances;

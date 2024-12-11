@@ -10,6 +10,7 @@ use crate::{
             representation::{
                 building::finalizing::{
                     state::Finalize,
+                    symbol::r#enum,
                     utility::{builder, occurrences::Occurrences},
                     Finalizer,
                 },
@@ -20,7 +21,7 @@ use crate::{
         },
         Enum, GenericParameterVariances, GlobalID,
     },
-    type_system::{environment::Environment, normalizer},
+    type_system::{environment::Environment, normalizer, variance::Variance},
 };
 
 /// Generic parameters are built
@@ -327,12 +328,53 @@ impl Finalize for Enum {
                     handler,
                 );
 
-                // drop the read
+                for (lt, _) in enum_sym
+                    .generic_declaration
+                    .parameters
+                    .lifetime_parameters_as_order()
+                {
+                    generic_parameter_variances
+                        .variances_by_lifetime_ids
+                        .entry(lt)
+                        .or_insert_with(|| Variance::Covariant);
+                }
+                for (ty, _) in enum_sym
+                    .generic_declaration
+                    .parameters
+                    .type_parameters_as_order()
+                {
+                    generic_parameter_variances
+                        .variances_by_type_ids
+                        .entry(ty)
+                        .or_insert_with(|| Variance::Covariant);
+                }
+
+                // make sure every parameters has a variance
+                assert!(
+                    enum_sym
+                        .generic_declaration
+                        .parameters
+                        .lifetime_parameters_as_order()
+                        .all(|(lt, _)| {
+                            generic_parameter_variances
+                                .variances_by_lifetime_ids
+                                .contains_key(&lt)
+                        })
+                        && enum_sym
+                            .generic_declaration
+                            .parameters
+                            .type_parameters_as_order()
+                            .all(|(ty, _)| {
+                                generic_parameter_variances
+                                    .variances_by_type_ids
+                                    .contains_key(&ty)
+                            }),
+                );
+
                 drop(enum_sym);
 
                 // write the variance
                 table
-                    .representation
                     .enums
                     .get(symbol_id)
                     .unwrap()
