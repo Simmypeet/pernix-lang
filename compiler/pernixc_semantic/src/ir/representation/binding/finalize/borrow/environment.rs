@@ -524,10 +524,7 @@ impl Environment {
     }
 
     /// Detaches the subset relation between the given lifetimes
-    pub fn deteach_subset_relation(
-        &mut self,
-        lifetime: &Lifetime<BorrowModel>,
-    ) {
+    pub fn detach_subset_relation(&mut self, lifetime: &Lifetime<BorrowModel>) {
         let detaching_region = match lifetime {
             Lifetime::Static => Region::Universal(UniversalRegion::Static),
             Lifetime::Parameter(member_id) => Region::Universal(
@@ -573,6 +570,7 @@ impl Environment {
                 .map_or(true, |x| x.is_empty())
             {
                 self.active_borrows.remove(borrow);
+                self.invalidated_borrows.remove(borrow);
             }
         }
     }

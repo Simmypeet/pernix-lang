@@ -837,7 +837,7 @@ impl Values<BorrowModel> {
 
                     // detach the subset-relation
                     for lifetime in address_lifetimes.iter() {
-                        context.environment.deteach_subset_relation(lifetime);
+                        context.environment.detach_subset_relation(lifetime);
                     }
 
                     // apply the compatibility constraints
