@@ -1,7 +1,8 @@
 use crate::{
     error::{
-        MoveInLoop, MovedOutValueFromMutableReference, MovedOutWhileBorrowed,
-        MutablyAccessWhileBorrowed, UseAfterMove,
+        AccessWhileMutablyBorrowed, MoveInLoop,
+        MovedOutValueFromMutableReference, MovedOutWhileBorrowed,
+        MutablyAccessWhileImmutablyBorrowed, UseAfterMove,
         VariableDoesNotLiveLongEnough,
     },
     ir,
@@ -288,6 +289,7 @@ public function test[T](mutable x: (T, T)) {
     let y = &x;
 
     consume(x.0);
+
     consume(y);
 }
 "#;
@@ -296,13 +298,20 @@ public function test[T](mutable x: (T, T)) {
 fn moved_out_while_borrowed() {
     let (_, errs) = build_table(MOVED_OUT_WHILE_BORROWED).unwrap_err();
 
-    assert_eq!(errs.len(), 1);
+    assert_eq!(errs.len(), 2);
 
-    let error =
-        errs[0].as_any().downcast_ref::<MovedOutWhileBorrowed>().unwrap();
+    errs.iter().any(|x| {
+        x.as_any().downcast_ref::<MovedOutWhileBorrowed>().map_or(false, |x| {
+            x.moved_out_span.str() == "x.0" && x.borrow_usage_span.str() == "y"
+        })
+    });
 
-    assert_eq!(error.borrow_usage_span.str(), "y");
-    assert_eq!(error.moved_out_span.str(), "x.0");
+    errs.iter().any(|x| {
+        x.as_any().downcast_ref::<MovedOutWhileBorrowed>().map_or(false, |x| {
+            x.moved_out_span.str() == "x"
+                && x.borrow_usage_span.str() == "consume(y)"
+        })
+    });
 }
 
 const REBORROW: &str = r#"
@@ -383,12 +392,18 @@ fn mutably_access_while_borrowed() {
     let (_, errs) = build_table(MUTABLY_ACCESS_WHILE_BORROWED).unwrap_err();
 
     assert_eq!(errs.len(), 1);
+    dbg!(&errs);
 
-    let error =
-        &errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+    let error = &errs[0]
+        .as_any()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .unwrap();
 
-    assert_eq!(error.borrow_span.as_ref().map(|x| x.str()), Some("&number"));
-    assert_eq!(error.mutable_access.str(), "number = 2");
+    assert_eq!(
+        error.immutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&number")
+    );
+    assert_eq!(error.mutable_access_span.str(), "number = 2");
     assert_eq!(error.borrow_usage_span.str(), "*numberRef");
 }
 
@@ -525,13 +540,13 @@ fn mutably_access_more_than_once_in_function() {
     assert_eq!(errs.len(), 1);
 
     let error =
-        &errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+        &errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
 
     assert_eq!(
-        error.borrow_span.as_ref().map(|x| x.str()),
+        error.mutable_borrow_span.as_ref().map(|x| x.str()),
         Some("&mutable number")
     );
-    assert_eq!(error.mutable_access.str(), "&mutable number");
+    assert_eq!(error.access_span.str(), "&mutable number");
     assert_eq!(
         error.borrow_usage_span.str(),
         "Vector::push(&mutable vector, &mutable number)"
@@ -576,14 +591,14 @@ fn mutably_access_more_than_once_in_function_with_variable() {
     assert_eq!(errs.len(), 1);
 
     let error =
-        errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+        errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
 
     assert_eq!(
-        error.borrow_span.as_ref().map(|x| x.str()),
+        error.mutable_borrow_span.as_ref().map(|x| x.str()),
         Some("&mutable number")
     );
-    assert_eq!(error.mutable_access.str(), "&mutable number");
-    assert_eq!(error.borrow_usage_span.str(), "Vector::push(v, n)");
+    assert_eq!(error.access_span.str(), "&mutable number");
+    assert_eq!(error.borrow_usage_span.str(), "v");
 }
 
 const AN_ALIASED_FORMULATION: &str = r#"
@@ -616,16 +631,21 @@ public function main() {
 
 #[test]
 fn an_aliased_formulation() {
-    let (_, errs) = dbg!(build_table(AN_ALIASED_FORMULATION).unwrap_err());
+    let (_, errs) = build_table(AN_ALIASED_FORMULATION).unwrap_err();
 
     assert_eq!(errs.len(), 1);
 
-    let error =
-        errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .unwrap();
 
-    assert_eq!(error.borrow_span.as_ref().map(|x| x.str()), Some("&x"));
-    assert_eq!(error.mutable_access.str(), "x += 1");
-    assert_eq!(error.borrow_usage_span.str(), "take(v)");
+    assert_eq!(
+        error.immutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&x")
+    );
+    assert_eq!(error.mutable_access_span.str(), "x += 1");
+    assert_eq!(error.borrow_usage_span.str(), "v");
 }
 
 // the test case is lifted from
@@ -655,11 +675,16 @@ fn polonius_one_example() {
 
     assert_eq!(errs.len(), 1);
 
-    let error =
-        errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .unwrap();
 
-    assert_eq!(error.borrow_span.as_ref().map(|x| x.str()), Some("&y"));
-    assert_eq!(error.mutable_access.str(), "y += 1");
+    assert_eq!(
+        error.immutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&y")
+    );
+    assert_eq!(error.mutable_access_span.str(), "y += 1");
     assert_eq!(error.borrow_usage_span.str(), "*p");
 }
 
@@ -690,7 +715,7 @@ public function main() {
 
 #[test]
 fn struct_inference_no_error() {
-    assert!(dbg!(build_table(STRUCT_INFERENCE_NO_ERROR)).is_ok());
+    assert!(build_table(STRUCT_INFERENCE_NO_ERROR).is_ok());
 }
 
 const STRUCT_INFERENCE_WITH_ERROR: &str = r#"
@@ -724,11 +749,16 @@ fn struct_inference_with_error() {
 
     assert_eq!(errs.len(), 1);
 
-    let error =
-        errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .unwrap();
 
-    assert_eq!(error.borrow_span.as_ref().map(|x| x.str()), Some("&outer"));
-    assert_eq!(error.mutable_access.str(), "outer = 32");
+    assert_eq!(
+        error.immutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&outer")
+    );
+    assert_eq!(error.mutable_access_span.str(), "outer = 32");
     assert_eq!(error.borrow_usage_span.str(), "*pair.first");
 }
 
@@ -770,10 +800,32 @@ fn struct_inference_with_lifetime_flow() {
 
     assert_eq!(errs.len(), 1);
 
-    let error =
-        errs[0].as_any().downcast_ref::<MutablyAccessWhileBorrowed>().unwrap();
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .unwrap();
 
-    assert_eq!(error.borrow_span.as_ref().map(|x| x.str()), Some("&outer"));
-    assert_eq!(error.mutable_access.str(), "outer = 32");
+    assert_eq!(
+        error.immutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&outer")
+    );
+    assert_eq!(error.mutable_access_span.str(), "outer = 32");
     assert_eq!(error.borrow_usage_span.str(), "*pair.second");
+}
+
+const USE_MUTABLE_REF_TWICE: &str = r#"
+public function print[T](value: T) {}
+
+public function main() {
+    let mutable x = 1;
+    let ref = &mutable x;
+
+    *ref = 1;
+    *ref = 2;
+}
+"#;
+
+#[test]
+fn use_mutable_ref_twice() {
+    assert!(build_table(USE_MUTABLE_REF_TWICE).is_ok());
 }

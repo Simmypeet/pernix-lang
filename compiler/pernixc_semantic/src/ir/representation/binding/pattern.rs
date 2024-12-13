@@ -32,7 +32,7 @@ use crate::{
         representation::borrow,
         scope::Scope,
         value::{
-            register::{Assignment, Load, ReferenceOf},
+            register::{Assignment, Borrow, Load},
             Value,
         },
         Erased,
@@ -1279,7 +1279,7 @@ impl<
     ) {
         // address_type <= alloca_type <= named_type
         let register_id = self.create_register_assignmnet(
-            Assignment::ReferenceOf(ReferenceOf {
+            Assignment::Borrow(Borrow {
                 address,
                 qualifier,
                 lifetime: Lifetime::Inference(Erased),

@@ -341,7 +341,7 @@ impl Representation<ir::Model> {
                 }
             }
 
-            register::Assignment::ReferenceOf(_)
+            register::Assignment::Borrow(_)
             | register::Assignment::Prefix(_)
             | register::Assignment::Binary(_)
             | register::Assignment::Array(_)

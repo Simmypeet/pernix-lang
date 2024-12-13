@@ -122,7 +122,7 @@ impl<M: Model> Values<M> {
 
 /// Obtains a reference at the given address.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ReferenceOf<M: Model> {
+pub struct Borrow<M: Model> {
     /// The address to the value.
     pub address: Address<M>,
 
@@ -136,7 +136,7 @@ pub struct ReferenceOf<M: Model> {
 impl<M: Model> Values<M> {
     fn type_of_reference_of_assignment<S: table::State>(
         &self,
-        reference_of: &ReferenceOf<M>,
+        reference_of: &Borrow<M>,
         current_site: GlobalID,
         environment: &Environment<
             M,
@@ -459,7 +459,7 @@ pub struct VariantNumber<M: Model> {
 pub enum Assignment<M: Model> {
     Tuple(Tuple<M>),
     Load(Load<M>),
-    ReferenceOf(ReferenceOf<M>),
+    Borrow(Borrow<M>),
     Prefix(Prefix<M>),
     Struct(Struct<M>),
     Variant(Variant<M>),
@@ -524,7 +524,7 @@ impl<M: Model> Values<M> {
                     environment,
                 )
             }
-            Assignment::ReferenceOf(reference_of) => {
+            Assignment::Borrow(reference_of) => {
                 return self.type_of_reference_of_assignment(
                     reference_of,
                     current_site,
@@ -649,8 +649,8 @@ impl<M: Model> Register<M> {
                 Assignment::Load(load) => Assignment::Load(Load {
                     address: load.address.transform_model(transformer)?,
                 }),
-                Assignment::ReferenceOf(reference_of) => {
-                    Assignment::ReferenceOf(ReferenceOf {
+                Assignment::Borrow(reference_of) => {
+                    Assignment::Borrow(Borrow {
                         address: reference_of
                             .address
                             .transform_model(transformer)?,

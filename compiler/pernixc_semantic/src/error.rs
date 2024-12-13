@@ -3170,33 +3170,75 @@ impl Report<&Table<Suboptimal>>
     }
 }
 
-/// The mutable access is done while the value is borrowed.
+/// The access is done while the value is mutably borrowed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MutablyAccessWhileBorrowed {
-    /// The span of the mutable access.
-    pub mutable_access: Span,
+pub struct AccessWhileMutablyBorrowed {
+    /// The span of the access.
+    pub access_span: Span,
 
     /// The span of the prior borrow.
-    pub borrow_span: Option<Span>,
+    pub mutable_borrow_span: Option<Span>,
 
     /// The usage span of the prior borrow.
     pub borrow_usage_span: Span,
 }
 
-impl Report<&Table<Suboptimal>> for MutablyAccessWhileBorrowed {
+impl Report<&Table<Suboptimal>> for AccessWhileMutablyBorrowed {
     type Error = ReportError;
 
     fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
-            span: self.mutable_access.clone(),
+            span: self.access_span.clone(),
             message: format!(
-                "mutable access to `{}` is done while it is borrowed",
-                self.mutable_access.str()
+                "access to `{}` is done while it is mutably borrowed",
+                self.access_span.str()
             ),
             severity: Severity::Error,
             help_message: None,
             related: self
-                .borrow_span
+                .mutable_borrow_span
+                .as_ref()
+                .map(|x| Related {
+                    span: x.clone(),
+                    message: "the mutable borrow starts here".to_string(),
+                })
+                .into_iter()
+                .chain(std::iter::once(Related {
+                    span: self.borrow_usage_span.clone(),
+                    message: "the mutable borrow is used here".to_string(),
+                }))
+                .collect(),
+        })
+    }
+}
+
+/// The mutable access is done while the value is immutably borrowed.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MutablyAccessWhileImmutablyBorrowed {
+    /// The span of the mutable access.
+    pub mutable_access_span: Span,
+
+    /// The span of the prior borrow.
+    pub immutable_borrow_span: Option<Span>,
+
+    /// The usage span of the prior borrow.
+    pub borrow_usage_span: Span,
+}
+
+impl Report<&Table<Suboptimal>> for MutablyAccessWhileImmutablyBorrowed {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.mutable_access_span.clone(),
+            message: format!(
+                "mutable access to `{}` is done while it is borrowed",
+                self.mutable_access_span.str()
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: self
+                .immutable_borrow_span
                 .as_ref()
                 .map(|x| Related {
                     span: x.clone(),

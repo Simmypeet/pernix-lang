@@ -7,14 +7,14 @@ use pernixc_base::{handler::Handler, source_file::Span};
 
 use super::{
     context::Context,
+    environment::get_lifetimes_in_address,
     state::{self, SetStateSucceeded, Stack, Summary},
 };
 use crate::{
     arena::{Arena, ID},
     error::{
-        MoveInLoop, MovedOutValueFromMutableReference, MovedOutWhileBorrowed,
-        MutablyAccessWhileBorrowed, OverflowOperation, TypeSystemOverflow,
-        UseAfterMove, UseBeforeInitialization, VariableDoesNotLiveLongEnough,
+        MoveInLoop, MovedOutValueFromMutableReference, OverflowOperation,
+        TypeSystemOverflow, UseAfterMove, UseBeforeInitialization,
     },
     ir::{
         self,
@@ -35,12 +35,12 @@ use crate::{
                 },
                 HandlerWrapper,
             },
-            borrow::{Access, Loan, Model as BorrowModel, Origin},
+            borrow::{Access, LocalRegion, Model as BorrowModel},
             Values,
         },
         value::{
             register::{
-                Assignment, FunctionCall, Load, ReferenceOf, Register, Struct,
+                Assignment, Borrow, FunctionCall, Load, Register, Struct,
                 Variant,
             },
             Value,
@@ -91,221 +91,6 @@ fn get_lifetimes_from_instantiation(
 }
 
 impl Values<BorrowModel> {
-    fn add_hidden_loan<S: table::State>(
-        &self,
-        mut address: &Address<BorrowModel>,
-        loans: &mut HashMap<Loan, HashSet<ID<Access>>>,
-        context: &Context,
-        current_site: GlobalID,
-        checking_span: Span,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
-    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        loop {
-            match address {
-                Address::Memory(_) => break,
-
-                Address::Field(field) => {
-                    address = &field.struct_address;
-                }
-                Address::Tuple(tuple) => {
-                    address = &tuple.tuple_address;
-                }
-                Address::Index(index) => {
-                    address = &index.array_address;
-                }
-                Address::Variant(variant) => {
-                    address = &variant.enum_address;
-                }
-
-                Address::Reference(reference) => {
-                    let reference_ty = self
-                        .type_of_address(
-                            &reference.reference_address,
-                            current_site,
-                            ty_environment,
-                        )
-                        .map_err(|x| TypeSystemOverflow::<ir::Model> {
-                            operation: OverflowOperation::TypeOf,
-                            overflow_span: checking_span.clone(),
-                            overflow_error: x.into_overflow().unwrap(),
-                        })?
-                        .result
-                        .into_reference()
-                        .unwrap();
-
-                    match reference_ty.lifetime {
-                        Lifetime::Static => {
-                            loans.entry(Loan::Static).or_default();
-                        }
-                        Lifetime::Parameter(member_id) => {
-                            loans
-                                .entry(Loan::LifetimeParameter(member_id))
-                                .or_default();
-                        }
-                        Lifetime::Inference(origin_id) => {
-                            let new_loans = context
-                                .environment
-                                .origins
-                                .get(origin_id)
-                                .unwrap()
-                                .loans
-                                .clone();
-
-                            for (loan, accesses) in new_loans {
-                                loans
-                                    .entry(loan)
-                                    .or_insert_with(HashSet::new)
-                                    .extend(accesses);
-                            }
-                        }
-                        Lifetime::Forall(_) => unreachable!(),
-                        Lifetime::Error(_) => {}
-                    }
-
-                    address = &reference.reference_address;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Checks if the access is allowed e.g., access to droped value, mutably
-    /// borrow more than once.
-    fn handle_access<S: table::State>(
-        &self,
-        address: &Address<BorrowModel>,
-        qualifier: Qualifier,
-        access_span: Span,
-        context: &mut Context,
-        accesses: &mut Arena<Access>,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
-        handler: &HandlerWrapper,
-    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        let access_id = accesses.insert(Access {
-            address: address.clone(),
-            qualifier,
-            span: access_span.clone(),
-        });
-        context.environment.occurred_accesses.insert(access_id);
-
-        // check if the variable is still alive
-        let Succeeded { result: address_ty, constraints } = self
-            .type_of_address(&address, current_site, ty_environment)
-            .map_err(|x| TypeSystemOverflow::<ir::Model> {
-                operation: OverflowOperation::TypeOf,
-                overflow_span: access_span.clone(),
-                overflow_error: x.into_overflow().unwrap(),
-            })?;
-
-        self.handle_outlives(
-            constraints.iter().map(|x| x.as_lifetime_outlives().unwrap()),
-            None,
-            access_span.clone(),
-            context,
-            current_site,
-            ty_environment,
-            handler,
-        )?;
-
-        let mut loans = context.environment.get_loans(&address_ty);
-        self.add_hidden_loan(
-            address,
-            &mut loans,
-            context,
-            current_site,
-            access_span.clone(),
-            ty_environment,
-        )?;
-
-        // check if the loan is already invalidated
-        for (loan, invalidations) in loans.iter() {
-            for invalidation in invalidations {
-                let mutable_access =
-                    accesses.get(*invalidation).unwrap().span.clone();
-
-                handler.receive(Box::new(MutablyAccessWhileBorrowed {
-                    mutable_access,
-                    borrow_span: match loan {
-                        Loan::Borrow(id) => {
-                            Some(self.registers.get(*id).unwrap().span.clone())
-                        }
-                        Loan::LifetimeParameter(_) | Loan::Static => None,
-                    },
-                    borrow_usage_span: access_span.clone(),
-                }));
-            }
-        }
-
-        // check if the variable is still alive
-        for borrow in loans.keys().filter_map(|x| x.as_borrow()) {
-            // check if the variable is still alive
-            let borrow_address = &self
-                .registers
-                .get(*borrow)
-                .unwrap()
-                .assignment
-                .as_reference_of()
-                .unwrap()
-                .address;
-
-            let Some(state) = context.stack.get_state(borrow_address) else {
-                // the variable has been dropped
-                handler.receive(Box::new(VariableDoesNotLiveLongEnough::<
-                    ir::Model,
-                > {
-                    variable_span: match *borrow_address.get_root_memory() {
-                        Memory::Parameter(id) => ty_environment
-                            .table()
-                            .get_callable(current_site.try_into().unwrap())
-                            .unwrap()
-                            .parameters()
-                            .get(id)
-                            .unwrap()
-                            .span
-                            .clone()
-                            .unwrap(),
-                        Memory::Alloca(id) => {
-                            self.allocas.get(id).unwrap().span.clone()
-                        }
-                    },
-                    for_lifetime: None,
-                    instantiation_span: access_span.clone(),
-                }));
-                continue;
-            };
-
-            match state.get_state_summary() {
-                Summary::Initialized => {}
-                Summary::Uninitialized => {}
-                Summary::Moved(span) => {
-                    handler.receive(Box::new(MovedOutWhileBorrowed {
-                        borrow_usage_span: access_span.clone(),
-                        moved_out_span: span,
-                    }));
-                }
-            }
-        }
-
-        // invalidate the mutable borrow
-        if qualifier == Qualifier::Mutable {
-            context.environment.invalidate(address, self, access_id);
-        }
-
-        Ok(())
-    }
-
     /// Handles a list of outlives constraints to populate the loans in the
     /// inference variables.
     ///
@@ -856,39 +641,16 @@ impl Values<BorrowModel> {
             handler,
         )?;
 
-        let mut loans = HashMap::new();
-
-        // check if the loans used by the function call are still valid
-        for lifetime in function_lifetimes {
-            let current_loan =
-                context.environment.get_loans_of_lifetime(&lifetime);
-
-            for (loan, invalidated) in current_loan {
-                loans
-                    .entry(loan)
-                    .or_insert_with(HashSet::new)
-                    .extend(invalidated);
-            }
-        }
-
-        for (loan, invalidations) in loans {
-            for invalidated in invalidations {
-                handler.receive(Box::new(MutablyAccessWhileBorrowed {
-                    mutable_access: accesses
-                        .get(invalidated)
-                        .unwrap()
-                        .span
-                        .clone(),
-                    borrow_span: match loan {
-                        Loan::Borrow(id) => {
-                            Some(self.registers.get(id).unwrap().span.clone())
-                        }
-                        Loan::LifetimeParameter(_) | Loan::Static => None,
-                    },
-                    borrow_usage_span: register_span.clone(),
-                }));
-            }
-        }
+        context.environment.check_lifetime_usages(
+            function_lifetimes.iter(),
+            self,
+            &context.stack,
+            register_span,
+            accesses,
+            current_site,
+            ty_environment,
+            handler,
+        );
 
         Ok(())
     }
@@ -896,7 +658,7 @@ impl Values<BorrowModel> {
     fn handle_reference_of<S: table::State>(
         &self,
         register_id: ID<Register<BorrowModel>>,
-        reference_of: &ReferenceOf<BorrowModel>,
+        reference_of: &Borrow<BorrowModel>,
         register_span: Span,
         context: &mut Context,
         accesses: &mut Arena<Access>,
@@ -933,11 +695,12 @@ impl Values<BorrowModel> {
         }
 
         // check the access
-        self.handle_access(
+        context.environment.handle_access(
             &reference_of.address,
             reference_of.qualifier,
             register_span.clone(),
-            context,
+            &context.stack,
+            self,
             accesses,
             current_site,
             ty_environment,
@@ -947,7 +710,7 @@ impl Values<BorrowModel> {
         let reference_of_origin_id =
             reference_of.lifetime.clone().into_inference().unwrap();
 
-        let Succeeded { result: ty, constraints } = self
+        let constraints_in_type_of = self
             .type_of_address(
                 &reference_of.address,
                 current_site,
@@ -957,11 +720,26 @@ impl Values<BorrowModel> {
                 operation: OverflowOperation::TypeOf,
                 overflow_span: register_span.clone(),
                 overflow_error: x.into_overflow().unwrap(),
-            })?;
+            })?
+            .constraints;
+
+        let constraints_in_address = get_lifetimes_in_address(
+            &reference_of.address,
+            register_span.clone(),
+            self,
+            current_site,
+            ty_environment,
+        )?
+        .into_iter()
+        .map(|x| Outlives::new(x, Lifetime::Inference(reference_of_origin_id)))
+        .collect::<Vec<_>>();
 
         // handle outlives constraints of the reference
         self.handle_outlives(
-            constraints.iter().map(|x| x.as_lifetime_outlives().unwrap()),
+            constraints_in_type_of
+                .iter()
+                .map(|x| x.as_lifetime_outlives().unwrap())
+                .chain(constraints_in_address.iter()),
             None,
             register_span,
             context,
@@ -970,15 +748,7 @@ impl Values<BorrowModel> {
             handler,
         )?;
 
-        let mut loans = context.environment.get_loans(&ty);
-        loans.insert(Loan::Borrow(register_id), HashSet::new());
-
-        context
-            .environment
-            .origins
-            .get_mut(reference_of_origin_id)
-            .unwrap()
-            .loans = loans;
+        context.environment.attach_borrow(register_id, reference_of_origin_id);
 
         Ok(())
     }
@@ -1065,22 +835,12 @@ impl Values<BorrowModel> {
                         .cloned()
                         .collect::<HashSet<_>>();
 
-                    for origin_id in address_lifetimes
-                        .iter()
-                        .filter_map(|x| x.as_inference())
-                        .copied()
-                    {
-                        context
-                            .environment
-                            .origins
-                            .get_mut(origin_id)
-                            .unwrap()
-                            .loans
-                            .clear();
+                    // detach the subset-relation
+                    for lifetime in address_lifetimes.iter() {
+                        context.environment.deteach_subset_relation(lifetime);
                     }
 
                     // apply the compatibility constraints
-
                     self.handle_outlives(
                         value_constraints
                             .iter()
@@ -1094,19 +854,8 @@ impl Values<BorrowModel> {
                         ty_environment,
                         handler,
                     )?;
-
-                    dbg!(
-                        value_ty,
-                        address_ty,
-                        value_constraints,
-                        address_constraints,
-                        compatibility_constraints,
-                        &context,
-                        store_span.str(),
-                    );
                 }
                 Ok(None) => {
-                    println!("check failed!");
                     panic!("{value_ty:#?} => {address_ty:#?}")
                 }
                 Err(OverflowError) => {
@@ -1119,11 +868,12 @@ impl Values<BorrowModel> {
             }
         }
 
-        self.handle_access(
+        context.environment.handle_access(
             store_address,
             Qualifier::Mutable,
             store_span,
-            context,
+            &context.stack,
+            self,
             accesses,
             current_site,
             ty_environment,
@@ -1187,11 +937,12 @@ impl Values<BorrowModel> {
             .iter()
             .all(well_formedness::Error::is_lifetime_constraints)
             {
-                self.handle_access(
+                context.environment.handle_access(
                     &load.address,
                     Qualifier::Immutable,
                     register_span,
-                    context,
+                    &context.stack,
+                    self,
                     accesses,
                     current_site,
                     ty_environment,
@@ -1235,11 +986,12 @@ impl Values<BorrowModel> {
             Summary::Initialized => {}
         };
 
-        self.handle_access(
+        context.environment.handle_access(
             &load.address,
             Qualifier::Immutable,
             register_span,
-            context,
+            &context.stack,
+            self,
             accesses,
             current_site,
             ty_environment,
@@ -1323,7 +1075,8 @@ struct Checker<
 
     /// Contains the starting borrow origins. (Contains all the id with empty
     /// values)
-    starting_origin: Arena<Origin>,
+    #[allow(unused)]
+    starting_origin: Arena<LocalRegion>,
 
     current_site: GlobalID,
     ty_environment: &'a TyEnvironment<'a, BorrowModel, S, N, O>,
@@ -1424,7 +1177,7 @@ impl<
                             1
                         }
 
-                        Assignment::ReferenceOf(reference_of) => {
+                        Assignment::Borrow(reference_of) => {
                             self.representation.values.handle_reference_of(
                                 register_assignment.id,
                                 reference_of,
@@ -1776,13 +1529,50 @@ impl<
         let (mut context, looped_blocks) = if block.is_entry() {
             assert!(block.predecessors().is_empty());
 
+            let mut starting_environment = Environment::default();
+            let predicates = self
+                .ty_environment
+                .table()
+                .get_active_premise::<BorrowModel>(self.current_site.into())
+                .unwrap()
+                .predicates;
+
+            for predicate in predicates {
+                match predicate {
+                    Predicate::LifetimeOutlives(outlives) => {
+                        let (Some(operand), Some(bound)) = (
+                            outlives.operand.try_into().ok(),
+                            outlives.bound.try_into().ok(),
+                        ) else {
+                            continue;
+                        };
+
+                        starting_environment
+                            .insert_known_subset_relation(operand, bound);
+                    }
+
+                    Predicate::TypeOutlives(outlives) => {
+                        let Some(bound) = outlives.bound.try_into().ok() else {
+                            continue;
+                        };
+
+                        for operand in RecursiveIterator::new(&outlives.operand)
+                            .filter_map(|x| x.0.into_lifetime().ok())
+                            .filter_map(|x| x.clone().try_into().ok())
+                        {
+                            starting_environment
+                                .insert_known_subset_relation(operand, bound);
+                        }
+                    }
+
+                    _ => {}
+                }
+            }
+
             (
                 Context {
                     stack: Stack::new(),
-                    environment: Environment {
-                        origins: self.starting_origin.clone(),
-                        occurred_accesses: HashSet::new(),
-                    },
+                    environment: Environment::default(),
                 },
                 Vec::new(),
             )
@@ -2025,7 +1815,7 @@ impl<
 
 #[derive(Debug, PartialEq, Eq)]
 struct ReplaceWithFreshInference<'a> {
-    origins: &'a mut Arena<Origin>,
+    origins: &'a mut Arena<LocalRegion>,
 }
 
 impl MutableRecursive<Lifetime<BorrowModel>> for ReplaceWithFreshInference<'_> {
@@ -2038,7 +1828,8 @@ impl MutableRecursive<Lifetime<BorrowModel>> for ReplaceWithFreshInference<'_> {
             return true;
         }
 
-        *term = Lifetime::Inference(self.origins.insert(Origin::default()));
+        *term =
+            Lifetime::Inference(self.origins.insert(LocalRegion::default()));
 
         true
     }
@@ -2065,7 +1856,10 @@ impl MutableRecursive<Constant<BorrowModel>> for ReplaceWithFreshInference<'_> {
 }
 
 impl ir::Representation<BorrowModel> {
-    fn replace_with_fresh_lifetimes(&mut self, origins: &mut Arena<Origin>) {
+    fn replace_with_fresh_lifetimes(
+        &mut self,
+        origins: &mut Arena<LocalRegion>,
+    ) {
         let mut visitor = ReplaceWithFreshInference { origins };
 
         // replace the lifetime in allocas

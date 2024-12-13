@@ -98,7 +98,7 @@ impl Representation<infer::Model> {
                     return None;
                 };
 
-                let Assignment::ReferenceOf(reference_of) = &self
+                let Assignment::Borrow(reference_of) = &self
                     .values
                     .registers
                     .get(register_assignment.id)

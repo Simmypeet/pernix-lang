@@ -11,7 +11,7 @@ use crate::{
             borrow,
         },
         value::{
-            register::{Assignment, Prefix, PrefixOperator, ReferenceOf},
+            register::{Assignment, Prefix, PrefixOperator, Borrow},
             Value,
         },
         Erased,
@@ -132,7 +132,7 @@ impl<
                 }
 
                 let register_id = self.create_register_assignmnet(
-                    Assignment::ReferenceOf(ReferenceOf {
+                    Assignment::Borrow(Borrow {
                         address: lvalue.address,
                         qualifier,
                         lifetime: Lifetime::Inference(Erased),

@@ -39,8 +39,7 @@ use crate::{
         value::{
             literal::{self, Literal},
             register::{
-                Assignment, Cast, FunctionCall, Load, ReferenceOf, Register,
-                Variant,
+                Assignment, Borrow, Cast, FunctionCall, Load, Register, Variant,
             },
             Value,
         },
@@ -551,7 +550,7 @@ impl<
                 );
 
                 Ok(Value::Register(self.create_register_assignmnet(
-                    Assignment::ReferenceOf(ReferenceOf {
+                    Assignment::Borrow(Borrow {
                         address: address::Address::Memory(Memory::Alloca(
                             alloca_id,
                         )),
@@ -580,7 +579,7 @@ impl<
                 }
 
                 let reference_of = self.create_register_assignmnet(
-                    Assignment::ReferenceOf(ReferenceOf {
+                    Assignment::Borrow(Borrow {
                         address: address.address,
                         qualifier,
                         lifetime: Lifetime::Inference(Erased),

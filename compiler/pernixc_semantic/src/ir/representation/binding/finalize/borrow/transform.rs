@@ -7,7 +7,7 @@ use crate::{
     arena::{Arena, Key, ID},
     ir::{
         self,
-        representation::{borrow, borrow::Origin},
+        representation::{borrow, borrow::LocalRegion},
         Erased, Transform,
     },
     symbol::table::{self, Table},
@@ -19,7 +19,7 @@ use crate::{
 
 #[derive(Debug, PartialEq, Eq)]
 struct ToBorrowRecursiveVisitor<'a> {
-    arena: &'a mut Arena<Origin>,
+    arena: &'a mut Arena<LocalRegion>,
 }
 
 impl<'a> MutableRecursive<Lifetime<borrow::Model>>
@@ -31,7 +31,7 @@ impl<'a> MutableRecursive<Lifetime<borrow::Model>>
         _: impl Iterator<Item = crate::type_system::sub_term::TermLocation>,
     ) -> bool {
         if let Lifetime::Inference(id) = term {
-            *id = self.arena.insert(Origin::default());
+            *id = self.arena.insert(LocalRegion::default());
         }
 
         true
@@ -64,18 +64,18 @@ impl<'a> MutableRecursive<Constant<borrow::Model>>
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ToBorrowTransformer {
-    arena: Arena<Origin>,
+    arena: Arena<LocalRegion>,
 }
 
-impl From<Erased> for ID<Origin> {
+impl From<Erased> for ID<LocalRegion> {
     fn from(Erased: Erased) -> Self {
         // use default value first, will be replaced later
         ID::from_index(0)
     }
 }
 
-impl From<ID<Origin>> for Erased {
-    fn from(_: ID<Origin>) -> Self { Erased }
+impl From<ID<LocalRegion>> for Erased {
+    fn from(_: ID<LocalRegion>) -> Self { Erased }
 }
 
 impl Transform<Lifetime<ir::Model>> for ToBorrowTransformer {
@@ -99,7 +99,7 @@ impl Transform<Lifetime<ir::Model>> for ToBorrowTransformer {
             Lifetime::Static => Lifetime::Static,
             Lifetime::Parameter(param) => Lifetime::Parameter(param),
             Lifetime::Inference(Erased) => {
-                Lifetime::Inference(self.arena.insert(Origin::default()))
+                Lifetime::Inference(self.arena.insert(LocalRegion::default()))
             }
             Lifetime::Forall(_) => unreachable!(),
             Lifetime::Error(error) => Lifetime::Error(error),
@@ -234,7 +234,7 @@ impl Transform<Constant<borrow::Model>> for ToIRTransofmer {
 pub(super) fn transform_to_borrow_model(
     ir: ir::Representation<ir::Model>,
     table: &Table<impl table::State>,
-) -> (ir::Representation<borrow::Model>, Arena<Origin>) {
+) -> (ir::Representation<borrow::Model>, Arena<LocalRegion>) {
     let mut transformer = ToBorrowTransformer { arena: Arena::default() };
 
     (ir.transform_model(&mut transformer, table).unwrap(), transformer.arena)

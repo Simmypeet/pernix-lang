@@ -738,7 +738,7 @@ fn reference_of() {
                 .get(id)
                 .unwrap()
                 .assignment
-                .as_reference_of()
+                .as_borrow()
                 .unwrap();
 
             assert_eq!(reference_of.address, variable_address);
@@ -2844,7 +2844,7 @@ fn create_temporary_lvalue() {
             .get(register_id)
             .unwrap()
             .assignment
-            .as_reference_of()
+            .as_borrow()
             .unwrap();
 
         // this should be an alloca that temporary stores 32 for the reference
@@ -3388,7 +3388,7 @@ fn arrow_access() {
                 .get(store.value.as_register().copied().unwrap())
                 .unwrap()
                 .assignment
-                .as_reference_of()
+                .as_borrow()
                 .unwrap();
 
             assert_eq!(reference_of.address, *variable_address);
@@ -3516,7 +3516,7 @@ fn struct_method() {
                 .get(reference_of_register_id)
                 .unwrap()
                 .assignment
-                .as_reference_of()
+                .as_borrow()
                 .unwrap();
 
             assert_eq!(reference_of.address, *variable_address);
@@ -3575,7 +3575,7 @@ fn struct_method() {
                 .get(reference_of_register_id)
                 .unwrap()
                 .assignment
-                .as_reference_of()
+                .as_borrow()
                 .unwrap();
 
             assert_eq!(reference_of.address, *mutable_variable_address);
