@@ -58,6 +58,7 @@ impl DynamicBitSet {
     /// # Returns
     ///
     /// Returns true if there was a change in the bitset
+    #[allow(unused)]
     pub fn unset(&self, index: usize) -> bool {
         if index >= self.size {
             panic!("index out of bounds");
@@ -116,6 +117,7 @@ impl DynamicBitSet {
     /// # Returns
     ///
     /// Returns true if there was a change in the bitset
+    #[allow(unused)]
     pub fn and(&self, other: &Self) -> bool {
         if self.size != other.size {
             panic!("bitsets have different sizes");
@@ -132,6 +134,7 @@ impl DynamicBitSet {
     }
 
     /// Checks if any bit is set to 1
+    #[allow(unused)]
     pub fn is_not_zero(&self) -> bool {
         self.bits.iter().any(|word| word.get() != 0)
     }
@@ -259,6 +262,7 @@ impl TransitiveClosure {
 
     /// Returns an iterator over the vertices reachable from the given vertex
     /// index.
+    #[allow(unused)]
     pub fn reachable_from(
         &self,
         from: usize,
@@ -277,6 +281,7 @@ impl TransitiveClosure {
     /// This operation recomputes the whole transitive closure matrix.
     /// Therefore, it's better to batch the removal of edges and call this
     /// function once.
+    #[allow(unused)]
     pub fn remove_edges(
         &mut self,
         edges: impl IntoIterator<Item = (usize, usize)>,

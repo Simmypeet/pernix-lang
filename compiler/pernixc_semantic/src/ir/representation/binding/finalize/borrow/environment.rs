@@ -1,6 +1,5 @@
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
-    hash::Hash,
     sync::Arc,
 };
 
@@ -151,17 +150,6 @@ pub struct Environment {
 
     occurred_accesses: HashSet<ID<Access>>,
     active_borrows: HashSet<ID<Register<BorrowModel>>>,
-}
-
-fn merge_relation<K: Clone + Eq + Hash, V: Clone + Eq + Hash>(
-    this: &mut HashMap<K, HashSet<V>>,
-    other: &HashMap<K, HashSet<V>>,
-) {
-    for (other_key, other_values) in other {
-        this.entry(other_key.clone())
-            .or_default()
-            .extend(other_values.iter().cloned());
-    }
 }
 
 /// Gets all the lifetimes included in the given address.
