@@ -23,7 +23,7 @@ use crate::{
         address::{Address, Memory},
         alloca::Alloca,
         control_flow_graph::Block,
-        instruction::{Instruction, Terminator, UnconditionalJump},
+        instruction::{Instruction, Return, Terminator, UnconditionalJump},
         representation::{
             binding::{
                 finalize::{
@@ -124,6 +124,82 @@ impl Values<BorrowModel> {
             ty_environment,
             handler,
         )
+    }
+
+    fn handle_return<S: table::State>(
+        &self,
+        ret: &Return<BorrowModel>,
+        context: &mut Context,
+        current_site: GlobalID,
+        ty_environment: &TyEnvironment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+        handler: &HandlerWrapper,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        let return_ty = Type::from_default_model(
+            ty_environment
+                .table()
+                .get_callable(current_site.try_into().unwrap())
+                .unwrap()
+                .return_type()
+                .clone(),
+        );
+
+        let Succeeded { result: value_ty, mut constraints } = self
+            .type_of_value(&ret.value, current_site, ty_environment)
+            .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                operation: OverflowOperation::TypeOf,
+                overflow_span: ret.span.clone(),
+                overflow_error: x.into_overflow().unwrap(),
+            })?;
+
+        match value_ty.compatible(
+            &return_ty,
+            Variance::Covariant,
+            ty_environment,
+        ) {
+            Ok(Some(Succeeded {
+                result:
+                    Compatibility {
+                        forall_lifetime_instantiations,
+                        forall_lifetime_errors,
+                    },
+                constraints: compatibility_constraints,
+            })) => {
+                assert!(forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
+                assert!(forall_lifetime_errors.is_empty());
+
+                constraints.extend(compatibility_constraints);
+
+                self.handle_outlives(
+                    constraints
+                        .iter()
+                        .map(|x| x.as_lifetime_outlives().unwrap()),
+                    ret.span.clone(),
+                    context,
+                    current_site,
+                    ty_environment,
+                    handler,
+                )?;
+            }
+            Ok(None) => {
+                panic!("{value_ty:#?} => {return_ty:#?}")
+            }
+            Err(OverflowError) => {
+                return Err(TypeSystemOverflow {
+                    operation: OverflowOperation::TypeCheck,
+                    overflow_span: ret.span.clone(),
+                    overflow_error: OverflowError,
+                })
+            }
+        }
+
+        Ok(())
     }
 
     fn handle_variant<S: table::State>(
@@ -1436,6 +1512,24 @@ impl<
             };
 
             current_index += step;
+        }
+
+        let Some(terminator) = block.terminator() else {
+            return Ok(());
+        };
+
+        match terminator {
+            Terminator::Return(ret) => {
+                self.representation.values.handle_return(
+                    ret,
+                    context,
+                    self.current_site,
+                    self.ty_environment,
+                    handler,
+                )?;
+            }
+
+            Terminator::Jump(_) | Terminator::Panic => {}
         }
 
         Ok(())

@@ -25,7 +25,7 @@ use crate::{
         MismatchedImplementationArguments,
         MismatchedImplementationConstantTypeParameter,
         OverflowCalculatingRequirementForInstantiation, OverflowOperation,
-        RecursiveTraitTypeEquality, TypeSystemOverflow, UnsatisifedPredicate,
+        RecursiveTraitTypeEquality, TypeSystemOverflow, UnsatisfiedPredicate,
         UnusedGenericParameterInImplementation,
     },
     symbol::{
@@ -115,7 +115,7 @@ where
     ) {
         match self {
             Self::Unsatisfied { predicate, predicate_declaration_span } => {
-                handler.receive(Box::new(UnsatisifedPredicate {
+                handler.receive(Box::new(UnsatisfiedPredicate {
                     predicate,
                     instantiation_span,
                     predicate_declaration_span,
@@ -944,7 +944,7 @@ where
                         Ok(Some(Satisfied)) => {}
 
                         Ok(None) => {
-                            handler.receive(Box::new(UnsatisifedPredicate {
+                            handler.receive(Box::new(UnsatisfiedPredicate {
                                 predicate: predicate::Predicate::TypeOutlives(
                                     Outlives {
                                         operand: reference
@@ -1048,7 +1048,7 @@ where
                         Ok(Some(Satisfied)) => {}
 
                         Ok(None) => {
-                            handler.receive(Box::new(UnsatisifedPredicate {
+                            handler.receive(Box::new(UnsatisfiedPredicate {
                                 predicate: Predicate::LifetimeOutlives(
                                     outlives,
                                 ),

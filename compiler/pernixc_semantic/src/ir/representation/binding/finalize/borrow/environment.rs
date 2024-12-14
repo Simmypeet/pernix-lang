@@ -15,7 +15,7 @@ use crate::{
     error::{
         self, AccessWhileMutablyBorrowed, MovedOutWhileBorrowed,
         MutablyAccessWhileImmutablyBorrowed, OverflowOperation,
-        TypeSystemOverflow, UnsatisifedPredicate,
+        TypeSystemOverflow, UnsatisfiedPredicate,
         VariableDoesNotLiveLongEnough,
     },
     ir::{
@@ -40,7 +40,7 @@ use crate::{
         normalizer::Normalizer,
         observer::Observer,
         predicate::{Outlives, Predicate},
-        term::{lifetime::Lifetime, r#type::Qualifier},
+        term::{lifetime::Lifetime, r#type::Qualifier, Term},
         visitor::RecursiveIterator,
         Compute, Satisfied,
     },
@@ -719,7 +719,7 @@ impl Environment {
                     )? {
                         Some(Satisfied) => {}
                         None => {
-                            handler.receive(Box::new(UnsatisifedPredicate {
+                            handler.receive(Box::new(UnsatisfiedPredicate {
                                 predicate: Predicate::LifetimeOutlives(
                                     outlives.clone(),
                                 ),
@@ -798,9 +798,13 @@ impl Environment {
                     }
                 };
 
-                handler.receive(Box::new(VariableDoesNotLiveLongEnough {
+                handler.receive(Box::new(VariableDoesNotLiveLongEnough::<
+                    ir::Model,
+                > {
                     variable_span,
-                    for_lifetime: Some(universal_region_bound.clone()),
+                    for_lifetime: Some(Lifetime::from_other_model(
+                        universal_region_bound.clone(),
+                    )),
                     instantiation_span: checking_span.clone(),
                 }));
             }
@@ -834,7 +838,7 @@ impl Environment {
                     )?
                     .is_none()
                 {
-                    handler.receive(Box::new(UnsatisifedPredicate {
+                    handler.receive(Box::new(UnsatisfiedPredicate {
                         predicate: Predicate::LifetimeOutlives(outlives),
                         instantiation_span: checking_span.clone(),
                         predicate_declaration_span: None,

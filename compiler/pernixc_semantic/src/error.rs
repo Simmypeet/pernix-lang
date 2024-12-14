@@ -1843,7 +1843,7 @@ impl Report<&Table<Suboptimal>> for UnimplementedTraitMembers {
 
 /// The bound is not satisfied upon instantiation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnsatisifedPredicate<M: Model> {
+pub struct UnsatisfiedPredicate<M: Model> {
     /// The unsatisfied bound.
     pub predicate: Predicate<M>,
 
@@ -1854,7 +1854,7 @@ pub struct UnsatisifedPredicate<M: Model> {
     pub predicate_declaration_span: Option<Span>,
 }
 
-impl<M: Model> Report<&Table<Suboptimal>> for UnsatisifedPredicate<M>
+impl<M: Model> Report<&Table<Suboptimal>> for UnsatisfiedPredicate<M>
 where
     Predicate<M>: Display<Suboptimal>,
 {

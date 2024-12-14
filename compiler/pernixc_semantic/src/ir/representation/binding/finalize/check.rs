@@ -34,7 +34,7 @@ fn report_error(
                 return;
             }
 
-            handler.receive(Box::new(error::UnsatisifedPredicate {
+            handler.receive(Box::new(error::UnsatisfiedPredicate {
                 predicate: unsatisfied.predicate,
                 instantiation_span,
                 predicate_declaration_span: unsatisfied

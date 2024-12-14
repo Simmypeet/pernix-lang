@@ -7,7 +7,7 @@ use crate::{
     error::{
         AdtImplementationIsNotGeneralEnough, Error,
         ImplementationIsNotGeneralEnough, MismatchedImplementationArguments,
-        UnsatisifedPredicate,
+        UnsatisfiedPredicate,
     },
     symbol::{
         table::{self, representation::Index, Suboptimal, Success, Table},
@@ -73,7 +73,7 @@ fn check_lifetime_matching_error(
     assert!(errors.iter().any(|error| {
         let Some(error) = error
             .as_any()
-            .downcast_ref::<UnsatisifedPredicate<model::Default>>()
+            .downcast_ref::<UnsatisfiedPredicate<model::Default>>()
         else {
             return false;
         };
@@ -88,7 +88,7 @@ fn check_lifetime_matching_error(
     assert!(errors.iter().any(|error| {
         let Some(error) = error
             .as_any()
-            .downcast_ref::<UnsatisifedPredicate<model::Default>>()
+            .downcast_ref::<UnsatisfiedPredicate<model::Default>>()
         else {
             return false;
         };
@@ -187,7 +187,7 @@ fn predicate_requirements() {
         errors.iter().any(|x| {
             let Some(error) = x
                 .as_any()
-                .downcast_ref::<UnsatisifedPredicate<model::Default>>()
+                .downcast_ref::<UnsatisfiedPredicate<model::Default>>()
             else {
                 return false;
             };
@@ -375,7 +375,7 @@ fn trait_occurrence() {
     assert!(errors.iter().any(|error| {
         let Some(error) = error
             .as_any()
-            .downcast_ref::<UnsatisifedPredicate<model::Default>>()
+            .downcast_ref::<UnsatisfiedPredicate<model::Default>>()
         else {
             return false;
         };
@@ -557,7 +557,7 @@ fn reference_type_occurrence() {
     assert!(errors.iter().any(|error| {
         let Some(error) = error
             .as_any()
-            .downcast_ref::<UnsatisifedPredicate<model::Default>>()
+            .downcast_ref::<UnsatisfiedPredicate<model::Default>>()
         else {
             return false;
         };
@@ -604,7 +604,7 @@ fn check_unpacked_ocurrence() {
     assert!(errors.iter().any(|error| {
         let Some(error) = error
             .as_any()
-            .downcast_ref::<UnsatisifedPredicate<model::Default>>()
+            .downcast_ref::<UnsatisfiedPredicate<model::Default>>()
         else {
             return false;
         };
