@@ -99,7 +99,10 @@ impl<
             .control_flow_graph
             .insert_terminator(
                 self.current_block_id,
-                Terminator::Return(instruction::Return { value }),
+                Terminator::Return(instruction::Return {
+                    value,
+                    span: syntax_tree.span(),
+                }),
             )
         {
             panic!("invalid block id");

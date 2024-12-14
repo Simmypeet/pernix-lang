@@ -119,6 +119,9 @@ impl<M: Model> Jump<M> {
 pub struct Return<M: Model> {
     /// The value to return.
     pub value: Value<M>,
+
+    /// The span where the return instruction is generated.
+    pub span: Span,
 }
 
 /// Represents an assignment of a register.
@@ -316,6 +319,7 @@ impl<M: Model> Terminator<M> {
             }
             Self::Return(r#return) => Terminator::Return(Return {
                 value: r#return.value.transform_model(transformer)?,
+                span: r#return.span,
             }),
             Self::Panic => Terminator::Panic,
         })
