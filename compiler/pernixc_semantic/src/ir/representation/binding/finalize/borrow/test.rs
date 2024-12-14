@@ -938,3 +938,30 @@ where
 fn return_correct_lifetime() {
     assert!(build_table(RETURN_CORRECT_LIFETIME).is_ok());
 }
+
+const DEREFERENCE_MOVED_MUTABLE_REFERENCE_OF_COPYABLE_TYPE: &str = r#"
+public function consume[T](..: T) {}
+
+public function test() {
+    let mutable x = 0;
+    let ref = &mutable x;
+
+    let movedToRef = ref;
+
+    consume(*ref);
+}
+"#;
+
+#[test]
+fn dereference_moved_mutable_reference_of_copyable_type() {
+    let (_, errs) =
+        build_table(DEREFERENCE_MOVED_MUTABLE_REFERENCE_OF_COPYABLE_TYPE)
+            .unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0].as_any().downcast_ref::<UseAfterMove>().unwrap();
+
+    assert_eq!(error.use_span.str(), "*ref");
+    assert_eq!(error.move_span.str(), "ref");
+}

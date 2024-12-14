@@ -936,69 +936,66 @@ impl Values<BorrowModel> {
             .unwrap();
 
         // has been checked previously
-        let memory_state = if load.address.get_reference_qualifier()
-            == Some(Qualifier::Immutable)
-            || load.address.is_behind_index()
-        {
-            context
-                .stack
-                .get_state(&load.address)
-                .expect("should found")
-                .get_state_summary()
-        } else {
-            let copy_marker = ty_environment
-                .table()
-                .get_by_qualified_name(["core", "Copy"].into_iter())
-                .unwrap()
-                .into_marker()
-                .unwrap();
-
-            // no need to move
-            if well_formedness::predicate_satisfied(
-                Predicate::PositiveMarker(PositiveMarker::new(
-                    copy_marker,
-                    GenericArguments {
-                        lifetimes: Vec::new(),
-                        types: vec![ty.result],
-                        constants: Vec::new(),
-                    },
-                )),
-                None,
-                false,
-                ty_environment,
-            )
-            .iter()
-            .all(well_formedness::Error::is_lifetime_constraints)
+        let memory_state = 'memory_state: {
+            if load.address.get_reference_qualifier()
+                == Some(Qualifier::Immutable)
+                || load.address.is_behind_index()
             {
-                context.environment.handle_access(
-                    &load.address,
-                    Qualifier::Immutable,
-                    register_span,
-                    &context.stack,
-                    self,
-                    accesses,
-                    current_site,
+                context
+                    .stack
+                    .get_state(&load.address)
+                    .expect("should found")
+                    .get_state_summary()
+            } else {
+                let copy_marker = ty_environment
+                    .table()
+                    .get_by_qualified_name(["core", "Copy"].into_iter())
+                    .unwrap()
+                    .into_marker()
+                    .unwrap();
+
+                // no need to move
+                if well_formedness::predicate_satisfied(
+                    Predicate::PositiveMarker(PositiveMarker::new(
+                        copy_marker,
+                        GenericArguments {
+                            lifetimes: Vec::new(),
+                            types: vec![ty.result],
+                            constants: Vec::new(),
+                        },
+                    )),
+                    None,
+                    false,
                     ty_environment,
-                    handler,
+                )
+                .iter()
+                .all(well_formedness::Error::is_lifetime_constraints)
+                {
+                    break 'memory_state context
+                        .stack
+                        .get_state(&load.address)
+                        .expect("should found")
+                        .get_state_summary();
+                }
+
+                let state = context.stack.set_uninitialized(
+                    &load.address,
+                    register_span.clone(),
+                    ty_environment,
                 )?;
-                return Ok(());
-            }
 
-            let state = context.stack.set_uninitialized(
-                &load.address,
-                register_span.clone(),
-                ty_environment,
-            )?;
+                match state {
+                    SetStateSucceeded::Unchanged(initialized, _) => initialized
+                        .as_false()
+                        .and_then(|x| x.latest_accessor().as_ref())
+                        .map_or(Summary::Initialized, |x| {
+                            Summary::Moved(x.clone())
+                        }),
 
-            match state {
-                SetStateSucceeded::Unchanged(initialized, _) => initialized
-                    .as_false()
-                    .and_then(|x| x.latest_accessor().as_ref())
-                    .map_or(Summary::Initialized, |x| {
-                        Summary::Moved(x.clone())
-                    }),
-
-                SetStateSucceeded::Updated(state) => state.get_state_summary(),
+                    SetStateSucceeded::Updated(state) => {
+                        state.get_state_summary()
+                    }
+                }
             }
         };
 
