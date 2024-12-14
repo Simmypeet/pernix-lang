@@ -719,9 +719,13 @@ impl Environment {
                     )? {
                         Some(Satisfied) => {}
                         None => {
-                            handler.receive(Box::new(UnsatisfiedPredicate {
-                                predicate: Predicate::LifetimeOutlives(
-                                    outlives.clone(),
+                            handler.receive(Box::new(UnsatisfiedPredicate::<
+                                ir::Model,
+                            > {
+                                predicate: Predicate::from_other_model(
+                                    Predicate::LifetimeOutlives(
+                                        outlives.clone(),
+                                    ),
                                 ),
                                 instantiation_span: checking_span.clone(),
                                 predicate_declaration_span: None,
@@ -838,8 +842,12 @@ impl Environment {
                     )?
                     .is_none()
                 {
-                    handler.receive(Box::new(UnsatisfiedPredicate {
-                        predicate: Predicate::LifetimeOutlives(outlives),
+                    handler.receive(Box::new(UnsatisfiedPredicate::<
+                        ir::Model,
+                    > {
+                        predicate: Predicate::from_other_model(
+                            Predicate::LifetimeOutlives(outlives),
+                        ),
                         instantiation_span: checking_span.clone(),
                         predicate_declaration_span: None,
                     }));

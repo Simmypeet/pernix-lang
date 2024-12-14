@@ -1,12 +1,18 @@
+use pernixc_base::handler::Panic;
+
 use crate::{
     error::{
         AccessWhileMutablyBorrowed, MoveInLoop,
         MovedOutValueFromMutableReference, MovedOutWhileBorrowed,
-        MutablyAccessWhileImmutablyBorrowed, UseAfterMove,
-        VariableDoesNotLiveLongEnough,
+        MutablyAccessWhileImmutablyBorrowed, UnsatisfiedPredicate,
+        UseAfterMove, VariableDoesNotLiveLongEnough,
     },
     ir,
-    symbol::table::representation::test::build_table,
+    symbol::table::{
+        representation::test::{build_table, parse},
+        resolution::Config,
+    },
+    type_system::predicate::{Outlives, Predicate},
 };
 
 const USE_AFTER_PARTIAL_MOVE: &str = r#"
@@ -828,4 +834,107 @@ public function main() {
 #[test]
 fn use_mutable_ref_twice() {
     assert!(build_table(USE_MUTABLE_REF_TWICE).is_ok());
+}
+
+const RETURN_LOCAL_REFERENCE: &str = r#"
+public function test['a](param: &'a int32): &'a int32 {
+    let local = 0;
+    return &local;
+}
+"#;
+
+#[test]
+fn return_local_reference() {
+    let (table, errs) = build_table(RETURN_LOCAL_REFERENCE).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let test_function = table.get_by_qualified_name(["test", "test"]).unwrap();
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .unwrap();
+
+    assert_eq!(error.variable_span.str(), "local");
+    assert_eq!(
+        error.for_lifetime,
+        Some(
+            table
+                .resolve_lifetime(
+                    &parse("'a"),
+                    test_function,
+                    Config::default(),
+                    &Panic
+                )
+                .unwrap()
+        )
+    );
+    assert_eq!(error.instantiation_span.str(), "return &local");
+}
+
+const RETURN_WRONG_LIFETIME: &str = r#"
+public function test['a, 'b](
+    first: &'a int32,
+    second: &'b int32,
+): &'a int32 {
+    return second;
+}
+"#;
+
+#[test]
+fn return_wrong_lifetime() {
+    let (table, errs) = build_table(RETURN_WRONG_LIFETIME).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+    dbg!(&errs);
+
+    let test_function = table.get_by_qualified_name(["test", "test"]).unwrap();
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<UnsatisfiedPredicate<ir::Model>>()
+        .unwrap();
+
+    let a_lt = table
+        .resolve_lifetime(
+            &parse("'a"),
+            test_function,
+            Config::default(),
+            &Panic,
+        )
+        .unwrap();
+    let b_lt = table
+        .resolve_lifetime(
+            &parse("'b"),
+            test_function,
+            Config::default(),
+            &Panic,
+        )
+        .unwrap();
+
+    assert_eq!(
+        error.predicate,
+        Predicate::LifetimeOutlives(Outlives::new(b_lt, a_lt))
+    );
+}
+
+const RETURN_CORRECT_LIFETIME: &str = r#"
+public function test['a, 'b](
+    test: &'a (int32, int32, int32),
+): &'b int32 
+where
+    'a: 'b
+{
+    match (true, true) {
+        (true, false): return &test->0,
+        (false, false): return &test->1,
+        (.., true):    return &test->2,
+    }
+}
+"#;
+
+#[test]
+fn return_correct_lifetime() {
+    assert!(build_table(RETURN_CORRECT_LIFETIME).is_ok());
 }
