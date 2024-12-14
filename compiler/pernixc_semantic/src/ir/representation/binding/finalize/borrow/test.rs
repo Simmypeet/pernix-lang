@@ -951,13 +951,18 @@ fn return_correct_lifetime() {
 }
 
 const INVALIDATED_UNIVERSAL_REGIONS: &str = r#"
-
 // fake vector
 public struct Vector[T] {
 }
 
 implements[T] Vector[T] {
     public function new(): this { panic; }
+    public function clear['a](self: &'a mutable this)
+    where
+        T: 'a
+    {
+        panic;
+    }
     public function push['a](self: &'a mutable this, value: T)
     where
         T: 'a
@@ -965,8 +970,6 @@ implements[T] Vector[T] {
         panic;
     }
 }
-
-public function consume[T](..: T) {}
 
 public function test['a, 'b](
     numbers: &'b mutable Vector[&'a mutable int32],
@@ -976,7 +979,7 @@ where
     'a: 'b
 {
     numbers->push(&mutable *number);
-    consume(*number);
+    *number;
 }
 "#;
 
@@ -996,13 +999,65 @@ fn invalidated_universal_regions() {
     let a_lt = table
         .resolve_lifetime(&parse("'a"), function, Config::default(), &Panic)
         .unwrap();
+    let b_lt = table
+        .resolve_lifetime(&parse("'b"), function, Config::default(), &Panic)
+        .unwrap();
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(|x| x.str()),
         Some("&mutable *number")
     );
     assert_eq!(error.access_span.str(), "*number");
-    assert_eq!(error.borrow_usage.as_by_universal_regions(), Some(&vec![a_lt]));
+
+    let by_universal_region =
+        error.borrow_usage.as_by_universal_regions().unwrap();
+
+    assert_eq!(by_universal_region.len(), 2);
+
+    assert!(by_universal_region.contains(&a_lt));
+    assert!(by_universal_region.contains(&b_lt));
+}
+
+const VALID_USE_OF_UNIVERSAL_REGIONS: &str = r#"
+
+// fake vector
+public struct Vector[T] {
+}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function clear['a](self: &'a mutable this)
+    where
+        T: 'a
+    {
+        panic;
+    }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+
+public function consume[T](..: T) {}
+
+public function test['a, 'b](
+    numbers: &'b mutable Vector[&'a mutable int32],
+    number: &'a mutable int32,
+)
+where
+    'a: 'b
+{
+    numbers->push(&mutable *number);
+    numbers->clear();
+}
+"#;
+
+#[test]
+fn valid_use_of_universal_regions() {
+    assert!(build_table(VALID_USE_OF_UNIVERSAL_REGIONS).is_ok());
 }
 
 const DEREFERENCE_MOVED_MUTABLE_REFERENCE_OF_COPYABLE_TYPE: &str = r#"

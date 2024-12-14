@@ -541,13 +541,13 @@ impl Environment {
                     )
                 {
                     if self.subset_relations.has_path(
-                        self.region_info.into_transitive_closure_index(
-                            Region::Universal(*universal_region),
-                        ),
                         self.attached_borrows
                             .get(&borrow)
                             .unwrap()
                             .into_index(),
+                        self.region_info.into_transitive_closure_index(
+                            Region::Universal(*universal_region),
+                        ),
                     ) {
                         universal_lifetimes.push(equiv_lifetime);
                     }
@@ -844,6 +844,25 @@ impl Environment {
         for (operand_region, universal_region_bound) in
             local_to_universal_checks
         {
+            // add the edges
+            'out: {
+                let from_index =
+                    self.region_info.into_transitive_closure_index(
+                        Region::Local(operand_region),
+                    );
+                let to_index = self.region_info.into_transitive_closure_index(
+                    Region::Universal(match universal_region_bound {
+                        Lifetime::Static => UniversalRegion::Static,
+                        Lifetime::Parameter(member_id) => {
+                            UniversalRegion::LifetimeParameter(*member_id)
+                        }
+                        _ => break 'out,
+                    }),
+                );
+
+                self.subset_relations.add_edge(from_index, to_index);
+            }
+
             let mut universal_regions_to_check = HashSet::new();
 
             // checks for the possible use of local borrows
@@ -917,7 +936,7 @@ impl Environment {
                 )),
             );
 
-            for universal_region in dbg!(universal_regions_to_check) {
+            for universal_region in universal_regions_to_check {
                 // create a regular outlives predicate
                 let outlives = Outlives::new(
                     match universal_region {

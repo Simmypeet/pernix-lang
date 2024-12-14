@@ -1458,6 +1458,16 @@ impl<
                         .copied()
                         .collect::<Vec<_>>();
 
+                    context.environment.detach_subset_relations(
+                        poped_scope.memories_by_address().values().flat_map(
+                            |x| {
+                                RecursiveIterator::new(x.r#type())
+                                    .filter_map(|x| x.0.into_lifetime().ok())
+                                    .filter_map(|x| x.clone().try_into().ok())
+                            },
+                        ),
+                    );
+
                     sort_drop_addresses(
                         &mut memories,
                         &self.representation.values.allocas,
