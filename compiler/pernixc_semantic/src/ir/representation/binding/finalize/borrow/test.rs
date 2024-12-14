@@ -398,7 +398,6 @@ fn mutably_access_while_borrowed() {
     let (_, errs) = build_table(MUTABLY_ACCESS_WHILE_BORROWED).unwrap_err();
 
     assert_eq!(errs.len(), 1);
-    dbg!(&errs);
 
     let error = &errs[0]
         .as_any()
@@ -900,7 +899,6 @@ fn return_wrong_lifetime() {
     let (table, errs) = build_table(RETURN_WRONG_LIFETIME).unwrap_err();
 
     assert_eq!(errs.len(), 1);
-    dbg!(&errs);
 
     let test_function = table.get_by_qualified_name(["test", "test"]).unwrap();
 
@@ -986,7 +984,6 @@ where
 fn invalidated_universal_regions() {
     let (table, errs) = build_table(INVALIDATED_UNIVERSAL_REGIONS).unwrap_err();
 
-    dbg!(&errs);
     assert_eq!(errs.len(), 1);
 
     let error = errs[0]
@@ -1033,4 +1030,54 @@ fn dereference_moved_mutable_reference_of_copyable_type() {
 
     assert_eq!(error.use_span.str(), "*ref");
     assert_eq!(error.move_span.str(), "ref");
+}
+
+const STRUCT_REGION_INFERENCE: &str = r#"
+public struct RefWrapper['a, T] 
+where
+    T: 'a
+{
+    public ref: &'a T,
+}
+
+public function test['a, 'b](
+    ref: &'a int32
+): RefWrapper['b, int32] {
+    let test = 32;
+    let another = &test;
+
+    return RefWrapper { ref: ref };
+}
+"#;
+
+#[test]
+fn struct_region_inference() {
+    let (table, errs) = build_table(STRUCT_REGION_INFERENCE).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<UnsatisfiedPredicate<ir::Model>>()
+        .unwrap();
+
+    let function = table.get_by_qualified_name(["test", "test"]).unwrap();
+
+    let a_lt = table
+        .resolve_lifetime(&parse("'a"), function, Config::default(), &Panic)
+        .unwrap();
+
+    let b_lt = table
+        .resolve_lifetime(&parse("'b"), function, Config::default(), &Panic)
+        .unwrap();
+
+    assert_eq!(
+        error.predicate,
+        Predicate::LifetimeOutlives(Outlives::new(a_lt, b_lt))
+    );
+
+    assert_eq!(
+        error.instantiation_span.str(),
+        "return RefWrapper { ref: ref }"
+    );
 }

@@ -685,6 +685,37 @@ impl Environment {
         }
     }
 
+    /// Gets the universal regions of the given lifetime
+    pub fn get_universal_regions_of_lifetime(
+        &self,
+        lifetime: &Lifetime<BorrowModel>,
+    ) -> impl Iterator<Item = UniversalRegion> + '_ {
+        let region = match lifetime {
+            Lifetime::Static => Region::Universal(UniversalRegion::Static),
+            Lifetime::Parameter(member_id) => Region::Universal(
+                UniversalRegion::LifetimeParameter(*member_id),
+            ),
+            Lifetime::Inference(local_region) => Region::Local(*local_region),
+            Lifetime::Forall(_) => unreachable!("should be instantiated"),
+            Lifetime::Error(_) => return None.into_iter().flatten(),
+        };
+
+        let region_index =
+            self.region_info.into_transitive_closure_index(region);
+
+        Some(self.region_info.indices_by_univseral_region.iter().filter_map(
+            move |(universal_region, index)| {
+                if self.subset_relations.has_path(*index, region_index) {
+                    Some(*universal_region)
+                } else {
+                    None
+                }
+            },
+        ))
+        .into_iter()
+        .flatten()
+    }
+
     /// Gets the borrows occurred so far in the lifetime
     pub fn get_borrows_of_lifetime(
         &self,
@@ -813,10 +844,12 @@ impl Environment {
         for (operand_region, universal_region_bound) in
             local_to_universal_checks
         {
+            let mut universal_regions_to_check = HashSet::new();
+
+            // checks for the possible use of local borrows
             let borrows = self
                 .get_borrows_of_lifetime(&Lifetime::Inference(operand_region));
 
-            let mut universal_regions_to_check = HashSet::new();
             for borrow in borrows {
                 let mut universal_regions = Vec::new();
                 let borrow_local_region =
@@ -878,7 +911,13 @@ impl Environment {
                 }));
             }
 
-            for universal_region in universal_regions_to_check {
+            universal_regions_to_check.extend(
+                self.get_universal_regions_of_lifetime(&Lifetime::Inference(
+                    operand_region,
+                )),
+            );
+
+            for universal_region in dbg!(universal_regions_to_check) {
                 // create a regular outlives predicate
                 let outlives = Outlives::new(
                     match universal_region {
