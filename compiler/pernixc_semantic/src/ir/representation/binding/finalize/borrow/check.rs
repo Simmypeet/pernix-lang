@@ -1,13 +1,15 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeSet, HashMap, HashSet},
+    sync::Arc,
 };
 
 use pernixc_base::{handler::Handler, source_file::Span};
 
 use super::{
     context::Context,
-    environment::get_lifetimes_in_address,
+    environment::{get_lifetimes_in_address, RegionInfo},
+    local_region_generator::LocalRegionGenerator,
     state::{self, SetStateSucceeded, Stack, Summary},
 };
 use crate::{
@@ -35,7 +37,7 @@ use crate::{
                 },
                 HandlerWrapper,
             },
-            borrow::{Access, LocalRegion, Model as BorrowModel},
+            borrow::{Access, Model as BorrowModel},
             Values,
         },
         value::{
@@ -103,7 +105,6 @@ impl Values<BorrowModel> {
         &self,
         outlives: impl IntoIterator<Item = &'a Outlives<Lifetime<BorrowModel>>>
             + Clone,
-        priority_lifetimes: Option<&HashSet<Lifetime<BorrowModel>>>,
         checking_span: Span,
         context: &mut Context,
         current_site: GlobalID,
@@ -115,48 +116,14 @@ impl Values<BorrowModel> {
         >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        if let Some(priority_lifetimes) = priority_lifetimes {
-            let is_flow_into = |x: &Outlives<Lifetime<BorrowModel>>| {
-                !priority_lifetimes.contains(&x.operand)
-                    && priority_lifetimes.contains(&x.bound)
-            };
-            for outlive in
-                outlives.clone().into_iter().filter(|x| is_flow_into(x))
-            {
-                context.environment.handle_outlives(
-                    &outlive,
-                    checking_span.clone(),
-                    current_site,
-                    self,
-                    ty_environment,
-                    handler,
-                )?;
-            }
-
-            for outlive in outlives.into_iter().filter(|x| !is_flow_into(x)) {
-                context.environment.handle_outlives(
-                    &outlive,
-                    checking_span.clone(),
-                    current_site,
-                    self,
-                    ty_environment,
-                    handler,
-                )?;
-            }
-        } else {
-            for outlive in outlives {
-                context.environment.handle_outlives(
-                    &outlive,
-                    checking_span.clone(),
-                    current_site,
-                    self,
-                    ty_environment,
-                    handler,
-                )?;
-            }
-        }
-
-        Ok(())
+        context.environment.handle_outlives_constraints(
+            outlives,
+            checking_span,
+            current_site,
+            self,
+            ty_environment,
+            handler,
+        )
     }
 
     fn handle_variant<S: table::State>(
@@ -190,8 +157,6 @@ impl Values<BorrowModel> {
         .unwrap();
 
         let mut lifetime_constraints = BTreeSet::new();
-
-        let enum_lifetimes = get_lifetimes_from_instantiation(&instantiation);
 
         // compare each values in the field to the struct's field type
         if let Some(mut associated_type) = variant_sym
@@ -259,7 +224,6 @@ impl Values<BorrowModel> {
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            Some(&enum_lifetimes),
             register_span.clone(),
             context,
             current_site,
@@ -312,7 +276,6 @@ impl Values<BorrowModel> {
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            Some(&enum_lifetimes), // is it needed here?
             register_span.clone(),
             context,
             current_site,
@@ -353,7 +316,6 @@ impl Values<BorrowModel> {
 
         let mut lifetime_constraints = BTreeSet::new();
 
-        let struct_lifetimes = get_lifetimes_from_instantiation(&instantiation);
         let struct_sym =
             ty_environment.table().get(struct_lit.struct_id).unwrap();
 
@@ -423,7 +385,6 @@ impl Values<BorrowModel> {
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            Some(&struct_lifetimes),
             register_span.clone(),
             context,
             current_site,
@@ -476,7 +437,6 @@ impl Values<BorrowModel> {
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            Some(&struct_lifetimes), // is it needed here?
             register_span.clone(),
             context,
             current_site,
@@ -583,7 +543,6 @@ impl Values<BorrowModel> {
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            Some(&function_lifetimes),
             register_span.clone(),
             context,
             current_site,
@@ -633,7 +592,6 @@ impl Values<BorrowModel> {
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            Some(&function_lifetimes),
             register_span.clone(),
             context,
             current_site,
@@ -740,7 +698,6 @@ impl Values<BorrowModel> {
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap())
                 .chain(constraints_in_address.iter()),
-            None,
             register_span,
             context,
             current_site,
@@ -835,10 +792,11 @@ impl Values<BorrowModel> {
                         .cloned()
                         .collect::<HashSet<_>>();
 
-                    // detach the subset-relation
-                    for lifetime in address_lifetimes.iter() {
-                        context.environment.detach_subset_relation(lifetime);
-                    }
+                    context.environment.detach_subset_relations(
+                        address_lifetimes
+                            .into_iter()
+                            .filter_map(|x| x.try_into().ok()),
+                    );
 
                     // apply the compatibility constraints
                     self.handle_outlives(
@@ -847,7 +805,6 @@ impl Values<BorrowModel> {
                             .chain(address_constraints.iter())
                             .chain(compatibility_constraints.iter())
                             .map(|x| x.as_lifetime_outlives().unwrap()),
-                        Some(&address_lifetimes),
                         store_span.clone(),
                         context,
                         current_site,
@@ -1073,10 +1030,7 @@ struct Checker<
     /// List of access to the address occurred so far.
     accesses: Arena<Access>,
 
-    /// Contains the starting borrow origins. (Contains all the id with empty
-    /// values)
-    #[allow(unused)]
-    starting_origin: Arena<LocalRegion>,
+    region_info: Arc<RegionInfo>,
 
     current_site: GlobalID,
     ty_environment: &'a TyEnvironment<'a, BorrowModel, S, N, O>,
@@ -1529,13 +1483,17 @@ impl<
         let (mut context, looped_blocks) = if block.is_entry() {
             assert!(block.predecessors().is_empty());
 
-            let mut starting_environment = Environment::default();
+            let mut starting_environment =
+                Environment::new(self.region_info.clone());
+
             let predicates = self
                 .ty_environment
                 .table()
                 .get_active_premise::<BorrowModel>(self.current_site.into())
                 .unwrap()
                 .predicates;
+
+            let mut adding_edges = Vec::new();
 
             for predicate in predicates {
                 match predicate {
@@ -1547,8 +1505,7 @@ impl<
                             continue;
                         };
 
-                        starting_environment
-                            .insert_known_subset_relation(operand, bound);
+                        adding_edges.push((operand, bound));
                     }
 
                     Predicate::TypeOutlives(outlives) => {
@@ -1560,8 +1517,7 @@ impl<
                             .filter_map(|x| x.0.into_lifetime().ok())
                             .filter_map(|x| x.clone().try_into().ok())
                         {
-                            starting_environment
-                                .insert_known_subset_relation(operand, bound);
+                            adding_edges.push((operand, bound));
                         }
                     }
 
@@ -1569,10 +1525,12 @@ impl<
                 }
             }
 
+            starting_environment.insert_known_subset_relation(adding_edges);
+
             (
                 Context {
                     stack: Stack::new(),
-                    environment: Environment::default(),
+                    environment: starting_environment,
                 },
                 Vec::new(),
             )
@@ -1815,7 +1773,7 @@ impl<
 
 #[derive(Debug, PartialEq, Eq)]
 struct ReplaceWithFreshInference<'a> {
-    origins: &'a mut Arena<LocalRegion>,
+    generator: &'a mut LocalRegionGenerator,
 }
 
 impl MutableRecursive<Lifetime<BorrowModel>> for ReplaceWithFreshInference<'_> {
@@ -1828,8 +1786,7 @@ impl MutableRecursive<Lifetime<BorrowModel>> for ReplaceWithFreshInference<'_> {
             return true;
         }
 
-        *term =
-            Lifetime::Inference(self.origins.insert(LocalRegion::default()));
+        *term = Lifetime::Inference(self.generator.next());
 
         true
     }
@@ -1858,9 +1815,9 @@ impl MutableRecursive<Constant<BorrowModel>> for ReplaceWithFreshInference<'_> {
 impl ir::Representation<BorrowModel> {
     fn replace_with_fresh_lifetimes(
         &mut self,
-        origins: &mut Arena<LocalRegion>,
+        origins: &mut LocalRegionGenerator,
     ) {
-        let mut visitor = ReplaceWithFreshInference { origins };
+        let mut visitor = ReplaceWithFreshInference { generator: origins };
 
         // replace the lifetime in allocas
         for alloca in self.values.allocas.items_mut() {
@@ -1933,19 +1890,23 @@ impl ir::Representation<ir::Model> {
         >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        let (mut ir, mut arena) =
+        let (mut ir, mut generator) =
             transform_to_borrow_model(self.clone(), ty_environment.table());
 
         let all_block_ids =
             ir.control_flow_graph.blocks().ids().collect::<Vec<_>>();
 
-        ir.replace_with_fresh_lifetimes(&mut arena);
+        ir.replace_with_fresh_lifetimes(&mut generator);
 
         let mut checker = Checker {
             representation: ir,
             walk_results_by_block_id: HashMap::new(),
             target_contexts_by_block_id: HashMap::new(),
-            starting_origin: arena,
+            region_info: Arc::new(RegionInfo::new(
+                generator,
+                current_site,
+                ty_environment.table(),
+            )),
             accesses: Arena::new(),
             current_site,
             ty_environment,

@@ -257,7 +257,7 @@ pub enum UniversalRegion {
 /// the function body, automatically created by the compiler).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[allow(missing_docs)]
-pub struct LocalRegion {}
+pub struct LocalRegion;
 
 /// Represents a region in the IR. It can be either a universal region or a
 /// local region.

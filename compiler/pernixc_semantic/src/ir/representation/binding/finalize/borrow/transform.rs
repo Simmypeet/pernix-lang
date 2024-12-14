@@ -3,8 +3,9 @@
 
 use std::convert::Infallible;
 
+use super::local_region_generator::LocalRegionGenerator;
 use crate::{
-    arena::{Arena, Key, ID},
+    arena::{Key, ID},
     ir::{
         self,
         representation::{borrow, borrow::LocalRegion},
@@ -19,7 +20,7 @@ use crate::{
 
 #[derive(Debug, PartialEq, Eq)]
 struct ToBorrowRecursiveVisitor<'a> {
-    arena: &'a mut Arena<LocalRegion>,
+    generator: &'a mut LocalRegionGenerator,
 }
 
 impl<'a> MutableRecursive<Lifetime<borrow::Model>>
@@ -31,7 +32,7 @@ impl<'a> MutableRecursive<Lifetime<borrow::Model>>
         _: impl Iterator<Item = crate::type_system::sub_term::TermLocation>,
     ) -> bool {
         if let Lifetime::Inference(id) = term {
-            *id = self.arena.insert(LocalRegion::default());
+            *id = self.generator.next();
         }
 
         true
@@ -64,7 +65,7 @@ impl<'a> MutableRecursive<Constant<borrow::Model>>
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ToBorrowTransformer {
-    arena: Arena<LocalRegion>,
+    generator: LocalRegionGenerator,
 }
 
 impl From<Erased> for ID<LocalRegion> {
@@ -99,7 +100,7 @@ impl Transform<Lifetime<ir::Model>> for ToBorrowTransformer {
             Lifetime::Static => Lifetime::Static,
             Lifetime::Parameter(param) => Lifetime::Parameter(param),
             Lifetime::Inference(Erased) => {
-                Lifetime::Inference(self.arena.insert(LocalRegion::default()))
+                Lifetime::Inference(self.generator.next())
             }
             Lifetime::Forall(_) => unreachable!(),
             Lifetime::Error(error) => Lifetime::Error(error),
@@ -126,7 +127,8 @@ impl Transform<Type<ir::Model>> for ToBorrowTransformer {
         _: pernixc_base::source_file::Span,
     ) -> Result<Type<borrow::Model>, Self::Error> {
         let mut ty: Type<borrow::Model> = Type::from_other_model(term);
-        let mut visitor = ToBorrowRecursiveVisitor { arena: &mut self.arena };
+        let mut visitor =
+            ToBorrowRecursiveVisitor { generator: &mut self.generator };
 
         visitor::accept_recursive_mut(&mut ty, &mut visitor);
 
@@ -154,7 +156,8 @@ impl Transform<Constant<ir::Model>> for ToBorrowTransformer {
     ) -> Result<Constant<borrow::Model>, Self::Error> {
         // constant should've no lifetime, but here we are doing it anyway
         let mut constant = Constant::from_other_model(term);
-        let mut visitor = ToBorrowRecursiveVisitor { arena: &mut self.arena };
+        let mut visitor =
+            ToBorrowRecursiveVisitor { generator: &mut self.generator };
 
         visitor::accept_recursive_mut(&mut constant, &mut visitor);
 
@@ -234,10 +237,14 @@ impl Transform<Constant<borrow::Model>> for ToIRTransofmer {
 pub(super) fn transform_to_borrow_model(
     ir: ir::Representation<ir::Model>,
     table: &Table<impl table::State>,
-) -> (ir::Representation<borrow::Model>, Arena<LocalRegion>) {
-    let mut transformer = ToBorrowTransformer { arena: Arena::default() };
+) -> (ir::Representation<borrow::Model>, LocalRegionGenerator) {
+    let mut transformer =
+        ToBorrowTransformer { generator: LocalRegionGenerator::new() };
 
-    (ir.transform_model(&mut transformer, table).unwrap(), transformer.arena)
+    (
+        ir.transform_model(&mut transformer, table).unwrap(),
+        transformer.generator,
+    )
 }
 
 pub(super) fn transform_to_ir_model(
