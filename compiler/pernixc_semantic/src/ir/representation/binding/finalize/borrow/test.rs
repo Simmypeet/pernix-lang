@@ -402,7 +402,7 @@ fn mutably_access_while_borrowed() {
 
     let error = &errs[0]
         .as_any()
-        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed<ir::Model>>()
         .unwrap();
 
     assert_eq!(
@@ -410,7 +410,10 @@ fn mutably_access_while_borrowed() {
         Some("&number")
     );
     assert_eq!(error.mutable_access_span.str(), "number = 2");
-    assert_eq!(error.borrow_usage_span.str(), "*numberRef");
+    assert_eq!(
+        error.borrow_usage.as_local().map(|x| x.str()),
+        Some("*numberRef")
+    );
 }
 
 const VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_LOOP: &str = r#"
@@ -545,8 +548,10 @@ fn mutably_access_more_than_once_in_function() {
 
     assert_eq!(errs.len(), 1);
 
-    let error =
-        &errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
+    let error = &errs[0]
+        .as_any()
+        .downcast_ref::<AccessWhileMutablyBorrowed<ir::Model>>()
+        .unwrap();
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(|x| x.str()),
@@ -554,8 +559,8 @@ fn mutably_access_more_than_once_in_function() {
     );
     assert_eq!(error.access_span.str(), "&mutable number");
     assert_eq!(
-        error.borrow_usage_span.str(),
-        "Vector::push(&mutable vector, &mutable number)"
+        error.borrow_usage.as_local().map(|x| x.str()),
+        Some("Vector::push(&mutable vector, &mutable number)")
     );
 }
 
@@ -596,15 +601,17 @@ fn mutably_access_more_than_once_in_function_with_variable() {
 
     assert_eq!(errs.len(), 1);
 
-    let error =
-        errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<AccessWhileMutablyBorrowed<ir::Model>>()
+        .unwrap();
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(|x| x.str()),
         Some("&mutable number")
     );
     assert_eq!(error.access_span.str(), "&mutable number");
-    assert_eq!(error.borrow_usage_span.str(), "v");
+    assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("v"));
 }
 
 const AN_ALIASED_FORMULATION: &str = r#"
@@ -643,7 +650,7 @@ fn an_aliased_formulation() {
 
     let error = errs[0]
         .as_any()
-        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed<ir::Model>>()
         .unwrap();
 
     assert_eq!(
@@ -651,7 +658,7 @@ fn an_aliased_formulation() {
         Some("&x")
     );
     assert_eq!(error.mutable_access_span.str(), "x += 1");
-    assert_eq!(error.borrow_usage_span.str(), "v");
+    assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("v"));
 }
 
 // the test case is lifted from
@@ -683,7 +690,7 @@ fn polonius_one_example() {
 
     let error = errs[0]
         .as_any()
-        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed<ir::Model>>()
         .unwrap();
 
     assert_eq!(
@@ -691,7 +698,7 @@ fn polonius_one_example() {
         Some("&y")
     );
     assert_eq!(error.mutable_access_span.str(), "y += 1");
-    assert_eq!(error.borrow_usage_span.str(), "*p");
+    assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("*p"));
 }
 
 const STRUCT_INFERENCE_NO_ERROR: &str = r#"
@@ -757,7 +764,7 @@ fn struct_inference_with_error() {
 
     let error = errs[0]
         .as_any()
-        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed<ir::Model>>()
         .unwrap();
 
     assert_eq!(
@@ -765,7 +772,10 @@ fn struct_inference_with_error() {
         Some("&outer")
     );
     assert_eq!(error.mutable_access_span.str(), "outer = 32");
-    assert_eq!(error.borrow_usage_span.str(), "*pair.first");
+    assert_eq!(
+        error.borrow_usage.as_local().map(|x| x.str()),
+        Some("*pair.first")
+    );
 }
 
 const STRUCT_INFERENCE_WITH_LIFETIME_FLOW: &str = r#"
@@ -808,7 +818,7 @@ fn struct_inference_with_lifetime_flow() {
 
     let error = errs[0]
         .as_any()
-        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed<ir::Model>>()
         .unwrap();
 
     assert_eq!(
@@ -816,7 +826,10 @@ fn struct_inference_with_lifetime_flow() {
         Some("&outer")
     );
     assert_eq!(error.mutable_access_span.str(), "outer = 32");
-    assert_eq!(error.borrow_usage_span.str(), "*pair.second");
+    assert_eq!(
+        error.borrow_usage.as_local().map(|x| x.str()),
+        Some("*pair.second")
+    );
 }
 
 const USE_MUTABLE_REF_TWICE: &str = r#"
@@ -937,6 +950,62 @@ where
 #[test]
 fn return_correct_lifetime() {
     assert!(build_table(RETURN_CORRECT_LIFETIME).is_ok());
+}
+
+const INVALIDATED_UNIVERSAL_REGIONS: &str = r#"
+
+// fake vector
+public struct Vector[T] {
+}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function consume[T](..: T) {}
+
+public function test['a, 'b](
+    numbers: &'b mutable Vector[&'a mutable int32],
+    number: &'a mutable int32,
+)
+where
+    'a: 'b
+{
+    numbers->push(&mutable *number);
+    consume(*number);
+}
+"#;
+
+#[test]
+fn invalidated_universal_regions() {
+    let (table, errs) = build_table(INVALIDATED_UNIVERSAL_REGIONS).unwrap_err();
+
+    dbg!(&errs);
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<AccessWhileMutablyBorrowed<ir::Model>>()
+        .unwrap();
+
+    let function = table.get_by_qualified_name(["test", "test"]).unwrap();
+
+    let a_lt = table
+        .resolve_lifetime(&parse("'a"), function, Config::default(), &Panic)
+        .unwrap();
+
+    assert_eq!(
+        error.mutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&mutable *number")
+    );
+    assert_eq!(error.access_span.str(), "*number");
+    assert_eq!(error.borrow_usage.as_by_universal_regions(), Some(&vec![a_lt]));
 }
 
 const DEREFERENCE_MOVED_MUTABLE_REFERENCE_OF_COPYABLE_TYPE: &str = r#"

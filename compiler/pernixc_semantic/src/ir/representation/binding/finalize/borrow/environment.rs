@@ -12,7 +12,7 @@ use super::{
 use crate::{
     arena::{Arena, Key, ID},
     error::{
-        self, AccessWhileMutablyBorrowed, MovedOutWhileBorrowed,
+        self, AccessWhileMutablyBorrowed, BorrowUsage, MovedOutWhileBorrowed,
         MutablyAccessWhileImmutablyBorrowed, OverflowOperation,
         TypeSystemOverflow, UnsatisfiedPredicate,
         VariableDoesNotLiveLongEnough,
@@ -380,7 +380,7 @@ impl Environment {
                 match borrow_qualifier {
                     Qualifier::Immutable => {
                         handler.receive(Box::new(
-                            MutablyAccessWhileImmutablyBorrowed {
+                            MutablyAccessWhileImmutablyBorrowed::<ir::Model> {
                                 mutable_access_span: accesses
                                     .get(*invalidated_access_id)
                                     .unwrap()
@@ -394,27 +394,33 @@ impl Environment {
                                         .span
                                         .clone(),
                                 ),
-                                borrow_usage_span: checking_span.clone(),
+                                borrow_usage: BorrowUsage::Local(
+                                    checking_span.clone(),
+                                ),
                             },
                         ));
                     }
                     Qualifier::Mutable => {
-                        handler.receive(Box::new(AccessWhileMutablyBorrowed {
-                            access_span: accesses
-                                .get(*invalidated_access_id)
-                                .unwrap()
-                                .span
-                                .clone(),
-                            mutable_borrow_span: Some(
-                                values
-                                    .registers
-                                    .get(borrow)
+                        handler.receive(Box::new(
+                            AccessWhileMutablyBorrowed::<ir::Model> {
+                                access_span: accesses
+                                    .get(*invalidated_access_id)
                                     .unwrap()
                                     .span
                                     .clone(),
-                            ),
-                            borrow_usage_span: checking_span.clone(),
-                        }));
+                                mutable_borrow_span: Some(
+                                    values
+                                        .registers
+                                        .get(borrow)
+                                        .unwrap()
+                                        .span
+                                        .clone(),
+                                ),
+                                borrow_usage: BorrowUsage::Local(
+                                    checking_span.clone(),
+                                ),
+                            },
+                        ));
                     }
                 }
             }
@@ -520,6 +526,77 @@ impl Environment {
 
                 // TODO: check if the invalidated borrow is used by universal
                 // regions
+                let mut universal_lifetimes = Vec::new();
+
+                for (universal_region, equiv_lifetime) in
+                    self.region_info.indices_by_univseral_region.keys().map(
+                        |x| {
+                            (x, match x {
+                                UniversalRegion::Static => Lifetime::Static,
+                                UniversalRegion::LifetimeParameter(
+                                    member_id,
+                                ) => Lifetime::Parameter(*member_id),
+                            })
+                        },
+                    )
+                {
+                    if self.subset_relations.has_path(
+                        self.region_info.into_transitive_closure_index(
+                            Region::Universal(*universal_region),
+                        ),
+                        self.attached_borrows
+                            .get(&borrow)
+                            .unwrap()
+                            .into_index(),
+                    ) {
+                        universal_lifetimes.push(equiv_lifetime);
+                    }
+                }
+
+                // if there's any universal lifetimes that could use the
+                // invalidated borrow, report an error
+                if !universal_lifetimes.is_empty() {
+                    // mark as error reported
+                    *self
+                        .invalidated_borrows
+                        .get_mut(&borrow)
+                        .unwrap()
+                        .get_mut(&by_access_id)
+                        .unwrap() = true;
+
+                    match borrow_assignment.qualifier {
+                        Qualifier::Mutable => {
+                            handler.receive(Box::new(
+                                AccessWhileMutablyBorrowed::<ir::Model> {
+                                    access_span: span.clone(),
+                                    mutable_borrow_span: Some(
+                                        borrow_register.span.clone(),
+                                    ),
+                                    borrow_usage:
+                                        BorrowUsage::ByUniversalRegions(
+                                            universal_lifetimes,
+                                        ),
+                                },
+                            ));
+                        }
+                        Qualifier::Immutable => {
+                            handler.receive(Box::new(
+                                MutablyAccessWhileImmutablyBorrowed::<
+                                    ir::Model,
+                                > {
+                                    mutable_access_span: span.clone(),
+                                    immutable_borrow_span: Some(
+                                        borrow_register.span.clone(),
+                                    ),
+                                    borrow_usage:
+                                        BorrowUsage::ByUniversalRegions(
+                                            universal_lifetimes,
+                                        ),
+                                },
+                            ));
+                        }
+                    }
+                }
             }
         }
 

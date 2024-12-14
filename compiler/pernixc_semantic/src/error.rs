@@ -7,6 +7,7 @@ use std::{
     fmt::{self, Debug},
 };
 
+use enum_as_inner::EnumAsInner;
 use pernixc_base::{
     diagnostic::{Diagnostic, Related, Report},
     log::{Message, Severity, SourceCodeDisplay},
@@ -3170,9 +3171,21 @@ impl Report<&Table<Suboptimal>>
     }
 }
 
+/// An enumeration of what part of the code uses the invalidated borrows.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum BorrowUsage<M: Model> {
+    /// The invalidated borrows are later used within the body of local
+    /// function/scope.
+    Local(Span),
+
+    /// The invalidated borrows might be later used by the univseral regions
+    /// (the caller of the function).
+    ByUniversalRegions(Vec<Lifetime<M>>),
+}
+
 /// The access is done while the value is mutably borrowed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AccessWhileMutablyBorrowed {
+pub struct AccessWhileMutablyBorrowed<M: Model> {
     /// The span of the access.
     pub access_span: Span,
 
@@ -3180,13 +3193,19 @@ pub struct AccessWhileMutablyBorrowed {
     pub mutable_borrow_span: Option<Span>,
 
     /// The usage span of the prior borrow.
-    pub borrow_usage_span: Span,
+    pub borrow_usage: BorrowUsage<M>,
 }
 
-impl Report<&Table<Suboptimal>> for AccessWhileMutablyBorrowed {
+impl<M: Model> Report<&Table<Suboptimal>> for AccessWhileMutablyBorrowed<M>
+where
+    M::LifetimeInference: table::Display<Suboptimal>,
+{
     type Error = ReportError;
 
-    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             span: self.access_span.clone(),
             message: format!(
@@ -3194,7 +3213,18 @@ impl Report<&Table<Suboptimal>> for AccessWhileMutablyBorrowed {
                 self.access_span.str()
             ),
             severity: Severity::Error,
-            help_message: None,
+            help_message: self.borrow_usage.as_by_universal_regions().map(
+                |x| {
+                    format!(
+                        "lifetime(s) {} can access the borrow later",
+                        x.iter()
+                            .map(|x| DisplayObject { display: x, table }
+                                .to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                },
+            ),
             related: self
                 .mutable_borrow_span
                 .as_ref()
@@ -3203,8 +3233,8 @@ impl Report<&Table<Suboptimal>> for AccessWhileMutablyBorrowed {
                     message: "the mutable borrow starts here".to_string(),
                 })
                 .into_iter()
-                .chain(std::iter::once(Related {
-                    span: self.borrow_usage_span.clone(),
+                .chain(self.borrow_usage.as_local().map(|x| Related {
+                    span: x.clone(),
                     message: "the mutable borrow is used here".to_string(),
                 }))
                 .collect(),
@@ -3214,7 +3244,7 @@ impl Report<&Table<Suboptimal>> for AccessWhileMutablyBorrowed {
 
 /// The mutable access is done while the value is immutably borrowed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MutablyAccessWhileImmutablyBorrowed {
+pub struct MutablyAccessWhileImmutablyBorrowed<M: Model> {
     /// The span of the mutable access.
     pub mutable_access_span: Span,
 
@@ -3222,13 +3252,20 @@ pub struct MutablyAccessWhileImmutablyBorrowed {
     pub immutable_borrow_span: Option<Span>,
 
     /// The usage span of the prior borrow.
-    pub borrow_usage_span: Span,
+    pub borrow_usage: BorrowUsage<M>,
 }
 
-impl Report<&Table<Suboptimal>> for MutablyAccessWhileImmutablyBorrowed {
+impl<M: Model> Report<&Table<Suboptimal>>
+    for MutablyAccessWhileImmutablyBorrowed<M>
+where
+    M::LifetimeInference: table::Display<Suboptimal>,
+{
     type Error = ReportError;
 
-    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             span: self.mutable_access_span.clone(),
             message: format!(
@@ -3236,7 +3273,18 @@ impl Report<&Table<Suboptimal>> for MutablyAccessWhileImmutablyBorrowed {
                 self.mutable_access_span.str()
             ),
             severity: Severity::Error,
-            help_message: None,
+            help_message: self.borrow_usage.as_by_universal_regions().map(
+                |x| {
+                    format!(
+                        "lifetime(s) {} can access the borrow later",
+                        x.iter()
+                            .map(|x| DisplayObject { display: x, table }
+                                .to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                },
+            ),
             related: self
                 .immutable_borrow_span
                 .as_ref()
@@ -3245,8 +3293,8 @@ impl Report<&Table<Suboptimal>> for MutablyAccessWhileImmutablyBorrowed {
                     message: "the borrow starts here".to_string(),
                 })
                 .into_iter()
-                .chain(std::iter::once(Related {
-                    span: self.borrow_usage_span.clone(),
+                .chain(self.borrow_usage.as_local().map(|x| Related {
+                    span: x.clone(),
                     message: "the borrow is used here".to_string(),
                 }))
                 .collect(),
