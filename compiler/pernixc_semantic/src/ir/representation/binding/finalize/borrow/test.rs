@@ -1200,3 +1200,84 @@ fn array_inference() {
         Some("let array = [&mutable x, &mutable x];")
     );
 }
+
+const PHI_INFERENCE_VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH: &str = r#"
+public function test(cond: bool) {
+    let outer = 1;
+
+    let ref = 'result: {
+        let inner = 2;
+        if (true) { 
+            express 'result &inner;
+        } else if (true) {
+            let anotherInner = 3;
+            express 'result &anotherInner;
+         }
+
+         express &outer;
+    };
+}
+"#;
+
+#[test]
+fn phi_inference_variable_does_not_live_long_enough() {
+    let (_, errs) =
+        build_table(PHI_INFERENCE_VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH)
+            .unwrap_err();
+
+    assert_eq!(errs.len(), 2);
+
+    dbg!(&errs);
+
+    assert!(errs.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .map_or(false, |x| {
+            x.variable_span.str() == "inner" && x.for_lifetime.is_none()
+        })));
+
+    assert!(errs.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .map_or(false, |x| {
+            x.variable_span.str() == "anotherInner" && x.for_lifetime.is_none()
+        })));
+}
+
+const PHI_INFERENCE_USE_INVALIDATED_REFERENCE: &str = r#"
+public function test(cond: bool) {
+    let mutable first = 1;
+    let mutable second = 1;
+
+    let ref = 'result: {
+        if (cond) {
+            express 'result &first;
+        } else {
+            express 'result &second;
+        }
+    };
+
+    first = 2;       // <- Error: first is borrowed by ref
+    let copy = *ref; // <- Error: ref is invalidated
+}
+"#;
+
+#[test]
+fn phi_inference_use_invalidated_reference() {
+    let (_, errs) =
+        build_table(PHI_INFERENCE_USE_INVALIDATED_REFERENCE).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed<ir::Model>>()
+        .unwrap();
+
+    assert_eq!(
+        error.immutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&first")
+    );
+    assert_eq!(error.mutable_access_span.str(), "first = 2");
+    assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("*ref"));
+}
