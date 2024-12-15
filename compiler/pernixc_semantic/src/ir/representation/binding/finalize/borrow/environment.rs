@@ -674,6 +674,7 @@ impl Environment {
         }
 
         self.occurred_accesses.extend(other.occurred_accesses.iter().cloned());
+        self.active_borrows.extend(other.active_borrows.iter().cloned());
     }
 
     /// Detaches the subset relation between the given lifetimes
