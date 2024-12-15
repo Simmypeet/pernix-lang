@@ -42,8 +42,8 @@ use crate::{
         },
         value::{
             register::{
-                Assignment, Borrow, FunctionCall, Load, Register, Struct,
-                Variant,
+                Array, Assignment, Borrow, FunctionCall, Load, Register,
+                Struct, Variant,
             },
             Value,
         },
@@ -374,6 +374,81 @@ impl Values<BorrowModel> {
         )?;
 
         // invalidated lifetimes will not be checked here; unlike function call
+
+        Ok(())
+    }
+
+    fn handle_array<S: table::State>(
+        &self,
+        array: &Array<BorrowModel>,
+        register_span: Span,
+        context: &mut Context,
+        current_site: GlobalID,
+        ty_environment: &TyEnvironment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+        handler: &HandlerWrapper,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        let array_ty = array.element_type.clone();
+        let mut lifetime_constraints = BTreeSet::new();
+
+        for value in &array.elements {
+            let value_span = match value {
+                Value::Register(id) => {
+                    self.registers.get(*id).unwrap().span.clone()
+                }
+                Value::Literal(literal) => literal.span().clone(),
+            };
+
+            let Succeeded { result: value_ty, constraints } = self
+                .type_of_value(value, current_site, ty_environment)
+                .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeOf,
+                    overflow_span: value_span.clone(),
+                    overflow_error: x.into_overflow().unwrap(),
+                })?;
+
+            lifetime_constraints.extend(constraints);
+
+            let copmatibility = value_ty
+                .compatible(&array_ty, Variance::Covariant, ty_environment)
+                .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeCheck,
+                    overflow_span: value_span.clone(),
+                    overflow_error,
+                })?;
+
+            // append the lifetime constraints
+            if let Some(Succeeded {
+                result,
+                constraints: compatibility_constraints,
+            }) = copmatibility
+            {
+                assert!(result.forall_lifetime_errors.is_empty());
+                assert!(result
+                    .forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
+
+                lifetime_constraints.extend(compatibility_constraints);
+            } else {
+                panic!("{value_ty:#?} => {array_ty:#?}")
+            }
+        }
+
+        self.handle_outlives(
+            lifetime_constraints
+                .iter()
+                .map(|x| x.as_lifetime_outlives().unwrap()),
+            register_span.clone(),
+            context,
+            current_site,
+            ty_environment,
+            handler,
+        )?;
 
         Ok(())
     }
@@ -1273,10 +1348,22 @@ impl<
                             1
                         }
 
+                        Assignment::Array(array) => {
+                            self.representation.values.handle_array(
+                                array,
+                                register.span.clone(),
+                                context,
+                                self.current_site,
+                                self.ty_environment,
+                                handler,
+                            )?;
+
+                            1
+                        }
+
                         Assignment::Prefix(_)
                         | Assignment::Tuple(_)
                         | Assignment::Binary(_)
-                        | Assignment::Array(_)
                         | Assignment::Phi(_)
                         | Assignment::Cast(_)
                         | Assignment::VariantNumber(_) => 1,

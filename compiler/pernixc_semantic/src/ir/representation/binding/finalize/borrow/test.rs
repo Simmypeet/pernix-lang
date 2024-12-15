@@ -1167,3 +1167,36 @@ fn return_invalidated_universal_regions() {
         Some("return (&mutable *ref, &mutable *ref)")
     );
 }
+
+const ARRAY_INFERENCE: &str = r#"
+public function consume[T](..: T) {}
+
+public function test() {
+    let mutable x = 0;
+    let array = [&mutable x, &mutable x];
+
+}
+"#;
+
+#[test]
+fn array_inference() {
+    let (_, errs) = build_table(ARRAY_INFERENCE).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<AccessWhileMutablyBorrowed<ir::Model>>()
+        .unwrap();
+
+    assert_eq!(
+        error.mutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&mutable x")
+    );
+
+    assert_eq!(error.access_span.str(), "&mutable x");
+    assert_eq!(
+        error.borrow_usage.as_local().map(|x| x.str()),
+        Some("let array = [&mutable x, &mutable x];")
+    );
+}
