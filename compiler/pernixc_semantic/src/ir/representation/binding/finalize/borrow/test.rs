@@ -1136,3 +1136,34 @@ fn struct_region_inference() {
         "return RefWrapper { ref: ref }"
     );
 }
+
+const RETURN_INVALIDATED_UNIVERSAL_REGIONS: &str = r#"
+public function test['a](
+    ref: &'a mutable int32
+): (&'a mutable int32, &'a mutable int32) {
+    return (&mutable *ref, &mutable *ref);
+}
+"#;
+
+#[test]
+fn return_invalidated_universal_regions() {
+    let (_, errs) =
+        build_table(RETURN_INVALIDATED_UNIVERSAL_REGIONS).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<AccessWhileMutablyBorrowed<ir::Model>>()
+        .unwrap();
+
+    assert_eq!(
+        error.mutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&mutable *ref")
+    );
+    assert_eq!(error.access_span.str(), "&mutable *ref");
+    assert_eq!(
+        error.borrow_usage.as_local().map(|x| x.str()),
+        Some("return (&mutable *ref, &mutable *ref)")
+    );
+}

@@ -129,6 +129,7 @@ impl Values<BorrowModel> {
     fn handle_return<S: table::State>(
         &self,
         ret: &Return<BorrowModel>,
+        accesses: &Arena<Access>,
         context: &mut Context,
         current_site: GlobalID,
         ty_environment: &TyEnvironment<
@@ -198,6 +199,19 @@ impl Values<BorrowModel> {
                 })
             }
         }
+
+        let borrows = RecursiveIterator::new(&return_ty)
+            .filter_map(|x| x.0.into_lifetime().ok())
+            .flat_map(|x| context.environment.get_borrows_of_lifetime(x))
+            .collect::<HashSet<_>>();
+
+        context.environment.check_invalidated_borrow_usages(
+            borrows.into_iter(),
+            self,
+            ret.span.clone(),
+            accesses,
+            handler,
+        );
 
         Ok(())
     }
@@ -1529,6 +1543,7 @@ impl<
             Terminator::Return(ret) => {
                 self.representation.values.handle_return(
                     ret,
+                    &self.accesses,
                     context,
                     self.current_site,
                     self.ty_environment,

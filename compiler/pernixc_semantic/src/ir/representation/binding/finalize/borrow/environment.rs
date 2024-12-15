@@ -279,74 +279,16 @@ impl Environment {
         );
     }
 
-    /// Checks the usage of borrows
-    pub fn check_borrow_usages<S: table::State>(
+    /// Checks the usage of invalidated borrows (mutable access while borrow,
+    /// can only use one mutable borrow at a time)
+    pub fn check_invalidated_borrow_usages(
         &mut self,
-        borrows: impl Iterator<Item = ID<Register<BorrowModel>>> + Clone,
+        borrows: impl Iterator<Item = ID<Register<BorrowModel>>>,
         values: &Values<BorrowModel>,
-        stack: &Stack,
         checking_span: Span,
         accesses: &Arena<Access>,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        // check for the live long enough, not moved out variables
-        for borrow in borrows.clone() {
-            let borrow_register = values.registers.get(borrow).unwrap();
-            let borrow_assignment =
-                borrow_register.assignment.as_borrow().unwrap();
-
-            // get the state of the borrow
-            let Some(state) = stack.get_state(&borrow_assignment.address)
-            else {
-                // not found means it has been popped out of scope
-                handler.receive(Box::new(VariableDoesNotLiveLongEnough::<
-                    ir::Model,
-                > {
-                    variable_span: match *borrow_assignment
-                        .address
-                        .get_root_memory()
-                    {
-                        Memory::Parameter(id) => ty_environment
-                            .table()
-                            .get_callable(current_site.try_into().unwrap())
-                            .unwrap()
-                            .parameters()
-                            .get(id)
-                            .unwrap()
-                            .span
-                            .clone()
-                            .unwrap(),
-                        Memory::Alloca(id) => {
-                            values.allocas.get(id).unwrap().span.clone()
-                        }
-                    },
-                    for_lifetime: None,
-                    instantiation_span: checking_span.clone(),
-                }));
-                continue;
-            };
-
-            // check the state of the variable
-            match state.get_state_summary() {
-                Summary::Initialized => {}
-                Summary::Uninitialized => {}
-                Summary::Moved(moved_out_span) => {
-                    // TODO: find a way to prevent multiple reporting
-                    handler.receive(Box::new(MovedOutWhileBorrowed {
-                        borrow_usage_span: checking_span.clone(),
-                        moved_out_span,
-                    }));
-                }
-            }
-        }
-
         // check for the invalidated borrows
         for borrow in borrows {
             // if the borrow is already invalidated, skip
@@ -425,6 +367,84 @@ impl Environment {
                 }
             }
         }
+    }
+
+    /// Checks the usage of borrows
+    pub fn check_borrow_usages<S: table::State>(
+        &mut self,
+        borrows: impl Iterator<Item = ID<Register<BorrowModel>>> + Clone,
+        values: &Values<BorrowModel>,
+        stack: &Stack,
+        checking_span: Span,
+        accesses: &Arena<Access>,
+        current_site: GlobalID,
+        ty_environment: &TyEnvironment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        // check for the live long enough, not moved out variables
+        for borrow in borrows.clone() {
+            let borrow_register = values.registers.get(borrow).unwrap();
+            let borrow_assignment =
+                borrow_register.assignment.as_borrow().unwrap();
+
+            // get the state of the borrow
+            let Some(state) = stack.get_state(&borrow_assignment.address)
+            else {
+                // not found means it has been popped out of scope
+                handler.receive(Box::new(VariableDoesNotLiveLongEnough::<
+                    ir::Model,
+                > {
+                    variable_span: match *borrow_assignment
+                        .address
+                        .get_root_memory()
+                    {
+                        Memory::Parameter(id) => ty_environment
+                            .table()
+                            .get_callable(current_site.try_into().unwrap())
+                            .unwrap()
+                            .parameters()
+                            .get(id)
+                            .unwrap()
+                            .span
+                            .clone()
+                            .unwrap(),
+                        Memory::Alloca(id) => {
+                            values.allocas.get(id).unwrap().span.clone()
+                        }
+                    },
+                    for_lifetime: None,
+                    instantiation_span: checking_span.clone(),
+                }));
+                continue;
+            };
+
+            // check the state of the variable
+            match state.get_state_summary() {
+                Summary::Initialized => {}
+                Summary::Uninitialized => {}
+                Summary::Moved(moved_out_span) => {
+                    // TODO: find a way to prevent multiple reporting
+                    handler.receive(Box::new(MovedOutWhileBorrowed {
+                        borrow_usage_span: checking_span.clone(),
+                        moved_out_span,
+                    }));
+                }
+            }
+        }
+
+        // check for the invalidated borrows
+        self.check_invalidated_borrow_usages(
+            borrows,
+            values,
+            checking_span.clone(),
+            accesses,
+            handler,
+        );
     }
 
     /// Attaches a borrow to the local region
