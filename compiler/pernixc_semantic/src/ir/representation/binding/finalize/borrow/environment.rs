@@ -279,6 +279,14 @@ impl Environment {
         );
     }
 
+    /// Gets the difference between the set of accesses `self - other`.
+    pub fn access_difference<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> impl Iterator<Item = ID<Access>> + 'a {
+        self.occurred_accesses.difference(&other.occurred_accesses).cloned()
+    }
+
     /// Checks the usage of invalidated borrows (mutable access while borrow,
     /// can only use one mutable borrow at a time)
     pub fn check_invalidated_borrow_usages(
@@ -491,6 +499,7 @@ impl Environment {
         let by_access_id = accesses.insert(Access {
             address: address.clone(),
             qualifier: access_qualifier,
+            access_order: accesses.len(),
             span: span.clone(),
         });
         assert!(
