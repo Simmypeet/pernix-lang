@@ -241,7 +241,7 @@ pub struct Access {
     pub span: Span,
 
     /// The order of the access.
-    pub access_order: usize,
+    pub order: usize,
 }
 
 /// Represents a region that was created by explicitly specified by the user.

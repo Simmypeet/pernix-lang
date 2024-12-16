@@ -499,7 +499,7 @@ impl Environment {
         let by_access_id = accesses.insert(Access {
             address: address.clone(),
             qualifier: access_qualifier,
-            access_order: accesses.len(),
+            order: accesses.len(),
             span: span.clone(),
         });
         assert!(
