@@ -210,39 +210,17 @@
 use std::{self, fmt::Display};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_base::source_file::Span;
 
 use crate::{
     arena::{Key, ID},
-    ir::address::Address,
     symbol::{table, LifetimeParameterID},
     type_system::{
         model,
         term::{
-            constant::Constant,
-            lifetime::Lifetime,
-            r#type::{Qualifier, Type},
-            Never, Term,
+            constant::Constant, lifetime::Lifetime, r#type::Type, Never, Term,
         },
     },
 };
-
-/// Represents an access to a particular memory location. This is subjected to
-/// check by the borrow checker whether it is safe or not.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Access {
-    /// The address of the memory location.
-    pub address: Address<Model>,
-
-    /// The qualifier of the access.
-    pub qualifier: Qualifier,
-
-    /// The span of the access.
-    pub span: Span,
-
-    /// The order of the access.
-    pub order: usize,
-}
 
 /// Represents a region that was created by explicitly specified by the user.
 ///
