@@ -1,12 +1,12 @@
 //! Contains the definition of [`Instruction`] and its variants.
 
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
 
 use super::{
-    address::Address,
+    address::{self, Address},
     control_flow_graph::Block,
     representation::Values,
     scope::Scope,
@@ -214,7 +214,7 @@ pub struct TuplePack<M: Model> {
     pub after_packed_element_count: usize,
 
     /// The span to the packed tuple pattern.
-    pub packed_tuple_span: Option<Span>,
+    pub packed_tuple_span: Span,
 }
 
 /// An instruction that pushes a new scope onto the scope stack.
@@ -363,5 +363,117 @@ impl<M: Model> Terminator<M> {
             }),
             Self::Panic => Terminator::Panic,
         })
+    }
+}
+
+/// Represents how a particular address is accessed in an instruction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AccessKind {
+    /// The address is in read mode. The qualifier is used to determine in
+    /// case of the `Borrow` assignment used in the address.
+    Read(Qualifier),
+
+    /// The address is in write mode (Store instruction mostly).
+    Write,
+}
+
+/// Couldn't find a register for the given register ID.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    thiserror::Error,
+    displaydoc::Display,
+)]
+pub struct NotFoundRegisterIDError<M: Model>(ID<Register<M>>);
+
+impl<M: Model> Instruction<M> {
+    /// Gets the address that was used during the execution of this instruction.
+    ///
+    /// This does not include the address that might be used during the drop.
+    ///
+    /// Returns `None` if the instruction was a register assignment and the
+    /// register ID could not be found in the given `values`.
+    #[must_use]
+    pub fn get_access_address<'a>(
+        &'a self,
+        values: &'a Values<M>,
+    ) -> Result<
+        Vec<(Cow<'a, Address<M>>, &'a Span, AccessKind)>,
+        NotFoundRegisterIDError<M>,
+    > {
+        match self {
+            Instruction::Store(store) => Ok(vec![(
+                Cow::Borrowed(&store.address),
+                &store.span,
+                AccessKind::Write,
+            )]),
+            Instruction::RegisterAssignment(register_assignment) => {
+                let register =
+                    values.registers().get(register_assignment.id).ok_or(
+                        NotFoundRegisterIDError(register_assignment.id),
+                    )?;
+
+                match &register.assignment {
+                    Assignment::Load(load) => Ok(vec![(
+                        Cow::Borrowed(&load.address),
+                        &register.span,
+                        AccessKind::Read(Qualifier::Immutable),
+                    )]),
+                    Assignment::Borrow(borrow) => Ok(vec![(
+                        Cow::Borrowed(&borrow.address),
+                        &register.span,
+                        AccessKind::Read(borrow.qualifier),
+                    )]),
+                    Assignment::VariantNumber(variant_number) => Ok(vec![(
+                        Cow::Borrowed(&variant_number.address),
+                        &register.span,
+                        AccessKind::Read(Qualifier::Immutable),
+                    )]),
+
+                    Assignment::Prefix(_)
+                    | Assignment::Struct(_)
+                    | Assignment::Variant(_)
+                    | Assignment::FunctionCall(_)
+                    | Assignment::Binary(_)
+                    | Assignment::Array(_)
+                    | Assignment::Phi(_)
+                    | Assignment::Cast(_)
+                    | Assignment::Tuple(_) => Ok(Vec::new()),
+                }
+            }
+
+            Instruction::TuplePack(tuple_pack) => {
+                let vec = vec![
+                    (
+                        Cow::Owned(Address::Tuple(address::Tuple {
+                            tuple_address: Box::new(
+                                tuple_pack.tuple_address.clone(),
+                            ),
+                            offset: address::Offset::Unpacked,
+                        })),
+                        &tuple_pack.packed_tuple_span,
+                        AccessKind::Read(Qualifier::Immutable),
+                    ),
+                    (
+                        Cow::Borrowed(&tuple_pack.store_address),
+                        &tuple_pack.packed_tuple_span,
+                        AccessKind::Write,
+                    ),
+                ];
+                Ok(vec)
+            }
+
+            Instruction::ScopePush(_)
+            | Instruction::ScopePop(_)
+            | Instruction::DropUnpackTuple(_)
+            | Instruction::Drop(_)
+            | Instruction::RegisterDiscard(_) => Ok(Vec::new()),
+        }
     }
 }

@@ -1471,14 +1471,12 @@ impl<
                 // use dedicated instruction to pack the unpacked element
                 let _ = self.current_block_mut().add_instruction(
                     Instruction::TuplePack(TuplePack {
-                        packed_tuple_span: Some(
-                            tuple_pat
-                                .elements
-                                .get(packed_position)
-                                .unwrap()
-                                .pattern
-                                .span(),
-                        ),
+                        packed_tuple_span: tuple_pat
+                            .elements
+                            .get(packed_position)
+                            .unwrap()
+                            .pattern
+                            .span(),
                         store_address: Address::Memory(Memory::Alloca(
                             packed_alloca,
                         )),
