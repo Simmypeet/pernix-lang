@@ -779,7 +779,16 @@ impl<M: Model> Match for Type<M> {
 
 /// An ID used with the [`Type::Symbol`] type.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum SymbolID {
