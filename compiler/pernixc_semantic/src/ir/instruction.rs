@@ -1,9 +1,7 @@
 //! Contains the definition of [`Instruction`] and its variants.
 
 use std::{borrow::Cow, collections::HashMap};
-
-use enum_as_inner::EnumAsInner;
-use pernixc_base::source_file::Span;
+use enum_as_inner::EnumAsInner; use pernixc_base::source_file::Span;
 
 use super::{
     address::{self, Address},
@@ -18,10 +16,7 @@ use super::{
 };
 use crate::{
     arena::{Key, ID},
-    type_system::{
-        model::Model,
-        term::r#type::{Qualifier, Type},
-    },
+    type_system::{model::Model, term::r#type::Type},
 };
 
 /// Represents a jump to another block unconditionally.
@@ -367,14 +362,20 @@ impl<M: Model> Terminator<M> {
 }
 
 /// Represents how a particular address is accessed in an instruction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AccessKind {
-    /// The address is in read mode. The qualifier is used to determine in
-    /// case of the `Borrow` assignment used in the address.
-    Read(Qualifier),
+    /// The access is made to any instructions other than `Drop` instructions.
+    Normal {
+        /// If `true` the access is a write access, otherwise it is a read
+        /// access.
+        write: bool,
 
-    /// The address is in write mode (Store instruction mostly).
-    Write,
+        /// The span where the access is made.
+        span: Span,
+    },
+
+    /// The access is made in the drop instruction.
+    Drop,
 }
 
 /// Couldn't find a register for the given register ID.
@@ -404,15 +405,16 @@ impl<M: Model> Instruction<M> {
         &'a self,
         values: &'a Values<M>,
     ) -> Result<
-        Vec<(Cow<'a, Address<M>>, &'a Span, AccessKind)>,
+        Vec<(Cow<'a, Address<M>>, AccessKind)>,
         NotFoundRegisterIDError<M>,
     > {
         match self {
-            Instruction::Store(store) => Ok(vec![(
-                Cow::Borrowed(&store.address),
-                &store.span,
-                AccessKind::Write,
-            )]),
+            Instruction::Store(store) => {
+                Ok(vec![(Cow::Borrowed(&store.address), AccessKind::Normal {
+                    write: true,
+                    span: store.span.clone(),
+                })])
+            }
             Instruction::RegisterAssignment(register_assignment) => {
                 let register =
                     values.registers().get(register_assignment.id).ok_or(
@@ -422,18 +424,24 @@ impl<M: Model> Instruction<M> {
                 match &register.assignment {
                     Assignment::Load(load) => Ok(vec![(
                         Cow::Borrowed(&load.address),
-                        &register.span,
-                        AccessKind::Read(Qualifier::Immutable),
+                        AccessKind::Normal {
+                            write: false,
+                            span: register.span.clone(),
+                        },
                     )]),
                     Assignment::Borrow(borrow) => Ok(vec![(
                         Cow::Borrowed(&borrow.address),
-                        &register.span,
-                        AccessKind::Read(borrow.qualifier),
+                        AccessKind::Normal {
+                            write: false,
+                            span: register.span.clone(),
+                        },
                     )]),
                     Assignment::VariantNumber(variant_number) => Ok(vec![(
                         Cow::Borrowed(&variant_number.address),
-                        &register.span,
-                        AccessKind::Read(Qualifier::Immutable),
+                        AccessKind::Normal {
+                            write: false,
+                            span: register.span.clone(),
+                        },
                     )]),
 
                     Assignment::Prefix(_)
@@ -457,22 +465,36 @@ impl<M: Model> Instruction<M> {
                             ),
                             offset: address::Offset::Unpacked,
                         })),
-                        &tuple_pack.packed_tuple_span,
-                        AccessKind::Read(Qualifier::Immutable),
+                        AccessKind::Normal {
+                            write: false,
+                            span: tuple_pack.packed_tuple_span.clone(),
+                        },
                     ),
                     (
                         Cow::Borrowed(&tuple_pack.store_address),
-                        &tuple_pack.packed_tuple_span,
-                        AccessKind::Write,
+                        AccessKind::Normal {
+                            write: true,
+                            span: tuple_pack.packed_tuple_span.clone(),
+                        },
                     ),
                 ];
                 Ok(vec)
             }
 
+            Instruction::Drop(drop) => {
+                Ok(vec![(Cow::Borrowed(&drop.address), AccessKind::Drop)])
+            }
+
+            Instruction::DropUnpackTuple(drop) => Ok(vec![(
+                Cow::Owned(Address::Tuple(address::Tuple {
+                    tuple_address: Box::new(drop.tuple_address.clone()),
+                    offset: address::Offset::Unpacked,
+                })),
+                AccessKind::Drop,
+            )]),
+
             Instruction::ScopePush(_)
             | Instruction::ScopePop(_)
-            | Instruction::DropUnpackTuple(_)
-            | Instruction::Drop(_)
             | Instruction::RegisterDiscard(_) => Ok(Vec::new()),
         }
     }
