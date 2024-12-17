@@ -3176,7 +3176,13 @@ impl Report<&Table<Suboptimal>>
 pub enum BorrowUsage<M: Model> {
     /// The invalidated borrows are later used within the body of local
     /// function/scope.
-    Local(Span),
+    Local {
+        /// The span of the access to the invalidated borrow.
+        access_span: Span,
+
+        /// Was the access occurred later in the lop?
+        in_loop: bool,
+    },
 
     /// The invalidated borrows might be later used by the univseral regions
     /// (the caller of the function).
@@ -3233,9 +3239,16 @@ where
                     message: "the mutable borrow starts here".to_string(),
                 })
                 .into_iter()
-                .chain(self.borrow_usage.as_local().map(|x| Related {
-                    span: x.clone(),
-                    message: "the mutable borrow is used here".to_string(),
+                .chain(self.borrow_usage.as_local().map(|(span, in_loop)| {
+                    Related {
+                        span: span.clone(),
+                        message: if *in_loop {
+                            "the borrow is used later in the next iteration"
+                                .to_string()
+                        } else {
+                            "the borrow is used here".to_string()
+                        },
+                    }
                 }))
                 .collect(),
         })
@@ -3293,9 +3306,16 @@ where
                     message: "the borrow starts here".to_string(),
                 })
                 .into_iter()
-                .chain(self.borrow_usage.as_local().map(|x| Related {
-                    span: x.clone(),
-                    message: "the borrow is used here".to_string(),
+                .chain(self.borrow_usage.as_local().map(|(span, in_loop)| {
+                    Related {
+                        span: span.clone(),
+                        message: if *in_loop {
+                            "the borrow is used later in the next iteration"
+                                .to_string()
+                        } else {
+                            "the borrow is used here".to_string()
+                        },
+                    }
                 }))
                 .collect(),
         })

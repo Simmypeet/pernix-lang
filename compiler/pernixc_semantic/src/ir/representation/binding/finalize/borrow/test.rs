@@ -410,7 +410,7 @@ fn mutably_access_while_borrowed() {
     );
     assert_eq!(error.mutable_access_span.str(), "number = 2");
     assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.str()),
+        error.borrow_usage.as_local().map(|x| x.0.str()),
         Some("*numberRef")
     );
 }
@@ -433,6 +433,8 @@ public function test(cond: bool) {
 fn variable_does_not_live_long_enough_in_loop() {
     let (_, errs) =
         build_table(VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_LOOP).unwrap_err();
+
+    dbg!(&errs);
 
     assert_eq!(errs.len(), 1);
 
@@ -513,7 +515,7 @@ public function test(cond: bool) {
 
 #[test]
 fn reset_borrowed_reference_when_break() {
-    assert!(build_table(RESET_BORROWED_REFERENCE_WHEN_BREAK).is_ok());
+    assert!(dbg!(build_table(RESET_BORROWED_REFERENCE_WHEN_BREAK)).is_ok());
 }
 
 const MUTABLY_ACCESS_MORE_THAN_ONCE_IN_FUNCTION: &str = r#"
@@ -558,7 +560,7 @@ fn mutably_access_more_than_once_in_function() {
     );
     assert_eq!(error.access_span.str(), "&mutable number");
     assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.str()),
+        error.borrow_usage.as_local().map(|x| x.0.str()),
         Some("Vector::push(&mutable vector, &mutable number)")
     );
 }
@@ -610,7 +612,7 @@ fn mutably_access_more_than_once_in_function_with_variable() {
         Some("&mutable number")
     );
     assert_eq!(error.access_span.str(), "&mutable number");
-    assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("v"));
+    assert_eq!(error.borrow_usage.as_local().map(|x| x.0.str()), Some("v"));
 }
 
 const AN_ALIASED_FORMULATION: &str = r#"
@@ -657,7 +659,7 @@ fn an_aliased_formulation() {
         Some("&x")
     );
     assert_eq!(error.mutable_access_span.str(), "x += 1");
-    assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("v"));
+    assert_eq!(error.borrow_usage.as_local().map(|x| x.0.str()), Some("v"));
 }
 
 // the test case is lifted from
@@ -697,7 +699,7 @@ fn polonius_one_example() {
         Some("&y")
     );
     assert_eq!(error.mutable_access_span.str(), "y += 1");
-    assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("*p"));
+    assert_eq!(error.borrow_usage.as_local().map(|x| x.0.str()), Some("*p"));
 }
 
 const STRUCT_INFERENCE_NO_ERROR: &str = r#"
@@ -772,7 +774,7 @@ fn struct_inference_with_error() {
     );
     assert_eq!(error.mutable_access_span.str(), "outer = 32");
     assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.str()),
+        error.borrow_usage.as_local().map(|x| x.0.str()),
         Some("*pair.first")
     );
 }
@@ -826,7 +828,7 @@ fn struct_inference_with_lifetime_flow() {
     );
     assert_eq!(error.mutable_access_span.str(), "outer = 32");
     assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.str()),
+        error.borrow_usage.as_local().map(|x| x.0.str()),
         Some("*pair.second")
     );
 }
@@ -933,7 +935,7 @@ fn return_wrong_lifetime() {
 const RETURN_CORRECT_LIFETIME: &str = r#"
 public function test['a, 'b](
     test: &'a (int32, int32, int32),
-): &'b int32 
+): &'b int32
 where
     'a: 'b
 {
@@ -1088,7 +1090,7 @@ fn dereference_moved_mutable_reference_of_copyable_type() {
 }
 
 const STRUCT_REGION_INFERENCE: &str = r#"
-public struct RefWrapper['a, T] 
+public struct RefWrapper['a, T]
 where
     T: 'a
 {
@@ -1163,7 +1165,7 @@ fn return_invalidated_universal_regions() {
     );
     assert_eq!(error.access_span.str(), "&mutable *ref");
     assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.str()),
+        error.borrow_usage.as_local().map(|x| x.0.str()),
         Some("return (&mutable *ref, &mutable *ref)")
     );
 }
@@ -1196,7 +1198,7 @@ fn array_inference() {
 
     assert_eq!(error.access_span.str(), "&mutable x");
     assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.str()),
+        error.borrow_usage.as_local().map(|x| x.0.str()),
         Some("let array = [&mutable x, &mutable x];")
     );
 }
@@ -1207,7 +1209,7 @@ public function test(cond: bool) {
 
     let ref = 'result: {
         let inner = 2;
-        if (true) { 
+        if (true) {
             express 'result &inner;
         } else if (true) {
             let anotherInner = 3;
@@ -1279,5 +1281,221 @@ fn phi_inference_use_invalidated_reference() {
         Some("&first")
     );
     assert_eq!(error.mutable_access_span.str(), "first = 2");
-    assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("*ref"));
+    assert_eq!(error.borrow_usage.as_local().map(|x| x.0.str()), Some("*ref"));
+}
+
+const INVALIDATED_BORROWS_IN_LOOP: &str = r#"
+// fake vector
+public struct Vector[T] {
+}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function clear['a](self: &'a mutable this)
+    where
+        T: 'a
+    {
+        panic;
+    }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function main(cond: bool) {
+    let mutable vector = Vector::new();
+    let mutable number = 0;
+
+    while (cond) {
+        vector.push(&mutable number);
+    }
+}
+"#;
+
+#[test]
+fn invalidated_borrows_in_loop() {
+    let (_, errs) = build_table(INVALIDATED_BORROWS_IN_LOOP).unwrap_err();
+
+    dbg!(&errs);
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<AccessWhileMutablyBorrowed<ir::Model>>()
+        .unwrap();
+
+    assert_eq!(
+        error.mutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&mutable number")
+    );
+    assert_eq!(error.access_span.str(), "&mutable number");
+    assert_eq!(
+        error.borrow_usage.as_local().map(|x| x.0.str()),
+        Some("vector")
+    );
+
+    assert!(error.borrow_usage.as_local().map_or(false, |x| *x.1));
+}
+
+const INVALIDATED_BORROWS_IN_LOOP_WITH_BREAK: &str = r#"
+// fake vector
+public struct Vector[T] {
+}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function clear['a](self: &'a mutable this)
+    where
+        T: 'a
+    {
+        panic;
+    }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function main(cond: bool) {
+    let mutable vector = Vector::new();
+    let mutable number = 0;
+
+    while (cond) {
+        vector.push(&mutable number);
+        break;
+    }
+}
+"#;
+
+#[test]
+fn invalidated_borrows_in_loop_with_break() {
+    assert!(build_table(INVALIDATED_BORROWS_IN_LOOP_WITH_BREAK).is_ok());
+}
+
+const MUTABLY_BORROW_IN_LOOP: &str = r#"
+// fake Vector
+public struct Vector[T] {
+}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function main(cond: bool) {
+    while (cond) {
+        let mutable vector = Vector::new();
+        let mutable number = 0;
+
+        vector.push(&mutable number);
+    }
+}
+"#;
+
+#[test]
+fn mutably_borrow_in_loop() {
+    assert!(dbg!(build_table(MUTABLY_BORROW_IN_LOOP)).is_ok());
+}
+
+const VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_LOOP_2: &str = r#"
+// fake vector
+public struct Vector[T] {
+}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function main(cond: bool) {
+    let mutable vector = Vector::new();
+    while (cond) {
+        let mutable number = 0;
+        vector.push(&mutable number);
+    }
+}
+"#;
+
+#[test]
+fn variable_does_not_live_long_enough_in_loop_2() {
+    let (_, errs) =
+        build_table(VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_LOOP_2).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .unwrap();
+
+    assert_eq!(error.variable_span.str(), "number");
+    assert_eq!(error.for_lifetime, None);
+    assert_eq!(error.instantiation_span.str(), "vector.push(&mutable number)");
+}
+
+const BORROW_IN_LOOP: &str = r#"
+public function main() {
+    let outer = 32;
+    let mutable test = &outer;
+    
+    while (true) {
+        let inner = 32;
+        test = &inner;
+
+        let copy = *test;
+    }
+}
+"#;
+
+#[test]
+fn borrow_in_loop() {
+    assert!(dbg!(build_table(BORROW_IN_LOOP)).is_ok());
+}
+
+const POSSIBLE_USE_OF_GOING_OUT_OF_SCOPE_REFERENCE: &str = r#"
+public function test(cond: bool) {
+    let outer = 1;
+    let mutable ref = &outer;
+
+    while (true) {
+        let inner = 2;
+        if (true) {
+            ref = &inner;
+        }
+        let copy = *ref;
+    }
+}
+"#;
+
+#[test]
+fn possible_use_of_going_out_of_scope_reference() {
+    let (_, errs) =
+        build_table(POSSIBLE_USE_OF_GOING_OUT_OF_SCOPE_REFERENCE).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .unwrap();
+
+    assert_eq!(error.variable_span.str(), "inner");
+    assert_eq!(error.for_lifetime, None);
+    assert_eq!(error.instantiation_span.str(), "*ref");
 }

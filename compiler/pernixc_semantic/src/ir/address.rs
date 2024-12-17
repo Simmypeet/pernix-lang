@@ -60,6 +60,9 @@ pub enum Offset {
 
     /// The offset is from the end of the tuple (0-indexed).
     FromEnd(usize),
+
+    /// Points to the non-definite unpacked tuple element.
+    Unpacked,
 }
 
 /// Interprets the enum addresss as an associated value of a particular variant.
@@ -318,26 +321,22 @@ impl<M: Model> Values<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError> {
         match address {
             Address::Memory(Memory::Parameter(parameter)) => {
-                let callable_id =
-                    CallableID::try_from(current_site).ok().ok_or(
-                        TypeOfError::CurrentSiteIsNotFunction(current_site),
-                    )?;
+                let callable_id = CallableID::try_from(current_site)
+                    .ok()
+                    .ok_or(TypeOfError::Discrepancy)?;
 
                 let callable = environment
                     .table()
                     .get_callable(callable_id)
-                    .ok_or(TypeOfError::InvalidGlobalID(callable_id.into()))?;
+                    .ok_or(TypeOfError::Discrepancy)?;
 
                 let ty = callable
                     .parameters()
                     .get(*parameter)
-                    .ok_or(TypeOfError::InvalidParameterID {
-                        parameter_id: *parameter,
-                        in_function: callable_id,
-                    })?
+                    .ok_or(TypeOfError::Discrepancy)?
                     .r#type
                     .clone();
 
@@ -348,7 +347,7 @@ impl<M: Model> Values<M> {
                 let alloca = self
                     .allocas()
                     .get(*parameter)
-                    .ok_or(TypeOfError::InvalidAllocaID(*parameter))?;
+                    .ok_or(TypeOfError::Discrepancy)?;
 
                 Ok(simplify::simplify(&alloca.r#type.clone(), environment)?)
             }
@@ -368,43 +367,31 @@ impl<M: Model> Values<M> {
                         generic_arguments,
                     }) => (struct_id, generic_arguments),
 
-                    another_ty => {
-                        return Err(TypeOfError::NonStructAddressType {
-                            address: (*field_address.struct_address).clone(),
-                            r#type: another_ty,
-                        });
+                    _ => {
+                        return Err(TypeOfError::Discrepancy);
                     }
                 };
 
                 let struct_sym = environment
                     .table()
                     .get(struct_id)
-                    .ok_or(TypeOfError::InvalidGlobalID(struct_id.into()))?;
+                    .ok_or(TypeOfError::Discrepancy)?;
 
-                let instantiation =
-                    match Instantiation::from_generic_arguments(
-                        generic_arguments,
-                        struct_id.into(),
-                        &struct_sym.generic_declaration.parameters,
-                    ) {
-                        Ok(instantiation) => instantiation,
+                let instantiation = match Instantiation::from_generic_arguments(
+                    generic_arguments,
+                    struct_id.into(),
+                    &struct_sym.generic_declaration.parameters,
+                ) {
+                    Ok(instantiation) => instantiation,
 
-                        Err(error) => return Err(
-                            TypeOfError::InvalidStructAddressInstantiation {
-                                struct_id,
-                                mismatched_generic_argument_error: error,
-                            },
-                        ),
-                    };
+                    Err(_) => return Err(TypeOfError::Discrepancy),
+                };
 
                 let mut field_ty = M::from_default_type(
                     struct_sym
                         .fields()
                         .get(field_address.id)
-                        .ok_or(TypeOfError::InvalidFieldID {
-                            field_id: field_address.id,
-                            in_struct: struct_id,
-                        })?
+                        .ok_or(TypeOfError::Discrepancy)?
                         .r#type
                         .clone(),
                 );
@@ -427,12 +414,7 @@ impl<M: Model> Values<M> {
                     // extract tuple type
                     let mut tuple_ty = match x {
                         Type::Tuple(tuple_ty) => tuple_ty,
-                        another_ty => {
-                            return Err(TypeOfError::NonTupleAddressType {
-                                address: (*tuple.tuple_address).clone(),
-                                r#type: another_ty,
-                            })
-                        }
+                        _ => return Err(TypeOfError::Discrepancy),
                     };
 
                     match match tuple.offset {
@@ -442,6 +424,17 @@ impl<M: Model> Values<M> {
                             .len()
                             .checked_sub(1)
                             .and_then(|x| x.checked_sub(id)),
+                        address::Offset::Unpacked => {
+                            let Some(unpacked_ty) = tuple_ty
+                                .elements
+                                .iter()
+                                .find_map(|x| x.is_unpacked.then_some(&x.term))
+                            else {
+                                return Err(TypeOfError::Discrepancy);
+                            };
+
+                            return Ok(unpacked_ty.clone());
+                        }
                     } {
                         Some(id) if id < tuple_ty.elements.len() => {
                             let element_ty = tuple_ty.elements.remove(id);
@@ -458,10 +451,7 @@ impl<M: Model> Values<M> {
                             })
                         }
 
-                        _ => Err(TypeOfError::InvalidTupleOffset {
-                            offset: tuple.offset,
-                            tuple_type: tuple_ty,
-                        }),
+                        _ => Err(TypeOfError::Discrepancy),
                     }
                 })
             }
@@ -475,11 +465,8 @@ impl<M: Model> Values<M> {
                 .try_map(|x| {
                     let element_ty = match x {
                         Type::Array(array_ty) => *array_ty.r#type,
-                        another_ty => {
-                            return Err(TypeOfError::NonArrayAddressType {
-                                address: (*index.array_address).clone(),
-                                r#type: another_ty,
-                            });
+                        _ => {
+                            return Err(TypeOfError::Discrepancy);
                         }
                     };
 
@@ -500,31 +487,25 @@ impl<M: Model> Values<M> {
                         generic_arguments,
                     }) => (enum_id, generic_arguments),
 
-                    another_ty => {
-                        return Err(TypeOfError::NonEnumAddressType {
-                            address: (*variant.enum_address).clone(),
-                            r#type: another_ty,
-                        });
+                    _ => {
+                        return Err(TypeOfError::Discrepancy);
                     }
                 };
 
                 let variant_sym = environment
                     .table()
                     .get(variant.id)
-                    .ok_or(TypeOfError::InvalidGlobalID(variant.id.into()))?;
+                    .ok_or(TypeOfError::Discrepancy)?;
 
                 // mismatched enum id
                 if variant_sym.parent_enum_id() != enum_id {
-                    return Err(TypeOfError::InvalidVariantID {
-                        variant_id: variant.id,
-                        enum_id,
-                    });
+                    return Err(TypeOfError::Discrepancy);
                 }
 
                 let enum_sym = environment
                     .table()
                     .get(enum_id)
-                    .ok_or(TypeOfError::InvalidGlobalID(enum_id.into()))?;
+                    .ok_or(TypeOfError::Discrepancy)?;
 
                 let instantiation = match Instantiation::from_generic_arguments(
                     generic_arguments,
@@ -533,22 +514,14 @@ impl<M: Model> Values<M> {
                 ) {
                     Ok(instantiation) => instantiation,
 
-                    Err(error) => {
-                        return Err(
-                            TypeOfError::InvalidEnumAddressInstantiation {
-                                enum_id,
-                                mismatched_generic_argument_error: error,
-                            },
-                        )
-                    }
+                    Err(_) => return Err(TypeOfError::Discrepancy),
                 };
 
                 let mut variant_ty = M::from_default_type(
-                    variant_sym.associated_type.clone().ok_or(
-                        TypeOfError::VariantHasNoAssociatedValue {
-                            variant_id: variant.id,
-                        },
-                    )?,
+                    variant_sym
+                        .associated_type
+                        .clone()
+                        .ok_or(TypeOfError::Discrepancy)?,
                 );
 
                 instantiation::instantiate(&mut variant_ty, &instantiation);
@@ -571,10 +544,7 @@ impl<M: Model> Values<M> {
                 )?
                 .try_map(|x| match x {
                     Type::Reference(value) => Ok(*value.pointee),
-                    _ => Err(TypeOfError::NonReferenceAddressType {
-                        address: (*value.reference_address).clone(),
-                        r#type: x,
-                    }),
+                    _ => Err(TypeOfError::Discrepancy),
                 }),
         }
     }

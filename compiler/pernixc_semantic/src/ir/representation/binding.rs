@@ -307,7 +307,7 @@ pub enum InternalError {
         "encountered an internal error while trying to retrieve the type of a \
          register or address while binding the IR"
     )]
-    TypeOf(#[from] TypeOfError<infer::Model>),
+    TypeOf(#[from] TypeOfError),
 
     #[error(transparent)]
     TypeSystemOverflow(#[from] TypeSystemOverflow),
@@ -332,8 +332,8 @@ pub enum Error {
     Internal(#[from] InternalError),
 }
 
-impl From<TypeOfError<infer::Model>> for Error {
-    fn from(error: TypeOfError<infer::Model>) -> Self {
+impl From<TypeOfError> for Error {
+    fn from(error: TypeOfError) -> Self {
         Self::Internal(InternalError::TypeOf(error))
     }
 }
@@ -553,7 +553,7 @@ impl<
     fn type_of_register(
         &self,
         register_id: ID<Register<infer::Model>>,
-    ) -> Result<Type<infer::Model>, TypeOfError<infer::Model>> {
+    ) -> Result<Type<infer::Model>, TypeOfError> {
         self.intermediate_representation
             .values
             .type_of_register(
@@ -568,7 +568,7 @@ impl<
     fn type_of_value(
         &self,
         value: &Value<infer::Model>,
-    ) -> Result<Type<infer::Model>, TypeOfError<infer::Model>> {
+    ) -> Result<Type<infer::Model>, TypeOfError> {
         match value {
             Value::Register(register_id) => self.type_of_register(*register_id),
             Value::Literal(literal) => Ok(literal.r#type()),
@@ -579,7 +579,7 @@ impl<
     fn type_of_address(
         &self,
         address: &Address<infer::Model>,
-    ) -> Result<Type<infer::Model>, TypeOfError<infer::Model>> {
+    ) -> Result<Type<infer::Model>, TypeOfError> {
         self.intermediate_representation
             .values
             .type_of_address(

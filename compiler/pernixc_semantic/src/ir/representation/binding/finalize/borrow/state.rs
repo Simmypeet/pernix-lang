@@ -1181,6 +1181,11 @@ impl Scope {
                                 Offset::FromEnd(index) => {
                                     x.elements.len() - index
                                 }
+                                Offset::Unpacked => {
+                                    return x.elements.iter().find_map(|x| {
+                                        x.is_unpacked.then_some(&x.state)
+                                    })
+                                }
                             })
                             .map(|x| &x.state)
                     })
@@ -1357,26 +1362,49 @@ impl Scope {
                 }
 
                 (
-                    state
-                        .as_projection_mut()
-                        .and_then(|x| x.as_tuple_mut())
-                        .ok_or(SetStateError::InvalidAddress)?
-                        .elements
-                        .get_mut(match tuple.offset {
+                    'state: {
+                        let tuple_proj = state
+                            .as_projection_mut()
+                            .and_then(|x| x.as_tuple_mut())
+                            .ok_or(SetStateError::InvalidAddress)?;
+
+                        let tuple_index = match tuple.offset {
                             Offset::FromStart(index) => index,
                             Offset::FromEnd(index) => elements.len() - index,
-                        })
-                        .map(|x| &mut x.state)
-                        .ok_or(SetStateError::InvalidAddress)?,
-                    {
+                            Offset::Unpacked => {
+                                break 'state tuple_proj
+                                    .elements
+                                    .iter_mut()
+                                    .find_map(|x| {
+                                        x.is_unpacked.then_some(&mut x.state)
+                                    })
+                                    .ok_or(SetStateError::InvalidAddress)?
+                            }
+                        };
+
+                        &mut tuple_proj
+                            .elements
+                            .get_mut(tuple_index)
+                            .ok_or(SetStateError::InvalidAddress)?
+                            .state
+                    },
+                    'type_result: {
+                        let index = match tuple.offset {
+                            Offset::FromStart(index) => index,
+                            Offset::FromEnd(index) => elements.len() - index,
+                            Offset::Unpacked => {
+                                break 'type_result elements
+                                    .iter()
+                                    .find_map(|x| {
+                                        x.is_unpacked.then(|| x.term.clone())
+                                    })
+                                    .ok_or(SetStateError::InvalidAddress)?
+                            }
+                        };
+
                         elements
-                            .get(match tuple.offset {
-                                Offset::FromStart(index) => index,
-                                Offset::FromEnd(index) => {
-                                    elements.len() - index
-                                }
-                            })
-                            .unwrap()
+                            .get(index)
+                            .ok_or(SetStateError::InvalidAddress)?
                             .term
                             .clone()
                     },
@@ -1567,6 +1595,10 @@ pub struct Stack {
 
 impl Stack {
     pub const fn new() -> Self { Self { scopes: Vec::new() } }
+
+    pub fn has_scope(&self, scope_id: ID<scope::Scope>) -> bool {
+        self.scopes.iter().any(|x| x.scope_id == scope_id)
+    }
 
     pub fn new_scope(&mut self, scope_id: ID<scope::Scope>) {
         self.scopes.push(Scope::new(scope_id));

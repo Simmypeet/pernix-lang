@@ -8,13 +8,20 @@ use pernixc_base::source_file::Span;
 use super::{
     address::Address,
     control_flow_graph::Block,
+    representation::Values,
     scope::Scope,
-    value::{register::Register, Value},
+    value::{
+        register::{Assignment, Register},
+        Value,
+    },
     Transform,
 };
 use crate::{
     arena::{Key, ID},
-    type_system::{model::Model, term::r#type::Type},
+    type_system::{
+        model::Model,
+        term::r#type::{Qualifier, Type},
+    },
 };
 
 /// Represents a jump to another block unconditionally.
@@ -149,6 +156,39 @@ pub struct Store<M: Model> {
 
 /// An instructions that packs the unpacked elements of a tuple into a packed
 /// element.
+///
+/// When it appears in the IR, it mostly means that the type of the tuple being
+/// unpacked is not definite (unknown) at a time, so the this *special*
+/// instruction is used to represent the packed tuple.
+///
+/// For example, consider the following code:
+/// ```pnx
+/// public function main[T](var: (int32, ...T, int32))
+/// where
+///     tuple T
+/// {
+///     // ...
+///     let (a, ...b, c) = var;
+///     // ...
+/// }
+/// ```
+///
+/// This code will generate a tuple pack instruction for the pattern matching
+/// at the `...b` part.
+///
+/// However, in case of a known tuple type, the tuple pack instruction is not
+/// generated.
+///
+/// ```pnx
+/// public function main(var: (int32, int32, float32, int32)) {
+///     // ...
+///     let (a, ...b, d) = var;
+///     // ...
+/// }
+/// ```
+///
+/// In this case, the tuple pack instruction is not generated; instead, normal
+/// `Store` instruction are generated.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TuplePack<M: Model> {
     /// The address where the unpacked tuple elements will be stored.

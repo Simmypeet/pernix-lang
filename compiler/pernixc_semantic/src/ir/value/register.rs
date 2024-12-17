@@ -66,7 +66,7 @@ impl<M: Model> Values<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError> {
         let mut constraints = BTreeSet::new();
         let mut elements = Vec::new();
 
@@ -115,7 +115,7 @@ impl<M: Model> Values<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError> {
         self.type_of_address(&load.address, current_site, environment)
     }
 }
@@ -144,7 +144,7 @@ impl<M: Model> Values<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError> {
         self.type_of_address(&reference_of.address, current_site, environment)
             .map(|x| {
                 x.map(|x| {
@@ -192,7 +192,7 @@ impl<M: Model> Values<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError> {
         let operand_type =
             self.type_of_value(&prefix.operand, current_site, environment)?;
 
@@ -240,10 +240,10 @@ pub struct Variant<M: Model> {
 fn type_of_variant_assignment<M: Model>(
     variant: &Variant<M>,
     table: &Table<impl table::State>,
-) -> Result<Type<M>, TypeOfError<M>> {
+) -> Result<Type<M>, TypeOfError> {
     let enum_id = table
         .get(variant.variant_id)
-        .ok_or(TypeOfError::InvalidGlobalID(variant.variant_id.into()))?
+        .ok_or(TypeOfError::Discrepancy)?
         .parent_enum_id();
 
     Ok(Type::Symbol(Symbol {
@@ -268,10 +268,10 @@ pub struct FunctionCall<M: Model> {
 fn type_of_function_call_assignment<M: Model>(
     function_call: &FunctionCall<M>,
     table: &Table<impl table::State>,
-) -> Result<Type<M>, TypeOfError<M>> {
-    let callable = table.get_callable(function_call.callable_id).ok_or(
-        TypeOfError::InvalidGlobalID(function_call.callable_id.into()),
-    )?;
+) -> Result<Type<M>, TypeOfError> {
+    let callable = table
+        .get_callable(function_call.callable_id)
+        .ok_or(TypeOfError::Discrepancy)?;
 
     let mut return_type = M::from_default_type(callable.return_type().clone());
 
@@ -387,7 +387,7 @@ impl<M: Model> Values<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError> {
         // the return type always based on the lhs field
         if let BinaryOperator::Relational(_) = binary.operator {
             Ok(Succeeded::new(Type::Primitive(r#type::Primitive::Bool)))
@@ -503,11 +503,9 @@ impl<M: Model> Values<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
-        let register = self
-            .registers()
-            .get(id)
-            .ok_or(TypeOfError::InvalidRegisterID(id))?;
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError> {
+        let register =
+            self.registers().get(id).ok_or(TypeOfError::Discrepancy)?;
 
         let ty = match &register.assignment {
             Assignment::Tuple(tuple) => {

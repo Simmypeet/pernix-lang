@@ -75,7 +75,7 @@ impl<M: Model> Values<M> {
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<Succeeded<Type<M>, M>, TypeOfError<M>> {
+    ) -> Result<Succeeded<Type<M>, M>, TypeOfError> {
         match value {
             Value::Register(register) => {
                 self.type_of_register(*register, current_site, environment)

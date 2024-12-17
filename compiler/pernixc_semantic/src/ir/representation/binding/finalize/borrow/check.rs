@@ -20,7 +20,7 @@ use crate::{
     },
     ir::{
         self,
-        address::{Address, Memory},
+        address::{self, Address, Memory},
         alloca::Alloca,
         control_flow_graph::Block,
         instruction::{Instruction, Return, Terminator, UnconditionalJump},
@@ -209,6 +209,7 @@ impl Values<BorrowModel> {
             borrows.into_iter(),
             self,
             ret.span.clone(),
+            false,
             accesses,
             handler,
         );
@@ -843,6 +844,7 @@ impl Values<BorrowModel> {
             self,
             &context.stack,
             register_span,
+            false,
             accesses,
             current_site,
             ty_environment,
@@ -1457,77 +1459,55 @@ impl<
                 }
 
                 Instruction::TuplePack(tuple_pack) => {
-                    let moved_tuple_ty = self
-                        .representation
-                        .values
-                        .type_of_address(
-                            &tuple_pack.tuple_address,
-                            self.current_site,
-                            self.ty_environment,
-                        )
-                        .unwrap()
-                        .result
-                        .into_tuple()
-                        .unwrap();
-
-                    let moved_range = tuple_pack.before_packed_element_count
-                        ..(moved_tuple_ty.elements.len()
-                            - tuple_pack.after_packed_element_count);
-
-                    for i in moved_range {
-                        let address = Address::Tuple(ir::address::Tuple {
+                    let state = context.stack.set_uninitialized(
+                        &Address::Tuple(address::Tuple {
                             tuple_address: Box::new(
                                 tuple_pack.tuple_address.clone(),
                             ),
-                            offset: ir::address::Offset::FromStart(i),
-                        });
+                            offset: address::Offset::Unpacked,
+                        }),
+                        tuple_pack.packed_tuple_span.clone().unwrap(),
+                        self.ty_environment,
+                    )?;
 
-                        // mark as moved out
-                        let state = context.stack.set_uninitialized(
-                            &address,
-                            tuple_pack.packed_tuple_span.clone().unwrap(),
-                            self.ty_environment,
-                        )?;
+                    let sumamry = match state {
+                        SetStateSucceeded::Unchanged(initialized, _) => {
+                            initialized
+                                .as_false()
+                                .and_then(|x| x.latest_accessor().as_ref())
+                                .map_or(Summary::Initialized, |x| {
+                                    Summary::Moved(x.clone())
+                                })
+                        }
 
-                        let sumamry = match state {
-                            SetStateSucceeded::Unchanged(initialized, _) => {
-                                initialized
-                                    .as_false()
-                                    .and_then(|x| x.latest_accessor().as_ref())
-                                    .map_or(Summary::Initialized, |x| {
-                                        Summary::Moved(x.clone())
-                                    })
-                            }
+                        SetStateSucceeded::Updated(state) => {
+                            state.get_state_summary()
+                        }
+                    };
 
-                            SetStateSucceeded::Updated(state) => {
-                                state.get_state_summary()
-                            }
-                        };
-
-                        match sumamry {
-                            Summary::Uninitialized => {
-                                handler.receive(Box::new(
-                                    UseBeforeInitialization {
-                                        use_span: tuple_pack
-                                            .packed_tuple_span
-                                            .clone()
-                                            .unwrap(),
-                                    },
-                                ));
-                            }
-
-                            Summary::Moved(span) => {
-                                handler.receive(Box::new(UseAfterMove {
+                    match sumamry {
+                        Summary::Uninitialized => {
+                            handler.receive(Box::new(
+                                UseBeforeInitialization {
                                     use_span: tuple_pack
                                         .packed_tuple_span
                                         .clone()
                                         .unwrap(),
-                                    move_span: span,
-                                }));
-                            }
-
-                            Summary::Initialized => {}
+                                },
+                            ));
                         }
+
+                        Summary::Moved(span) => {
+                            handler.receive(Box::new(UseAfterMove {
+                                use_span: tuple_pack
+                                    .packed_tuple_span
+                                    .clone()
+                                    .unwrap(),
+                                move_span: span,
+                            }));
+                        }
+
+                        Summary::Initialized => {}
                     }
 
                     let instructions =
@@ -2041,6 +2021,72 @@ impl<
                             moved_value_span: move_span,
                         }));
                     }
+                }
+            }
+
+            // check the possible accesses to the invalidated borrows in the
+            // next iteration
+            {
+                let mut accesses_in_loop = context
+                    .environment
+                    .access_difference(&target_stack.environment)
+                    .collect::<Vec<_>>();
+
+                accesses_in_loop.sort_by(|x, y| {
+                    let x_access = self.accesses.get(*x).unwrap();
+                    let y_access = self.accesses.get(*y).unwrap();
+
+                    x_access.order.cmp(&y_access.order)
+                });
+
+                for access_id in dbg!(accesses_in_loop) {
+                    let access = self.accesses.get(access_id).unwrap();
+
+                    let root = access.address.get_root_memory();
+
+                    if let Memory::Alloca(id) = root {
+                        // check the access to something outside the loop
+                        if !context.stack.has_scope(
+                            self.representation
+                                .values
+                                .allocas
+                                .get(*id)
+                                .unwrap()
+                                .declared_in_scope_id,
+                        ) {
+                            continue;
+                        }
+                    }
+
+                    let address_lifetimes = get_lifetimes_in_address(
+                        &access.address,
+                        access.span.clone(),
+                        &self.representation.values,
+                        self.current_site,
+                        self.ty_environment,
+                    )?;
+                    let borrows_in_address = address_lifetimes
+                        .iter()
+                        .flat_map(|x| {
+                            context.environment.get_borrows_of_lifetime(&x)
+                        })
+                        .collect::<HashSet<_>>();
+
+                    context.environment.check_invalidated_borrow_usages(
+                        borrows_in_address.into_iter(),
+                        &self.representation.values,
+                        access.span.clone(),
+                        true,
+                        &self.accesses,
+                        handler,
+                    );
+
+                    context.environment.invalidate_borrows_from_access(
+                        access_id,
+                        &self.accesses,
+                        &self.representation.values,
+                        handler,
+                    );
                 }
             }
 
