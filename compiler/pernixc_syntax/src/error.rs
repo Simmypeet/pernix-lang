@@ -184,7 +184,11 @@ impl Error {
                     Found::Token(token) => token.span().clone(),
                     Found::EndOfFile(arc) => Span::new(
                         arc.clone(),
-                        arc.content().len() - 1,
+                        if arc.content().len() == 0 {
+                            0
+                        } else {
+                            arc.content().len() - 1
+                        },
                         arc.content().len(),
                     )
                     .unwrap(),
