@@ -71,12 +71,12 @@ struct ToBorrowTransformer {
 impl From<Erased> for ID<LocalRegion> {
     fn from(Erased: Erased) -> Self {
         // use default value first, will be replaced later
-        ID::from_index(0)
+        Self::from_index(0)
     }
 }
 
 impl From<ID<LocalRegion>> for Erased {
-    fn from(_: ID<LocalRegion>) -> Self { Erased }
+    fn from(_: ID<LocalRegion>) -> Self { Self }
 }
 
 impl Transform<Lifetime<ir::Model>> for ToBorrowTransformer {

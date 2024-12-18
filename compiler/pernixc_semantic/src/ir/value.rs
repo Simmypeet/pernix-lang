@@ -38,6 +38,7 @@ pub enum Value<M: Model> {
 
 impl<M: Model> Value<M> {
     /// Transforms the [`Value`] another model using the given transformer.
+    #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,

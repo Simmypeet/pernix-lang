@@ -125,9 +125,11 @@ pub trait Transform<T: Term> {
     /// The method should report the error seen in the term. For exmple, if the
     /// term contains an un-inferrable type. This is called at most onece per
     /// expression/entity.
+    #[allow(clippy::missing_errors_doc)]
     fn inspect(&mut self, term: &T, span: Span) -> Result<(), Self::Error>;
 
     /// Transforms the term.
+    #[allow(clippy::missing_errors_doc)]
     fn transform(
         &mut self,
         term: T,
@@ -135,6 +137,7 @@ pub trait Transform<T: Term> {
     ) -> Result<T::Rebind<Self::Target>, Self::Error>;
 
     /// Inspects and transforms the term.
+    #[allow(clippy::missing_errors_doc)]
     fn inspect_and_transform(
         &mut self,
         term: T,

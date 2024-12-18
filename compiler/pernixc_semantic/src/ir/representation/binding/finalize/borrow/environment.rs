@@ -136,7 +136,7 @@ impl RegionInfo {
     }
 
     /// Translates the given region into the index of the transitive closure
-    pub fn into_transitive_closure_index(&self, region: Region) -> usize {
+    pub fn get_transitive_closure_index(&self, region: Region) -> usize {
         match region {
             Region::Local(local_region) => local_region.into_index(),
             Region::Universal(universal_region) => *self
@@ -190,7 +190,7 @@ impl Recursive<'_, Constant<BorrowModel>> for Contains<'_> {
 }
 
 impl<'a> Contains<'a> {
-    pub fn new(regions: &'a HashSet<Region>) -> Self {
+    pub const fn new(regions: &'a HashSet<Region>) -> Self {
         Self { regions, contains: false }
     }
 
@@ -220,12 +220,8 @@ struct RegisterTypeCache {
 ///
 /// The key [`Environment::region_subset_relations`] represents the subset while
 /// the values represent the superset.
-///
-/// ## TODO
-///
-/// Use a more efficient data structure for the subset relation (probably
-/// transitive closures).
 #[derive(CopyGetters)]
+#[allow(clippy::struct_field_names)]
 pub struct Environment<
     'a,
     S: table::State,
@@ -290,7 +286,7 @@ impl<
 /// Gets all the lifetimes included in the given address.
 pub fn get_lifetimes_in_address<S: table::State>(
     mut address: &Address<BorrowModel>,
-    span: Span,
+    span: &Span,
     values: &Values<BorrowModel>,
     current_site: GlobalID,
     ty_environment: &TyEnvironment<
@@ -444,7 +440,7 @@ impl<
     fn invalidate_borrow(
         &self,
         borrow: ID<Register<BorrowModel>>,
-        access_span: Span,
+        access_span: &Span,
         mut exit: impl FnMut(&Instruction<BorrowModel>, Point<BorrowModel>) -> bool,
         point: Point<BorrowModel>,
         handler_fn: impl Fn(Usage),
@@ -474,7 +470,7 @@ impl<
                 &alloca.r#type,
                 point,
                 &mut exit,
-                &self.representation,
+                self.representation,
                 self.ty_environment,
             )
             .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
@@ -486,7 +482,7 @@ impl<
             for (address, access_kind) in accesses {
                 if get_lifetimes_in_address(
                     &address,
-                    access_span.clone(),
+                    access_span,
                     &self.representation.values,
                     self.current_site,
                     self.ty_environment,
@@ -521,7 +517,7 @@ impl<
             let live_spans = liveness::live_register_spans(
                 *register,
                 point,
-                &self.representation,
+                self.representation,
             );
 
             for span in live_spans {
@@ -536,7 +532,7 @@ impl<
         {
             if self.subset_relations.has_path(
                 self.attached_borrows.get(&borrow).unwrap().into_index(),
-                self.region_info.into_transitive_closure_index(
+                self.region_info.get_transitive_closure_index(
                     Region::Universal(*universal_region),
                 ),
             ) {
@@ -562,7 +558,7 @@ impl<
         point: Point<BorrowModel>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        for borrow in self.attached_borrows.keys().cloned() {
+        for borrow in self.attached_borrows.keys().copied() {
             let borrow_register =
                 self.representation.values.registers.get(borrow).unwrap();
             let borrow_assignment =
@@ -580,7 +576,7 @@ impl<
 
             self.invalidate_borrow(
                 borrow,
-                span.clone(),
+                &span,
                 |_, _| false,
                 point,
                 |borrow_usage| {
@@ -588,7 +584,7 @@ impl<
                         borrow_span: borrow_register.span.clone(),
                         usage: borrow_usage,
                         moved_out_span: move_span.clone(),
-                    }))
+                    }));
                 },
             )?;
         }
@@ -604,7 +600,7 @@ impl<
         point: Point<BorrowModel>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        for (borrow, _) in self.attached_borrows.iter() {
+        for borrow in self.attached_borrows.keys() {
             let borrow_register =
                 self.representation.values.registers.get(*borrow).unwrap();
             let borrow_assignment =
@@ -656,7 +652,7 @@ impl<
 
             self.invalidate_borrow(
                 *borrow,
-                span.clone(),
+                &span,
                 |inst, _| {
                     // prevent multiple invalidations in loops
                     inst.as_scope_pop().map_or(false, |x| x.0 == dropped_scope)
@@ -686,7 +682,7 @@ impl<
         &mut self,
         address: &Address<BorrowModel>,
         access_qualifier: Qualifier,
-        span: Span,
+        span: &Span,
         point: Point<BorrowModel>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
@@ -699,7 +695,7 @@ impl<
          */
 
         // invalidate the borrows
-        for borrow in self.attached_borrows.keys().cloned() {
+        for borrow in self.attached_borrows.keys().copied() {
             let borrow_register =
                 self.representation.values.registers.get(borrow).unwrap();
             let borrow_assignment =
@@ -710,12 +706,12 @@ impl<
 
             // if the address overlaps
             let is_subaddress = address.is_child_of(&borrow_assignment.address)
-                || borrow_assignment.address.is_child_of(&address);
+                || borrow_assignment.address.is_child_of(address);
 
             if should_invalidate && is_subaddress {
                 self.invalidate_borrow(
                     borrow,
-                    span.clone(),
+                    span,
                     |_, _| false,
                     point,
                     |borrow_usage| match borrow_assignment.qualifier {
@@ -789,11 +785,12 @@ impl<
     ) {
         for region in regions {
             self.subset_relations
-                .detach(self.region_info.into_transitive_closure_index(region));
+                .detach(self.region_info.get_transitive_closure_index(region));
         }
     }
 
     /// Gets the universal regions of the given lifetime
+    #[allow(clippy::iter_on_single_items, clippy::iter_on_empty_collections)]
     pub fn get_universal_regions_of_lifetime(
         &self,
         lifetime: &Lifetime<BorrowModel>,
@@ -809,7 +806,7 @@ impl<
         };
 
         let region_index =
-            self.region_info.into_transitive_closure_index(region);
+            self.region_info.get_transitive_closure_index(region);
 
         Some(self.region_info.indices_by_univseral_region.iter().filter_map(
             move |(universal_region, index)| {
@@ -825,6 +822,7 @@ impl<
     }
 
     /// Gets the borrows occurred so far in the lifetime
+    #[allow(clippy::iter_on_single_items, clippy::iter_on_empty_collections)]
     pub fn get_borrows_of_lifetime(
         &self,
         lifetime: &Lifetime<BorrowModel>,
@@ -843,7 +841,7 @@ impl<
             move |(borrow, borrow_local_region)| {
                 if self.subset_relations.has_path(
                     borrow_local_region.into_index(),
-                    self.region_info.into_transitive_closure_index(region),
+                    self.region_info.get_transitive_closure_index(region),
                 ) {
                     Some(*borrow)
                 } else {
@@ -864,9 +862,9 @@ impl<
     ) {
         for region in regions {
             let from_index =
-                self.region_info.into_transitive_closure_index(region.0);
+                self.region_info.get_transitive_closure_index(region.0);
             let to_index =
-                self.region_info.into_transitive_closure_index(region.1);
+                self.region_info.get_transitive_closure_index(region.1);
 
             self.subset_relations.add_edge(from_index, to_index);
         }
@@ -875,12 +873,13 @@ impl<
     /// Handles the outlives constraints from subtyping and lifetime bounds.
     /// The envrionment will build subset relations between the regions and
     /// check the outlives for the universal regions.
+    #[allow(clippy::too_many_lines)]
     pub fn handle_outlives_constraints<'o>(
         &mut self,
         outlives_constraints: impl IntoIterator<
             Item = &'o Outlives<Lifetime<BorrowModel>>,
         >,
-        checking_span: Span,
+        checking_span: &Span,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let mut adding_edges: Vec<(Region, Region)> = Vec::new();
@@ -938,8 +937,8 @@ impl<
         // adding the edges
         for (from, to) in adding_edges {
             let from_index =
-                self.region_info.into_transitive_closure_index(from);
-            let to_index = self.region_info.into_transitive_closure_index(to);
+                self.region_info.get_transitive_closure_index(from);
+            let to_index = self.region_info.get_transitive_closure_index(to);
 
             self.subset_relations.add_edge(from_index, to_index);
         }
@@ -949,11 +948,10 @@ impl<
         {
             // add the edges
             'out: {
-                let from_index =
-                    self.region_info.into_transitive_closure_index(
-                        Region::Local(operand_region),
-                    );
-                let to_index = self.region_info.into_transitive_closure_index(
+                let from_index = self.region_info.get_transitive_closure_index(
+                    Region::Local(operand_region),
+                );
+                let to_index = self.region_info.get_transitive_closure_index(
                     Region::Universal(match universal_region_bound {
                         Lifetime::Static => UniversalRegion::Static,
                         Lifetime::Parameter(member_id) => {

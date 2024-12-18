@@ -8,7 +8,7 @@ pub struct LocalRegionGenerator(usize);
 
 impl LocalRegionGenerator {
     /// Creates a new instance of [`LocalRegionGenerator`]
-    pub fn new() -> Self { Self(0) }
+    pub const fn new() -> Self { Self(0) }
 
     /// Generate a new local region id
     pub fn next(&mut self) -> ID<LocalRegion> {
@@ -19,5 +19,5 @@ impl LocalRegionGenerator {
     }
 
     /// Returns the number of generated local regions
-    pub fn generated_count(&self) -> usize { self.0 }
+    pub const fn generated_count(self) -> usize { self.0 }
 }

@@ -141,6 +141,7 @@ pub enum Literal<M: Model> {
 
 impl<M: Model> Literal<M> {
     /// Transforms the literal to another model using the given transformer.
+    #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,

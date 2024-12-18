@@ -91,6 +91,7 @@ pub(super) trait Pattern:
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> Result<Option<Self>, TypeSystemOverflow>;
 
+    #[allow(clippy::too_many_arguments)]
     fn insert_named_binding_point<
         S: table::State,
         RO: resolution::Observer<S, infer::Model>,
@@ -1325,7 +1326,7 @@ impl<
         total_length - start_index - 1
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     fn insert_named_binding_point_tuple<T: Pattern>(
         &mut self,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
@@ -1671,6 +1672,7 @@ impl<
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn insert_named_binding_point_structural<T: Pattern>(
         &mut self,
         name_binding_point: &mut NameBindingPoint<infer::Model>,

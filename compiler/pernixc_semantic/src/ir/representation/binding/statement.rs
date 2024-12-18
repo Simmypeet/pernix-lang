@@ -121,6 +121,7 @@ impl<
     /// An `Ok` of tuple address where the initializer value is stored and a
     /// boolean indicating if the address is from the l-value or is newly
     /// created to store the r-value.
+    #[allow(clippy::too_many_lines)]
     pub fn bind_variable_declaration(
         &mut self,
         syntax_tree: &syntax_tree::statement::VariableDeclaration,

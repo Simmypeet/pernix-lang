@@ -118,7 +118,7 @@ impl<
                     constraints
                         .iter()
                         .map(|x| x.as_lifetime_outlives().unwrap()),
-                    ret.span.clone(),
+                    &ret.span,
                     handler,
                 )?;
             }
@@ -137,10 +137,11 @@ impl<
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn handle_variant(
         &mut self,
         variant: &Variant<BorrowModel>,
-        register_span: Span,
+        register_span: &Span,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let variant_sym =
@@ -233,7 +234,7 @@ impl<
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            register_span.clone(),
+            register_span,
             handler,
         )?;
 
@@ -250,7 +251,7 @@ impl<
             .predicates
             .into_iter()
             .map(|x| {
-                let mut x = Predicate::from_default_model(x.clone());
+                let mut x = Predicate::from_default_model(x);
                 x.instantiate(&instantiation);
 
                 x
@@ -283,7 +284,7 @@ impl<
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            register_span.clone(),
+            register_span,
             handler,
         )?;
 
@@ -293,7 +294,7 @@ impl<
     fn handle_phi(
         &mut self,
         phi: &Phi<BorrowModel>,
-        register_span: Span,
+        register_span: &Span,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let mut lifetime_constraints = BTreeSet::new();
@@ -361,7 +362,7 @@ impl<
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            register_span.clone(),
+            register_span,
             handler,
         )?;
 
@@ -371,7 +372,7 @@ impl<
     fn handle_array(
         &mut self,
         array: &Array<BorrowModel>,
-        register_span: Span,
+        register_span: &Span,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let array_ty = array.element_type.clone();
@@ -440,17 +441,18 @@ impl<
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            register_span.clone(),
+            register_span,
             handler,
         )?;
 
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn handle_struct(
         &mut self,
         struct_lit: &Struct<BorrowModel>,
-        register_span: Span,
+        register_span: &Span,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let instantiation = Instantiation::from_generic_arguments(
@@ -496,7 +498,7 @@ impl<
                 self.representation()
                     .values
                     .type_of_value(
-                        &struct_lit
+                        struct_lit
                             .initializers_by_field_id
                             .get(&field_id)
                             .unwrap(),
@@ -546,7 +548,7 @@ impl<
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            register_span.clone(),
+            register_span,
             handler,
         )?;
 
@@ -563,7 +565,7 @@ impl<
             .predicates
             .into_iter()
             .map(|x| {
-                let mut x = Predicate::from_default_model(x.clone());
+                let mut x = Predicate::from_default_model(x);
                 x.instantiate(&instantiation);
 
                 x
@@ -596,17 +598,18 @@ impl<
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            register_span.clone(),
+            register_span,
             handler,
         )?;
 
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn handle_function_call(
         &mut self,
         function_call: &FunctionCall<BorrowModel>,
-        register_span: Span,
+        register_span: &Span,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let callable = self
@@ -701,7 +704,7 @@ impl<
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            register_span.clone(),
+            register_span,
             handler,
         )?;
 
@@ -715,7 +718,7 @@ impl<
             .predicates
             .into_iter()
             .map(|x| {
-                let mut x = Predicate::from_default_model(x.clone());
+                let mut x = Predicate::from_default_model(x);
                 x.instantiate(&function_call.instantiation);
 
                 x
@@ -748,7 +751,7 @@ impl<
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
-            register_span.clone(),
+            register_span,
             handler,
         )?;
 
@@ -759,7 +762,7 @@ impl<
         &mut self,
         register_id: ID<Register<BorrowModel>>,
         reference_of: &Borrow<BorrowModel>,
-        register_span: Span,
+        register_span: &Span,
         point: Point<BorrowModel>,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
@@ -767,7 +770,7 @@ impl<
         self.handle_access(
             &reference_of.address,
             reference_of.qualifier,
-            register_span.clone(),
+            register_span,
             point,
             handler,
         )?;
@@ -792,7 +795,7 @@ impl<
 
         let constraints_in_address = get_lifetimes_in_address(
             &reference_of.address,
-            register_span.clone(),
+            register_span,
             &self.representation().values,
             self.current_site(),
             self.ty_environment(),
@@ -819,7 +822,7 @@ impl<
     fn handle_store(
         &mut self,
         store_address: &Address<BorrowModel>,
-        value_type: Succeeded<Type<BorrowModel>, BorrowModel>,
+        value_type: &Succeeded<Type<BorrowModel>, BorrowModel>,
         store_span: Span,
         point: Point<BorrowModel>,
         handler: &HandlerWrapper,
@@ -876,7 +879,7 @@ impl<
                         .chain(address_constraints.iter())
                         .chain(compatibility_constraints.iter())
                         .map(|x| x.as_lifetime_outlives().unwrap()),
-                    store_span.clone(),
+                    &store_span,
                     handler,
                 )?;
             }
@@ -886,7 +889,7 @@ impl<
             Err(OverflowError) => {
                 return Err(TypeSystemOverflow {
                     operation: OverflowOperation::TypeCheck,
-                    overflow_span: store_span.clone(),
+                    overflow_span: store_span,
                     overflow_error: OverflowError,
                 })
             }
@@ -895,7 +898,7 @@ impl<
         self.handle_access(
             store_address,
             Qualifier::Mutable,
-            store_span,
+            &store_span,
             point,
             handler,
         )
@@ -904,7 +907,7 @@ impl<
     fn handle_load(
         &mut self,
         load: &Load<BorrowModel>,
-        register_span: Span,
+        register_span: &Span,
         point: Point<BorrowModel>,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
@@ -929,7 +932,7 @@ impl<
                 let copy_marker = self
                     .ty_environment()
                     .table()
-                    .get_by_qualified_name(["core", "Copy"].into_iter())
+                    .get_by_qualified_name(["core", "Copy"])
                     .unwrap()
                     .into_marker()
                     .unwrap();
@@ -954,12 +957,7 @@ impl<
                     break 'out;
                 }
 
-                self.handle_move(
-                    &load.address,
-                    &register_span,
-                    point,
-                    handler,
-                )?;
+                self.handle_move(&load.address, register_span, point, handler)?;
             }
         };
 
@@ -980,6 +978,7 @@ impl<
         O: Observer<BorrowModel, S>,
     > Environment<'a, S, N, O>
 {
+    #[allow(clippy::too_many_lines)]
     fn walk_instructions(
         &mut self,
         block_id: ID<Block<BorrowModel>>,
@@ -1023,7 +1022,7 @@ impl<
 
                     self.handle_store(
                         &store.address,
-                        value_type,
+                        &value_type,
                         store.span.clone(),
                         current_point,
                         handler,
@@ -1042,7 +1041,7 @@ impl<
                         Assignment::Load(load) => {
                             self.handle_load(
                                 load,
-                                register.span.clone(),
+                                &register.span,
                                 current_point,
                                 handler,
                             )?;
@@ -1052,7 +1051,7 @@ impl<
                             self.handle_reference_of(
                                 register_assignment.id,
                                 reference_of,
-                                register.span.clone(),
+                                &register.span,
                                 current_point,
                                 handler,
                             )?;
@@ -1061,7 +1060,7 @@ impl<
                         Assignment::FunctionCall(function_call) => {
                             self.handle_function_call(
                                 function_call,
-                                register.span.clone(),
+                                &register.span,
                                 handler,
                             )?;
                         }
@@ -1069,7 +1068,7 @@ impl<
                         Assignment::Struct(struct_lit) => {
                             self.handle_struct(
                                 struct_lit,
-                                register.span.clone(),
+                                &register.span,
                                 handler,
                             )?;
                         }
@@ -1077,25 +1076,17 @@ impl<
                         Assignment::Variant(variant) => {
                             self.handle_variant(
                                 variant,
-                                register.span.clone(),
+                                &register.span,
                                 handler,
                             )?;
                         }
 
                         Assignment::Array(array) => {
-                            self.handle_array(
-                                array,
-                                register.span.clone(),
-                                handler,
-                            )?;
+                            self.handle_array(array, &register.span, handler)?;
                         }
 
                         Assignment::Phi(phi) => {
-                            self.handle_phi(
-                                phi,
-                                register.span.clone(),
-                                handler,
-                            )?;
+                            self.handle_phi(phi, &register.span, handler)?;
                         }
 
                         Assignment::Prefix(_)
@@ -1123,7 +1114,7 @@ impl<
 
                     self.handle_store(
                         &tuple_pack.store_address,
-                        tuple_ty.map(|x| {
+                        &tuple_ty.map(|x| {
                             x.into_tuple()
                                 .unwrap()
                                 .elements
@@ -1171,7 +1162,7 @@ impl<
                                 callable
                                     .parameters()
                                     .ids()
-                                    .map(|x| Memory::Parameter(x)),
+                                    .map(Memory::Parameter),
                             );
                         }
                     }
@@ -1227,6 +1218,7 @@ impl<
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::type_complexity)]
 struct Checker<
     'a,
     S: table::State,
@@ -1284,6 +1276,7 @@ impl<
         Ok(Some(walk_result.environment))
     }
 
+    #[allow(clippy::too_many_lines)]
     fn walk_block(
         &mut self,
         block_id: ID<Block<BorrowModel>>,
@@ -1307,7 +1300,7 @@ impl<
 
             let mut starting_environment = Environment::new(
                 self.region_info.clone(),
-                &self.representation,
+                self.representation,
                 self.current_site,
                 self.ty_environment,
             )?;
@@ -1315,7 +1308,7 @@ impl<
             let predicates = self
                 .ty_environment
                 .table()
-                .get_active_premise::<BorrowModel>(self.current_site.into())
+                .get_active_premise::<BorrowModel>(self.current_site)
                 .unwrap()
                 .predicates;
 

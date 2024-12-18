@@ -247,6 +247,7 @@ pub struct InvalidStructAddressError<M: Model>(Type<M>);
 
 impl<M: Model> Address<M> {
     /// Transforms the [`Address`] to another model using the given transformer.
+    #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
@@ -360,16 +361,12 @@ impl<M: Model> Values<M> {
                         current_site,
                         environment,
                     )?;
-
-                let (struct_id, generic_arguments) = match result {
-                    Type::Symbol(Symbol {
-                        id: r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
-                        generic_arguments,
-                    }) => (struct_id, generic_arguments),
-
-                    _ => {
-                        return Err(TypeOfError::Discrepancy);
-                    }
+                let Type::Symbol(Symbol {
+                    id: r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
+                    generic_arguments,
+                }) = result
+                else {
+                    return Err(TypeOfError::Discrepancy);
                 };
 
                 let struct_sym = environment
@@ -377,14 +374,12 @@ impl<M: Model> Values<M> {
                     .get(struct_id)
                     .ok_or(TypeOfError::Discrepancy)?;
 
-                let instantiation = match Instantiation::from_generic_arguments(
+                let Ok(instantiation) = Instantiation::from_generic_arguments(
                     generic_arguments,
                     struct_id.into(),
                     &struct_sym.generic_declaration.parameters,
-                ) {
-                    Ok(instantiation) => instantiation,
-
-                    Err(_) => return Err(TypeOfError::Discrepancy),
+                ) else {
+                    return Err(TypeOfError::Discrepancy);
                 };
 
                 let mut field_ty = M::from_default_type(
@@ -412,9 +407,8 @@ impl<M: Model> Values<M> {
                 )?
                 .try_map(|x| {
                     // extract tuple type
-                    let mut tuple_ty = match x {
-                        Type::Tuple(tuple_ty) => tuple_ty,
-                        _ => return Err(TypeOfError::Discrepancy),
+                    let Type::Tuple(mut tuple_ty) = x else {
+                        return Err(TypeOfError::Discrepancy);
                     };
 
                     match match tuple.offset {
@@ -481,15 +475,12 @@ impl<M: Model> Values<M> {
                         environment,
                     )?;
 
-                let (enum_id, generic_arguments) = match result {
-                    Type::Symbol(Symbol {
-                        id: r#type::SymbolID::Adt(AdtID::Enum(enum_id)),
-                        generic_arguments,
-                    }) => (enum_id, generic_arguments),
-
-                    _ => {
-                        return Err(TypeOfError::Discrepancy);
-                    }
+                let Type::Symbol(Symbol {
+                    id: r#type::SymbolID::Adt(AdtID::Enum(enum_id)),
+                    generic_arguments,
+                }) = result
+                else {
+                    return Err(TypeOfError::Discrepancy);
                 };
 
                 let variant_sym = environment
@@ -507,14 +498,12 @@ impl<M: Model> Values<M> {
                     .get(enum_id)
                     .ok_or(TypeOfError::Discrepancy)?;
 
-                let instantiation = match Instantiation::from_generic_arguments(
+                let Ok(instantiation) = Instantiation::from_generic_arguments(
                     generic_arguments,
                     enum_id.into(),
                     &enum_sym.generic_declaration.parameters,
-                ) {
-                    Ok(instantiation) => instantiation,
-
-                    Err(_) => return Err(TypeOfError::Discrepancy),
+                ) else {
+                    return Err(TypeOfError::Discrepancy);
                 };
 
                 let mut variant_ty = M::from_default_type(

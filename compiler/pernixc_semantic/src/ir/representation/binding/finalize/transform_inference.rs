@@ -178,10 +178,8 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
         });
 
         if found_inference && self.should_report {
-            self.handler.receive(Box::new(TypeAnnotationRequired {
-                span,
-                r#type: ty.clone(),
-            }));
+            self.handler
+                .receive(Box::new(TypeAnnotationRequired { span, r#type: ty }));
         }
 
         Ok(())

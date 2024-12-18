@@ -66,6 +66,7 @@ where
     Ok(results)
 }
 
+#[allow(clippy::uninhabited_references, clippy::too_many_lines)]
 pub(super) fn simplify_drop<
     S: table::State,
     M: model::Model<TypeInference = Never, ConstantInference = Never>,

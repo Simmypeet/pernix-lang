@@ -145,7 +145,7 @@
 //! SubsetRelation = { {%r1} -> ?y }
 //! ```
 //!
-//! `{%r1} -> ?y` means that the set `{%r1} is the subset of region inference
+//! `{%r1} -> ?y` means that the set `{%r1}` is the subset of region inference
 //! `?y`.
 //!
 //! Next instruction:
@@ -242,8 +242,8 @@ impl<S: table::State> table::Display<S> for UniversalRegion {
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         match self {
-            UniversalRegion::Static => write!(f, "'static"),
-            UniversalRegion::LifetimeParameter(id) => {
+            Self::Static => write!(f, "'static"),
+            Self::LifetimeParameter(id) => {
                 match &table
                     .get_generic(id.parent)
                     .ok_or(fmt::Error)?
@@ -255,7 +255,7 @@ impl<S: table::State> table::Display<S> for UniversalRegion {
                     .name
                 {
                     Some(name) => {
-                        write!(f, "'{}", name)
+                        write!(f, "'{name}")
                     }
                     None => write!(f, "'{}", id.id.into_index()),
                 }
@@ -293,11 +293,11 @@ impl TryFrom<Lifetime<Model>> for Region {
 
     fn try_from(value: Lifetime<Model>) -> Result<Self, Self::Error> {
         match value {
-            Lifetime::Static => Ok(Region::Universal(UniversalRegion::Static)),
-            Lifetime::Parameter(member_id) => Ok(Region::Universal(
+            Lifetime::Static => Ok(Self::Universal(UniversalRegion::Static)),
+            Lifetime::Parameter(member_id) => Ok(Self::Universal(
                 UniversalRegion::LifetimeParameter(member_id),
             )),
-            Lifetime::Inference(inference) => Ok(Region::Local(inference)),
+            Lifetime::Inference(inference) => Ok(Self::Local(inference)),
 
             lifetime => Err(lifetime),
         }

@@ -30,7 +30,8 @@ mod simplify_drop;
 mod transform_inference;
 
 #[derive(Debug, Clone, PartialEq, Eq, derive_more::From)]
-pub enum FinalizeError {
+#[allow(clippy::large_enum_variant)]
+pub enum Error {
     TypeSystemOverflow(TypeSystemOverflow<ir::Model>),
     Suboptimal(IR<Suboptimal>),
 }
@@ -57,7 +58,7 @@ impl<
     pub fn finalize(
         mut self,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<IR<Success>, FinalizeError> {
+    ) -> Result<IR<Success>, Error> {
         let root_scope_id =
             self.intermediate_representation.scope_tree.root_scope_id();
         let _ = self
@@ -100,7 +101,7 @@ impl<
 
         // stop now, it will produce useless errors
         if *handler_wrapper.suboptimal.read() {
-            return Err(FinalizeError::Suboptimal(IR {
+            return Err(Error::Suboptimal(IR {
                 representation: transformed_ir,
                 state: Suboptimal,
             }));
@@ -145,7 +146,7 @@ impl<
         )?;
 
         if *handler_wrapper.suboptimal.as_ref().read() {
-            Err(FinalizeError::Suboptimal(IR {
+            Err(Error::Suboptimal(IR {
                 representation: transformed_ir,
                 state: Suboptimal,
             }))

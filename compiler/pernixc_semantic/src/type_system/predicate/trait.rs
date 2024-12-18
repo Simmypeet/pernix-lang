@@ -129,6 +129,7 @@ impl<M: Model> Positive<M> {
     }
 
     /// Converts a positive trait with the model `U` into the model `M`.
+    #[must_use]
     pub fn from_other_model<U: Model>(term: Positive<U>) -> Self
     where
         M::LifetimeInference: From<U::LifetimeInference>,
@@ -349,6 +350,7 @@ impl<M: Model> Negative<M> {
     }
 
     /// Converts a negative trait with the model `U` into the model `M`.
+    #[must_use]
     pub fn from_other_model<U: Model>(term: Negative<U>) -> Self
     where
         M::LifetimeInference: From<U::LifetimeInference>,

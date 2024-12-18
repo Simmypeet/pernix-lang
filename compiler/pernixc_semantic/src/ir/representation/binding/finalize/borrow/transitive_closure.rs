@@ -29,9 +29,7 @@ impl DynamicBitSet {
     ///
     /// Returns true if there was a change in the bitset
     pub fn set(&self, index: usize) -> bool {
-        if index >= self.size {
-            panic!("index out of bounds");
-        }
+        assert!(index < self.size, "index out of bounds");
 
         let word = index / 64;
         let bit = index % 64;
@@ -60,9 +58,7 @@ impl DynamicBitSet {
     /// Returns true if there was a change in the bitset
     #[allow(unused)]
     pub fn unset(&self, index: usize) -> bool {
-        if index >= self.size {
-            panic!("index out of bounds");
-        }
+        assert!(index < self.size, "index out of bounds");
 
         let word = index / 64;
         let bit = index % 64;
@@ -75,9 +71,7 @@ impl DynamicBitSet {
 
     /// Get the value of the bit at the given index
     pub fn get(&self, index: usize) -> bool {
-        if index >= self.size {
-            panic!("index out of bounds");
-        }
+        assert!(index < self.size, "index out of bounds");
 
         let word = index / 64;
         let bit = index % 64;
@@ -94,9 +88,7 @@ impl DynamicBitSet {
     ///
     /// Returns true if there was a change in the bitset
     pub fn or(&self, other: &Self) -> bool {
-        if self.size != other.size {
-            panic!("bitsets have different sizes");
-        }
+        assert!(self.size == other.size, "bitsets have different sizes");
 
         let mut changed = false;
         for (i, word) in other.bits.iter().enumerate() {
@@ -119,9 +111,7 @@ impl DynamicBitSet {
     /// Returns true if there was a change in the bitset
     #[allow(unused)]
     pub fn and(&self, other: &Self) -> bool {
-        if self.size != other.size {
-            panic!("bitsets have different sizes");
-        }
+        assert!(self.size == other.size, "bitsets have different sizes");
 
         let mut changed = false;
         for (i, word) in other.bits.iter().enumerate() {
@@ -143,7 +133,7 @@ impl DynamicBitSet {
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
 pub struct TransitiveClosure {
     size: usize,
-    transitive_closure: Vec<DynamicBitSet>,
+    closure: Vec<DynamicBitSet>,
 
     #[get = "pub"]
     direct_adjacency: HashMap<usize, HashSet<usize>>,
@@ -178,14 +168,14 @@ impl TransitiveClosure {
 
         let mut result = Self {
             size,
-            transitive_closure,
+            closure: transitive_closure,
             direct_adjacency,
             reversed_direct_adjacency,
         };
 
         // add self-loops
         for i in 0..size {
-            result.transitive_closure[i].set(i);
+            result.closure[i].set(i);
         }
 
         result.compute_transitive_closure();
@@ -199,20 +189,20 @@ impl TransitiveClosure {
         let predecessors =
             self.reversed_direct_adjacency.remove(&node).unwrap_or_default();
 
-        for pred in predecessors.iter().copied() {
-            let pred_adj = self.direct_adjacency.get_mut(&pred).unwrap();
+        for pred in &predecessors {
+            let pred_adj = self.direct_adjacency.get_mut(pred).unwrap();
 
             pred_adj.remove(&node);
 
             if pred_adj.is_empty() {
-                self.direct_adjacency.remove(&pred);
+                self.direct_adjacency.remove(pred);
             }
         }
 
         // recompute the transitive closure
         for i in 0..self.size {
-            self.transitive_closure[i].clear();
-            self.transitive_closure[i].set(i);
+            self.closure[i].clear();
+            self.closure[i].set(i);
         }
 
         self.compute_transitive_closure();
@@ -230,16 +220,15 @@ impl TransitiveClosure {
                 .iter()
                 .flat_map(|(from, tos)| tos.iter().map(move |to| (*from, *to)))
             {
-                changed |= self.transitive_closure[from].set(to);
-                changed |= self.transitive_closure[from]
-                    .or(&self.transitive_closure[to]);
+                changed |= self.closure[from].set(to);
+                changed |= self.closure[from].or(&self.closure[to]);
             }
         }
     }
 
     /// Checks if there is a path from the `from` vertex to the `to` vertex.
     pub fn has_path(&self, from: usize, to: usize) -> bool {
-        self.transitive_closure[from].get(to)
+        self.closure[from].get(to)
     }
 
     /// Returns an iterator over the vertices reachable from the given vertex
@@ -249,11 +238,9 @@ impl TransitiveClosure {
         &self,
         from: usize,
     ) -> impl Iterator<Item = usize> + '_ {
-        if from >= self.size {
-            panic!("Vertex indices out of bounds");
-        }
+        assert!(from < self.size, "Vertex indices out of bounds");
 
-        (0..self.size).filter(move |&to| self.transitive_closure[from].get(to))
+        (0..self.size).filter(move |&to| self.closure[from].get(to))
     }
 
     /// Removes a set of edges from the transitive closure matrix
@@ -274,7 +261,7 @@ impl TransitiveClosure {
                 set.is_empty()
             });
 
-            if let Some(true) = empty {
+            if empty == Some(true) {
                 self.direct_adjacency.remove(&remove.0);
             }
 
@@ -284,15 +271,15 @@ impl TransitiveClosure {
                     set.is_empty()
                 });
 
-            if let Some(true) = empty {
+            if empty == Some(true) {
                 self.reversed_direct_adjacency.remove(&remove.1);
             }
         }
 
         // recompute the transitive closure
         for i in 0..self.size {
-            self.transitive_closure[i].clear();
-            self.transitive_closure[i].set(i);
+            self.closure[i].clear();
+            self.closure[i].set(i);
         }
 
         self.compute_transitive_closure();
@@ -312,13 +299,13 @@ impl TransitiveClosure {
             return false;
         }
 
-        self.transitive_closure[from].set(to);
+        self.closure[from].set(to);
 
         // incrementally update the transitive closure
         for i in 0..self.size {
-            if self.transitive_closure[i].get(from) {
-                self.transitive_closure[i].set(to);
-                self.transitive_closure[i].or(&self.transitive_closure[to]);
+            if self.closure[i].get(from) {
+                self.closure[i].set(to);
+                self.closure[i].or(&self.closure[to]);
             }
         }
 

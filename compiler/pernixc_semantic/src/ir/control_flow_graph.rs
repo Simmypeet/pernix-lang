@@ -37,6 +37,7 @@ pub struct Block<M: Model> {
 impl<M: Model> Block<M> {
     /// Transforms the [`Block`] to another model using the given
     /// transformer.
+    #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
@@ -62,7 +63,6 @@ impl<M: Model> Block<M> {
 
     /// Splices the instructions in the block with the given range with the
     /// replacement instructions.
-    #[must_use]
     pub fn splice(
         &mut self,
         range: impl RangeBounds<usize>,
@@ -74,7 +74,6 @@ impl<M: Model> Block<M> {
     /// Inserts a multiple instructions to the block at the given index.
     ///
     /// The instructions are inserted in the order they are given.
-    #[must_use]
     pub fn insert_instructions(
         &mut self,
         index: usize,
@@ -228,6 +227,7 @@ impl<M: Model> Drop for RemoveUnreachableBlocks<'_, M> {
 impl<M: Model> ControlFlowGraph<M> {
     /// Transforms the [`ControlFlowGraph`] to another model using the given
     /// transformer.
+    #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,

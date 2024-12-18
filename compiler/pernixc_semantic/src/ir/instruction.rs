@@ -66,6 +66,7 @@ pub enum Jump<M: Model> {
 
 impl<M: Model> Jump<M> {
     /// Transforms the [`Jump`] to another model using the given transformer.
+    #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
@@ -272,6 +273,7 @@ pub enum Instruction<M: Model> {
 impl<M: Model> Instruction<M> {
     /// Transforms the [`Instruction`] to another model using the given
     /// transformer.
+    #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
@@ -346,6 +348,7 @@ pub enum Terminator<M: Model> {
 impl<M: Model> Terminator<M> {
     /// Transforms the [`Terminator`] to another model using the given
     /// transformer.
+    #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,
@@ -402,7 +405,7 @@ impl<M: Model> Instruction<M> {
     ///
     /// Returns `None` if the instruction was a register assignment and the
     /// register ID could not be found in the given `values`.
-    #[must_use]
+    #[allow(clippy::type_complexity, clippy::missing_errors_doc)]
     pub fn get_access_address<'a>(
         &'a self,
         values: &'a Values<M>,
@@ -411,13 +414,13 @@ impl<M: Model> Instruction<M> {
         NotFoundRegisterIDError<M>,
     > {
         match self {
-            Instruction::Store(store) => {
+            Self::Store(store) => {
                 Ok(vec![(Cow::Borrowed(&store.address), AccessKind::Normal {
                     write: true,
                     span: store.span.clone(),
                 })])
             }
-            Instruction::RegisterAssignment(register_assignment) => {
+            Self::RegisterAssignment(register_assignment) => {
                 let register =
                     values.registers().get(register_assignment.id).ok_or(
                         NotFoundRegisterIDError(register_assignment.id),
@@ -458,7 +461,7 @@ impl<M: Model> Instruction<M> {
                 }
             }
 
-            Instruction::TuplePack(tuple_pack) => {
+            Self::TuplePack(tuple_pack) => {
                 let vec = vec![
                     (
                         Cow::Owned(Address::Tuple(address::Tuple {
@@ -483,11 +486,11 @@ impl<M: Model> Instruction<M> {
                 Ok(vec)
             }
 
-            Instruction::Drop(drop) => {
+            Self::Drop(drop) => {
                 Ok(vec![(Cow::Borrowed(&drop.address), AccessKind::Drop)])
             }
 
-            Instruction::DropUnpackTuple(drop) => Ok(vec![(
+            Self::DropUnpackTuple(drop) => Ok(vec![(
                 Cow::Owned(Address::Tuple(address::Tuple {
                     tuple_address: Box::new(drop.tuple_address.clone()),
                     offset: address::Offset::Unpacked,
@@ -495,9 +498,9 @@ impl<M: Model> Instruction<M> {
                 AccessKind::Drop,
             )]),
 
-            Instruction::ScopePush(_)
-            | Instruction::ScopePop(_)
-            | Instruction::RegisterDiscard(_) => Ok(Vec::new()),
+            Self::ScopePush(_)
+            | Self::ScopePop(_)
+            | Self::RegisterDiscard(_) => Ok(Vec::new()),
         }
     }
 }

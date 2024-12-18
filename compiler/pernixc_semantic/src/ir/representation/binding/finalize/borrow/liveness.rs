@@ -103,19 +103,19 @@ impl Accessed {
     /// Returns `true` if every address in the projection has been accessed.
     pub fn is_accessed(&self) -> bool {
         match self {
-            Accessed::Struct(struct_) => struct_
+            Self::Struct(struct_) => struct_
                 .projections_by_field_id
                 .values()
-                .all(|proj| proj.is_accessed()),
+                .all(Self::is_accessed),
 
-            Accessed::Tuple(tuple) => tuple
+            Self::Tuple(tuple) => tuple
                 .elements
                 .iter()
                 .all(|element| element.projection.is_accessed()),
 
-            Accessed::Whole(accessed) => *accessed,
+            Self::Whole(accessed) => *accessed,
 
-            Accessed::Variant(_) | Accessed::Dereference(_) => false,
+            Self::Variant(_) | Self::Dereference(_) => false,
         }
     }
 }
@@ -147,6 +147,7 @@ impl Accessed {
             .unwrap())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn set_accessed_internal<M: Model, S: table::State>(
         &mut self,
         address: &Address<M>,
@@ -193,8 +194,7 @@ impl Accessed {
 
                     ty => {
                         return Err(SetAccessedError::Internal(format!(
-                            "expected a struct type, found `{:?}`",
-                            ty
+                            "expected a struct type, found `{ty:?}`",
                         )));
                     }
                 };
@@ -202,8 +202,7 @@ impl Accessed {
                 let struct_symbol =
                     environment.table().get(struct_id).ok_or_else(|| {
                         SetAccessedError::Internal(format!(
-                            "symbol ID: {:?} not found",
-                            struct_id
+                            "symbol ID: {struct_id:?} not found",
                         ))
                     })?;
 
@@ -218,16 +217,14 @@ impl Accessed {
                     ))
                 })?;
 
-                if let Accessed::Whole(whole_proj) = proj {
+                if let Self::Whole(whole_proj) = proj {
                     // if have concluded, we should've returned earlier
                     assert!(!*whole_proj);
 
-                    *proj = Accessed::Struct(Struct {
+                    *proj = Self::Struct(Struct {
                         projections_by_field_id: struct_symbol
                             .fields_as_order()
-                            .map(|(field_id, _)| {
-                                (field_id, Accessed::Whole(false))
-                            })
+                            .map(|(field_id, _)| (field_id, Self::Whole(false)))
                             .collect(),
                     });
                 }
@@ -292,16 +289,16 @@ impl Accessed {
                     ))
                 })?;
 
-                if let Accessed::Whole(whole_proj) = proj {
+                if let Self::Whole(whole_proj) = proj {
                     // if have concluded, we should've returned earlier
                     assert!(!*whole_proj);
 
-                    *proj = Accessed::Tuple(Tuple {
+                    *proj = Self::Tuple(Tuple {
                         elements: tuple_ty
                             .elements
                             .iter()
                             .map(|term| TupleElement {
-                                projection: Accessed::Whole(false),
+                                projection: Self::Whole(false),
                                 is_unpacked: term.is_unpacked,
                             })
                             .collect(),
@@ -376,7 +373,7 @@ impl Accessed {
 
             Address::Index(_) => {
                 if !write {
-                    *self = Accessed::Whole(true);
+                    *self = Self::Whole(true);
                 }
 
                 return Ok(SetAccessedResultInternal::Done(false));
@@ -407,8 +404,7 @@ impl Accessed {
 
                     ty => {
                         return Err(SetAccessedError::Internal(format!(
-                            "expected an enum type, found `{:?}`",
-                            ty
+                            "expected an enum type, found `{ty:?}`",
                         )));
                     }
                 };
@@ -416,8 +412,7 @@ impl Accessed {
                 let enum_symbol =
                     environment.table().get(enum_id).ok_or_else(|| {
                         SetAccessedError::Internal(format!(
-                            "symbol ID: {:?} not found",
-                            enum_id
+                            "symbol ID: {enum_id:?} not found",
                         ))
                     })?;
 
@@ -440,12 +435,12 @@ impl Accessed {
                     ))
                 })?;
 
-                if let Accessed::Whole(whole_proj) = proj {
+                if let Self::Whole(whole_proj) = proj {
                     // if have concluded, we should've returned earlier
                     assert!(!*whole_proj);
 
-                    *proj = Accessed::Variant(Variant {
-                        variant_projection: Box::new(Accessed::Whole(false)),
+                    *proj = Self::Variant(Variant {
+                        variant_projection: Box::new(Self::Whole(false)),
                         variant_id: variant.id,
                     });
                 }
@@ -501,12 +496,12 @@ impl Accessed {
                     }
                 };
 
-                if let Accessed::Whole(whole_proj) = proj {
+                if let Self::Whole(whole_proj) = proj {
                     // if have concluded, we should've returned earlier
                     assert!(!*whole_proj);
 
-                    *proj = Accessed::Dereference(Dereference {
-                        projection: Box::new(Accessed::Whole(false)),
+                    *proj = Self::Dereference(Dereference {
+                        projection: Box::new(Self::Whole(false)),
                     });
                 }
 
@@ -525,7 +520,7 @@ impl Accessed {
         };
 
         Ok(if root {
-            *target_projection = Accessed::Whole(true);
+            *target_projection = Self::Whole(true);
 
             SetAccessedResultInternal::Done(true)
         } else {
@@ -566,10 +561,10 @@ impl<M: Model> RegisterTraverser<'_, M> {
         starting_instruction_index: Option<usize>,
         visited: &mut HashSet<(usize, Option<usize>)>,
     ) -> Vec<Span> {
-        if starting_instruction_index.is_none() {
-            if !visited.insert((block_id.into_index(), None)) {
-                return Vec::new();
-            }
+        if starting_instruction_index.is_none()
+            && !visited.insert((block_id.into_index(), None))
+        {
+            return Vec::new();
         }
 
         let block = self
@@ -659,7 +654,7 @@ impl<M: Model> RegisterTraverser<'_, M> {
                         .branches
                         .values()
                         .copied()
-                        .chain(select_jump.otherwise.clone())
+                        .chain(select_jump.otherwise)
                     {
                         spans.extend(self.traverse_block(
                             block,
@@ -674,7 +669,7 @@ impl<M: Model> RegisterTraverser<'_, M> {
 
             Some(Terminator::Return(_)) => {
                 // NOTE: should we consider the return value?
-                return Vec::new();
+                Vec::new()
             }
 
             Some(Terminator::Panic) | None => Vec::new(),
@@ -743,7 +738,7 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
 {
     fn clone(&self) -> Self {
         Self {
-            root_memory_address: self.root_memory_address.clone(),
+            root_memory_address: self.root_memory_address,
             root_type: self.root_type,
             representation: self.representation,
             environment: self.environment,
@@ -755,6 +750,7 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
 impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
     MemoryTraverser<'a, S, M, N, O>
 {
+    #[allow(clippy::too_many_lines)]
     fn traverse_block(
         &mut self,
         block_id: ID<Block<M>>,
@@ -762,10 +758,10 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
         exit: &mut impl FnMut(&Instruction<M>, Point<M>) -> bool,
         visited: &mut HashSet<(usize, Option<usize>)>,
     ) -> Result<HashSet<(Address<M>, AccessKind)>, OverflowError> {
-        if starting_instruction_index.is_none() {
-            if !visited.insert((block_id.into_index(), None)) {
-                return Ok(HashSet::new());
-            }
+        if starting_instruction_index.is_none()
+            && !visited.insert((block_id.into_index(), None))
+        {
+            return Ok(HashSet::new());
         }
 
         let block = self
@@ -803,9 +799,9 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
                 .unwrap();
 
             for (address, kind) in accesses {
-                if !address.is_child_of(&Address::Memory(
-                    self.root_memory_address.clone(),
-                )) {
+                if !address
+                    .is_child_of(&Address::Memory(self.root_memory_address))
+                {
                     // not relevant, skip
                     continue;
                 }
@@ -834,11 +830,9 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
                     Ok(false) => {}
 
                     Err(err) => match err {
-                        SetAccessedError::Overflow(err) => {
-                            return Err(err.into())
-                        }
+                        SetAccessedError::Overflow(err) => return Err(err),
 
-                        err => {
+                        err @ SetAccessedError::Internal(_) => {
                             panic!("{err}")
                         }
                     },
@@ -891,7 +885,7 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
                         .branches
                         .values()
                         .copied()
-                        .chain(select_jump.otherwise.clone())
+                        .chain(select_jump.otherwise)
                     {
                         live_addresses.extend(self.clone().traverse_block(
                             block,
@@ -905,7 +899,7 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
                 }
             },
 
-            Some(Terminator::Return(_)) | Some(Terminator::Panic) | None => {
+            Some(Terminator::Return(_) | Terminator::Panic) | None => {
                 Ok(live_addresses)
             }
         }

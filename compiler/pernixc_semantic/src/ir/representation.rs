@@ -48,6 +48,7 @@ pub struct Representation<M: Model> {
 
 impl<M: Model> Representation<M> {
     /// Transforms the IR to another model using the given transformer.
+    #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<
         U: Model,
         E,

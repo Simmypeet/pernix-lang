@@ -27,6 +27,7 @@ pub struct Alloca<M: Model> {
 
 impl<M: Model> Alloca<M> {
     /// Transforms the address to another model using the given transformer.
+    #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
         self,
         transformer: &mut T,

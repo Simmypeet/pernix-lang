@@ -1,7 +1,4 @@
-use std::{
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
-};
+use std::{cmp::Ordering, collections::HashMap};
 
 use pernixc_base::{handler::Handler, source_file::Span};
 
@@ -30,43 +27,19 @@ use crate::{
     },
     type_system::{
         environment::Environment as TyEnvironment,
-        instantiation::Instantiation,
         normalizer::Normalizer,
         observer::Observer,
         predicate::{PositiveMarker, Predicate},
         term::{
-            lifetime::Lifetime,
             r#type::{Qualifier, Type},
             GenericArguments, Term,
         },
-        visitor::RecursiveIterator,
         well_formedness,
     },
 };
 
-fn get_lifetimes_from_instantiation(
-    instantiation: &Instantiation<ir::Model>,
-) -> HashSet<Lifetime<ir::Model>> {
-    instantiation
-        .lifetimes
-        .values()
-        .cloned()
-        .chain(instantiation.types.values().flat_map(|x| {
-            RecursiveIterator::new(x)
-                .filter_map(|x| x.0.into_lifetime().ok())
-                .cloned()
-        }))
-        .chain(instantiation.constants.values().flat_map(|x| {
-            RecursiveIterator::new(x)
-                .filter_map(|x| x.0.into_lifetime().ok())
-                .cloned()
-        }))
-        .collect::<HashSet<_>>()
-}
-
 impl Values<ir::Model> {
     fn handle_store<S: table::State>(
-        &self,
         store_address: &Address<ir::Model>,
         store_span: Span,
         stack: &mut Stack,
@@ -96,7 +69,7 @@ impl Values<ir::Model> {
         if let Some(span) = state.get_moved_out_mutable_reference() {
             handler.receive(Box::new(MovedOutValueFromMutableReference {
                 moved_out_value_span: span.clone(),
-                reassignment_span: Some(store_span.clone()),
+                reassignment_span: Some(store_span),
             }));
         }
 
@@ -136,7 +109,7 @@ impl Values<ir::Model> {
             } else {
                 let copy_marker = ty_environment
                     .table()
-                    .get_by_qualified_name(["core", "Copy"].into_iter())
+                    .get_by_qualified_name(["core", "Copy"])
                     .unwrap()
                     .into_marker()
                     .unwrap();
@@ -188,13 +161,13 @@ impl Values<ir::Model> {
         match memory_state {
             Summary::Uninitialized => {
                 handler.receive(Box::new(UseBeforeInitialization {
-                    use_span: register_span.clone(),
+                    use_span: register_span,
                 }));
             }
 
             Summary::Moved(span) => {
                 handler.receive(Box::new(UseAfterMove {
-                    use_span: register_span.clone(),
+                    use_span: register_span,
                     move_span: span,
                 }));
             }
@@ -286,6 +259,7 @@ impl<
         O: Observer<ir::Model, S>,
     > Checker<'_, '_, S, N, O>
 {
+    #[allow(clippy::too_many_lines)]
     fn walk_instructions(
         &mut self,
         block_id: ID<Block<ir::Model>>,
@@ -302,14 +276,13 @@ impl<
         while current_index < block.instructions().len() {
             let step = match &block.instructions()[current_index] {
                 Instruction::Store(store) => {
-                    let instructions =
-                        self.representation.values.handle_store(
-                            &store.address,
-                            store.span.clone(),
-                            stack,
-                            self.ty_environment,
-                            handler,
-                        )?;
+                    let instructions = Values::handle_store(
+                        &store.address,
+                        store.span.clone(),
+                        stack,
+                        self.ty_environment,
+                        handler,
+                    )?;
 
                     let instructions = simplify_drop::simplify_drops(
                         instructions,
@@ -319,8 +292,7 @@ impl<
                     )?;
                     let instructions_len = instructions.len();
 
-                    let _ =
-                        block.insert_instructions(current_index, instructions);
+                    block.insert_instructions(current_index, instructions);
 
                     instructions_len + 1
                 }
@@ -409,14 +381,13 @@ impl<
                         Summary::Initialized => {}
                     }
 
-                    let instructions =
-                        self.representation.values.handle_store(
-                            &tuple_pack.store_address,
-                            tuple_pack.packed_tuple_span.clone(),
-                            stack,
-                            self.ty_environment,
-                            handler,
-                        )?;
+                    let instructions = Values::handle_store(
+                        &tuple_pack.store_address,
+                        tuple_pack.packed_tuple_span.clone(),
+                        stack,
+                        self.ty_environment,
+                        handler,
+                    )?;
 
                     let instructions = simplify_drop::simplify_drops(
                         instructions,
@@ -426,8 +397,7 @@ impl<
                     )?;
                     let instructions_len = instructions.len();
 
-                    let _ =
-                        block.insert_instructions(current_index, instructions);
+                    block.insert_instructions(current_index, instructions);
 
                     instructions_len + 1
                 }
@@ -564,8 +534,7 @@ impl<
                     )?;
                     let len = drop_instructions.len();
 
-                    let _ = block
-                        .insert_instructions(current_index, drop_instructions);
+                    block.insert_instructions(current_index, drop_instructions);
 
                     1 + len
                 }
@@ -577,6 +546,7 @@ impl<
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn walk_block(
         &mut self,
         block_id: ID<Block<ir::Model>>,
@@ -723,7 +693,7 @@ impl<
                     .get_block_mut(predecessor)
                     .unwrap();
 
-                let _ = block.insert_instructions(
+                block.insert_instructions(
                     block.instructions().len(),
                     simplify_drop::simplify_drops(
                         drop_instructions,
@@ -785,7 +755,7 @@ impl<
                         .control_flow_graph
                         .get_block_mut(block_id)
                         .unwrap();
-                    let _ = block.insert_instructions(
+                    block.insert_instructions(
                         block.instructions().len(),
                         simplify_drop::simplify_drops(
                             drop_instructions,

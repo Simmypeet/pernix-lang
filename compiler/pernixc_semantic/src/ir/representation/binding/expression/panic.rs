@@ -45,7 +45,7 @@ impl<
             .intermediate_representation
             .control_flow_graph
             .insert_terminator(self.current_block_id, Terminator::Panic)
-            .map_or_else(|e| !e.is_invalid_block_id(), |_| true));
+            .map_or_else(|e| !e.is_invalid_block_id(), |()| true));
 
         Ok(Expression::RValue(Value::Literal(Literal::Unreachable(
             Unreachable {

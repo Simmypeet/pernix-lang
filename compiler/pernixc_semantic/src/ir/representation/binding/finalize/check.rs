@@ -273,7 +273,7 @@ impl Representation<ir::Model> {
 
                     let copy_marker = environment
                         .table()
-                        .get_by_qualified_name(["core", "Copy"].into_iter())
+                        .get_by_qualified_name(["core", "Copy"])
                         .unwrap()
                         .into_marker()
                         .unwrap();

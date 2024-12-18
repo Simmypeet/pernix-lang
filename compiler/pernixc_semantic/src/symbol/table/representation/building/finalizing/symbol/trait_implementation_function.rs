@@ -260,6 +260,7 @@ impl Finalize for TraitImplementationFunction {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn function_signature_check(
     symbol_id: ID<TraitImplementationFunction>,
     trait_function_id: ID<TraitFunction>,
@@ -457,11 +458,10 @@ fn function_signature_check(
         trait_return_type,
         Variance::Covariant,
         FunctionSignaturePart::Return,
-        syntax_tree
-            .signature()
-            .return_type()
-            .as_ref()
-            .map_or_else(|| syntax_tree.signature().span(), |x| x.span()),
+        syntax_tree.signature().return_type().as_ref().map_or_else(
+            || syntax_tree.signature().span(),
+            SourceElement::span,
+        ),
         &environment,
         handler,
     );
@@ -487,9 +487,9 @@ fn compatibility_check(
     >,
     handler: &dyn Handler<Box<dyn error::Error>>,
 ) {
-    use FunctionSignatureIncompatibilityReason::*;
+    use FunctionSignatureIncompatibilityReason::{IncompatibleType, Outlives};
 
-    match implementation_type.compatible(&trait_type, variance, &environment) {
+    match implementation_type.compatible(&trait_type, variance, environment) {
         Ok(Some(Succeeded { result, constraints })) => {
             assert!(
                 result.forall_lifetime_errors.is_empty(),
@@ -506,7 +506,7 @@ fn compatibility_check(
             let unsatisfied_outlives = constraints
                 .into_iter()
                 .filter_map(|LifetimeConstraint::LifetimeOutlives(outlives)| {
-                    match outlives.query(&environment) {
+                    match outlives.query(environment) {
                         Ok(Some(_)) => None,
                         result => Some(result.map(|_| outlives)),
                     }

@@ -3403,15 +3403,17 @@ where
     ) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             span: self.variable_span.clone(),
-            message: if let Some(lifetime) = &self.for_lifetime {
-                format!(
-                    "the variable doesn't live long enough to outlives the \
-                     lifetime `{}`",
-                    DisplayObject { display: lifetime, table }
-                )
-            } else {
-                "the variable doesn't live long enough".to_string()
-            },
+            message: self.for_lifetime.as_ref().map_or_else(
+                || "the variable doesn't live long enough".to_string(),
+                |lifetime| {
+                    format!(
+                        "the variable doesn't live long enough to outlives \
+                         the lifetime `{}`",
+                        DisplayObject { display: lifetime, table }
+                    )
+                },
+            ),
+
             severity: Severity::Error,
             help_message: None,
             related: vec![Related {

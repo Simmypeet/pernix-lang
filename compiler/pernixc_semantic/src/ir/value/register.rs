@@ -61,7 +61,7 @@ impl<M: Model> Tuple<M> {
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
         self.elements
             .iter()
-            .filter_map(|x| x.value.as_register().cloned())
+            .filter_map(|x| x.value.as_register().copied())
             .collect()
     }
 }
@@ -196,7 +196,7 @@ impl<M: Model> Prefix<M> {
     /// Returns the register that is used in the prefix.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
-        self.operand.as_register().cloned().into_iter().collect()
+        self.operand.as_register().copied().into_iter().collect()
     }
 }
 
@@ -242,7 +242,7 @@ impl<M: Model> Struct<M> {
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
         self.initializers_by_field_id
             .values()
-            .filter_map(|x| x.as_register().cloned())
+            .filter_map(|x| x.as_register().copied())
             .collect()
     }
 }
@@ -273,7 +273,7 @@ impl<M: Model> Variant<M> {
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
         self.associated_value
             .as_ref()
-            .map(|x| x.as_register().cloned())
+            .map(|x| x.as_register().copied())
             .into_iter()
             .flatten()
             .collect()
@@ -312,7 +312,7 @@ impl<M: Model> FunctionCall<M> {
     /// Returns the list of registers that are used in the function call.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
-        self.arguments.iter().filter_map(|x| x.as_register().cloned()).collect()
+        self.arguments.iter().filter_map(|x| x.as_register().copied()).collect()
     }
 }
 
@@ -433,9 +433,9 @@ impl<M: Model> Binary<M> {
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
         self.lhs
             .as_register()
-            .cloned()
+            .copied()
             .into_iter()
-            .chain(self.rhs.as_register().cloned())
+            .chain(self.rhs.as_register().copied())
             .collect()
     }
 }
@@ -485,7 +485,7 @@ impl<M: Model> Phi<M> {
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
         self.incoming_values
             .values()
-            .filter_map(|x| x.as_register().cloned())
+            .filter_map(|x| x.as_register().copied())
             .collect()
     }
 }
@@ -508,7 +508,7 @@ impl<M: Model> Array<M> {
     /// Returns the list of registers that are used in the array.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
-        self.elements.iter().filter_map(|x| x.as_register().cloned()).collect()
+        self.elements.iter().filter_map(|x| x.as_register().copied()).collect()
     }
 }
 
@@ -526,7 +526,7 @@ impl<M: Model> Cast<M> {
     /// Returns the register that is used in the cast.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
-        self.value.as_register().cloned().into_iter().collect()
+        self.value.as_register().copied().into_iter().collect()
     }
 }
 
@@ -567,21 +567,21 @@ impl<M: Model> Assignment<M> {
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
         match self {
-            Assignment::Tuple(tuple) => tuple.get_used_registers(),
-            Assignment::Prefix(prefix) => prefix.get_used_registers(),
-            Assignment::Struct(st) => st.get_used_registers(),
-            Assignment::Variant(variant) => variant.get_used_registers(),
-            Assignment::FunctionCall(function_call) => {
+            Self::Tuple(tuple) => tuple.get_used_registers(),
+            Self::Prefix(prefix) => prefix.get_used_registers(),
+            Self::Struct(st) => st.get_used_registers(),
+            Self::Variant(variant) => variant.get_used_registers(),
+            Self::FunctionCall(function_call) => {
                 function_call.get_used_registers()
             }
-            Assignment::Binary(binary) => binary.get_used_registers(),
-            Assignment::Array(array) => array.get_used_registers(),
-            Assignment::Phi(phi) => phi.get_used_registers(),
-            Assignment::Cast(cast) => cast.get_used_registers(),
+            Self::Binary(binary) => binary.get_used_registers(),
+            Self::Array(array) => array.get_used_registers(),
+            Self::Phi(phi) => phi.get_used_registers(),
+            Self::Cast(cast) => cast.get_used_registers(),
 
-            Assignment::Load(_)
-            | Assignment::Borrow(_)
-            | Assignment::VariantNumber(_) => Vec::new(),
+            Self::Load(_) | Self::Borrow(_) | Self::VariantNumber(_) => {
+                Vec::new()
+            }
         }
     }
 }
@@ -691,7 +691,7 @@ fn transform_instantiation<
 >(
     transformer: &mut T,
     instantiation: Instantiation<FM>,
-    span: Span,
+    span: &Span,
 ) -> Result<Instantiation<TM>, E> {
     Ok(Instantiation {
         lifetimes: instantiation
@@ -732,7 +732,7 @@ fn transform_instantiation<
 impl<M: Model> Register<M> {
     /// Transforms the [`Register`] to another model using the given
     /// transformer.
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::missing_errors_doc)]
     pub fn transform_model<
         E,
         U: Model,
@@ -867,7 +867,7 @@ impl<M: Model> Register<M> {
                                 transform_instantiation(
                                     transformer,
                                     function_call.instantiation,
-                                    self.span,
+                                    &self.span,
                                 )?
                             }
 
@@ -910,7 +910,7 @@ impl<M: Model> Register<M> {
                                 transform_instantiation(
                                     transformer,
                                     function_call.instantiation,
-                                    self.span,
+                                    &self.span,
                                 )?
                             }
 
@@ -979,7 +979,7 @@ impl<M: Model> Register<M> {
                                 transform_instantiation(
                                     transformer,
                                     function_call.instantiation,
-                                    self.span,
+                                    &self.span,
                                 )?
                             }
                         },

@@ -1595,10 +1595,7 @@ pub struct Stack {
 impl Stack {
     pub const fn new() -> Self { Self { scopes: Vec::new() } }
 
-    pub fn has_scope(&self, scope_id: ID<scope::Scope>) -> bool {
-        self.scopes.iter().any(|x| x.scope_id == scope_id)
-    }
-
+    #[allow(unused)]
     pub fn new_scope(&mut self, scope_id: ID<scope::Scope>) {
         self.scopes.push(Scope::new(scope_id));
     }
