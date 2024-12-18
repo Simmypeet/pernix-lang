@@ -10,7 +10,7 @@ use crate::{
     arena::{Key, ID},
     ir::{
         self,
-        address::{self, Address, Memory, Reference},
+        address::{self, Address, Memory},
         control_flow_graph::{Block, Point},
         instruction::{AccessKind, Instruction, Jump, Terminator},
         value::register::Register,
@@ -672,16 +672,9 @@ impl<M: Model> RegisterTraverser<'_, M> {
                 }
             },
 
-            Some(Terminator::Return(ret)) => {
-                if ret
-                    .value
-                    .as_register()
-                    .map_or(false, |x| *x == self.target_register_id)
-                {
-                    vec![ret.span.clone()]
-                } else {
-                    Vec::new()
-                }
+            Some(Terminator::Return(_)) => {
+                // NOTE: should we consider the return value?
+                return Vec::new();
             }
 
             Some(Terminator::Panic) | None => Vec::new(),
@@ -707,6 +700,7 @@ pub fn get_live_addresses<S: table::State, M: Model>(
     root_memory_address: Memory<M>,
     root_type: &Type<M>,
     point: Point<M>,
+    exit: &mut impl FnMut(&Instruction<M>, Point<M>) -> bool,
     representation: &ir::Representation<M>,
     environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
 ) -> Result<HashSet<(Address<M>, AccessKind)>, OverflowError> {
@@ -721,6 +715,7 @@ pub fn get_live_addresses<S: table::State, M: Model>(
     state.traverse_block(
         point.block_id,
         Some(point.instruction_index),
+        exit,
         &mut HashSet::new(),
     )
 }
@@ -764,6 +759,7 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
         &mut self,
         block_id: ID<Block<M>>,
         starting_instruction_index: Option<usize>,
+        exit: &mut impl FnMut(&Instruction<M>, Point<M>) -> bool,
         visited: &mut HashSet<(usize, Option<usize>)>,
     ) -> Result<HashSet<(Address<M>, AccessKind)>, OverflowError> {
         if starting_instruction_index.is_none() {
@@ -795,6 +791,11 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
             // should mark the current instruction as visited
             if starting_instruction_index.map_or(false, |x| x + 1 == index) {
                 assert!(visited.insert((block_id.into_index(), Some(index))));
+            }
+
+            // explicitly exit the traversal
+            if exit(instruction, Point { block_id, instruction_index: index }) {
+                return Ok(live_addresses);
             }
 
             let accesses = instruction
@@ -857,6 +858,7 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
                     let accesses = self.traverse_block(
                         unconditional_jump.target,
                         None,
+                        exit,
                         visited,
                     )?;
 
@@ -868,12 +870,14 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
                     let true_accesses = self.clone().traverse_block(
                         conditional_jump.true_target,
                         None,
+                        exit,
                         &mut visited.clone(),
                     )?;
 
                     let false_accesses = self.traverse_block(
                         conditional_jump.false_target,
                         None,
+                        exit,
                         &mut visited.clone(),
                     )?;
 
@@ -892,6 +896,7 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
                         live_addresses.extend(self.clone().traverse_block(
                             block,
                             None,
+                            exit,
                             &mut visited.clone(),
                         )?);
                     }

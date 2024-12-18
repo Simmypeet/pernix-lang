@@ -600,8 +600,6 @@ impl<
             handler,
         )?;
 
-        // invalidated lifetimes will not be checked here; unlike function call
-
         Ok(())
     }
 
@@ -956,7 +954,12 @@ impl<
                     break 'out;
                 }
 
-                // TODO: check the usage of borrow after move
+                self.handle_move(
+                    &load.address,
+                    &register_span,
+                    point,
+                    handler,
+                )?;
             }
         };
 
@@ -1140,8 +1143,6 @@ impl<
                 | Instruction::Drop(_) => {}
 
                 Instruction::ScopePop(scope_pop) => {
-                    println!("scope pop {:?}", scope_pop);
-                    // TODO: check use of goes out of scope borrows
                     let mut dropped_memories = self
                         .representation()
                         .values
@@ -1176,8 +1177,6 @@ impl<
                     }
 
                     for memory in dropped_memories {
-                        println!("dropping {:?}", memory);
-
                         self.handle_drop_memory(
                             memory,
                             current_point,
@@ -1191,6 +1190,10 @@ impl<
         let Some(terminator) = block.terminator() else {
             return Ok(());
         };
+
+        if let Terminator::Return(ret) = terminator {
+            self.handle_return(ret, handler)?;
+        }
 
         Ok(())
     }
@@ -1578,8 +1581,6 @@ impl ir::Representation<ir::Model> {
         }
 
         assert!(checker.walk_results_by_block_id.values().all(Option::is_some));
-
-        dbg!(ir);
 
         Ok(())
     }

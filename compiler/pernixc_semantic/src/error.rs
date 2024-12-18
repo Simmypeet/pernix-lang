@@ -3206,10 +3206,7 @@ pub struct AccessWhileMutablyBorrowed {
     pub borrow_usage: Usage,
 }
 
-impl Report<&Table<Suboptimal>> for AccessWhileMutablyBorrowed
-where
-    M::LifetimeInference: table::Display<Suboptimal>,
-{
+impl Report<&Table<Suboptimal>> for AccessWhileMutablyBorrowed {
     type Error = ReportError;
 
     fn report(
@@ -3271,7 +3268,7 @@ pub struct MutablyAccessWhileImmutablyBorrowed {
     pub immutable_borrow_span: Option<Span>,
 
     /// The usage span of the prior borrow.
-    pub borrow_usage: Usage,
+    pub usage: Usage,
 }
 
 impl Report<&Table<Suboptimal>> for MutablyAccessWhileImmutablyBorrowed {
@@ -3288,7 +3285,7 @@ impl Report<&Table<Suboptimal>> for MutablyAccessWhileImmutablyBorrowed {
                 self.mutable_access_span.str()
             ),
             severity: Severity::Error,
-            help_message: match &self.borrow_usage {
+            help_message: match &self.usage {
                 Usage::Local { .. } => None,
                 Usage::ByUniversalRegions(vec) => Some(format!(
                         "lifetime(s) {} can access the borrow later",
@@ -3310,16 +3307,14 @@ impl Report<&Table<Suboptimal>> for MutablyAccessWhileImmutablyBorrowed {
                     message: "the borrow starts here".to_string(),
                 })
                 .into_iter()
-                .chain(self.borrow_usage.as_local().map(|(span, in_loop)| {
-                    Related {
-                        span: span.clone(),
-                        message: if *in_loop {
-                            "the borrow is used later in the next iteration"
-                                .to_string()
-                        } else {
-                            "the borrow is used here".to_string()
-                        },
-                    }
+                .chain(self.usage.as_local().map(|(span, in_loop)| Related {
+                    span: span.clone(),
+                    message: if *in_loop {
+                        "the borrow is used later in the next iteration"
+                            .to_string()
+                    } else {
+                        "the borrow is used here".to_string()
+                    },
                 }))
                 .collect(),
         })

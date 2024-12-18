@@ -14,15 +14,16 @@ use super::{
 use crate::{
     arena::{Key, ID},
     error::{
-        self, AccessWhileMutablyBorrowed, BorrowUsage,
+        self, AccessWhileMutablyBorrowed, MovedOutWhileBorrowed,
         MutablyAccessWhileImmutablyBorrowed, OverflowOperation,
-        TypeSystemOverflow, UnsatisfiedPredicate,
+        TypeSystemOverflow, UnsatisfiedPredicate, Usage,
         VariableDoesNotLiveLongEnough,
     },
     ir::{
         self,
         address::{Address, Memory},
         control_flow_graph::Point,
+        instruction::Instruction,
         representation::{
             borrow::{
                 LocalRegion, Model as BorrowModel, Region, UniversalRegion,
@@ -444,8 +445,9 @@ impl<
         &self,
         borrow: ID<Register<BorrowModel>>,
         access_span: Span,
+        mut exit: impl FnMut(&Instruction<BorrowModel>, Point<BorrowModel>) -> bool,
         point: Point<BorrowModel>,
-        handler_fn: impl Fn(BorrowUsage<ir::Model>),
+        handler_fn: impl Fn(Usage),
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let borrow_region = self.attached_borrows.get(&borrow).unwrap();
 
@@ -471,6 +473,7 @@ impl<
                 Memory::Alloca(alloca_id),
                 &alloca.r#type,
                 point,
+                &mut exit,
                 &self.representation,
                 self.ty_environment,
             )
@@ -497,8 +500,8 @@ impl<
                     invalidated_local_regions.contains(&x)
                 }) {
                     handler_fn(access_kind.into_normal().map_or(
-                        BorrowUsage::Drop,
-                        |(_, span)| BorrowUsage::Local {
+                        Usage::Drop,
+                        |(_, span)| Usage::Local {
                             access_span: span,
                             in_loop: false,
                         },
@@ -522,24 +525,14 @@ impl<
             );
 
             for span in live_spans {
-                handler_fn(BorrowUsage::Local {
-                    access_span: span,
-                    in_loop: false,
-                });
+                handler_fn(Usage::Local { access_span: span, in_loop: false });
             }
         }
 
         let mut universal_lifetimes = Vec::new();
 
-        for (universal_region, equiv_lifetime) in
-            self.region_info.indices_by_univseral_region.keys().map(|x| {
-                (x, match x {
-                    UniversalRegion::Static => Lifetime::Static,
-                    UniversalRegion::LifetimeParameter(member_id) => {
-                        Lifetime::Parameter(*member_id)
-                    }
-                })
-            })
+        for universal_region in
+            self.region_info.indices_by_univseral_region.keys()
         {
             if self.subset_relations.has_path(
                 self.attached_borrows.get(&borrow).unwrap().into_index(),
@@ -547,19 +540,64 @@ impl<
                     Region::Universal(*universal_region),
                 ),
             ) {
-                universal_lifetimes.push(equiv_lifetime);
+                universal_lifetimes.push(*universal_region);
             }
         }
 
         // if there's any universal lifetimes that could use the
         // invalidated borrow, report an error
         if !universal_lifetimes.is_empty() {
-            handler_fn(BorrowUsage::ByUniversalRegions(universal_lifetimes));
+            handler_fn(Usage::ByUniversalRegions(universal_lifetimes));
         }
 
         Ok(())
     }
 
+    /// Handles the move of the memory. This will invalidate the borrows that
+    /// are attached to the memory.
+    pub fn handle_move(
+        &mut self,
+        moved_address: &Address<BorrowModel>,
+        move_span: &Span,
+        point: Point<BorrowModel>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        for borrow in self.attached_borrows.keys().cloned() {
+            let borrow_register =
+                self.representation.values.registers.get(borrow).unwrap();
+            let borrow_assignment =
+                borrow_register.assignment.as_borrow().unwrap();
+
+            let should_invalidate = moved_address
+                .is_child_of(&borrow_assignment.address)
+                || borrow_assignment.address.is_child_of(moved_address);
+
+            if !should_invalidate {
+                continue;
+            }
+
+            let span = borrow_register.span.clone();
+
+            self.invalidate_borrow(
+                borrow,
+                span.clone(),
+                |_, _| false,
+                point,
+                |borrow_usage| {
+                    handler.receive(Box::new(MovedOutWhileBorrowed {
+                        borrow_span: borrow_register.span.clone(),
+                        usage: borrow_usage,
+                        moved_out_span: move_span.clone(),
+                    }))
+                },
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Handles the drop of the memory. This will invalidate the borrows that
+    /// are attached to the memory.
     pub fn handle_drop_memory(
         &mut self,
         drop: Memory<BorrowModel>,
@@ -573,11 +611,26 @@ impl<
                 borrow_register.assignment.as_borrow().unwrap();
 
             let should_invalidate =
-                borrow_assignment.address.is_child_of(&Address::Memory(drop));
+                borrow_assignment.address.is_child_of(&Address::Memory(drop))
+                    && !borrow_assignment.address.is_behind_reference();
 
             if !should_invalidate {
                 continue;
             }
+
+            let dropped_scope = match drop {
+                Memory::Parameter(_) => {
+                    self.representation.scope_tree.root_scope_id()
+                }
+                Memory::Alloca(id) => {
+                    self.representation
+                        .values
+                        .allocas
+                        .get(id)
+                        .unwrap()
+                        .declared_in_scope_id
+                }
+            };
 
             let span = match drop {
                 Memory::Parameter(id) => self
@@ -604,9 +657,13 @@ impl<
             self.invalidate_borrow(
                 *borrow,
                 span.clone(),
+                |inst, _| {
+                    // prevent multiple invalidations in loops
+                    inst.as_scope_pop().map_or(false, |x| x.0 == dropped_scope)
+                },
                 point,
                 |borrow_usage| match borrow_usage {
-                    BorrowUsage::Local { access_span, .. } => {
+                    Usage::Local { access_span, .. } => {
                         handler.receive(Box::new(
                             VariableDoesNotLiveLongEnough::<ir::Model> {
                                 variable_span: span.clone(),
@@ -616,7 +673,7 @@ impl<
                         ));
                     }
 
-                    BorrowUsage::ByUniversalRegions(_) | BorrowUsage::Drop => {}
+                    Usage::ByUniversalRegions(_) | Usage::Drop => {}
                 },
             )?;
         }
@@ -659,24 +716,23 @@ impl<
                 self.invalidate_borrow(
                     borrow,
                     span.clone(),
+                    |_, _| false,
                     point,
                     |borrow_usage| match borrow_assignment.qualifier {
                         Qualifier::Immutable => {
                             handler.receive(Box::new(
-                                MutablyAccessWhileImmutablyBorrowed::<
-                                    ir::Model,
-                                > {
+                                MutablyAccessWhileImmutablyBorrowed {
                                     mutable_access_span: span.clone(),
                                     immutable_borrow_span: Some(
                                         borrow_register.span.clone(),
                                     ),
-                                    borrow_usage,
+                                    usage: borrow_usage,
                                 },
                             ));
                         }
                         Qualifier::Mutable => {
                             handler.receive(Box::new(
-                                AccessWhileMutablyBorrowed::<ir::Model> {
+                                AccessWhileMutablyBorrowed {
                                     access_span: span.clone(),
                                     mutable_borrow_span: Some(
                                         borrow_register.span.clone(),

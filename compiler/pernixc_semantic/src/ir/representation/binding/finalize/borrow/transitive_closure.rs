@@ -237,24 +237,6 @@ impl TransitiveClosure {
         }
     }
 
-    /// Checks if the given node has a path to any other node (except itself).
-    pub fn does_not_go_to_any_except_itself(&mut self, node: usize) -> bool {
-        let expected_word_index = node / 64;
-        let bit = node % 64;
-
-        let expected = 1 << bit;
-
-        self.transitive_closure[node].bits.iter().enumerate().all(
-            |(word_idx, word)| {
-                if word_idx == expected_word_index {
-                    word.get() == expected
-                } else {
-                    word.get() == 0
-                }
-            },
-        )
-    }
-
     /// Checks if there is a path from the `from` vertex to the `to` vertex.
     pub fn has_path(&self, from: usize, to: usize) -> bool {
         self.transitive_closure[from].get(to)
