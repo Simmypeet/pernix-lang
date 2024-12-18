@@ -3222,18 +3222,20 @@ where
                 self.access_span.str()
             ),
             severity: Severity::Error,
-            help_message: self.borrow_usage.as_by_universal_regions().map(
-                |x| {
-                    format!(
+            help_message: match &self.borrow_usage {
+                BorrowUsage::Local { .. } => None,
+                BorrowUsage::ByUniversalRegions(vec) => Some(format!(
                         "lifetime(s) {} can access the borrow later",
-                        x.iter()
+                        vec.iter()
                             .map(|x| DisplayObject { display: x, table }
                                 .to_string())
                             .collect::<Vec<_>>()
                             .join(", ")
-                    )
-                },
-            ),
+                    )),
+                BorrowUsage::Drop => Some(
+                    "the borrow is used in the drop implementation".to_string(),
+                ),
+            },
             related: self
                 .mutable_borrow_span
                 .as_ref()
@@ -3289,18 +3291,20 @@ where
                 self.mutable_access_span.str()
             ),
             severity: Severity::Error,
-            help_message: self.borrow_usage.as_by_universal_regions().map(
-                |x| {
-                    format!(
+            help_message: match &self.borrow_usage {
+                BorrowUsage::Local { .. } => None,
+                BorrowUsage::ByUniversalRegions(vec) => Some(format!(
                         "lifetime(s) {} can access the borrow later",
-                        x.iter()
+                        vec.iter()
                             .map(|x| DisplayObject { display: x, table }
                                 .to_string())
                             .collect::<Vec<_>>()
                             .join(", ")
-                    )
-                },
-            ),
+                    )),
+                BorrowUsage::Drop => Some(
+                    "the borrow is used in the drop implementation".to_string(),
+                ),
+            },
             related: self
                 .immutable_borrow_span
                 .as_ref()
