@@ -55,6 +55,17 @@ pub struct Tuple<M: Model> {
     pub elements: Vec<TupleElement<M>>,
 }
 
+impl<M: Model> Tuple<M> {
+    /// Returns the list of registers that are used in the tuple.
+    #[must_use]
+    pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
+        self.elements
+            .iter()
+            .filter_map(|x| x.value.as_register().cloned())
+            .collect()
+    }
+}
+
 impl<M: Model> Values<M> {
     fn type_of_tuple_assignment<S: table::State>(
         &self,
@@ -181,6 +192,14 @@ pub struct Prefix<M: Model> {
     pub operator: PrefixOperator,
 }
 
+impl<M: Model> Prefix<M> {
+    /// Returns the register that is used in the prefix.
+    #[must_use]
+    pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
+        self.operand.as_register().cloned().into_iter().collect()
+    }
+}
+
 impl<M: Model> Values<M> {
     fn type_of_prefix_assignment<S: table::State>(
         &self,
@@ -217,6 +236,17 @@ pub struct Struct<M: Model> {
     pub generic_arguments: GenericArguments<M>,
 }
 
+impl<M: Model> Struct<M> {
+    /// Returns the list of registers that are used in the struct.
+    #[must_use]
+    pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
+        self.initializers_by_field_id
+            .values()
+            .filter_map(|x| x.as_register().cloned())
+            .collect()
+    }
+}
+
 fn type_of_struct_assignment<M: Model>(st: &Struct<M>) -> Type<M> {
     Type::Symbol(Symbol {
         id: r#type::SymbolID::Adt(AdtID::Struct(st.struct_id)),
@@ -235,6 +265,19 @@ pub struct Variant<M: Model> {
 
     /// The generic arguments supplied to the enum.
     pub generic_arguments: GenericArguments<M>,
+}
+
+impl<M: Model> Variant<M> {
+    /// Returns the list of registers that are used in the variant.
+    #[must_use]
+    pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
+        self.associated_value
+            .as_ref()
+            .map(|x| x.as_register().cloned())
+            .into_iter()
+            .flatten()
+            .collect()
+    }
 }
 
 fn type_of_variant_assignment<M: Model>(
@@ -263,6 +306,14 @@ pub struct FunctionCall<M: Model> {
 
     /// The generic instantiations of the function.
     pub instantiation: Instantiation<M>,
+}
+
+impl<M: Model> FunctionCall<M> {
+    /// Returns the list of registers that are used in the function call.
+    #[must_use]
+    pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
+        self.arguments.iter().filter_map(|x| x.as_register().cloned()).collect()
+    }
 }
 
 fn type_of_function_call_assignment<M: Model>(
@@ -376,6 +427,19 @@ pub struct Binary<M: Model> {
     pub operator: BinaryOperator,
 }
 
+impl<M: Model> Binary<M> {
+    /// Returns the list of registers that are used in the binary.
+    #[must_use]
+    pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
+        self.lhs
+            .as_register()
+            .cloned()
+            .into_iter()
+            .chain(self.rhs.as_register().cloned())
+            .collect()
+    }
+}
+
 impl<M: Model> Values<M> {
     fn type_of_binary<S: table::State>(
         &self,
@@ -415,6 +479,17 @@ pub struct Phi<M: Model> {
     pub r#type: Type<M>,
 }
 
+impl<M: Model> Phi<M> {
+    /// Returns the list of registers that are used in the phi node.
+    #[must_use]
+    pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
+        self.incoming_values
+            .values()
+            .filter_map(|x| x.as_register().cloned())
+            .collect()
+    }
+}
+
 /// Represents an array of values.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Array<M: Model> {
@@ -429,6 +504,14 @@ pub struct Array<M: Model> {
     pub element_type: Type<M>,
 }
 
+impl<M: Model> Array<M> {
+    /// Returns the list of registers that are used in the array.
+    #[must_use]
+    pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
+        self.elements.iter().filter_map(|x| x.as_register().cloned()).collect()
+    }
+}
+
 /// Represents a cast operation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Cast<M: Model> {
@@ -437,6 +520,14 @@ pub struct Cast<M: Model> {
 
     /// The type to cast the value to.
     pub r#type: Type<M>,
+}
+
+impl<M: Model> Cast<M> {
+    /// Returns the register that is used in the cast.
+    #[must_use]
+    pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
+        self.value.as_register().cloned().into_iter().collect()
+    }
 }
 
 /// Returns the variant number of the given address to the enum.
@@ -469,6 +560,30 @@ pub enum Assignment<M: Model> {
     Phi(Phi<M>),
     Cast(Cast<M>),
     VariantNumber(VariantNumber<M>),
+}
+
+impl<M: Model> Assignment<M> {
+    /// Returns the register that is used in the assignment.
+    #[must_use]
+    pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
+        match self {
+            Assignment::Tuple(tuple) => tuple.get_used_registers(),
+            Assignment::Prefix(prefix) => prefix.get_used_registers(),
+            Assignment::Struct(st) => st.get_used_registers(),
+            Assignment::Variant(variant) => variant.get_used_registers(),
+            Assignment::FunctionCall(function_call) => {
+                function_call.get_used_registers()
+            }
+            Assignment::Binary(binary) => binary.get_used_registers(),
+            Assignment::Array(array) => array.get_used_registers(),
+            Assignment::Phi(phi) => phi.get_used_registers(),
+            Assignment::Cast(cast) => cast.get_used_registers(),
+
+            Assignment::Load(_)
+            | Assignment::Borrow(_)
+            | Assignment::VariantNumber(_) => Vec::new(),
+        }
+    }
 }
 
 /// Represents a register in the SSA from.
