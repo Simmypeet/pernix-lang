@@ -207,6 +207,7 @@
 //! Now it's more clear that `?x` is a set of `{%r1, %r2}`, which is the
 //! possible `Borrow` expressions that it might come from.
 
+use core::fmt;
 use std::{self, fmt::Display};
 
 use enum_as_inner::EnumAsInner;
@@ -232,6 +233,35 @@ use crate::{
 pub enum UniversalRegion {
     Static,
     LifetimeParameter(LifetimeParameterID),
+}
+
+impl<S: table::State> table::Display<S> for UniversalRegion {
+    fn fmt(
+        &self,
+        table: &table::Table<S>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            UniversalRegion::Static => write!(f, "'static"),
+            UniversalRegion::LifetimeParameter(id) => {
+                match &table
+                    .get_generic(id.parent)
+                    .ok_or(fmt::Error)?
+                    .generic_declaration()
+                    .parameters
+                    .lifetimes()
+                    .get(id.id)
+                    .ok_or(fmt::Error)?
+                    .name
+                {
+                    Some(name) => {
+                        write!(f, "'{}", name)
+                    }
+                    None => write!(f, "'{}", id.id.into_index()),
+                }
+            }
+        }
+    }
 }
 
 /// Represents a region inference that was created in the IR. (declared within

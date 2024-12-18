@@ -16,7 +16,7 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    ir::ConstraintModel,
+    ir::{representation::borrow::UniversalRegion, ConstraintModel},
     symbol::{
         table::{
             self, representation::Index, Display, DisplayObject, State,
@@ -3171,9 +3171,10 @@ impl Report<&Table<Suboptimal>>
     }
 }
 
-/// An enumeration of what part of the code uses the invalidated borrows.
+/// An enumeration of what part of the code uses the invalidated
+/// borrows/variables.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum BorrowUsage<M: Model> {
+pub enum Usage {
     /// The invalidated borrows are later used within the body of local
     /// function/scope.
     Local {
@@ -3186,7 +3187,7 @@ pub enum BorrowUsage<M: Model> {
 
     /// The invalidated borrows might be later used by the univseral regions
     /// (the caller of the function).
-    ByUniversalRegions(Vec<Lifetime<M>>),
+    ByUniversalRegions(Vec<UniversalRegion>),
 
     /// The invalidated borrows are used in the drop implementation.
     Drop,
@@ -3194,7 +3195,7 @@ pub enum BorrowUsage<M: Model> {
 
 /// The access is done while the value is mutably borrowed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AccessWhileMutablyBorrowed<M: Model> {
+pub struct AccessWhileMutablyBorrowed {
     /// The span of the access.
     pub access_span: Span,
 
@@ -3202,10 +3203,10 @@ pub struct AccessWhileMutablyBorrowed<M: Model> {
     pub mutable_borrow_span: Option<Span>,
 
     /// The usage span of the prior borrow.
-    pub borrow_usage: BorrowUsage<M>,
+    pub borrow_usage: Usage,
 }
 
-impl<M: Model> Report<&Table<Suboptimal>> for AccessWhileMutablyBorrowed<M>
+impl Report<&Table<Suboptimal>> for AccessWhileMutablyBorrowed
 where
     M::LifetimeInference: table::Display<Suboptimal>,
 {
@@ -3223,8 +3224,8 @@ where
             ),
             severity: Severity::Error,
             help_message: match &self.borrow_usage {
-                BorrowUsage::Local { .. } => None,
-                BorrowUsage::ByUniversalRegions(vec) => Some(format!(
+                Usage::Local { .. } => None,
+                Usage::ByUniversalRegions(vec) => Some(format!(
                         "lifetime(s) {} can access the borrow later",
                         vec.iter()
                             .map(|x| DisplayObject { display: x, table }
@@ -3232,7 +3233,7 @@ where
                             .collect::<Vec<_>>()
                             .join(", ")
                     )),
-                BorrowUsage::Drop => Some(
+                Usage::Drop => Some(
                     "the borrow is used in the drop implementation".to_string(),
                 ),
             },
@@ -3262,7 +3263,7 @@ where
 
 /// The mutable access is done while the value is immutably borrowed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MutablyAccessWhileImmutablyBorrowed<M: Model> {
+pub struct MutablyAccessWhileImmutablyBorrowed {
     /// The span of the mutable access.
     pub mutable_access_span: Span,
 
@@ -3270,14 +3271,10 @@ pub struct MutablyAccessWhileImmutablyBorrowed<M: Model> {
     pub immutable_borrow_span: Option<Span>,
 
     /// The usage span of the prior borrow.
-    pub borrow_usage: BorrowUsage<M>,
+    pub borrow_usage: Usage,
 }
 
-impl<M: Model> Report<&Table<Suboptimal>>
-    for MutablyAccessWhileImmutablyBorrowed<M>
-where
-    M::LifetimeInference: table::Display<Suboptimal>,
-{
+impl Report<&Table<Suboptimal>> for MutablyAccessWhileImmutablyBorrowed {
     type Error = ReportError;
 
     fn report(
@@ -3292,8 +3289,8 @@ where
             ),
             severity: Severity::Error,
             help_message: match &self.borrow_usage {
-                BorrowUsage::Local { .. } => None,
-                BorrowUsage::ByUniversalRegions(vec) => Some(format!(
+                Usage::Local { .. } => None,
+                Usage::ByUniversalRegions(vec) => Some(format!(
                         "lifetime(s) {} can access the borrow later",
                         vec.iter()
                             .map(|x| DisplayObject { display: x, table }
@@ -3301,7 +3298,7 @@ where
                             .collect::<Vec<_>>()
                             .join(", ")
                     )),
-                BorrowUsage::Drop => Some(
+                Usage::Drop => Some(
                     "the borrow is used in the drop implementation".to_string(),
                 ),
             },
@@ -3332,8 +3329,11 @@ where
 /// The value is moved out from the variabl while it is borrowed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MovedOutWhileBorrowed {
+    /// The span of the borrow.
+    pub borrow_span: Span,
+
     /// The span of the borrow usage.
-    pub borrow_usage_span: Span,
+    pub usage: Usage,
 
     /// The span where the value is moved out
     pub moved_out_span: Span,
@@ -3342,18 +3342,43 @@ pub struct MovedOutWhileBorrowed {
 impl Report<&Table<Suboptimal>> for MovedOutWhileBorrowed {
     type Error = ReportError;
 
-    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
+    fn report(
+        &self,
+        table: &Table<Suboptimal>,
+    ) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             span: self.moved_out_span.clone(),
             message: "the value is moved out from the variable while it is \
                       borrowed"
                 .to_string(),
             severity: Severity::Error,
-            help_message: None,
-            related: vec![Related {
-                span: self.borrow_usage_span.clone(),
-                message: "the borrow is used here".to_string(),
-            }],
+            help_message: match &self.usage {
+                Usage::Local { .. } => None,
+                Usage::ByUniversalRegions(vec) => Some(format!(
+                        "lifetime(s) {} can access the borrow later",
+                        vec.iter()
+                            .map(|x| DisplayObject { display: x, table }
+                                .to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
+                Usage::Drop => Some(
+                    "the borrow is used in the drop implementation".to_string(),
+                ),
+            },
+            related: std::iter::once(Related {
+                span: self.borrow_span.clone(),
+                message: "the borrow starts here".to_string(),
+            })
+            .chain(self.usage.as_local().map(|(span, in_loop)| Related {
+                span: span.clone(),
+                message: if *in_loop {
+                    "the borrow is used later in the next iteration".to_string()
+                } else {
+                    "the borrow is used here".to_string()
+                },
+            }))
+            .collect(),
         })
     }
 }
