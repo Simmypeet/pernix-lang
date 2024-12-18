@@ -246,10 +246,3 @@ pub(super) fn transform_to_borrow_model(
         transformer.generator,
     )
 }
-
-pub(super) fn transform_to_ir_model(
-    ir: ir::Representation<borrow::Model>,
-    table: &Table<impl table::State>,
-) -> ir::Representation<ir::Model> {
-    ir.transform_model(&mut ToIRTransofmer, table).unwrap()
-}

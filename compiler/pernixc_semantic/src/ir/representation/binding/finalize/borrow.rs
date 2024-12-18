@@ -1,8 +1,7 @@
 mod check;
-mod context;
 mod environment;
+mod liveness;
 mod local_region_generator;
-mod state;
 mod transform;
 mod transitive_closure;
 

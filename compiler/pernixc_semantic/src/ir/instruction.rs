@@ -1,7 +1,9 @@
 //! Contains the definition of [`Instruction`] and its variants.
 
 use std::{borrow::Cow, collections::HashMap};
-use enum_as_inner::EnumAsInner; use pernixc_base::source_file::Span;
+
+use enum_as_inner::EnumAsInner;
+use pernixc_base::source_file::Span;
 
 use super::{
     address::{self, Address},
@@ -362,7 +364,7 @@ impl<M: Model> Terminator<M> {
 }
 
 /// Represents how a particular address is accessed in an instruction.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum AccessKind {
     /// The access is made to any instructions other than `Drop` instructions.
     Normal {

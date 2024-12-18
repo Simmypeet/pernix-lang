@@ -3187,6 +3187,9 @@ pub enum BorrowUsage<M: Model> {
     /// The invalidated borrows might be later used by the univseral regions
     /// (the caller of the function).
     ByUniversalRegions(Vec<Lifetime<M>>),
+
+    /// The invalidated borrows are used in the drop implementation.
+    Drop,
 }
 
 /// The access is done while the value is mutably borrowed.

@@ -626,3 +626,14 @@ impl<M: Model> Default for ControlFlowGraph<M> {
         Self { blocks, entry_block_id }
     }
 }
+
+/// Represents an identifier to a particular instruction in the control flow
+/// graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Point<M: Model> {
+    /// The index of the instruction in the block.
+    pub instruction_index: usize,
+
+    /// The ID of the block that contains the instruction.
+    pub block_id: ID<Block<M>>,
+}

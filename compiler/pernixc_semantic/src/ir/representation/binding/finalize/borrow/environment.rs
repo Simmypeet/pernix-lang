@@ -6,13 +6,13 @@ use std::{
 use pernixc_base::{handler::Handler, source_file::Span};
 
 use super::{
-    local_region_generator::LocalRegionGenerator, state::Stack,
+    liveness, local_region_generator::LocalRegionGenerator,
     transitive_closure::TransitiveClosure,
 };
 use crate::{
-    arena::{Arena, Key, ID},
+    arena::{Key, ID},
     error::{
-        self, AccessWhileMutablyBorrowed, BorrowUsage, MovedOutWhileBorrowed,
+        self, AccessWhileMutablyBorrowed, BorrowUsage,
         MutablyAccessWhileImmutablyBorrowed, OverflowOperation,
         TypeSystemOverflow, UnsatisfiedPredicate,
         VariableDoesNotLiveLongEnough,
@@ -20,11 +20,10 @@ use crate::{
     ir::{
         self,
         address::{Address, Memory},
+        control_flow_graph::Point,
         representation::{
-            binding::finalize::borrow::state::Summary,
             borrow::{
-                Access, LocalRegion, Model as BorrowModel, Region,
-                UniversalRegion,
+                LocalRegion, Model as BorrowModel, Region, UniversalRegion,
             },
             Values,
         },
@@ -39,8 +38,14 @@ use crate::{
         normalizer::Normalizer,
         observer::Observer,
         predicate::{Outlives, Predicate},
-        term::{lifetime::Lifetime, r#type::Qualifier, Term},
-        visitor::RecursiveIterator,
+        sub_term::TermLocation,
+        term::{
+            constant::Constant,
+            lifetime::Lifetime,
+            r#type::{Qualifier, Type},
+            Term,
+        },
+        visitor::{self, Recursive, RecursiveIterator},
         Compute, Satisfied,
     },
 };
@@ -50,6 +55,7 @@ use crate::{
 pub struct RegionInfo {
     generated_local_regions: usize,
     indices_by_univseral_region: HashMap<UniversalRegion, usize>,
+    universal_regions_by_index: HashMap<usize, UniversalRegion>,
 }
 
 impl RegionInfo {
@@ -63,6 +69,8 @@ impl RegionInfo {
         table: &Table<impl table::State>,
     ) -> Self {
         let mut indices_by_univseral_region = HashMap::new();
+        let mut universal_regions_by_index = HashMap::new();
+
         let mut starting_universal_regions_index = generator.generated_count();
 
         for global_id in table.scope_walker(current_site).unwrap() {
@@ -90,6 +98,17 @@ impl RegionInfo {
                         starting_universal_regions_index,
                     )
                     .is_none());
+                assert!(universal_regions_by_index
+                    .insert(
+                        starting_universal_regions_index,
+                        UniversalRegion::LifetimeParameter(
+                            LifetimeParameterID {
+                                parent: generic_id,
+                                id: lifetime,
+                            }
+                        ),
+                    )
+                    .is_none());
 
                 starting_universal_regions_index += 1;
             }
@@ -98,10 +117,13 @@ impl RegionInfo {
         // finally, insert the static region
         indices_by_univseral_region
             .insert(UniversalRegion::Static, starting_universal_regions_index);
+        universal_regions_by_index
+            .insert(starting_universal_regions_index, UniversalRegion::Static);
 
         Self {
             generated_local_regions: generator.generated_count(),
             indices_by_univseral_region,
+            universal_regions_by_index,
         }
     }
 
@@ -119,6 +141,63 @@ impl RegionInfo {
                 .get(&universal_region)
                 .unwrap(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Contains<'a> {
+    regions: &'a HashSet<Region>,
+    contains: bool,
+}
+
+impl Recursive<'_, Lifetime<BorrowModel>> for Contains<'_> {
+    fn visit(
+        &mut self,
+        term: &'_ Lifetime<BorrowModel>,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        let Some(region) = term.clone().try_into().ok() else {
+            return true;
+        };
+
+        self.contains |= self.regions.contains(&region);
+
+        !self.contains
+    }
+}
+
+impl Recursive<'_, Type<BorrowModel>> for Contains<'_> {
+    fn visit(
+        &mut self,
+        _: &'_ Type<BorrowModel>,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        !self.contains
+    }
+}
+
+impl Recursive<'_, Constant<BorrowModel>> for Contains<'_> {
+    fn visit(
+        &mut self,
+        _: &'_ Constant<BorrowModel>,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        !self.contains
+    }
+}
+
+impl<'a> Contains<'a> {
+    pub fn new(regions: &'a HashSet<Region>) -> Self {
+        Self { regions, contains: false }
+    }
+
+    pub fn contains(
+        ty: &Type<BorrowModel>,
+        regions: &'a HashSet<Region>,
+    ) -> bool {
+        let mut contains = Self::new(regions);
+        visitor::accept_recursive(ty, &mut contains);
+        contains.contains
     }
 }
 
@@ -144,12 +223,6 @@ pub struct Environment {
     attached_borrows: HashMap<ID<Register<BorrowModel>>, ID<LocalRegion>>,
     reversed_attached_borrows:
         HashMap<ID<LocalRegion>, ID<Register<BorrowModel>>>,
-
-    invalidated_borrows:
-        HashMap<ID<Register<BorrowModel>>, HashMap<ID<Access>, bool>>,
-
-    occurred_accesses: HashSet<ID<Access>>,
-    active_borrows: HashSet<ID<Register<BorrowModel>>>,
 }
 
 /// Gets all the lifetimes included in the given address.
@@ -239,229 +312,7 @@ impl Environment {
 
             attached_borrows: HashMap::new(),
             reversed_attached_borrows: HashMap::new(),
-
-            invalidated_borrows: HashMap::new(),
-
-            occurred_accesses: HashSet::new(),
-            active_borrows: HashSet::new(),
         }
-    }
-
-    pub fn check_lifetime_usages<'a, S: table::State>(
-        &mut self,
-        lifetimes: impl Iterator<Item = &'a Lifetime<BorrowModel>>,
-        values: &Values<BorrowModel>,
-        stack: &Stack,
-        checking_span: Span,
-        is_loop: bool,
-        accesses: &Arena<Access>,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) {
-        let borrows = lifetimes
-            .flat_map(|x| self.get_borrows_of_lifetime(x))
-            .collect::<HashSet<_>>();
-
-        self.check_borrow_usages(
-            borrows.iter().copied(),
-            values,
-            stack,
-            checking_span.clone(),
-            is_loop,
-            accesses,
-            current_site,
-            ty_environment,
-            handler,
-        );
-    }
-
-    /// Gets the difference between the set of accesses `self - other`.
-    pub fn access_difference<'a>(
-        &'a self,
-        other: &'a Self,
-    ) -> impl Iterator<Item = ID<Access>> + 'a {
-        self.occurred_accesses.difference(&other.occurred_accesses).cloned()
-    }
-
-    /// Checks the usage of invalidated borrows (mutable access while borrow,
-    /// can only use one mutable borrow at a time)
-    pub fn check_invalidated_borrow_usages(
-        &mut self,
-        borrows: impl Iterator<Item = ID<Register<BorrowModel>>>,
-        values: &Values<BorrowModel>,
-        checking_span: Span,
-        in_loop: bool,
-        accesses: &Arena<Access>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) {
-        // check for the invalidated borrows
-        for borrow in borrows {
-            // if the borrow is already invalidated, skip
-            let Some(invalidated_accesses) =
-                self.invalidated_borrows.get_mut(&borrow)
-            else {
-                continue;
-            };
-
-            let borrow_qualifier = values
-                .registers
-                .get(borrow)
-                .unwrap()
-                .assignment
-                .as_borrow()
-                .unwrap()
-                .qualifier;
-
-            for (invalidated_access_id, reported) in
-                invalidated_accesses.iter_mut()
-            {
-                if *reported {
-                    continue;
-                }
-
-                *reported = true;
-
-                // let invalidated_access =
-                //     accesses.get(invalidated_access_id).unwrap();
-
-                match borrow_qualifier {
-                    Qualifier::Immutable => {
-                        handler.receive(Box::new(
-                            MutablyAccessWhileImmutablyBorrowed::<ir::Model> {
-                                mutable_access_span: accesses
-                                    .get(*invalidated_access_id)
-                                    .unwrap()
-                                    .span
-                                    .clone(),
-                                immutable_borrow_span: Some(
-                                    values
-                                        .registers
-                                        .get(borrow)
-                                        .unwrap()
-                                        .span
-                                        .clone(),
-                                ),
-                                borrow_usage: BorrowUsage::Local {
-                                    access_span: checking_span.clone(),
-                                    in_loop,
-                                },
-                            },
-                        ));
-                    }
-                    Qualifier::Mutable => {
-                        handler.receive(Box::new(
-                            AccessWhileMutablyBorrowed::<ir::Model> {
-                                access_span: accesses
-                                    .get(*invalidated_access_id)
-                                    .unwrap()
-                                    .span
-                                    .clone(),
-                                mutable_borrow_span: Some(
-                                    values
-                                        .registers
-                                        .get(borrow)
-                                        .unwrap()
-                                        .span
-                                        .clone(),
-                                ),
-                                borrow_usage: BorrowUsage::Local {
-                                    access_span: checking_span.clone(),
-                                    in_loop,
-                                },
-                            },
-                        ));
-                    }
-                }
-            }
-        }
-    }
-
-    /// Checks the usage of borrows
-    pub fn check_borrow_usages<S: table::State>(
-        &mut self,
-        borrows: impl Iterator<Item = ID<Register<BorrowModel>>> + Clone,
-        values: &Values<BorrowModel>,
-        stack: &Stack,
-        checking_span: Span,
-        in_loop: bool,
-        accesses: &Arena<Access>,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) {
-        // check for the live long enough, not moved out variables
-        for borrow in borrows.clone() {
-            let borrow_register = values.registers.get(borrow).unwrap();
-            let borrow_assignment =
-                borrow_register.assignment.as_borrow().unwrap();
-
-            // get the state of the borrow
-            let Some(state) = stack.get_state(&borrow_assignment.address)
-            else {
-                dbg!(borrow_register, borrow_assignment);
-
-                // not found means it has been popped out of scope
-                handler.receive(Box::new(VariableDoesNotLiveLongEnough::<
-                    ir::Model,
-                > {
-                    variable_span: match *borrow_assignment
-                        .address
-                        .get_root_memory()
-                    {
-                        Memory::Parameter(id) => ty_environment
-                            .table()
-                            .get_callable(current_site.try_into().unwrap())
-                            .unwrap()
-                            .parameters()
-                            .get(id)
-                            .unwrap()
-                            .span
-                            .clone()
-                            .unwrap(),
-                        Memory::Alloca(id) => {
-                            values.allocas.get(id).unwrap().span.clone()
-                        }
-                    },
-                    for_lifetime: None,
-                    instantiation_span: checking_span.clone(),
-                }));
-                continue;
-            };
-
-            // check the state of the variable
-            match state.get_state_summary() {
-                Summary::Initialized => {}
-                Summary::Uninitialized => {}
-                Summary::Moved(moved_out_span) => {
-                    // TODO: find a way to prevent multiple reporting
-                    handler.receive(Box::new(MovedOutWhileBorrowed {
-                        borrow_usage_span: checking_span.clone(),
-                        moved_out_span,
-                    }));
-                }
-            }
-        }
-
-        // check for the invalidated borrows
-        self.check_invalidated_borrow_usages(
-            borrows,
-            values,
-            checking_span.clone(),
-            in_loop,
-            accesses,
-            handler,
-        );
     }
 
     /// Attaches a borrow to the local region
@@ -475,108 +326,111 @@ impl Environment {
             .reversed_attached_borrows
             .insert(region, borrow)
             .is_none());
-
-        assert!(self.active_borrows.insert(borrow));
     }
 
-    pub fn invalidate_borrows_from_access(
-        &mut self,
-        access_id: ID<Access>,
-        accesses: &Arena<Access>,
-        values: &Values<BorrowModel>,
+    fn invalidate_borrow<S: table::State>(
+        &self,
+        borrow: ID<Register<BorrowModel>>,
+        borrow_register: &Register<BorrowModel>,
+        access_span: Span,
+        point: Point<BorrowModel>,
+        representation: &ir::Representation<BorrowModel>,
+        current_site: GlobalID,
+        ty_environment: &TyEnvironment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) {
-        let access = accesses.get(access_id).unwrap();
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        let borrow_assignment = borrow_register.assignment.as_borrow().unwrap();
+        let borrow_region = self.attached_borrows.get(&borrow).unwrap();
 
-        // invalidate the borrows
-        for borrow in self.attached_borrows.keys().cloned() {
-            let borrow_register = values.registers.get(borrow).unwrap();
-            let borrow_assignment =
-                borrow_register.assignment.as_borrow().unwrap();
+        // get the invalidated local regions
+        let invalidated_local_regions = self
+            .subset_relations
+            .reachable_from(borrow_region.into_index())
+            .filter_map(|x| {
+                (!self.region_info.universal_regions_by_index.contains_key(&x))
+                    .then_some(Region::Local(ID::from_index(x)))
+            })
+            .collect::<HashSet<_>>();
 
-            let should_invalidate = access.qualifier == Qualifier::Mutable
-                || borrow_assignment.qualifier == Qualifier::Mutable;
+        // these are the allocas that contain the invalidated local
+        // regions, check if the allocas are *used*
+        let checking_allocas =
+            representation.values.allocas.iter().filter(|(_, x)| {
+                Contains::contains(&x.r#type, &invalidated_local_regions)
+            });
 
-            // if the address overlaps
-            let is_subaddress =
-                access.address.is_child_of(&borrow_assignment.address)
-                    || borrow_assignment.address.is_child_of(&access.address);
+        for (alloca_id, alloca) in checking_allocas {
+            let accesses = liveness::get_live_addresses(
+                Memory::Alloca(alloca_id),
+                &alloca.r#type,
+                point,
+                &representation,
+                ty_environment,
+            )
+            .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
+                operation: OverflowOperation::TypeOf,
+                overflow_span: access_span.clone(),
+                overflow_error,
+            })?;
 
-            if should_invalidate
-                && is_subaddress
-                && self.active_borrows.contains(&borrow)
-            {
-                // invalidate the borrow
-                self.invalidated_borrows.insert(
-                    borrow,
-                    std::iter::once((access_id, false)).collect(),
-                );
+            for (address, access_kind) in accesses {
+                if get_lifetimes_in_address(
+                    &address,
+                    access_span.clone(),
+                    &representation.values,
+                    current_site,
+                    ty_environment,
+                )?
+                .into_iter()
+                .any(|x| {
+                    let Some(x) = Region::try_from(x).ok() else {
+                        return false;
+                    };
 
-                let mut universal_lifetimes = Vec::new();
-
-                for (universal_region, equiv_lifetime) in
-                    self.region_info.indices_by_univseral_region.keys().map(
-                        |x| {
-                            (x, match x {
-                                UniversalRegion::Static => Lifetime::Static,
-                                UniversalRegion::LifetimeParameter(
-                                    member_id,
-                                ) => Lifetime::Parameter(*member_id),
-                            })
-                        },
-                    )
-                {
-                    if self.subset_relations.has_path(
-                        self.attached_borrows
-                            .get(&borrow)
-                            .unwrap()
-                            .into_index(),
-                        self.region_info.into_transitive_closure_index(
-                            Region::Universal(*universal_region),
-                        ),
-                    ) {
-                        universal_lifetimes.push(equiv_lifetime);
-                    }
-                }
-
-                // if there's any universal lifetimes that could use the
-                // invalidated borrow, report an error
-                if !universal_lifetimes.is_empty() {
-                    // mark as error reported
-                    *self
-                        .invalidated_borrows
-                        .get_mut(&borrow)
-                        .unwrap()
-                        .get_mut(&access_id)
-                        .unwrap() = true;
-
+                    invalidated_local_regions.contains(&x)
+                }) {
                     match borrow_assignment.qualifier {
-                        Qualifier::Mutable => {
-                            handler.receive(Box::new(
-                                AccessWhileMutablyBorrowed::<ir::Model> {
-                                    access_span: access.span.clone(),
-                                    mutable_borrow_span: Some(
-                                        borrow_register.span.clone(),
-                                    ),
-                                    borrow_usage:
-                                        BorrowUsage::ByUniversalRegions(
-                                            universal_lifetimes,
-                                        ),
-                                },
-                            ));
-                        }
                         Qualifier::Immutable => {
                             handler.receive(Box::new(
                                 MutablyAccessWhileImmutablyBorrowed::<
                                     ir::Model,
                                 > {
-                                    mutable_access_span: access.span.clone(),
+                                    mutable_access_span: access_span.clone(),
                                     immutable_borrow_span: Some(
                                         borrow_register.span.clone(),
                                     ),
-                                    borrow_usage:
-                                        BorrowUsage::ByUniversalRegions(
-                                            universal_lifetimes,
+                                    borrow_usage: access_kind
+                                        .into_normal()
+                                        .map_or(
+                                            BorrowUsage::Drop,
+                                            |(_, span)| BorrowUsage::Local {
+                                                access_span: span,
+                                                in_loop: false,
+                                            },
+                                        ),
+                                },
+                            ));
+                        }
+                        Qualifier::Mutable => {
+                            handler.receive(Box::new(
+                                AccessWhileMutablyBorrowed::<ir::Model> {
+                                    access_span: access_span.clone(),
+                                    mutable_borrow_span: Some(
+                                        borrow_register.span.clone(),
+                                    ),
+                                    borrow_usage: access_kind
+                                        .into_normal()
+                                        .map_or(
+                                            BorrowUsage::Drop,
+                                            |(_, span)| BorrowUsage::Local {
+                                                access_span: span,
+                                                in_loop: false,
+                                            },
                                         ),
                                 },
                             ));
@@ -585,6 +439,61 @@ impl Environment {
                 }
             }
         }
+
+        let mut universal_lifetimes = Vec::new();
+
+        for (universal_region, equiv_lifetime) in
+            self.region_info.indices_by_univseral_region.keys().map(|x| {
+                (x, match x {
+                    UniversalRegion::Static => Lifetime::Static,
+                    UniversalRegion::LifetimeParameter(member_id) => {
+                        Lifetime::Parameter(*member_id)
+                    }
+                })
+            })
+        {
+            if self.subset_relations.has_path(
+                self.attached_borrows.get(&borrow).unwrap().into_index(),
+                self.region_info.into_transitive_closure_index(
+                    Region::Universal(*universal_region),
+                ),
+            ) {
+                universal_lifetimes.push(equiv_lifetime);
+            }
+        }
+
+        // if there's any universal lifetimes that could use the
+        // invalidated borrow, report an error
+        if !universal_lifetimes.is_empty() {
+            match borrow_assignment.qualifier {
+                Qualifier::Mutable => {
+                    handler.receive(Box::new(AccessWhileMutablyBorrowed::<
+                        ir::Model,
+                    > {
+                        access_span: access_span.clone(),
+                        mutable_borrow_span: Some(borrow_register.span.clone()),
+                        borrow_usage: BorrowUsage::ByUniversalRegions(
+                            universal_lifetimes,
+                        ),
+                    }));
+                }
+                Qualifier::Immutable => {
+                    handler.receive(Box::new(
+                        MutablyAccessWhileImmutablyBorrowed::<ir::Model> {
+                            mutable_access_span: access_span.clone(),
+                            immutable_borrow_span: Some(
+                                borrow_register.span.clone(),
+                            ),
+                            borrow_usage: BorrowUsage::ByUniversalRegions(
+                                universal_lifetimes,
+                            ),
+                        },
+                    ));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Handles an access to the given address.
@@ -593,9 +502,8 @@ impl Environment {
         address: &Address<BorrowModel>,
         access_qualifier: Qualifier,
         span: Span,
-        stack: &Stack,
-        values: &Values<BorrowModel>,
-        accesses: &mut Arena<Access>,
+        point: Point<BorrowModel>,
+        representation: &ir::Representation<BorrowModel>,
         current_site: GlobalID,
         ty_environment: &TyEnvironment<
             BorrowModel,
@@ -613,47 +521,33 @@ impl Environment {
             - if it's an immutable access, invalidate the mutable borrows
          */
 
-        let by_access_id = accesses.insert(Access {
-            address: address.clone(),
-            qualifier: access_qualifier,
-            order: accesses.len(),
-            span: span.clone(),
-        });
-        assert!(
-            self.occurred_accesses.insert(by_access_id),
-            "access already occurred"
-        );
+        // invalidate the borrows
+        for borrow in self.attached_borrows.keys().cloned() {
+            let borrow_register =
+                representation.values.registers.get(borrow).unwrap();
+            let borrow_assignment =
+                borrow_register.assignment.as_borrow().unwrap();
 
-        let address_lifetimes = get_lifetimes_in_address(
-            address,
-            span.clone(),
-            values,
-            current_site,
-            ty_environment,
-        )?;
-        let borrows_in_address = address_lifetimes
-            .iter()
-            .flat_map(|x| self.get_borrows_of_lifetime(&x))
-            .collect::<HashSet<_>>();
+            let should_invalidate = access_qualifier == Qualifier::Mutable
+                || borrow_assignment.qualifier == Qualifier::Mutable;
 
-        self.check_borrow_usages(
-            borrows_in_address.iter().copied(),
-            values,
-            stack,
-            span.clone(),
-            false,
-            accesses,
-            current_site,
-            ty_environment,
-            handler,
-        );
+            // if the address overlaps
+            let is_subaddress = address.is_child_of(&borrow_assignment.address)
+                || borrow_assignment.address.is_child_of(&address);
 
-        self.invalidate_borrows_from_access(
-            by_access_id,
-            accesses,
-            values,
-            handler,
-        );
+            if should_invalidate && is_subaddress {
+                self.invalidate_borrow(
+                    borrow,
+                    borrow_register,
+                    span.clone(),
+                    point,
+                    representation,
+                    current_site,
+                    ty_environment,
+                    handler,
+                )?;
+            }
+        }
 
         Ok(())
     }
@@ -689,27 +583,6 @@ impl Environment {
                 }
             }
         }
-
-        for (other_brrow, other_invalidated_access) in
-            &other.invalidated_borrows
-        {
-            let this_invalidated_access =
-                self.invalidated_borrows.entry(*other_brrow).or_default();
-
-            for (other_access, other_reported) in other_invalidated_access {
-                match this_invalidated_access.entry(*other_access) {
-                    Entry::Occupied(occupied_entry) => {
-                        *occupied_entry.into_mut() |= *other_reported;
-                    }
-                    Entry::Vacant(vacant_entry) => {
-                        vacant_entry.insert(*other_reported);
-                    }
-                }
-            }
-        }
-
-        self.occurred_accesses.extend(other.occurred_accesses.iter().cloned());
-        self.active_borrows.extend(other.active_borrows.iter().cloned());
     }
 
     /// Detaches the subset relation between the given lifetimes
@@ -717,27 +590,9 @@ impl Environment {
         &mut self,
         regions: impl IntoIterator<Item = Region>,
     ) {
-        let detached_regions = regions
-            .into_iter()
-            .flat_map(|x| {
-                self.subset_relations
-                    .detach(self.region_info.into_transitive_closure_index(x))
-            })
-            .collect::<HashSet<_>>();
-
-        for detached in detached_regions {
-            let Some(borrow) =
-                self.reversed_attached_borrows.get(&ID::from_index(detached))
-            else {
-                continue;
-            };
-
-            // remove the borrow if the region is not used by any other
-            if self.subset_relations.does_not_go_to_any_except_itself(detached)
-            {
-                self.active_borrows.remove(borrow);
-                self.invalidated_borrows.remove(borrow);
-            }
+        for region in regions {
+            self.subset_relations
+                .detach(self.region_info.into_transitive_closure_index(region));
         }
     }
 
@@ -820,6 +675,9 @@ impl Environment {
         }
     }
 
+    /// Handles the outlives constraints from subtyping and lifetime bounds.
+    /// The envrionment will build subset relations between the regions and
+    /// check the outlives for the universal regions.
     pub fn handle_outlives_constraints<'a, S: table::State>(
         &mut self,
         outlives_constraints: impl IntoIterator<

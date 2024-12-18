@@ -25,6 +25,7 @@ use crate::{
 
 mod borrow;
 mod check;
+mod memory;
 mod simplify_drop;
 mod transform_inference;
 
@@ -119,6 +120,12 @@ impl<
         // perform the well-formedness check
         transformed_ir.check(self.current_site, &environment, &handler_wrapper);
 
+        transformed_ir.memory_check(
+            self.current_site,
+            &environment,
+            &handler_wrapper,
+        )?;
+
         // create new environment for borrow checking
         let premise = self
             .table
@@ -130,7 +137,8 @@ impl<
             normalizer::NO_OP,
             &self.type_system_observer,
         );
-        transformed_ir.borrow_checker(
+
+        transformed_ir.borrow_check(
             self.current_site,
             &environment,
             &handler_wrapper,
