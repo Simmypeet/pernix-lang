@@ -6,11 +6,13 @@
 //! on the product types into the drop instructions on the individual fields if
 //! the product type itself does not implement the `Drop` trait.
 
+use std::collections::HashSet;
+
 use crate::{
     error::{OverflowOperation, TypeSystemOverflow},
     ir::{
         self,
-        address::{self, Address, Field, Memory},
+        address::{self, Address, Field, Memory, Variant},
         instruction::{Drop, DropUnpackTuple, Instruction},
         representation::Values,
         Erased,
@@ -52,6 +54,7 @@ where
             results.extend(simplify_drop(
                 &drop,
                 values,
+                &mut HashSet::new(),
                 current_site,
                 environment,
             )?);
@@ -69,6 +72,7 @@ pub(super) fn simplify_drop<
 >(
     drop: &Drop<M>,
     values: &Values<M>,
+    visited_types: &mut HashSet<Type<M>>,
     current_site: GlobalID,
     environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
 ) -> Result<Vec<Instruction<M>>, TypeSystemOverflow<ir::Model>>
@@ -103,6 +107,10 @@ where
         })?
         .result;
 
+    if !visited_types.insert(ty.clone()) {
+        return Ok(Vec::new());
+    }
+
     match &ty {
         Type::Symbol(symbol) => match symbol.id {
             SymbolID::Adt(AdtID::Struct(struct_id)) => {
@@ -118,7 +126,7 @@ where
                     false, /* TODO: use correct boolean value */
                     GenericArguments {
                         lifetimes: Vec::new(),
-                        types: vec![ty],
+                        types: vec![ty.clone()],
                         constants: Vec::new(),
                     },
                 );
@@ -129,10 +137,12 @@ where
                     }
 
                     Ok(Some(_)) => {
-                        return Ok(vec![Instruction::Drop(drop.clone())])
+                        visited_types.remove(&ty);
+                        return Ok(vec![Instruction::Drop(drop.clone())]);
                     }
 
                     Err(overflow_error) => {
+                        visited_types.remove(&ty);
                         return Err(TypeSystemOverflow {
                             operation: OverflowOperation::Predicate(
                                 Predicate::from_other_model(
@@ -164,16 +174,104 @@ where
                             }),
                         },
                         values,
+                        visited_types,
                         current_site,
                         environment,
                     )?);
                 }
 
+                visited_types.remove(&ty);
                 Ok(instructions)
             }
 
-            SymbolID::Adt(AdtID::Enum(_)) => {
-                Ok(vec![Instruction::Drop(drop.clone())])
+            SymbolID::Adt(AdtID::Enum(enum_id)) => {
+                // if any of the variant requires drop, then we should drop the
+                // entire enum
+
+                let drop_trait_id = environment
+                    .table()
+                    .get_by_qualified_name(["core", "Drop"])
+                    .unwrap()
+                    .into_trait()
+                    .unwrap();
+
+                let predicate = PositiveTrait::new(
+                    drop_trait_id,
+                    false, /* TODO: use correct boolean value */
+                    GenericArguments {
+                        lifetimes: Vec::new(),
+                        types: vec![ty.clone()],
+                        constants: Vec::new(),
+                    },
+                );
+
+                match predicate.query(environment) {
+                    Ok(None) => {
+                        // continue breaking if any variants requires drop
+                    }
+
+                    Ok(Some(_)) => {
+                        visited_types.remove(&ty);
+                        return Ok(vec![Instruction::Drop(drop.clone())]);
+                    }
+
+                    Err(overflow_error) => {
+                        visited_types.remove(&ty);
+                        return Err(TypeSystemOverflow {
+                            operation: OverflowOperation::Predicate(
+                                Predicate::from_other_model(
+                                    Predicate::PositiveTrait(predicate),
+                                ),
+                            ),
+                            overflow_span: get_span_of(),
+                            overflow_error,
+                        });
+                    }
+                }
+
+                let mut should_drop = false;
+                for variant_id in environment
+                    .table()
+                    .get(enum_id)
+                    .unwrap()
+                    .variant_declaration_order()
+                    .iter()
+                    .copied()
+                    .filter(|x| {
+                        environment
+                            .table()
+                            .get(*x)
+                            .unwrap()
+                            .associated_type
+                            .is_some()
+                    })
+                {
+                    // recursively simplify the drop instructions
+                    if !simplify_drop(
+                        &Drop {
+                            address: Address::Variant(Variant {
+                                enum_address: Box::new(drop.address.clone()),
+                                id: variant_id,
+                            }),
+                        },
+                        values,
+                        visited_types,
+                        current_site,
+                        environment,
+                    )?
+                    .is_empty()
+                    {
+                        should_drop = true;
+                        break;
+                    }
+                }
+
+                visited_types.remove(&ty);
+                if should_drop {
+                    Ok(vec![Instruction::Drop(drop.clone())])
+                } else {
+                    Ok(Vec::new())
+                }
             }
 
             SymbolID::Function(_) => Ok(Vec::new()),
@@ -198,6 +296,7 @@ where
                                 }),
                             },
                             values,
+                            visited_types,
                             current_site,
                             environment,
                         )?);
@@ -226,6 +325,7 @@ where
                                 }),
                             },
                             values,
+                            visited_types,
                             current_site,
                             environment,
                         )?);
@@ -244,6 +344,7 @@ where
                                 }),
                             },
                             values,
+                            visited_types,
                             current_site,
                             environment,
                         )?);
@@ -251,6 +352,7 @@ where
                 }
             }
 
+            visited_types.remove(&ty);
             Ok(instructions)
         }
 
@@ -259,9 +361,13 @@ where
         | Type::Pointer(_)
         | Type::Primitive(_)
         | Type::Error(_)
-        | Type::Phantom(_) => Ok(Vec::new()),
+        | Type::Phantom(_) => {
+            visited_types.remove(&ty);
+            Ok(Vec::new())
+        }
 
         Type::Array(_) | Type::TraitMember(_) | Type::Parameter(_) => {
+            visited_types.remove(&ty);
             Ok(vec![Instruction::Drop(drop.clone())])
         }
 
