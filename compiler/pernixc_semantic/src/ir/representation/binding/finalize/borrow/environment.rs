@@ -1,8 +1,10 @@
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
+    fmt::Debug,
     sync::Arc,
 };
 
+use getset::CopyGetters;
 use pernixc_base::{handler::Handler, source_file::Span};
 
 use super::{
@@ -201,6 +203,13 @@ impl<'a> Contains<'a> {
     }
 }
 
+/// The cache for the `type_of` register.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RegisterTypeCache {
+    r#type: Type<BorrowModel>,
+    regions: HashSet<Region>,
+}
+
 /// Contains all the information related to borrows and accesses used for
 /// borrow checking.
 ///
@@ -215,14 +224,66 @@ impl<'a> Contains<'a> {
 ///
 /// Use a more efficient data structure for the subset relation (probably
 /// transitive closures).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Environment {
+#[derive(CopyGetters)]
+pub struct Environment<
+    'a,
+    S: table::State,
+    N: Normalizer<BorrowModel, S>,
+    O: Observer<BorrowModel, S>,
+> {
     region_info: Arc<RegionInfo>, // immutable data
     subset_relations: TransitiveClosure,
 
     attached_borrows: HashMap<ID<Register<BorrowModel>>, ID<LocalRegion>>,
     reversed_attached_borrows:
         HashMap<ID<LocalRegion>, ID<Register<BorrowModel>>>,
+
+    register_type_cache:
+        Arc<HashMap<ID<Register<BorrowModel>>, RegisterTypeCache>>,
+
+    #[get_copy = "pub"]
+    current_site: GlobalID,
+    #[get_copy = "pub"]
+    representation: &'a ir::Representation<BorrowModel>,
+    #[get_copy = "pub"]
+    ty_environment: &'a TyEnvironment<'a, BorrowModel, S, N, O>,
+}
+
+impl<
+        S: table::State,
+        N: Normalizer<BorrowModel, S>,
+        O: Observer<BorrowModel, S>,
+    > Debug for Environment<'_, S, N, O>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Environment")
+            .field("region_info", &self.region_info)
+            .field("subset_relations", &self.subset_relations)
+            .field("attached_borrows", &self.attached_borrows)
+            .field("reversed_attached_borrows", &self.reversed_attached_borrows)
+            .field("register_type_cache", &self.register_type_cache)
+            .finish()
+    }
+}
+
+impl<
+        S: table::State,
+        N: Normalizer<BorrowModel, S>,
+        O: Observer<BorrowModel, S>,
+    > Clone for Environment<'_, S, N, O>
+{
+    fn clone(&self) -> Self {
+        Self {
+            region_info: self.region_info.clone(),
+            subset_relations: self.subset_relations.clone(),
+            attached_borrows: self.attached_borrows.clone(),
+            reversed_attached_borrows: self.reversed_attached_borrows.clone(),
+            register_type_cache: self.register_type_cache.clone(),
+            current_site: self.current_site,
+            representation: self.representation,
+            ty_environment: self.ty_environment,
+        }
+    }
 }
 
 /// Gets all the lifetimes included in the given address.
@@ -300,9 +361,20 @@ pub fn get_lifetimes_in_address<S: table::State>(
     Ok(lifetimes)
 }
 
-impl Environment {
-    pub fn new(region_info: Arc<RegionInfo>) -> Self {
-        Self {
+impl<
+        'a,
+        S: table::State,
+        N: Normalizer<BorrowModel, S>,
+        O: Observer<BorrowModel, S>,
+    > Environment<'a, S, N, O>
+{
+    pub fn new(
+        region_info: Arc<RegionInfo>,
+        representation: &'a ir::Representation<BorrowModel>,
+        current_site: GlobalID,
+        ty_environment: &'a TyEnvironment<'a, BorrowModel, S, N, O>,
+    ) -> Result<Self, TypeSystemOverflow<ir::Model>> {
+        Ok(Self {
             subset_relations: TransitiveClosure::new(
                 std::iter::empty(),
                 region_info.total_regions(),
@@ -312,7 +384,47 @@ impl Environment {
 
             attached_borrows: HashMap::new(),
             reversed_attached_borrows: HashMap::new(),
-        }
+
+            register_type_cache: Arc::new(
+                representation
+                    .values
+                    .registers
+                    .iter()
+                    .map(|(id, x)| {
+                        Ok((id, {
+                            let ty = representation
+                                .values
+                                .type_of_register(
+                                    id,
+                                    current_site,
+                                    ty_environment,
+                                )
+                                .map_err(|overflow_error| {
+                                    TypeSystemOverflow::<ir::Model> {
+                                        operation: OverflowOperation::TypeOf,
+                                        overflow_span: x.span.clone(),
+                                        overflow_error: overflow_error
+                                            .into_overflow()
+                                            .unwrap(),
+                                    }
+                                })?;
+
+                            RegisterTypeCache {
+                                regions: RecursiveIterator::new(&ty.result)
+                                    .filter_map(|x| x.0.into_lifetime().ok())
+                                    .filter_map(|x| x.clone().try_into().ok())
+                                    .collect(),
+                                r#type: ty.result,
+                            }
+                        }))
+                    })
+                    .collect::<Result<_, TypeSystemOverflow<ir::Model>>>()?,
+            ),
+
+            current_site,
+            ty_environment,
+            representation,
+        })
     }
 
     /// Attaches a borrow to the local region
@@ -328,23 +440,13 @@ impl Environment {
             .is_none());
     }
 
-    fn invalidate_borrow<S: table::State>(
+    fn invalidate_borrow(
         &self,
         borrow: ID<Register<BorrowModel>>,
-        borrow_register: &Register<BorrowModel>,
         access_span: Span,
         point: Point<BorrowModel>,
-        representation: &ir::Representation<BorrowModel>,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler_fn: impl Fn(BorrowUsage<ir::Model>),
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        let borrow_assignment = borrow_register.assignment.as_borrow().unwrap();
         let borrow_region = self.attached_borrows.get(&borrow).unwrap();
 
         // get the invalidated local regions
@@ -360,7 +462,7 @@ impl Environment {
         // these are the allocas that contain the invalidated local
         // regions, check if the allocas are *used*
         let checking_allocas =
-            representation.values.allocas.iter().filter(|(_, x)| {
+            self.representation.values.allocas.iter().filter(|(_, x)| {
                 Contains::contains(&x.r#type, &invalidated_local_regions)
             });
 
@@ -369,8 +471,8 @@ impl Environment {
                 Memory::Alloca(alloca_id),
                 &alloca.r#type,
                 point,
-                &representation,
-                ty_environment,
+                &self.representation,
+                self.ty_environment,
             )
             .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
                 operation: OverflowOperation::TypeOf,
@@ -382,9 +484,9 @@ impl Environment {
                 if get_lifetimes_in_address(
                     &address,
                     access_span.clone(),
-                    &representation.values,
-                    current_site,
-                    ty_environment,
+                    &self.representation.values,
+                    self.current_site,
+                    self.ty_environment,
                 )?
                 .into_iter()
                 .any(|x| {
@@ -394,49 +496,36 @@ impl Environment {
 
                     invalidated_local_regions.contains(&x)
                 }) {
-                    match borrow_assignment.qualifier {
-                        Qualifier::Immutable => {
-                            handler.receive(Box::new(
-                                MutablyAccessWhileImmutablyBorrowed::<
-                                    ir::Model,
-                                > {
-                                    mutable_access_span: access_span.clone(),
-                                    immutable_borrow_span: Some(
-                                        borrow_register.span.clone(),
-                                    ),
-                                    borrow_usage: access_kind
-                                        .into_normal()
-                                        .map_or(
-                                            BorrowUsage::Drop,
-                                            |(_, span)| BorrowUsage::Local {
-                                                access_span: span,
-                                                in_loop: false,
-                                            },
-                                        ),
-                                },
-                            ));
-                        }
-                        Qualifier::Mutable => {
-                            handler.receive(Box::new(
-                                AccessWhileMutablyBorrowed::<ir::Model> {
-                                    access_span: access_span.clone(),
-                                    mutable_borrow_span: Some(
-                                        borrow_register.span.clone(),
-                                    ),
-                                    borrow_usage: access_kind
-                                        .into_normal()
-                                        .map_or(
-                                            BorrowUsage::Drop,
-                                            |(_, span)| BorrowUsage::Local {
-                                                access_span: span,
-                                                in_loop: false,
-                                            },
-                                        ),
-                                },
-                            ));
-                        }
-                    }
+                    handler_fn(access_kind.into_normal().map_or(
+                        BorrowUsage::Drop,
+                        |(_, span)| BorrowUsage::Local {
+                            access_span: span,
+                            in_loop: false,
+                        },
+                    ));
                 }
+            }
+        }
+
+        let checking_registers =
+            self.register_type_cache.iter().filter(|(_, x)| {
+                invalidated_local_regions
+                    .iter()
+                    .any(|region| x.regions.contains(region))
+            });
+
+        for (register, _) in checking_registers {
+            let live_spans = liveness::live_register_spans(
+                *register,
+                point,
+                &self.representation,
+            );
+
+            for span in live_spans {
+                handler_fn(BorrowUsage::Local {
+                    access_span: span,
+                    in_loop: false,
+                });
             }
         }
 
@@ -465,52 +554,83 @@ impl Environment {
         // if there's any universal lifetimes that could use the
         // invalidated borrow, report an error
         if !universal_lifetimes.is_empty() {
-            match borrow_assignment.qualifier {
-                Qualifier::Mutable => {
-                    handler.receive(Box::new(AccessWhileMutablyBorrowed::<
-                        ir::Model,
-                    > {
-                        access_span: access_span.clone(),
-                        mutable_borrow_span: Some(borrow_register.span.clone()),
-                        borrow_usage: BorrowUsage::ByUniversalRegions(
-                            universal_lifetimes,
-                        ),
-                    }));
-                }
-                Qualifier::Immutable => {
-                    handler.receive(Box::new(
-                        MutablyAccessWhileImmutablyBorrowed::<ir::Model> {
-                            mutable_access_span: access_span.clone(),
-                            immutable_borrow_span: Some(
-                                borrow_register.span.clone(),
-                            ),
-                            borrow_usage: BorrowUsage::ByUniversalRegions(
-                                universal_lifetimes,
-                            ),
-                        },
-                    ));
-                }
+            handler_fn(BorrowUsage::ByUniversalRegions(universal_lifetimes));
+        }
+
+        Ok(())
+    }
+
+    pub fn handle_drop_memory(
+        &mut self,
+        drop: Memory<BorrowModel>,
+        point: Point<BorrowModel>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        for (borrow, _) in self.attached_borrows.iter() {
+            let borrow_register =
+                self.representation.values.registers.get(*borrow).unwrap();
+            let borrow_assignment =
+                borrow_register.assignment.as_borrow().unwrap();
+
+            let should_invalidate =
+                borrow_assignment.address.is_child_of(&Address::Memory(drop));
+
+            if !should_invalidate {
+                continue;
             }
+
+            let span = match drop {
+                Memory::Parameter(id) => self
+                    .ty_environment
+                    .table()
+                    .get_callable(self.current_site.try_into().unwrap())
+                    .unwrap()
+                    .parameters()
+                    .get(id)
+                    .unwrap()
+                    .span
+                    .clone()
+                    .unwrap(),
+                Memory::Alloca(id) => self
+                    .representation
+                    .values
+                    .allocas
+                    .get(id)
+                    .unwrap()
+                    .span
+                    .clone(),
+            };
+
+            self.invalidate_borrow(
+                *borrow,
+                span.clone(),
+                point,
+                |borrow_usage| match borrow_usage {
+                    BorrowUsage::Local { access_span, .. } => {
+                        handler.receive(Box::new(
+                            VariableDoesNotLiveLongEnough::<ir::Model> {
+                                variable_span: span.clone(),
+                                for_lifetime: None,
+                                instantiation_span: access_span,
+                            },
+                        ));
+                    }
+
+                    BorrowUsage::ByUniversalRegions(_) | BorrowUsage::Drop => {}
+                },
+            )?;
         }
 
         Ok(())
     }
 
     /// Handles an access to the given address.
-    pub fn handle_access<S: table::State>(
+    pub fn handle_access(
         &mut self,
         address: &Address<BorrowModel>,
         access_qualifier: Qualifier,
         span: Span,
         point: Point<BorrowModel>,
-        representation: &ir::Representation<BorrowModel>,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         /*
@@ -524,7 +644,7 @@ impl Environment {
         // invalidate the borrows
         for borrow in self.attached_borrows.keys().cloned() {
             let borrow_register =
-                representation.values.registers.get(borrow).unwrap();
+                self.representation.values.registers.get(borrow).unwrap();
             let borrow_assignment =
                 borrow_register.assignment.as_borrow().unwrap();
 
@@ -538,13 +658,34 @@ impl Environment {
             if should_invalidate && is_subaddress {
                 self.invalidate_borrow(
                     borrow,
-                    borrow_register,
                     span.clone(),
                     point,
-                    representation,
-                    current_site,
-                    ty_environment,
-                    handler,
+                    |borrow_usage| match borrow_assignment.qualifier {
+                        Qualifier::Immutable => {
+                            handler.receive(Box::new(
+                                MutablyAccessWhileImmutablyBorrowed::<
+                                    ir::Model,
+                                > {
+                                    mutable_access_span: span.clone(),
+                                    immutable_borrow_span: Some(
+                                        borrow_register.span.clone(),
+                                    ),
+                                    borrow_usage,
+                                },
+                            ));
+                        }
+                        Qualifier::Mutable => {
+                            handler.receive(Box::new(
+                                AccessWhileMutablyBorrowed::<ir::Model> {
+                                    access_span: span.clone(),
+                                    mutable_borrow_span: Some(
+                                        borrow_register.span.clone(),
+                                    ),
+                                    borrow_usage,
+                                },
+                            ));
+                        }
+                    },
                 )?;
             }
         }
@@ -678,20 +819,12 @@ impl Environment {
     /// Handles the outlives constraints from subtyping and lifetime bounds.
     /// The envrionment will build subset relations between the regions and
     /// check the outlives for the universal regions.
-    pub fn handle_outlives_constraints<'a, S: table::State>(
+    pub fn handle_outlives_constraints<'o>(
         &mut self,
         outlives_constraints: impl IntoIterator<
-            Item = &'a Outlives<Lifetime<BorrowModel>>,
+            Item = &'o Outlives<Lifetime<BorrowModel>>,
         >,
         checking_span: Span,
-        current_site: GlobalID,
-        values: &Values<BorrowModel>,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let mut adding_edges: Vec<(Region, Region)> = Vec::new();
@@ -714,7 +847,7 @@ impl Environment {
                 }
 
                 _ => {
-                    match outlives.query(ty_environment).map_err(
+                    match outlives.query(self.ty_environment).map_err(
                         |overflow_error| TypeSystemOverflow::<ir::Model> {
                             operation: OverflowOperation::Predicate(
                                 Predicate::from_other_model(
@@ -807,7 +940,9 @@ impl Environment {
                 }
 
                 // local variabless
-                let borrowed_address = &values
+                let borrowed_address = &self
+                    .representation
+                    .values
                     .registers
                     .get(borrow)
                     .unwrap()
@@ -818,9 +953,10 @@ impl Environment {
 
                 let root_memory = borrowed_address.get_root_memory();
                 let variable_span = match root_memory {
-                    Memory::Parameter(id) => ty_environment
+                    Memory::Parameter(id) => self
+                        .ty_environment
                         .table()
-                        .get_callable(current_site.try_into().unwrap())
+                        .get_callable(self.current_site.try_into().unwrap())
                         .unwrap()
                         .parameters()
                         .get(*id)
@@ -828,9 +964,14 @@ impl Environment {
                         .span
                         .clone()
                         .unwrap(),
-                    Memory::Alloca(id) => {
-                        values.allocas.get(*id).unwrap().span.clone()
-                    }
+                    Memory::Alloca(id) => self
+                        .representation
+                        .values
+                        .allocas
+                        .get(*id)
+                        .unwrap()
+                        .span
+                        .clone(),
                 };
 
                 handler.receive(Box::new(VariableDoesNotLiveLongEnough::<
@@ -863,7 +1004,7 @@ impl Environment {
                 );
 
                 if outlives
-                    .query(ty_environment)
+                    .query(self.ty_environment)
                     .map_err(
                         |overflow_error| TypeSystemOverflow::<ir::Model> {
                             operation: OverflowOperation::Predicate(

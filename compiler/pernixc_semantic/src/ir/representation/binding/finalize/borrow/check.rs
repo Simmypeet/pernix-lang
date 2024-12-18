@@ -14,7 +14,7 @@ use crate::{
     error::{OverflowOperation, TypeSystemOverflow},
     ir::{
         self,
-        address::Address,
+        address::{Address, Memory},
         control_flow_graph::{Block, Point},
         instruction::{Instruction, Return, Terminator, UnconditionalJump},
         representation::{
@@ -26,7 +26,6 @@ use crate::{
                 HandlerWrapper,
             },
             borrow::Model as BorrowModel,
-            Representation,
         },
         value::{
             register::{
@@ -38,7 +37,7 @@ use crate::{
     },
     symbol::{
         table::{self, representation::Index},
-        GlobalID,
+        CallableID, GlobalID,
     },
     type_system::{
         compatible::{Compatibility, Compatible},
@@ -60,65 +59,35 @@ use crate::{
     },
 };
 
-impl Representation<BorrowModel> {
-    /// Handles a list of outlives constraints to populate the loans in the
-    /// inference variables.
-    ///
-    /// # Parameters
-    ///
-    /// - `outlives`: The list of outlives constraints.
-    /// - `priority_lifetimes`: If specified, these lifetimes will be flowed
-    ///   into first.
-    fn handle_outlives<'a, S: table::State>(
-        &self,
-        outlives: impl IntoIterator<Item = &'a Outlives<Lifetime<BorrowModel>>>
-            + Clone,
-        checking_span: Span,
-        environment: &mut Environment,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
-        handler: &HandlerWrapper,
-    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        environment.handle_outlives_constraints(
-            outlives,
-            checking_span,
-            current_site,
-            &self.values,
-            ty_environment,
-            handler,
-        )
-    }
-
-    fn handle_return<S: table::State>(
-        &self,
+impl<
+        'a,
+        S: table::State,
+        N: Normalizer<BorrowModel, S>,
+        O: Observer<BorrowModel, S>,
+    > Environment<'a, S, N, O>
+{
+    fn handle_return(
+        &mut self,
         ret: &Return<BorrowModel>,
-        environment: &mut Environment,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let return_ty = Type::from_default_model(
-            ty_environment
+            self.ty_environment()
                 .table()
-                .get_callable(current_site.try_into().unwrap())
+                .get_callable(self.current_site().try_into().unwrap())
                 .unwrap()
                 .return_type()
                 .clone(),
         );
 
         let Succeeded { result: value_ty, mut constraints } = self
+            .representation()
             .values
-            .type_of_value(&ret.value, current_site, ty_environment)
+            .type_of_value(
+                &ret.value,
+                self.current_site(),
+                self.ty_environment(),
+            )
             .map_err(|x| TypeSystemOverflow::<ir::Model> {
                 operation: OverflowOperation::TypeOf,
                 overflow_span: ret.span.clone(),
@@ -128,7 +97,7 @@ impl Representation<BorrowModel> {
         match value_ty.compatible(
             &return_ty,
             Variance::Covariant,
-            ty_environment,
+            self.ty_environment(),
         ) {
             Ok(Some(Succeeded {
                 result:
@@ -145,14 +114,11 @@ impl Representation<BorrowModel> {
 
                 constraints.extend(compatibility_constraints);
 
-                self.handle_outlives(
+                self.handle_outlives_constraints(
                     constraints
                         .iter()
                         .map(|x| x.as_lifetime_outlives().unwrap()),
                     ret.span.clone(),
-                    environment,
-                    current_site,
-                    ty_environment,
                     handler,
                 )?;
             }
@@ -171,28 +137,21 @@ impl Representation<BorrowModel> {
         Ok(())
     }
 
-    fn handle_variant<S: table::State>(
-        &self,
+    fn handle_variant(
+        &mut self,
         variant: &Variant<BorrowModel>,
         register_span: Span,
-        environment: &mut Environment,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let variant_sym =
-            ty_environment.table().get(variant.variant_id).unwrap();
-        let enum_id = ty_environment
+            self.ty_environment().table().get(variant.variant_id).unwrap();
+        let enum_id = self
+            .ty_environment()
             .table()
             .get(variant.variant_id)
             .unwrap()
             .parent_enum_id();
-        let enum_sym = ty_environment.table().get(enum_id).unwrap();
+        let enum_sym = self.ty_environment().table().get(enum_id).unwrap();
 
         let instantiation = Instantiation::from_generic_arguments(
             variant.generic_arguments.clone(),
@@ -212,18 +171,24 @@ impl Representation<BorrowModel> {
             instantiation::instantiate(&mut associated_type, &instantiation);
             let associated_value = variant.associated_value.as_ref().unwrap();
             let value_span = match associated_value {
-                Value::Register(id) => {
-                    self.values.registers.get(*id).unwrap().span.clone()
-                }
+                Value::Register(id) => self
+                    .representation()
+                    .values
+                    .registers
+                    .get(*id)
+                    .unwrap()
+                    .span
+                    .clone(),
                 Value::Literal(literal) => literal.span().clone(),
             };
 
             let Succeeded { result: value_ty, constraints: value_constraints } =
-                self.values
+                self.representation()
+                    .values
                     .type_of_value(
                         associated_value,
-                        current_site,
-                        ty_environment,
+                        self.current_site(),
+                        self.ty_environment(),
                     )
                     .map_err(|x| TypeSystemOverflow::<ir::Model> {
                         operation: OverflowOperation::TypeOf,
@@ -237,7 +202,7 @@ impl Representation<BorrowModel> {
                 .compatible(
                     &associated_type,
                     Variance::Covariant,
-                    ty_environment,
+                    self.ty_environment(),
                 )
                 .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
                     operation: OverflowOperation::TypeCheck,
@@ -264,14 +229,11 @@ impl Representation<BorrowModel> {
         }
 
         // handle the constraints introduced by instantiating the struct
-        self.handle_outlives(
+        self.handle_outlives_constraints(
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
             register_span.clone(),
-            environment,
-            current_site,
-            ty_environment,
             handler,
         )?;
 
@@ -280,7 +242,8 @@ impl Representation<BorrowModel> {
         // handle the constraints introduced by the outlive predicates of the
         // struct
 
-        for predicate in ty_environment
+        for predicate in self
+            .ty_environment()
             .table()
             .get_active_premise(variant.variant_id.into())
             .unwrap()
@@ -316,47 +279,46 @@ impl Representation<BorrowModel> {
             }
         }
 
-        self.handle_outlives(
+        self.handle_outlives_constraints(
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
             register_span.clone(),
-            environment,
-            current_site,
-            ty_environment,
             handler,
         )?;
 
         Ok(())
     }
 
-    fn handle_phi<S: table::State>(
-        &self,
+    fn handle_phi(
+        &mut self,
         phi: &Phi<BorrowModel>,
         register_span: Span,
-        environment: &mut Environment,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let mut lifetime_constraints = BTreeSet::new();
 
         for value in phi.incoming_values.values() {
             let value_span = match value {
-                Value::Register(id) => {
-                    self.values.registers.get(*id).unwrap().span.clone()
-                }
+                Value::Register(id) => self
+                    .representation()
+                    .values
+                    .registers
+                    .get(*id)
+                    .unwrap()
+                    .span
+                    .clone(),
                 Value::Literal(literal) => literal.span().clone(),
             };
 
             let Succeeded { result: value_ty, constraints } = self
+                .representation()
                 .values
-                .type_of_value(value, current_site, ty_environment)
+                .type_of_value(
+                    value,
+                    self.current_site(),
+                    self.ty_environment(),
+                )
                 .map_err(|x| TypeSystemOverflow::<ir::Model> {
                     operation: OverflowOperation::TypeOf,
                     overflow_span: value_span.clone(),
@@ -366,7 +328,11 @@ impl Representation<BorrowModel> {
             lifetime_constraints.extend(constraints);
 
             let copmatibility = value_ty
-                .compatible(&phi.r#type, Variance::Covariant, ty_environment)
+                .compatible(
+                    &phi.r#type,
+                    Variance::Covariant,
+                    self.ty_environment(),
+                )
                 .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
                     operation: OverflowOperation::TypeCheck,
                     overflow_span: value_span.clone(),
@@ -391,32 +357,21 @@ impl Representation<BorrowModel> {
             }
         }
 
-        self.handle_outlives(
+        self.handle_outlives_constraints(
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
             register_span.clone(),
-            environment,
-            current_site,
-            ty_environment,
             handler,
         )?;
 
         Ok(())
     }
 
-    fn handle_array<S: table::State>(
-        &self,
+    fn handle_array(
+        &mut self,
         array: &Array<BorrowModel>,
         register_span: Span,
-        environment: &mut Environment,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let array_ty = array.element_type.clone();
@@ -424,15 +379,25 @@ impl Representation<BorrowModel> {
 
         for value in &array.elements {
             let value_span = match value {
-                Value::Register(id) => {
-                    self.values.registers.get(*id).unwrap().span.clone()
-                }
+                Value::Register(id) => self
+                    .representation()
+                    .values
+                    .registers
+                    .get(*id)
+                    .unwrap()
+                    .span
+                    .clone(),
                 Value::Literal(literal) => literal.span().clone(),
             };
 
             let Succeeded { result: value_ty, constraints } = self
+                .representation()
                 .values
-                .type_of_value(value, current_site, ty_environment)
+                .type_of_value(
+                    value,
+                    self.current_site(),
+                    self.ty_environment(),
+                )
                 .map_err(|x| TypeSystemOverflow::<ir::Model> {
                     operation: OverflowOperation::TypeOf,
                     overflow_span: value_span.clone(),
@@ -442,7 +407,11 @@ impl Representation<BorrowModel> {
             lifetime_constraints.extend(constraints);
 
             let copmatibility = value_ty
-                .compatible(&array_ty, Variance::Covariant, ty_environment)
+                .compatible(
+                    &array_ty,
+                    Variance::Covariant,
+                    self.ty_environment(),
+                )
                 .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
                     operation: OverflowOperation::TypeCheck,
                     overflow_span: value_span.clone(),
@@ -467,38 +436,28 @@ impl Representation<BorrowModel> {
             }
         }
 
-        self.handle_outlives(
+        self.handle_outlives_constraints(
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
             register_span.clone(),
-            environment,
-            current_site,
-            ty_environment,
             handler,
         )?;
 
         Ok(())
     }
 
-    fn handle_struct<S: table::State>(
-        &self,
+    fn handle_struct(
+        &mut self,
         struct_lit: &Struct<BorrowModel>,
         register_span: Span,
-        environment: &mut Environment,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let instantiation = Instantiation::from_generic_arguments(
             struct_lit.generic_arguments.clone(),
             struct_lit.struct_id.into(),
-            &ty_environment
+            &self
+                .ty_environment()
                 .table()
                 .get(struct_lit.struct_id)
                 .unwrap()
@@ -510,7 +469,7 @@ impl Representation<BorrowModel> {
         let mut lifetime_constraints = BTreeSet::new();
 
         let struct_sym =
-            ty_environment.table().get(struct_lit.struct_id).unwrap();
+            self.ty_environment().table().get(struct_lit.struct_id).unwrap();
 
         // compare each values in the field to the struct's field type
         for field_id in struct_sym.field_declaration_order().iter().copied() {
@@ -521,22 +480,28 @@ impl Representation<BorrowModel> {
 
             let value_span =
                 match &struct_lit.initializers_by_field_id.get(&field_id) {
-                    Some(Value::Register(id)) => {
-                        self.values.registers.get(*id).unwrap().span.clone()
-                    }
+                    Some(Value::Register(id)) => self
+                        .representation()
+                        .values
+                        .registers
+                        .get(*id)
+                        .unwrap()
+                        .span
+                        .clone(),
                     Some(Value::Literal(literal)) => literal.span().clone(),
                     None => unreachable!(),
                 };
 
             let Succeeded { result: value_ty, constraints: value_constraints } =
-                self.values
+                self.representation()
+                    .values
                     .type_of_value(
                         &struct_lit
                             .initializers_by_field_id
                             .get(&field_id)
                             .unwrap(),
-                        current_site,
-                        ty_environment,
+                        self.current_site(),
+                        self.ty_environment(),
                     )
                     .map_err(|x| TypeSystemOverflow::<ir::Model> {
                         operation: OverflowOperation::TypeOf,
@@ -547,7 +512,11 @@ impl Representation<BorrowModel> {
             lifetime_constraints.extend(value_constraints);
 
             let copmatibility = value_ty
-                .compatible(&field_ty, Variance::Covariant, ty_environment)
+                .compatible(
+                    &field_ty,
+                    Variance::Covariant,
+                    self.ty_environment(),
+                )
                 .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
                     operation: OverflowOperation::TypeCheck,
                     overflow_span: value_span.clone(),
@@ -573,14 +542,11 @@ impl Representation<BorrowModel> {
         }
 
         // handle the constraints introduced by instantiating the struct
-        self.handle_outlives(
+        self.handle_outlives_constraints(
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
             register_span.clone(),
-            environment,
-            current_site,
-            ty_environment,
             handler,
         )?;
 
@@ -589,7 +555,8 @@ impl Representation<BorrowModel> {
         // handle the constraints introduced by the outlive predicates of the
         // struct
 
-        for predicate in ty_environment
+        for predicate in self
+            .ty_environment()
             .table()
             .get_active_premise(struct_lit.struct_id.into())
             .unwrap()
@@ -625,14 +592,11 @@ impl Representation<BorrowModel> {
             }
         }
 
-        self.handle_outlives(
+        self.handle_outlives_constraints(
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
             register_span.clone(),
-            environment,
-            current_site,
-            ty_environment,
             handler,
         )?;
 
@@ -641,21 +605,14 @@ impl Representation<BorrowModel> {
         Ok(())
     }
 
-    fn handle_function_call<S: table::State>(
-        &self,
+    fn handle_function_call(
+        &mut self,
         function_call: &FunctionCall<BorrowModel>,
         register_span: Span,
-        environment: &mut Environment,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        let callable = ty_environment
+        let callable = self
+            .ty_environment()
             .table()
             .get_callable(function_call.callable_id)
             .unwrap();
@@ -683,17 +640,27 @@ impl Representation<BorrowModel> {
 
             // obtains the type of argument ty
             let argument_span = match argument {
-                Value::Register(id) => {
-                    self.values.registers.get(*id).unwrap().span.clone()
-                }
+                Value::Register(id) => self
+                    .representation()
+                    .values
+                    .registers
+                    .get(*id)
+                    .unwrap()
+                    .span
+                    .clone(),
                 Value::Literal(literal) => literal.span().clone(),
             };
             let Succeeded {
                 result: argument_ty,
                 constraints: argument_ty_constraints,
             } = self
+                .representation()
                 .values
-                .type_of_value(argument, current_site, ty_environment)
+                .type_of_value(
+                    argument,
+                    self.current_site(),
+                    self.ty_environment(),
+                )
                 .map_err(|x| TypeSystemOverflow::<ir::Model> {
                     operation: OverflowOperation::TypeOf,
                     overflow_span: argument_span.clone(),
@@ -703,7 +670,11 @@ impl Representation<BorrowModel> {
             lifetime_constraints.extend(argument_ty_constraints);
 
             let copmatibility = argument_ty
-                .compatible(&parameter_ty, Variance::Covariant, ty_environment)
+                .compatible(
+                    &parameter_ty,
+                    Variance::Covariant,
+                    self.ty_environment(),
+                )
                 .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
                     operation: OverflowOperation::TypeCheck,
                     overflow_span: argument_span,
@@ -728,20 +699,18 @@ impl Representation<BorrowModel> {
             }
         }
 
-        self.handle_outlives(
+        self.handle_outlives_constraints(
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
             register_span.clone(),
-            environment,
-            current_site,
-            ty_environment,
             handler,
         )?;
 
         lifetime_constraints.clear();
 
-        for predicate in ty_environment
+        for predicate in self
+            .ty_environment()
             .table()
             .get_active_premise(function_call.callable_id.into())
             .unwrap()
@@ -777,45 +746,31 @@ impl Representation<BorrowModel> {
             }
         }
 
-        self.handle_outlives(
+        self.handle_outlives_constraints(
             lifetime_constraints
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap()),
             register_span.clone(),
-            environment,
-            current_site,
-            ty_environment,
             handler,
         )?;
 
         Ok(())
     }
 
-    fn handle_reference_of<S: table::State>(
-        &self,
+    fn handle_reference_of(
+        &mut self,
         register_id: ID<Register<BorrowModel>>,
         reference_of: &Borrow<BorrowModel>,
         register_span: Span,
         point: Point<BorrowModel>,
-        environment: &mut Environment,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         // check the access
-        environment.handle_access(
+        self.handle_access(
             &reference_of.address,
             reference_of.qualifier,
             register_span.clone(),
             point,
-            self,
-            current_site,
-            ty_environment,
             handler,
         )?;
 
@@ -823,11 +778,12 @@ impl Representation<BorrowModel> {
             reference_of.lifetime.clone().into_inference().unwrap();
 
         let constraints_in_type_of = self
+            .representation()
             .values
             .type_of_address(
                 &reference_of.address,
-                current_site,
-                ty_environment,
+                self.current_site(),
+                self.ty_environment(),
             )
             .map_err(|x| TypeSystemOverflow::<ir::Model> {
                 operation: OverflowOperation::TypeOf,
@@ -839,51 +795,45 @@ impl Representation<BorrowModel> {
         let constraints_in_address = get_lifetimes_in_address(
             &reference_of.address,
             register_span.clone(),
-            &self.values,
-            current_site,
-            ty_environment,
+            &self.representation().values,
+            self.current_site(),
+            self.ty_environment(),
         )?
         .into_iter()
         .map(|x| Outlives::new(x, Lifetime::Inference(reference_of_origin_id)))
         .collect::<Vec<_>>();
 
         // handle outlives constraints of the reference
-        self.handle_outlives(
+        self.handle_outlives_constraints(
             constraints_in_type_of
                 .iter()
                 .map(|x| x.as_lifetime_outlives().unwrap())
                 .chain(constraints_in_address.iter()),
             register_span,
-            environment,
-            current_site,
-            ty_environment,
             handler,
         )?;
 
-        environment.attach_borrow(register_id, reference_of_origin_id);
+        self.attach_borrow(register_id, reference_of_origin_id);
 
         Ok(())
     }
 
-    fn handle_store<S: table::State>(
-        &self,
+    fn handle_store(
+        &mut self,
         store_address: &Address<BorrowModel>,
         value_type: Succeeded<Type<BorrowModel>, BorrowModel>,
         store_span: Span,
         point: Point<BorrowModel>,
-        environment: &mut Environment,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let Succeeded { result: address_ty, constraints: address_constraints } =
-            self.values
-                .type_of_address(store_address, current_site, ty_environment)
+            self.representation()
+                .values
+                .type_of_address(
+                    store_address,
+                    self.current_site(),
+                    self.ty_environment(),
+                )
                 .map_err(|x| TypeSystemOverflow::<ir::Model> {
                     operation: OverflowOperation::TypeOf,
                     overflow_span: store_span.clone(),
@@ -893,7 +843,7 @@ impl Representation<BorrowModel> {
         match value_type.result.compatible(
             &address_ty,
             Variance::Covariant,
-            ty_environment,
+            self.ty_environment(),
         ) {
             Ok(Some(Succeeded {
                 result:
@@ -914,14 +864,14 @@ impl Representation<BorrowModel> {
                     .cloned()
                     .collect::<HashSet<_>>();
 
-                environment.detach_subset_relations(
+                self.detach_subset_relations(
                     address_lifetimes
                         .into_iter()
                         .filter_map(|x| x.try_into().ok()),
                 );
 
                 // apply the compatibility constraints
-                self.handle_outlives(
+                self.handle_outlives_constraints(
                     value_type
                         .constraints
                         .iter()
@@ -929,9 +879,6 @@ impl Representation<BorrowModel> {
                         .chain(compatibility_constraints.iter())
                         .map(|x| x.as_lifetime_outlives().unwrap()),
                     store_span.clone(),
-                    environment,
-                    current_site,
-                    ty_environment,
                     handler,
                 )?;
             }
@@ -947,36 +894,30 @@ impl Representation<BorrowModel> {
             }
         }
 
-        environment.handle_access(
+        self.handle_access(
             store_address,
             Qualifier::Mutable,
             store_span,
             point,
-            self,
-            current_site,
-            ty_environment,
             handler,
         )
     }
 
-    fn handle_load<S: table::State>(
-        &self,
+    fn handle_load(
+        &mut self,
         load: &Load<BorrowModel>,
         register_span: Span,
         point: Point<BorrowModel>,
-        environment: &mut Environment,
-        current_site: GlobalID,
-        ty_environment: &TyEnvironment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let ty = self
+            .representation()
             .values
-            .type_of_address(&load.address, current_site, ty_environment)
+            .type_of_address(
+                &load.address,
+                self.current_site(),
+                self.ty_environment(),
+            )
             .unwrap();
 
         // has been checked previously
@@ -987,7 +928,8 @@ impl Representation<BorrowModel> {
             {
                 // TODO: check copy marker
             } else {
-                let copy_marker = ty_environment
+                let copy_marker = self
+                    .ty_environment()
                     .table()
                     .get_by_qualified_name(["core", "Copy"].into_iter())
                     .unwrap()
@@ -1006,7 +948,7 @@ impl Representation<BorrowModel> {
                     )),
                     None,
                     false,
-                    ty_environment,
+                    self.ty_environment(),
                 )
                 .iter()
                 .all(well_formedness::Error::is_lifetime_constraints)
@@ -1018,68 +960,33 @@ impl Representation<BorrowModel> {
             }
         };
 
-        environment.handle_access(
+        self.handle_access(
             &load.address,
             Qualifier::Immutable,
             register_span,
             point,
-            self,
-            current_site,
-            ty_environment,
             handler,
         )
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct WalkResult {
-    /// The context after checking the whole block
-    environment: Environment,
-    looped_blocks: Vec<ID<Block<BorrowModel>>>,
-}
-
-#[derive(Debug, Clone)]
-struct Checker<
-    'a,
-    S: table::State,
-    N: Normalizer<BorrowModel, S>,
-    O: Observer<BorrowModel, S>,
-> {
-    representation: ir::Representation<BorrowModel>,
-
-    /// The key represents the block ID that needs to be checked/explored.
-    ///
-    /// - `None` value means the block is being processed.
-    /// - `Some` value means the block has been processed
-    /// - No value means the block has not been explored
-    walk_results_by_block_id:
-        HashMap<ID<Block<BorrowModel>>, Option<WalkResult>>,
-
-    /// If the block id appears in this map, it means the block is a looped
-    /// block and the value is the starting environment of the looped block.
-    target_environments_by_block_id:
-        HashMap<ID<Block<BorrowModel>>, Environment>,
-
-    region_info: Arc<RegionInfo>,
-
-    current_site: GlobalID,
-    ty_environment: &'a TyEnvironment<'a, BorrowModel, S, N, O>,
-}
-
 impl<
+        'a,
         S: table::State,
         N: Normalizer<BorrowModel, S>,
         O: Observer<BorrowModel, S>,
-    > Checker<'_, S, N, O>
+    > Environment<'a, S, N, O>
 {
     fn walk_instructions(
-        &self,
+        &mut self,
         block_id: ID<Block<BorrowModel>>,
-        environment: &mut Environment,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        let block =
-            self.representation.control_flow_graph.get_block(block_id).unwrap();
+        let block = self
+            .representation()
+            .control_flow_graph
+            .get_block(block_id)
+            .unwrap();
 
         for (index, inst) in block.instructions().iter().enumerate() {
             let current_point = Point { block_id, instruction_index: index };
@@ -1088,7 +995,7 @@ impl<
                 Instruction::Store(store) => {
                     let span = match &store.value {
                         Value::Register(id) => self
-                            .representation
+                            .representation()
                             .values
                             .registers
                             .get(*id)
@@ -1098,12 +1005,12 @@ impl<
                         Value::Literal(literal) => literal.span().clone(),
                     };
                     let value_type = self
-                        .representation
+                        .representation()
                         .values
                         .type_of_value(
                             &store.value,
-                            self.current_site,
-                            self.ty_environment,
+                            self.current_site(),
+                            self.ty_environment(),
                         )
                         .map_err(|x| TypeSystemOverflow::<ir::Model> {
                             operation: OverflowOperation::TypeOf,
@@ -1111,21 +1018,18 @@ impl<
                             overflow_error: x.into_overflow().unwrap(),
                         })?;
 
-                    self.representation.handle_store(
+                    self.handle_store(
                         &store.address,
                         value_type,
                         store.span.clone(),
                         current_point,
-                        environment,
-                        self.current_site,
-                        self.ty_environment,
                         handler,
                     )?;
                 }
 
                 Instruction::RegisterAssignment(register_assignment) => {
                     let register = self
-                        .representation
+                        .representation()
                         .values
                         .registers
                         .get(register_assignment.id)
@@ -1133,81 +1037,60 @@ impl<
 
                     match &register.assignment {
                         Assignment::Load(load) => {
-                            self.representation.handle_load(
+                            self.handle_load(
                                 load,
                                 register.span.clone(),
                                 current_point,
-                                environment,
-                                self.current_site,
-                                self.ty_environment,
                                 handler,
                             )?;
                         }
 
                         Assignment::Borrow(reference_of) => {
-                            self.representation.handle_reference_of(
+                            self.handle_reference_of(
                                 register_assignment.id,
                                 reference_of,
                                 register.span.clone(),
                                 current_point,
-                                environment,
-                                self.current_site,
-                                self.ty_environment,
                                 handler,
                             )?;
                         }
 
                         Assignment::FunctionCall(function_call) => {
-                            self.representation.handle_function_call(
+                            self.handle_function_call(
                                 function_call,
                                 register.span.clone(),
-                                environment,
-                                self.current_site,
-                                self.ty_environment,
                                 handler,
                             )?;
                         }
 
                         Assignment::Struct(struct_lit) => {
-                            self.representation.handle_struct(
+                            self.handle_struct(
                                 struct_lit,
                                 register.span.clone(),
-                                environment,
-                                self.current_site,
-                                self.ty_environment,
                                 handler,
                             )?;
                         }
 
                         Assignment::Variant(variant) => {
-                            self.representation.handle_variant(
+                            self.handle_variant(
                                 variant,
                                 register.span.clone(),
-                                environment,
-                                self.current_site,
-                                self.ty_environment,
                                 handler,
                             )?;
                         }
 
                         Assignment::Array(array) => {
-                            self.representation.handle_array(
+                            self.handle_array(
                                 array,
                                 register.span.clone(),
-                                environment,
-                                self.current_site,
-                                self.ty_environment,
                                 handler,
                             )?;
                         }
 
                         Assignment::Phi(phi) => {
-                            self.representation.handle_phi(
+                            self.handle_phi(
                                 phi,
                                 register.span.clone(),
-                                environment,
-                                self.current_site,
-                                self.ty_environment,
                                 handler,
                             )?;
                         }
@@ -1222,12 +1105,12 @@ impl<
 
                 Instruction::TuplePack(tuple_pack) => {
                     let tuple_ty = self
-                        .representation
+                        .representation()
                         .values
                         .type_of_address(
                             &tuple_pack.tuple_address,
-                            self.current_site,
-                            self.ty_environment,
+                            self.current_site(),
+                            self.ty_environment(),
                         )
                         .map_err(|x| TypeSystemOverflow::<ir::Model> {
                             operation: OverflowOperation::TypeOf,
@@ -1235,7 +1118,7 @@ impl<
                             overflow_error: x.into_overflow().unwrap(),
                         })?;
 
-                    self.representation.handle_store(
+                    self.handle_store(
                         &tuple_pack.store_address,
                         tuple_ty.map(|x| {
                             x.into_tuple()
@@ -1247,9 +1130,6 @@ impl<
                         }),
                         tuple_pack.packed_tuple_span.clone(),
                         current_point,
-                        environment,
-                        self.current_site,
-                        self.ty_environment,
                         handler,
                     )?;
                 }
@@ -1260,7 +1140,50 @@ impl<
                 | Instruction::Drop(_) => {}
 
                 Instruction::ScopePop(scope_pop) => {
+                    println!("scope pop {:?}", scope_pop);
                     // TODO: check use of goes out of scope borrows
+                    let mut dropped_memories = self
+                        .representation()
+                        .values
+                        .allocas
+                        .iter()
+                        .filter_map(|(id, x)| {
+                            (x.declared_in_scope_id == scope_pop.0)
+                                .then_some(Memory::Alloca(id))
+                        })
+                        .collect::<Vec<_>>();
+
+                    // add parameters to the dropped memories
+                    if let Ok(callable_id) =
+                        CallableID::try_from(self.current_site())
+                    {
+                        if scope_pop.0
+                            == self.representation().scope_tree.root_scope_id()
+                        {
+                            let callable = self
+                                .ty_environment()
+                                .table()
+                                .get_callable(callable_id)
+                                .unwrap();
+
+                            dropped_memories.extend(
+                                callable
+                                    .parameters()
+                                    .ids()
+                                    .map(|x| Memory::Parameter(x)),
+                            );
+                        }
+                    }
+
+                    for memory in dropped_memories {
+                        println!("dropping {:?}", memory);
+
+                        self.handle_drop_memory(
+                            memory,
+                            current_point,
+                            handler,
+                        )?;
+                    }
                 }
             }
         }
@@ -1271,12 +1194,76 @@ impl<
 
         Ok(())
     }
+}
 
+#[derive(Debug)]
+struct WalkResult<
+    'a,
+    S: table::State,
+    N: Normalizer<BorrowModel, S>,
+    O: Observer<BorrowModel, S>,
+> {
+    /// The context after checking the whole block
+    environment: Environment<'a, S, N, O>,
+    looped_blocks: Vec<ID<Block<BorrowModel>>>,
+}
+
+impl<
+        'a,
+        S: table::State,
+        N: Normalizer<BorrowModel, S>,
+        O: Observer<BorrowModel, S>,
+    > Clone for WalkResult<'a, S, N, O>
+{
+    fn clone(&self) -> Self {
+        Self {
+            environment: self.environment.clone(),
+            looped_blocks: self.looped_blocks.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Checker<
+    'a,
+    S: table::State,
+    N: Normalizer<BorrowModel, S>,
+    O: Observer<BorrowModel, S>,
+> {
+    representation: &'a ir::Representation<BorrowModel>,
+
+    /// The key represents the block ID that needs to be checked/explored.
+    ///
+    /// - `None` value means the block is being processed.
+    /// - `Some` value means the block has been processed
+    /// - No value means the block has not been explored
+    walk_results_by_block_id:
+        HashMap<ID<Block<BorrowModel>>, Option<WalkResult<'a, S, N, O>>>,
+
+    /// If the block id appears in this map, it means the block is a looped
+    /// block and the value is the starting environment of the looped block.
+    target_environments_by_block_id:
+        HashMap<ID<Block<BorrowModel>>, Environment<'a, S, N, O>>,
+
+    region_info: Arc<RegionInfo>,
+
+    current_site: GlobalID,
+    ty_environment: &'a TyEnvironment<'a, BorrowModel, S, N, O>,
+}
+
+impl<
+        'a,
+        S: table::State,
+        N: Normalizer<BorrowModel, S>,
+        O: Observer<BorrowModel, S>,
+    > Checker<'a, S, N, O>
+{
     fn get_predecessor_environment(
         &mut self,
         block_id: ID<Block<BorrowModel>>,
         handler: &HandlerWrapper,
-    ) -> Result<Option<Environment>, TypeSystemOverflow<ir::Model>> {
+    ) -> Result<Option<Environment<'a, S, N, O>>, TypeSystemOverflow<ir::Model>>
+    {
         let Some(mut walk_result) = self.walk_block(block_id, handler)? else {
             return Ok(None);
         };
@@ -1298,7 +1285,8 @@ impl<
         &mut self,
         block_id: ID<Block<BorrowModel>>,
         handler: &HandlerWrapper,
-    ) -> Result<Option<WalkResult>, TypeSystemOverflow<ir::Model>> {
+    ) -> Result<Option<WalkResult<'a, S, N, O>>, TypeSystemOverflow<ir::Model>>
+    {
         // skip if already processed
         if let Some(walk_result) = self.walk_results_by_block_id.get(&block_id)
         {
@@ -1314,8 +1302,12 @@ impl<
         let (mut environment, looped_blocks) = if block.is_entry() {
             assert!(block.predecessors().is_empty());
 
-            let mut starting_environment =
-                Environment::new(self.region_info.clone());
+            let mut starting_environment = Environment::new(
+                self.region_info.clone(),
+                &self.representation,
+                self.current_site,
+                self.ty_environment,
+            )?;
 
             let predicates = self
                 .ty_environment
@@ -1426,7 +1418,7 @@ impl<
             (environment, looped_block_ids)
         };
 
-        self.walk_instructions(block_id, &mut environment, handler)?;
+        environment.walk_instructions(block_id, handler)?;
 
         let result = WalkResult { environment, looped_blocks };
 
@@ -1569,7 +1561,7 @@ impl ir::Representation<ir::Model> {
         ir.replace_with_fresh_lifetimes(&mut generator);
 
         let mut checker = Checker {
-            representation: ir,
+            representation: &ir,
             walk_results_by_block_id: HashMap::new(),
             target_environments_by_block_id: HashMap::new(),
             region_info: Arc::new(RegionInfo::new(
@@ -1586,6 +1578,8 @@ impl ir::Representation<ir::Model> {
         }
 
         assert!(checker.walk_results_by_block_id.values().all(Option::is_some));
+
+        dbg!(ir);
 
         Ok(())
     }

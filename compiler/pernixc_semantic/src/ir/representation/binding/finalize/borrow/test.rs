@@ -190,7 +190,7 @@ public function test(cond: bool) {
 
 #[test]
 fn variable_does_not_live_long_enough_in_loop() {
-    let (_, errs) =
+    let (table, errs) =
         build_table(VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_LOOP).unwrap_err();
 
     dbg!(&errs);
@@ -297,7 +297,7 @@ public function main() {
     let mutable vector = Vector::new();
 
     Vector::push(&mutable vector, &mutable number);
-    Vector::push(&mutable vector, &mutable number);
+    Vector::push(&mutable vector,  &mutable number);
 }
 "#;
 
@@ -320,7 +320,7 @@ fn mutably_access_more_than_once_in_function() {
     assert_eq!(error.access_span.str(), "&mutable number");
     assert_eq!(
         error.borrow_usage.as_local().map(|x| x.0.str()),
-        Some("Vector::push(&mutable vector, &mutable number)")
+        Some("Vector::push(&mutable vector,  &mutable number)")
     );
 }
 
@@ -931,7 +931,7 @@ fn array_inference() {
     assert_eq!(error.access_span.str(), "&mutable x");
     assert_eq!(
         error.borrow_usage.as_local().map(|x| x.0.str()),
-        Some("let array = [&mutable x, &mutable x];")
+        Some("[&mutable x, &mutable x]")
     );
 }
 

@@ -4,14 +4,16 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
+use pernixc_base::source_file::Span;
 
 use crate::{
     arena::{Key, ID},
     ir::{
         self,
-        address::{self, Address, Memory},
+        address::{self, Address, Memory, Reference},
         control_flow_graph::{Block, Point},
-        instruction::{AccessKind, Jump, Terminator},
+        instruction::{AccessKind, Instruction, Jump, Terminator},
+        value::register::Register,
     },
     symbol::{
         self,
@@ -535,6 +537,158 @@ impl Accessed {
     }
 }
 
+pub fn live_register_spans<M: Model>(
+    register_id: ID<Register<M>>,
+    point: Point<M>,
+    representation: &ir::Representation<M>,
+) -> Vec<Span> {
+    let traverser =
+        RegisterTraverser { target_register_id: register_id, representation };
+
+    traverser.traverse_block(
+        point.block_id,
+        Some(point.instruction_index),
+        &mut HashSet::new(),
+    )
+}
+
+/// The state struct used for keep tracking the liveness of the addresses.
+#[derive(Debug, Clone)]
+struct RegisterTraverser<'a, M: Model> {
+    target_register_id: ID<Register<M>>,
+    representation: &'a ir::Representation<M>,
+}
+
+impl<M: Model> RegisterTraverser<'_, M> {
+    fn traverse_block(
+        &self,
+        block_id: ID<Block<M>>,
+        starting_instruction_index: Option<usize>,
+        visited: &mut HashSet<(usize, Option<usize>)>,
+    ) -> Vec<Span> {
+        if starting_instruction_index.is_none() {
+            if !visited.insert((block_id.into_index(), None)) {
+                return Vec::new();
+            }
+        }
+
+        let block = self
+            .representation
+            .control_flow_graph
+            .blocks()
+            .get(block_id)
+            .unwrap();
+
+        for (index, instruction) in block
+            .instructions()
+            .iter()
+            .enumerate()
+            .skip(starting_instruction_index.map_or(0, |x| x + 1))
+        {
+            // skip to the starting instruction index
+            if visited.contains(&(block_id.into_index(), Some(index))) {
+                return Vec::new();
+            }
+
+            // if the next instruction is the starting instruction index, we
+            // should mark the current instruction as visited
+            if starting_instruction_index.map_or(false, |x| x + 1 == index) {
+                assert!(visited.insert((block_id.into_index(), Some(index))));
+            }
+
+            match instruction {
+                Instruction::RegisterAssignment(register_assignment) => {
+                    if register_assignment.id == self.target_register_id {
+                        return Vec::new();
+                    }
+
+                    let register = self
+                        .representation
+                        .values
+                        .registers
+                        .get(register_assignment.id)
+                        .unwrap();
+                    let used_register =
+                        register.assignment.get_used_registers();
+
+                    if used_register.contains(&self.target_register_id) {
+                        return vec![register.span.clone()];
+                    }
+                }
+                Instruction::RegisterDiscard(register_discard) => {
+                    if register_discard.id == self.target_register_id {
+                        return Vec::new();
+                    }
+                }
+                Instruction::Store(_)
+                | Instruction::TuplePack(_)
+                | Instruction::ScopePush(_)
+                | Instruction::ScopePop(_)
+                | Instruction::DropUnpackTuple(_)
+                | Instruction::Drop(_) => {}
+            }
+        }
+
+        match block.terminator() {
+            Some(Terminator::Jump(jump)) => match jump {
+                Jump::Unconditional(unconditional_jump) => self.traverse_block(
+                    unconditional_jump.target,
+                    None,
+                    visited,
+                ),
+                Jump::Conditional(conditional_jump) => {
+                    let mut true_spans = self.traverse_block(
+                        conditional_jump.true_target,
+                        None,
+                        &mut visited.clone(),
+                    );
+
+                    let false_span = self.traverse_block(
+                        conditional_jump.false_target,
+                        None,
+                        &mut visited.clone(),
+                    );
+
+                    true_spans.extend(false_span);
+
+                    true_spans
+                }
+                Jump::Select(select_jump) => {
+                    let mut spans = Vec::new();
+                    for block in select_jump
+                        .branches
+                        .values()
+                        .copied()
+                        .chain(select_jump.otherwise.clone())
+                    {
+                        spans.extend(self.traverse_block(
+                            block,
+                            None,
+                            &mut visited.clone(),
+                        ));
+                    }
+
+                    spans
+                }
+            },
+
+            Some(Terminator::Return(ret)) => {
+                if ret
+                    .value
+                    .as_register()
+                    .map_or(false, |x| *x == self.target_register_id)
+                {
+                    vec![ret.span.clone()]
+                } else {
+                    Vec::new()
+                }
+            }
+
+            Some(Terminator::Panic) | None => Vec::new(),
+        }
+    }
+}
+
 /// Returns the *live* addresses in the given `check_address`.
 ///
 /// For example,
@@ -556,7 +710,7 @@ pub fn get_live_addresses<S: table::State, M: Model>(
     representation: &ir::Representation<M>,
     environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
 ) -> Result<HashSet<(Address<M>, AccessKind)>, OverflowError> {
-    let mut state = State {
+    let mut state = MemoryTraverser {
         root_memory_address,
         root_type,
         representation,
@@ -573,7 +727,7 @@ pub fn get_live_addresses<S: table::State, M: Model>(
 
 /// The state struct used for keep tracking the liveness of the addresses.
 #[derive(Debug)]
-struct State<
+struct MemoryTraverser<
     'a,
     S: table::State,
     M: Model,
@@ -590,7 +744,7 @@ struct State<
 }
 
 impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
-    Clone for State<'a, S, M, N, O>
+    Clone for MemoryTraverser<'a, S, M, N, O>
 {
     fn clone(&self) -> Self {
         Self {
@@ -604,7 +758,7 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
 }
 
 impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
-    State<'a, S, M, N, O>
+    MemoryTraverser<'a, S, M, N, O>
 {
     fn traverse_block(
         &mut self,
@@ -640,7 +794,7 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
             // if the next instruction is the starting instruction index, we
             // should mark the current instruction as visited
             if starting_instruction_index.map_or(false, |x| x + 1 == index) {
-                visited.insert((block_id.into_index(), Some(index)));
+                assert!(visited.insert((block_id.into_index(), Some(index))));
             }
 
             let accesses = instruction
