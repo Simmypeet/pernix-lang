@@ -134,6 +134,25 @@ pub enum Address<M: Model> {
 }
 
 impl<M: Model> Address<M> {
+    /// Gets the number of dereference operations found in the address.
+    pub fn get_dereference_count(mut self: &Self) -> usize {
+        let mut count = 0;
+
+        loop {
+            match self {
+                Self::Memory(_) => return count,
+                Self::Field(field) => self = &*field.struct_address,
+                Self::Tuple(tuple) => self = &*tuple.tuple_address,
+                Self::Index(index) => self = &*index.array_address,
+                Self::Variant(variant) => self = &*variant.enum_address,
+                Self::Reference(reference) => {
+                    self = &*reference.reference_address;
+                    count += 1;
+                }
+            }
+        }
+    }
+
     /// Checks if the `self` address is the child of the `parent` address.
     pub fn is_child_of(mut self: &Self, parent: &Self) -> bool {
         loop {
