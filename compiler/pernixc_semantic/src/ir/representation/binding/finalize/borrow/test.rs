@@ -1212,3 +1212,21 @@ fn possible_use_of_going_out_of_scope_reference() {
     assert_eq!(error.for_lifetime, None);
     assert_eq!(error.instantiation_span.str(), "*ref");
 }
+
+const ASSIGN_MUTABLE_REFERENCE_DOES_NOT_INVALIDATE: &str = r#"
+public function main() {
+    let mutable first = 32;
+    let mutable second = 64;
+
+    let mutable ref = &mutable first;
+	let anoher = &mutable *ref;
+
+    ref = &mutable second;
+	let x = *anoher;
+}
+"#;
+
+#[test]
+fn mutable_reference_from_difference_places() {
+    assert!(build_table(ASSIGN_MUTABLE_REFERENCE_DOES_NOT_INVALIDATE).is_ok());
+}

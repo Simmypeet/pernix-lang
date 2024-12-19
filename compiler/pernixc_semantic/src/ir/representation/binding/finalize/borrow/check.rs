@@ -16,7 +16,10 @@ use crate::{
         self,
         address::{Address, Memory},
         control_flow_graph::{Block, Point},
-        instruction::{Instruction, Return, Terminator, UnconditionalJump},
+        instruction::{
+            AccessMode, Instruction, Read, Return, Terminator,
+            UnconditionalJump,
+        },
         representation::{
             binding::{
                 finalize::borrow::{
@@ -769,8 +772,10 @@ impl<
         // check the access
         self.handle_access(
             &reference_of.address,
-            reference_of.qualifier,
-            register_span,
+            AccessMode::Read(Read {
+                qualifier: reference_of.qualifier,
+                span: register_span.clone(),
+            }),
             point,
             handler,
         )?;
@@ -897,8 +902,7 @@ impl<
 
         self.handle_access(
             store_address,
-            Qualifier::Mutable,
-            &store_span,
+            AccessMode::Write(store_span.clone()),
             point,
             handler,
         )
@@ -963,8 +967,10 @@ impl<
 
         self.handle_access(
             &load.address,
-            Qualifier::Immutable,
-            register_span,
+            AccessMode::Read(Read {
+                qualifier: Qualifier::Immutable,
+                span: register_span.clone(),
+            }),
             point,
             handler,
         )
@@ -1415,6 +1421,11 @@ impl<
         };
 
         environment.walk_instructions(block_id, handler)?;
+
+        // handle loop
+        if let Some(target_environment) =
+            self.target_environments_by_block_id.get(&block_id)
+        {}
 
         let result = WalkResult { environment, looped_blocks };
 

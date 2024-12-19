@@ -12,7 +12,7 @@ use crate::{
         self,
         address::{self, Address, Memory},
         control_flow_graph::{Block, Point},
-        instruction::{AccessKind, Instruction, Jump, Terminator},
+        instruction::{AccessKind, AccessMode, Instruction, Jump, Terminator},
         value::register::Register,
     },
     symbol::{
@@ -103,10 +103,9 @@ impl Accessed {
     /// Returns `true` if every address in the projection has been accessed.
     pub fn is_accessed(&self) -> bool {
         match self {
-            Self::Struct(struct_) => struct_
-                .projections_by_field_id
-                .values()
-                .all(Self::is_accessed),
+            Self::Struct(struct_) => {
+                struct_.projections_by_field_id.values().all(Self::is_accessed)
+            }
 
             Self::Tuple(tuple) => tuple
                 .elements
@@ -496,6 +495,12 @@ impl Accessed {
                     }
                 };
 
+                let ty = ty.into_reference().map_err(|x| {
+                    SetAccessedError::Internal(format!(
+                        "expected a reference type, found `{x:?}`",
+                    ))
+                })?;
+
                 if let Self::Whole(whole_proj) = proj {
                     // if have concluded, we should've returned earlier
                     assert!(!*whole_proj);
@@ -514,7 +519,7 @@ impl Accessed {
                         })?
                         .projection
                         .as_mut(),
-                    ty,
+                    *ty.pointee,
                 )
             }
         };
@@ -807,7 +812,7 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
                 }
 
                 let write =
-                    matches!(&kind, AccessKind::Normal { write: true, .. });
+                    matches!(&kind, AccessKind::Normal(AccessMode::Write(_)));
 
                 match self.projection.set_accessed(
                     &address,
@@ -833,7 +838,7 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
                         SetAccessedError::Overflow(err) => return Err(err),
 
                         err @ SetAccessedError::Internal(_) => {
-                            panic!("{err}")
+                            panic!("{err:?}")
                         }
                     },
                 }

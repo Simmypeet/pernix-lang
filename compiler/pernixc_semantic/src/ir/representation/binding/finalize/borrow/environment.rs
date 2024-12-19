@@ -23,7 +23,7 @@ use crate::{
         self,
         address::{Address, Memory},
         control_flow_graph::Point,
-        instruction::Instruction,
+        instruction::{AccessMode, Instruction},
         representation::{
             borrow::{
                 LocalRegion, Model as BorrowModel, Region, UniversalRegion,
@@ -497,8 +497,8 @@ impl<
                 }) {
                     handler_fn(access_kind.into_normal().map_or(
                         Usage::Drop,
-                        |(_, span)| Usage::Local {
-                            access_span: span,
+                        |access_mode| Usage::Local {
+                            access_span: access_mode.into_span(),
                             in_loop: false,
                         },
                     ));
@@ -681,8 +681,7 @@ impl<
     pub fn handle_access(
         &mut self,
         address: &Address<BorrowModel>,
-        access_qualifier: Qualifier,
-        span: &Span,
+        access_mode: AccessMode,
         point: Point<BorrowModel>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
@@ -701,24 +700,63 @@ impl<
             let borrow_assignment =
                 borrow_register.assignment.as_borrow().unwrap();
 
-            let should_invalidate = access_qualifier == Qualifier::Mutable
-                || borrow_assignment.qualifier == Qualifier::Mutable;
+            let should_invalidate: bool = match &access_mode {
+                AccessMode::Read(read) => {
+                    let qualifier_invalidate = read.qualifier
+                        == Qualifier::Mutable
+                        || borrow_assignment.qualifier == Qualifier::Mutable;
 
-            // if the address overlaps
-            let is_subaddress = address.is_child_of(&borrow_assignment.address)
-                || borrow_assignment.address.is_child_of(address);
+                    let address_overlap = address
+                        .is_child_of(&borrow_assignment.address)
+                        || borrow_assignment.address.is_child_of(address);
 
-            if should_invalidate && is_subaddress {
+                    qualifier_invalidate && address_overlap
+                }
+                AccessMode::Write(_) => {
+                    /*
+                    ```
+                    let mutable x = 0;
+                    let mutable y = 0;
+
+                    let mutable ref = &mutable x;
+                    let anotherRef = &mutable *ref;
+
+                    // this doesn't invalidate the borrow because the borrow
+                    // is not used in the access
+                    ref = &mutable y;
+
+                    *anotherRef = 2;
+                    ```
+                     */
+
+                    let address_overlap = address
+                        .is_child_of(&borrow_assignment.address)
+                        || borrow_assignment.address.is_child_of(address);
+
+                    let borrow_address_dereference_count =
+                        borrow_assignment.address.get_dereference_count();
+                    let write_address_dereference_count =
+                        address.get_dereference_count();
+
+                    address_overlap
+                        && write_address_dereference_count
+                            >= borrow_address_dereference_count
+                }
+            };
+
+            if should_invalidate {
                 self.invalidate_borrow(
                     borrow,
-                    span,
+                    access_mode.span(),
                     |_, _| false,
                     point,
                     |borrow_usage| match borrow_assignment.qualifier {
                         Qualifier::Immutable => {
                             handler.receive(Box::new(
                                 MutablyAccessWhileImmutablyBorrowed {
-                                    mutable_access_span: span.clone(),
+                                    mutable_access_span: access_mode
+                                        .span()
+                                        .clone(),
                                     immutable_borrow_span: Some(
                                         borrow_register.span.clone(),
                                     ),
@@ -729,7 +767,7 @@ impl<
                         Qualifier::Mutable => {
                             handler.receive(Box::new(
                                 AccessWhileMutablyBorrowed {
-                                    access_span: span.clone(),
+                                    access_span: access_mode.span().clone(),
                                     mutable_borrow_span: Some(
                                         borrow_register.span.clone(),
                                     ),

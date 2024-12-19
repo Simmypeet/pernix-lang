@@ -18,7 +18,10 @@ use super::{
 };
 use crate::{
     arena::{Key, ID},
-    type_system::{model::Model, term::r#type::Type},
+    type_system::{
+        model::Model,
+        term::r#type::{Qualifier, Type},
+    },
 };
 
 /// Represents a jump to another block unconditionally.
@@ -366,18 +369,52 @@ impl<M: Model> Terminator<M> {
     }
 }
 
+/// Represents a read access to a value. The instruction that reads the value
+/// are `Load`, `Borrow`, `VariantNumber`, and etc.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Read {
+    /// The qualifier that the value is read with. Mostly, this will be
+    /// [`Qualifier::Immutable`], however, it can be [`Qualifier::Mutable`] if
+    /// the value is borrowed mutably.
+    pub qualifier: Qualifier,
+
+    /// The span where the read access is made.
+    pub span: Span,
+}
+
+/// Represents how a particular address is accessed in an instruction.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum AccessMode {
+    Read(Read),
+
+    /// The address is written to.
+    Write(Span),
+}
+
+impl AccessMode {
+    /// Gets the span where the access is made.
+    pub fn span(&self) -> &Span {
+        match self {
+            Self::Read(read) => &read.span,
+            Self::Write(span) => span,
+        }
+    }
+
+    /// Converts the access mode to a span.
+    pub fn into_span(self) -> Span {
+        match self {
+            Self::Read(read) => read.span,
+            Self::Write(span) => span,
+        }
+    }
+}
+
 /// Represents how a particular address is accessed in an instruction.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum AccessKind {
     /// The access is made to any instructions other than `Drop` instructions.
-    Normal {
-        /// If `true` the access is a write access, otherwise it is a read
-        /// access.
-        write: bool,
-
-        /// The span where the access is made.
-        span: Span,
-    },
+    Normal(AccessMode),
 
     /// The access is made in the drop instruction.
     Drop,
@@ -414,12 +451,10 @@ impl<M: Model> Instruction<M> {
         NotFoundRegisterIDError<M>,
     > {
         match self {
-            Self::Store(store) => {
-                Ok(vec![(Cow::Borrowed(&store.address), AccessKind::Normal {
-                    write: true,
-                    span: store.span.clone(),
-                })])
-            }
+            Self::Store(store) => Ok(vec![(
+                Cow::Borrowed(&store.address),
+                AccessKind::Normal(AccessMode::Write(store.span.clone())),
+            )]),
             Self::RegisterAssignment(register_assignment) => {
                 let register =
                     values.registers().get(register_assignment.id).ok_or(
@@ -429,24 +464,24 @@ impl<M: Model> Instruction<M> {
                 match &register.assignment {
                     Assignment::Load(load) => Ok(vec![(
                         Cow::Borrowed(&load.address),
-                        AccessKind::Normal {
-                            write: false,
+                        AccessKind::Normal(AccessMode::Read(Read {
+                            qualifier: Qualifier::Immutable,
                             span: register.span.clone(),
-                        },
+                        })),
                     )]),
                     Assignment::Borrow(borrow) => Ok(vec![(
                         Cow::Borrowed(&borrow.address),
-                        AccessKind::Normal {
-                            write: false,
+                        AccessKind::Normal(AccessMode::Read(Read {
+                            qualifier: borrow.qualifier,
                             span: register.span.clone(),
-                        },
+                        })),
                     )]),
                     Assignment::VariantNumber(variant_number) => Ok(vec![(
                         Cow::Borrowed(&variant_number.address),
-                        AccessKind::Normal {
-                            write: false,
+                        AccessKind::Normal(AccessMode::Read(Read {
+                            qualifier: Qualifier::Immutable,
                             span: register.span.clone(),
-                        },
+                        })),
                     )]),
 
                     Assignment::Prefix(_)
@@ -470,17 +505,16 @@ impl<M: Model> Instruction<M> {
                             ),
                             offset: address::Offset::Unpacked,
                         })),
-                        AccessKind::Normal {
-                            write: false,
+                        AccessKind::Normal(AccessMode::Read(Read {
+                            qualifier: Qualifier::Immutable,
                             span: tuple_pack.packed_tuple_span.clone(),
-                        },
+                        })),
                     ),
                     (
                         Cow::Borrowed(&tuple_pack.store_address),
-                        AccessKind::Normal {
-                            write: true,
-                            span: tuple_pack.packed_tuple_span.clone(),
-                        },
+                        AccessKind::Normal(AccessMode::Write(
+                            tuple_pack.packed_tuple_span.clone(),
+                        )),
                     ),
                 ];
                 Ok(vec)
