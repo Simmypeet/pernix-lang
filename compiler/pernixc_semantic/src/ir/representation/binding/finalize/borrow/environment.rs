@@ -366,6 +366,13 @@ impl<
         point: Point<BorrowModel>,
         handler_fn: impl Fn(Usage),
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        let borrow_register =
+            self.representation.values.registers.get(borrow).unwrap();
+        let borrow_assignment = borrow_register.assignment.as_borrow().unwrap();
+
+        // make sure that the referant of the borrow is not reassigned
+        let borrowed_address = borrow_assignment.address.get_root_memory();
+
         let borrow_region = self.attached_borrows.get(&borrow).unwrap();
 
         // get the invalidated local regions

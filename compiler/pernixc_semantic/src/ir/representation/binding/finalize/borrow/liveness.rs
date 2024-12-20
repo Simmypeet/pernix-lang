@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_base::source_file::Span;
 
 use crate::{
     arena::{Key, ID},
@@ -9,7 +8,7 @@ use crate::{
     ir::{
         self,
         address::{self, Address, Memory},
-        control_flow_graph::{Block, Point},
+        control_flow_graph::{Block, ControlFlowGraph, Point},
         instruction::{AccessKind, AccessMode, Instruction, Jump, Terminator},
         representation::{
             binding::finalize::borrow::get_lifetimes_in_address,
@@ -622,149 +621,183 @@ impl Assigned {
     }
 }
 
-#[allow(unused)]
-pub fn live_register_spans<M: Model>(
-    register_id: ID<Register<M>>,
-    point: Point<M>,
-    representation: &ir::Representation<M>,
-) -> Vec<Span> {
-    let traverser =
-        RegisterTraverser { target_register_id: register_id, representation };
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ControlFlow<T> {
+    Continue,
+    Break(T),
+}
 
-    traverser.traverse_block(
+/// A trait for the state machine that traverses the control flow graph.
+///
+/// # Note
+///
+/// Cloning is used when encountering a branch in the control flow graph.
+trait Traverser<M: Model>: Clone {
+    type Error;
+    type Result: Default;
+
+    fn on_instruction(
+        &mut self,
+        point: Point<M>,
+        instruction: &Instruction<M>,
+    ) -> Result<ControlFlow<Self::Result>, Self::Error>;
+
+    fn on_terminator(
+        &mut self,
+        block_id: ID<Block<M>>,
+        terminator: Option<&Terminator<M>>,
+    ) -> Result<ControlFlow<Self::Result>, Self::Error>;
+
+    fn fold_result(
+        previous: Self::Result,
+        next: Self::Result,
+    ) -> (Self::Result, bool);
+}
+
+fn traverse_block<M: Model, T: Traverser<M>>(
+    traverser_state: &mut T,
+    control_flow_graph: &ControlFlowGraph<M>,
+    point: Point<M>,
+    exit: &mut impl FnMut(&Instruction<M>, Point<M>) -> bool,
+) -> Result<T::Result, T::Error> {
+    traverse_block_internal(
+        traverser_state,
+        control_flow_graph,
         point.block_id,
         Some(point.instruction_index),
+        exit,
         &mut HashSet::new(),
     )
 }
 
-/// The state struct used for keep tracking the liveness of the addresses.
-#[derive(Debug, Clone)]
-#[allow(unused)]
-struct RegisterTraverser<'a, M: Model> {
-    target_register_id: ID<Register<M>>,
-    representation: &'a ir::Representation<M>,
-}
+fn traverse_block_internal<M: Model, T: Traverser<M>>(
+    traverser_state: &mut T,
+    control_flow_graph: &ControlFlowGraph<M>,
+    block_id: ID<Block<M>>,
+    starting_instruction_index: Option<usize>,
+    exit: &mut impl FnMut(&Instruction<M>, Point<M>) -> bool,
+    visited: &mut HashSet<(usize, Option<usize>)>,
+) -> Result<T::Result, T::Error> {
+    if starting_instruction_index.is_none()
+        && !visited.insert((block_id.into_index(), None))
+    {
+        return Ok(T::Result::default());
+    }
 
-impl<M: Model> RegisterTraverser<'_, M> {
-    fn traverse_block(
-        &self,
-        block_id: ID<Block<M>>,
-        starting_instruction_index: Option<usize>,
-        visited: &mut HashSet<(usize, Option<usize>)>,
-    ) -> Vec<Span> {
-        if starting_instruction_index.is_none()
-            && !visited.insert((block_id.into_index(), None))
-        {
-            return Vec::new();
+    let block = control_flow_graph.blocks().get(block_id).unwrap();
+
+    for (index, instruction) in block
+        .instructions()
+        .iter()
+        .enumerate()
+        .skip(starting_instruction_index.map_or(0, |x| x + 1))
+    {
+        // skip to the starting instruction index
+        if visited.contains(&(block_id.into_index(), Some(index))) {
+            return Ok(T::Result::default());
         }
 
-        let block = self
-            .representation
-            .control_flow_graph
-            .blocks()
-            .get(block_id)
-            .unwrap();
-
-        for (index, instruction) in block
-            .instructions()
-            .iter()
-            .enumerate()
-            .skip(starting_instruction_index.map_or(0, |x| x + 1))
-        {
-            // skip to the starting instruction index
-            if visited.contains(&(block_id.into_index(), Some(index))) {
-                return Vec::new();
-            }
-
-            // if the next instruction is the starting instruction index, we
-            // should mark the current instruction as visited
-            if starting_instruction_index.map_or(false, |x| x + 1 == index) {
-                assert!(visited.insert((block_id.into_index(), Some(index))));
-            }
-
-            match instruction {
-                Instruction::RegisterAssignment(register_assignment) => {
-                    if register_assignment.id == self.target_register_id {
-                        return Vec::new();
-                    }
-
-                    let register = self
-                        .representation
-                        .values
-                        .registers
-                        .get(register_assignment.id)
-                        .unwrap();
-                    let used_register =
-                        register.assignment.get_used_registers();
-
-                    if used_register.contains(&self.target_register_id) {
-                        return vec![register.span.clone()];
-                    }
-                }
-                Instruction::RegisterDiscard(register_discard) => {
-                    if register_discard.id == self.target_register_id {
-                        return Vec::new();
-                    }
-                }
-                Instruction::Store(_)
-                | Instruction::TuplePack(_)
-                | Instruction::ScopePush(_)
-                | Instruction::ScopePop(_)
-                | Instruction::DropUnpackTuple(_)
-                | Instruction::Drop(_) => {}
-            }
+        // if the next instruction is the starting instruction index, we
+        // should mark the current instruction as visited
+        if starting_instruction_index.map_or(false, |x| x + 1 == index) {
+            assert!(visited.insert((block_id.into_index(), Some(index))));
         }
 
-        match block.terminator() {
-            Some(Terminator::Jump(jump)) => match jump {
-                Jump::Unconditional(unconditional_jump) => self.traverse_block(
-                    unconditional_jump.target,
+        // explicitly exit the traversal
+        if exit(instruction, Point { block_id, instruction_index: index }) {
+            return Ok(T::Result::default());
+        }
+
+        match traverser_state.on_instruction(
+            Point { block_id, instruction_index: index },
+            instruction,
+        )? {
+            ControlFlow::Continue => {}
+            ControlFlow::Break(result) => return Ok(result),
+        }
+    }
+
+    if let ControlFlow::Break(result) =
+        traverser_state.on_terminator(block_id, block.terminator().as_ref())?
+    {
+        return Ok(result);
+    }
+
+    match block.terminator() {
+        Some(Terminator::Jump(jump)) => match jump {
+            Jump::Unconditional(unconditional_jump) => traverse_block_internal(
+                traverser_state,
+                control_flow_graph,
+                unconditional_jump.target,
+                None,
+                exit,
+                visited,
+            ),
+            Jump::Conditional(conditional_jump) => {
+                let true_usages = traverse_block_internal(
+                    &mut traverser_state.clone(),
+                    control_flow_graph,
+                    conditional_jump.true_target,
                     None,
-                    visited,
-                ),
-                Jump::Conditional(conditional_jump) => {
-                    let mut true_spans = self.traverse_block(
-                        conditional_jump.true_target,
+                    exit,
+                    &mut visited.clone(),
+                )?;
+                let false_usages = traverse_block_internal(
+                    traverser_state,
+                    control_flow_graph,
+                    conditional_jump.false_target,
+                    None,
+                    exit,
+                    &mut visited.clone(),
+                )?;
+
+                Ok(T::fold_result(true_usages, false_usages).0)
+            }
+            Jump::Select(select_jump) => {
+                let mut blocks = select_jump
+                    .branches
+                    .values()
+                    .copied()
+                    .chain(select_jump.otherwise);
+
+                let Some(first_block) = blocks.next() else {
+                    return Ok(T::Result::default());
+                };
+                let mut first_result = traverse_block_internal(
+                    &mut traverser_state.clone(),
+                    control_flow_graph,
+                    first_block,
+                    None,
+                    exit,
+                    &mut visited.clone(),
+                )?;
+
+                for block in select_jump.branches.values().copied() {
+                    let new_result = traverse_block_internal(
+                        &mut traverser_state.clone(),
+                        control_flow_graph,
+                        block,
                         None,
+                        exit,
                         &mut visited.clone(),
-                    );
+                    )?;
 
-                    let false_span = self.traverse_block(
-                        conditional_jump.false_target,
-                        None,
-                        &mut visited.clone(),
-                    );
+                    let (folded, return_now) =
+                        T::fold_result(first_result, new_result);
 
-                    true_spans.extend(false_span);
-
-                    true_spans
-                }
-                Jump::Select(select_jump) => {
-                    let mut spans = Vec::new();
-                    for block in select_jump
-                        .branches
-                        .values()
-                        .copied()
-                        .chain(select_jump.otherwise)
-                    {
-                        spans.extend(self.traverse_block(
-                            block,
-                            None,
-                            &mut visited.clone(),
-                        ));
+                    if return_now {
+                        return Ok(folded);
                     }
 
-                    spans
+                    first_result = folded;
                 }
-            },
 
-            Some(Terminator::Return(_)) => {
-                // NOTE: should we consider the return value?
-                Vec::new()
+                Ok(first_result)
             }
+        },
 
-            Some(Terminator::Panic) | None => Vec::new(),
+        Some(Terminator::Return(_)) | Some(Terminator::Panic) | None => {
+            Ok(T::Result::default())
         }
     }
 }
@@ -810,11 +843,11 @@ pub fn get_live_usages<S: table::State>(
         current_site,
     };
 
-    state.traverse_block(
-        point.block_id,
-        Some(point.instruction_index),
+    traverse_block(
+        &mut state,
+        &representation.control_flow_graph,
+        point,
         &mut exit,
-        &mut HashSet::new(),
     )
 }
 
@@ -860,214 +893,180 @@ impl<
         S: table::State,
         N: Normalizer<BorrowModel, S>,
         O: Observer<BorrowModel, S>,
-    > LiveBorrowTraverser<'a, S, N, O>
+    > Traverser<BorrowModel> for LiveBorrowTraverser<'a, S, N, O>
 {
-    #[allow(clippy::too_many_lines)]
-    fn traverse_block(
-        &mut self,
-        block_id: ID<Block<BorrowModel>>,
-        starting_instruction_index: Option<usize>,
-        exit: &mut impl FnMut(&Instruction<BorrowModel>, Point<BorrowModel>) -> bool,
-        visited: &mut HashSet<(usize, Option<usize>)>,
-    ) -> Result<HashSet<Usage>, TypeSystemOverflow<ir::Model>> {
-        if starting_instruction_index.is_none()
-            && !visited.insert((block_id.into_index(), None))
-        {
-            return Ok(HashSet::new());
-        }
+    type Error = TypeSystemOverflow<ir::Model>;
 
-        let block = self
-            .representation
-            .control_flow_graph
-            .blocks()
-            .get(block_id)
+    type Result = HashSet<Usage>;
+
+    fn on_instruction(
+        &mut self,
+        _: Point<BorrowModel>,
+        instruction: &Instruction<BorrowModel>,
+    ) -> Result<ControlFlow<Self::Result>, Self::Error> {
+        let accesses = instruction
+            .get_access_address(&self.representation.values)
             .unwrap();
 
-        for (index, instruction) in block
-            .instructions()
-            .iter()
-            .enumerate()
-            .skip(starting_instruction_index.map_or(0, |x| x + 1))
-        {
-            // skip to the starting instruction index
-            if visited.contains(&(block_id.into_index(), Some(index))) {
-                return Ok(HashSet::new());
+        // check each access
+        for (address, kind) in accesses {
+            let memory_root = address.get_root_memory();
+            let memory_root_ty = match *memory_root {
+                Memory::Parameter(id) => Type::from_default_model(
+                    self.environment
+                        .table()
+                        .get_callable(self.current_site.try_into().unwrap())
+                        .unwrap()
+                        .parameters()
+                        .get(id)
+                        .unwrap()
+                        .r#type
+                        .clone(),
+                ),
+                Memory::Alloca(id) => self
+                    .representation
+                    .values
+                    .allocas
+                    .get(id)
+                    .unwrap()
+                    .r#type
+                    .clone(),
+            };
+
+            let Some(assigned_state) =
+                self.assigned_states_by_memory.get_mut(&memory_root)
+            else {
+                // skip irrelevant addresses
+                continue;
+            };
+
+            // check if the address is accessed
+            if assigned_state.from_address(&address).is_assigned() {
+                // has already assigned, dead address
+                continue;
             }
 
-            // if the next instruction is the starting instruction index, we
-            // should mark the current instruction as visited
-            if starting_instruction_index.map_or(false, |x| x + 1 == index) {
-                assert!(visited.insert((block_id.into_index(), Some(index))));
-            }
+            let (read_span, is_drop) = match kind {
+                AccessKind::Normal(AccessMode::Write(write)) => {
+                    match assigned_state.set_assigned(
+                        &address,
+                        memory_root_ty,
+                        self.environment,
+                    ) {
+                        Ok(_) => {
+                            continue;
+                        }
 
-            // explicitly exit the traversal
-            if exit(instruction, Point { block_id, instruction_index: index }) {
-                return Ok(HashSet::new());
-            }
+                        Err(SetAccessedError::Internal(reason)) => {
+                            panic!("{reason}")
+                        }
 
-            let accesses = instruction
-                .get_access_address(&self.representation.values)
-                .unwrap();
+                        Err(SetAccessedError::Overflow(overflow_error)) => {
+                            return Err(TypeSystemOverflow {
+                                operation: OverflowOperation::TypeOf,
+                                overflow_span: write,
+                                overflow_error,
+                            });
+                        }
+                    }
+                }
 
-            // check each access
-            for (address, kind) in accesses {
-                let memory_root = address.get_root_memory();
-                let memory_root_ty = match *memory_root {
-                    Memory::Parameter(id) => Type::from_default_model(
-                        self.environment
+                AccessKind::Normal(AccessMode::Read(read)) => {
+                    (read.span, false)
+                }
+                AccessKind::Drop => (
+                    match *memory_root {
+                        Memory::Parameter(id) => self
+                            .environment
                             .table()
                             .get_callable(self.current_site.try_into().unwrap())
                             .unwrap()
                             .parameters()
                             .get(id)
                             .unwrap()
-                            .r#type
+                            .span
+                            .clone()
+                            .unwrap(),
+                        Memory::Alloca(id) => self
+                            .representation
+                            .values
+                            .allocas
+                            .get(id)
+                            .unwrap()
+                            .span
                             .clone(),
-                    ),
-                    Memory::Alloca(id) => self
-                        .representation
-                        .values
-                        .allocas
-                        .get(id)
-                        .unwrap()
-                        .r#type
-                        .clone(),
-                };
+                    },
+                    true,
+                ),
+            };
 
-                let Some(assigned_state) =
-                    self.assigned_states_by_memory.get_mut(&memory_root)
-                else {
-                    // skip irrelevant addresses
-                    continue;
-                };
+            let read_lifetimes = get_lifetimes_in_address(
+                &address,
+                &read_span,
+                &self.representation.values,
+                self.current_site,
+                self.environment,
+            )?;
+            // check if the lifetime appears in the invalidated regions
+            let has_invalidated_region = read_lifetimes
+                .iter()
+                .filter_map(|x| x.clone().try_into().ok())
+                .any(|x| self.invalidated_regions.contains(&x));
 
-                // check if the address is accessed
-                if assigned_state.from_address(&address).is_assigned() {
-                    // has already assigned, dead address
-                    continue;
-                }
-
-                let (read_span, is_drop) = match kind {
-                    AccessKind::Normal(AccessMode::Write(write)) => {
-                        match assigned_state.set_assigned(
-                            &address,
-                            memory_root_ty,
-                            self.environment,
-                        ) {
-                            Ok(_) => {
-                                continue;
-                            }
-
-                            Err(SetAccessedError::Internal(reason)) => {
-                                panic!("{reason}")
-                            }
-
-                            Err(SetAccessedError::Overflow(overflow_error)) => {
-                                return Err(TypeSystemOverflow {
-                                    operation: OverflowOperation::TypeOf,
-                                    overflow_span: write,
-                                    overflow_error,
-                                });
-                            }
-                        }
-                    }
-
-                    AccessKind::Normal(AccessMode::Read(read)) => {
-                        (read.span, false)
-                    }
-                    AccessKind::Drop => (
-                        match *memory_root {
-                            Memory::Parameter(id) => self
-                                .environment
-                                .table()
-                                .get_callable(
-                                    self.current_site.try_into().unwrap(),
-                                )
-                                .unwrap()
-                                .parameters()
-                                .get(id)
-                                .unwrap()
-                                .span
-                                .clone()
-                                .unwrap(),
-                            Memory::Alloca(id) => self
-                                .representation
-                                .values
-                                .allocas
-                                .get(id)
-                                .unwrap()
-                                .span
-                                .clone(),
-                        },
-                        true,
-                    ),
-                };
-
-                let read_lifetimes = get_lifetimes_in_address(
-                    &address,
-                    &read_span,
-                    &self.representation.values,
-                    self.current_site,
-                    self.environment,
-                )?;
-                // check if the lifetime appears in the invalidated regions
-                let has_invalidated_region = read_lifetimes
-                    .iter()
-                    .filter_map(|x| x.clone().try_into().ok())
-                    .any(|x| self.invalidated_regions.contains(&x));
-
-                // found usage of invalidated regions
-                if has_invalidated_region {
-                    return Ok(std::iter::once(if is_drop {
+            // found usage of invalidated regions
+            if has_invalidated_region {
+                return Ok(ControlFlow::Break(
+                    std::iter::once(if is_drop {
                         Usage::Drop
                     } else {
                         Usage::Local { access_span: read_span, in_loop: false }
                     })
-                    .collect());
-                }
+                    .collect(),
+                ));
+            }
+        }
+
+        let invalidated_use_register = match instruction {
+            Instruction::Store(store) => {
+                store.value.as_register().and_then(|x| {
+                    self.checking_registers.contains(x).then_some(*x)
+                })
             }
 
-            let invalidated_use_register = match instruction {
-                Instruction::Store(store) => {
-                    store.value.as_register().and_then(|x| {
-                        self.checking_registers.contains(x).then_some(*x)
-                    })
-                }
+            Instruction::RegisterAssignment(register_assignment) => {
+                self.checking_registers.remove(&register_assignment.id);
 
-                Instruction::RegisterAssignment(register_assignment) => {
-                    self.checking_registers.remove(&register_assignment.id);
+                let register = self
+                    .representation
+                    .values
+                    .registers
+                    .get(register_assignment.id)
+                    .unwrap();
 
-                    let register = self
-                        .representation
-                        .values
-                        .registers
-                        .get(register_assignment.id)
-                        .unwrap();
+                let used_registers = register.assignment.get_used_registers();
 
-                    let used_registers =
-                        register.assignment.get_used_registers();
+                used_registers
+                    .iter()
+                    .any(|x| self.checking_registers.contains(x))
+                    .then_some(register_assignment.id)
+            }
 
-                    used_registers
-                        .iter()
-                        .any(|x| self.checking_registers.contains(x))
-                        .then_some(register_assignment.id)
-                }
+            Instruction::RegisterDiscard(register_discard) => {
+                self.checking_registers.remove(&register_discard.id);
 
-                Instruction::RegisterDiscard(register_discard) => {
-                    self.checking_registers.remove(&register_discard.id);
+                None
+            }
 
-                    None
-                }
+            Instruction::TuplePack(_)
+            | Instruction::ScopePush(_)
+            | Instruction::ScopePop(_)
+            | Instruction::DropUnpackTuple(_)
+            | Instruction::Drop(_) => None,
+        };
 
-                Instruction::TuplePack(_)
-                | Instruction::ScopePush(_)
-                | Instruction::ScopePop(_)
-                | Instruction::DropUnpackTuple(_)
-                | Instruction::Drop(_) => None,
-            };
-
-            if let Some(register_id) = invalidated_use_register {
-                return Ok(std::iter::once(Usage::Local {
+        if let Some(register_id) = invalidated_use_register {
+            return Ok(ControlFlow::Break(
+                std::iter::once(Usage::Local {
                     access_span: self
                         .representation
                         .values
@@ -1078,59 +1077,31 @@ impl<
                         .clone(),
                     in_loop: false,
                 })
-                .collect());
-            }
+                .collect(),
+            ));
         }
 
-        match block.terminator() {
-            Some(Terminator::Jump(jump)) => match jump {
-                Jump::Unconditional(unconditional_jump) => self.traverse_block(
-                    unconditional_jump.target,
-                    None,
-                    exit,
-                    visited,
-                ),
-                Jump::Conditional(conditional_jump) => {
-                    let mut true_usages = self.clone().traverse_block(
-                        conditional_jump.true_target,
-                        None,
-                        exit,
-                        &mut visited.clone(),
-                    )?;
-                    let false_usages = self.traverse_block(
-                        conditional_jump.false_target,
-                        None,
-                        exit,
-                        &mut visited.clone(),
-                    )?;
+        Ok(ControlFlow::Continue)
+    }
 
-                    true_usages.extend(false_usages);
+    fn on_terminator(
+        &mut self,
+        _: ID<Block<BorrowModel>>,
+        _: Option<&Terminator<BorrowModel>>,
+    ) -> Result<ControlFlow<Self::Result>, Self::Error> {
+        Ok(ControlFlow::Continue)
+    }
 
-                    Ok(true_usages)
-                }
-                Jump::Select(select_jump) => {
-                    let mut usages = HashSet::new();
-                    for block in select_jump
-                        .branches
-                        .values()
-                        .copied()
-                        .chain(select_jump.otherwise)
-                    {
-                        usages.extend(self.clone().traverse_block(
-                            block,
-                            None,
-                            exit,
-                            &mut visited.clone(),
-                        )?);
-                    }
-
-                    Ok(usages)
-                }
+    fn fold_result(
+        mut previous: Self::Result,
+        next: Self::Result,
+    ) -> (Self::Result, bool) {
+        (
+            {
+                previous.extend(next.into_iter());
+                previous
             },
-
-            Some(Terminator::Return(_)) | Some(Terminator::Panic) | None => {
-                Ok(HashSet::new())
-            }
-        }
+            false,
+        )
     }
 }
