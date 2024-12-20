@@ -1377,3 +1377,43 @@ public function main() {
 fn reassign_reference() {
     assert!(build_table(REASSIGNED_REFERENCE).is_ok());
 }
+
+const INVALIDATED_IMMUTABLE_REFERENCE_USED_IN_LOOP: &str = r#"
+public function consume[T](x: T) {}
+
+public function cond(): bool { panic; }
+
+public function main() {
+    let mutable test = 32;
+    let r = &test;
+
+    while (cond()) {
+        // in first iteration, r is fine, no error
+        // in second iteration, r is invalidated error should be raised
+        consume(*r); 
+
+        // r is invalidated here
+        test = 64;
+    }
+}
+"#;
+
+#[test]
+fn invalidated_immutable_reference_used_in_loop() {
+    let (_, errs) =
+        build_table(INVALIDATED_IMMUTABLE_REFERENCE_USED_IN_LOOP).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .unwrap();
+
+    assert_eq!(
+        error.immutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&test")
+    );
+    assert_eq!(error.mutable_access_span.str(), "test = 64");
+    assert_eq!(error.usage.as_local().map(|x| x.0.str()), Some("*r"));
+}
