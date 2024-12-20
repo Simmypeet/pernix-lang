@@ -1268,6 +1268,98 @@ fn push_two_mutable_references_from_different_places() {
     );
 }
 
+const PUSH_TWO_MUTABLE_REFERENCES_FROM_DIFFERENT_WITH_COND: &str = r#"
+// fake vector
+public struct Vector[T] {
+}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function main(cond: bool) {
+    let mutable first = 32;
+    let mutable second = 64;
+    let mutable vector = Vector::new();
+
+    let mutable ref = &mutable first;
+    vector.push(&mutable *ref);
+
+    if (cond) { 
+        ref = &mutable second;
+    } else {
+        return;
+    }
+    vector.push(&mutable *ref);
+}
+"#;
+
+#[test]
+fn push_two_mutable_references_from_different_places_with_cond() {
+    assert!(build_table(PUSH_TWO_MUTABLE_REFERENCES_FROM_DIFFERENT_WITH_COND)
+        .is_ok());
+}
+
+const PUSH_TWO_MUTABLE_REFERENCES_FROM_DIFFERENT_PLACES_ERROR: &str = r#"
+// fake vector
+public struct Vector[T] {
+}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function main(cond: bool) {
+    let mutable first = 32;
+    let mutable second = 64;
+    let mutable vector = Vector::new();
+
+    let mutable ref = &mutable first;
+    vector.push(&mutable *ref);
+
+    if (cond) { 
+        ref = &mutable second;
+    } else {
+        // no reassignment, will error
+    }
+    vector.push(&mutable *ref);
+}
+"#;
+
+#[test]
+fn push_two_mutable_references_from_different_places_error() {
+    let (_, errs) =
+        build_table(PUSH_TWO_MUTABLE_REFERENCES_FROM_DIFFERENT_PLACES_ERROR)
+            .unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error =
+        errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
+
+    assert_eq!(
+        error.mutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&mutable *ref")
+    );
+    assert_eq!(error.access_span.str(), "&mutable *ref");
+    assert_eq!(
+        error.borrow_usage.as_local().map(|x| x.0.str()),
+        Some("vector")
+    );
+}
+
 const REASSIGNED_REFERENCE: &str = r#"
 public function print[T](value: T) {}
 

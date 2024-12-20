@@ -1229,9 +1229,29 @@ impl<
     fn on_terminator(
         &mut self,
         _: ID<Block<BorrowModel>>,
-        _: Option<&Terminator<BorrowModel>>,
+        terminator: Option<&Terminator<BorrowModel>>,
     ) -> Result<ControlFlow<Self::Result>, Self::Error> {
-        Ok(ControlFlow::Continue)
+        match terminator {
+            Some(terminator) => match terminator {
+                Terminator::Jump(jump) => {
+                    let Jump::Select(select) = jump else {
+                        return Ok(ControlFlow::Continue);
+                    };
+
+                    if select.otherwise.is_none() && select.branches.is_empty()
+                    {
+                        Ok(ControlFlow::Break(true))
+                    } else {
+                        Ok(ControlFlow::Continue)
+                    }
+                }
+
+                Terminator::Return(_) | Terminator::Panic => {
+                    Ok(ControlFlow::Break(true))
+                }
+            },
+            None => Ok(ControlFlow::Break(true)),
+        }
     }
 
     fn fold_result(
