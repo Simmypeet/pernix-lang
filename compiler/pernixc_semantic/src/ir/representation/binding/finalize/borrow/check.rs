@@ -819,7 +819,7 @@ impl<
             handler,
         )?;
 
-        self.attach_borrow(register_id, reference_of_origin_id);
+        self.attach_borrow(register_id, reference_of_origin_id, point);
 
         Ok(())
     }

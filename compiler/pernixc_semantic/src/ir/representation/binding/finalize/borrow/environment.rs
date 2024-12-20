@@ -8,7 +8,8 @@ use getset::CopyGetters;
 use pernixc_base::{handler::Handler, source_file::Span};
 
 use super::{
-    liveness, local_region_generator::LocalRegionGenerator,
+    liveness::{self, has_been_reassigned},
+    local_region_generator::LocalRegionGenerator,
     transitive_closure::TransitiveClosure,
 };
 use crate::{
@@ -228,6 +229,8 @@ pub struct Environment<
     region_info: Arc<RegionInfo>, // immutable data
     subset_relations: TransitiveClosure,
 
+    register_borrow_issued_at:
+        HashMap<ID<Register<BorrowModel>>, Point<BorrowModel>>,
     attached_borrows: HashMap<ID<Register<BorrowModel>>, ID<LocalRegion>>,
     reversed_attached_borrows:
         HashMap<ID<LocalRegion>, ID<Register<BorrowModel>>>,
@@ -270,6 +273,7 @@ impl<
         Self {
             region_info: self.region_info.clone(),
             subset_relations: self.subset_relations.clone(),
+            register_borrow_issued_at: self.register_borrow_issued_at.clone(),
             attached_borrows: self.attached_borrows.clone(),
             reversed_attached_borrows: self.reversed_attached_borrows.clone(),
             register_type_cache: self.register_type_cache.clone(),
@@ -301,6 +305,7 @@ impl<
 
             region_info,
 
+            register_borrow_issued_at: HashMap::new(),
             attached_borrows: HashMap::new(),
             reversed_attached_borrows: HashMap::new(),
 
@@ -351,7 +356,9 @@ impl<
         &mut self,
         borrow: ID<Register<BorrowModel>>,
         region: ID<LocalRegion>,
+        point: Point<BorrowModel>,
     ) {
+        assert!(self.register_borrow_issued_at.insert(borrow, point).is_none());
         assert!(self.attached_borrows.insert(borrow, region).is_none());
         assert!(self
             .reversed_attached_borrows
@@ -371,7 +378,41 @@ impl<
         let borrow_assignment = borrow_register.assignment.as_borrow().unwrap();
 
         // make sure that the referant of the borrow is not reassigned
-        let borrowed_address = borrow_assignment.address.get_root_memory();
+        let borrowed_at = *self.register_borrow_issued_at.get(&borrow).unwrap();
+        let root_borrowed_address_type =
+            match *borrow_assignment.address.get_root_memory() {
+                Memory::Parameter(id) => Type::from_default_model(
+                    self.ty_environment
+                        .table()
+                        .get_callable(self.current_site.try_into().unwrap())
+                        .unwrap()
+                        .parameters()
+                        .get(id)
+                        .unwrap()
+                        .r#type
+                        .clone(),
+                ),
+                Memory::Alloca(id) => self
+                    .representation
+                    .values
+                    .allocas
+                    .get(id)
+                    .unwrap()
+                    .r#type
+                    .clone(),
+            };
+
+        if has_been_reassigned(
+            &borrow_assignment.address,
+            &root_borrowed_address_type,
+            borrowed_at,
+            point,
+            &self.representation.control_flow_graph,
+            self.ty_environment,
+        )? {
+            // not an active borrow
+            return Ok(());
+        }
 
         let borrow_region = self.attached_borrows.get(&borrow).unwrap();
 
@@ -674,6 +715,18 @@ impl<
             .flat_map(|(from, tos)| tos.iter().map(|to| (*from, *to)))
         {
             self.subset_relations.add_edge(other_from, other_to);
+        }
+
+        for (other_borrow, borrow_issued_at) in &other.register_borrow_issued_at
+        {
+            match self.register_borrow_issued_at.entry(*other_borrow) {
+                Entry::Occupied(occupied_entry) => {
+                    assert_eq!(occupied_entry.get(), borrow_issued_at);
+                }
+                Entry::Vacant(vacant_entry) => {
+                    vacant_entry.insert(*borrow_issued_at);
+                }
+            }
         }
 
         for (other_borrow, other_region) in &other.attached_borrows {

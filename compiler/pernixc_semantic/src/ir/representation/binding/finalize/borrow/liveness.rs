@@ -1105,3 +1105,141 @@ impl<
         )
     }
 }
+
+pub fn has_been_reassigned<S: table::State>(
+    checking_address: &Address<BorrowModel>,
+    root_address_type: &Type<BorrowModel>,
+    from: Point<BorrowModel>,
+    to: Point<BorrowModel>,
+    control_flow_graph: &ControlFlowGraph<BorrowModel>,
+    environment: &Environment<
+        BorrowModel,
+        S,
+        impl Normalizer<BorrowModel, S>,
+        impl Observer<BorrowModel, S>,
+    >,
+) -> Result<bool, TypeSystemOverflow<ir::Model>> {
+    let mut traverser = LiveLenderTraverser {
+        root_memory: *checking_address.get_root_memory(),
+        assigned_states: Assigned::Whole(false),
+        checking_address,
+        root_type: root_address_type,
+        environment,
+    };
+
+    traverse_block(&mut traverser, control_flow_graph, from, &mut |_, point| {
+        point == to
+    })
+}
+
+#[derive(Debug)]
+struct LiveLenderTraverser<
+    'a,
+    S: table::State,
+    N: Normalizer<BorrowModel, S>,
+    O: Observer<BorrowModel, S>,
+> {
+    root_memory: Memory<BorrowModel>,
+    assigned_states: Assigned,
+    checking_address: &'a Address<BorrowModel>,
+    root_type: &'a Type<BorrowModel>,
+
+    environment: &'a Environment<'a, BorrowModel, S, N, O>,
+}
+
+impl<
+        'a,
+        S: table::State,
+        N: Normalizer<BorrowModel, S>,
+        O: Observer<BorrowModel, S>,
+    > Clone for LiveLenderTraverser<'a, S, N, O>
+{
+    fn clone(&self) -> Self {
+        Self {
+            root_memory: self.root_memory,
+            assigned_states: self.assigned_states.clone(),
+            checking_address: self.checking_address,
+            root_type: self.root_type,
+
+            environment: self.environment,
+        }
+    }
+}
+
+impl<
+        'a,
+        S: table::State,
+        N: Normalizer<BorrowModel, S>,
+        O: Observer<BorrowModel, S>,
+    > Traverser<BorrowModel> for LiveLenderTraverser<'a, S, N, O>
+{
+    type Error = TypeSystemOverflow<ir::Model>;
+
+    type Result = bool; /* true if it has been reassigned, false otherwise */
+
+    fn on_instruction(
+        &mut self,
+        _: Point<BorrowModel>,
+        instruction: &Instruction<BorrowModel>,
+    ) -> Result<ControlFlow<Self::Result>, Self::Error> {
+        let Instruction::Store(store) = instruction else {
+            return Ok(ControlFlow::Continue);
+        };
+
+        let overlapping_addresses =
+            store.address.is_child_of(&self.checking_address)
+                || self.checking_address.is_child_of(&store.address);
+
+        // non-related address
+        if !overlapping_addresses {
+            return Ok(ControlFlow::Continue);
+        }
+
+        match self.assigned_states.set_assigned(
+            &store.address,
+            self.root_type.clone(),
+            self.environment,
+        ) {
+            Ok(_) => {}
+
+            Err(SetAccessedError::Internal(reason)) => {
+                panic!("{reason}")
+            }
+
+            Err(SetAccessedError::Overflow(overflow_error)) => {
+                return Err(TypeSystemOverflow {
+                    operation: OverflowOperation::TypeOf,
+                    overflow_span: store.span.clone(),
+                    overflow_error,
+                });
+            }
+        }
+
+        if self
+            .assigned_states
+            .from_address(&self.checking_address)
+            .is_assigned()
+        {
+            Ok(ControlFlow::Break(true))
+        } else {
+            Ok(ControlFlow::Continue)
+        }
+    }
+
+    fn on_terminator(
+        &mut self,
+        _: ID<Block<BorrowModel>>,
+        _: Option<&Terminator<BorrowModel>>,
+    ) -> Result<ControlFlow<Self::Result>, Self::Error> {
+        Ok(ControlFlow::Continue)
+    }
+
+    fn fold_result(
+        previous: Self::Result,
+        next: Self::Result,
+    ) -> (Self::Result, bool) {
+        let result = previous && next;
+
+        (result, !result)
+    }
+}
