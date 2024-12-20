@@ -409,6 +409,8 @@ fn an_aliased_formulation() {
 // the test case is lifted from
 // https://smallcultfollowing.com/babysteps/blog/2023/09/22/polonius-part-1/
 const POLONIUS_ONE_EXAMPLE: &str = r#"
+public function consume[T](x: T) {}
+
 // only (D) is an error
 public function main() {
     let mutable x = 22;
@@ -423,7 +425,7 @@ public function main() {
         y += 1;              // (C) Mutate `y` -- is this ok?
     }
     y += 1;                  // (D) Mutate `y` -- is this ok?
-    let a = *p;           // use `p` again here
+    consume(*p);           // use `p` again here
 }
 "#;
 
@@ -1166,7 +1168,7 @@ const BORROW_IN_LOOP: &str = r#"
 public function main() {
     let outer = 32;
     let mutable test = &outer;
-    
+
     while (true) {
         let inner = 32;
         test = &inner;
@@ -1178,7 +1180,7 @@ public function main() {
 
 #[test]
 fn borrow_in_loop() {
-    assert!(dbg!(build_table(BORROW_IN_LOOP)).is_ok());
+    assert!(build_table(BORROW_IN_LOOP).is_ok());
 }
 
 const POSSIBLE_USE_OF_GOING_OUT_OF_SCOPE_REFERENCE: &str = r#"
@@ -1229,4 +1231,57 @@ public function main() {
 #[test]
 fn mutable_reference_from_difference_places() {
     assert!(build_table(ASSIGN_MUTABLE_REFERENCE_DOES_NOT_INVALIDATE).is_ok());
+}
+
+const PUSH_TWO_MUTABLE_REFERENCES_FROM_DIFFERENT_PLACES: &str = r#"
+// fake vector
+public struct Vector[T] {
+}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function main() {
+    let mutable first = 32;
+    let mutable second = 64;
+    let mutable vector = Vector::new();
+
+    let mutable ref = &mutable first;
+    vector.push(&mutable *ref);
+
+    ref = &mutable second;
+    vector.push(&mutable *ref);
+}
+"#;
+
+#[test]
+fn push_two_mutable_references_from_different_places() {
+    assert!(
+        build_table(PUSH_TWO_MUTABLE_REFERENCES_FROM_DIFFERENT_PLACES).is_ok()
+    );
+}
+
+const REASSIGNED_REFERENCE: &str = r#"
+public function print[T](value: T) {}
+
+public function main() {
+    let mutable x = 22;
+    let y = 44;
+    let mutable p = &x;
+    p = &y;
+    x += 1;
+    print(*p);
+}
+"#;
+
+#[test]
+fn reassign_reference() {
+    assert!(build_table(REASSIGNED_REFERENCE).is_ok());
 }

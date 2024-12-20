@@ -1,24 +1,26 @@
-use std::{
-    borrow::Cow,
-    collections::{HashMap, HashSet},
-};
+use std::collections::{HashMap, HashSet};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
 
 use crate::{
     arena::{Key, ID},
+    error::{OverflowOperation, TypeSystemOverflow, Usage},
     ir::{
         self,
         address::{self, Address, Memory},
         control_flow_graph::{Block, Point},
         instruction::{AccessKind, AccessMode, Instruction, Jump, Terminator},
+        representation::{
+            binding::finalize::borrow::get_lifetimes_in_address,
+            borrow::{Model as BorrowModel, Region},
+        },
         value::register::Register,
     },
     symbol::{
         self,
         table::{self, representation::Index as _},
-        AdtID, Field,
+        AdtID, Field, GlobalID,
     },
     type_system::{
         environment::Environment,
@@ -62,7 +64,7 @@ pub enum SetAccessedError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TupleElement {
-    projection: Accessed,
+    projection: Assigned,
     is_unpacked: bool,
 }
 
@@ -73,66 +75,158 @@ pub struct Tuple {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
-    projections_by_field_id: HashMap<ID<Field>, Accessed>,
+    projections_by_field_id: HashMap<ID<Field>, Assigned>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
-    variant_projection: Box<Accessed>,
+    variant_projection: Box<Assigned>,
     variant_id: ID<symbol::Variant>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dereference {
-    projection: Box<Accessed>,
+    projection: Box<Assigned>,
 }
 
 /// An enumeration representing the state whether a particular address has been
-/// accessed or not.
+/// assigned or not.
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
-pub enum Accessed {
+pub enum Assigned {
     Struct(Struct),
     Tuple(Tuple),
     Variant(Variant),
     Dereference(Dereference),
 
+    /// `true` means has been assigned, `false` otherwise.
     Whole(bool),
 }
 
-impl Accessed {
+impl Assigned {
     /// Returns `true` if every address in the projection has been accessed.
-    pub fn is_accessed(&self) -> bool {
+    pub fn is_assigned(&self) -> bool {
         match self {
-            Self::Struct(struct_) => {
-                struct_.projections_by_field_id.values().all(Self::is_accessed)
-            }
+            Self::Struct(struct_proj) => struct_proj
+                .projections_by_field_id
+                .values()
+                .all(Self::is_assigned),
 
-            Self::Tuple(tuple) => tuple
+            Self::Tuple(tuple_proj) => tuple_proj
                 .elements
                 .iter()
-                .all(|element| element.projection.is_accessed()),
+                .all(|element| element.projection.is_assigned()),
 
-            Self::Whole(accessed) => *accessed,
+            Self::Variant(variant_proj) => {
+                variant_proj.variant_projection.is_assigned()
+            }
 
-            Self::Variant(_) | Self::Dereference(_) => false,
+            Self::Dereference(_) => false,
+
+            Self::Whole(assigned) => *assigned,
+        }
+    }
+
+    /// Returns assignment state for the given address.
+    pub fn from_address(&self, address: &Address<impl Model>) -> &Self {
+        match address {
+            Address::Memory(_) => self,
+
+            Address::Field(field) => match self {
+                Self::Struct(struct_proj) => struct_proj
+                    .projections_by_field_id
+                    .get(&field.id)
+                    .unwrap()
+                    .from_address(&field.struct_address),
+
+                Self::Whole(_) => self,
+
+                _ => panic!(
+                    "expected a struct/whole; found address: {address:?}, \
+                     found assigned: {self:?}"
+                ),
+            },
+
+            Address::Tuple(tuple) => match self {
+                Self::Tuple(tuple_proj) => {
+                    let index = match tuple.offset {
+                        address::Offset::FromStart(index) => index,
+                        address::Offset::FromEnd(index) => {
+                            tuple_proj.elements.len() - index
+                        }
+                        address::Offset::Unpacked => {
+                            for element in &tuple_proj.elements {
+                                if element.is_unpacked {
+                                    return element
+                                        .projection
+                                        .from_address(&tuple.tuple_address);
+                                }
+                            }
+
+                            panic!("unpacked tuple type not found");
+                        }
+                    };
+
+                    tuple_proj.elements[index]
+                        .projection
+                        .from_address(&tuple.tuple_address)
+                }
+
+                Self::Whole(_) => self,
+
+                _ => panic!(
+                    "expected a tuple/whole; found address: {address:?}, \
+                     found assigned: {self:?}"
+                ),
+            },
+
+            Address::Index(_) => {
+                assert!(self.is_whole());
+
+                self
+            }
+
+            Address::Variant(variant) => match self {
+                Self::Variant(variant_proj) => variant_proj
+                    .variant_projection
+                    .from_address(&variant.enum_address),
+
+                Self::Whole(_) => self,
+
+                _ => panic!(
+                    "expected a variant/whole; found address: {address:?}, \
+                     found assigned: {self:?}"
+                ),
+            },
+
+            Address::Reference(reference) => match self {
+                Self::Dereference(deref_proj) => deref_proj
+                    .projection
+                    .from_address(&reference.reference_address),
+
+                Self::Whole(_) => self,
+
+                _ => panic!(
+                    "expected a dereference/whole; found address: \
+                     {address:?}, found assigned: {self:?}"
+                ),
+            },
         }
     }
 }
 
 #[derive(Debug, EnumAsInner)]
-enum SetAccessedResultInternal<'a, M: Model> {
+enum SetAssignedResultInternal<'a, M: Model> {
     Done(bool),
-    Continue { projection: &'a mut Accessed, ty: Type<M> },
+    Continue { projection: &'a mut Assigned, ty: Type<M> },
 }
 
-impl Accessed {
+impl Assigned {
     /// Remembers that the given `address` has been accessed. Returns `true`
     /// if the address is accessed for the first time.
-    pub fn set_accessed<M: Model, S: table::State>(
+    pub fn set_assigned<M: Model, S: table::State>(
         &mut self,
         address: &Address<M>,
         root_ty: Type<M>,
-        write: bool,
         environment: &Environment<
             M,
             S,
@@ -141,7 +235,7 @@ impl Accessed {
         >,
     ) -> Result<bool, SetAccessedError> {
         Ok(self
-            .set_accessed_internal(address, root_ty, true, write, environment)?
+            .set_accessed_internal(address, root_ty, true, environment)?
             .into_done()
             .unwrap())
     }
@@ -152,17 +246,16 @@ impl Accessed {
         address: &Address<M>,
         root_ty: Type<M>,
         root: bool,
-        write: bool,
         environment: &Environment<
             M,
             S,
             impl Normalizer<M, S>,
             impl Observer<M, S>,
         >,
-    ) -> Result<SetAccessedResultInternal<M>, SetAccessedError> {
+    ) -> Result<SetAssignedResultInternal<M>, SetAccessedError> {
         // no more work to do
-        if self.is_accessed() {
-            return Ok(SetAccessedResultInternal::Done(false));
+        if self.is_assigned() {
+            return Ok(SetAssignedResultInternal::Done(false));
         }
 
         let (target_projection, ty) = match address {
@@ -173,14 +266,13 @@ impl Accessed {
                     &field.struct_address,
                     root_ty,
                     false,
-                    write,
                     environment,
                 )? {
-                    done @ SetAccessedResultInternal::Done(_) => {
+                    done @ SetAssignedResultInternal::Done(_) => {
                         return Ok(done);
                     }
 
-                    SetAccessedResultInternal::Continue { projection, ty } => {
+                    SetAssignedResultInternal::Continue { projection, ty } => {
                         (projection, ty)
                     }
                 };
@@ -270,14 +362,13 @@ impl Accessed {
                     &tuple.tuple_address,
                     root_ty,
                     false,
-                    write,
                     environment,
                 )? {
-                    done @ SetAccessedResultInternal::Done(_) => {
+                    done @ SetAssignedResultInternal::Done(_) => {
                         return Ok(done);
                     }
 
-                    SetAccessedResultInternal::Continue { projection, ty } => {
+                    SetAssignedResultInternal::Continue { projection, ty } => {
                         (projection, ty)
                     }
                 };
@@ -371,11 +462,7 @@ impl Accessed {
             }
 
             Address::Index(_) => {
-                if !write {
-                    *self = Self::Whole(true);
-                }
-
-                return Ok(SetAccessedResultInternal::Done(false));
+                return Ok(SetAssignedResultInternal::Done(false));
             }
 
             Address::Variant(variant) => {
@@ -383,14 +470,13 @@ impl Accessed {
                     &variant.enum_address,
                     root_ty,
                     false,
-                    write,
                     environment,
                 )? {
-                    done @ SetAccessedResultInternal::Done(_) => {
+                    done @ SetAssignedResultInternal::Done(_) => {
                         return Ok(done);
                     }
 
-                    SetAccessedResultInternal::Continue { projection, ty } => {
+                    SetAssignedResultInternal::Continue { projection, ty } => {
                         (projection, ty)
                     }
                 };
@@ -483,14 +569,13 @@ impl Accessed {
                     &reference.reference_address,
                     root_ty,
                     false,
-                    write,
                     environment,
                 )? {
-                    done @ SetAccessedResultInternal::Done(_) => {
+                    done @ SetAssignedResultInternal::Done(_) => {
                         return Ok(done);
                     }
 
-                    SetAccessedResultInternal::Continue { projection, ty } => {
+                    SetAssignedResultInternal::Continue { projection, ty } => {
                         (projection, ty)
                     }
                 };
@@ -527,9 +612,9 @@ impl Accessed {
         Ok(if root {
             *target_projection = Self::Whole(true);
 
-            SetAccessedResultInternal::Done(true)
+            SetAssignedResultInternal::Done(true)
         } else {
-            SetAccessedResultInternal::Continue {
+            SetAssignedResultInternal::Continue {
                 projection: target_projection,
                 ty,
             }
@@ -537,6 +622,7 @@ impl Accessed {
     }
 }
 
+#[allow(unused)]
 pub fn live_register_spans<M: Model>(
     register_id: ID<Register<M>>,
     point: Point<M>,
@@ -554,6 +640,7 @@ pub fn live_register_spans<M: Model>(
 
 /// The state struct used for keep tracking the liveness of the addresses.
 #[derive(Debug, Clone)]
+#[allow(unused)]
 struct RegisterTraverser<'a, M: Model> {
     target_register_id: ID<Register<M>>,
     representation: &'a ir::Representation<M>,
@@ -696,73 +783,93 @@ impl<M: Model> RegisterTraverser<'_, M> {
 /// ```
 ///
 /// the live addresses is only `a.1`.
-pub fn get_live_addresses<S: table::State, M: Model>(
-    root_memory_address: Memory<M>,
-    root_type: &Type<M>,
-    point: Point<M>,
-    exit: &mut impl FnMut(&Instruction<M>, Point<M>) -> bool,
-    representation: &ir::Representation<M>,
-    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
-) -> Result<HashSet<(Address<M>, AccessKind)>, OverflowError> {
-    let mut state = MemoryTraverser {
-        root_memory_address,
-        root_type,
+pub fn get_live_usages<S: table::State>(
+    memories: impl IntoIterator<Item = Memory<BorrowModel>>,
+    checking_registers: HashSet<ID<Register<BorrowModel>>>,
+    invalidated_regions: &HashSet<Region>,
+    point: Point<BorrowModel>,
+    mut exit: &mut impl FnMut(&Instruction<BorrowModel>, Point<BorrowModel>) -> bool,
+    representation: &ir::Representation<BorrowModel>,
+    current_site: GlobalID,
+    environment: &Environment<
+        BorrowModel,
+        S,
+        impl Normalizer<BorrowModel, S>,
+        impl Observer<BorrowModel, S>,
+    >,
+) -> Result<HashSet<Usage>, TypeSystemOverflow<ir::Model>> {
+    let mut state = LiveBorrowTraverser {
+        assigned_states_by_memory: memories
+            .into_iter()
+            .map(|memory| (memory, Assigned::Whole(false)))
+            .collect(),
+        checking_registers,
+        invalidated_regions,
         representation,
         environment,
-        projection: Accessed::Whole(false),
+        current_site,
     };
 
     state.traverse_block(
         point.block_id,
         Some(point.instruction_index),
-        exit,
+        &mut exit,
         &mut HashSet::new(),
     )
 }
 
 /// The state struct used for keep tracking the liveness of the addresses.
 #[derive(Debug)]
-struct MemoryTraverser<
+struct LiveBorrowTraverser<
     'a,
     S: table::State,
-    M: Model,
-    N: Normalizer<M, S>,
-    O: Observer<M, S>,
+    N: Normalizer<BorrowModel, S>,
+    O: Observer<BorrowModel, S>,
 > {
-    root_memory_address: Memory<M>,
+    assigned_states_by_memory: HashMap<Memory<BorrowModel>, Assigned>,
+    checking_registers: HashSet<ID<Register<BorrowModel>>>,
+    invalidated_regions: &'a HashSet<Region>,
 
-    root_type: &'a Type<M>,
-    representation: &'a ir::Representation<M>,
-    environment: &'a Environment<'a, M, S, N, O>,
-
-    projection: Accessed,
+    representation: &'a ir::Representation<BorrowModel>,
+    environment: &'a Environment<'a, BorrowModel, S, N, O>,
+    current_site: GlobalID,
 }
 
-impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
-    Clone for MemoryTraverser<'a, S, M, N, O>
+impl<
+        'a,
+        S: table::State,
+        N: Normalizer<BorrowModel, S>,
+        O: Observer<BorrowModel, S>,
+    > Clone for LiveBorrowTraverser<'a, S, N, O>
 {
     fn clone(&self) -> Self {
         Self {
-            root_memory_address: self.root_memory_address,
-            root_type: self.root_type,
+            assigned_states_by_memory: self.assigned_states_by_memory.clone(),
+            checking_registers: self.checking_registers.clone(),
+
+            invalidated_regions: self.invalidated_regions,
             representation: self.representation,
             environment: self.environment,
-            projection: self.projection.clone(),
+            current_site: self.current_site,
         }
     }
 }
 
-impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
-    MemoryTraverser<'a, S, M, N, O>
+impl<
+        'a,
+        S: table::State,
+        N: Normalizer<BorrowModel, S>,
+        O: Observer<BorrowModel, S>,
+    > LiveBorrowTraverser<'a, S, N, O>
 {
     #[allow(clippy::too_many_lines)]
     fn traverse_block(
         &mut self,
-        block_id: ID<Block<M>>,
+        block_id: ID<Block<BorrowModel>>,
         starting_instruction_index: Option<usize>,
-        exit: &mut impl FnMut(&Instruction<M>, Point<M>) -> bool,
+        exit: &mut impl FnMut(&Instruction<BorrowModel>, Point<BorrowModel>) -> bool,
         visited: &mut HashSet<(usize, Option<usize>)>,
-    ) -> Result<HashSet<(Address<M>, AccessKind)>, OverflowError> {
+    ) -> Result<HashSet<Usage>, TypeSystemOverflow<ir::Model>> {
         if starting_instruction_index.is_none()
             && !visited.insert((block_id.into_index(), None))
         {
@@ -775,7 +882,6 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
             .blocks()
             .get(block_id)
             .unwrap();
-        let mut live_addresses = HashSet::new();
 
         for (index, instruction) in block
             .instructions()
@@ -785,7 +891,7 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
         {
             // skip to the starting instruction index
             if visited.contains(&(block_id.into_index(), Some(index))) {
-                return Ok(live_addresses);
+                return Ok(HashSet::new());
             }
 
             // if the next instruction is the starting instruction index, we
@@ -796,103 +902,221 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
 
             // explicitly exit the traversal
             if exit(instruction, Point { block_id, instruction_index: index }) {
-                return Ok(live_addresses);
+                return Ok(HashSet::new());
             }
 
             let accesses = instruction
                 .get_access_address(&self.representation.values)
                 .unwrap();
 
+            // check each access
             for (address, kind) in accesses {
-                if !address
-                    .is_child_of(&Address::Memory(self.root_memory_address))
-                {
-                    // not relevant, skip
+                let memory_root = address.get_root_memory();
+                let memory_root_ty = match *memory_root {
+                    Memory::Parameter(id) => Type::from_default_model(
+                        self.environment
+                            .table()
+                            .get_callable(self.current_site.try_into().unwrap())
+                            .unwrap()
+                            .parameters()
+                            .get(id)
+                            .unwrap()
+                            .r#type
+                            .clone(),
+                    ),
+                    Memory::Alloca(id) => self
+                        .representation
+                        .values
+                        .allocas
+                        .get(id)
+                        .unwrap()
+                        .r#type
+                        .clone(),
+                };
+
+                let Some(assigned_state) =
+                    self.assigned_states_by_memory.get_mut(&memory_root)
+                else {
+                    // skip irrelevant addresses
+                    continue;
+                };
+
+                // check if the address is accessed
+                if assigned_state.from_address(&address).is_assigned() {
+                    // has already assigned, dead address
                     continue;
                 }
 
-                let write =
-                    matches!(&kind, AccessKind::Normal(AccessMode::Write(_)));
+                let (read_span, is_drop) = match kind {
+                    AccessKind::Normal(AccessMode::Write(write)) => {
+                        match assigned_state.set_assigned(
+                            &address,
+                            memory_root_ty,
+                            self.environment,
+                        ) {
+                            Ok(_) => {
+                                continue;
+                            }
 
-                match self.projection.set_accessed(
-                    &address,
-                    self.root_type.clone(),
-                    write,
-                    self.environment,
-                ) {
-                    Ok(true) => {
-                        if !write {
-                            live_addresses.insert((
-                                match address {
-                                    Cow::Borrowed(x) => x.clone(),
-                                    Cow::Owned(x) => x,
-                                },
-                                kind,
-                            ));
+                            Err(SetAccessedError::Internal(reason)) => {
+                                panic!("{reason}")
+                            }
+
+                            Err(SetAccessedError::Overflow(overflow_error)) => {
+                                return Err(TypeSystemOverflow {
+                                    operation: OverflowOperation::TypeOf,
+                                    overflow_span: write,
+                                    overflow_error,
+                                });
+                            }
                         }
                     }
 
-                    Ok(false) => {}
+                    AccessKind::Normal(AccessMode::Read(read)) => {
+                        (read.span, false)
+                    }
+                    AccessKind::Drop => (
+                        match *memory_root {
+                            Memory::Parameter(id) => self
+                                .environment
+                                .table()
+                                .get_callable(
+                                    self.current_site.try_into().unwrap(),
+                                )
+                                .unwrap()
+                                .parameters()
+                                .get(id)
+                                .unwrap()
+                                .span
+                                .clone()
+                                .unwrap(),
+                            Memory::Alloca(id) => self
+                                .representation
+                                .values
+                                .allocas
+                                .get(id)
+                                .unwrap()
+                                .span
+                                .clone(),
+                        },
+                        true,
+                    ),
+                };
 
-                    Err(err) => match err {
-                        SetAccessedError::Overflow(err) => return Err(err),
+                let read_lifetimes = get_lifetimes_in_address(
+                    &address,
+                    &read_span,
+                    &self.representation.values,
+                    self.current_site,
+                    self.environment,
+                )?;
+                // check if the lifetime appears in the invalidated regions
+                let has_invalidated_region = read_lifetimes
+                    .iter()
+                    .filter_map(|x| x.clone().try_into().ok())
+                    .any(|x| self.invalidated_regions.contains(&x));
 
-                        err @ SetAccessedError::Internal(_) => {
-                            panic!("{err:?}")
-                        }
-                    },
+                // found usage of invalidated regions
+                if has_invalidated_region {
+                    return Ok(std::iter::once(if is_drop {
+                        Usage::Drop
+                    } else {
+                        Usage::Local { access_span: read_span, in_loop: false }
+                    })
+                    .collect());
                 }
             }
 
-            // if the whole thing is used or reassigned, we can skip the
-            // rest of the instructions
-            if self.projection.is_accessed() {
-                break;
+            let invalidated_use_register = match instruction {
+                Instruction::Store(store) => {
+                    store.value.as_register().and_then(|x| {
+                        self.checking_registers.contains(x).then_some(*x)
+                    })
+                }
+
+                Instruction::RegisterAssignment(register_assignment) => {
+                    self.checking_registers.remove(&register_assignment.id);
+
+                    let register = self
+                        .representation
+                        .values
+                        .registers
+                        .get(register_assignment.id)
+                        .unwrap();
+
+                    let used_registers =
+                        register.assignment.get_used_registers();
+
+                    used_registers
+                        .iter()
+                        .any(|x| self.checking_registers.contains(x))
+                        .then_some(register_assignment.id)
+                }
+
+                Instruction::RegisterDiscard(register_discard) => {
+                    self.checking_registers.remove(&register_discard.id);
+
+                    None
+                }
+
+                Instruction::TuplePack(_)
+                | Instruction::ScopePush(_)
+                | Instruction::ScopePop(_)
+                | Instruction::DropUnpackTuple(_)
+                | Instruction::Drop(_) => None,
+            };
+
+            if let Some(register_id) = invalidated_use_register {
+                return Ok(std::iter::once(Usage::Local {
+                    access_span: self
+                        .representation
+                        .values
+                        .registers
+                        .get(register_id)
+                        .unwrap()
+                        .span
+                        .clone(),
+                    in_loop: false,
+                })
+                .collect());
             }
         }
 
         match block.terminator() {
             Some(Terminator::Jump(jump)) => match jump {
-                Jump::Unconditional(unconditional_jump) => {
-                    let accesses = self.traverse_block(
-                        unconditional_jump.target,
-                        None,
-                        exit,
-                        visited,
-                    )?;
-
-                    live_addresses.extend(accesses);
-
-                    Ok(live_addresses)
-                }
+                Jump::Unconditional(unconditional_jump) => self.traverse_block(
+                    unconditional_jump.target,
+                    None,
+                    exit,
+                    visited,
+                ),
                 Jump::Conditional(conditional_jump) => {
-                    let true_accesses = self.clone().traverse_block(
+                    let mut true_usages = self.clone().traverse_block(
                         conditional_jump.true_target,
                         None,
                         exit,
                         &mut visited.clone(),
                     )?;
-
-                    let false_accesses = self.traverse_block(
+                    let false_usages = self.traverse_block(
                         conditional_jump.false_target,
                         None,
                         exit,
                         &mut visited.clone(),
                     )?;
 
-                    live_addresses.extend(true_accesses);
-                    live_addresses.extend(false_accesses);
+                    true_usages.extend(false_usages);
 
-                    Ok(live_addresses)
+                    Ok(true_usages)
                 }
                 Jump::Select(select_jump) => {
+                    let mut usages = HashSet::new();
                     for block in select_jump
                         .branches
                         .values()
                         .copied()
                         .chain(select_jump.otherwise)
                     {
-                        live_addresses.extend(self.clone().traverse_block(
+                        usages.extend(self.clone().traverse_block(
                             block,
                             None,
                             exit,
@@ -900,12 +1124,12 @@ impl<'a, S: table::State, M: Model, N: Normalizer<M, S>, O: Observer<M, S>>
                         )?);
                     }
 
-                    Ok(live_addresses)
+                    Ok(usages)
                 }
             },
 
-            Some(Terminator::Return(_) | Terminator::Panic) | None => {
-                Ok(live_addresses)
+            Some(Terminator::Return(_)) | Some(Terminator::Panic) | None => {
+                Ok(HashSet::new())
             }
         }
     }

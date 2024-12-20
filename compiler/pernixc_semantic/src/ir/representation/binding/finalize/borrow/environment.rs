@@ -24,11 +24,8 @@ use crate::{
         address::{Address, Memory},
         control_flow_graph::Point,
         instruction::{AccessMode, Instruction},
-        representation::{
-            borrow::{
-                LocalRegion, Model as BorrowModel, Region, UniversalRegion,
-            },
-            Values,
+        representation::borrow::{
+            LocalRegion, Model as BorrowModel, Region, UniversalRegion,
         },
         value::register::Register,
     },
@@ -283,81 +280,6 @@ impl<
     }
 }
 
-/// Gets all the lifetimes included in the given address.
-pub fn get_lifetimes_in_address<S: table::State>(
-    mut address: &Address<BorrowModel>,
-    span: &Span,
-    values: &Values<BorrowModel>,
-    current_site: GlobalID,
-    ty_environment: &TyEnvironment<
-        BorrowModel,
-        S,
-        impl Normalizer<BorrowModel, S>,
-        impl Observer<BorrowModel, S>,
-    >,
-) -> Result<HashSet<Lifetime<BorrowModel>>, TypeSystemOverflow<ir::Model>> {
-    let mut lifetimes = HashSet::new();
-    let address_ty = values
-        .type_of_address(address, current_site, ty_environment)
-        .map_err(|x| TypeSystemOverflow::<ir::Model> {
-            operation: OverflowOperation::TypeOf,
-            overflow_span: span.clone(),
-            overflow_error: x.into_overflow().unwrap(),
-        })?
-        .result;
-
-    lifetimes.extend(
-        RecursiveIterator::new(&address_ty)
-            .filter_map(|x| x.0.into_lifetime().ok())
-            .cloned(),
-    );
-
-    loop {
-        match address {
-            Address::Memory(_) => break,
-
-            Address::Field(field) => {
-                address = &field.struct_address;
-            }
-            Address::Tuple(tuple) => {
-                address = &tuple.tuple_address;
-            }
-            Address::Index(index) => {
-                address = &index.array_address;
-            }
-            Address::Variant(variant) => {
-                address = &variant.enum_address;
-            }
-
-            Address::Reference(reference) => {
-                let pointee_ty = values
-                    .type_of_address(
-                        &reference.reference_address,
-                        current_site,
-                        ty_environment,
-                    )
-                    .map_err(|x| TypeSystemOverflow::<ir::Model> {
-                        operation: OverflowOperation::TypeOf,
-                        overflow_span: span.clone(),
-                        overflow_error: x.into_overflow().unwrap(),
-                    })?
-                    .result;
-                let pointee_reference_ty = pointee_ty.as_reference().unwrap();
-
-                lifetimes.insert(pointee_reference_ty.lifetime.clone());
-
-                if pointee_reference_ty.qualifier == Qualifier::Immutable {
-                    break;
-                }
-
-                address = &reference.reference_address;
-            }
-        }
-    }
-
-    Ok(lifetimes)
-}
-
 impl<
         'a,
         S: table::State,
@@ -440,7 +362,6 @@ impl<
     fn invalidate_borrow(
         &self,
         borrow: ID<Register<BorrowModel>>,
-        access_span: &Span,
         mut exit: impl FnMut(&Instruction<BorrowModel>, Point<BorrowModel>) -> bool,
         point: Point<BorrowModel>,
         handler_fn: impl Fn(Usage),
@@ -463,49 +384,6 @@ impl<
             self.representation.values.allocas.iter().filter(|(_, x)| {
                 Contains::contains(&x.r#type, &invalidated_local_regions)
             });
-
-        for (alloca_id, alloca) in checking_allocas {
-            let accesses = liveness::get_live_addresses(
-                Memory::Alloca(alloca_id),
-                &alloca.r#type,
-                point,
-                &mut exit,
-                self.representation,
-                self.ty_environment,
-            )
-            .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
-                operation: OverflowOperation::TypeOf,
-                overflow_span: access_span.clone(),
-                overflow_error,
-            })?;
-
-            for (address, access_kind) in accesses {
-                if get_lifetimes_in_address(
-                    &address,
-                    access_span,
-                    &self.representation.values,
-                    self.current_site,
-                    self.ty_environment,
-                )?
-                .into_iter()
-                .any(|x| {
-                    let Some(x) = Region::try_from(x).ok() else {
-                        return false;
-                    };
-
-                    invalidated_local_regions.contains(&x)
-                }) {
-                    handler_fn(access_kind.into_normal().map_or(
-                        Usage::Drop,
-                        |access_mode| Usage::Local {
-                            access_span: access_mode.into_span(),
-                            in_loop: false,
-                        },
-                    ));
-                }
-            }
-        }
-
         let checking_registers =
             self.register_type_cache.iter().filter(|(_, x)| {
                 invalidated_local_regions
@@ -513,16 +391,19 @@ impl<
                     .any(|region| x.regions.contains(region))
             });
 
-        for (register, _) in checking_registers {
-            let live_spans = liveness::live_register_spans(
-                *register,
-                point,
-                self.representation,
-            );
+        let live_usages = liveness::get_live_usages(
+            checking_allocas.map(|x| Memory::Alloca(x.0)),
+            checking_registers.map(|x| *x.0).collect(),
+            &invalidated_local_regions,
+            point,
+            &mut exit,
+            self.representation,
+            self.current_site,
+            self.ty_environment(),
+        )?;
 
-            for span in live_spans {
-                handler_fn(Usage::Local { access_span: span, in_loop: false });
-            }
+        for usage in live_usages {
+            handler_fn(usage);
         }
 
         let mut universal_lifetimes = Vec::new();
@@ -572,11 +453,8 @@ impl<
                 continue;
             }
 
-            let span = borrow_register.span.clone();
-
             self.invalidate_borrow(
                 borrow,
-                &span,
                 |_, _| false,
                 point,
                 |borrow_usage| {
@@ -652,7 +530,6 @@ impl<
 
             self.invalidate_borrow(
                 *borrow,
-                &span,
                 |inst, _| {
                     // prevent multiple invalidations in loops
                     inst.as_scope_pop().map_or(false, |x| x.0 == dropped_scope)
@@ -747,7 +624,6 @@ impl<
             if should_invalidate {
                 self.invalidate_borrow(
                     borrow,
-                    access_mode.span(),
                     |_, _| false,
                     point,
                     |borrow_usage| match borrow_assignment.qualifier {

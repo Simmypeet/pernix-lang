@@ -6,7 +6,7 @@ use std::{
 use pernixc_base::source_file::Span;
 
 use super::{
-    environment::{get_lifetimes_in_address, RegionInfo},
+    environment::RegionInfo, get_lifetimes_in_address,
     local_region_generator::LocalRegionGenerator,
 };
 use crate::{
