@@ -8,11 +8,13 @@ use crate::{
     arena::{Key, ID},
     ir::{
         self,
-        representation::{borrow, borrow::LocalRegion},
+        representation::borrow::{self, LocalRegion, Model as BorrowModel},
+        value::register::Assignment,
         Erased, Transform,
     },
     symbol::table::{self, Table},
     type_system::{
+        sub_term::TermLocation,
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor::{self, MutableRecursive},
     },
@@ -234,6 +236,112 @@ impl Transform<Constant<borrow::Model>> for ToIRTransofmer {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct ReplaceWithFreshInference<'a> {
+    generator: &'a mut LocalRegionGenerator,
+}
+
+impl MutableRecursive<Lifetime<BorrowModel>> for ReplaceWithFreshInference<'_> {
+    fn visit(
+        &mut self,
+        term: &mut Lifetime<BorrowModel>,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        if term.is_inference() {
+            return true;
+        }
+
+        *term = Lifetime::Inference(self.generator.next());
+
+        true
+    }
+}
+
+impl MutableRecursive<Type<BorrowModel>> for ReplaceWithFreshInference<'_> {
+    fn visit(
+        &mut self,
+        _: &mut Type<BorrowModel>,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        true
+    }
+}
+
+impl MutableRecursive<Constant<BorrowModel>> for ReplaceWithFreshInference<'_> {
+    fn visit(
+        &mut self,
+        _: &mut Constant<BorrowModel>,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        true
+    }
+}
+
+impl ir::Representation<BorrowModel> {
+    fn replace_with_fresh_lifetimes(
+        &mut self,
+        origins: &mut LocalRegionGenerator,
+    ) {
+        let mut visitor = ReplaceWithFreshInference { generator: origins };
+
+        // replace the lifetime in allocas
+        for alloca in self.values.allocas.items_mut() {
+            visitor::accept_recursive_mut(&mut alloca.r#type, &mut visitor);
+        }
+
+        // replace the lifetime in registers
+        for register in self.values.registers.items_mut() {
+            // these assignments merge multiple lifetimes, therefore we create
+            // a new lifetime for each of them
+            match &mut register.assignment {
+                Assignment::Phi(phi) => {
+                    visitor::accept_recursive_mut(
+                        &mut phi.r#type,
+                        &mut visitor,
+                    );
+                }
+
+                Assignment::Array(array) => {
+                    visitor::accept_recursive_mut(
+                        &mut array.element_type,
+                        &mut visitor,
+                    );
+                }
+
+                Assignment::Struct(structure) => {
+                    for lifetime in &mut structure.generic_arguments.lifetimes {
+                        visitor::accept_recursive_mut(lifetime, &mut visitor);
+                    }
+
+                    for ty in &mut structure.generic_arguments.types {
+                        visitor::accept_recursive_mut(ty, &mut visitor);
+                    }
+
+                    for con in &mut structure.generic_arguments.constants {
+                        visitor::accept_recursive_mut(con, &mut visitor);
+                    }
+                }
+
+                Assignment::Variant(variant) => {
+                    for lifetime in &mut variant.generic_arguments.lifetimes {
+                        visitor::accept_recursive_mut(lifetime, &mut visitor);
+                    }
+
+                    for ty in &mut variant.generic_arguments.types {
+                        visitor::accept_recursive_mut(ty, &mut visitor);
+                    }
+
+                    for con in &mut variant.generic_arguments.constants {
+                        visitor::accept_recursive_mut(con, &mut visitor);
+                    }
+                }
+
+                _ => {}
+            }
+        }
+    }
+}
+
 pub(super) fn transform_to_borrow_model(
     ir: ir::Representation<ir::Model>,
     table: &Table<impl table::State>,
@@ -241,8 +349,8 @@ pub(super) fn transform_to_borrow_model(
     let mut transformer =
         ToBorrowTransformer { generator: LocalRegionGenerator::new() };
 
-    (
-        ir.transform_model(&mut transformer, table).unwrap(),
-        transformer.generator,
-    )
+    let mut transformed = ir.transform_model(&mut transformer, table).unwrap();
+    transformed.replace_with_fresh_lifetimes(&mut transformer.generator);
+
+    (transformed, transformer.generator)
 }
