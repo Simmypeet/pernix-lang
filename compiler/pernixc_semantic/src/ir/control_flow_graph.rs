@@ -1,7 +1,7 @@
 //! Contains the definition of [`Block`] and [`ControlFlowGraph`].
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ops::{Not, RangeBounds},
 };
 
@@ -14,8 +14,36 @@ use super::{
 };
 use crate::{
     arena::{Arena, Key, ID},
+    transitive_closure::TransitiveClosure,
     type_system::{model::Model, term::r#type::Type},
 };
+
+/// A data structure used for computing whether a particular block in the
+/// control flow graph is reachable to another.
+///
+/// This data structure used an efficient algorithm to determine the
+/// reachability in constant time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reachability<M: Model> {
+    blocks_to_index: HashMap<ID<Block<M>>, usize>,
+    index_to_blocks: Vec<ID<Block<M>>>,
+
+    transitive_closure: TransitiveClosure,
+}
+
+impl<M: Model> Reachability<M> {
+    /// Checks if there is a path from the `from` block to the `to` block.
+    pub fn has_path(
+        &self,
+        from: ID<Block<M>>,
+        to: ID<Block<M>>,
+    ) -> Option<bool> {
+        let from = self.blocks_to_index.get(&from)?;
+        let to = self.blocks_to_index.get(&to)?;
+
+        Some(self.transitive_closure.has_path(*from, *to).unwrap())
+    }
+}
 
 /// Represents a list of instructions executed in sequence.
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
@@ -269,6 +297,74 @@ impl<M: Model> ControlFlowGraph<M> {
                 .filter_map(|(id, x)| x.is_reachable().not().then_some(id))
                 .collect(),
             graph: self,
+        }
+    }
+
+    /// Creates a [`Reachability`], used for efficiently determining the
+    /// reachability of particular blocks.
+    pub fn reachability(&self) -> Reachability<M> {
+        let mut block_ids_to_index = HashMap::new();
+        let mut index_to_block_ids = Vec::new();
+
+        for (index, id) in self.blocks().ids().enumerate() {
+            block_ids_to_index.insert(id, index);
+            index_to_block_ids.push(id);
+        }
+
+        let mut edges = Vec::new();
+
+        // add edges to the transitive closure
+        for (block_id, block) in self.blocks.iter() {
+            let Some(Terminator::Jump(jump)) = &block.terminator else {
+                continue;
+            };
+
+            match jump {
+                Jump::Unconditional(jump) => {
+                    edges.push((
+                        block_ids_to_index[&block_id],
+                        block_ids_to_index[&jump.target],
+                    ));
+                }
+                Jump::Conditional(jump) => {
+                    edges.push((
+                        block_ids_to_index[&block_id],
+                        block_ids_to_index[&jump.true_target],
+                    ));
+                    edges.push((
+                        block_ids_to_index[&block_id],
+                        block_ids_to_index[&jump.false_target],
+                    ));
+                }
+                Jump::Select(select) => {
+                    for target in select.branches.values().copied() {
+                        edges.push((
+                            block_ids_to_index[&block_id],
+                            block_ids_to_index[&target],
+                        ));
+                    }
+
+                    if let Some(otherwise) = select.otherwise {
+                        edges.push((
+                            block_ids_to_index[&block_id],
+                            block_ids_to_index[&otherwise],
+                        ));
+                    }
+                }
+            }
+        }
+
+        // compute transitive closure
+        let closure = TransitiveClosure::new(
+            edges.iter().map(|(f, t)| (*f, *t)),
+            self.blocks.len(),
+        )
+        .expect("failed to create transitive closure");
+
+        Reachability {
+            blocks_to_index: block_ids_to_index,
+            index_to_blocks: index_to_block_ids,
+            transitive_closure: closure,
         }
     }
 
