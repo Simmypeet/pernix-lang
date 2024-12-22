@@ -72,6 +72,18 @@ pub struct RegionAt {
     pub point: Option<RegionPoint>,
 }
 
+impl RegionAt {
+    /// Creates a new [`RegionAt`] where the region is location sensitive.
+    pub fn new(region: Region, point: RegionPoint) -> Self {
+        Self { region, point: Some(point) }
+    }
+
+    /// Creates a new [`RegionAt`] where the region is location insensitive.
+    pub fn new_location_insensitive(region: Region) -> Self {
+        Self { region, point: None }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RegionChangeLog {
     pub updated_at_instruction_indices:
@@ -1047,10 +1059,68 @@ pub struct Subset {
     region_ats_by_index: Vec<RegionAt>,
     transitive_closure: TransitiveClosure,
 
+    created_borrows: HashMap<
+        ID<Register<BorrowModel>>,
+        (ID<LocalRegion>, Point<BorrowModel>),
+    >,
+
     change_logs_by_region: HashMap<Region, RegionChangeLog>,
     active_region_sets_by_block_id:
         HashMap<ID<Block<BorrowModel>>, HashSet<Region>>,
     location_insensitive_regions: HashSet<ID<LocalRegion>>,
+}
+
+impl Subset {
+    /// Gets a list of region that contains the given borrow at the given point.
+    pub fn get_regions_containing(
+        &self,
+        borrow_register_id: ID<Register<BorrowModel>>,
+        point: Point<BorrowModel>,
+    ) -> HashSet<Region> {
+        let block_id = point.block_id;
+        let borrow_region = RegionAt::new_location_insensitive(Region::Local(
+            self.created_borrows.get(&borrow_register_id).unwrap().0,
+        ));
+
+        self.location_insensitive_regions
+            .iter()
+            .copied()
+            .filter_map(|x| {
+                // start with the location insensitive regions
+                self.transitive_closure
+                    .has_path(
+                        self.indices_by_region_at[&borrow_region],
+                        self.indices_by_region_at
+                            [&RegionAt::new_location_insensitive(
+                                Region::Local(x),
+                            )],
+                    )
+                    .unwrap()
+                    .then_some(Region::Local(x))
+            })
+            .chain(
+                // then check active regions that require location sensitivity
+                self.active_region_sets_by_block_id
+                    .get(&block_id)
+                    .unwrap()
+                    .iter()
+                    .copied()
+                    .filter_map(|x| {
+                        let most_updated_point = self.change_logs_by_region[&x]
+                            .get_most_updated_point(point);
+                        let region_at = RegionAt::new(x, most_updated_point);
+
+                        self.transitive_closure
+                            .has_path(
+                                self.indices_by_region_at[&region_at],
+                                self.indices_by_region_at[&borrow_region],
+                            )
+                            .unwrap()
+                            .then_some(x)
+                    }),
+            )
+            .collect::<HashSet<_>>()
+    }
 }
 
 pub fn subset_analysis<
@@ -1155,6 +1225,7 @@ pub fn subset_analysis<
         indices_by_region_at,
         region_ats_by_index,
         transitive_closure,
+        created_borrows: subset_result.created_borrows,
         location_insensitive_regions,
         active_region_sets_by_block_id,
         change_logs_by_region,
