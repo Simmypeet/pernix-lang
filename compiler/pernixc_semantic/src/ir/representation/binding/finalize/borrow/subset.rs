@@ -1169,9 +1169,15 @@ pub fn analyze<
     let mut change_logs_by_region = HashMap::<_, RegionChangeLog>::new();
 
     for region_at in
-        subset_result.subset_relations.iter().flat_map(|(key, values)| {
-            std::iter::once(*key).chain(values.iter().copied())
-        })
+        subset_result
+            .subset_relations
+            .iter()
+            .flat_map(|(key, values)| {
+                std::iter::once(*key).chain(values.iter().copied())
+            })
+            .chain(subset_result.created_borrows.iter().map(|x| {
+                RegionAt::new_location_insensitive(Region::Local(x.1 .0))
+            }))
     {
         assert!(region_at.point.is_some() || region_at.region.is_local());
 
@@ -1183,14 +1189,24 @@ pub fn analyze<
                 .or_default()
                 .insert(region_at.region);
 
-            if let RegionPoint::InBlock(point) = region_point {
-                change_logs_by_region
-                    .entry(region_at.region)
-                    .or_default()
-                    .updated_at_instruction_indices
-                    .entry(point.block_id)
-                    .or_default()
-                    .push(point.instruction_index);
+            match region_point {
+                RegionPoint::InBlock(point) => {
+                    change_logs_by_region
+                        .entry(region_at.region)
+                        .or_default()
+                        .updated_at_instruction_indices
+                        .entry(point.block_id)
+                        .or_default()
+                        .push(point.instruction_index);
+                }
+                RegionPoint::EnteringBlock(id) => {
+                    change_logs_by_region
+                        .entry(region_at.region)
+                        .or_default()
+                        .updated_at_instruction_indices
+                        .entry(id)
+                        .or_default();
+                }
             }
         } else {
             location_insensitive_regions
@@ -1210,7 +1226,7 @@ pub fn analyze<
         let index = region_ats_by_index.len();
 
         region_ats_by_index.push(region_at);
-        indices_by_region_at.insert(region_at, index);
+        assert!(indices_by_region_at.insert(region_at, index).is_none());
     }
 
     let transitive_closure = TransitiveClosure::new(
