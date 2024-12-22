@@ -17,7 +17,4 @@ impl LocalRegionGenerator {
 
         ID::from_index(id)
     }
-
-    /// Returns the number of generated local regions
-    pub const fn generated_count(self) -> usize { self.0 }
 }

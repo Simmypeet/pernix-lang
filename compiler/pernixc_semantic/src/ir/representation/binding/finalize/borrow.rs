@@ -7,7 +7,7 @@ use crate::{
         self,
         representation::{
             binding::HandlerWrapper, borrow::Model as BorrowModel,
-            Representation, Values,
+            Representation,
         },
     },
     symbol::{table, GlobalID},
@@ -17,6 +17,8 @@ use crate::{
 };
 
 mod cache;
+mod check;
+mod invalidate;
 mod liveness;
 mod local_region_generator;
 mod subset;
@@ -41,11 +43,15 @@ impl Representation<ir::Model> {
         let register_types =
             RegisterTypes::new(&ir.values, current_site, environment)?;
 
-        let subset = subset::subset_analysis(
-            &ir,
+        let subset =
+            subset::analyze(&ir, &register_types, current_site, environment)?;
+
+        ir.borrow_check_internal(
+            &&subset,
             &register_types,
             current_site,
             environment,
+            handler,
         )?;
 
         Ok(())

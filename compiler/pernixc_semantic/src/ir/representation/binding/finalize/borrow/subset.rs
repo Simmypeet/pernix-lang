@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use getset::Getters;
 use pernixc_base::source_file::Span;
 
 use super::cache::RegisterTypes;
@@ -129,7 +130,7 @@ impl RegionChangeLog {
 
 /// Contains the direct subset relations between regions. It's the result of
 /// the subset analysis with no optimization.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters)]
 pub struct Naive {
     /// The accumulated subset relations between regions since the beginning
     /// of the control flow graph.
@@ -139,6 +140,7 @@ pub struct Naive {
     ///
     /// The key is the register ID of the borrow assignment, and the value is
     /// the region where the borrow is created.
+    #[get = "pub"]
     created_borrows: HashMap<
         ID<Register<BorrowModel>>,
         (ID<LocalRegion>, Point<BorrowModel>),
@@ -1053,12 +1055,13 @@ impl<
 
 /// The final result of the subset analysis. It allows querying the subset
 /// relation between regions at any given point in the control flow graph.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters)]
 pub struct Subset {
     indices_by_region_at: HashMap<RegionAt, usize>,
     region_ats_by_index: Vec<RegionAt>,
     transitive_closure: TransitiveClosure,
 
+    #[get = "pub"]
     created_borrows: HashMap<
         ID<Register<BorrowModel>>,
         (ID<LocalRegion>, Point<BorrowModel>),
@@ -1112,8 +1115,8 @@ impl Subset {
 
                         self.transitive_closure
                             .has_path(
-                                self.indices_by_region_at[&region_at],
                                 self.indices_by_region_at[&borrow_region],
+                                self.indices_by_region_at[&region_at],
                             )
                             .unwrap()
                             .then_some(x)
@@ -1123,7 +1126,7 @@ impl Subset {
     }
 }
 
-pub fn subset_analysis<
+pub fn analyze<
     S: table::State,
     N: Normalizer<BorrowModel, S>,
     O: Observer<BorrowModel, S>,
