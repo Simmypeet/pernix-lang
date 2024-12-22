@@ -380,9 +380,8 @@ public function main() {
     let mutable x = 22;
     let mutable v = Vector::new();
     let r = &mutable v;
-    let p = &x;       // 1. `x` is borrowed here to create `p`
-    r->push(p);        // 2. `p` is stored into `v`, but through `r`
-    x += 1;           // <-- Error! can't mutate `x` while borrowed
+    r->push(&x);        // 1. `&x` is stored into `v`, but throungh `r`
+    x += 1;             // 2. <-- Error! can't mutate `x` while borrowed
     let c = v;          // 3. the reference to `x` is later used here
 }
 "#;
@@ -1138,7 +1137,7 @@ public function main(cond: bool) {
     let mutable vector = Vector::new();
     while (cond) {
         let mutable number = 0;
-        vector.push(&mutable number);
+        vector.push(&number);
     }
 }
 "#;
@@ -1148,6 +1147,7 @@ fn variable_does_not_live_long_enough_in_loop_2() {
     let (_, errs) =
         build_table(VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_LOOP_2).unwrap_err();
 
+    dbg!(&errs);
     assert_eq!(errs.len(), 1);
 
     let error = errs[0]
@@ -1155,7 +1155,7 @@ fn variable_does_not_live_long_enough_in_loop_2() {
         .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
         .unwrap();
 
-    assert_eq!(error.variable_span.str(), "mutable number");
+    assert_eq!(error.variable_span.str(), "number");
     assert_eq!(error.for_lifetime, None);
     assert_eq!(error.instantiation_span.str(), "vector");
 }
@@ -1474,3 +1474,4 @@ public function main() {
 fn vector_push_two_times() {
     assert!(build_table(VECTOR_PUSH_TWO_TIMES).is_ok());
 }
+

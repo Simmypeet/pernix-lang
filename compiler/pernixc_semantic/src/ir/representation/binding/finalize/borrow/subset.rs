@@ -12,23 +12,25 @@ use crate::{
         control_flow_graph::{Block, Point},
         instruction::{Instruction, Store},
         representation::{
-            binding::finalize::borrow::subset,
             borrow::{
                 LocalRegion, Model as BorrowModel, Region, UniversalRegion,
             },
             Representation, Values,
         },
         value::{
-            register::{Assignment, Borrow, FunctionCall, Register},
+            register::{Assignment, Borrow, FunctionCall, Register, Struct},
             Value,
         },
     },
-    symbol::{table, GenericID, GlobalID, LifetimeParameterID},
+    symbol::{
+        table::{self, representation::Index},
+        GenericID, GlobalID, LifetimeParameterID,
+    },
     transitive_closure::TransitiveClosure,
     type_system::{
         compatible::{Compatibility, Compatible},
         environment::Environment,
-        instantiation,
+        instantiation::{self, Instantiation},
         normalizer::Normalizer,
         observer::Observer,
         predicate::{Outlives, Predicate},
@@ -229,6 +231,148 @@ pub struct Changes {
 }
 
 impl Values<BorrowModel> {
+    pub(super) fn get_changes_of_struct<S: table::State>(
+        &self,
+        struct_lit: &Struct<BorrowModel>,
+        span: &Span,
+        current_site: GlobalID,
+        environment: &Environment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+    ) -> Result<Changes, TypeSystemOverflow<ir::Model>> {
+        let instantiation = Instantiation::from_generic_arguments(
+            struct_lit.generic_arguments.clone(),
+            struct_lit.struct_id.into(),
+            &environment
+                .table()
+                .get(struct_lit.struct_id)
+                .unwrap()
+                .generic_declaration
+                .parameters,
+        )
+        .unwrap();
+
+        let mut lifetime_constraints = BTreeSet::new();
+
+        let struct_sym = environment.table().get(struct_lit.struct_id).unwrap();
+
+        // compare each values in the field to the struct's field type
+        for field_id in struct_sym.field_declaration_order().iter().copied() {
+            let mut field_ty = Type::from_other_model(
+                struct_sym.fields().get(field_id).unwrap().r#type.clone(),
+            );
+            instantiation::instantiate(&mut field_ty, &instantiation);
+
+            let value_span =
+                match &struct_lit.initializers_by_field_id.get(&field_id) {
+                    Some(Value::Register(id)) => {
+                        self.registers.get(*id).unwrap().span.clone()
+                    }
+                    Some(Value::Literal(literal)) => literal.span().clone(),
+                    None => unreachable!(),
+                };
+
+            let Succeeded { result: value_ty, constraints: value_constraints } =
+                self.type_of_value(
+                    struct_lit.initializers_by_field_id.get(&field_id).unwrap(),
+                    current_site,
+                    environment,
+                )
+                .map_err(|x| TypeSystemOverflow::<
+                    ir::Model,
+                > {
+                    operation: OverflowOperation::TypeOf,
+                    overflow_span: value_span.clone(),
+                    overflow_error: x.into_overflow().unwrap(),
+                })?;
+
+            lifetime_constraints.extend(value_constraints);
+
+            let copmatibility = value_ty
+                .compatible(&field_ty, Variance::Covariant, environment)
+                .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeCheck,
+                    overflow_span: value_span.clone(),
+                    overflow_error,
+                })?;
+
+            // append the lifetime constraints
+            if let Some(Succeeded {
+                result,
+                constraints: compatibility_constraints,
+            }) = copmatibility
+            {
+                assert!(result.forall_lifetime_errors.is_empty());
+                assert!(result
+                    .forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
+
+                lifetime_constraints.extend(compatibility_constraints);
+            } else {
+                panic!("{value_ty:#?} => {field_ty:#?}")
+            }
+        }
+
+        // handle the constraints introduced by the outlive predicates of the
+        // struct
+
+        for predicate in environment
+            .table()
+            .get_active_premise(struct_lit.struct_id.into())
+            .unwrap()
+            .predicates
+            .into_iter()
+            .map(|x| {
+                let mut x = Predicate::from_default_model(x);
+                x.instantiate(&instantiation);
+
+                x
+            })
+        {
+            match predicate {
+                Predicate::LifetimeOutlives(outlives) => {
+                    lifetime_constraints.insert(
+                        LifetimeConstraint::LifetimeOutlives(outlives.clone()),
+                    );
+                }
+                Predicate::TypeOutlives(outlives) => {
+                    for lt in RecursiveIterator::new(&outlives.operand)
+                        .filter_map(|x| x.0.into_lifetime().ok())
+                    {
+                        lifetime_constraints.insert(
+                            LifetimeConstraint::LifetimeOutlives(Outlives {
+                                operand: lt.clone(),
+                                bound: outlives.bound.clone(),
+                            }),
+                        );
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        Ok(Changes {
+            subset_relations: lifetime_constraints
+                .into_iter()
+                .filter_map(|x| {
+                    let x = x.into_lifetime_outlives().ok()?;
+
+                    let from = Region::try_from(x.operand.clone()).ok()?;
+                    let to = Region::try_from(x.bound.clone()).ok()?;
+
+                    Some((from, to, span.clone()))
+                })
+                .collect(),
+            borrow_created: None,
+            overwritten_regions: HashSet::new(),
+        })
+    }
+
     pub(super) fn get_changes_of_function_call<S: table::State>(
         &self,
         function_call: &FunctionCall<BorrowModel>,
@@ -395,7 +539,7 @@ impl Values<BorrowModel> {
                 regions_in_address
                     .into_iter()
                     .map(|x| {
-                        (Region::Local(borrow_local_region), x, span.clone())
+                        (x, Region::Local(borrow_local_region), span.clone())
                     })
                     .collect()
             },
@@ -683,7 +827,14 @@ impl<
                             self.environment,
                         )
                     }
-                    Assignment::Struct(_) => Ok(Changes::default()),
+                    Assignment::Struct(struct_lit) => {
+                        self.representation.values.get_changes_of_struct(
+                            struct_lit,
+                            &register.span,
+                            self.current_site,
+                            self.environment,
+                        )
+                    }
                     Assignment::Variant(_) => Ok(Changes::default()),
                     Assignment::Array(_) => Ok(Changes::default()),
                     Assignment::Phi(_) => Ok(Changes::default()),
@@ -735,6 +886,7 @@ impl<
 
         // add subset relations
         for (from, to, span) in changes.subset_relations {
+            dbg!(from, to, &span);
             let latest_from =
                 self.latest_change_points_by_region.get(&from).cloned();
             let latest_to =
@@ -802,12 +954,16 @@ impl<
 
             // update the latest location
             if latest_from.is_some() {
-                self.latest_change_points_by_region
-                    .insert(from, Some(instruction_point.instruction_index));
+                assert!(self
+                    .latest_change_points_by_region
+                    .insert(from, Some(instruction_point.instruction_index))
+                    .is_some());
             }
             if latest_to.is_some() {
-                self.latest_change_points_by_region
-                    .insert(to, Some(instruction_point.instruction_index));
+                assert!(self
+                    .latest_change_points_by_region
+                    .insert(to, Some(instruction_point.instruction_index))
+                    .is_some());
             }
         }
 
@@ -1186,7 +1342,7 @@ impl Subset {
                         self.transitive_closure
                             .has_path(
                                 self.indices_by_region_at[&borrow_region],
-                                self.indices_by_region_at[&region_at],
+                                *self.indices_by_region_at.get(&region_at)?,
                             )
                             .unwrap()
                             .then_some(x)
@@ -1311,7 +1467,7 @@ pub fn analyze<
     )
     .expect("failed to create transitive closure");
 
-    Ok(Subset {
+    Ok(dbg!(Subset {
         indices_by_region_at,
         region_ats_by_index,
         transitive_closure,
@@ -1320,5 +1476,5 @@ pub fn analyze<
         location_insensitive_regions,
         active_region_sets_by_block_id,
         change_logs_by_region,
-    })
+    }))
 }

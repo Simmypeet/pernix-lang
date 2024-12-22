@@ -817,6 +817,7 @@ pub fn get_live_usages<S: table::State>(
     memories: impl IntoIterator<Item = Memory<BorrowModel>>,
     checking_registers: HashSet<ID<Register<BorrowModel>>>,
     invalidated_regions: &HashSet<Region>,
+    invalidated_borrow_register_id: ID<Register<BorrowModel>>,
     point: Point<BorrowModel>,
     mut exit: &mut impl FnMut(&Instruction<BorrowModel>, Point<BorrowModel>) -> bool,
     representation: &ir::Representation<BorrowModel>,
@@ -833,12 +834,24 @@ pub fn get_live_usages<S: table::State>(
             .into_iter()
             .map(|memory| (memory, Assigned::Whole(false)))
             .collect(),
+        invalidated_borrow_register_id,
         checking_registers,
         invalidated_regions,
         representation,
         environment,
         current_site,
     };
+
+    for alloca_id in state.assigned_states_by_memory.keys().copied() {
+        dbg!(
+            alloca_id,
+            state
+                .representation
+                .values
+                .allocas
+                .get(alloca_id.into_alloca().unwrap())
+        );
+    }
 
     traverse_block(
         &mut state,
@@ -859,6 +872,7 @@ struct LiveBorrowTraverser<
     assigned_states_by_memory: HashMap<Memory<BorrowModel>, Assigned>,
     checking_registers: HashSet<ID<Register<BorrowModel>>>,
     invalidated_regions: &'a HashSet<Region>,
+    invalidated_borrow_register_id: ID<Register<BorrowModel>>,
 
     representation: &'a ir::Representation<BorrowModel>,
     environment: &'a Environment<'a, BorrowModel, S, N, O>,
@@ -876,6 +890,7 @@ impl<
         Self {
             assigned_states_by_memory: self.assigned_states_by_memory.clone(),
             checking_registers: self.checking_registers.clone(),
+            invalidated_borrow_register_id: self.invalidated_borrow_register_id,
 
             invalidated_regions: self.invalidated_regions,
             representation: self.representation,
@@ -1053,6 +1068,11 @@ impl<
             }
 
             Instruction::RegisterAssignment(register_assignment) => {
+                // if self.invalidated_borrow_register_id ==
+                // register_assignment.id {
+                //     return Ok(ControlFlow::Break(HashSet::new()));
+                // }
+
                 self.checking_registers.remove(&register_assignment.id);
 
                 let register = self

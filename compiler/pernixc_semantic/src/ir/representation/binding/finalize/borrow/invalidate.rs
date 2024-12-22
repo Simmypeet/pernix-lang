@@ -8,7 +8,7 @@ use crate::{
     arena::ID,
     error::{
         AccessWhileMutablyBorrowed, MutablyAccessWhileImmutablyBorrowed,
-        TypeSystemOverflow, Usage,
+        TypeSystemOverflow, Usage, VariableDoesNotLiveLongEnough,
     },
     ir::{
         self,
@@ -219,12 +219,16 @@ impl<
                     .reachability
                     .point_reachable(x.assigned_at, invalidate_at)
                     .unwrap()
+                && x.assigned_at != invalidate_at // the mutable borrow will be
+                                                  // invalidated right away
+                                                  // without this cond
         });
 
         let live_usages = liveness::get_live_usages(
             checking_allocas.map(|x| Memory::Alloca(x.0)),
             checking_registers.map(|x| *x.0).collect(),
             &invalidated_local_regions,
+            borrow,
             invalidate_at,
             &mut exit,
             self.representation,
@@ -240,6 +244,97 @@ impl<
             handler_fn(Usage::ByUniversalRegions(
                 invalidated_universal_regions,
             ));
+        }
+
+        Ok(())
+    }
+
+    /// Handles the drop of the memory. This will invalidate the borrows that
+    /// are attached to the memory.
+    pub fn handle_drop_memory(
+        &self,
+        drop: Memory<BorrowModel>,
+        point: Point<BorrowModel>,
+        handler: &HandlerWrapper,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        for (borrow_register_id, (_, borrow_point)) in
+            self.subset.created_borrows()
+        {
+            let borrow_register = self
+                .representation
+                .values
+                .registers
+                .get(*borrow_register_id)
+                .unwrap();
+            let borrow_assignment =
+                borrow_register.assignment.as_borrow().unwrap();
+
+            let should_invalidate =
+                borrow_assignment.address.is_child_of(&Address::Memory(drop))
+                    && !borrow_assignment.address.is_behind_reference();
+
+            if !should_invalidate {
+                continue;
+            }
+
+            let dropped_scope = match drop {
+                Memory::Parameter(_) => {
+                    self.representation.scope_tree.root_scope_id()
+                }
+                Memory::Alloca(id) => {
+                    self.representation
+                        .values
+                        .allocas
+                        .get(id)
+                        .unwrap()
+                        .declared_in_scope_id
+                }
+            };
+
+            let span = match drop {
+                Memory::Parameter(id) => self
+                    .environment
+                    .table()
+                    .get_callable(self.current_site.try_into().unwrap())
+                    .unwrap()
+                    .parameters()
+                    .get(id)
+                    .unwrap()
+                    .span
+                    .clone()
+                    .unwrap(),
+                Memory::Alloca(id) => self
+                    .representation
+                    .values
+                    .allocas
+                    .get(id)
+                    .unwrap()
+                    .span
+                    .clone(),
+            };
+
+            self.invalidate_borrow(
+                *borrow_register_id,
+                *borrow_point,
+                |inst, _| {
+                    // prevent multiple invalidations in loops
+                    inst.as_scope_pop().map_or(false, |x| x.0 == dropped_scope)
+                },
+                point,
+                |borrow_usage| match borrow_usage {
+                    Usage::Local(usage_span) => {
+                        handler.receive(Box::new(
+                            VariableDoesNotLiveLongEnough::<ir::Model> {
+                                variable_span: span.clone(),
+                                for_lifetime: None,
+                                instantiation_span: usage_span,
+                            },
+                        ));
+                    }
+
+                    Usage::ByUniversalRegions(_) | Usage::Drop => {}
+                },
+            )?;
         }
 
         Ok(())
