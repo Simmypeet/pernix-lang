@@ -675,9 +675,16 @@ impl<
                             self.environment,
                         )
                     }
+                    Assignment::FunctionCall(function_call) => {
+                        self.representation.values.get_changes_of_function_call(
+                            function_call,
+                            &register.span,
+                            self.current_site,
+                            self.environment,
+                        )
+                    }
                     Assignment::Struct(_) => Ok(Changes::default()),
                     Assignment::Variant(_) => Ok(Changes::default()),
-                    Assignment::FunctionCall(_) => Ok(Changes::default()),
                     Assignment::Array(_) => Ok(Changes::default()),
                     Assignment::Phi(_) => Ok(Changes::default()),
                 }
