@@ -68,7 +68,7 @@ fn moved_out_while_borrowed() {
     errs.iter().any(|x| {
         x.as_any().downcast_ref::<MovedOutWhileBorrowed>().map_or(false, |x| {
             x.moved_out_span.str() == "x.0"
-                && x.usage.as_local().map_or(false, |x| x.0.str() == "y")
+                && x.usage.as_local().map_or(false, |x| x.str() == "y")
         })
     });
 }
@@ -162,7 +162,7 @@ fn mutably_access_while_borrowed() {
         Some("&number")
     );
     assert_eq!(error.mutable_access_span.str(), "number = 2");
-    assert_eq!(error.usage.as_local().map(|x| x.0.str()), Some("*numberRef"));
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("*numberRef"));
 }
 
 const VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_LOOP: &str = r#"
@@ -306,7 +306,7 @@ fn mutably_access_more_than_once_in_function() {
     );
     assert_eq!(error.access_span.str(), "&mutable number");
     assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.0.str()),
+        error.borrow_usage.as_local().map(|x| x.str()),
         Some("Vector::push(&mutable vector,  &mutable number)")
     );
 }
@@ -356,7 +356,7 @@ fn mutably_access_more_than_once_in_function_with_variable() {
         Some("&mutable number")
     );
     assert_eq!(error.access_span.str(), "&mutable number");
-    assert_eq!(error.borrow_usage.as_local().map(|x| x.0.str()), Some("v"));
+    assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("v"));
 }
 
 const AN_ALIASED_FORMULATION: &str = r#"
@@ -403,7 +403,7 @@ fn an_aliased_formulation() {
         Some("&x")
     );
     assert_eq!(error.mutable_access_span.str(), "x += 1");
-    assert_eq!(error.usage.as_local().map(|x| x.0.str()), Some("v"));
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("v"));
 }
 
 // the test case is lifted from
@@ -445,7 +445,7 @@ fn polonius_one_example() {
         Some("&y")
     );
     assert_eq!(error.mutable_access_span.str(), "y += 1");
-    assert_eq!(error.usage.as_local().map(|x| x.0.str()), Some("*p"));
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("*p"));
 }
 
 const STRUCT_INFERENCE_NO_ERROR: &str = r#"
@@ -519,7 +519,7 @@ fn struct_inference_with_error() {
         Some("&outer")
     );
     assert_eq!(error.mutable_access_span.str(), "outer = 32");
-    assert_eq!(error.usage.as_local().map(|x| x.0.str()), Some("*pair.first"));
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("*pair.first"));
 }
 
 const STRUCT_INFERENCE_WITH_LIFETIME_FLOW: &str = r#"
@@ -570,7 +570,7 @@ fn struct_inference_with_lifetime_flow() {
         Some("&outer")
     );
     assert_eq!(error.mutable_access_span.str(), "outer = 32");
-    assert_eq!(error.usage.as_local().map(|x| x.0.str()), Some("*pair.second"));
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("*pair.second"));
 }
 
 const USE_MUTABLE_REF_TWICE: &str = r#"
@@ -888,7 +888,7 @@ fn return_invalidated_universal_regions() {
     );
     assert_eq!(error.access_span.str(), "&mutable *ref");
     assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.0.str()),
+        error.borrow_usage.as_local().map(|x| x.str()),
         Some("(&mutable *ref, &mutable *ref)")
     );
 }
@@ -919,7 +919,7 @@ fn array_inference() {
 
     assert_eq!(error.access_span.str(), "&mutable x");
     assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.0.str()),
+        error.borrow_usage.as_local().map(|x| x.str()),
         Some("[&mutable x, &mutable x]")
     );
 }
@@ -1000,7 +1000,7 @@ fn phi_inference_use_invalidated_reference() {
         Some("&first")
     );
     assert_eq!(error.mutable_access_span.str(), "first = 2");
-    assert_eq!(error.usage.as_local().map(|x| x.0.str()), Some("*ref"));
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("*ref"));
 }
 
 const INVALIDATED_BORROWS_IN_LOOP: &str = r#"
@@ -1048,12 +1048,7 @@ fn invalidated_borrows_in_loop() {
         Some("&mutable number")
     );
     assert_eq!(error.access_span.str(), "&mutable number");
-    assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.0.str()),
-        Some("vector")
-    );
-
-    assert!(error.borrow_usage.as_local().map_or(false, |x| *x.1));
+    assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("vector"));
 }
 
 const INVALIDATED_BORROWS_IN_LOOP_WITH_BREAK: &str = r#"
@@ -1354,10 +1349,7 @@ fn push_two_mutable_references_from_different_places_error() {
         Some("&mutable *ref")
     );
     assert_eq!(error.access_span.str(), "&mutable *ref");
-    assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.0.str()),
-        Some("vector")
-    );
+    assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("vector"));
 }
 
 const REASSIGNED_REFERENCE: &str = r#"
@@ -1415,7 +1407,7 @@ fn invalidated_immutable_reference_used_in_loop() {
         Some("&test")
     );
     assert_eq!(error.mutable_access_span.str(), "test = 64");
-    assert_eq!(error.usage.as_local().map(|x| x.0.str()), Some("*r"));
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("*r"));
 }
 
 const MUTABLY_ACCESS_WHILE_MUTABLY_BORROWED: &str = r#"
@@ -1446,7 +1438,7 @@ fn mutably_access_while_mutably_borrowed() {
 
     assert_eq!(error.access_span.str(), "test += 64");
     assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.0.str()),
+        error.borrow_usage.as_local().map(|x| x.str()),
         Some("*refm = 64")
     );
 }
