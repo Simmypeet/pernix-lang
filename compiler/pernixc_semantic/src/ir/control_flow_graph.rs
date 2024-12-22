@@ -33,7 +33,7 @@ pub struct Reachability<M: Model> {
 
 impl<M: Model> Reachability<M> {
     /// Checks if there is a path from the `from` block to the `to` block.
-    pub fn has_path(
+    pub fn block_reachable(
         &self,
         from: ID<Block<M>>,
         to: ID<Block<M>>,
@@ -42,6 +42,26 @@ impl<M: Model> Reachability<M> {
         let to = self.blocks_to_index.get(&to)?;
 
         Some(self.transitive_closure.has_path(*from, *to).unwrap())
+    }
+
+    /// Checks if there is a path from the `from` point to the `to` point.
+    ///
+    /// The interpretation of reachable is that the exit of `from` point is
+    /// reachable to the entry of `to` point; therefore, the same point is
+    /// not reachable to each other unless the block is in the loop.
+    pub fn point_reachable(
+        &self,
+        from: Point<M>,
+        to: Point<M>,
+    ) -> Option<bool> {
+        if self.block_reachable(from.block_id, to.block_id)? {
+            Some(true)
+        } else {
+            Some(
+                from.block_id == to.block_id
+                    && from.instruction_index < to.instruction_index,
+            )
+        }
     }
 }
 
