@@ -17,10 +17,7 @@ use crate::{
             },
             Representation, Values,
         },
-        value::{
-            self,
-            register::{Assignment, Borrow, Register},
-        },
+        value::register::{Assignment, Borrow, Register},
     },
     symbol::{table, GenericID, GlobalID, LifetimeParameterID},
     transitive_closure::TransitiveClosure,
@@ -721,6 +718,13 @@ impl<
                 self.latest_change_points_by_region
                     .insert(to, Some(instruction_point.instruction_index));
             }
+        }
+
+        for region in self.get_removing_regions(instruction) {
+            assert!(self
+                .latest_change_points_by_region
+                .remove(&region)
+                .is_some());
         }
 
         Ok(())
