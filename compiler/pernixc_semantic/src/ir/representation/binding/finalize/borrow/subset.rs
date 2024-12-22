@@ -45,6 +45,16 @@ pub enum RegionPoint {
     EnteringBlock(ID<Block<BorrowModel>>),
 }
 
+impl RegionPoint {
+    /// Gets the block id where the region is considered.
+    pub fn block_id(&self) -> ID<Block<BorrowModel>> {
+        match self {
+            Self::InBlock(point) => point.block_id,
+            Self::EnteringBlock(block_id) => *block_id,
+        }
+    }
+}
+
 /// Used for representing a region at a particular point in the control flow
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RegionAt {
@@ -62,7 +72,7 @@ pub struct RegionAt {
     pub point: Option<RegionPoint>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RegionChangeLog {
     pub updated_at_instruction_indices:
         HashMap<ID<Block<BorrowModel>>, Vec<usize>>,
@@ -1036,6 +1046,11 @@ pub struct Subset {
     indices_by_region_at: HashMap<RegionAt, usize>,
     region_ats_by_index: Vec<RegionAt>,
     transitive_closure: TransitiveClosure,
+
+    change_logs_by_region: HashMap<Region, RegionChangeLog>,
+    active_region_sets_by_block_id:
+        HashMap<ID<Block<BorrowModel>>, HashSet<Region>>,
+    location_insensitive_regions: HashSet<ID<LocalRegion>>,
 }
 
 pub fn subset_analysis<
@@ -1076,16 +1091,51 @@ pub fn subset_analysis<
     let mut indices_by_region_at = HashMap::new();
 
     let mut all_regions = HashSet::new();
-    for (key_region, value_regions) in &subset_result.subset_relations {
-        all_regions.insert(*key_region);
+    let mut location_insensitive_regions = HashSet::new();
+    let mut active_region_sets_by_block_id = HashMap::<_, HashSet<_>>::new();
+    let mut change_logs_by_region = HashMap::<_, RegionChangeLog>::new();
 
-        for region_at in value_regions {
-            all_regions.insert(*region_at);
+    for region_at in
+        subset_result.subset_relations.iter().flat_map(|(key, values)| {
+            std::iter::once(*key).chain(values.iter().copied())
+        })
+    {
+        assert!(region_at.point.is_some() || region_at.region.is_local());
+
+        all_regions.insert(region_at);
+
+        if let Some(region_point) = region_at.point {
+            active_region_sets_by_block_id
+                .entry(region_point.block_id())
+                .or_default()
+                .insert(region_at.region);
+
+            if let RegionPoint::InBlock(point) = region_point {
+                change_logs_by_region
+                    .entry(region_at.region)
+                    .or_default()
+                    .updated_at_instruction_indices
+                    .entry(point.block_id)
+                    .or_default()
+                    .push(point.instruction_index);
+            }
+        } else {
+            location_insensitive_regions
+                .insert(region_at.region.into_local().unwrap());
         }
+    }
+
+    for indices in change_logs_by_region
+        .values_mut()
+        .flat_map(|x| x.updated_at_instruction_indices.values_mut())
+    {
+        indices.sort_unstable();
+        indices.dedup();
     }
 
     for region_at in all_regions.iter().copied() {
         let index = region_ats_by_index.len();
+
         region_ats_by_index.push(region_at);
         indices_by_region_at.insert(region_at, index);
     }
@@ -1101,5 +1151,12 @@ pub fn subset_analysis<
     )
     .expect("failed to create transitive closure");
 
-    Ok(Subset { indices_by_region_at, region_ats_by_index, transitive_closure })
+    Ok(dbg!(Subset {
+        indices_by_region_at,
+        region_ats_by_index,
+        transitive_closure,
+        location_insensitive_regions,
+        active_region_sets_by_block_id,
+        change_logs_by_region,
+    }))
 }
