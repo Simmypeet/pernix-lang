@@ -1136,10 +1136,15 @@ impl<
 
                 Instruction::RegisterDiscard(_)
                 | Instruction::DropUnpackTuple(_)
-                | Instruction::ScopePush(_)
                 | Instruction::Drop(_) => {}
 
+                Instruction::ScopePush(push) => {
+                    self.push_scope(push.0);
+                }
+
                 Instruction::ScopePop(scope_pop) => {
+                    self.pop_scope();
+
                     let mut dropped_memories = self
                         .representation()
                         .values

@@ -4,11 +4,11 @@ use std::{
     sync::Arc,
 };
 
-use getset::CopyGetters;
+use getset::{CopyGetters, Getters};
 use pernixc_base::{handler::Handler, source_file::Span};
 
 use super::{
-    liveness::{self, has_been_reassigned},
+    liveness_old::{self, has_been_reassigned},
     local_region_generator::LocalRegionGenerator,
     transitive_closure::TransitiveClosure,
 };
@@ -28,6 +28,7 @@ use crate::{
         representation::borrow::{
             LocalRegion, Model as BorrowModel, Region, UniversalRegion,
         },
+        scope::Scope,
         value::register::Register,
     },
     symbol::{
@@ -218,7 +219,7 @@ struct RegisterTypeCache {
 ///
 /// The key [`Environment::region_subset_relations`] represents the subset while
 /// the values represent the superset.
-#[derive(CopyGetters)]
+#[derive(CopyGetters, Getters)]
 #[allow(clippy::struct_field_names)]
 pub struct Environment<
     'a,
@@ -229,14 +230,20 @@ pub struct Environment<
     region_info: Arc<RegionInfo>, // immutable data
     subset_relations: TransitiveClosure,
 
+    #[get = "pub"]
     register_borrow_issued_at:
         HashMap<ID<Register<BorrowModel>>, Point<BorrowModel>>,
+    #[get = "pub"]
     attached_borrows: HashMap<ID<Register<BorrowModel>>, ID<LocalRegion>>,
+    #[get = "pub"]
     reversed_attached_borrows:
         HashMap<ID<LocalRegion>, ID<Register<BorrowModel>>>,
 
     register_type_cache:
         Arc<HashMap<ID<Register<BorrowModel>>, RegisterTypeCache>>,
+
+    #[get = "pub"]
+    scope_stack: Vec<ID<Scope>>,
 
     #[get_copy = "pub"]
     current_site: GlobalID,
@@ -256,9 +263,12 @@ impl<
         f.debug_struct("Environment")
             .field("region_info", &self.region_info)
             .field("subset_relations", &self.subset_relations)
+            .field("register_borrow_issued_at", &self.register_borrow_issued_at)
             .field("attached_borrows", &self.attached_borrows)
             .field("reversed_attached_borrows", &self.reversed_attached_borrows)
             .field("register_type_cache", &self.register_type_cache)
+            .field("scope_stack", &self.scope_stack)
+            .field("current_site", &self.current_site)
             .finish()
     }
 }
@@ -277,6 +287,7 @@ impl<
             attached_borrows: self.attached_borrows.clone(),
             reversed_attached_borrows: self.reversed_attached_borrows.clone(),
             register_type_cache: self.register_type_cache.clone(),
+            scope_stack: self.scope_stack.clone(),
             current_site: self.current_site,
             representation: self.representation,
             ty_environment: self.ty_environment,
@@ -344,6 +355,8 @@ impl<
                     })
                     .collect::<Result<_, TypeSystemOverflow<ir::Model>>>()?,
             ),
+
+            scope_stack: Vec::new(),
 
             current_site,
             ty_environment,
@@ -439,7 +452,7 @@ impl<
                     .any(|region| x.regions.contains(region))
             });
 
-        let live_usages = liveness::get_live_usages(
+        let live_usages = liveness_old::get_live_usages(
             checking_allocas.map(|x| Memory::Alloca(x.0)),
             checking_registers.map(|x| *x.0).collect(),
             &invalidated_local_regions,
@@ -604,7 +617,7 @@ impl<
 
     /// Handles an access to the given address.
     pub fn handle_access(
-        &mut self,
+        &self,
         address: &Address<BorrowModel>,
         access_mode: AccessMode,
         point: Point<BorrowModel>,
@@ -706,6 +719,12 @@ impl<
 
         Ok(())
     }
+
+    pub fn push_scope(&mut self, scope: ID<Scope>) {
+        self.scope_stack.push(scope);
+    }
+
+    pub fn pop_scope(&mut self) { self.scope_stack.pop(); }
 
     pub fn merge(&mut self, other: &Self) {
         for (other_from, other_to) in other

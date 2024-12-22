@@ -1029,7 +1029,7 @@ public function main(cond: bool) {
     let mutable number = 0;
 
     while (cond) {
-        Vector::push(&mutable vector, &mutable number);
+        vector.push(&mutable number);
     }
 }
 "#;
@@ -1416,4 +1416,37 @@ fn invalidated_immutable_reference_used_in_loop() {
     );
     assert_eq!(error.mutable_access_span.str(), "test = 64");
     assert_eq!(error.usage.as_local().map(|x| x.0.str()), Some("*r"));
+}
+
+const MUTABLY_ACCESS_WHILE_MUTABLY_BORROWED: &str = r#"
+public function testa() {
+	let mutable test = 32;
+	let &mutable refm = test;
+
+	test += 64;
+
+	*refm = 64;
+}
+"#;
+
+#[test]
+fn mutably_access_while_mutably_borrowed() {
+    let (_, errs) =
+        build_table(MUTABLY_ACCESS_WHILE_MUTABLY_BORROWED).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error =
+        errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
+
+    assert_eq!(
+        error.mutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&mutable refm")
+    );
+
+    assert_eq!(error.access_span.str(), "test += 64");
+    assert_eq!(
+        error.borrow_usage.as_local().map(|x| x.0.str()),
+        Some("*refm = 64")
+    );
 }
