@@ -18,6 +18,8 @@ impl BitSet {
     /// Creates a new dynamic bitset with the given size.
     pub fn new(size: usize) -> Self {
         let bits = vec![Cell::new(0); (size + 63) / 64];
+
+        println!("Size: {}", bits.len());
         Self { bits, size }
     }
 
@@ -151,7 +153,8 @@ pub struct TransitiveClosure {
     #[get_copy = "pub"]
     size: usize,
 
-    closure: Vec<BitSet>,
+    /// The transitive closure matrix is stored in a single bitset arrary
+    closure: BitSet,
 }
 
 impl TransitiveClosure {
@@ -163,34 +166,62 @@ impl TransitiveClosure {
         size: usize,
         include_self_loops: bool,
     ) -> Option<Self> {
-        let transitive_closure = vec![BitSet::new(size); size];
+        let round_up_64 = |x| (x + 63) / 64 * 64;
+
+        let column_size = round_up_64(size);
+
+        let transitive_closure = BitSet::new(column_size * size);
 
         if include_self_loops {
             for i in 0..size {
-                transitive_closure[i].set(i)?;
+                transitive_closure.set(Self::to_index(size, i, i))?;
             }
         }
 
         let result = Self { size, closure: transitive_closure };
 
         let mut changed = true;
+        let chunk_count = (size + 63) / 64;
         while changed {
             changed = false;
 
             for (from, to) in edges.clone() {
-                changed |= result.closure[from].set(to)?;
-                changed |= result.closure[from].or(&result.closure[to])?;
+                changed |=
+                    result.closure.set(Self::to_index(size, from, to))?;
+
+                let from_starting_bit_index = chunk_count * from;
+                let to_starting_bit_index = chunk_count * to;
+
+                for x in 0..chunk_count {
+                    let to_word =
+                        result.closure.bits[to_starting_bit_index + x].get();
+                    let old =
+                        result.closure.bits[from_starting_bit_index + x].get();
+
+                    result.closure.bits[from_starting_bit_index + x]
+                        .set(old | to_word);
+
+                    changed |= old
+                        != result.closure.bits[from_starting_bit_index + x]
+                            .get();
+                }
             }
         }
 
         Some(result)
     }
 
+    fn to_index(size: usize, row: usize, col: usize) -> usize {
+        let column_count = (size + 63) / 64 * 64;
+
+        row * column_count + col
+    }
+
     /// Checks if there is a path from the `from` vertex to the `to` vertex.
     /// index.
     #[must_use]
     pub fn has_path(&self, from: usize, to: usize) -> Option<bool> {
-        Some(self.closure.get(from)?.get(to)?)
+        self.closure.get(Self::to_index(self.size, from, to))
     }
 
     /// Returns an iterator over the vertices reachable from the given vertex
@@ -204,10 +235,9 @@ impl TransitiveClosure {
             return None;
         }
 
-        Some(
-            (0..self.size)
-                .filter(move |&to| self.closure[from].get(to).unwrap()),
-        )
+        Some((0..self.size).filter(move |&to| {
+            self.closure.get(Self::to_index(self.size, from, to)).unwrap()
+        }))
     }
 }
 
@@ -221,7 +251,7 @@ mod test {
     #[test]
     fn transitive_closure_basic() {
         let relation =
-            TransitiveClosure::new([(0, 1), (1, 2)], 3, false).unwrap();
+            TransitiveClosure::new([(0, 1), (1, 2)], 150, false).unwrap();
 
         // Check paths
         assert!(relation.has_path(0, 1).unwrap());
@@ -238,7 +268,7 @@ mod test {
     fn reachable_vertices() {
         let relation = TransitiveClosure::new(
             [(0, 1), (1, 2), (2, 3), (4, 5), (4, 6)],
-            7,
+            200,
             false,
         )
         .unwrap();
@@ -267,7 +297,8 @@ mod test {
     #[test]
     fn complex_edge() {
         let relation =
-            TransitiveClosure::new([(0, 1), (2, 5), (1, 2)], 6, false).unwrap();
+            TransitiveClosure::new([(0, 1), (2, 5), (1, 2)], 300, false)
+                .unwrap();
 
         // Verify paths
         assert!(relation.has_path(0, 5).unwrap());
@@ -277,7 +308,7 @@ mod test {
     fn looped_relation() {
         let relation = TransitiveClosure::new(
             [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0)],
-            6,
+            400,
             false,
         )
         .unwrap();
