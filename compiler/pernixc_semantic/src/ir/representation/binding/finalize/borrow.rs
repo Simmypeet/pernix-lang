@@ -42,13 +42,15 @@ impl Representation<ir::Model> {
 
         let register_types =
             RegisterTypes::new(&ir.values, current_site, environment)?;
+        let reachability = ir.control_flow_graph.reachability();
 
         let subset =
             subset::analyze(&ir, &register_types, current_site, environment)?;
 
         ir.borrow_check_internal(
-            &&subset,
+            &subset,
             &register_types,
+            &reachability,
             current_site,
             environment,
             handler,

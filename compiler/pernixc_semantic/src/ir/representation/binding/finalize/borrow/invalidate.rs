@@ -13,7 +13,7 @@ use crate::{
     ir::{
         self,
         address::{Address, Memory},
-        control_flow_graph::Point,
+        control_flow_graph::{Point, Reachability},
         instruction::{AccessMode, Instruction},
         representation::{
             binding::HandlerWrapper,
@@ -108,6 +108,8 @@ pub struct Checker<
     #[get_copy = "pub"]
     environment: &'a Environment<'a, BorrowModel, S, N, O>,
     #[get_copy = "pub"]
+    reachability: &'a Reachability<BorrowModel>,
+    #[get_copy = "pub"]
     register_types: &'a RegisterTypes,
     #[get_copy = "pub"]
     current_site: GlobalID,
@@ -125,6 +127,7 @@ impl<
     pub fn new(
         representation: &'a Representation<BorrowModel>,
         environment: &'a Environment<'a, BorrowModel, S, N, O>,
+        reachability: &'a Reachability<BorrowModel>,
         register_types: &'a RegisterTypes,
         current_site: GlobalID,
         subset: &'a Subset,
@@ -132,6 +135,7 @@ impl<
         Self {
             representation,
             environment,
+            reachability,
             register_types,
             current_site,
             subset,
@@ -236,12 +240,21 @@ impl<
         &self,
         address: &Address<BorrowModel>,
         access_mode: AccessMode,
-        point: Point<BorrowModel>,
+        access_point: Point<BorrowModel>,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         for (borrow_register_id, (_, borrow_point)) in
             self.subset.created_borrows()
         {
+            // borrow hasn't happened yet at the point of access
+            if !self
+                .reachability
+                .point_reachable(*borrow_point, access_point)
+                .unwrap()
+            {
+                continue;
+            }
+
             let borrow_register = self
                 .representation
                 .values
@@ -309,7 +322,7 @@ impl<
                 *borrow_register_id,
                 *borrow_point,
                 |_, _| false,
-                point,
+                access_point,
                 |borrow_usage| match borrow_assignment.qualifier {
                     Qualifier::Immutable => {
                         handler.receive(Box::new(

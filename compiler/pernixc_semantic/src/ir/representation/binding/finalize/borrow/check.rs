@@ -9,7 +9,7 @@ use crate::{
     ir::{
         self,
         address::{Address, Memory},
-        control_flow_graph::Point,
+        control_flow_graph::{Point, Reachability},
         instruction::{AccessMode, Instruction},
         representation::{
             binding::HandlerWrapper,
@@ -78,6 +78,7 @@ impl Representation<BorrowModel> {
         &self,
         subset: &Subset,
         register_types: &RegisterTypes,
+        reachability: &Reachability<BorrowModel>,
         current_site: GlobalID,
         environment: &Environment<
             BorrowModel,
@@ -90,6 +91,7 @@ impl Representation<BorrowModel> {
         let checker = Checker::new(
             self,
             environment,
+            reachability,
             register_types,
             current_site,
             subset,
