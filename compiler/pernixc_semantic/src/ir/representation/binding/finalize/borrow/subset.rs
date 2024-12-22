@@ -1175,7 +1175,7 @@ impl Subset {
                 // then check active regions that require location sensitivity
                 self.active_region_sets_by_block_id
                     .get(&block_id)
-                    .unwrap()
+                    .unwrap_or_else(|| panic!("{:?} {self:?}", block_id))
                     .iter()
                     .copied()
                     .filter_map(|x| {
@@ -1222,7 +1222,7 @@ pub fn analyze<
         created_borrows: HashMap::new(),
     };
 
-    for block_id in all_block_ids {
+    for block_id in all_block_ids.iter().copied() {
         context.walk_block(block_id, &mut subset_result)?;
     }
 
@@ -1280,6 +1280,11 @@ pub fn analyze<
             location_insensitive_regions
                 .insert(region_at.region.into_local().unwrap());
         }
+    }
+
+    // should at least have a key present
+    for block_id in all_block_ids {
+        active_region_sets_by_block_id.entry(block_id).or_default();
     }
 
     for indices in change_logs_by_region

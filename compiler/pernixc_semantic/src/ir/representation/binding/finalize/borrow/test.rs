@@ -1038,6 +1038,7 @@ public function main(cond: bool) {
 fn invalidated_borrows_in_loop() {
     let (_, errs) = build_table(INVALIDATED_BORROWS_IN_LOOP).unwrap_err();
 
+    dbg!(&errs);
     assert_eq!(errs.len(), 1);
 
     let error =
@@ -1415,7 +1416,7 @@ public function testa() {
 	let mutable test = 32;
 	let refm = &mutable test;
 
-	test += 64;
+	test = 64;
 
 	*refm = 64;
 }
@@ -1425,6 +1426,8 @@ public function testa() {
 fn mutably_access_while_mutably_borrowed() {
     let (_, errs) =
         build_table(MUTABLY_ACCESS_WHILE_MUTABLY_BORROWED).unwrap_err();
+
+    dbg!(&errs);
 
     assert_eq!(errs.len(), 1);
 
@@ -1436,9 +1439,38 @@ fn mutably_access_while_mutably_borrowed() {
         Some("&mutable test")
     );
 
-    assert_eq!(error.access_span.str(), "test += 64");
+    assert_eq!(error.access_span.str(), "test = 64");
     assert_eq!(
         error.borrow_usage.as_local().map(|x| x.str()),
         Some("*refm = 64")
     );
+}
+
+const VECTOR_PUSH_TWO_TIMES: &str = r#"
+// fake vector
+public struct Vector[T] {
+}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function main() {
+    let mutable vector = Vector::new();
+    let mutable number = 0;
+
+    vector.push(number);
+    vector.push(number);
+}
+"#;
+
+#[test]
+fn vector_push_two_times() {
+    assert!(build_table(VECTOR_PUSH_TWO_TIMES).is_ok());
 }

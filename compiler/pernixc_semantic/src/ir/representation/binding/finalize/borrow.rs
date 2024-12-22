@@ -192,7 +192,7 @@ impl Representation<ir::Model> {
             transform_to_borrow_model(self.clone(), environment.table());
 
         let register_types =
-            RegisterTypes::new(&ir.values, current_site, environment)?;
+            RegisterTypes::new(&ir, current_site, environment)?;
         let reachability = ir.control_flow_graph.reachability();
 
         let subset =

@@ -215,6 +215,10 @@ impl<
             invalidated_local_regions
                 .iter()
                 .any(|region| x.regions.contains(region))
+                && self
+                    .reachability
+                    .point_reachable(x.assigned_at, invalidate_at)
+                    .unwrap()
         });
 
         let live_usages = liveness::get_live_usages(
@@ -320,6 +324,12 @@ impl<
                 continue;
             }
 
+            println!(
+                "invalidating {:?} by {:?}",
+                borrow_register.span.str(),
+                access_mode.span().str()
+            );
+
             self.invalidate_borrow(
                 *borrow_register_id,
                 *borrow_point,
@@ -327,7 +337,7 @@ impl<
                 access_point,
                 |borrow_usage| match borrow_assignment.qualifier {
                     Qualifier::Immutable => {
-                        handler.receive(Box::new(
+                        handler.receive(dbg!(Box::new(
                             MutablyAccessWhileImmutablyBorrowed {
                                 mutable_access_span: access_mode.span().clone(),
                                 immutable_borrow_span: Some(
@@ -335,16 +345,18 @@ impl<
                                 ),
                                 usage: borrow_usage,
                             },
-                        ));
+                        )));
                     }
                     Qualifier::Mutable => {
-                        handler.receive(Box::new(AccessWhileMutablyBorrowed {
-                            access_span: access_mode.span().clone(),
-                            mutable_borrow_span: Some(
-                                borrow_register.span.clone(),
-                            ),
-                            borrow_usage,
-                        }));
+                        handler.receive(dbg!(Box::new(
+                            AccessWhileMutablyBorrowed {
+                                access_span: access_mode.span().clone(),
+                                mutable_borrow_span: Some(
+                                    borrow_register.span.clone(),
+                                ),
+                                borrow_usage,
+                            }
+                        )));
                     }
                 },
             )?;

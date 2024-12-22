@@ -1066,8 +1066,24 @@ impl<
 
                 used_registers
                     .iter()
-                    .any(|x| self.checking_registers.contains(x))
-                    .then_some(register_assignment.id)
+                    .find_map(|x| {
+                        self.checking_registers.contains(x).then_some(x)
+                    })
+                    .map(|x| {
+                        dbg!(
+                            self.representation
+                                .values
+                                .registers
+                                .get(register_assignment.id)
+                                .unwrap(),
+                            self.representation
+                                .values
+                                .registers
+                                .get(*x)
+                                .unwrap()
+                        );
+                        register_assignment.id
+                    })
             }
 
             Instruction::RegisterDiscard(register_discard) => {
@@ -1084,8 +1100,8 @@ impl<
         };
 
         if let Some(register_id) = invalidated_use_register {
-            return Ok(ControlFlow::Break(
-                std::iter::once(Usage::Local(
+            return Ok(ControlFlow::Break(dbg!(std::iter::once(
+                Usage::Local(
                     self.representation
                         .values
                         .registers
@@ -1093,9 +1109,9 @@ impl<
                         .unwrap()
                         .span
                         .clone(),
-                ))
-                .collect(),
-            ));
+                )
+            )
+            .collect())));
         }
 
         Ok(ControlFlow::Continue)
