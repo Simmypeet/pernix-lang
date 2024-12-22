@@ -225,89 +225,6 @@ pub struct Changes {
 }
 
 impl Values<BorrowModel> {
-    pub(super) fn get_regions_in_address<S: table::State>(
-        &self,
-        mut address: &Address<BorrowModel>,
-        span: &Span,
-        include_deref: bool,
-        current_site: GlobalID,
-        environment: &Environment<
-            BorrowModel,
-            S,
-            impl Normalizer<BorrowModel, S>,
-            impl Observer<BorrowModel, S>,
-        >,
-    ) -> Result<HashSet<Region>, TypeSystemOverflow<ir::Model>> {
-        let Succeeded { result: address_ty, .. } = self
-            .type_of_address(address, current_site, environment)
-            .map_err(|x| TypeSystemOverflow::<ir::Model> {
-                operation: OverflowOperation::TypeOf,
-                overflow_span: span.clone(),
-                overflow_error: x.into_overflow().unwrap(),
-            })?;
-
-        let mut regions = RecursiveIterator::new(&address_ty)
-            .filter_map(|x| x.0.into_lifetime().ok())
-            .filter_map(|x| Region::try_from(x.clone()).ok())
-            .collect::<HashSet<_>>();
-
-        if include_deref {
-            loop {
-                match address {
-                    Address::Memory(_) => break,
-
-                    Address::Field(field) => {
-                        address = &field.struct_address;
-                    }
-                    Address::Tuple(tuple) => {
-                        address = &tuple.tuple_address;
-                    }
-                    Address::Index(index) => {
-                        address = &index.array_address;
-                    }
-                    Address::Variant(variant) => {
-                        address = &variant.enum_address;
-                    }
-
-                    Address::Reference(reference) => {
-                        let pointee_ty = self
-                            .type_of_address(
-                                &reference.reference_address,
-                                current_site,
-                                environment,
-                            )
-                            .map_err(|x| TypeSystemOverflow::<ir::Model> {
-                                operation: OverflowOperation::TypeOf,
-                                overflow_span: span.clone(),
-                                overflow_error: x.into_overflow().unwrap(),
-                            })?
-                            .result;
-
-                        let pointee_reference_ty =
-                            pointee_ty.into_reference().unwrap();
-
-                        regions.extend(
-                            Region::try_from(pointee_reference_ty.lifetime)
-                                .ok(),
-                        );
-
-                        if pointee_reference_ty.qualifier
-                            == Qualifier::Immutable
-                        {
-                            break;
-                        }
-
-                        address = &reference.reference_address;
-                    }
-                }
-            }
-
-            Ok(regions)
-        } else {
-            Ok(regions)
-        }
-    }
-
     pub(super) fn get_changes_of_borrow<S: table::State>(
         &self,
         borrow: &Borrow<BorrowModel>,
@@ -1240,7 +1157,7 @@ pub fn analyze<
     )
     .expect("failed to create transitive closure");
 
-    Ok(dbg!(Subset {
+    Ok(Subset {
         indices_by_region_at,
         region_ats_by_index,
         transitive_closure,
@@ -1248,5 +1165,5 @@ pub fn analyze<
         location_insensitive_regions,
         active_region_sets_by_block_id,
         change_logs_by_region,
-    }))
+    })
 }

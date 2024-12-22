@@ -1413,7 +1413,7 @@ fn invalidated_immutable_reference_used_in_loop() {
 const MUTABLY_ACCESS_WHILE_MUTABLY_BORROWED: &str = r#"
 public function testa() {
 	let mutable test = 32;
-	let &mutable refm = test;
+	let refm = &mutable test;
 
 	test += 64;
 
@@ -1433,7 +1433,7 @@ fn mutably_access_while_mutably_borrowed() {
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(|x| x.str()),
-        Some("&mutable refm")
+        Some("&mutable test")
     );
 
     assert_eq!(error.access_span.str(), "test += 64");

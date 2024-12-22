@@ -944,7 +944,28 @@ impl<
             }
 
             let (read_span, is_drop) = match kind {
-                AccessKind::Normal(AccessMode::Write(write)) => {
+                AccessKind::Normal(AccessMode::Write(write_span)) => {
+                    // check if the write dereference the regions that are
+                    // invalidated
+                    let dereferenced_regions = self
+                        .representation
+                        .values
+                        .get_dereferenced_regions_in_address(
+                            &address,
+                            &write_span,
+                            self.current_site,
+                            self.environment,
+                        )?;
+
+                    if dereferenced_regions
+                        .iter()
+                        .any(|x| self.invalidated_regions.contains(x))
+                    {
+                        return Ok(ControlFlow::Break(
+                            std::iter::once(Usage::Local(write_span)).collect(),
+                        ));
+                    }
+
                     match assigned_state.set_assigned(
                         &address,
                         memory_root_ty,
@@ -961,7 +982,7 @@ impl<
                         Err(SetAccessedError::Overflow(overflow_error)) => {
                             return Err(TypeSystemOverflow {
                                 operation: OverflowOperation::TypeOf,
-                                overflow_span: write,
+                                overflow_span: write_span,
                                 overflow_error,
                             });
                         }

@@ -142,7 +142,7 @@ impl<
         }
     }
 
-    pub fn invalidate_borrow(
+    fn invalidate_borrow(
         &self,
         borrow: ID<Register<BorrowModel>>,
         borrowed_at: Point<BorrowModel>,
@@ -191,24 +191,36 @@ impl<
         }
 
         // get the invalidated local regions
-        let invalidated_regions =
-            dbg!(self.subset.get_regions_containing(borrow, invalidate_at));
-        dbg!(self.subset);
+        let mut invalidated_local_regions = HashSet::new();
+        let mut invalidated_universal_regions = Vec::new();
+
+        for x in self.subset.get_regions_containing(borrow, invalidate_at) {
+            match x {
+                Region::Universal(universal_region) => {
+                    invalidated_universal_regions.push(universal_region);
+                }
+                Region::Local(id) => {
+                    invalidated_local_regions.insert(Region::Local(id));
+                }
+            }
+        }
 
         // these are the allocas that contain the invalidated local
         // regions, check if the allocas are *used*
         let checking_allocas =
             self.representation.values.allocas.iter().filter(|(_, x)| {
-                Contains::contains(&x.r#type, &invalidated_regions)
+                Contains::contains(&x.r#type, &invalidated_local_regions)
             });
         let checking_registers = self.register_types.iter().filter(|(_, x)| {
-            invalidated_regions.iter().any(|region| x.regions.contains(region))
+            invalidated_local_regions
+                .iter()
+                .any(|region| x.regions.contains(region))
         });
 
         let live_usages = liveness::get_live_usages(
             checking_allocas.map(|x| Memory::Alloca(x.0)),
             checking_registers.map(|x| *x.0).collect(),
-            &invalidated_regions,
+            &invalidated_local_regions,
             invalidate_at,
             &mut exit,
             self.representation,
@@ -220,15 +232,10 @@ impl<
             handler_fn(usage);
         }
 
-        // if there's any universal lifetimes that could use the
-        // invalidated borrow, report an error
-        let universal_lifetimes = invalidated_regions
-            .into_iter()
-            .filter_map(|x| x.into_universal().ok())
-            .collect::<Vec<_>>();
-
-        if !universal_lifetimes.is_empty() {
-            handler_fn(Usage::ByUniversalRegions(universal_lifetimes));
+        if !invalidated_universal_regions.is_empty() {
+            handler_fn(Usage::ByUniversalRegions(
+                invalidated_universal_regions,
+            ));
         }
 
         Ok(())
@@ -312,11 +319,6 @@ impl<
                 // irrelevant borrow
                 continue;
             }
-            println!(
-                "invalidating borrow {} by {}",
-                borrow_register.span.str(),
-                access_mode.span().str()
-            );
 
             self.invalidate_borrow(
                 *borrow_register_id,
