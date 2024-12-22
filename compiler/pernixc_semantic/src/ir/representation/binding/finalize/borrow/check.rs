@@ -1,32 +1,20 @@
-use std::borrow::Borrow;
-
-use super::{
-    cache::RegisterTypes, invalidate::Checker, liveness, subset::Subset,
-};
+use super::{cache::RegisterTypes, invalidate::Checker, subset::Subset};
 use crate::{
-    arena::ID,
-    error::{TypeSystemOverflow, Usage},
+    error::TypeSystemOverflow,
     ir::{
         self,
-        address::{Address, Memory},
         control_flow_graph::{Point, Reachability},
-        instruction::{AccessMode, Instruction},
+        instruction::{AccessMode, Instruction, Read},
         representation::{
-            binding::HandlerWrapper,
-            borrow::{LocalRegion, Model as BorrowModel},
+            binding::HandlerWrapper, borrow::Model as BorrowModel,
             Representation,
         },
-        value::register::Register,
+        value::register::Assignment,
     },
     symbol::{table, GlobalID},
     type_system::{
-        environment::Environment,
-        normalizer::Normalizer,
-        observer::Observer,
-        term::{
-            r#type::{Qualifier, Type},
-            Term,
-        },
+        environment::Environment, normalizer::Normalizer, observer::Observer,
+        term::r#type::Qualifier,
     },
 };
 
@@ -58,7 +46,48 @@ impl<
                     point,
                     handler,
                 )?,
-                Instruction::RegisterAssignment(register_assignment) => {}
+                Instruction::RegisterAssignment(register_assignment) => {
+                    let register = self
+                        .representation()
+                        .values
+                        .registers
+                        .get(register_assignment.id)
+                        .unwrap();
+
+                    match &register.assignment {
+                        Assignment::Load(load) => self.handle_access(
+                            &load.address,
+                            AccessMode::Read(Read {
+                                qualifier: Qualifier::Immutable,
+                                span: register.span.clone(),
+                            }),
+                            point,
+                            handler,
+                        )?,
+                        Assignment::Borrow(borrow) => {
+                            self.handle_access(
+                                &borrow.address,
+                                AccessMode::Read(Read {
+                                    qualifier: borrow.qualifier,
+                                    span: register.span.clone(),
+                                }),
+                                point,
+                                handler,
+                            )?;
+                        }
+
+                        Assignment::Tuple(_)
+                        | Assignment::Prefix(_)
+                        | Assignment::Struct(_)
+                        | Assignment::Variant(_)
+                        | Assignment::FunctionCall(_)
+                        | Assignment::Binary(_)
+                        | Assignment::Array(_)
+                        | Assignment::Phi(_)
+                        | Assignment::Cast(_)
+                        | Assignment::VariantNumber(_) => {}
+                    }
+                }
                 Instruction::RegisterDiscard(register_discard) => {}
                 Instruction::TuplePack(tuple_pack) => {}
                 Instruction::ScopePush(scope_push) => {}
