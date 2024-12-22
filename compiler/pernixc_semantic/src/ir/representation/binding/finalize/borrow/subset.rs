@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use getset::Getters;
 use pernixc_base::source_file::Span;
@@ -9,29 +9,33 @@ use crate::{
     error::{OverflowOperation, TypeSystemOverflow},
     ir::{
         self,
-        address::Address,
         control_flow_graph::{Block, Point},
         instruction::{Instruction, Store},
         representation::{
+            binding::finalize::borrow::subset,
             borrow::{
                 LocalRegion, Model as BorrowModel, Region, UniversalRegion,
             },
             Representation, Values,
         },
-        value::register::{Assignment, Borrow, Register},
+        value::{
+            register::{Assignment, Borrow, FunctionCall, Register},
+            Value,
+        },
     },
     symbol::{table, GenericID, GlobalID, LifetimeParameterID},
     transitive_closure::TransitiveClosure,
     type_system::{
         compatible::{Compatibility, Compatible},
         environment::Environment,
+        instantiation,
         normalizer::Normalizer,
         observer::Observer,
-        predicate::Predicate,
-        term::r#type::Qualifier,
+        predicate::{Outlives, Predicate},
+        term::{r#type::Type, Term},
         variance::Variance,
         visitor::RecursiveIterator,
-        Succeeded,
+        LifetimeConstraint, Succeeded,
     },
 };
 
@@ -134,7 +138,7 @@ impl RegionChangeLog {
 pub struct Naive {
     /// The accumulated subset relations between regions since the beginning
     /// of the control flow graph.
-    subset_relations: HashMap<RegionAt, HashSet<RegionAt>>,
+    subset_relations: HashSet<(RegionAt, RegionAt, Option<Span>)>,
 
     /// Represents the [`Borrow`] register assignment created so far.
     ///
@@ -203,7 +207,7 @@ impl<
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Changes {
     /// Creates a new subset relation between two regions.
-    subset_relations: HashSet<(Region, Region)>,
+    subset_relations: HashSet<(Region, Region, Span)>,
 
     /// The borrow is created at the given region.
     borrow_created: Option<(ID<Register<BorrowModel>>, ID<LocalRegion>)>,
@@ -225,6 +229,143 @@ pub struct Changes {
 }
 
 impl Values<BorrowModel> {
+    pub(super) fn get_changes_of_function_call<S: table::State>(
+        &self,
+        function_call: &FunctionCall<BorrowModel>,
+        span: &Span,
+        current_site: GlobalID,
+        environment: &Environment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+    ) -> Result<Changes, TypeSystemOverflow<ir::Model>> {
+        let callable = environment
+            .table()
+            .get_callable(function_call.callable_id)
+            .unwrap();
+
+        let mut lifetime_constraints = BTreeSet::new();
+
+        for (parameter, argument) in callable
+            .parameter_order()
+            .iter()
+            .copied()
+            .map(|x| callable.parameters().get(x).unwrap())
+            .zip(&function_call.arguments)
+        {
+            assert_eq!(
+                callable.parameter_order().len(),
+                function_call.arguments.len()
+            );
+
+            let mut parameter_ty =
+                Type::from_other_model(parameter.r#type.clone());
+            instantiation::instantiate(
+                &mut parameter_ty,
+                &function_call.instantiation,
+            );
+
+            // obtains the type of argument ty
+            let argument_span = match argument {
+                Value::Register(id) => {
+                    self.registers.get(*id).unwrap().span.clone()
+                }
+                Value::Literal(literal) => literal.span().clone(),
+            };
+            let Succeeded {
+                result: argument_ty,
+                constraints: argument_ty_constraints,
+            } = self
+                .type_of_value(argument, current_site, environment)
+                .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeOf,
+                    overflow_span: argument_span.clone(),
+                    overflow_error: x.into_overflow().unwrap(),
+                })?;
+
+            lifetime_constraints.extend(argument_ty_constraints);
+
+            let copmatibility = argument_ty
+                .compatible(&parameter_ty, Variance::Covariant, environment)
+                .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeCheck,
+                    overflow_span: argument_span,
+                    overflow_error,
+                })?;
+
+            // append the lifetime constraints
+            if let Some(Succeeded {
+                result,
+                constraints: compatibility_constraints,
+            }) = copmatibility
+            {
+                assert!(result.forall_lifetime_errors.is_empty());
+                assert!(result
+                    .forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
+
+                lifetime_constraints.extend(compatibility_constraints);
+            } else {
+                panic!("{argument_ty:#?} => {parameter_ty:#?}")
+            }
+        }
+
+        for predicate in environment
+            .table()
+            .get_active_premise(function_call.callable_id.into())
+            .unwrap()
+            .predicates
+            .into_iter()
+            .map(|x| {
+                let mut x = Predicate::from_default_model(x);
+                x.instantiate(&function_call.instantiation);
+
+                x
+            })
+        {
+            match predicate {
+                Predicate::LifetimeOutlives(outlives) => {
+                    lifetime_constraints.insert(
+                        LifetimeConstraint::LifetimeOutlives(outlives.clone()),
+                    );
+                }
+                Predicate::TypeOutlives(outlives) => {
+                    for lt in RecursiveIterator::new(&outlives.operand)
+                        .filter_map(|x| x.0.into_lifetime().ok())
+                    {
+                        lifetime_constraints.insert(
+                            LifetimeConstraint::LifetimeOutlives(Outlives {
+                                operand: lt.clone(),
+                                bound: outlives.bound.clone(),
+                            }),
+                        );
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        Ok(Changes {
+            subset_relations: lifetime_constraints
+                .into_iter()
+                .filter_map(|x| {
+                    let x = x.into_lifetime_outlives().ok()?;
+
+                    let from = Region::try_from(x.operand.clone()).ok()?;
+                    let to = Region::try_from(x.bound.clone()).ok()?;
+
+                    Some((from, to, span.clone()))
+                })
+                .collect(),
+            borrow_created: None,
+            overwritten_regions: HashSet::new(),
+        })
+    }
+
     pub(super) fn get_changes_of_borrow<S: table::State>(
         &self,
         borrow: &Borrow<BorrowModel>,
@@ -253,7 +394,9 @@ impl Values<BorrowModel> {
             subset_relations: {
                 regions_in_address
                     .into_iter()
-                    .map(|x| (Region::Local(borrow_local_region), x))
+                    .map(|x| {
+                        (Region::Local(borrow_local_region), x, span.clone())
+                    })
                     .collect()
             },
             borrow_created: Some((register_id, borrow_local_region)),
@@ -331,7 +474,7 @@ impl Values<BorrowModel> {
                     let from = Region::try_from(x.operand.clone()).ok()?;
                     let to = Region::try_from(x.bound.clone()).ok()?;
 
-                    Some((from, to))
+                    Some((from, to, store_inst.span.clone()))
                 })
                 .collect(),
             borrow_created: None,
@@ -584,7 +727,7 @@ impl<
         }
 
         // add subset relations
-        for (from, to) in changes.subset_relations {
+        for (from, to, span) in changes.subset_relations {
             let latest_from =
                 self.latest_change_points_by_region.get(&from).cloned();
             let latest_to =
@@ -602,11 +745,11 @@ impl<
             };
 
             // add subset relation
-            subset_result
-                .subset_relations
-                .entry(from_region_at)
-                .or_default()
-                .insert(to_region_at);
+            subset_result.subset_relations.insert((
+                from_region_at,
+                to_region_at,
+                Some(span),
+            ));
 
             // flows the previous region state to the current one
             let mut flow =
@@ -621,9 +764,8 @@ impl<
                         assert!(region_at.point.is_some());
 
                         // flows state to current
-                        subset_result
-                            .subset_relations
-                            .entry(RegionAt {
+                        subset_result.subset_relations.insert((
+                            RegionAt {
                                 region: region_at.region,
                                 point: Some(
                                     latest_updated_inst_index.map_or_else(
@@ -641,9 +783,10 @@ impl<
                                         },
                                     ),
                                 ),
-                            })
-                            .or_default()
-                            .insert(region_at);
+                            },
+                            region_at,
+                            None,
+                        ));
                     }
                 };
 
@@ -809,11 +952,11 @@ impl<
                     point: Some(RegionPoint::EnteringBlock(block_id)),
                 };
 
-                subset_result
-                    .subset_relations
-                    .entry(from_region_at)
-                    .or_default()
-                    .insert(to_region_at);
+                subset_result.subset_relations.insert((
+                    from_region_at,
+                    to_region_at,
+                    None,
+                ));
             }
 
             builder
@@ -891,11 +1034,11 @@ impl<
                         point: Some(RegionPoint::EnteringBlock(block_id)),
                     };
 
-                    subset_result
-                        .subset_relations
-                        .entry(from_region_at)
-                        .or_default()
-                        .insert(to_region_at);
+                    subset_result.subset_relations.insert((
+                        from_region_at,
+                        to_region_at,
+                        None,
+                    ));
                 }
             }
 
@@ -951,11 +1094,11 @@ impl<
                     point: Some(RegionPoint::EnteringBlock(*to_block_id)),
                 };
 
-                subset_result
-                    .subset_relations
-                    .entry(from_region_at)
-                    .or_default()
-                    .insert(to_region_at);
+                subset_result.subset_relations.insert((
+                    from_region_at,
+                    to_region_at,
+                    None,
+                ));
             }
         }
 
@@ -977,6 +1120,9 @@ pub struct Subset {
     indices_by_region_at: HashMap<RegionAt, usize>,
     region_ats_by_index: Vec<RegionAt>,
     transitive_closure: TransitiveClosure,
+
+    #[get = "pub"]
+    direct_subset_relations: HashSet<(RegionAt, RegionAt, Option<Span>)>,
 
     #[get = "pub"]
     created_borrows: HashMap<
@@ -1065,7 +1211,7 @@ pub fn analyze<
     let all_block_ids =
         ir.control_flow_graph().blocks().ids().collect::<Vec<_>>();
     let mut subset_result = Naive {
-        subset_relations: HashMap::new(),
+        subset_relations: HashSet::new(),
         created_borrows: HashMap::new(),
     };
 
@@ -1089,9 +1235,7 @@ pub fn analyze<
         subset_result
             .subset_relations
             .iter()
-            .flat_map(|(key, values)| {
-                std::iter::once(*key).chain(values.iter().copied())
-            })
+            .flat_map(|(from, to, _)| [*from, *to])
             .chain(subset_result.created_borrows.iter().map(|x| {
                 RegionAt::new_location_insensitive(Region::Local(x.1 .0))
             }))
@@ -1147,10 +1291,8 @@ pub fn analyze<
     }
 
     let transitive_closure = TransitiveClosure::new(
-        subset_result.subset_relations.iter().flat_map(|(key, values)| {
-            values.iter().map(|value| {
-                (indices_by_region_at[key], indices_by_region_at[value])
-            })
+        subset_result.subset_relations.iter().map(|(from, to, _)| {
+            (indices_by_region_at[from], indices_by_region_at[to])
         }),
         all_regions.len(),
         true,
@@ -1161,6 +1303,7 @@ pub fn analyze<
         indices_by_region_at,
         region_ats_by_index,
         transitive_closure,
+        direct_subset_relations: subset_result.subset_relations,
         created_borrows: subset_result.created_borrows,
         location_insensitive_regions,
         active_region_sets_by_block_id,
