@@ -358,6 +358,7 @@ impl<M: Model> ControlFlowGraph<M> {
         let closure = TransitiveClosure::new(
             edges.iter().map(|(f, t)| (*f, *t)),
             self.blocks.len(),
+            false,
         )
         .expect("failed to create transitive closure");
 

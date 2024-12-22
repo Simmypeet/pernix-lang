@@ -161,8 +161,15 @@ impl TransitiveClosure {
     pub fn new(
         edges: impl IntoIterator<Item = (usize, usize)> + Clone,
         size: usize,
+        include_self_loops: bool,
     ) -> Option<Self> {
         let transitive_closure = vec![BitSet::new(size); size];
+
+        if include_self_loops {
+            for i in 0..size {
+                transitive_closure[i].set(i)?;
+            }
+        }
 
         let result = Self { size, closure: transitive_closure };
 
@@ -213,7 +220,8 @@ mod test {
 
     #[test]
     fn transitive_closure_basic() {
-        let relation = TransitiveClosure::new([(0, 1), (1, 2)], 3).unwrap();
+        let relation =
+            TransitiveClosure::new([(0, 1), (1, 2)], 3, false).unwrap();
 
         // Check paths
         assert!(relation.has_path(0, 1).unwrap());
@@ -228,9 +236,12 @@ mod test {
 
     #[test]
     fn reachable_vertices() {
-        let relation =
-            TransitiveClosure::new([(0, 1), (1, 2), (2, 3), (4, 5), (4, 6)], 7)
-                .unwrap();
+        let relation = TransitiveClosure::new(
+            [(0, 1), (1, 2), (2, 3), (4, 5), (4, 6)],
+            7,
+            false,
+        )
+        .unwrap();
 
         // Check reachable vertices
         let reachable =
@@ -256,7 +267,7 @@ mod test {
     #[test]
     fn complex_edge() {
         let relation =
-            TransitiveClosure::new([(0, 1), (2, 5), (1, 2)], 6).unwrap();
+            TransitiveClosure::new([(0, 1), (2, 5), (1, 2)], 6, false).unwrap();
 
         // Verify paths
         assert!(relation.has_path(0, 5).unwrap());
@@ -267,6 +278,7 @@ mod test {
         let relation = TransitiveClosure::new(
             [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0)],
             6,
+            false,
         )
         .unwrap();
 
