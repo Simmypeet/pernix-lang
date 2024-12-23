@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use getset::Getters;
 use pernixc_base::source_file::Span;
 
-use super::cache::RegisterTypes;
+use super::cache::RegisterInfos;
 use crate::{
     arena::ID,
     error::{OverflowOperation, TypeSystemOverflow},
@@ -170,7 +170,7 @@ pub struct Builder<
     O: Observer<BorrowModel, S>,
 > {
     representation: &'a Representation<BorrowModel>,
-    register_types: &'a RegisterTypes,
+    register_infos: &'a RegisterInfos,
     current_site: GlobalID,
     environment: &'a Environment<'a, BorrowModel, S, N, O>,
 
@@ -194,7 +194,7 @@ impl<
         Self {
             environment: self.environment,
             representation: self.representation,
-            register_types: self.register_types,
+            register_infos: self.register_infos,
 
             current_site: self.current_site.clone(),
             latest_change_points_by_region: self
@@ -1012,7 +1012,7 @@ struct Context<
     representation: &'a ir::Representation<BorrowModel>,
     current_site: GlobalID,
     environment: &'a Environment<'a, BorrowModel, S, N, O>,
-    register_types: &'a RegisterTypes,
+    register_infos: &'a RegisterInfos,
 
     /// The key represents the block ID that needs to be checked/explored.
     ///
@@ -1060,7 +1060,7 @@ impl<
 
             let builder = Builder {
                 representation: self.representation,
-                register_types: self.register_types,
+                register_infos: self.register_infos,
                 current_site: self.current_site,
                 environment: self.environment,
                 latest_change_points_by_region: HashMap::new(),
@@ -1152,7 +1152,7 @@ impl<
 
             let builder = Builder {
                 representation: self.representation,
-                register_types: self.register_types,
+                register_infos: self.register_infos,
                 current_site: self.current_site,
                 environment: self.environment,
 
@@ -1358,7 +1358,7 @@ pub fn analyze<
     O: Observer<BorrowModel, S>,
 >(
     ir: &ir::Representation<BorrowModel>,
-    register_types: &RegisterTypes,
+    register_infos: &RegisterInfos,
     current_site: GlobalID,
     environment: &Environment<BorrowModel, S, N, O>,
 ) -> Result<Subset, TypeSystemOverflow<ir::Model>> {
@@ -1366,7 +1366,7 @@ pub fn analyze<
         representation: ir,
         current_site,
         environment,
-        register_types,
+        register_infos,
         walk_results_by_block_id: HashMap::new(),
         target_regions_by_block_id: HashMap::new(),
     };

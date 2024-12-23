@@ -21,7 +21,7 @@ use crate::{
 
 /// The cache for `type_of` register operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RegisterType {
+pub struct RegisterInfo {
     pub r#type: Type<BorrowModel>,
     pub regions: HashSet<Region>,
     pub assigned_at: Point<BorrowModel>,
@@ -31,9 +31,9 @@ pub struct RegisterType {
 #[derive(
     Debug, Clone, PartialEq, Eq, derive_more::Deref, derive_more::DerefMut,
 )]
-pub struct RegisterTypes(HashMap<ID<Register<BorrowModel>>, RegisterType>);
+pub struct RegisterInfos(HashMap<ID<Register<BorrowModel>>, RegisterInfo>);
 
-impl RegisterTypes {
+impl RegisterInfos {
     /// Create a new empty register types cache.
     pub fn new<S: table::State>(
         ir: &Representation<BorrowModel>,
@@ -71,7 +71,7 @@ impl RegisterTypes {
                     overflow_error: overflow_error.into_overflow().unwrap(),
                 })?;
 
-            cache.insert(inst.id, RegisterType {
+            cache.insert(inst.id, RegisterInfo {
                 regions: RecursiveIterator::new(&ty.result)
                     .filter_map(|x| x.0.into_lifetime().ok())
                     .filter_map(|x| x.clone().try_into().ok())

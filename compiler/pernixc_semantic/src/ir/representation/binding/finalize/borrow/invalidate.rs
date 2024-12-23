@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use getset::{CopyGetters, Getters};
 use pernixc_base::handler::Handler;
 
-use super::{cache::RegisterTypes, liveness, subset::Subset};
+use super::{cache::RegisterInfos, liveness, subset::Subset};
 use crate::{
     arena::ID,
     error::{
@@ -110,7 +110,7 @@ pub struct Checker<
     #[get_copy = "pub"]
     reachability: &'a Reachability<BorrowModel>,
     #[get_copy = "pub"]
-    register_types: &'a RegisterTypes,
+    register_infos: &'a RegisterInfos,
     #[get_copy = "pub"]
     current_site: GlobalID,
     #[get_copy = "pub"]
@@ -128,7 +128,7 @@ impl<
         representation: &'a Representation<BorrowModel>,
         environment: &'a Environment<'a, BorrowModel, S, N, O>,
         reachability: &'a Reachability<BorrowModel>,
-        register_types: &'a RegisterTypes,
+        register_infos: &'a RegisterInfos,
         current_site: GlobalID,
         subset: &'a Subset,
     ) -> Self {
@@ -136,7 +136,7 @@ impl<
             representation,
             environment,
             reachability,
-            register_types,
+            register_infos,
             current_site,
             subset,
         }
@@ -211,7 +211,7 @@ impl<
             self.representation.values.allocas.iter().filter(|(_, x)| {
                 Contains::contains(&x.r#type, &invalidated_local_regions)
             });
-        let checking_registers = self.register_types.iter().filter(|(_, x)| {
+        let checking_registers = self.register_infos.iter().filter(|(_, x)| {
             invalidated_local_regions
                 .iter()
                 .any(|region| x.regions.contains(region))

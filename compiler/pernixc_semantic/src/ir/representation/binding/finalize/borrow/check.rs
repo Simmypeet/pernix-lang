@@ -1,4 +1,4 @@
-use super::{cache::RegisterTypes, invalidate::Checker, subset::Subset};
+use super::{cache::RegisterInfos, invalidate::Checker, subset::Subset};
 use crate::{
     error::TypeSystemOverflow,
     ir::{
@@ -144,7 +144,7 @@ impl Representation<BorrowModel> {
     pub(super) fn borrow_check_internal<S: table::State>(
         &self,
         subset: &Subset,
-        register_types: &RegisterTypes,
+        register_infos: &RegisterInfos,
         reachability: &Reachability<BorrowModel>,
         current_site: GlobalID,
         environment: &Environment<
@@ -159,7 +159,7 @@ impl Representation<BorrowModel> {
             self,
             environment,
             reachability,
-            register_types,
+            register_infos,
             current_site,
             subset,
         );
