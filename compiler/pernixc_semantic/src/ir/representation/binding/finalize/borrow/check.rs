@@ -1,19 +1,20 @@
-use pernixc_base::source_file::Span;
+use pernixc_base::{handler::Handler, source_file::Span};
 
 use super::{
     cache::{RegionVariances, RegisterInfos},
     invalidate::Checker,
-    subset::Subset,
+    subset::{RegionAt, Subset},
 };
 use crate::{
-    error::TypeSystemOverflow,
+    error::{OverflowOperation, TypeSystemOverflow, UnsatisfiedPredicate},
     ir::{
         self,
         address::Memory,
         control_flow_graph::{Point, Reachability},
         instruction::{AccessMode, Instruction, Read},
         representation::{
-            binding::HandlerWrapper, borrow::Model as BorrowModel,
+            binding::HandlerWrapper,
+            borrow::{Model as BorrowModel, Region},
             Representation,
         },
         value::register::{Assignment, Load},
@@ -23,9 +24,9 @@ use crate::{
         environment::Environment,
         normalizer::Normalizer,
         observer::Observer,
-        predicate::{PositiveMarker, Predicate},
-        term::{r#type::Qualifier, GenericArguments},
-        well_formedness,
+        predicate::{Outlives, PositiveMarker, Predicate},
+        term::{lifetime::Lifetime, r#type::Qualifier, GenericArguments},
+        well_formedness, Compute, Satisfied,
     },
 };
 
@@ -109,7 +110,86 @@ impl<
         Ok(())
     }
 
-    pub fn borrow_check(
+    pub fn universal_region_check(
+        &self,
+        handler: &HandlerWrapper,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        for (from, to_universal, to_point, span) in self
+            .subset()
+            .direct_subset_relations()
+            .iter()
+            .filter_map(|(from, to, span)| {
+                let (
+                    from,
+                    RegionAt { region: Region::Universal(to_universal), point },
+                    Some(span),
+                ) = (from, to, span)
+                else {
+                    return None;
+                };
+
+                Some((
+                    from,
+                    to_universal,
+                    point
+                        .expect("should have a point because it has span")
+                        .into_in_block()
+                        .expect("should be in block because it has a span"),
+                    span,
+                ))
+            })
+        {
+            assert!(from.point.map_or(true, |x| x
+                .as_in_block()
+                .map_or(false, |x| x == &to_point)));
+
+            let universal_regions = self
+                .subset()
+                .get_universal_regions_containing(from.region, to_point);
+
+            // use type_system's outlive checker
+            for universal_region in universal_regions {
+                let outlives = Outlives::<Lifetime<BorrowModel>>::new(
+                    universal_region.into(),
+                    to_universal.clone().into(),
+                );
+
+                match outlives.query(self.environment()) {
+                    Ok(Some(Satisfied)) => {}
+                    Ok(None) => {
+                        handler.receive(Box::new(UnsatisfiedPredicate::<
+                            ir::Model,
+                        > {
+                            predicate: Predicate::LifetimeOutlives(
+                                Outlives::new(
+                                    universal_region.into(),
+                                    to_universal.clone().into(),
+                                ),
+                            ),
+                            instantiation_span: span.clone(),
+                            predicate_declaration_span: None,
+                        }));
+                    }
+                    Err(err) => {
+                        return Err(TypeSystemOverflow {
+                            operation: OverflowOperation::Predicate(
+                                Predicate::LifetimeOutlives(Outlives::new(
+                                    universal_region.into(),
+                                    to_universal.clone().into(),
+                                )),
+                            ),
+                            overflow_span: span.clone(),
+                            overflow_error: err,
+                        })
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn invalidate_check(
         &self,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
@@ -246,6 +326,7 @@ impl Representation<BorrowModel> {
             subset,
         );
 
-        checker.borrow_check(handler)
+        checker.invalidate_check(handler)?;
+        checker.universal_region_check(handler)
     }
 }

@@ -630,7 +630,7 @@ public function test['a, 'b](
     first: &'a int32,
     second: &'b int32,
 ): &'a int32 {
-    return second;
+    return &*second;
 }
 "#;
 

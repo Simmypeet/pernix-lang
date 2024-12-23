@@ -235,6 +235,17 @@ pub enum UniversalRegion {
     LifetimeParameter(LifetimeParameterID),
 }
 
+impl<M: model::Model> From<UniversalRegion> for Lifetime<M> {
+    fn from(value: UniversalRegion) -> Self {
+        match value {
+            UniversalRegion::Static => Lifetime::Static,
+            UniversalRegion::LifetimeParameter(id) => {
+                Lifetime::Parameter(id.into())
+            }
+        }
+    }
+}
+
 impl<S: table::State> table::Display<S> for UniversalRegion {
     fn fmt(
         &self,

@@ -204,7 +204,9 @@ impl<
         let mut invalidated_local_regions = HashSet::new();
         let mut invalidated_universal_regions = Vec::new();
 
-        for x in self.subset.get_regions_containing(borrow, invalidate_at) {
+        for x in
+            self.subset.get_regions_containing_borrow(borrow, invalidate_at)
+        {
             match x {
                 Region::Universal(universal_region) => {
                     invalidated_universal_regions.push(universal_region);

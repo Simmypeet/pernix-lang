@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_base::source_file::Span;
 
@@ -45,7 +46,9 @@ use crate::{
 
 /// Represents a point in the control flow graph where the borrow checker
 /// is considering the subset relation between regions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
 pub enum RegionPoint {
     /// Involving a particular point in the control flow graph.
     InBlock(Point<BorrowModel>),
@@ -1601,8 +1604,51 @@ pub struct Subset {
 }
 
 impl Subset {
+    pub fn get_universal_regions_containing(
+        &self,
+        to_region: Region,
+        point: Point<BorrowModel>,
+    ) -> HashSet<UniversalRegion> {
+        let block_id = point.block_id;
+
+        let to_region_at = if to_region
+            .as_local()
+            .map_or(false, |x| self.location_insensitive_regions.contains(&x))
+        {
+            RegionAt::new_location_insensitive(to_region)
+        } else {
+            RegionAt::new(to_region, {
+                self.change_logs_by_region[&to_region]
+                    .get_most_updated_point(point)
+            })
+        };
+
+        self.active_region_sets_by_block_id
+            .get(&block_id)
+            .unwrap_or_else(|| panic!("{:?} {self:?}", block_id))
+            .iter()
+            .copied()
+            .filter_map(|x| x.into_universal().ok())
+            .filter_map(|x| {
+                let most_updated_point = self.change_logs_by_region
+                    [&Region::Universal(x)]
+                    .get_most_updated_point(point);
+                let from_region_at =
+                    RegionAt::new(Region::Universal(x), most_updated_point);
+
+                self.transitive_closure
+                    .has_path(
+                        *self.indices_by_region_at.get(&from_region_at)?,
+                        self.indices_by_region_at[&to_region_at],
+                    )
+                    .unwrap()
+                    .then_some(x)
+            })
+            .collect()
+    }
+
     /// Gets a list of region that contains the given borrow at the given point.
-    pub fn get_regions_containing(
+    pub fn get_regions_containing_borrow(
         &self,
         borrow_register_id: ID<Register<BorrowModel>>,
         point: Point<BorrowModel>,
