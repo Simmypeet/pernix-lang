@@ -220,6 +220,7 @@ fn variable_does_not_live_long_enough_in_inner_loop() {
     let (_, errs) =
         build_table(VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_INNER_LOOP)
             .unwrap_err();
+    dbg!(&errs);
 
     assert_eq!(errs.len(), 2);
 
@@ -1153,7 +1154,7 @@ fn variable_does_not_live_long_enough_in_loop_2() {
         .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
         .unwrap();
 
-    assert_eq!(error.variable_span.str(), "number");
+    assert_eq!(error.variable_span.str(), "mutable number");
     assert_eq!(error.for_lifetime, None);
     assert_eq!(error.instantiation_span.str(), "vector");
 }
@@ -1196,6 +1197,8 @@ public function test(cond: bool) {
 fn possible_use_of_going_out_of_scope_reference() {
     let (_, errs) =
         build_table(POSSIBLE_USE_OF_GOING_OUT_OF_SCOPE_REFERENCE).unwrap_err();
+
+    dbg!(&errs);
 
     assert_eq!(errs.len(), 1);
 
@@ -1469,4 +1472,55 @@ public function main() {
 #[test]
 fn vector_push_two_times() {
     assert!(build_table(VECTOR_PUSH_TWO_TIMES).is_ok());
+}
+
+const POLONIUS_TWO_EXAMPLE: &str = r#"
+// fake vector
+public struct Vector[T] {}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function consume[T](x: T) {}
+
+public function main() {
+    let mutable v = Vector::new();
+    let p = &mutable v;
+    let mutable x = 1;
+
+    x = 2;
+
+    p->push(&x);
+
+    x = 3;
+
+    consume(v);
+}
+"#;
+
+#[test]
+fn polonius_two_example() {
+    let (_, errs) = build_table(POLONIUS_TWO_EXAMPLE).unwrap_err();
+
+    dbg!(&errs);
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .unwrap();
+
+    assert_eq!(
+        error.immutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&x")
+    );
+    assert_eq!(error.mutable_access_span.str(), "x = 3");
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("v"));
 }

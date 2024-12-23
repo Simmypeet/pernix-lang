@@ -186,12 +186,12 @@ impl<
                     .clone(),
             };
 
-        if liveness::has_been_reassigned(
+        if !liveness::is_live(
             &borrow_assignment.address,
             &root_borrowed_address_type,
             borrowed_at,
             invalidate_at,
-            &self.representation.control_flow_graph,
+            self.representation,
             self.environment,
         )? {
             // not an active borrow
@@ -268,6 +268,13 @@ impl<
         for (borrow_register_id, (_, borrow_point)) in
             self.subset.created_borrows()
         {
+            // basic reachability check, this can filter out a lot of irrelevant
+            // borrows without doing more expensive check
+            if !self.reachability.point_reachable(*borrow_point, point).unwrap()
+            {
+                continue;
+            }
+
             let borrow_register = self
                 .representation
                 .values
@@ -284,20 +291,6 @@ impl<
             if !should_invalidate {
                 continue;
             }
-
-            let dropped_scope = match drop {
-                Memory::Parameter(_) => {
-                    self.representation.scope_tree.root_scope_id()
-                }
-                Memory::Alloca(id) => {
-                    self.representation
-                        .values
-                        .allocas
-                        .get(id)
-                        .unwrap()
-                        .declared_in_scope_id
-                }
-            };
 
             let span = match drop {
                 Memory::Parameter(id) => self
@@ -324,10 +317,7 @@ impl<
             self.invalidate_borrow(
                 *borrow_register_id,
                 *borrow_point,
-                |inst, _| {
-                    // prevent multiple invalidations in loops
-                    inst.as_scope_pop().map_or(false, |x| x.0 == dropped_scope)
-                },
+                |_, _| false,
                 point,
                 |borrow_usage| match borrow_usage {
                     Usage::Local(usage_span) => {
@@ -340,7 +330,9 @@ impl<
                         ));
                     }
 
-                    Usage::ByUniversalRegions(_) | Usage::Drop => {}
+                    Usage::ByUniversalRegions(_) | Usage::Drop => {
+                        // TODO: report variable use in drop
+                    }
                 },
             )?;
         }
@@ -360,7 +352,8 @@ impl<
         for (borrow_register_id, (_, borrow_point)) in
             self.subset.created_borrows()
         {
-            // borrow hasn't happened yet at the point of access
+            // basic reachability check, this can filter out a lot of irrelevant
+            // borrows without doing more expensive check
             if !self
                 .reachability
                 .point_reachable(*borrow_point, access_point)

@@ -1132,12 +1132,12 @@ impl<
     }
 }
 
-pub fn has_been_reassigned<S: table::State>(
+pub fn is_live<S: table::State>(
     checking_address: &Address<BorrowModel>,
     root_address_type: &Type<BorrowModel>,
     from: Point<BorrowModel>,
     to: Point<BorrowModel>,
-    control_flow_graph: &ControlFlowGraph<BorrowModel>,
+    representation: &ir::Representation<BorrowModel>,
     environment: &Environment<
         BorrowModel,
         S,
@@ -1149,13 +1149,18 @@ pub fn has_been_reassigned<S: table::State>(
         root_memory: *checking_address.get_root_memory(),
         assigned_states: Assigned::Whole(false),
         checking_address,
+        representation,
+        to_point: to,
         root_type: root_address_type,
         environment,
     };
 
-    traverse_block(&mut traverser, control_flow_graph, from, &mut |_, point| {
-        point == to
-    })
+    traverse_block(
+        &mut traverser,
+        &representation.control_flow_graph,
+        from,
+        &mut |_, _| false,
+    )
 }
 
 #[derive(Debug)]
@@ -1169,8 +1174,10 @@ struct LiveLenderTraverser<
     assigned_states: Assigned,
     checking_address: &'a Address<BorrowModel>,
     root_type: &'a Type<BorrowModel>,
+    to_point: Point<BorrowModel>,
 
     environment: &'a Environment<'a, BorrowModel, S, N, O>,
+    representation: &'a ir::Representation<BorrowModel>,
 }
 
 impl<
@@ -1186,6 +1193,8 @@ impl<
             assigned_states: self.assigned_states.clone(),
             checking_address: self.checking_address,
             root_type: self.root_type,
+            representation: self.representation,
+            to_point: self.to_point,
 
             environment: self.environment,
         }
@@ -1201,91 +1210,101 @@ impl<
 {
     type Error = TypeSystemOverflow<ir::Model>;
 
-    type Result = bool; /* true if it has been reassigned, false otherwise */
+    /// True if the address is reachable to the `to_point` without the address
+    /// be reassigned or go you of scope.
+    type Result = bool;
 
     fn on_instruction(
         &mut self,
-        _: Point<BorrowModel>,
+        point: Point<BorrowModel>,
         instruction: &Instruction<BorrowModel>,
     ) -> Result<ControlFlow<Self::Result>, Self::Error> {
-        let Instruction::Store(store) = instruction else {
-            return Ok(ControlFlow::Continue);
-        };
-
-        let overlapping_addresses =
-            store.address.is_child_of(&self.checking_address)
-                || self.checking_address.is_child_of(&store.address);
-
-        // non-related address
-        if !overlapping_addresses {
-            return Ok(ControlFlow::Continue);
+        if point == self.to_point {
+            return Ok(ControlFlow::Break(true));
         }
 
-        match self.assigned_states.set_assigned(
-            &store.address,
-            self.root_type.clone(),
-            self.environment,
-        ) {
-            Ok(_) => {}
+        match instruction {
+            Instruction::Store(store) => {
+                let overlapping_addresses =
+                    store.address.is_child_of(&self.checking_address)
+                        || self.checking_address.is_child_of(&store.address);
 
-            Err(SetAccessedError::Internal(reason)) => {
-                panic!("{reason}")
+                // non-related address
+                if !overlapping_addresses {
+                    return Ok(ControlFlow::Continue);
+                }
+
+                match self.assigned_states.set_assigned(
+                    &store.address,
+                    self.root_type.clone(),
+                    self.environment,
+                ) {
+                    Ok(_) => {}
+
+                    Err(SetAccessedError::Internal(reason)) => {
+                        panic!("{reason}")
+                    }
+
+                    Err(SetAccessedError::Overflow(overflow_error)) => {
+                        return Err(TypeSystemOverflow {
+                            operation: OverflowOperation::TypeOf,
+                            overflow_span: store.span.clone(),
+                            overflow_error,
+                        });
+                    }
+                }
+
+                if self
+                    .assigned_states
+                    .from_address(&self.checking_address)
+                    .is_assigned()
+                {
+                    Ok(ControlFlow::Break(false))
+                } else {
+                    Ok(ControlFlow::Continue)
+                }
             }
 
-            Err(SetAccessedError::Overflow(overflow_error)) => {
-                return Err(TypeSystemOverflow {
-                    operation: OverflowOperation::TypeOf,
-                    overflow_span: store.span.clone(),
-                    overflow_error,
-                });
-            }
-        }
+            Instruction::ScopePop(scope_pop) => {
+                let scope_of_memory = match self.root_memory {
+                    Memory::Parameter(_) => {
+                        self.representation.scope_tree.root_scope_id()
+                    }
+                    Memory::Alloca(id) => {
+                        self.representation
+                            .values
+                            .allocas
+                            .get(id)
+                            .unwrap()
+                            .declared_in_scope_id
+                    }
+                };
 
-        if self
-            .assigned_states
-            .from_address(&self.checking_address)
-            .is_assigned()
-        {
-            Ok(ControlFlow::Break(true))
-        } else {
-            Ok(ControlFlow::Continue)
+                if scope_of_memory == scope_pop.0 {
+                    Ok(ControlFlow::Break(false))
+                } else {
+                    Ok(ControlFlow::Continue)
+                }
+            }
+
+            _ => return Ok(ControlFlow::Continue),
         }
     }
 
     fn on_terminator(
         &mut self,
         _: ID<Block<BorrowModel>>,
-        terminator: Option<&Terminator<BorrowModel>>,
+        _: Option<&Terminator<BorrowModel>>,
     ) -> Result<ControlFlow<Self::Result>, Self::Error> {
-        match terminator {
-            Some(terminator) => match terminator {
-                Terminator::Jump(jump) => {
-                    let Jump::Select(select) = jump else {
-                        return Ok(ControlFlow::Continue);
-                    };
-
-                    if select.otherwise.is_none() && select.branches.is_empty()
-                    {
-                        Ok(ControlFlow::Break(true))
-                    } else {
-                        Ok(ControlFlow::Continue)
-                    }
-                }
-
-                Terminator::Return(_) | Terminator::Panic => {
-                    Ok(ControlFlow::Break(true))
-                }
-            },
-            None => Ok(ControlFlow::Break(true)),
-        }
+        Ok(ControlFlow::Continue)
     }
 
     fn fold_result(
         previous: Self::Result,
         next: Self::Result,
     ) -> (Self::Result, bool) {
-        let result = previous && next;
+        let result = previous || next;
 
-        (result, !result)
+        (result, result)
     }
 }
