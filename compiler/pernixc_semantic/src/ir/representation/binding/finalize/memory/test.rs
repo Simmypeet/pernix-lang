@@ -269,3 +269,38 @@ fn dereference_moved_mutable_reference_of_copyable_type() {
     assert_eq!(error.use_span.str(), "*ref");
     assert_eq!(error.move_span.str(), "ref");
 }
+
+const RETURN_MOVED_VALUE: &str = r#"
+public function create[T](): T { panic; }
+
+public function test[T](param: T): T {
+    let movedTo = param;
+    return param;
+}
+"#;
+
+#[test]
+fn return_moved_value() {
+    let (_, errs) = build_table(RETURN_MOVED_VALUE).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0].as_any().downcast_ref::<UseAfterMove>().unwrap();
+
+    assert_eq!(error.use_span.str(), "param");
+    assert_eq!(error.move_span.str(), "param");
+}
+
+const RETURN_NON_COPYABLE: &str = r#"
+public function create[T](): T { panic; }
+
+public function test[T](): T {
+    let value = create[T]();
+    return value;
+}
+"#;
+
+#[test]
+fn return_non_copyable() {
+    assert!(build_table(RETURN_NON_COPYABLE).is_ok());
+}
