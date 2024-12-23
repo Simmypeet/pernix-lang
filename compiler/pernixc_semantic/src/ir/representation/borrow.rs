@@ -235,6 +235,20 @@ pub enum UniversalRegion {
     LifetimeParameter(LifetimeParameterID),
 }
 
+impl<M: model::Model> TryFrom<Lifetime<M>> for UniversalRegion {
+    type Error = Lifetime<M>;
+
+    fn try_from(value: Lifetime<M>) -> Result<Self, Self::Error> {
+        match value {
+            Lifetime::Static => Ok(Self::Static),
+            Lifetime::Parameter(member_id) => {
+                Ok(Self::LifetimeParameter(member_id))
+            }
+            lifetime => Err(lifetime),
+        }
+    }
+}
+
 impl<M: model::Model> From<UniversalRegion> for Lifetime<M> {
     fn from(value: UniversalRegion) -> Self {
         match value {

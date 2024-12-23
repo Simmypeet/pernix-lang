@@ -1057,11 +1057,6 @@ impl<
             }
 
             Instruction::RegisterAssignment(register_assignment) => {
-                // if self.invalidated_borrow_register_id ==
-                // register_assignment.id {
-                //     return Ok(ControlFlow::Break(HashSet::new()));
-                // }
-
                 self.checking_registers.remove(&register_assignment.id);
 
                 let register = self

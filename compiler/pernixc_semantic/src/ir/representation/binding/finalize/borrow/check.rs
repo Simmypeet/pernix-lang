@@ -13,8 +13,7 @@ use crate::{
         control_flow_graph::{Point, Reachability},
         instruction::{AccessMode, Instruction, Read},
         representation::{
-            binding::HandlerWrapper,
-            borrow::{Model as BorrowModel, Region},
+            binding::HandlerWrapper, borrow::Model as BorrowModel,
             Representation,
         },
         value::register::{Assignment, Load},
@@ -114,38 +113,21 @@ impl<
         &self,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
-        for (from, to_universal, to_point, span) in self
-            .subset()
-            .direct_subset_relations()
-            .iter()
-            .filter_map(|(from, to, span)| {
-                let (
-                    from,
-                    RegionAt { region: Region::Universal(to_universal), point },
-                    Some(span),
-                ) = (from, to, span)
-                else {
-                    return None;
-                };
+        for (from, to_universal, span) in
+            self.subset().direct_subset_relations().iter().filter_map(
+                |(from, to, span)| {
+                    let (from, RegionAt::Universal(to_universal), Some(span)) =
+                        (from, to, span)
+                    else {
+                        return None;
+                    };
 
-                Some((
-                    from,
-                    to_universal,
-                    point
-                        .expect("should have a point because it has span")
-                        .into_in_block()
-                        .expect("should be in block because it has a span"),
-                    span,
-                ))
-            })
+                    Some((from, to_universal, span))
+                },
+            )
         {
-            assert!(from.point.map_or(true, |x| x
-                .as_in_block()
-                .map_or(false, |x| x == &to_point)));
-
-            let universal_regions = self
-                .subset()
-                .get_universal_regions_containing(from.region, to_point);
+            let universal_regions =
+                self.subset().get_universal_regions_containing(*from);
 
             // use type_system's outlive checker
             for universal_region in universal_regions {

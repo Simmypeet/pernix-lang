@@ -20,7 +20,6 @@ public function consume[T](x: T) {}
 public function test() {
     let outer = 0;
     let mutable ref = &outer;
-
     {
         let inner = 0;
         ref = &inner;
@@ -872,23 +871,49 @@ public function test['a](
 
 #[test]
 fn return_invalidated_universal_regions() {
-    let (_, errs) =
+    let (table, errs) =
         build_table(RETURN_INVALIDATED_UNIVERSAL_REGIONS).unwrap_err();
 
-    assert_eq!(errs.len(), 1);
+    assert_eq!(errs.len(), 2);
 
-    let error =
-        errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
+    let a_lt = table
+        .resolve_lifetime::<ir::Model>(
+            &parse("'a"),
+            table.get_by_qualified_name(["test", "test"]).unwrap(),
+            Config::default(),
+            &Panic,
+        )
+        .unwrap()
+        .into_parameter()
+        .unwrap();
 
-    assert_eq!(
-        error.mutable_borrow_span.as_ref().map(|x| x.str()),
-        Some("&mutable *ref")
-    );
-    assert_eq!(error.access_span.str(), "&mutable *ref");
-    assert_eq!(
-        error.borrow_usage.as_local().map(|x| x.str()),
-        Some("(&mutable *ref, &mutable *ref)")
-    );
+    errs.iter().any(|x| {
+        x.as_any().downcast_ref::<AccessWhileMutablyBorrowed>().map_or(
+            false,
+            |x| {
+                x.mutable_borrow_span.as_ref().map(|x| x.str())
+                    == Some("&mutable *ref")
+                    && x.access_span.str() == "&mutable *ref"
+                    && x.borrow_usage.as_local().map(|x| x.str())
+                        == Some("(&mutable *ref, &mutable *ref)")
+            },
+        )
+    });
+    errs.iter().any(|x| {
+        x.as_any().downcast_ref::<AccessWhileMutablyBorrowed>().map_or(
+            false,
+            |x| {
+                x.mutable_borrow_span.as_ref().map(|x| x.str())
+                    == Some("&mutable *ref")
+                    && x.access_span.str() == "&mutable *ref"
+                    && x.borrow_usage
+                        .as_by_universal_regions()
+                        .map_or(false, |x| {
+                            x == &[UniversalRegion::LifetimeParameter(a_lt)]
+                        })
+            },
+        )
+    });
 }
 
 const ARRAY_INFERENCE: &str = r#"
@@ -1660,3 +1685,188 @@ public function main(cond: bool) {
 
 #[test]
 fn vec_push_ref_three() { assert!(build_table(VEC_PUSH_REF_THREE).is_ok()) }
+
+const RETURN_WRONG_LIFETIME_WITH_JUMP: &str = r#"
+public function test['a, 'b](in: &'a int32): &'b int32 {
+	let result = in;
+	{} // <-  this creates a jump in cfg
+	return result;
+}
+"#;
+
+#[test]
+fn return_wrong_lifetime_with_jump() {
+    let (table, errs) =
+        build_table(RETURN_WRONG_LIFETIME_WITH_JUMP).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<UnsatisfiedPredicate<ir::Model>>()
+        .unwrap();
+
+    let function = table.get_by_qualified_name(["test", "test"]).unwrap();
+
+    let a_lt = table
+        .resolve_lifetime(&parse("'a"), function, Config::default(), &Panic)
+        .unwrap();
+
+    let b_lt = table
+        .resolve_lifetime(&parse("'b"), function, Config::default(), &Panic)
+        .unwrap();
+
+    assert_eq!(
+        error.predicate,
+        Predicate::LifetimeOutlives(Outlives::new(a_lt, b_lt))
+    );
+}
+
+const VEC_PUSH_LIST_REFS: &str = r#"
+public enum Option[T] {
+	Some(T),
+	None
+}
+
+implements[T] Option[T] {
+	public function isSome['a](self: &'a this) : bool
+	where
+		T: 'a
+	{
+		match (self) {
+			case Some(_): return true,
+			case None:    return false,
+		}
+	}
+
+	public function asRef['a](self: &'a this): Option[&'a T]
+	where
+		T: 'a
+	{
+		match (self) {
+			case Some(value): return Option::Some(value),
+			case None: return Option::None,
+		}
+	}
+
+    public function asMutable['a](self: &'a mutable this): Option[&'a mutable T]
+    where
+        T: 'a
+    {
+        match (self) {
+            case Some(value): return Option::Some(value),
+            case None: return Option::None,
+        }
+    }
+
+    public function unwrap(self: this): T {
+        match (self) {
+            case Some(value): return value,
+            case None: panic,
+        }
+    }
+}
+
+public struct Vector[T] {
+	private test: phantom T,
+}
+
+implements[T] Vector[T] {
+	public function new(): this {
+		return this {
+			test: phantom
+		};
+	}
+
+	public function push['a](self: &'a mutable this, value: T) 
+	where
+		T: 'a
+	{}
+}
+
+public struct List[T] {
+	public value: T,
+	public next: Option[List[T]],
+}
+
+public function createList[T](): List[T] {
+	panic;
+}
+
+public function getRefs['a, T](
+	mutable list: &'a mutable List[T]
+): Vector[&'a mutable T]
+where
+	T: 'a
+{
+	let mutable vector = Vector::new();
+
+	loop {
+		vector.push(&mutable list->value);
+
+		match (&mutable list->next) {
+			case Some(next): {
+				list = next;
+			},
+
+			case None: return vector,	
+		}
+	}
+}
+"#;
+
+#[test]
+fn vec_push_list_refs() {
+    assert!(build_table(VEC_PUSH_LIST_REFS).is_ok());
+}
+
+const COMPLEX_LOOP: &str = r#"
+public function consume[T](..: T) { panic; }
+public function create['a](): &'a mutable int32 { panic; }
+
+public function test(cond: bool) {
+	let mutable a = 32;
+	let mutable x = &mutable a;
+	let mutable q = create(); // create() No.1
+
+	loop {
+		// first iteration -> p refers to the `a` variable
+		// second iteration -> p refers to the `create() No.2` function
+		let p = &mutable *x; 
+
+		if (cond) { break; }
+	
+		// before loop -> q refers to the `create() No.1` function
+		// first iteration -> q refers to the `a` variable
+		// second iteration -> q refers to the `create() No.2` function
+		q = p;
+
+		x = create(); // create() No.2
+	}
+
+	consume(&mutable a);
+
+	// q might refer to the `a` variable if the loop is executed twice 
+	// (full first iteration, and second iteration hits the break)
+	consume(q);	
+}
+"#;
+
+#[test]
+fn complex_loop() {
+    let (_, errs) = build_table(COMPLEX_LOOP).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error =
+        errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
+
+    assert_eq!(
+        error.mutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&mutable a")
+    );
+
+    assert_eq!(error.access_span.str(), "&mutable a");
+
+    assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("q"));
+}
