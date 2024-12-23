@@ -18,7 +18,9 @@ use crate::{
             Representation, Values,
         },
         value::{
-            register::{Assignment, Borrow, FunctionCall, Register, Struct},
+            register::{
+                Assignment, Borrow, FunctionCall, Phi, Register, Struct,
+            },
             Value,
         },
     },
@@ -360,6 +362,88 @@ impl Values<BorrowModel> {
 
         Ok(Changes {
             subset_relations: lifetime_constraints
+                .into_iter()
+                .filter_map(|x| {
+                    let x = x.into_lifetime_outlives().ok()?;
+
+                    let from = Region::try_from(x.operand.clone()).ok()?;
+                    let to = Region::try_from(x.bound.clone()).ok()?;
+
+                    Some((from, to, span.clone()))
+                })
+                .collect(),
+            borrow_created: None,
+            overwritten_regions: HashSet::new(),
+        })
+    }
+
+    pub(super) fn get_changes_of_phi<S: table::State>(
+        &self,
+        phi: &Phi<BorrowModel>,
+        span: &Span,
+        current_site: GlobalID,
+        environment: &Environment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+    ) -> Result<Changes, TypeSystemOverflow<ir::Model>> {
+        let mut constraints = BTreeSet::new();
+        for value in phi.incoming_values.values() {
+            let Succeeded {
+                result: value_ty,
+                constraints: value_ty_constraints,
+            } = self.type_of_value(value, current_site, environment).map_err(
+                |x| TypeSystemOverflow {
+                    operation: OverflowOperation::TypeOf,
+                    overflow_span: match value {
+                        Value::Register(id) => {
+                            self.registers.get(*id).unwrap().span.clone()
+                        }
+                        Value::Literal(literal) => literal.span().clone(),
+                    },
+                    overflow_error: x.into_overflow().unwrap(),
+                },
+            )?;
+
+            constraints.extend(value_ty_constraints);
+
+            match value_ty.compatible(
+                &phi.r#type,
+                Variance::Covariant,
+                environment,
+            ) {
+                Ok(Some(Succeeded {
+                    result:
+                        Compatibility {
+                            forall_lifetime_instantiations,
+                            forall_lifetime_errors,
+                        },
+                    constraints: compatibility_constraints,
+                })) => {
+                    assert!(forall_lifetime_instantiations
+                        .lifetimes_by_forall
+                        .is_empty());
+                    assert!(forall_lifetime_errors.is_empty());
+
+                    constraints.extend(compatibility_constraints);
+                }
+                Ok(None) => {
+                    panic!("{value_ty:#?} => {:#?}", phi.r#type);
+                }
+                Err(err) => {
+                    return Err(TypeSystemOverflow {
+                        operation: OverflowOperation::TypeCheck,
+                        overflow_span: span.clone(),
+                        overflow_error: err,
+                    });
+                }
+            }
+        }
+
+        Ok(Changes {
+            subset_relations: constraints
                 .into_iter()
                 .filter_map(|x| {
                     let x = x.into_lifetime_outlives().ok()?;
@@ -839,7 +923,14 @@ impl<
                     }
                     Assignment::Variant(_) => Ok(Changes::default()),
                     Assignment::Array(_) => Ok(Changes::default()),
-                    Assignment::Phi(_) => Ok(Changes::default()),
+                    Assignment::Phi(phi) => {
+                        self.representation.values.get_changes_of_phi(
+                            phi,
+                            &register.span,
+                            self.current_site,
+                            self.environment,
+                        )
+                    }
                 }
             }
             Instruction::RegisterDiscard(_) => Ok(Changes::default()),
