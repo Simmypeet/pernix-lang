@@ -133,7 +133,7 @@ impl<
             for universal_region in universal_regions {
                 let outlives = Outlives::<Lifetime<BorrowModel>>::new(
                     universal_region.into(),
-                    to_universal.clone().into(),
+                    to_universal.region.into(),
                 );
 
                 match outlives.query(self.environment()) {
@@ -145,7 +145,7 @@ impl<
                             predicate: Predicate::LifetimeOutlives(
                                 Outlives::new(
                                     universal_region.into(),
-                                    to_universal.clone().into(),
+                                    to_universal.region.into(),
                                 ),
                             ),
                             instantiation_span: span.clone(),
@@ -157,7 +157,7 @@ impl<
                             operation: OverflowOperation::Predicate(
                                 Predicate::LifetimeOutlives(Outlives::new(
                                     universal_region.into(),
-                                    to_universal.clone().into(),
+                                    to_universal.region.into(),
                                 )),
                             ),
                             overflow_span: span.clone(),

@@ -11,7 +11,10 @@ use crate::{
         representation::test::{build_table, parse},
         resolution::Config,
     },
-    type_system::predicate::{Outlives, Predicate},
+    type_system::{
+        model,
+        predicate::{Outlives, Predicate},
+    },
 };
 
 const VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH: &str = r#"
@@ -861,59 +864,35 @@ fn struct_region_inference() {
     );
 }
 
-const RETURN_INVALIDATED_UNIVERSAL_REGIONS: &str = r#"
+const REGISTER_USE_INVALIDATED_LIFETIMES: &str = r#"
 public function test['a](
     ref: &'a mutable int32
-): (&'a mutable int32, &'a mutable int32) {
-    return (&mutable *ref, &mutable *ref);
+) {
+    let a =  (&mutable *ref, &mutable *ref);
 }
 "#;
 
 #[test]
-fn return_invalidated_universal_regions() {
-    let (table, errs) =
-        build_table(RETURN_INVALIDATED_UNIVERSAL_REGIONS).unwrap_err();
+fn register_use_invalidated_lifetimes() {
+    let (_, errs) =
+        build_table(REGISTER_USE_INVALIDATED_LIFETIMES).unwrap_err();
 
-    assert_eq!(errs.len(), 2);
+    assert_eq!(errs.len(), 1);
 
-    let a_lt = table
-        .resolve_lifetime::<ir::Model>(
-            &parse("'a"),
-            table.get_by_qualified_name(["test", "test"]).unwrap(),
-            Config::default(),
-            &Panic,
-        )
-        .unwrap()
-        .into_parameter()
-        .unwrap();
+    let error =
+        errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
 
-    errs.iter().any(|x| {
-        x.as_any().downcast_ref::<AccessWhileMutablyBorrowed>().map_or(
-            false,
-            |x| {
-                x.mutable_borrow_span.as_ref().map(|x| x.str())
-                    == Some("&mutable *ref")
-                    && x.access_span.str() == "&mutable *ref"
-                    && x.borrow_usage.as_local().map(|x| x.str())
-                        == Some("(&mutable *ref, &mutable *ref)")
-            },
-        )
-    });
-    errs.iter().any(|x| {
-        x.as_any().downcast_ref::<AccessWhileMutablyBorrowed>().map_or(
-            false,
-            |x| {
-                x.mutable_borrow_span.as_ref().map(|x| x.str())
-                    == Some("&mutable *ref")
-                    && x.access_span.str() == "&mutable *ref"
-                    && x.borrow_usage
-                        .as_by_universal_regions()
-                        .map_or(false, |x| {
-                            x == &[UniversalRegion::LifetimeParameter(a_lt)]
-                        })
-            },
-        )
-    });
+    assert_eq!(
+        error.mutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&mutable *ref")
+    );
+
+    assert_eq!(error.access_span.str(), "&mutable *ref");
+
+    assert_eq!(
+        error.borrow_usage.as_local().map(|x| x.str()),
+        Some("(&mutable *ref, &mutable *ref)")
+    );
 }
 
 const ARRAY_INFERENCE: &str = r#"
@@ -1869,4 +1848,209 @@ fn complex_loop() {
     assert_eq!(error.access_span.str(), "&mutable a");
 
     assert_eq!(error.borrow_usage.as_local().map(|x| x.str()), Some("q"));
+}
+
+const CONDITIONAL_CONTROL_FLOW_ACCROSS_FUNCTIONS: &str = r#"
+public enum Option[T] {
+	Some(T),
+	None
+}
+
+implements[T] Option[T] {
+	public function isSome['a](self: &'a this) : bool
+	where
+		T: 'a
+	{
+		match (self) {
+			case Some(_): return true,
+			case None:    return false,
+		}
+	}
+
+	public function asRef['a](self: &'a this): Option[&'a T]
+	where
+		T: 'a
+	{
+		match (self) {
+			case Some(value): return Option::Some(value),
+			case None: return Option::None,
+		}
+	}
+
+    public function asMutable['a](self: &'a mutable this): Option[&'a mutable T]
+    where
+        T: 'a
+    {
+        match (self) {
+            case Some(value): return Option::Some(value),
+            case None: return Option::None,
+        }
+    }
+
+    public function unwrap(self: this): T {
+        match (self) {
+            case Some(value): return value,
+            case None: panic,
+        }
+    }
+}
+
+public struct Vector[T] {
+	private test: phantom T,
+}
+
+implements[T] Vector[T] {
+	public function new(): this {
+		return this {
+			test: phantom
+		};
+	}
+
+	public function push['a](self: &'a mutable this, value: T) 
+	where
+		T: 'a
+	{}
+}
+
+public struct HashMap[K, V] {
+	private test: phantom (K, V),
+}
+
+implements[K, V] HashMap[K, V] {
+	public function new(): this {
+		return this {
+			test: phantom
+		};
+	}
+
+	public function insert['a](
+		self: &'a mutable this, 
+		key: K, 
+		value: V
+	): Option[V]
+	where
+		K: 'a,
+		V: 'a 
+	{
+		panic;
+	}
+
+	public function get['a, 'b](
+		self: &'a this, 
+		key: &'b K
+	): Option[&'a V]
+	where
+		K: 'a + 'b,
+		V: 'a
+	{
+		panic;
+	}
+
+	public function getOrDefault['a](
+		self: &'a mutable this, 
+		key: K,
+		default: V
+	): &'a V
+	where
+	 	K: 'a,
+		V: 'a
+	{
+		match (self->get(&key)) {
+			case Some(value): {
+				return value;
+			},
+			case None: {
+				self->insert(key, default);
+				return self->get(&key).unwrap();
+			},
+		}
+	}	
+}
+"#;
+
+#[test]
+fn conditional_control_flow_accross_functions() {
+    assert!(build_table(CONDITIONAL_CONTROL_FLOW_ACCROSS_FUNCTIONS).is_ok());
+}
+
+const RETURN_INVALIDATED_UNIVERSAL_REGIONS_2: &str = r#"
+// fake vector
+public struct Vector[T] {}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function test['a, 'b](
+	vector: &'a mutable Vector[&'b mutable int32],
+	number: &'b mutable int32
+): &'b mutable int32 
+where
+	'b: 'a
+{
+	// mutable ref number has already been stored in vector
+	vector->push(&mutable *number); 
+
+	// the caller can use the extra mutable reference, which is invalid
+	return &mutable *number;        
+}
+"#;
+
+#[test]
+fn return_invalidated_universal_regions_2() {
+    let (table, errs) =
+        build_table(RETURN_INVALIDATED_UNIVERSAL_REGIONS_2).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error =
+        errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
+
+    let function = table.get_by_qualified_name(["test", "test"]).unwrap();
+
+    let a_lt = table
+        .resolve_lifetime::<model::Default>(
+            &parse("'a"),
+            function,
+            Config::default(),
+            &Panic,
+        )
+        .unwrap()
+        .into_parameter()
+        .unwrap();
+
+    let b_lt = table
+        .resolve_lifetime::<model::Default>(
+            &parse("'b"),
+            function,
+            Config::default(),
+            &Panic,
+        )
+        .unwrap()
+        .into_parameter()
+        .unwrap();
+
+    assert_eq!(
+        error.mutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&mutable *number")
+    );
+    assert_eq!(error.access_span.str(), "&mutable *number");
+
+    let by_universal_region =
+        error.borrow_usage.as_by_universal_regions().unwrap();
+
+    assert_eq!(by_universal_region.len(), 2);
+
+    assert!(
+        by_universal_region.contains(&UniversalRegion::LifetimeParameter(a_lt))
+    );
+    assert!(
+        by_universal_region.contains(&UniversalRegion::LifetimeParameter(b_lt))
+    );
 }

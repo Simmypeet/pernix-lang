@@ -29,7 +29,7 @@ use crate::{
     },
     symbol::{
         table::{self, representation::Index},
-        GlobalID,
+        GenericID, GlobalID, LifetimeParameterID,
     },
     transitive_closure::TransitiveClosure,
     type_system::{
@@ -69,15 +69,24 @@ impl RegionPoint {
     }
 }
 
+/// Represents a universal region at a particular point in the control flow
+/// graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UniversalRegionAt {
+    /// The universal region at all points in the control flow graph.
+    pub region: UniversalRegion,
+
+    /// Specifies the point in the control flow graph where the region is
+    pub point: RegionPoint,
+}
+
 /// Used for representing a region at a particular point in the control flow
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
 )]
 pub enum RegionAt {
     /// The universal region at all points in the control flow graph.
-    ///
-    /// There's only one version of the universal region in the borrow checker.
-    Universal(UniversalRegion),
+    Universal(UniversalRegionAt),
 
     /// The local region at a particular point in the control flow graph.
     Local(LocalRegionAt),
@@ -103,22 +112,36 @@ pub struct LocalRegionAt {
 
 impl RegionAt {
     pub fn new_location_sensitive(
-        local_region: ID<LocalRegion>,
+        local_region: Region,
         point: RegionPoint,
     ) -> Self {
-        Self::Local(LocalRegionAt { local_region, point: Some(point) })
+        match local_region {
+            Region::Universal(region) => {
+                Self::Universal(UniversalRegionAt { region, point })
+            }
+            Region::Local(local_region) => {
+                Self::Local(LocalRegionAt { local_region, point: Some(point) })
+            }
+        }
     }
 
     pub fn new_location_insensitive(local_region: ID<LocalRegion>) -> Self {
         Self::Local(LocalRegionAt { local_region, point: None })
     }
 
-    pub fn to_region(&self) -> Region {
+    pub fn into_region(&self) -> Region {
         match self {
-            Self::Universal(region) => Region::Universal(*region),
+            Self::Universal(region) => Region::Universal(region.region),
             Self::Local(local_region_at) => {
                 Region::Local(local_region_at.local_region)
             }
+        }
+    }
+
+    pub fn region_point(&self) -> Option<&RegionPoint> {
+        match self {
+            Self::Universal(region) => Some(&region.point),
+            Self::Local(local_region) => local_region.point.as_ref(),
         }
     }
 }
@@ -169,7 +192,7 @@ impl RegionChangeLog {
 /// Contains the direct subset relations between regions. It's the result of
 /// the subset analysis with no optimization.
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
-pub struct Naive {
+pub struct Intermediate {
     /// The accumulated subset relations between regions since the beginning
     /// of the control flow graph.
     subset_relations: HashSet<(RegionAt, RegionAt, Option<Span>)>,
@@ -183,6 +206,11 @@ pub struct Naive {
         ID<Register<BorrowModel>>,
         (ID<LocalRegion>, Point<BorrowModel>),
     >,
+
+    /// Maps the region to the block ids that the region first appears. (mostly
+    /// is the entry block)
+    entry_block_ids_by_universal_regions:
+        HashMap<UniversalRegion, ID<Block<BorrowModel>>>,
 }
 
 /// A struct used for building a subset relations between regions in the borrow
@@ -210,10 +238,10 @@ pub struct Builder<
     /// A map between the region and the instruction index where the region
     /// was last changed.
     ///
-    /// The "long-lived" regions (created by allocas) will present in this map.
-    /// The value is the point in the control flow graph where the region
-    /// is most updated.
-    latest_change_points_by_region: HashMap<ID<LocalRegion>, Option<usize>>,
+    /// The "long-lived" regions (created by allocas or universal regions) will
+    /// present in this map. The value is the point in the control flow
+    /// graph where the region is most updated.
+    latest_change_points_by_region: HashMap<Region, Option<usize>>,
 }
 
 impl<
@@ -998,7 +1026,7 @@ impl<
     pub fn get_new_regions(
         &self,
         instruction: &Instruction<BorrowModel>,
-    ) -> HashSet<ID<LocalRegion>> {
+    ) -> HashSet<Region> {
         match instruction {
             Instruction::ScopePush(scope_push) => {
                 let mut regions = HashSet::new();
@@ -1014,10 +1042,48 @@ impl<
                             |x| {
                                 x.0.into_lifetime()
                                     .ok()
-                                    .and_then(|y| y.as_inference().cloned())
+                                    .and_then(|y| y.as_inference().copied())
+                                    .map(Region::Local)
                             },
                         ),
                     );
+                }
+
+                // we'll insert a universal region for the root scope
+                if scope_push.0
+                    == self.representation.scope_tree.root_scope_id()
+                {
+                    regions.insert(Region::Universal(UniversalRegion::Static));
+
+                    for generic_id in self
+                        .environment
+                        .table()
+                        .scope_walker(self.current_site)
+                        .unwrap()
+                        .filter_map(|x| GenericID::try_from(x).ok())
+                    {
+                        regions.extend(
+                            self.environment
+                                .table()
+                                .get_generic(generic_id)
+                                .unwrap()
+                                .generic_declaration()
+                                .parameters
+                                .lifetime_order()
+                                .iter()
+                                .copied()
+                                .map(|x| {
+                                    Region::Universal(
+                                        UniversalRegion::LifetimeParameter(
+                                            LifetimeParameterID {
+                                                parent: generic_id,
+                                                id: x,
+                                            },
+                                        ),
+                                    )
+                                }),
+                        );
+                    }
                 }
 
                 regions
@@ -1037,7 +1103,7 @@ impl<
     pub fn get_removing_regions(
         &self,
         instruction: &Instruction<BorrowModel>,
-    ) -> HashSet<ID<LocalRegion>> {
+    ) -> HashSet<Region> {
         match instruction {
             Instruction::ScopePop(scope_pop) => {
                 let mut regions = HashSet::new();
@@ -1052,10 +1118,47 @@ impl<
                             |x| {
                                 x.0.into_lifetime()
                                     .ok()
-                                    .and_then(|y| y.as_inference().cloned())
+                                    .and_then(|y| y.as_inference().copied())
+                                    .map(Region::Local)
                             },
                         ),
                     );
+                }
+
+                // we'll insert a universal region for the root scope
+                if scope_pop.0 == self.representation.scope_tree.root_scope_id()
+                {
+                    regions.insert(Region::Universal(UniversalRegion::Static));
+
+                    for generic_id in self
+                        .environment
+                        .table()
+                        .scope_walker(self.current_site)
+                        .unwrap()
+                        .filter_map(|x| GenericID::try_from(x).ok())
+                    {
+                        regions.extend(
+                            self.environment
+                                .table()
+                                .get_generic(generic_id)
+                                .unwrap()
+                                .generic_declaration()
+                                .parameters
+                                .lifetime_order()
+                                .iter()
+                                .copied()
+                                .map(|x| {
+                                    Region::Universal(
+                                        UniversalRegion::LifetimeParameter(
+                                            LifetimeParameterID {
+                                                parent: generic_id,
+                                                id: x,
+                                            },
+                                        ),
+                                    )
+                                }),
+                        );
+                    }
                 }
 
                 regions
@@ -1319,13 +1422,20 @@ impl<
         &mut self,
         instruction: &Instruction<BorrowModel>,
         instruction_point: Point<BorrowModel>,
-        subset_result: &mut Naive,
+        subset_result: &mut Intermediate,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         for region in self.get_new_regions(instruction) {
             assert!(self
                 .latest_change_points_by_region
                 .insert(region, None)
                 .is_none());
+
+            if let Region::Universal(universal_region) = region {
+                assert!(subset_result
+                    .entry_block_ids_by_universal_regions
+                    .insert(universal_region, instruction_point.block_id)
+                    .is_none());
+            }
         }
 
         // gets the changes made by the instruction
@@ -1345,14 +1455,14 @@ impl<
     pub fn handle_chages(
         &mut self,
         changes: Changes,
-        subset_result: &mut Naive,
+        subset_result: &mut Intermediate,
         instruction_point: Point<BorrowModel>,
     ) {
         if let Some((borrow_register_id, local_region)) = changes.borrow_created
         {
             assert!(!self
                 .latest_change_points_by_region
-                .contains_key(&local_region));
+                .contains_key(&Region::Local(local_region)));
             assert!(subset_result
                 .created_borrows
                 .insert(borrow_register_id, (local_region, instruction_point))
@@ -1361,17 +1471,17 @@ impl<
 
         // add subset relations
         for (from, to, span) in changes.subset_relations {
-            let latest_from = from.as_local().and_then(|x| {
-                self.latest_change_points_by_region.get(x).cloned()
-            });
-            let latest_to = to.as_local().and_then(|x| {
-                self.latest_change_points_by_region.get(x).cloned()
-            });
+            let latest_from =
+                self.latest_change_points_by_region.get(&from).cloned();
+            let latest_to =
+                self.latest_change_points_by_region.get(&to).cloned();
 
             let from_region_at = match from {
                 Region::Universal(universal_region) => {
-                    assert!(latest_from.is_none());
-                    RegionAt::Universal(universal_region)
+                    RegionAt::new_location_sensitive(
+                        Region::Universal(universal_region),
+                        RegionPoint::InBlock(instruction_point),
+                    )
                 }
                 Region::Local(id) => RegionAt::Local(LocalRegionAt {
                     local_region: id,
@@ -1381,8 +1491,10 @@ impl<
             };
             let to_region_at = match to {
                 Region::Universal(universal_region) => {
-                    assert!(latest_to.is_none());
-                    RegionAt::Universal(universal_region)
+                    RegionAt::new_location_sensitive(
+                        Region::Universal(universal_region),
+                        RegionPoint::InBlock(instruction_point),
+                    )
                 }
                 Region::Local(id) => RegionAt::Local(LocalRegionAt {
                     local_region: id,
@@ -1407,15 +1519,12 @@ impl<
                     if let (false, Some(latest_updated_inst_index)) = (
                         changes
                             .overwritten_regions
-                            .contains(&region_at.to_region()),
+                            .contains(&region_at.into_region()),
                         lastest_region_update,
                     ) {
-                        // if have region update, it's always a local region
-                        let local_region_at = region_at.into_local().unwrap();
-
-                        let flow_from = RegionAt::Local(LocalRegionAt {
-                            local_region: local_region_at.local_region,
-                            point: Some(latest_updated_inst_index.map_or_else(
+                        let flow_from = RegionAt::new_location_sensitive(
+                            region_at.into_region(),
+                            latest_updated_inst_index.map_or_else(
                                 || {
                                     RegionPoint::EnteringBlock(
                                         instruction_point.block_id,
@@ -1427,15 +1536,15 @@ impl<
                                         block_id: instruction_point.block_id,
                                     })
                                 },
-                            )),
-                        });
+                            ),
+                        );
 
                         let flow_to = region_at;
 
                         // flows state to current
                         match self
                             .region_variances
-                            .get(&region_at.to_region())
+                            .get(&region_at.into_region())
                             .cloned()
                             .unwrap_or(Variance::Covariant)
                         {
@@ -1468,19 +1577,13 @@ impl<
             if latest_from.is_some() {
                 assert!(self
                     .latest_change_points_by_region
-                    .insert(
-                        from.into_local().unwrap(),
-                        Some(instruction_point.instruction_index)
-                    )
+                    .insert(from, Some(instruction_point.instruction_index))
                     .is_some());
             }
             if latest_to.is_some() {
                 assert!(self
                     .latest_change_points_by_region
-                    .insert(
-                        to.into_local().unwrap(),
-                        Some(instruction_point.instruction_index)
-                    )
+                    .insert(to, Some(instruction_point.instruction_index))
                     .is_some());
             }
         }
@@ -1489,7 +1592,7 @@ impl<
     pub fn walk_block(
         &mut self,
         block_id: ID<Block<BorrowModel>>,
-        subset_result: &mut Naive,
+        subset_result: &mut Intermediate,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {
         let block = self
             .representation
@@ -1536,7 +1639,7 @@ struct Context<
     /// block and the value is the starting environment of the looped block.
     target_regions_by_block_id: HashMap<
         ID<Block<BorrowModel>>,
-        (ID<Block<BorrowModel>>, HashSet<ID<LocalRegion>>),
+        (ID<Block<BorrowModel>>, HashSet<Region>),
     >,
 }
 
@@ -1550,7 +1653,7 @@ impl<
     pub fn walk_block(
         &mut self,
         block_id: ID<Block<BorrowModel>>,
-        subset_result: &mut Naive,
+        subset_result: &mut Intermediate,
     ) -> Result<Option<Builder<'a, S, N, O>>, TypeSystemOverflow<ir::Model>>
     {
         // skip if already processed
@@ -1597,8 +1700,14 @@ impl<
                         };
 
                         adding_edges.insert((
-                            RegionAt::Universal(operand),
-                            RegionAt::Universal(bound),
+                            RegionAt::Universal(UniversalRegionAt {
+                                region: operand,
+                                point: RegionPoint::EnteringBlock(block_id),
+                            }),
+                            RegionAt::Universal(UniversalRegionAt {
+                                region: bound,
+                                point: RegionPoint::EnteringBlock(block_id),
+                            }),
                         ));
                     }
 
@@ -1612,8 +1721,14 @@ impl<
                             .filter_map(|x| x.clone().try_into().ok())
                         {
                             adding_edges.insert((
-                                RegionAt::Universal(operand),
-                                RegionAt::Universal(bound),
+                                RegionAt::Universal(UniversalRegionAt {
+                                    region: operand,
+                                    point: RegionPoint::EnteringBlock(block_id),
+                                }),
+                                RegionAt::Universal(UniversalRegionAt {
+                                    region: bound,
+                                    point: RegionPoint::EnteringBlock(block_id),
+                                }),
                             ));
                         }
                     }
@@ -1684,9 +1799,9 @@ impl<
                         .latest_change_points_by_region
                         .contains_key(&region));
 
-                    let from_region_at = RegionAt::Local(LocalRegionAt {
-                        local_region: region,
-                        point: Some(latest_point.map_or_else(
+                    let from_region_at = RegionAt::new_location_sensitive(
+                        region,
+                        latest_point.map_or_else(
                             || RegionPoint::EnteringBlock(from_block_id),
                             |x| {
                                 RegionPoint::InBlock(Point {
@@ -1694,17 +1809,17 @@ impl<
                                     instruction_index: x,
                                 })
                             },
-                        )),
-                    });
-                    let to_region_at = RegionAt::Local(LocalRegionAt {
-                        local_region: region,
-                        point: Some(RegionPoint::EnteringBlock(block_id)),
-                    });
+                        ),
+                    );
+                    let to_region_at = RegionAt::new_location_sensitive(
+                        region,
+                        RegionPoint::EnteringBlock(block_id),
+                    );
 
                     // taken account the variance
                     match self
                         .region_variances
-                        .get(&Region::Local(region))
+                        .get(&region)
                         .cloned()
                         .unwrap_or(Variance::Covariant)
                     {
@@ -1772,9 +1887,9 @@ impl<
             {
                 assert!(regions.contains(region));
 
-                let from_region_at = RegionAt::Local(LocalRegionAt {
-                    local_region: *region,
-                    point: Some(latest_point.map_or_else(
+                let from_region_at = RegionAt::new_location_sensitive(
+                    *region,
+                    latest_point.map_or_else(
                         || RegionPoint::EnteringBlock(block_id),
                         |x| {
                             RegionPoint::InBlock(Point {
@@ -1782,17 +1897,17 @@ impl<
                                 instruction_index: x,
                             })
                         },
-                    )),
-                });
-                let to_region_at = RegionAt::Local(LocalRegionAt {
-                    local_region: *region,
-                    point: Some(RegionPoint::EnteringBlock(*to_block_id)),
-                });
+                    ),
+                );
+                let to_region_at = RegionAt::new_location_sensitive(
+                    *region,
+                    RegionPoint::EnteringBlock(*to_block_id),
+                );
 
                 // taken account the variance
                 match self
                     .region_variances
-                    .get(&Region::Local(*region))
+                    .get(region)
                     .cloned()
                     .unwrap_or(Variance::Covariant)
                 {
@@ -1853,12 +1968,15 @@ pub struct Subset {
         ID<Register<BorrowModel>>,
         (ID<LocalRegion>, Point<BorrowModel>),
     >,
-    #[get = "pub"]
-    appeared_universal_regions: HashSet<UniversalRegion>,
 
-    change_logs_by_region: HashMap<ID<LocalRegion>, RegionChangeLog>,
+    /// Maps the region to the block ids that the region first appears. (mostly
+    /// is the entry block)
+    entry_block_ids_by_universal_regions:
+        HashMap<UniversalRegion, ID<Block<BorrowModel>>>,
+
+    change_logs_by_region: HashMap<Region, RegionChangeLog>,
     active_region_sets_by_block_id:
-        HashMap<ID<Block<BorrowModel>>, HashSet<ID<LocalRegion>>>,
+        HashMap<ID<Block<BorrowModel>>, HashSet<Region>>,
     location_insensitive_regions: HashSet<ID<LocalRegion>>,
 }
 
@@ -1867,28 +1985,37 @@ impl Subset {
         &self,
         mut to_region_at: RegionAt,
     ) -> HashSet<UniversalRegion> {
-        if let RegionAt::Local(LocalRegionAt {
-            local_region,
-            point: Some(point),
-        }) = &mut to_region_at
-        {
-            if let RegionPoint::InBlock(in_block) = point {
-                *point = self.change_logs_by_region[local_region]
+        let to_region = to_region_at.into_region();
+        let region_point = match &mut to_region_at {
+            RegionAt::Universal(universal) => Some(&mut universal.point),
+            RegionAt::Local(region) => region.point.as_mut(),
+        };
+
+        if let Some(region_point) = region_point {
+            if let RegionPoint::InBlock(in_block) = region_point {
+                // update to the correct pos
+                *region_point = self.change_logs_by_region[&to_region]
                     .get_most_updated_point(*in_block);
             }
         }
 
-        self.appeared_universal_regions
+        self.entry_block_ids_by_universal_regions
             .iter()
-            .copied()
+            .map(|(region, block_id)| {
+                // track from the root
+                RegionAt::new_location_sensitive(
+                    Region::Universal(*region),
+                    RegionPoint::EnteringBlock(*block_id),
+                )
+            })
             .filter_map(|x| {
                 self.transitive_closure
                     .has_path(
-                        self.indices_by_region_at[&RegionAt::Universal(x)],
+                        *self.indices_by_region_at.get(&x)?,
                         self.indices_by_region_at[&to_region_at],
                     )
                     .unwrap()
-                    .then_some(x)
+                    .then_some(x.as_universal().unwrap().region)
             })
             .collect()
     }
@@ -1918,18 +2045,6 @@ impl Subset {
                     .unwrap()
                     .then_some(Region::Local(x))
             })
-            .chain(self.appeared_universal_regions.iter().copied().filter_map(
-                |x| {
-                    // then check universal regions
-                    self.transitive_closure
-                        .has_path(
-                            self.indices_by_region_at[&borrow_region],
-                            self.indices_by_region_at[&RegionAt::Universal(x)],
-                        )
-                        .unwrap()
-                        .then_some(Region::Universal(x))
-                },
-            ))
             .chain(
                 // then check active regions that require location sensitivity
                 self.active_region_sets_by_block_id
@@ -1951,7 +2066,7 @@ impl Subset {
                                 *self.indices_by_region_at.get(&region_at)?,
                             )
                             .unwrap()
-                            .then_some(Region::Local(x))
+                            .then_some(x)
                     }),
             )
             .collect::<HashSet<_>>()
@@ -1981,9 +2096,10 @@ pub fn analyze<
 
     let all_block_ids =
         ir.control_flow_graph().blocks().ids().collect::<Vec<_>>();
-    let mut subset_result = Naive {
+    let mut subset_result = Intermediate {
         subset_relations: HashSet::new(),
         created_borrows: HashMap::new(),
+        entry_block_ids_by_universal_regions: HashMap::new(),
     };
 
     for block_id in all_block_ids.iter().copied() {
@@ -2001,7 +2117,6 @@ pub fn analyze<
     let mut location_insensitive_regions = HashSet::new();
     let mut active_region_sets_by_block_id = HashMap::<_, HashSet<_>>::new();
     let mut change_logs_by_region = HashMap::<_, RegionChangeLog>::new();
-    let mut appeared_universal_regions = HashSet::new();
 
     for region_at in subset_result
         .subset_relations
@@ -2016,41 +2131,34 @@ pub fn analyze<
     {
         all_regions.insert(region_at);
 
-        match region_at {
-            RegionAt::Universal(universal_region) => {
-                appeared_universal_regions.insert(universal_region);
-            }
-            RegionAt::Local(local_region_at) => {
-                if let Some(region_point) = local_region_at.point {
-                    active_region_sets_by_block_id
-                        .entry(region_point.block_id())
-                        .or_default()
-                        .insert(local_region_at.local_region);
+        if let Some(region_point) = region_at.region_point() {
+            active_region_sets_by_block_id
+                .entry(region_point.block_id())
+                .or_default()
+                .insert(region_at.into_region());
 
-                    match region_point {
-                        RegionPoint::InBlock(point) => {
-                            change_logs_by_region
-                                .entry(local_region_at.local_region)
-                                .or_default()
-                                .updated_at_instruction_indices
-                                .entry(point.block_id)
-                                .or_default()
-                                .push(point.instruction_index);
-                        }
-                        RegionPoint::EnteringBlock(id) => {
-                            change_logs_by_region
-                                .entry(local_region_at.local_region)
-                                .or_default()
-                                .updated_at_instruction_indices
-                                .entry(id)
-                                .or_default();
-                        }
-                    }
-                } else {
-                    location_insensitive_regions
-                        .insert(local_region_at.local_region);
+            match region_point {
+                RegionPoint::InBlock(point) => {
+                    change_logs_by_region
+                        .entry(region_at.into_region())
+                        .or_default()
+                        .updated_at_instruction_indices
+                        .entry(point.block_id)
+                        .or_default()
+                        .push(point.instruction_index);
+                }
+                RegionPoint::EnteringBlock(id) => {
+                    change_logs_by_region
+                        .entry(region_at.into_region())
+                        .or_default()
+                        .updated_at_instruction_indices
+                        .entry(*id)
+                        .or_default();
                 }
             }
+        } else {
+            location_insensitive_regions
+                .insert(region_at.into_local().unwrap().local_region);
         }
     }
 
@@ -2086,7 +2194,8 @@ pub fn analyze<
     Ok(Subset {
         indices_by_region_at,
         region_ats_by_index,
-        appeared_universal_regions,
+        entry_block_ids_by_universal_regions: subset_result
+            .entry_block_ids_by_universal_regions,
         transitive_closure,
         direct_subset_relations: subset_result.subset_relations,
         created_borrows: subset_result.created_borrows,
