@@ -9,7 +9,7 @@ use crate::{
     error::{OverflowOperation, TypeSystemOverflow, UnsatisfiedPredicate},
     ir::{
         self,
-        address::Memory,
+        address::{Address, Memory, Offset, Tuple},
         control_flow_graph::{Point, Reachability},
         instruction::{AccessMode, Instruction, Read},
         representation::{
@@ -249,9 +249,29 @@ impl<
                         | Assignment::VariantNumber(_) => {}
                     }
                 }
-                Instruction::RegisterDiscard(register_discard) => {}
-                Instruction::TuplePack(tuple_pack) => {}
-                Instruction::ScopePush(scope_push) => {}
+                Instruction::TuplePack(tuple_pack) => {
+                    self.handle_access(
+                        &Address::Tuple(Tuple {
+                            tuple_address: Box::new(
+                                tuple_pack.tuple_address.clone(),
+                            ),
+                            offset: Offset::Unpacked,
+                        }),
+                        AccessMode::Read(Read {
+                            qualifier: Qualifier::Immutable,
+                            span: tuple_pack.packed_tuple_span.clone(),
+                        }),
+                        point,
+                        handler,
+                    )?;
+
+                    self.handle_access(
+                        &tuple_pack.store_address,
+                        AccessMode::Write(tuple_pack.packed_tuple_span.clone()),
+                        point,
+                        handler,
+                    )?;
+                }
                 Instruction::ScopePop(scope_pop) => {
                     let mut dropped_memories = self
                         .representation()
@@ -290,8 +310,11 @@ impl<
                         self.handle_drop_memory(memory, point, handler)?;
                     }
                 }
-                Instruction::DropUnpackTuple(drop_unpack_tuple) => {}
-                Instruction::Drop(drop) => {}
+
+                Instruction::RegisterDiscard(_)
+                | Instruction::ScopePush(_)
+                | Instruction::DropUnpackTuple(_)
+                | Instruction::Drop(_) => {}
             }
         }
 
