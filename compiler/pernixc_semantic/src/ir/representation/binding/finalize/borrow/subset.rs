@@ -882,6 +882,115 @@ impl<
                 )
             }
             Instruction::RegisterAssignment(register_assignment) => {
+                // if the register assignment will be used as a return value,
+                // then, compute the subset relation against the type of the
+                // return type.
+                let extra_relations = self
+                    .representation
+                    .control_flow_graph
+                    .blocks()
+                    .items()
+                    .flat_map(|x| {
+                        x.terminator().as_ref().and_then(|x| x.as_return())
+                    })
+                    .find(|x| {
+                        x.value == Value::Register(register_assignment.id)
+                    })
+                    .map(|return_inst| {
+                        let callable = self
+                            .environment
+                            .table()
+                            .get_callable(self.current_site.try_into().unwrap())
+                            .unwrap();
+
+                        let return_ty = Type::from_other_model(
+                            callable.return_type().clone(),
+                        );
+
+                        let Succeeded {
+                            result: register_ty,
+                            constraints: register_constraints,
+                        } = self
+                            .representation
+                            .values
+                            .type_of_register(
+                                register_assignment.id,
+                                self.current_site,
+                                self.environment,
+                            )
+                            .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                                operation: OverflowOperation::TypeOf,
+                                overflow_span: self
+                                    .representation
+                                    .values
+                                    .registers
+                                    .get(register_assignment.id)
+                                    .unwrap()
+                                    .span
+                                    .clone(),
+                                overflow_error: x.into_overflow().unwrap(),
+                            })?;
+
+                        let compatibility_constraints = match register_ty
+                            .compatible(
+                                &return_ty,
+                                Variance::Covariant,
+                                self.environment,
+                            ) {
+                            Ok(Some(Succeeded {
+                                result:
+                                    Compatibility {
+                                        forall_lifetime_instantiations,
+                                        forall_lifetime_errors,
+                                    },
+                                constraints: compatibility_constraints,
+                            })) => {
+                                assert!(forall_lifetime_instantiations
+                                    .lifetimes_by_forall
+                                    .is_empty());
+                                assert!(forall_lifetime_errors.is_empty());
+
+                                compatibility_constraints
+                            }
+                            Ok(None) => {
+                                panic!(
+                                    "incompatible types {register_ty:#?} => \
+                                     {return_ty:#?}"
+                                );
+                            }
+                            Err(err) => {
+                                return Err(TypeSystemOverflow::<ir::Model> {
+                                    operation: OverflowOperation::TypeCheck,
+                                    overflow_span: self
+                                        .representation
+                                        .values
+                                        .registers
+                                        .get(register_assignment.id)
+                                        .unwrap()
+                                        .span
+                                        .clone(),
+                                    overflow_error: err,
+                                });
+                            }
+                        };
+
+                        Ok(register_constraints
+                            .into_iter()
+                            .chain(compatibility_constraints.into_iter())
+                            .filter_map(|x| {
+                                let x = x.into_lifetime_outlives().ok()?;
+
+                                let from =
+                                    Region::try_from(x.operand.clone()).ok()?;
+                                let to =
+                                    Region::try_from(x.bound.clone()).ok()?;
+
+                                Some((from, to, return_inst.span.clone()))
+                            })
+                            .collect::<HashSet<_>>())
+                    })
+                    .transpose()?;
+
                 let register = self
                     .representation
                     .values
@@ -889,7 +998,7 @@ impl<
                     .get(register_assignment.id)
                     .unwrap();
 
-                match &register.assignment {
+                let changes = match &register.assignment {
                     Assignment::VariantNumber(_)
                     | Assignment::Cast(_)
                     | Assignment::Binary(_)
@@ -931,7 +1040,17 @@ impl<
                             self.environment,
                         )
                     }
-                }
+                }?;
+
+                Ok(Changes {
+                    subset_relations: changes
+                        .subset_relations
+                        .into_iter()
+                        .chain(extra_relations.into_iter().flatten())
+                        .collect(),
+                    borrow_created: changes.borrow_created,
+                    overwritten_regions: changes.overwritten_regions,
+                })
             }
             Instruction::RegisterDiscard(_) => Ok(Changes::default()),
             Instruction::TuplePack(_) => Ok(Changes::default()),

@@ -114,6 +114,7 @@ pub struct Checker<
     environment: &'a Environment<'a, BorrowModel, S, N, O>,
     #[get_copy = "pub"]
     reachability: &'a Reachability<BorrowModel>,
+    #[allow(unused)]
     #[get_copy = "pub"]
     region_variances: &'a RegionVariances,
     #[get_copy = "pub"]
