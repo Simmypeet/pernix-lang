@@ -192,12 +192,13 @@ pub struct Store<M: Model> {
 /// `Store` instruction are generated.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TuplePack<M: Model> {
-    /// The address where the unpacked tuple elements will be stored.
+    /// The address where the packed tuple elements will be stored.
     ///
     /// The address should have a type of tuple.
     pub store_address: Address<M>,
 
-    /// The address to the tuple where the unpacked elements are stored.
+    /// The address to the tuple where the unpacked elements are located and
+    /// will be packed to a new address by this instruction.
     ///
     /// The address should have a type of tuple.
     pub tuple_address: Address<M>,
