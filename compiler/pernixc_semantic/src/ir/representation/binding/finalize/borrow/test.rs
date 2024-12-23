@@ -1037,7 +1037,6 @@ public function main(cond: bool) {
 fn invalidated_borrows_in_loop() {
     let (_, errs) = build_table(INVALIDATED_BORROWS_IN_LOOP).unwrap_err();
 
-    dbg!(&errs);
     assert_eq!(errs.len(), 1);
 
     let error =
@@ -1147,7 +1146,6 @@ fn variable_does_not_live_long_enough_in_loop_2() {
     let (_, errs) =
         build_table(VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_LOOP_2).unwrap_err();
 
-    dbg!(&errs);
     assert_eq!(errs.len(), 1);
 
     let error = errs[0]
@@ -1427,8 +1425,6 @@ fn mutably_access_while_mutably_borrowed() {
     let (_, errs) =
         build_table(MUTABLY_ACCESS_WHILE_MUTABLY_BORROWED).unwrap_err();
 
-    dbg!(&errs);
-
     assert_eq!(errs.len(), 1);
 
     let error =
@@ -1474,4 +1470,3 @@ public function main() {
 fn vector_push_two_times() {
     assert!(build_table(VECTOR_PUSH_TWO_TIMES).is_ok());
 }
-

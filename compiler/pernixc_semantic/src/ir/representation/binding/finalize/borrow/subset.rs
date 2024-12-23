@@ -888,7 +888,6 @@ impl<
 
         // add subset relations
         for (from, to, span) in changes.subset_relations {
-            dbg!(from, to, &span);
             let latest_from =
                 self.latest_change_points_by_region.get(&from).cloned();
             let latest_to =
@@ -1553,7 +1552,7 @@ pub fn analyze<
     )
     .expect("failed to create transitive closure");
 
-    Ok(dbg!(Subset {
+    Ok(Subset {
         indices_by_region_at,
         region_ats_by_index,
         transitive_closure,
@@ -1562,5 +1561,5 @@ pub fn analyze<
         location_insensitive_regions,
         active_region_sets_by_block_id,
         change_logs_by_region,
-    }))
+    })
 }

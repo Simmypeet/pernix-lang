@@ -842,17 +842,6 @@ pub fn get_live_usages<S: table::State>(
         current_site,
     };
 
-    for alloca_id in state.assigned_states_by_memory.keys().copied() {
-        dbg!(
-            alloca_id,
-            state
-                .representation
-                .values
-                .allocas
-                .get(alloca_id.into_alloca().unwrap())
-        );
-    }
-
     traverse_block(
         &mut state,
         &representation.control_flow_graph,
@@ -1086,24 +1075,8 @@ impl<
 
                 used_registers
                     .iter()
-                    .find_map(|x| {
-                        self.checking_registers.contains(x).then_some(x)
-                    })
-                    .map(|x| {
-                        dbg!(
-                            self.representation
-                                .values
-                                .registers
-                                .get(register_assignment.id)
-                                .unwrap(),
-                            self.representation
-                                .values
-                                .registers
-                                .get(*x)
-                                .unwrap()
-                        );
-                        register_assignment.id
-                    })
+                    .any(|x| self.checking_registers.contains(x))
+                    .then_some(register_assignment.id)
             }
 
             Instruction::RegisterDiscard(register_discard) => {
@@ -1120,8 +1093,8 @@ impl<
         };
 
         if let Some(register_id) = invalidated_use_register {
-            return Ok(ControlFlow::Break(dbg!(std::iter::once(
-                Usage::Local(
+            return Ok(ControlFlow::Break(
+                std::iter::once(Usage::Local(
                     self.representation
                         .values
                         .registers
@@ -1129,9 +1102,9 @@ impl<
                         .unwrap()
                         .span
                         .clone(),
-                )
-            )
-            .collect())));
+                ))
+                .collect(),
+            ));
         }
 
         Ok(ControlFlow::Continue)
