@@ -3391,21 +3391,18 @@ impl Report<&Table<Suboptimal>> for MovedOutWhileBorrowed {
 
 /// The variable doesn't live long enough to outlives the given lifetime.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct VariableDoesNotLiveLongEnough<M: Model> {
+pub struct VariableDoesNotLiveLongEnough {
+    /// The span where the borrows occurred
+    pub borrow_span: Span,
+
     /// The span of the variable declaration.
     pub variable_span: Span,
 
-    /// The lifetime that the variable doesn't outlives.
-    pub for_lifetime: Option<Lifetime<M>>,
-
-    /// The span that invokes the check.
-    pub instantiation_span: Span,
+    /// The usage of the borrow that points to the goes out of scope variable.
+    pub usage: Usage,
 }
 
-impl<M: Model> Report<&Table<Suboptimal>> for VariableDoesNotLiveLongEnough<M>
-where
-    Lifetime<M>: table::Display<Suboptimal>,
-{
+impl Report<&Table<Suboptimal>> for VariableDoesNotLiveLongEnough {
     type Error = ReportError;
 
     fn report(
@@ -3414,23 +3411,31 @@ where
     ) -> Result<Diagnostic, Self::Error> {
         Ok(Diagnostic {
             span: self.variable_span.clone(),
-            message: self.for_lifetime.as_ref().map_or_else(
-                || "the variable doesn't live long enough".to_string(),
-                |lifetime| {
-                    format!(
-                        "the variable doesn't live long enough to outlives \
-                         the lifetime `{}`",
-                        DisplayObject { display: lifetime, table }
-                    )
-                },
-            ),
-
+            message: "the variable doesn't live long enough".to_string(),
             severity: Severity::Error,
-            help_message: None,
-            related: vec![Related {
-                span: self.instantiation_span.clone(),
-                message: "the requirement is invoked here".to_string(),
-            }],
+            help_message: match &self.usage {
+                Usage::Local { .. } => None,
+                Usage::ByUniversalRegions(vec) => Some(format!(
+                        "lifetime(s) {} can access the borrow later",
+                        vec.iter()
+                            .map(|x| DisplayObject { display: x, table }
+                                .to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
+                Usage::Drop => Some(
+                    "the borrow is used in the drop implementation".to_string(),
+                ),
+            },
+            related: std::iter::once(Related {
+                span: self.borrow_span.clone(),
+                message: "the borrow starts here".to_string(),
+            })
+            .chain(self.usage.as_local().map(|span| Related {
+                span: span.clone(),
+                message: "the borrow is used here".to_string(),
+            }))
+            .collect(),
         })
     }
 }

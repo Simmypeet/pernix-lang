@@ -39,12 +39,12 @@ fn variable_does_not_live_long_enough() {
 
     let error = errs[0]
         .as_any()
-        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .downcast_ref::<VariableDoesNotLiveLongEnough>()
         .unwrap();
 
     assert_eq!(error.variable_span.str(), "inner");
-    assert_eq!(error.for_lifetime, None);
-    assert_eq!(error.instantiation_span.str(), "*ref");
+    assert_eq!(error.borrow_span.str(), "&inner");
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("*ref"));
 }
 
 const MOVED_OUT_WHILE_BORROWED: &str = r#"
@@ -125,12 +125,12 @@ fn invariant_lifetime() {
 
     let error = errs[0]
         .as_any()
-        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .downcast_ref::<VariableDoesNotLiveLongEnough>()
         .unwrap();
 
     assert_eq!(error.variable_span.str(), "inner");
-    assert_eq!(error.for_lifetime, None);
-    assert_eq!(error.instantiation_span.str(), "*ref");
+    assert_eq!(error.borrow_span.str(), "&inner");
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("*ref"));
 }
 
 const MUTABLY_ACCESS_WHILE_BORROWED: &str = r#"
@@ -188,12 +188,12 @@ fn variable_does_not_live_long_enough_in_loop() {
 
     let error = &errs[0]
         .as_any()
-        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .downcast_ref::<VariableDoesNotLiveLongEnough>()
         .unwrap();
 
     assert_eq!(error.variable_span.str(), "inner");
-    assert_eq!(error.for_lifetime, None);
-    assert_eq!(error.instantiation_span.str(), "*numberRef");
+    assert_eq!(error.borrow_span.str(), "&inner");
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("*numberRef"));
 }
 
 const VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_INNER_LOOP: &str = r#"
@@ -225,20 +225,20 @@ fn variable_does_not_live_long_enough_in_inner_loop() {
 
     assert!(errs.iter().any(|x| x
         .as_any()
-        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .downcast_ref::<VariableDoesNotLiveLongEnough>()
         .map_or(false, |x| {
             x.variable_span.str() == "inner"
-                && x.for_lifetime.is_none()
-                && x.instantiation_span.str() == "*numberRef"
+                && x.borrow_span.str() == "&inner"
+                && x.usage.as_local().map(|x| x.str()) == Some("*numberRef")
         })));
 
     assert!(errs.iter().any(|x| x
         .as_any()
-        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .downcast_ref::<VariableDoesNotLiveLongEnough>()
         .map_or(false, |x| {
             x.variable_span.str() == "innerInner"
-                && x.for_lifetime.is_none()
-                && x.instantiation_span.str() == "*numberRef"
+                && x.borrow_span.str() == "&innerInner"
+                && x.usage.as_local().map(|x| x.str()) == Some("*numberRef")
         })));
 }
 
@@ -606,24 +606,23 @@ fn return_local_reference() {
 
     let error = errs[0]
         .as_any()
-        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .downcast_ref::<VariableDoesNotLiveLongEnough>()
+        .unwrap();
+    let lifetime = table
+        .resolve_lifetime::<ir::Model>(
+            &parse("'a"),
+            test_function,
+            Config::default(),
+            &Panic,
+        )
         .unwrap();
 
     assert_eq!(error.variable_span.str(), "local");
-    assert_eq!(
-        error.for_lifetime,
-        Some(
-            table
-                .resolve_lifetime(
-                    &parse("'a"),
-                    test_function,
-                    Config::default(),
-                    &Panic
-                )
-                .unwrap()
-        )
-    );
-    assert_eq!(error.instantiation_span.str(), "return &local");
+    assert_eq!(error.borrow_span.str(), "&local");
+    assert!(error.usage.as_by_universal_regions().map_or(false, |x| x
+        == &[UniversalRegion::LifetimeParameter(
+            lifetime.into_parameter().unwrap()
+        )]));
 }
 
 const RETURN_WRONG_LIFETIME: &str = r#"
@@ -951,16 +950,17 @@ fn phi_inference_variable_does_not_live_long_enough() {
 
     assert!(errs.iter().any(|x| x
         .as_any()
-        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .downcast_ref::<VariableDoesNotLiveLongEnough>()
         .map_or(false, |x| {
-            x.variable_span.str() == "inner" && x.for_lifetime.is_none()
+            x.variable_span.str() == "inner" && x.borrow_span.str() == "&inner"
         })));
 
     assert!(errs.iter().any(|x| x
         .as_any()
-        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .downcast_ref::<VariableDoesNotLiveLongEnough>()
         .map_or(false, |x| {
-            x.variable_span.str() == "anotherInner" && x.for_lifetime.is_none()
+            x.variable_span.str() == "anotherInner"
+                && x.borrow_span.str() == "&anotherInner"
         })));
 }
 
@@ -1150,12 +1150,12 @@ fn variable_does_not_live_long_enough_in_loop_2() {
 
     let error = errs[0]
         .as_any()
-        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .downcast_ref::<VariableDoesNotLiveLongEnough>()
         .unwrap();
 
     assert_eq!(error.variable_span.str(), "mutable number");
-    assert_eq!(error.for_lifetime, None);
-    assert_eq!(error.instantiation_span.str(), "vector");
+    assert_eq!(error.borrow_span.str(), "&number");
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("vector"));
 }
 
 const BORROW_IN_LOOP: &str = r#"
@@ -1201,12 +1201,12 @@ fn possible_use_of_going_out_of_scope_reference() {
 
     let error = errs[0]
         .as_any()
-        .downcast_ref::<VariableDoesNotLiveLongEnough<ir::Model>>()
+        .downcast_ref::<VariableDoesNotLiveLongEnough>()
         .unwrap();
 
     assert_eq!(error.variable_span.str(), "inner");
-    assert_eq!(error.for_lifetime, None);
-    assert_eq!(error.instantiation_span.str(), "*ref");
+    assert_eq!(error.borrow_span.str(), "&inner");
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("*ref"));
 }
 
 const ASSIGN_MUTABLE_REFERENCE_DOES_NOT_INVALIDATE: &str = r#"

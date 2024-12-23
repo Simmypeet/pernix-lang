@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use getset::{CopyGetters, Getters};
-use pernixc_base::handler::Handler;
+use pernixc_base::{handler::Handler, source_file::Span};
 
 use super::{
     cache::{RegionVariances, RegisterInfos},
@@ -11,8 +11,9 @@ use super::{
 use crate::{
     arena::ID,
     error::{
-        AccessWhileMutablyBorrowed, MutablyAccessWhileImmutablyBorrowed,
-        TypeSystemOverflow, Usage, VariableDoesNotLiveLongEnough,
+        AccessWhileMutablyBorrowed, MovedOutWhileBorrowed,
+        MutablyAccessWhileImmutablyBorrowed, TypeSystemOverflow, Usage,
+        VariableDoesNotLiveLongEnough,
     },
     ir::{
         self,
@@ -259,6 +260,60 @@ impl<
 
     /// Handles the drop of the memory. This will invalidate the borrows that
     /// are attached to the memory.
+    pub fn handle_moved_memory(
+        &self,
+        moved_address: &Address<BorrowModel>,
+        moved_span: &Span,
+        point: Point<BorrowModel>,
+        handler: &HandlerWrapper,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        for (borrow_register_id, (_, borrow_point)) in
+            self.subset.created_borrows()
+        {
+            // basic reachability check, this can filter out a lot of irrelevant
+            // borrows without doing more expensive check
+            if !self.reachability.point_reachable(*borrow_point, point).unwrap()
+            {
+                continue;
+            }
+
+            let borrow_register = self
+                .representation
+                .values
+                .registers
+                .get(*borrow_register_id)
+                .unwrap();
+            let borrow_assignment =
+                borrow_register.assignment.as_borrow().unwrap();
+
+            let should_invalidate =
+                borrow_assignment.address.is_child_of(moved_address)
+                    || moved_address.is_child_of(&borrow_assignment.address);
+
+            if !should_invalidate {
+                continue;
+            }
+
+            self.invalidate_borrow(
+                *borrow_register_id,
+                *borrow_point,
+                |_, _| false,
+                point,
+                |borrow_usage| {
+                    handler.receive(Box::new(MovedOutWhileBorrowed {
+                        borrow_span: borrow_register.span.clone(),
+                        usage: borrow_usage,
+                        moved_out_span: moved_span.clone(),
+                    }))
+                },
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Handles the drop of the memory. This will invalidate the borrows that
+    /// are attached to the memory.
     pub fn handle_drop_memory(
         &self,
         drop: Memory<BorrowModel>,
@@ -319,20 +374,12 @@ impl<
                 *borrow_point,
                 |_, _| false,
                 point,
-                |borrow_usage| match borrow_usage {
-                    Usage::Local(usage_span) => {
-                        handler.receive(Box::new(
-                            VariableDoesNotLiveLongEnough::<ir::Model> {
-                                variable_span: span.clone(),
-                                for_lifetime: None,
-                                instantiation_span: usage_span,
-                            },
-                        ));
-                    }
-
-                    Usage::ByUniversalRegions(_) | Usage::Drop => {
-                        // TODO: report variable use in drop
-                    }
+                |borrow_usage| {
+                    handler.receive(Box::new(VariableDoesNotLiveLongEnough {
+                        variable_span: span.clone(),
+                        borrow_span: borrow_register.span.clone(),
+                        usage: borrow_usage,
+                    }))
                 },
             )?;
         }

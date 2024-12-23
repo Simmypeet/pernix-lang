@@ -1,3 +1,5 @@
+use pernixc_base::source_file::Span;
+
 use super::{
     cache::{RegionVariances, RegisterInfos},
     invalidate::Checker,
@@ -14,12 +16,16 @@ use crate::{
             binding::HandlerWrapper, borrow::Model as BorrowModel,
             Representation,
         },
-        value::register::Assignment,
+        value::register::{Assignment, Load},
     },
     symbol::{table, CallableID, GlobalID},
     type_system::{
-        environment::Environment, normalizer::Normalizer, observer::Observer,
-        term::r#type::Qualifier,
+        environment::Environment,
+        normalizer::Normalizer,
+        observer::Observer,
+        predicate::{PositiveMarker, Predicate},
+        term::{r#type::Qualifier, GenericArguments},
+        well_formedness,
     },
 };
 
@@ -30,6 +36,79 @@ impl<
         O: Observer<BorrowModel, S>,
     > Checker<'a, S, N, O>
 {
+    fn handle_load(
+        &self,
+        load: &Load<BorrowModel>,
+        register_span: &Span,
+        point: Point<BorrowModel>,
+        handler: &HandlerWrapper,
+    ) -> Result<(), TypeSystemOverflow<ir::Model>> {
+        let ty = self
+            .representation()
+            .values
+            .type_of_address(
+                &load.address,
+                self.current_site(),
+                self.environment(),
+            )
+            .unwrap();
+        self.handle_access(
+            &load.address,
+            AccessMode::Read(Read {
+                qualifier: Qualifier::Immutable,
+                span: register_span.clone(),
+            }),
+            point,
+            handler,
+        )?;
+
+        // has been checked previously
+        'out: {
+            if load.address.get_reference_qualifier()
+                == Some(Qualifier::Immutable)
+                || load.address.is_behind_index()
+            {
+                // TODO: check copy marker
+            } else {
+                let copy_marker = self
+                    .environment()
+                    .table()
+                    .get_by_qualified_name(["core", "Copy"])
+                    .unwrap()
+                    .into_marker()
+                    .unwrap();
+
+                // no need to move
+                if well_formedness::predicate_satisfied(
+                    Predicate::PositiveMarker(PositiveMarker::new(
+                        copy_marker,
+                        GenericArguments {
+                            lifetimes: Vec::new(),
+                            types: vec![ty.result],
+                            constants: Vec::new(),
+                        },
+                    )),
+                    None,
+                    false,
+                    self.environment(),
+                )
+                .iter()
+                .all(well_formedness::Error::is_lifetime_constraints)
+                {
+                    break 'out;
+                }
+
+                self.handle_moved_memory(
+                    &load.address,
+                    register_span,
+                    point,
+                    handler,
+                )?;
+            }
+        };
+        Ok(())
+    }
+
     pub fn borrow_check(
         &self,
         handler: &HandlerWrapper,
@@ -60,12 +139,9 @@ impl<
                         .unwrap();
 
                     match &register.assignment {
-                        Assignment::Load(load) => self.handle_access(
-                            &load.address,
-                            AccessMode::Read(Read {
-                                qualifier: Qualifier::Immutable,
-                                span: register.span.clone(),
-                            }),
+                        Assignment::Load(load) => self.handle_load(
+                            load,
+                            &register.span,
                             point,
                             handler,
                         )?,
