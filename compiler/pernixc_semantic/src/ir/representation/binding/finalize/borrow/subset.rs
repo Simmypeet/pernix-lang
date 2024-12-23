@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use getset::Getters;
 use pernixc_base::source_file::Span;
 
-use super::cache::RegisterInfos;
+use super::cache::{RegionVariances, RegisterInfos};
 use crate::{
     arena::ID,
     error::{OverflowOperation, TypeSystemOverflow},
@@ -173,6 +173,7 @@ pub struct Builder<
     register_infos: &'a RegisterInfos,
     current_site: GlobalID,
     environment: &'a Environment<'a, BorrowModel, S, N, O>,
+    region_variances: &'a RegionVariances,
 
     /// A map between the region and the instruction index where the region
     /// was last changed.
@@ -195,6 +196,7 @@ impl<
             environment: self.environment,
             representation: self.representation,
             register_infos: self.register_infos,
+            region_variances: self.region_variances,
 
             current_site: self.current_site.clone(),
             latest_change_points_by_region: self
@@ -922,30 +924,51 @@ impl<
                     ) {
                         assert!(region_at.point.is_some());
 
+                        let flow_from = RegionAt {
+                            region: region_at.region,
+                            point: Some(latest_updated_inst_index.map_or_else(
+                                || {
+                                    RegionPoint::EnteringBlock(
+                                        instruction_point.block_id,
+                                    )
+                                },
+                                |x| {
+                                    RegionPoint::InBlock(Point {
+                                        instruction_index: x,
+                                        block_id: instruction_point.block_id,
+                                    })
+                                },
+                            )),
+                        };
+
+                        let flow_to = region_at;
+
                         // flows state to current
-                        subset_result.subset_relations.insert((
-                            RegionAt {
-                                region: region_at.region,
-                                point: Some(
-                                    latest_updated_inst_index.map_or_else(
-                                        || {
-                                            RegionPoint::EnteringBlock(
-                                                instruction_point.block_id,
-                                            )
-                                        },
-                                        |x| {
-                                            RegionPoint::InBlock(Point {
-                                                instruction_index: x,
-                                                block_id: instruction_point
-                                                    .block_id,
-                                            })
-                                        },
-                                    ),
-                                ),
-                            },
-                            region_at,
-                            None,
-                        ));
+                        match self
+                            .region_variances
+                            .get(&region_at.region)
+                            .cloned()
+                            .unwrap_or(Variance::Covariant)
+                        {
+                            Variance::Covariant => {
+                                subset_result
+                                    .subset_relations
+                                    .insert((flow_from, flow_to, None));
+                            }
+                            Variance::Contravariant => {
+                                subset_result
+                                    .subset_relations
+                                    .insert((flow_to, flow_from, None));
+                            }
+                            Variance::Invariant => {
+                                subset_result
+                                    .subset_relations
+                                    .insert((flow_from, flow_to, None));
+                                subset_result
+                                    .subset_relations
+                                    .insert((flow_to, flow_from, None));
+                            }
+                        }
                     }
                 };
 
@@ -1013,6 +1036,7 @@ struct Context<
     current_site: GlobalID,
     environment: &'a Environment<'a, BorrowModel, S, N, O>,
     register_infos: &'a RegisterInfos,
+    region_variances: &'a RegionVariances,
 
     /// The key represents the block ID that needs to be checked/explored.
     ///
@@ -1063,6 +1087,7 @@ impl<
                 register_infos: self.register_infos,
                 current_site: self.current_site,
                 environment: self.environment,
+                region_variances: self.region_variances,
                 latest_change_points_by_region: HashMap::new(),
             };
 
@@ -1155,6 +1180,7 @@ impl<
                 register_infos: self.register_infos,
                 current_site: self.current_site,
                 environment: self.environment,
+                region_variances: self.region_variances,
 
                 latest_change_points_by_region: flowing_subset_builders[0]
                     .1
@@ -1197,11 +1223,40 @@ impl<
                         point: Some(RegionPoint::EnteringBlock(block_id)),
                     };
 
-                    subset_result.subset_relations.insert((
-                        from_region_at,
-                        to_region_at,
-                        None,
-                    ));
+                    // taken account the variance
+                    match self
+                        .region_variances
+                        .get(&region)
+                        .cloned()
+                        .unwrap_or(Variance::Covariant)
+                    {
+                        Variance::Covariant => {
+                            subset_result.subset_relations.insert((
+                                from_region_at,
+                                to_region_at,
+                                None,
+                            ));
+                        }
+                        Variance::Contravariant => {
+                            subset_result.subset_relations.insert((
+                                to_region_at,
+                                from_region_at,
+                                None,
+                            ));
+                        }
+                        Variance::Invariant => {
+                            subset_result.subset_relations.insert((
+                                from_region_at,
+                                to_region_at,
+                                None,
+                            ));
+                            subset_result.subset_relations.insert((
+                                to_region_at,
+                                from_region_at,
+                                None,
+                            ));
+                        }
+                    }
                 }
             }
 
@@ -1257,11 +1312,40 @@ impl<
                     point: Some(RegionPoint::EnteringBlock(*to_block_id)),
                 };
 
-                subset_result.subset_relations.insert((
-                    from_region_at,
-                    to_region_at,
-                    None,
-                ));
+                // taken account the variance
+                match self
+                    .region_variances
+                    .get(&region)
+                    .cloned()
+                    .unwrap_or(Variance::Covariant)
+                {
+                    Variance::Covariant => {
+                        subset_result.subset_relations.insert((
+                            from_region_at,
+                            to_region_at,
+                            None,
+                        ));
+                    }
+                    Variance::Contravariant => {
+                        subset_result.subset_relations.insert((
+                            to_region_at,
+                            from_region_at,
+                            None,
+                        ));
+                    }
+                    Variance::Invariant => {
+                        subset_result.subset_relations.insert((
+                            from_region_at,
+                            to_region_at,
+                            None,
+                        ));
+                        subset_result.subset_relations.insert((
+                            to_region_at,
+                            from_region_at,
+                            None,
+                        ));
+                    }
+                }
             }
         }
 
@@ -1359,6 +1443,7 @@ pub fn analyze<
 >(
     ir: &ir::Representation<BorrowModel>,
     register_infos: &RegisterInfos,
+    region_variances: &RegionVariances,
     current_site: GlobalID,
     environment: &Environment<BorrowModel, S, N, O>,
 ) -> Result<Subset, TypeSystemOverflow<ir::Model>> {
@@ -1367,6 +1452,7 @@ pub fn analyze<
         current_site,
         environment,
         register_infos,
+        region_variances,
         walk_results_by_block_id: HashMap::new(),
         target_regions_by_block_id: HashMap::new(),
     };

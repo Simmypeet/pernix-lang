@@ -1,4 +1,8 @@
-use super::{cache::RegisterInfos, invalidate::Checker, subset::Subset};
+use super::{
+    cache::{RegionVariances, RegisterInfos},
+    invalidate::Checker,
+    subset::Subset,
+};
 use crate::{
     error::TypeSystemOverflow,
     ir::{
@@ -145,6 +149,7 @@ impl Representation<BorrowModel> {
         &self,
         subset: &Subset,
         register_infos: &RegisterInfos,
+        region_variances: &RegionVariances,
         reachability: &Reachability<BorrowModel>,
         current_site: GlobalID,
         environment: &Environment<
@@ -160,6 +165,7 @@ impl Representation<BorrowModel> {
             environment,
             reachability,
             register_infos,
+            region_variances,
             current_site,
             subset,
         );

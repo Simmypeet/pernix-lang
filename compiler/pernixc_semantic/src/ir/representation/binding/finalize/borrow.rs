@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use cache::RegisterInfos;
+use cache::{RegionVariances, RegisterInfos};
 use pernixc_base::source_file::Span;
 use transform::transform_to_borrow_model;
 
@@ -193,14 +193,22 @@ impl Representation<ir::Model> {
 
         let register_infos =
             RegisterInfos::new(&ir, current_site, environment)?;
+        let region_variances =
+            RegionVariances::new(&ir, current_site, environment)?;
         let reachability = ir.control_flow_graph.reachability();
 
-        let subset =
-            subset::analyze(&ir, &register_infos, current_site, environment)?;
+        let subset = subset::analyze(
+            &ir,
+            &register_infos,
+            &region_variances,
+            current_site,
+            environment,
+        )?;
 
         ir.borrow_check_internal(
             &subset,
             &register_infos,
+            &region_variances,
             &reachability,
             current_site,
             environment,

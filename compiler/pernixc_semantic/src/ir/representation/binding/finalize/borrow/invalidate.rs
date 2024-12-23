@@ -3,7 +3,11 @@ use std::collections::HashSet;
 use getset::{CopyGetters, Getters};
 use pernixc_base::handler::Handler;
 
-use super::{cache::RegisterInfos, liveness, subset::Subset};
+use super::{
+    cache::{RegionVariances, RegisterInfos},
+    liveness,
+    subset::Subset,
+};
 use crate::{
     arena::ID,
     error::{
@@ -110,6 +114,8 @@ pub struct Checker<
     #[get_copy = "pub"]
     reachability: &'a Reachability<BorrowModel>,
     #[get_copy = "pub"]
+    region_variances: &'a RegionVariances,
+    #[get_copy = "pub"]
     register_infos: &'a RegisterInfos,
     #[get_copy = "pub"]
     current_site: GlobalID,
@@ -129,6 +135,7 @@ impl<
         environment: &'a Environment<'a, BorrowModel, S, N, O>,
         reachability: &'a Reachability<BorrowModel>,
         register_infos: &'a RegisterInfos,
+        region_variances: &'a RegionVariances,
         current_site: GlobalID,
         subset: &'a Subset,
     ) -> Self {
@@ -139,6 +146,7 @@ impl<
             register_infos,
             current_site,
             subset,
+            region_variances,
         }
     }
 

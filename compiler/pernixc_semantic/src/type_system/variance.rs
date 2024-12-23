@@ -1,5 +1,7 @@
 //! Contains the definition of [`Variance`]
 
+use enum_as_inner::EnumAsInner;
+
 use super::{
     environment::Environment,
     model::Model,
@@ -71,7 +73,9 @@ impl Variance {
 
 /// An enumeration of errors that can occur when calling
 /// [`Type::get_variance_of()`]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
 pub enum GetVarianceError {
     /// The location points to an invalid location in the term.
     InvalidLocation,
