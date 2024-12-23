@@ -10,6 +10,7 @@ use crate::{
     error::{OverflowOperation, TypeSystemOverflow},
     ir::{
         self,
+        address::Address,
         control_flow_graph::{Block, Point},
         instruction::{Instruction, Store},
         representation::{
@@ -20,7 +21,8 @@ use crate::{
         },
         value::{
             register::{
-                Assignment, Borrow, FunctionCall, Phi, Register, Struct,
+                Array, Assignment, Borrow, FunctionCall, Phi, Register, Struct,
+                Variant,
             },
             Value,
         },
@@ -462,6 +464,218 @@ impl Values<BorrowModel> {
         })
     }
 
+    pub(super) fn get_changes_of_array<S: table::State>(
+        &self,
+        array: &Array<BorrowModel>,
+        span: &Span,
+        current_site: GlobalID,
+        environment: &Environment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+    ) -> Result<Changes, TypeSystemOverflow<ir::Model>> {
+        let array_ty = array.element_type.clone();
+        let mut lifetime_constraints = BTreeSet::new();
+
+        for value in &array.elements {
+            let value_span = match value {
+                Value::Register(id) => {
+                    self.registers.get(*id).unwrap().span.clone()
+                }
+                Value::Literal(literal) => literal.span().clone(),
+            };
+
+            let Succeeded { result: value_ty, constraints } = self
+                .type_of_value(value, current_site, environment)
+                .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeOf,
+                    overflow_span: value_span.clone(),
+                    overflow_error: x.into_overflow().unwrap(),
+                })?;
+
+            lifetime_constraints.extend(constraints);
+
+            let copmatibility = value_ty
+                .compatible(&array_ty, Variance::Covariant, environment)
+                .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeCheck,
+                    overflow_span: value_span.clone(),
+                    overflow_error,
+                })?;
+
+            // append the lifetime constraints
+            if let Some(Succeeded {
+                result,
+                constraints: compatibility_constraints,
+            }) = copmatibility
+            {
+                assert!(result.forall_lifetime_errors.is_empty());
+                assert!(result
+                    .forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
+
+                lifetime_constraints.extend(compatibility_constraints);
+            } else {
+                panic!("{value_ty:#?} => {array_ty:#?}")
+            }
+        }
+
+        Ok(Changes {
+            subset_relations: lifetime_constraints
+                .into_iter()
+                .filter_map(|x| {
+                    let x = x.into_lifetime_outlives().ok()?;
+
+                    let from = Region::try_from(x.operand.clone()).ok()?;
+                    let to = Region::try_from(x.bound.clone()).ok()?;
+
+                    Some((from, to, span.clone()))
+                })
+                .collect(),
+            borrow_created: None,
+            overwritten_regions: HashSet::new(),
+        })
+    }
+
+    pub(super) fn get_changes_of_variant<S: table::State>(
+        &self,
+        variant: &Variant<BorrowModel>,
+        span: &Span,
+        current_site: GlobalID,
+        environment: &Environment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+    ) -> Result<Changes, TypeSystemOverflow<ir::Model>> {
+        let variant_sym = environment.table().get(variant.variant_id).unwrap();
+        let enum_id = environment
+            .table()
+            .get(variant.variant_id)
+            .unwrap()
+            .parent_enum_id();
+        let enum_sym = environment.table().get(enum_id).unwrap();
+
+        let instantiation = Instantiation::from_generic_arguments(
+            variant.generic_arguments.clone(),
+            enum_id.into(),
+            &enum_sym.generic_declaration.parameters,
+        )
+        .unwrap();
+
+        let mut lifetime_constraints = BTreeSet::new();
+
+        // compare each values in the field to the struct's field type
+        if let Some(mut associated_type) = variant_sym
+            .associated_type
+            .as_ref()
+            .map(|x| Type::from_default_model(x.clone()))
+        {
+            instantiation::instantiate(&mut associated_type, &instantiation);
+            let associated_value = variant.associated_value.as_ref().unwrap();
+            let value_span = match associated_value {
+                Value::Register(id) => {
+                    self.registers.get(*id).unwrap().span.clone()
+                }
+                Value::Literal(literal) => literal.span().clone(),
+            };
+
+            let Succeeded { result: value_ty, constraints: value_constraints } =
+                self.type_of_value(associated_value, current_site, environment)
+                    .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                        operation: OverflowOperation::TypeOf,
+                        overflow_span: value_span.clone(),
+                        overflow_error: x.into_overflow().unwrap(),
+                    })?;
+
+            lifetime_constraints.extend(value_constraints);
+
+            let copmatibility = value_ty
+                .compatible(&associated_type, Variance::Covariant, environment)
+                .map_err(|overflow_error| TypeSystemOverflow::<ir::Model> {
+                    operation: OverflowOperation::TypeCheck,
+                    overflow_span: value_span.clone(),
+                    overflow_error,
+                })?;
+
+            // append the lifetime constraints
+            if let Some(Succeeded {
+                result,
+                constraints: compatibility_constraints,
+            }) = copmatibility
+            {
+                assert!(result.forall_lifetime_errors.is_empty());
+                assert!(result
+                    .forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
+
+                lifetime_constraints.extend(compatibility_constraints);
+            } else {
+                panic!("{value_ty:#?} => {associated_type:#?}")
+            }
+        }
+
+        // handle the constraints introduced by the outlive predicates of the
+        // struct
+
+        for predicate in environment
+            .table()
+            .get_active_premise(variant.variant_id.into())
+            .unwrap()
+            .predicates
+            .into_iter()
+            .map(|x| {
+                let mut x = Predicate::from_default_model(x);
+                x.instantiate(&instantiation);
+
+                x
+            })
+        {
+            match predicate {
+                Predicate::LifetimeOutlives(outlives) => {
+                    lifetime_constraints.insert(
+                        LifetimeConstraint::LifetimeOutlives(outlives.clone()),
+                    );
+                }
+                Predicate::TypeOutlives(outlives) => {
+                    for lt in RecursiveIterator::new(&outlives.operand)
+                        .filter_map(|x| x.0.into_lifetime().ok())
+                    {
+                        lifetime_constraints.insert(
+                            LifetimeConstraint::LifetimeOutlives(Outlives {
+                                operand: lt.clone(),
+                                bound: outlives.bound.clone(),
+                            }),
+                        );
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        Ok(Changes {
+            subset_relations: lifetime_constraints
+                .into_iter()
+                .filter_map(|x| {
+                    let x = x.into_lifetime_outlives().ok()?;
+
+                    let from = Region::try_from(x.operand.clone()).ok()?;
+                    let to = Region::try_from(x.bound.clone()).ok()?;
+
+                    Some((from, to, span.clone()))
+                })
+                .collect(),
+            borrow_created: None,
+            overwritten_regions: HashSet::new(),
+        })
+    }
+
     pub(super) fn get_changes_of_function_call<S: table::State>(
         &self,
         function_call: &FunctionCall<BorrowModel>,
@@ -637,9 +851,11 @@ impl Values<BorrowModel> {
         })
     }
 
-    pub(super) fn get_changes_of_store<S: table::State>(
+    pub(super) fn get_changes_of_store_internal<S: table::State>(
         &self,
-        store_inst: &Store<BorrowModel>,
+        store_address: &Address<BorrowModel>,
+        value_type: Succeeded<Type<BorrowModel>, BorrowModel>,
+        span: &Span,
         current_site: GlobalID,
         environment: &Environment<
             BorrowModel,
@@ -649,22 +865,15 @@ impl Values<BorrowModel> {
         >,
     ) -> Result<Changes, TypeSystemOverflow<ir::Model>> {
         let Succeeded { result: address_ty, constraints: address_constraints } =
-            self.type_of_address(&store_inst.address, current_site, environment)
+            self.type_of_address(store_address, current_site, environment)
                 .map_err(|x| TypeSystemOverflow::<ir::Model> {
                     operation: OverflowOperation::TypeOf,
-                    overflow_span: store_inst.span.clone(),
-                    overflow_error: x.into_overflow().unwrap(),
-                })?;
-        let Succeeded { result: value_ty, constraints: value_constraints } =
-            self.type_of_value(&store_inst.value, current_site, environment)
-                .map_err(|x| TypeSystemOverflow::<ir::Model> {
-                    operation: OverflowOperation::TypeOf,
-                    overflow_span: store_inst.span.clone(),
+                    overflow_span: span.clone(),
                     overflow_error: x.into_overflow().unwrap(),
                 })?;
 
         // get the compatibility constraints between the value and the address
-        let compatibility_constraints = match value_ty.compatible(
+        let compatibility_constraints = match value_type.result.compatible(
             &address_ty,
             Variance::Covariant,
             environment,
@@ -685,19 +894,23 @@ impl Values<BorrowModel> {
                 compatibility_constraints
             }
             Ok(None) => {
-                panic!("incompatible types {value_ty:#?} => {address_ty:#?}");
+                panic!(
+                    "incompatible types {:#?} => {address_ty:#?}",
+                    value_type.result
+                );
             }
             Err(err) => {
                 return Err(TypeSystemOverflow::<ir::Model> {
                     operation: OverflowOperation::TypeCheck,
-                    overflow_span: store_inst.span.clone(),
+                    overflow_span: span.clone(),
                     overflow_error: err,
                 });
             }
         };
 
         Ok(Changes {
-            subset_relations: value_constraints
+            subset_relations: value_type
+                .constraints
                 .into_iter()
                 .chain(address_constraints.into_iter())
                 .chain(compatibility_constraints.into_iter())
@@ -707,7 +920,7 @@ impl Values<BorrowModel> {
                     let from = Region::try_from(x.operand.clone()).ok()?;
                     let to = Region::try_from(x.bound.clone()).ok()?;
 
-                    Some((from, to, store_inst.span.clone()))
+                    Some((from, to, span.clone()))
                 })
                 .collect(),
             borrow_created: None,
@@ -716,6 +929,33 @@ impl Values<BorrowModel> {
                 .filter_map(|x| Region::try_from(x.clone()).ok())
                 .collect::<HashSet<_>>(),
         })
+    }
+    pub(super) fn get_changes_of_store<S: table::State>(
+        &self,
+        store_inst: &Store<BorrowModel>,
+        current_site: GlobalID,
+        environment: &Environment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+    ) -> Result<Changes, TypeSystemOverflow<ir::Model>> {
+        let value_ty = self
+            .type_of_value(&store_inst.value, current_site, environment)
+            .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                operation: OverflowOperation::TypeOf,
+                overflow_span: store_inst.span.clone(),
+                overflow_error: x.into_overflow().unwrap(),
+            })?;
+
+        self.get_changes_of_store_internal(
+            &store_inst.address,
+            value_ty,
+            &store_inst.span,
+            current_site,
+            environment,
+        )
     }
 }
 
@@ -1033,8 +1273,22 @@ impl<
                             self.environment,
                         )
                     }
-                    Assignment::Variant(_) => Ok(Changes::default()),
-                    Assignment::Array(_) => Ok(Changes::default()),
+                    Assignment::Variant(variant) => {
+                        self.representation.values.get_changes_of_variant(
+                            variant,
+                            &register.span,
+                            self.current_site,
+                            self.environment,
+                        )
+                    }
+                    Assignment::Array(array) => {
+                        self.representation.values.get_changes_of_array(
+                            array,
+                            &register.span,
+                            self.current_site,
+                            self.environment,
+                        )
+                    }
                     Assignment::Phi(phi) => {
                         self.representation.values.get_changes_of_phi(
                             phi,
@@ -1056,7 +1310,36 @@ impl<
                 })
             }
             Instruction::RegisterDiscard(_) => Ok(Changes::default()),
-            Instruction::TuplePack(_) => Ok(Changes::default()),
+            Instruction::TuplePack(tuple_pack) => {
+                let tuple_ty = self
+                    .representation
+                    .values
+                    .type_of_address(
+                        &tuple_pack.tuple_address,
+                        self.current_site,
+                        self.environment,
+                    )
+                    .map_err(|x| TypeSystemOverflow::<ir::Model> {
+                        operation: OverflowOperation::TypeOf,
+                        overflow_span: tuple_pack.packed_tuple_span.clone(),
+                        overflow_error: x.into_overflow().unwrap(),
+                    })?;
+
+                self.representation.values.get_changes_of_store_internal(
+                    &tuple_pack.store_address,
+                    tuple_ty.map(|x| {
+                        x.into_tuple()
+                            .unwrap()
+                            .elements
+                            .into_iter()
+                            .find_map(|x| x.is_unpacked.then_some(x.term))
+                            .unwrap()
+                    }),
+                    &tuple_pack.packed_tuple_span,
+                    self.current_site,
+                    self.environment,
+                )
+            }
             Instruction::ScopePush(_) => Ok(Changes::default()),
             Instruction::ScopePop(_) => Ok(Changes::default()),
             Instruction::DropUnpackTuple(_) => Ok(Changes::default()),
