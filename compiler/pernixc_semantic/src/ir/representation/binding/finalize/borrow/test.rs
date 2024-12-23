@@ -220,7 +220,6 @@ fn variable_does_not_live_long_enough_in_inner_loop() {
     let (_, errs) =
         build_table(VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_INNER_LOOP)
             .unwrap_err();
-    dbg!(&errs);
 
     assert_eq!(errs.len(), 2);
 
@@ -1198,8 +1197,6 @@ fn possible_use_of_going_out_of_scope_reference() {
     let (_, errs) =
         build_table(POSSIBLE_USE_OF_GOING_OUT_OF_SCOPE_REFERENCE).unwrap_err();
 
-    dbg!(&errs);
-
     assert_eq!(errs.len(), 1);
 
     let error = errs[0]
@@ -1509,7 +1506,6 @@ public function main() {
 fn polonius_two_example() {
     let (_, errs) = build_table(POLONIUS_TWO_EXAMPLE).unwrap_err();
 
-    dbg!(&errs);
     assert_eq!(errs.len(), 1);
 
     let error = errs[0]
@@ -1524,3 +1520,143 @@ fn polonius_two_example() {
     assert_eq!(error.mutable_access_span.str(), "x = 3");
     assert_eq!(error.usage.as_local().map(|x| x.str()), Some("v"));
 }
+
+/// these test cases are taken from
+/// https://github.com/rust-lang/polonius/blob/0a754a9e1916c0e7d9ba23668ea33249c7a7b59e/inputs/vec-push-ref/vec-push-ref.rs#L5
+const VEC_PUSH_REF_ONE: &str = r#"
+// fake vector
+public struct Vector[T] {}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function consume[T](x: T) {}
+
+public function main(cond: bool) {
+    let mutable x = 1;
+    let mutable v = Vector::new();
+    let p = &x;
+
+    if (cond) {
+        v.push(p);
+        x = 2;
+    } else {
+        x = 3;
+    }
+
+    consume(v);
+}
+"#;
+
+#[test]
+fn vec_push_ref_one() {
+    let (_, errs) = build_table(VEC_PUSH_REF_ONE).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .unwrap();
+
+    assert_eq!(
+        error.immutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&x")
+    );
+    assert_eq!(error.mutable_access_span.str(), "x = 2");
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("v"));
+}
+
+const VEC_PUSH_REF_TWO: &str = r#"
+// fake vector
+public struct Vector[T] {}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function consume[T](x: T) {}
+
+public function main(cond: bool) {
+    let mutable x = 1;
+    let mutable v = Vector::new();
+    let p = &x;
+
+    if (cond) {
+        v.push(p);
+    } else {
+        x = 2;
+    }
+
+    x = 3;
+
+    consume(v);
+}
+"#;
+
+#[test]
+fn vec_push_ref_two() {
+    let (_, errs) = build_table(VEC_PUSH_REF_TWO).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .unwrap();
+
+    assert_eq!(
+        error.immutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&x")
+    );
+    assert_eq!(error.mutable_access_span.str(), "x = 3");
+    assert_eq!(error.usage.as_local().map(|x| x.str()), Some("v"));
+}
+
+const VEC_PUSH_REF_THREE: &str = r#"
+// fake vector
+public struct Vector[T] {}
+
+implements[T] Vector[T] {
+    public function new(): this { panic; }
+    public function push['a](self: &'a mutable this, value: T)
+    where
+        T: 'a
+    {
+        panic;
+    }
+}
+
+public function consume[T](x: T) {}
+
+public function main(cond: bool) {
+    let mutable x = 1;
+    let mutable v = Vector::new();
+    let p = &x;
+
+    if (cond) {
+        v.push(p);
+    } else {
+        x = 1;
+    }
+
+
+    consume(v);
+}
+"#;
+
+#[test]
+fn vec_push_ref_three() { assert!(build_table(VEC_PUSH_REF_THREE).is_ok()) }
