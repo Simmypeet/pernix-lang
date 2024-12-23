@@ -965,7 +965,24 @@ impl<
 
         // gets the changes made by the instruction
         let changes = self.get_changes(instruction)?;
+        self.handle_chages(changes, subset_result, instruction_point);
 
+        for region in self.get_removing_regions(instruction) {
+            assert!(self
+                .latest_change_points_by_region
+                .remove(&region)
+                .is_some());
+        }
+
+        Ok(())
+    }
+
+    pub fn handle_chages(
+        &mut self,
+        changes: Changes,
+        subset_result: &mut Naive,
+        instruction_point: Point<BorrowModel>,
+    ) {
         if let Some((borrow_register_id, local_region)) = changes.borrow_created
         {
             assert!(!self
@@ -1079,15 +1096,6 @@ impl<
                     .is_some());
             }
         }
-
-        for region in self.get_removing_regions(instruction) {
-            assert!(self
-                .latest_change_points_by_region
-                .remove(&region)
-                .is_some());
-        }
-
-        Ok(())
     }
 
     pub fn walk_block(
