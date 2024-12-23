@@ -411,6 +411,10 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
                 trait_member.get_term(location.0).cloned()
             }
 
+            (Self::Phantom, Type::Phantom(phantom)) => {
+                Some((*phantom.0).clone())
+            }
+
             _ => None,
         }
     }
@@ -444,6 +448,8 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member.get_term(location.0)
             }
+
+            (Self::Phantom, Type::Phantom(phantom)) => Some(&*phantom.0),
 
             _ => None,
         }
@@ -480,6 +486,8 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member.get_term_mut(location.0)
             }
+
+            (Self::Phantom, Type::Phantom(phantom)) => Some(&mut *phantom.0),
 
             _ => None,
         }
@@ -748,6 +756,19 @@ impl<M: Model> Match for Type<M> {
                             },
                         )
                     })
+            }
+
+            (Self::Phantom(lhs), Self::Phantom(rhs)) => {
+                Some(matching::Substructural {
+                    lifetimes: Vec::new(),
+                    types: vec![Matching {
+                        lhs: (*lhs.0).clone(),
+                        rhs: (*rhs.0).clone(),
+                        lhs_location: SubTypeLocation::Phantom,
+                        rhs_location: SubTypeLocation::Phantom,
+                    }],
+                    constants: Vec::new(),
+                })
             }
 
             _ => None,
