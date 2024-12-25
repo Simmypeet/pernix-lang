@@ -2110,3 +2110,54 @@ fn universal_regions_through_trait_predicates() {
         a_lt
     ),]);
 }
+
+const BORROW_USAGE_IN_DROP: &str = r#"
+using {Drop} from core;
+
+public struct DropWrapper[T] {
+    private value: T
+}
+
+implements[T] DropWrapper[T] {
+    public function new(value: T): this {
+        return this { value: value };
+    }
+}
+
+implements[T] Drop[DropWrapper[T]] {
+    public function drop['b](self: &'b mutable DropWrapper[T]) 
+    where 
+        DropWrapper[T]: 'b 
+    {
+
+    }
+}
+
+public function main() {
+    let mutable number = 32;
+    let wrapper = DropWrapper::new(&number);
+
+    number += 23;
+}
+"#;
+
+#[test]
+fn borrow_usage_in_drop() {
+    let (_, errs) = build_table(BORROW_USAGE_IN_DROP).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
+        .unwrap();
+
+    assert_eq!(
+        error.immutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&number")
+    );
+
+    assert_eq!(error.mutable_access_span.str(), "number += 23");
+
+    assert!(error.usage.is_drop());
+}
