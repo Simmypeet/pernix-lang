@@ -22,7 +22,7 @@ use crate::{
         value::{
             register::{
                 Array, Assignment, Borrow, FunctionCall, Phi, Register, Struct,
-                Variant,
+                Tuple, Variant,
             },
             Value,
         },
@@ -38,11 +38,11 @@ use crate::{
         instantiation::{self, Instantiation},
         normalizer::Normalizer,
         observer::Observer,
-        predicate::{self, Outlives, PositiveTrait, Predicate},
+        predicate::{self, PositiveTrait, Predicate},
         term::{r#type::Type, Term},
         variance::Variance,
         visitor::RecursiveIterator,
-        well_formedness, LifetimeConstraint, Succeeded,
+        well_formedness, Succeeded,
     },
 };
 
@@ -385,48 +385,18 @@ impl Values<BorrowModel> {
             }
         }
 
-        // handle the constraints introduced by the outlive predicates of the
-        // struct
-
-        for predicate in environment
-            .table()
-            .get_active_premise(struct_lit.struct_id.into())
-            .unwrap()
-            .predicates
-            .into_iter()
-            .map(|x| {
-                let mut x = Predicate::from_default_model(x);
-                x.instantiate(&instantiation);
-
-                x
-            })
-        {
-            match predicate {
-                Predicate::LifetimeOutlives(outlives) => {
-                    lifetime_constraints.insert(
-                        LifetimeConstraint::LifetimeOutlives(outlives.clone()),
-                    );
-                }
-                Predicate::TypeOutlives(outlives) => {
-                    for lt in RecursiveIterator::new(&outlives.operand)
-                        .filter_map(|x| x.0.into_lifetime().ok())
-                    {
-                        lifetime_constraints.insert(
-                            LifetimeConstraint::LifetimeOutlives(Outlives {
-                                operand: lt.clone(),
-                                bound: outlives.bound.clone(),
-                            }),
-                        );
-                    }
-                }
-
-                _ => {}
-            }
-        }
+        let well_fromed_lifetime_constraints = well_formedness::check(
+            struct_lit.struct_id.into(),
+            &instantiation,
+            false,
+            environment,
+        )
+        .0;
 
         Ok(Changes {
             subset_relations: lifetime_constraints
                 .into_iter()
+                .chain(well_fromed_lifetime_constraints)
                 .filter_map(|x| {
                     let x = x.into_lifetime_outlives().ok()?;
 
@@ -682,41 +652,62 @@ impl Values<BorrowModel> {
 
         // handle the constraints introduced by the outlive predicates of the
         // struct
+        let well_fromed_lifetime_constraints = well_formedness::check(
+            enum_id.into(),
+            &instantiation,
+            false,
+            environment,
+        )
+        .0;
 
-        for predicate in environment
-            .table()
-            .get_active_premise(variant.variant_id.into())
-            .unwrap()
-            .predicates
-            .into_iter()
-            .map(|x| {
-                let mut x = Predicate::from_default_model(x);
-                x.instantiate(&instantiation);
+        Ok(Changes {
+            subset_relations: lifetime_constraints
+                .into_iter()
+                .chain(well_fromed_lifetime_constraints)
+                .filter_map(|x| {
+                    let x = x.into_lifetime_outlives().ok()?;
 
-                x
-            })
-        {
-            match predicate {
-                Predicate::LifetimeOutlives(outlives) => {
-                    lifetime_constraints.insert(
-                        LifetimeConstraint::LifetimeOutlives(outlives.clone()),
-                    );
-                }
-                Predicate::TypeOutlives(outlives) => {
-                    for lt in RecursiveIterator::new(&outlives.operand)
-                        .filter_map(|x| x.0.into_lifetime().ok())
-                    {
-                        lifetime_constraints.insert(
-                            LifetimeConstraint::LifetimeOutlives(Outlives {
-                                operand: lt.clone(),
-                                bound: outlives.bound.clone(),
-                            }),
-                        );
-                    }
-                }
+                    let from = Region::try_from(x.operand.clone()).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
 
-                _ => {}
-            }
+                    Some((from, to, span.clone()))
+                })
+                .collect(),
+            borrow_created: None,
+            overwritten_regions: HashSet::new(),
+        })
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(super) fn get_changes_of_tuple<S: table::State>(
+        &self,
+        tuple: &Tuple<BorrowModel>,
+        span: &Span,
+        current_site: GlobalID,
+        environment: &Environment<
+            BorrowModel,
+            S,
+            impl Normalizer<BorrowModel, S>,
+            impl Observer<BorrowModel, S>,
+        >,
+    ) -> Result<Changes, TypeSystemOverflow<ir::Model>> {
+        let mut lifetime_constraints = BTreeSet::new();
+        for element in tuple.elements.iter().filter(|x| x.is_unpacked) {
+            let ty = self
+                .type_of_value(&element.value, current_site, environment)
+                .unwrap()
+                .result;
+
+            let predicate = Predicate::TupleType(predicate::Tuple(ty));
+            lifetime_constraints.extend(
+                well_formedness::predicate_satisfied(
+                    predicate,
+                    None,
+                    false,
+                    environment,
+                )
+                .0,
+            );
         }
 
         Ok(Changes {
@@ -1355,8 +1346,16 @@ impl<
                     | Assignment::Cast(_)
                     | Assignment::Binary(_)
                     | Assignment::Prefix(_)
-                    | Assignment::Tuple(_)
                     | Assignment::Load(_) => Ok(Changes::default()),
+
+                    Assignment::Tuple(tuple) => {
+                        self.representation.values.get_changes_of_tuple(
+                            tuple,
+                            &register.span,
+                            self.current_site,
+                            self.environment,
+                        )
+                    }
                     Assignment::Borrow(borrow) => {
                         self.representation.values.get_changes_of_borrow(
                             borrow,
