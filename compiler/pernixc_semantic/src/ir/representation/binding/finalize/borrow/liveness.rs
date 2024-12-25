@@ -123,7 +123,7 @@ impl Assigned {
     }
 
     /// Returns assignment state for the given address.
-    pub fn from_address(&self, address: &Address<impl Model>) -> &Self {
+    pub fn at_address(&self, address: &Address<impl Model>) -> &Self {
         match address {
             Address::Memory(_) => self,
 
@@ -132,7 +132,7 @@ impl Assigned {
                     .projections_by_field_id
                     .get(&field.id)
                     .unwrap()
-                    .from_address(&field.struct_address),
+                    .at_address(&field.struct_address),
 
                 Self::Whole(_) => self,
 
@@ -154,7 +154,7 @@ impl Assigned {
                                 if element.is_unpacked {
                                     return element
                                         .projection
-                                        .from_address(&tuple.tuple_address);
+                                        .at_address(&tuple.tuple_address);
                                 }
                             }
 
@@ -164,7 +164,7 @@ impl Assigned {
 
                     tuple_proj.elements[index]
                         .projection
-                        .from_address(&tuple.tuple_address)
+                        .at_address(&tuple.tuple_address)
                 }
 
                 Self::Whole(_) => self,
@@ -184,7 +184,7 @@ impl Assigned {
             Address::Variant(variant) => match self {
                 Self::Variant(variant_proj) => variant_proj
                     .variant_projection
-                    .from_address(&variant.enum_address),
+                    .at_address(&variant.enum_address),
 
                 Self::Whole(_) => self,
 
@@ -197,7 +197,7 @@ impl Assigned {
             Address::Reference(reference) => match self {
                 Self::Dereference(deref_proj) => deref_proj
                     .projection
-                    .from_address(&reference.reference_address),
+                    .at_address(&reference.reference_address),
 
                 Self::Whole(_) => self,
 
@@ -667,6 +667,7 @@ fn traverse_block<M: Model, T: Traverser<M>>(
     )
 }
 
+#[allow(clippy::too_many_lines)]
 fn traverse_block_internal<M: Model, T: Traverser<M>>(
     traverser_state: &mut T,
     control_flow_graph: &ControlFlowGraph<M>,
@@ -793,7 +794,7 @@ fn traverse_block_internal<M: Model, T: Traverser<M>>(
             }
         },
 
-        Some(Terminator::Return(_)) | Some(Terminator::Panic) | None => {
+        Some(Terminator::Return(_) | Terminator::Panic) | None => {
             Ok(T::Result::default())
         }
     }
@@ -813,6 +814,7 @@ fn traverse_block_internal<M: Model, T: Traverser<M>>(
 /// ```
 ///
 /// the live addresses is only `a.1`.
+#[allow(clippy::too_many_arguments)]
 pub fn get_live_usages<S: table::State>(
     memories: impl IntoIterator<Item = Memory<BorrowModel>>,
     checking_registers: HashSet<ID<Register<BorrowModel>>>,
@@ -900,6 +902,7 @@ impl<
 
     type Result = HashSet<Usage>;
 
+    #[allow(clippy::too_many_lines)]
     fn on_instruction(
         &mut self,
         _: Point<BorrowModel>,
@@ -935,14 +938,14 @@ impl<
             };
 
             let Some(assigned_state) =
-                self.assigned_states_by_memory.get_mut(&memory_root)
+                self.assigned_states_by_memory.get_mut(memory_root)
             else {
                 // skip irrelevant addresses
                 continue;
             };
 
             // check if the address is accessed
-            if assigned_state.from_address(&address).is_assigned() {
+            if assigned_state.at_address(&address).is_assigned() {
                 // has already assigned, dead address
                 continue;
             }
@@ -1119,7 +1122,7 @@ impl<
     ) -> (Self::Result, bool) {
         (
             {
-                previous.extend(next.into_iter());
+                previous.extend(next);
                 previous
             },
             false,
@@ -1221,7 +1224,7 @@ impl<
         match instruction {
             Instruction::Store(store) => {
                 let overlapping_addresses =
-                    store.address.is_child_of(&self.checking_address)
+                    store.address.is_child_of(self.checking_address)
                         || self.checking_address.is_child_of(&store.address);
 
                 // non-related address
@@ -1251,7 +1254,7 @@ impl<
 
                 if self
                     .assigned_states
-                    .from_address(&self.checking_address)
+                    .at_address(self.checking_address)
                     .is_assigned()
                 {
                     Ok(ControlFlow::Break(false))
@@ -1282,7 +1285,7 @@ impl<
                 }
             }
 
-            _ => return Ok(ControlFlow::Continue),
+            _ => Ok(ControlFlow::Continue),
         }
     }
 

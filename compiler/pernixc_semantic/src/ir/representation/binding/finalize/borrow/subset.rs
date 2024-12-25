@@ -29,7 +29,7 @@ use crate::{
     },
     symbol::{
         table::{self, representation::Index},
-        GenericID, GlobalID, LifetimeParameterID,
+        CallableID, GenericID, GlobalID, LifetimeParameterID,
     },
     transitive_closure::TransitiveClosure,
     type_system::{
@@ -38,11 +38,11 @@ use crate::{
         instantiation::{self, Instantiation},
         normalizer::Normalizer,
         observer::Observer,
-        predicate::{Outlives, Predicate},
+        predicate::{self, Outlives, PositiveTrait, Predicate},
         term::{r#type::Type, Term},
         variance::Variance,
         visitor::RecursiveIterator,
-        LifetimeConstraint, Succeeded,
+        well_formedness, LifetimeConstraint, Succeeded,
     },
 };
 
@@ -61,7 +61,7 @@ pub enum RegionPoint {
 
 impl RegionPoint {
     /// Gets the block id where the region is considered.
-    pub fn block_id(&self) -> ID<Block<BorrowModel>> {
+    pub const fn block_id(&self) -> ID<Block<BorrowModel>> {
         match self {
             Self::InBlock(point) => point.block_id,
             Self::EnteringBlock(block_id) => *block_id,
@@ -111,7 +111,7 @@ pub struct LocalRegionAt {
 }
 
 impl RegionAt {
-    pub fn new_location_sensitive(
+    pub const fn new_location_sensitive(
         local_region: Region,
         point: RegionPoint,
     ) -> Self {
@@ -125,11 +125,13 @@ impl RegionAt {
         }
     }
 
-    pub fn new_location_insensitive(local_region: ID<LocalRegion>) -> Self {
+    pub const fn new_location_insensitive(
+        local_region: ID<LocalRegion>,
+    ) -> Self {
         Self::Local(LocalRegionAt { local_region, point: None })
     }
 
-    pub fn into_region(&self) -> Region {
+    pub const fn to_region(self) -> Region {
         match self {
             Self::Universal(region) => Region::Universal(region.region),
             Self::Local(local_region_at) => {
@@ -138,7 +140,7 @@ impl RegionAt {
         }
     }
 
-    pub fn region_point(&self) -> Option<&RegionPoint> {
+    pub const fn region_point(&self) -> Option<&RegionPoint> {
         match self {
             Self::Universal(region) => Some(&region.point),
             Self::Local(local_region) => local_region.point.as_ref(),
@@ -170,28 +172,31 @@ impl RegionChangeLog {
 
         updated_points
             .binary_search_by(|x| x.cmp(&point.instruction_index))
-            .map(|x| {
-                RegionPoint::InBlock(Point {
-                    block_id: point.block_id,
-                    instruction_index: updated_points[x],
-                })
-            })
-            .unwrap_or_else(|x| {
-                if x == 0 {
-                    RegionPoint::EnteringBlock(point.block_id)
-                } else {
+            .map_or_else(
+                |err| {
+                    if err == 0 {
+                        RegionPoint::EnteringBlock(point.block_id)
+                    } else {
+                        RegionPoint::InBlock(Point {
+                            block_id: point.block_id,
+                            instruction_index: updated_points[err - 1],
+                        })
+                    }
+                },
+                |ok| {
                     RegionPoint::InBlock(Point {
                         block_id: point.block_id,
-                        instruction_index: updated_points[x - 1],
+                        instruction_index: updated_points[ok],
                     })
-                }
-            })
+                },
+            )
     }
 }
 
 /// Contains the direct subset relations between regions. It's the result of
 /// the subset analysis with no optimization.
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
+#[allow(clippy::type_complexity)]
 pub struct Intermediate {
     /// The accumulated subset relations between regions since the beginning
     /// of the control flow graph.
@@ -258,7 +263,7 @@ impl<
             register_infos: self.register_infos,
             region_variances: self.region_variances,
 
-            current_site: self.current_site.clone(),
+            current_site: self.current_site,
             latest_change_points_by_region: self
                 .latest_change_points_by_region
                 .clone(),
@@ -293,6 +298,7 @@ pub struct Changes {
 }
 
 impl Values<BorrowModel> {
+    #[allow(clippy::too_many_lines)]
     pub(super) fn get_changes_of_struct<S: table::State>(
         &self,
         struct_lit: &Struct<BorrowModel>,
@@ -425,7 +431,7 @@ impl Values<BorrowModel> {
                     let x = x.into_lifetime_outlives().ok()?;
 
                     let from = Region::try_from(x.operand.clone()).ok()?;
-                    let to = Region::try_from(x.bound.clone()).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
 
                     Some((from, to, span.clone()))
                 })
@@ -507,7 +513,7 @@ impl Values<BorrowModel> {
                     let x = x.into_lifetime_outlives().ok()?;
 
                     let from = Region::try_from(x.operand.clone()).ok()?;
-                    let to = Region::try_from(x.bound.clone()).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
 
                     Some((from, to, span.clone()))
                 })
@@ -583,7 +589,7 @@ impl Values<BorrowModel> {
                     let x = x.into_lifetime_outlives().ok()?;
 
                     let from = Region::try_from(x.operand.clone()).ok()?;
-                    let to = Region::try_from(x.bound.clone()).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
 
                     Some((from, to, span.clone()))
                 })
@@ -593,6 +599,7 @@ impl Values<BorrowModel> {
         })
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(super) fn get_changes_of_variant<S: table::State>(
         &self,
         variant: &Variant<BorrowModel>,
@@ -719,7 +726,7 @@ impl Values<BorrowModel> {
                     let x = x.into_lifetime_outlives().ok()?;
 
                     let from = Region::try_from(x.operand.clone()).ok()?;
-                    let to = Region::try_from(x.bound.clone()).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
 
                     Some((from, to, span.clone()))
                 })
@@ -729,6 +736,7 @@ impl Values<BorrowModel> {
         })
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(super) fn get_changes_of_function_call<S: table::State>(
         &self,
         function_call: &FunctionCall<BorrowModel>,
@@ -813,50 +821,88 @@ impl Values<BorrowModel> {
             }
         }
 
-        for predicate in environment
-            .table()
-            .get_active_premise(function_call.callable_id.into())
-            .unwrap()
-            .predicates
-            .into_iter()
-            .map(|x| {
-                let mut x = Predicate::from_default_model(x);
-                x.instantiate(&function_call.instantiation);
+        let mut well_formedness_constraints = well_formedness::check(
+            function_call.callable_id.into(),
+            &function_call.instantiation,
+            false,
+            environment,
+        )
+        .0;
 
-                x
-            })
-        {
-            match predicate {
-                Predicate::LifetimeOutlives(outlives) => {
-                    lifetime_constraints.insert(
-                        LifetimeConstraint::LifetimeOutlives(outlives.clone()),
-                    );
-                }
-                Predicate::TypeOutlives(outlives) => {
-                    for lt in RecursiveIterator::new(&outlives.operand)
-                        .filter_map(|x| x.0.into_lifetime().ok())
-                    {
-                        lifetime_constraints.insert(
-                            LifetimeConstraint::LifetimeOutlives(Outlives {
-                                operand: lt.clone(),
-                                bound: outlives.bound.clone(),
-                            }),
-                        );
+        match function_call.callable_id {
+            CallableID::Function(_) => {}
+            CallableID::TraitFunction(id) => {
+                // parent trait requirement
+                let parent_trait_id =
+                    environment.table().get(id).unwrap().parent_id();
+
+                let trait_arguments = function_call
+                    .instantiation
+                    .create_generic_arguments(
+                        parent_trait_id.into(),
+                        &environment
+                            .table()
+                            .get(parent_trait_id)
+                            .unwrap()
+                            .generic_declaration
+                            .parameters,
+                    )
+                    .unwrap();
+
+                // check extra trait satisfiability
+                well_formedness_constraints.extend(
+                    well_formedness::predicate_satisfied(
+                        predicate::Predicate::PositiveTrait(PositiveTrait {
+                            id: parent_trait_id,
+                            is_const: false, /* TODO: reflect the
+                                              * actual value */
+                            generic_arguments: trait_arguments,
+                        }),
+                        None,
+                        false,
+                        environment,
+                    )
+                    .0,
+                );
+            }
+            CallableID::TraitImplementationFunction(_)
+            | CallableID::AdtImplementationFunction(_) => {
+                let parent_implementation_id: GenericID = match function_call
+                    .callable_id
+                {
+                    CallableID::TraitImplementationFunction(id) => {
+                        environment.table().get(id).unwrap().parent_id().into()
                     }
-                }
+                    CallableID::AdtImplementationFunction(id) => {
+                        environment.table().get(id).unwrap().parent_id().into()
+                    }
 
-                _ => {}
+                    CallableID::Function(_) | CallableID::TraitFunction(_) => {
+                        unreachable!()
+                    }
+                };
+
+                well_formedness_constraints.extend(
+                    well_formedness::check(
+                        parent_implementation_id,
+                        &function_call.instantiation,
+                        false,
+                        environment,
+                    )
+                    .0,
+                );
             }
         }
 
         Ok(Changes {
             subset_relations: lifetime_constraints
                 .into_iter()
+                .chain(well_formedness_constraints)
                 .filter_map(|x| {
                     let x = x.into_lifetime_outlives().ok()?;
 
                     let from = Region::try_from(x.operand.clone()).ok()?;
-                    let to = Region::try_from(x.bound.clone()).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
 
                     Some((from, to, span.clone()))
                 })
@@ -965,13 +1011,13 @@ impl Values<BorrowModel> {
             subset_relations: value_type
                 .constraints
                 .into_iter()
-                .chain(address_constraints.into_iter())
-                .chain(compatibility_constraints.into_iter())
+                .chain(address_constraints)
+                .chain(compatibility_constraints)
                 .filter_map(|x| {
                     let x = x.into_lifetime_outlives().ok()?;
 
                     let from = Region::try_from(x.operand.clone()).ok()?;
-                    let to = Region::try_from(x.bound.clone()).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
 
                     Some((from, to, span.clone()))
                 })
@@ -1175,6 +1221,7 @@ impl<
     }
 
     /// Returns a list of regions that are removed by the scope pop instruction.
+    #[allow(clippy::too_many_lines)]
     pub fn get_changes(
         &self,
         instruction: &Instruction<BorrowModel>,
@@ -1196,7 +1243,7 @@ impl<
                     .control_flow_graph
                     .blocks()
                     .items()
-                    .flat_map(|x| {
+                    .filter_map(|x| {
                         x.terminator().as_ref().and_then(|x| x.as_return())
                     })
                     .find(|x| {
@@ -1288,8 +1335,7 @@ impl<
 
                                 let from =
                                     Region::try_from(x.operand.clone()).ok()?;
-                                let to =
-                                    Region::try_from(x.bound.clone()).ok()?;
+                                let to = Region::try_from(x.bound).ok()?;
 
                                 Some((from, to, return_inst.span.clone()))
                             })
@@ -1372,7 +1418,6 @@ impl<
                     overwritten_regions: changes.overwritten_regions,
                 })
             }
-            Instruction::RegisterDiscard(_) => Ok(Changes::default()),
             Instruction::TuplePack(tuple_pack) => {
                 let tuple_ty = self
                     .representation
@@ -1403,10 +1448,11 @@ impl<
                     self.environment,
                 )
             }
-            Instruction::ScopePush(_) => Ok(Changes::default()),
-            Instruction::ScopePop(_) => Ok(Changes::default()),
-            Instruction::DropUnpackTuple(_) => Ok(Changes::default()),
-            Instruction::Drop(_) => Ok(Changes::default()),
+            Instruction::RegisterDiscard(_)
+            | Instruction::ScopePush(_)
+            | Instruction::ScopePop(_)
+            | Instruction::DropUnpackTuple(_)
+            | Instruction::Drop(_) => Ok(Changes::default()),
         }
     }
 }
@@ -1452,6 +1498,7 @@ impl<
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn handle_chages(
         &mut self,
         changes: Changes,
@@ -1472,9 +1519,9 @@ impl<
         // add subset relations
         for (from, to, span) in changes.subset_relations {
             let latest_from =
-                self.latest_change_points_by_region.get(&from).cloned();
+                self.latest_change_points_by_region.get(&from).copied();
             let latest_to =
-                self.latest_change_points_by_region.get(&to).cloned();
+                self.latest_change_points_by_region.get(&to).copied();
 
             let from_region_at = match from {
                 Region::Universal(universal_region) => {
@@ -1519,11 +1566,11 @@ impl<
                     if let (false, Some(latest_updated_inst_index)) = (
                         changes
                             .overwritten_regions
-                            .contains(&region_at.into_region()),
+                            .contains(&region_at.to_region()),
                         lastest_region_update,
                     ) {
                         let flow_from = RegionAt::new_location_sensitive(
-                            region_at.into_region(),
+                            region_at.to_region(),
                             latest_updated_inst_index.map_or_else(
                                 || {
                                     RegionPoint::EnteringBlock(
@@ -1544,8 +1591,8 @@ impl<
                         // flows state to current
                         match self
                             .region_variances
-                            .get(&region_at.into_region())
-                            .cloned()
+                            .get(&region_at.to_region())
+                            .copied()
                             .unwrap_or(Variance::Covariant)
                         {
                             Variance::Covariant => {
@@ -1650,6 +1697,7 @@ impl<
         O: Observer<BorrowModel, S>,
     > Context<'a, S, N, O>
 {
+    #[allow(clippy::too_many_lines)]
     pub fn walk_block(
         &mut self,
         block_id: ID<Block<BorrowModel>>,
@@ -1820,7 +1868,7 @@ impl<
                     match self
                         .region_variances
                         .get(&region)
-                        .cloned()
+                        .copied()
                         .unwrap_or(Variance::Covariant)
                     {
                         Variance::Covariant => {
@@ -1908,7 +1956,7 @@ impl<
                 match self
                     .region_variances
                     .get(region)
-                    .cloned()
+                    .copied()
                     .unwrap_or(Variance::Covariant)
                 {
                     Variance::Covariant => {
@@ -1955,6 +2003,7 @@ impl<
 /// The final result of the subset analysis. It allows querying the subset
 /// relation between regions at any given point in the control flow graph.
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
+#[allow(clippy::type_complexity)]
 pub struct Subset {
     indices_by_region_at: HashMap<RegionAt, usize>,
     region_ats_by_index: Vec<RegionAt>,
@@ -1985,7 +2034,7 @@ impl Subset {
         &self,
         mut to_region_at: RegionAt,
     ) -> HashSet<UniversalRegion> {
-        let to_region = to_region_at.into_region();
+        let to_region = to_region_at.to_region();
         let region_point = match &mut to_region_at {
             RegionAt::Universal(universal) => Some(&mut universal.point),
             RegionAt::Local(region) => region.point.as_mut(),
@@ -2047,9 +2096,7 @@ impl Subset {
             })
             .chain(
                 // then check active regions that require location sensitivity
-                self.active_region_sets_by_block_id
-                    .get(&block_id)
-                    .unwrap_or_else(|| panic!("{:?} {self:?}", block_id))
+                self.active_region_sets_by_block_id[&block_id]
                     .iter()
                     .copied()
                     .filter_map(|x| {
@@ -2073,6 +2120,7 @@ impl Subset {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn analyze<
     S: table::State,
     N: Normalizer<BorrowModel, S>,
@@ -2135,12 +2183,12 @@ pub fn analyze<
             active_region_sets_by_block_id
                 .entry(region_point.block_id())
                 .or_default()
-                .insert(region_at.into_region());
+                .insert(region_at.to_region());
 
             match region_point {
                 RegionPoint::InBlock(point) => {
                     change_logs_by_region
-                        .entry(region_at.into_region())
+                        .entry(region_at.to_region())
                         .or_default()
                         .updated_at_instruction_indices
                         .entry(point.block_id)
@@ -2149,7 +2197,7 @@ pub fn analyze<
                 }
                 RegionPoint::EnteringBlock(id) => {
                     change_logs_by_region
-                        .entry(region_at.into_region())
+                        .entry(region_at.to_region())
                         .or_default()
                         .updated_at_instruction_indices
                         .entry(*id)

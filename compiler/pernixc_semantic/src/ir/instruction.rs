@@ -395,7 +395,8 @@ pub enum AccessMode {
 
 impl AccessMode {
     /// Gets the span where the access is made.
-    pub fn span(&self) -> &Span {
+    #[must_use]
+    pub const fn span(&self) -> &Span {
         match self {
             Self::Read(read) => &read.span,
             Self::Write(span) => span,
@@ -403,6 +404,7 @@ impl AccessMode {
     }
 
     /// Converts the access mode to a span.
+    #[must_use]
     pub fn into_span(self) -> Span {
         match self {
             Self::Read(read) => read.span,

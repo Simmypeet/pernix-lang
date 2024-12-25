@@ -118,9 +118,7 @@ impl<
             &self.type_system_observer,
         );
 
-        // perform the well-formedness check
         transformed_ir.check(self.current_site, &environment, &handler_wrapper);
-
         transformed_ir.memory_check(
             self.current_site,
             &environment,

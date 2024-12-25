@@ -252,10 +252,8 @@ impl<M: model::Model> TryFrom<Lifetime<M>> for UniversalRegion {
 impl<M: model::Model> From<UniversalRegion> for Lifetime<M> {
     fn from(value: UniversalRegion) -> Self {
         match value {
-            UniversalRegion::Static => Lifetime::Static,
-            UniversalRegion::LifetimeParameter(id) => {
-                Lifetime::Parameter(id.into())
-            }
+            UniversalRegion::Static => Self::Static,
+            UniversalRegion::LifetimeParameter(id) => Self::Parameter(id),
         }
     }
 }

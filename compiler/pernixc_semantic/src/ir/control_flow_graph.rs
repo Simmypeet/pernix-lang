@@ -33,6 +33,7 @@ pub struct Reachability<M: Model> {
 
 impl<M: Model> Reachability<M> {
     /// Checks if there is a path from the `from` block to the `to` block.
+    #[must_use]
     pub fn block_reachable(
         &self,
         from: ID<Block<M>>,
@@ -49,6 +50,7 @@ impl<M: Model> Reachability<M> {
     /// The interpretation of reachable is that the exit of `from` point is
     /// reachable to the entry of `to` point; therefore, the same point is
     /// not reachable to each other unless the block is in the loop.
+    #[must_use]
     pub fn point_reachable(
         &self,
         from: Point<M>,
@@ -322,6 +324,7 @@ impl<M: Model> ControlFlowGraph<M> {
 
     /// Creates a [`Reachability`], used for efficiently determining the
     /// reachability of particular blocks.
+    #[must_use]
     pub fn reachability(&self) -> Reachability<M> {
         let mut block_ids_to_index = HashMap::new();
         let mut index_to_block_ids = Vec::new();
@@ -357,10 +360,10 @@ impl<M: Model> ControlFlowGraph<M> {
                     ));
                 }
                 Jump::Select(select) => {
-                    for target in select.branches.values().copied() {
+                    for target in select.branches.values() {
                         edges.push((
                             block_ids_to_index[&block_id],
-                            block_ids_to_index[&target],
+                            block_ids_to_index[target],
                         ));
                     }
 

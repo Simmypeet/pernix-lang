@@ -13,11 +13,12 @@ use super::{
     normalizer::Normalizer,
     observer::Observer,
     predicate::{
-        self, NegativeMarkerSatisfied, NegativeTraitSatisfied,
+        self, NegativeMarkerSatisfied, NegativeTraitSatisfied, Outlives,
         PositiveMarkerSatisfied, PositiveTraitSatisfied, Predicate,
     },
     term::{r#type::Type, GenericArguments},
     variance::Variance,
+    visitor::RecursiveIterator,
     Compute, LifetimeConstraint, OverflowError, Satisfied, Succeeded,
 };
 use crate::symbol::{table, GenericID, ResolvableImplementationID};
@@ -65,7 +66,6 @@ pub enum Error<M: Model> {
     Unsatisfied(Unsatisfied<M>),
     Undecidable(Undecidable<M>),
     ImplementationIsNotGeneralEnough(ImplementationIsNotGeneralEnough<M>),
-    LifetimeConstraints(BTreeSet<LifetimeConstraint<M>>),
 }
 
 /// Checks the where clause predicate requirements declared in the given
@@ -78,7 +78,7 @@ pub fn check<M: Model, T: table::State>(
     instantiation: &instantiation::Instantiation<M>,
     do_outlives_check: bool,
     environment: &Environment<M, T, impl Normalizer<M, T>, impl Observer<M, T>>,
-) -> Vec<Error<M>> {
+) -> (BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>) {
     let predicates = environment
         .table()
         .get_generic(generic_id)
@@ -96,18 +96,22 @@ pub fn check<M: Model, T: table::State>(
         })
         .collect::<Vec<_>>();
 
+    let mut lifetime_constraints = BTreeSet::new();
     let mut errors = Vec::new();
 
     for (predicate, span) in predicates {
-        errors.extend(predicate_satisfied(
+        let (new_lifetime_constraints, new_erros) = predicate_satisfied(
             predicate,
             span,
             do_outlives_check,
             environment,
-        ));
+        );
+
+        lifetime_constraints.extend(new_lifetime_constraints);
+        errors.extend(new_erros);
     }
 
-    errors
+    (lifetime_constraints, errors)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -119,7 +123,8 @@ fn check_implementation_satisfied<M: Model, T: table::State>(
     do_outlives_check: bool,
     is_not_general_enough: bool,
     environment: &Environment<M, T, impl Normalizer<M, T>, impl Observer<M, T>>,
-) -> Vec<Error<M>> {
+) -> (BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>) {
+    let mut lifetime_constraints = BTreeSet::new();
     let mut errors = Vec::new();
 
     if is_not_general_enough {
@@ -151,15 +156,18 @@ fn check_implementation_satisfied<M: Model, T: table::State>(
 
         predicate_instantiated.instantiate(instantiation);
 
-        errors.extend(predicate_satisfied(
+        let (new_lifetime_constraints, new_erros) = predicate_satisfied(
             predicate_instantiated,
             predicate.span,
             do_outlives_check,
             environment,
-        ));
+        );
+
+        lifetime_constraints.extend(new_lifetime_constraints);
+        errors.extend(new_erros);
     }
 
-    errors
+    (lifetime_constraints, errors)
 }
 
 fn handle_positive_marker_satisfied<M: Model, T: table::State>(
@@ -174,8 +182,7 @@ fn handle_positive_marker_satisfied<M: Model, T: table::State>(
         | PositiveMarkerSatisfied::ByEnvironment
         | PositiveMarkerSatisfied::ByCyclic => (BTreeSet::new(), Vec::new()),
 
-        PositiveMarkerSatisfied::ByImplementation(implementation) => (
-            BTreeSet::new(),
+        PositiveMarkerSatisfied::ByImplementation(implementation) => {
             check_implementation_satisfied(
                 implementation.id.into(),
                 &implementation.instantiation,
@@ -184,8 +191,8 @@ fn handle_positive_marker_satisfied<M: Model, T: table::State>(
                 do_outlives_check,
                 implementation.is_not_general_enough,
                 environment,
-            ),
-        ),
+            )
+        }
 
         PositiveMarkerSatisfied::ByCongruence(btree_map) => {
             let mut constraints = BTreeSet::new();
@@ -218,7 +225,7 @@ pub fn predicate_satisfied<M: Model, T: table::State>(
     predicate_declaration_span: Option<Span>,
     do_outlives_check: bool,
     environment: &Environment<M, T, impl Normalizer<M, T>, impl Observer<M, T>>,
-) -> Vec<Error<M>> {
+) -> (BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>) {
     let (result, mut extra_predicate_error) = match &predicate {
         Predicate::TraitTypeEquality(equality) => {
             let result = Type::TraitMember(equality.lhs.clone()).compatible(
@@ -252,43 +259,82 @@ pub fn predicate_satisfied<M: Model, T: table::State>(
         }
         Predicate::LifetimeOutlives(outlives) => {
             if !do_outlives_check {
-                return Vec::new();
-            }
+                (
+                    Ok(Some(Succeeded::satisfied_with(
+                        std::iter::once(LifetimeConstraint::LifetimeOutlives(
+                            outlives.clone(),
+                        ))
+                        .collect(),
+                    ))),
+                    Vec::new(),
+                )
+            } else {
+                match outlives.query(environment) {
+                    Ok(Some(Satisfied)) => {
+                        return (BTreeSet::new(), Vec::new())
+                    }
 
-            return match outlives.query(environment) {
-                Ok(Some(Satisfied)) => Vec::new(),
-
-                Ok(None) => {
-                    vec![Error::Unsatisfied(Unsatisfied {
-                        predicate,
-                        predicate_declaration_span,
-                    })]
+                    Ok(None) => {
+                        return (BTreeSet::new(), vec![Error::Unsatisfied(
+                            Unsatisfied {
+                                predicate,
+                                predicate_declaration_span,
+                            },
+                        )])
+                    }
+                    Err(OverflowError) => {
+                        return (BTreeSet::new(), vec![Error::Undecidable(
+                            Undecidable {
+                                predicate,
+                                predicate_declaration_span,
+                            },
+                        )])
+                    }
                 }
-                Err(OverflowError) => vec![Error::Undecidable(Undecidable {
-                    predicate,
-                    predicate_declaration_span,
-                })],
-            };
+            }
         }
         Predicate::TypeOutlives(outlives) => {
             if !do_outlives_check {
-                return Vec::new();
-            }
+                (
+                    Ok(Some(Succeeded::satisfied_with(
+                        RecursiveIterator::new(&outlives.bound)
+                            .filter_map(|x| x.0.into_lifetime().ok())
+                            .map(|x| {
+                                LifetimeConstraint::LifetimeOutlives(
+                                    Outlives::new(
+                                        x.clone(),
+                                        outlives.bound.clone(),
+                                    ),
+                                )
+                            })
+                            .collect(),
+                    ))),
+                    Vec::new(),
+                )
+            } else {
+                match outlives.query(environment) {
+                    Ok(Some(Satisfied)) => {
+                        return (BTreeSet::new(), Vec::new())
+                    }
 
-            return match outlives.query(environment) {
-                Ok(Some(Satisfied)) => Vec::new(),
-
-                Ok(None) => {
-                    vec![Error::Unsatisfied(Unsatisfied {
-                        predicate,
-                        predicate_declaration_span,
-                    })]
+                    Ok(None) => {
+                        return (BTreeSet::new(), vec![Error::Unsatisfied(
+                            Unsatisfied {
+                                predicate,
+                                predicate_declaration_span,
+                            },
+                        )])
+                    }
+                    Err(OverflowError) => {
+                        return (BTreeSet::new(), vec![Error::Undecidable(
+                            Undecidable {
+                                predicate,
+                                predicate_declaration_span,
+                            },
+                        )])
+                    }
                 }
-                Err(OverflowError) => vec![Error::Undecidable(Undecidable {
-                    predicate,
-                    predicate_declaration_span,
-                })],
-            };
+            }
         }
         Predicate::TupleType(tuple) => (tuple.query(environment), Vec::new()),
         Predicate::PositiveTrait(positive) => match positive.query(environment)
@@ -302,18 +348,24 @@ pub fn predicate_satisfied<M: Model, T: table::State>(
                     Vec::new(),
                 ),
 
-                PositiveTraitSatisfied::ByImplementation(implementation) => (
-                    Ok(Some(Succeeded::satisfied_with(constraints))),
-                    check_implementation_satisfied(
-                        implementation.id.into(),
-                        &implementation.instantiation,
-                        &positive.generic_arguments,
-                        predicate_declaration_span.clone(),
-                        do_outlives_check,
-                        implementation.is_not_general_enough,
-                        environment,
-                    ),
-                ),
+                PositiveTraitSatisfied::ByImplementation(implementation) => {
+                    let (mut lt_constraints, errors) =
+                        check_implementation_satisfied(
+                            implementation.id.into(),
+                            &implementation.instantiation,
+                            &positive.generic_arguments,
+                            predicate_declaration_span.clone(),
+                            do_outlives_check,
+                            implementation.is_not_general_enough,
+                            environment,
+                        );
+                    lt_constraints.extend(constraints);
+
+                    (
+                        Ok(Some(Succeeded::satisfied_with(lt_constraints))),
+                        errors,
+                    )
+                }
             },
             Err(OverflowError) => (Err(OverflowError), Vec::new()),
         },
@@ -327,18 +379,24 @@ pub fn predicate_satisfied<M: Model, T: table::State>(
                     Vec::new(),
                 ),
 
-                NegativeTraitSatisfied::ByImplementation(implementation) => (
-                    Ok(Some(Succeeded::satisfied_with(constraints))),
-                    check_implementation_satisfied(
-                        implementation.id.into(),
-                        &implementation.instantiation,
-                        &negative.generic_arguments,
-                        predicate_declaration_span.clone(),
-                        do_outlives_check,
-                        implementation.is_not_general_enough,
-                        environment,
-                    ),
-                ),
+                NegativeTraitSatisfied::ByImplementation(implementation) => {
+                    let (mut lt_constraints, errors) =
+                        check_implementation_satisfied(
+                            implementation.id.into(),
+                            &implementation.instantiation,
+                            &negative.generic_arguments,
+                            predicate_declaration_span.clone(),
+                            do_outlives_check,
+                            implementation.is_not_general_enough,
+                            environment,
+                        );
+                    lt_constraints.extend(constraints);
+
+                    (
+                        Ok(Some(Succeeded::satisfied_with(lt_constraints))),
+                        errors,
+                    )
+                }
             },
             Err(OverflowError) => (Err(OverflowError), Vec::new()),
         },
@@ -378,18 +436,24 @@ pub fn predicate_satisfied<M: Model, T: table::State>(
 
                     NegativeMarkerSatisfied::ByImplementation(
                         implementation,
-                    ) => (
-                        Ok(Some(Succeeded::satisfied_with(constraints))),
-                        check_implementation_satisfied(
-                            implementation.id.into(),
-                            &implementation.instantiation,
-                            &negative.generic_arguments,
-                            predicate_declaration_span.clone(),
-                            do_outlives_check,
-                            implementation.is_not_general_enough,
-                            environment,
-                        ),
-                    ),
+                    ) => {
+                        let (mut lt_constraints, errors) =
+                            check_implementation_satisfied(
+                                implementation.id.into(),
+                                &implementation.instantiation,
+                                &negative.generic_arguments,
+                                predicate_declaration_span.clone(),
+                                do_outlives_check,
+                                implementation.is_not_general_enough,
+                                environment,
+                            );
+                        lt_constraints.extend(constraints);
+
+                        (
+                            Ok(Some(Succeeded::satisfied_with(lt_constraints))),
+                            errors,
+                        )
+                    }
                 },
                 Ok(None) => (Ok(None), Vec::new()),
                 Err(OverflowError) => (Err(OverflowError), Vec::new()),
@@ -401,10 +465,7 @@ pub fn predicate_satisfied<M: Model, T: table::State>(
         Ok(Some(Succeeded { result: Satisfied, constraints })) => {
             // if do_outlives_check is false, then we don't need to check
             if !do_outlives_check {
-                extra_predicate_error
-                    .push(Error::LifetimeConstraints(constraints));
-
-                return extra_predicate_error;
+                return (constraints, extra_predicate_error);
             }
 
             for constraint in constraints {
@@ -440,7 +501,7 @@ pub fn predicate_satisfied<M: Model, T: table::State>(
                 }
             }
 
-            extra_predicate_error
+            (BTreeSet::new(), extra_predicate_error)
         }
 
         Ok(None) => {
@@ -449,7 +510,7 @@ pub fn predicate_satisfied<M: Model, T: table::State>(
                 predicate_declaration_span,
             }));
 
-            extra_predicate_error
+            (BTreeSet::new(), extra_predicate_error)
         }
 
         Err(OverflowError) => {
@@ -458,7 +519,7 @@ pub fn predicate_satisfied<M: Model, T: table::State>(
                 predicate_declaration_span,
             }));
 
-            extra_predicate_error
+            (BTreeSet::new(), extra_predicate_error)
         }
     }
 }

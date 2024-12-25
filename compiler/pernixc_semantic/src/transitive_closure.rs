@@ -16,6 +16,7 @@ pub struct BitSet {
 
 impl BitSet {
     /// Creates a new dynamic bitset with the given size.
+    #[must_use]
     pub fn new(size: usize) -> Self {
         let bits = vec![Cell::new(0); (size + 63) / 64];
         Self { bits, size }
@@ -76,6 +77,7 @@ impl BitSet {
     ///
     /// Returns `None` if the index is out of bounds, otherwise returns `Some`
     /// with the value of the bit.
+    #[must_use]
     pub fn get(&self, index: usize) -> Option<bool> {
         if index >= self.size {
             return None;
@@ -132,6 +134,7 @@ impl BitSet {
 
     /// Checks if any bit is set to 1
     #[allow(unused)]
+    #[must_use]
     pub fn is_not_zero(&self) -> bool {
         self.bits.iter().any(|word| word.get() != 0)
     }
@@ -157,6 +160,7 @@ pub struct TransitiveClosure {
 impl TransitiveClosure {
     /// Creates a new transitive closure matrix from a list of edges and the
     /// size of the matrix.
+    #[allow(clippy::needless_range_loop, clippy::needless_pass_by_value)]
     #[must_use]
     pub fn new(
         edges: impl IntoIterator<Item = (usize, usize)> + Clone,
@@ -190,7 +194,7 @@ impl TransitiveClosure {
     /// index.
     #[must_use]
     pub fn has_path(&self, from: usize, to: usize) -> Option<bool> {
-        Some(self.closure.get(from)?.get(to)?)
+        self.closure.get(from)?.get(to)
     }
 
     /// Returns an iterator over the vertices reachable from the given vertex

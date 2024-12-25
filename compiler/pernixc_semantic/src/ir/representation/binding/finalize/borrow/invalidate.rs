@@ -132,7 +132,7 @@ impl<
         O: Observer<BorrowModel, S>,
     > Checker<'a, S, N, O>
 {
-    pub fn new(
+    pub const fn new(
         representation: &'a Representation<BorrowModel>,
         environment: &'a Environment<'a, BorrowModel, S, N, O>,
         reachability: &'a Reachability<BorrowModel>,
@@ -145,10 +145,10 @@ impl<
             representation,
             environment,
             reachability,
+            region_variances,
             register_infos,
             current_site,
             subset,
-            region_variances,
         }
     }
 
@@ -307,7 +307,7 @@ impl<
                         borrow_span: borrow_register.span.clone(),
                         usage: borrow_usage,
                         moved_out_span: moved_span.clone(),
-                    }))
+                    }));
                 },
             )?;
         }
@@ -382,7 +382,7 @@ impl<
                         variable_span: span.clone(),
                         borrow_span: borrow_register.span.clone(),
                         usage: borrow_usage,
-                    }))
+                    }));
                 },
             )?;
         }
@@ -395,7 +395,7 @@ impl<
     pub fn handle_access(
         &self,
         address: &Address<BorrowModel>,
-        access_mode: AccessMode,
+        access_mode: &AccessMode,
         access_point: Point<BorrowModel>,
         handler: &HandlerWrapper,
     ) -> Result<(), TypeSystemOverflow<ir::Model>> {

@@ -102,6 +102,7 @@ pub struct RegionVariances(HashMap<Region, Variance>);
 impl RegionVariances {
     /// Create a new region variance cache for all regions appearing in the
     /// allocas and parameters in IR.
+    #[allow(clippy::uninhabited_references)]
     pub fn new<S: table::State>(
         ir: &Representation<BorrowModel>,
         current_site: GlobalID,

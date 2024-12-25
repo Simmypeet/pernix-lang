@@ -54,7 +54,7 @@ impl<
             .unwrap();
         self.handle_access(
             &load.address,
-            AccessMode::Read(Read {
+            &AccessMode::Read(Read {
                 qualifier: Qualifier::Immutable,
                 span: register_span.clone(),
             }),
@@ -92,8 +92,8 @@ impl<
                     false,
                     self.environment(),
                 )
-                .iter()
-                .all(well_formedness::Error::is_lifetime_constraints)
+                .1
+                .is_empty()
                 {
                     break 'out;
                 }
@@ -171,6 +171,7 @@ impl<
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn invalidate_check(
         &self,
         handler: &HandlerWrapper,
@@ -188,7 +189,7 @@ impl<
             match inst {
                 Instruction::Store(store) => self.handle_access(
                     &store.address,
-                    AccessMode::Write(store.span.clone()),
+                    &AccessMode::Write(store.span.clone()),
                     point,
                     handler,
                 )?,
@@ -210,7 +211,7 @@ impl<
                         Assignment::Borrow(borrow) => {
                             self.handle_access(
                                 &borrow.address,
-                                AccessMode::Read(Read {
+                                &AccessMode::Read(Read {
                                     qualifier: borrow.qualifier,
                                     span: register.span.clone(),
                                 }),
@@ -239,7 +240,7 @@ impl<
                             ),
                             offset: Offset::Unpacked,
                         }),
-                        AccessMode::Read(Read {
+                        &AccessMode::Read(Read {
                             qualifier: Qualifier::Immutable,
                             span: tuple_pack.packed_tuple_span.clone(),
                         }),
@@ -249,7 +250,9 @@ impl<
 
                     self.handle_access(
                         &tuple_pack.store_address,
-                        AccessMode::Write(tuple_pack.packed_tuple_span.clone()),
+                        &AccessMode::Write(
+                            tuple_pack.packed_tuple_span.clone(),
+                        ),
                         point,
                         handler,
                     )?;
@@ -306,6 +309,7 @@ impl<
 
 impl Representation<BorrowModel> {
     /// The pass where the error checking is done.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn borrow_check_internal<S: table::State>(
         &self,
         subset: &Subset,

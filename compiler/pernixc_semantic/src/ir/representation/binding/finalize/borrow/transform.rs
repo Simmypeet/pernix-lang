@@ -349,8 +349,8 @@ pub(super) fn transform_to_borrow_model(
     let mut transformer =
         ToBorrowTransformer { generator: LocalRegionGenerator::new() };
 
-    let mut transformed = ir.transform_model(&mut transformer, table).unwrap();
-    transformed.replace_with_fresh_lifetimes(&mut transformer.generator);
+    let mut transformed_ir = ir.transform_model(&mut transformer, table).unwrap();
+    transformed_ir.replace_with_fresh_lifetimes(&mut transformer.generator);
 
-    (transformed, transformer.generator)
+    (transformed_ir, transformer.generator)
 }

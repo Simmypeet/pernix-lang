@@ -2054,3 +2054,59 @@ fn return_invalidated_universal_regions_2() {
         by_universal_region.contains(&UniversalRegion::LifetimeParameter(b_lt))
     );
 }
+
+const UNIVERSAL_REGIONS_THROUGH_TRAIT_PREDICATES: &str = r#"
+public trait Fizz['a, T, U] {
+    public function doSomething['b](self: &'b T, t: &'a mutable U)
+    where
+        T: 'b,
+        U: 'a;
+}
+
+public function test['a, 'b, T, U](t: &'b T, u: &'a mutable U) 
+where
+    trait Fizz['a, T, U],
+	T: 'b,
+	U: 'a
+{
+    t->doSomething(&mutable *u);
+    t->doSomething(&mutable *u);
+}
+
+"#;
+
+#[test]
+fn universal_regions_through_trait_predicates() {
+    let (table, errs) =
+        build_table(UNIVERSAL_REGIONS_THROUGH_TRAIT_PREDICATES).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let a_lt = table
+        .resolve_lifetime::<ir::Model>(
+            &parse("'a"),
+            table.get_by_qualified_name(["test", "test"]).unwrap(),
+            Config::default(),
+            &Panic,
+        )
+        .unwrap()
+        .into_parameter()
+        .unwrap();
+
+    let error =
+        errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
+
+    assert_eq!(
+        error.mutable_borrow_span.as_ref().map(|x| x.str()),
+        Some("&mutable *u")
+    );
+
+    assert_eq!(error.access_span.str(), "&mutable *u");
+
+    let by_universal_region =
+        error.borrow_usage.as_by_universal_regions().unwrap();
+
+    assert_eq!(by_universal_region, &[UniversalRegion::LifetimeParameter(
+        a_lt
+    ),]);
+}

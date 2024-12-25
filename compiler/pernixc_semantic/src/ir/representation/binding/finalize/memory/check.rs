@@ -128,8 +128,8 @@ impl Values<ir::Model> {
                     false,
                     ty_environment,
                 )
-                .iter()
-                .all(well_formedness::Error::is_lifetime_constraints)
+                .1
+                .is_empty()
                 {
                     break 'memory_state stack
                         .get_state(&load.address)

@@ -167,11 +167,9 @@ impl Values<BorrowModel> {
                     }
                 }
             }
-
-            Ok(regions)
-        } else {
-            Ok(regions)
         }
+
+        Ok(regions)
     }
 }
 

@@ -135,7 +135,7 @@ pub enum Address<M: Model> {
 
 impl<M: Model> Address<M> {
     /// Gets the number of dereference operations found in the address.
-    pub fn get_dereference_count(mut self: &Self) -> usize {
+    pub const fn get_dereference_count(mut self: &Self) -> usize {
         let mut count = 0;
 
         loop {

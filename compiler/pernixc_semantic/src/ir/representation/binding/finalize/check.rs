@@ -77,8 +77,6 @@ fn report_error(
                 },
             ));
         }
-        // no lifetime check occurs here, we'll do it in borrow checking stage
-        well_formedness::Error::LifetimeConstraints(_) => {}
     }
 }
 
@@ -118,7 +116,9 @@ impl Representation<ir::Model> {
                     &instantiation,
                     false,
                     environment,
-                ) {
+                )
+                .1
+                {
                     report_error(error, register.span.clone(), handler);
                 }
             }
@@ -146,7 +146,9 @@ impl Representation<ir::Model> {
                     &instantiation,
                     false,
                     environment,
-                ) {
+                )
+                .1
+                {
                     report_error(error, register.span.clone(), handler);
                 }
             }
@@ -158,7 +160,9 @@ impl Representation<ir::Model> {
                             &function_call.instantiation,
                             false,
                             environment,
-                        ) {
+                        )
+                        .1
+                        {
                             report_error(error, register.span.clone(), handler);
                         }
                     }
@@ -194,13 +198,17 @@ impl Representation<ir::Model> {
                             None,
                             false,
                             environment,
+                        )
+                        .1;
+                        errors.extend(
+                            well_formedness::check(
+                                id.into(),
+                                &function_call.instantiation,
+                                false,
+                                environment,
+                            )
+                            .1,
                         );
-                        errors.extend(well_formedness::check(
-                            id.into(),
-                            &function_call.instantiation,
-                            false,
-                            environment,
-                        ));
 
                         for error in errors {
                             report_error(error, register.span.clone(), handler);
@@ -239,14 +247,18 @@ impl Representation<ir::Model> {
                             &function_call.instantiation,
                             false,
                             environment,
-                        );
+                        )
+                        .1;
 
-                        errors.extend(well_formedness::check(
-                            function_call.callable_id.into(),
-                            &function_call.instantiation,
-                            false,
-                            environment,
-                        ));
+                        errors.extend(
+                            well_formedness::check(
+                                function_call.callable_id.into(),
+                                &function_call.instantiation,
+                                false,
+                                environment,
+                            )
+                            .1,
+                        );
 
                         for error in errors {
                             report_error(error, register.span.clone(), handler);
@@ -291,7 +303,8 @@ impl Representation<ir::Model> {
                         None,
                         false,
                         environment,
-                    );
+                    )
+                    .1;
 
                     for error in errors {
                         report_error(error, register.span.clone(), handler);
@@ -318,7 +331,8 @@ impl Representation<ir::Model> {
                         None,
                         false,
                         environment,
-                    );
+                    )
+                    .1;
 
                     for error in errors {
                         report_error(
