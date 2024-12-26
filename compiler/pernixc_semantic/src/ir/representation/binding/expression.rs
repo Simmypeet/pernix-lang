@@ -533,7 +533,30 @@ impl<
             syntax_tree::expression::Expression::Terminator(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Expression::Brace(syn) => {
+        }
+    }
+}
+
+impl<
+        't,
+        S: table::State,
+        RO: resolution::Observer<S, infer::Model>,
+        TO: type_system::observer::Observer<infer::Model, S>
+            + type_system::observer::Observer<ir::Model, S>
+            + type_system::observer::Observer<borrow::Model, S>,
+    > Bind<&syntax_tree::expression::BinaryNode> for Binder<'t, S, RO, TO>
+{
+    fn bind(
+        &mut self,
+        syntax_tree: &syntax_tree::expression::BinaryNode,
+        config: Config,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Expression, Error> {
+        match syntax_tree {
+            syntax_tree::expression::BinaryNode::Prefixable(syn) => {
+                self.bind(syn, config, handler)
+            }
+            syntax_tree::expression::BinaryNode::Brace(syn) => {
                 self.bind(syn, config, handler)
             }
         }

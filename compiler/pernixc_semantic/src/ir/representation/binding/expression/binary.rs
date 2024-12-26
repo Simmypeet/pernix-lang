@@ -61,7 +61,7 @@ impl<
 
 enum BinaryNode<'a> {
     Binary(Box<BinaryTree<'a>>),
-    Expression(&'a syntax_tree::expression::Prefixable),
+    Expression(&'a syntax_tree::expression::BinaryNode),
 }
 
 impl SourceElement for BinaryNode<'_> {

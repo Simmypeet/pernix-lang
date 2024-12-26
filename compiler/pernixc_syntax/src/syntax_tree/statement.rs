@@ -15,7 +15,7 @@ use pernixc_lexical::{
 };
 
 use super::{
-    expression::{Binary, Brace, Expression, Terminator},
+    expression::{Brace, Expression},
     pattern::Irrefutable,
     r#type::Type,
     EnclosedTree, Parse, ParseExt, SyntaxTree,
@@ -58,29 +58,22 @@ impl SyntaxTree for Statement {
                     Expression::parse.parse(state_machine, handler)?;
 
                 match expression {
-                    expression @ (Expression::Binary(_)
-                    | Expression::Terminator(_)) => {
-                        let semi_expression = match expression {
-                            Expression::Binary(binary) => {
-                                SemiExpression::Binary(binary)
-                            }
-                            Expression::Terminator(terminator) => {
-                                SemiExpression::Terminator(terminator)
-                            }
-                            Expression::Brace(_) => unreachable!(),
-                        };
-
-                        let punctuation =
-                            ';'.to_owned().parse(state_machine, handler)?;
-
-                        Ok(Self::Expressive(Expressive::Semi(Semi {
-                            expression: semi_expression,
-                            semicolon: punctuation,
-                        })))
+                    Expression::Binary(binary)
+                        if binary.first().is_brace()
+                            && binary.chain().is_empty() =>
+                    {
+                        Ok(Self::Expressive(Expressive::Brace(
+                            binary.destruct().0.into_brace().unwrap(),
+                        )))
                     }
 
-                    Expression::Brace(brace) => {
-                        Ok(Self::Expressive(Expressive::Brace(brace)))
+                    expression => {
+                        Ok(Self::Expressive(Expressive::Semi(Semi {
+                            expression,
+                            semicolon: ';'
+                                .to_owned()
+                                .parse(state_machine, handler)?,
+                        })))
                     }
                 }
             },
@@ -220,31 +213,6 @@ impl SourceElement for Expressive {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// SemiExpression:
-///     Functional
-///     | Terminator
-///     ;
-/// ```
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
-)]
-#[allow(missing_docs)]
-pub enum SemiExpression {
-    Binary(Binary),
-    Terminator(Terminator),
-}
-
-impl SourceElement for SemiExpression {
-    fn span(&self) -> Span {
-        match self {
-            Self::Binary(expression) => expression.span(),
-            Self::Terminator(expression) => expression.span(),
-        }
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
 /// Semi:
 ///     Functional ';'
 ///     ;
@@ -253,7 +221,7 @@ impl SourceElement for SemiExpression {
 #[allow(missing_docs)]
 pub struct Semi {
     #[get = "pub"]
-    expression: SemiExpression,
+    expression: Expression,
     #[get = "pub"]
     semicolon: Punctuation,
 }

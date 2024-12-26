@@ -41,7 +41,6 @@ pub mod strategy;
 pub enum Expression {
     Binary(Binary),
     Terminator(Terminator),
-    Brace(Brace),
 }
 
 impl SyntaxTree for Expression {
@@ -52,7 +51,6 @@ impl SyntaxTree for Expression {
         (
             Binary::parse.map(Self::Binary),
             Terminator::parse.map(Self::Terminator),
-            Brace::parse.map(Self::Brace),
         )
             .branch()
             .parse(state_machine, handler)
@@ -64,7 +62,6 @@ impl SourceElement for Expression {
         match self {
             Self::Binary(syn) => syn.span(),
             Self::Terminator(syn) => syn.span(),
-            Self::Brace(syn) => syn.span(),
         }
     }
 }
@@ -497,6 +494,44 @@ impl SourceElement for Loop {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct TerminatorTarget(Option<Label>, Option<Binary>);
+
+impl SyntaxTree for TerminatorTarget {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            (
+                LabelSpecifier::parse,
+                KeywordKind::Unsafe.to_owned().or_none(),
+                Statements::parse,
+                (BinaryOperator::parse, BinaryNode::parse).keep_take(),
+            )
+                .map(
+                    |(label_specifier, unsafe_keyword, statements, chain)| {
+                        TerminatorTarget(
+                            None,
+                            Some(Binary {
+                                first: BinaryNode::Brace(Brace::Block(Block {
+                                    label_specifier: Some(label_specifier),
+                                    unsafe_keyword,
+                                    statements,
+                                })),
+                                chain,
+                            }),
+                        )
+                    },
+                ),
+            (Label::parse.or_none(), Binary::parse.or_none())
+                .map(|(label, binary)| TerminatorTarget(label, binary)),
+        )
+            .branch()
+            .parse(state_machine, handler)
+    }
+}
+
 /// Syntax Synopsis:
 ///
 /// ``` txt
@@ -636,12 +671,8 @@ impl SyntaxTree for Express {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (
-            KeywordKind::Express.to_owned(),
-            Label::parse.or_none(),
-            Binary::parse.or_none(),
-        )
-            .map(|(express_keyword, label, binary)| Self {
+        (KeywordKind::Express.to_owned(), TerminatorTarget::parse)
+            .map(|(express_keyword, TerminatorTarget(label, binary))| Self {
                 express_keyword,
                 label,
                 binary,
@@ -690,12 +721,8 @@ impl SyntaxTree for Break {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (
-            KeywordKind::Break.to_owned(),
-            Label::parse.or_none(),
-            Binary::parse.or_none(),
-        )
-            .map(|(break_keyword, label, binary)| Self {
+        (KeywordKind::Break.to_owned(), TerminatorTarget::parse)
+            .map(|(break_keyword, TerminatorTarget(label, binary))| Self {
                 break_keyword,
                 label,
                 binary,
@@ -1820,6 +1847,41 @@ impl SyntaxTree for BinaryOperator {
 /// Syntax Synopsis:
 ///
 /// ``` txt
+/// BinaryNode:
+///     Prefixable
+///     | Brace
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum BinaryNode {
+    Prefixable(Prefixable),
+    Brace(Brace),
+}
+
+impl SourceElement for BinaryNode {
+    fn span(&self) -> Span {
+        match self {
+            Self::Prefixable(prefixable) => prefixable.span(),
+            Self::Brace(brace) => brace.span(),
+        }
+    }
+}
+
+impl SyntaxTree for BinaryNode {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self>
+    where
+        Self: Sized,
+    {
+        (Prefixable::parse.map(Self::Prefixable), Brace::parse.map(Self::Brace))
+            .branch()
+            .parse(state_machine, handler)
+    }
+}
+
+/// Syntax Synopsis:
+///
+/// ``` txt
 /// Binary:
 ///     Prefixable (BinaryOperator Prefixable)*
 ///     ;
@@ -1827,9 +1889,9 @@ impl SyntaxTree for BinaryOperator {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Binary {
     #[get = "pub"]
-    first: Box<Prefixable>,
+    first: BinaryNode,
     #[get = "pub"]
-    chain: Vec<(BinaryOperator, Prefixable)>,
+    chain: Vec<(BinaryOperator, BinaryNode)>,
 }
 
 impl SyntaxTree for Binary {
@@ -1841,8 +1903,8 @@ impl SyntaxTree for Binary {
         Self: Sized,
     {
         (
-            Prefixable::parse.map(Box::new),
-            (BinaryOperator::parse, Prefixable::parse).keep_take(),
+            BinaryNode::parse,
+            (BinaryOperator::parse, BinaryNode::parse).keep_take(),
         )
             .map(|(first, chain)| Self { first, chain })
             .parse(state_machine, handler)
@@ -1852,9 +1914,7 @@ impl SyntaxTree for Binary {
 impl Binary {
     /// Destructs the binary into its components
     #[must_use]
-    pub fn destruct(
-        self,
-    ) -> (Box<Prefixable>, Vec<(BinaryOperator, Prefixable)>) {
+    pub fn destruct(self) -> (BinaryNode, Vec<(BinaryOperator, BinaryNode)>) {
         (self.first, self.chain)
     }
 }

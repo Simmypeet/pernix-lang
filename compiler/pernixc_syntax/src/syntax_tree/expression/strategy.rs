@@ -1,5 +1,6 @@
 use std::fmt::{Display, Write};
 
+use enum_as_inner::EnumAsInner;
 use pernixc_tests::input::Input;
 use proptest::{
     arbitrary::Arbitrary,
@@ -24,7 +25,6 @@ use crate::syntax_tree::{
 pub enum Expression {
     Binary(Binary),
     Terminator(Terminator),
-    Brace(Brace),
 }
 
 impl Input<&super::Expression> for &Expression {
@@ -37,9 +37,6 @@ impl Input<&super::Expression> for &Expression {
                 Expression::Terminator(input),
                 super::Expression::Terminator(output),
             ) => input.assert(output),
-            (Expression::Brace(input), super::Expression::Brace(output)) => {
-                input.assert(output)
-            }
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -60,7 +57,7 @@ impl Arbitrary for Expression {
         let leaf = prop_oneof![
             Boolean::arbitrary().prop_map(|x| {
                 Self::Binary(Binary {
-                    first: Box::new(Prefixable::Postfixable(
+                    first: BinaryNode::Prefixable(Prefixable::Postfixable(
                         Postfixable::Unit(Unit::Boolean(x)),
                     )),
                     chain: Vec::new(),
@@ -68,7 +65,7 @@ impl Arbitrary for Expression {
             }),
             Numeric::arbitrary().prop_map(|x| {
                 Self::Binary(Binary {
-                    first: Box::new(Prefixable::Postfixable(
+                    first: BinaryNode::Prefixable(Prefixable::Postfixable(
                         Postfixable::Unit(Unit::Numeric(x)),
                     )),
                     chain: Vec::new(),
@@ -81,22 +78,17 @@ impl Arbitrary for Expression {
                 Binary::arbitrary_with((
                     Some(inner.clone()),
                     args.0.clone(),
-                    args.1.clone()
+                    args.1.clone(),
+                    args.2.clone()
                 ))
                 .prop_map(Expression::Binary),
                 Terminator::arbitrary_with((
                     Some(inner.clone()),
                     args.0.clone(),
-                    args.1.clone()
-                ))
-                .prop_map(Expression::Terminator),
-                Brace::arbitrary_with((
-                    Some(inner),
-                    args.0.clone(),
                     args.1.clone(),
                     args.2.clone()
                 ))
-                .prop_map(Expression::Brace),
+                .prop_map(Expression::Terminator),
             ]
         })
         .boxed()
@@ -108,7 +100,6 @@ impl Display for Expression {
         match self {
             Self::Binary(binary) => Display::fmt(binary, f),
             Self::Terminator(terminator) => Display::fmt(terminator, f),
-            Self::Brace(brace) => Display::fmt(brace, f),
         }
     }
 }
@@ -590,6 +581,7 @@ impl Arbitrary for Terminator {
         Option<BoxedStrategy<Expression>>,
         Option<BoxedStrategy<Type>>,
         Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
@@ -631,6 +623,7 @@ impl Arbitrary for Return {
         Option<BoxedStrategy<Expression>>,
         Option<BoxedStrategy<Type>>,
         Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
@@ -705,6 +698,7 @@ impl Arbitrary for Express {
         Option<BoxedStrategy<Expression>>,
         Option<BoxedStrategy<Type>>,
         Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
@@ -752,6 +746,7 @@ impl Arbitrary for Break {
         Option<BoxedStrategy<Expression>>,
         Option<BoxedStrategy<Type>>,
         Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
@@ -2011,10 +2006,66 @@ impl Display for BinaryOperator {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum BinaryNode {
+    Prefixable(Prefixable),
+    Brace(Brace),
+}
+
+impl Arbitrary for BinaryNode {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Prefixable::arbitrary_with((
+                args.0.clone(),
+                args.1.clone(),
+                args.2.clone(),
+            ))
+            .prop_map(BinaryNode::Prefixable),
+            Brace::arbitrary_with(args).prop_map(BinaryNode::Brace),
+        ]
+        .boxed()
+    }
+}
+
+impl Input<&super::BinaryNode> for &BinaryNode {
+    fn assert(self, output: &super::BinaryNode) -> TestCaseResult {
+        match (self, output) {
+            (
+                BinaryNode::Prefixable(input),
+                super::BinaryNode::Prefixable(output),
+            ) => input.assert(output),
+            (BinaryNode::Brace(input), super::BinaryNode::Brace(output)) => {
+                input.assert(output)
+            }
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Display for BinaryNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Prefixable(prefixable) => Display::fmt(prefixable, f),
+            Self::Brace(brace) => Display::fmt(brace, f),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Binary {
-    pub first: Box<Prefixable>,
-    pub chain: Vec<(BinaryOperator, Prefixable)>,
+    pub first: BinaryNode,
+    pub chain: Vec<(BinaryOperator, BinaryNode)>,
 }
 
 impl Arbitrary for Binary {
@@ -2022,11 +2073,12 @@ impl Arbitrary for Binary {
         Option<BoxedStrategy<Expression>>,
         Option<BoxedStrategy<Type>>,
         Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let prefixable = Prefixable::arbitrary_with((args.0, args.1, args.2));
+        let prefixable = BinaryNode::arbitrary_with(args);
         (
             prefixable.clone(),
             proptest::collection::vec(
@@ -2034,7 +2086,7 @@ impl Arbitrary for Binary {
                 0..=3,
             ),
         )
-            .prop_map(|(first, chain)| Self { first: Box::new(first), chain })
+            .prop_map(|(first, chain)| Self { first, chain })
             .boxed()
     }
 }

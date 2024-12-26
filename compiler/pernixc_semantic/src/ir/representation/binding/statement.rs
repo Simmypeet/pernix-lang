@@ -58,24 +58,12 @@ impl<
                 let scope_id = self.push_scope();
 
                 let result = match expressive {
-                    syntax_tree::statement::Expressive::Semi(semi) => match semi
-                        .expression()
-                    {
-                        syntax_tree::statement::SemiExpression::Binary(
-                            syntax_tree,
-                        ) => self.bind(
-                            syntax_tree,
+                    syntax_tree::statement::Expressive::Semi(semi) => self
+                        .bind(
+                            semi.expression(),
                             Config { target: Target::Statement },
                             handler,
                         ),
-                        syntax_tree::statement::SemiExpression::Terminator(
-                            syntax_tree,
-                        ) => self.bind(
-                            syntax_tree,
-                            Config { target: Target::Statement },
-                            handler,
-                        ),
-                    },
                     syntax_tree::statement::Expressive::Brace(brace) => self
                         .bind(
                             brace,

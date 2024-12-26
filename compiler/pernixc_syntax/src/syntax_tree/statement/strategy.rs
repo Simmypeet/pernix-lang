@@ -9,7 +9,7 @@ use proptest::{
 };
 
 use crate::syntax_tree::{
-    expression::strategy::{Binary, Brace, Expression, Terminator},
+    expression::strategy::{Brace, Expression},
     pattern::strategy::Irrefutable,
     r#type::strategy::Type,
     strategy::QualifiedIdentifier,
@@ -153,13 +153,12 @@ impl Arbitrary for Expressive {
 
         expr_strategy
             .prop_map(|x| match x {
-                Expression::Binary(x) => {
-                    Self::Semi(Semi { expression: SemiExpression::Binary(x) })
+                Expression::Binary(binary)
+                    if binary.first.is_brace() && binary.chain.is_empty() =>
+                {
+                    Expressive::Brace(binary.first.into_brace().unwrap())
                 }
-                Expression::Terminator(x) => Self::Semi(Semi {
-                    expression: SemiExpression::Terminator(x),
-                }),
-                Expression::Brace(x) => Self::Brace(x),
+                expression => Expressive::Semi(Semi { expression }),
             })
             .boxed()
     }
@@ -175,41 +174,8 @@ impl Display for Expressive {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum SemiExpression {
-    Binary(Binary),
-    Terminator(Terminator),
-}
-
-impl Input<&super::SemiExpression> for &SemiExpression {
-    fn assert(self, output: &super::SemiExpression) -> TestCaseResult {
-        match (self, output) {
-            (SemiExpression::Binary(i), super::SemiExpression::Binary(o)) => {
-                i.assert(o)
-            }
-            (
-                SemiExpression::Terminator(i),
-                super::SemiExpression::Terminator(o),
-            ) => i.assert(o),
-            _ => Err(TestCaseError::fail(format!(
-                "Expected {self:?}, found {output:?}",
-            ))),
-        }
-    }
-}
-
-impl Display for SemiExpression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Binary(t) => Display::fmt(t, f),
-            Self::Terminator(t) => Display::fmt(t, f),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Semi {
-    pub expression: SemiExpression,
+    pub expression: Expression,
 }
 
 impl Input<&super::Semi> for &Semi {

@@ -93,6 +93,8 @@ fn numeric_literal_suffix() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -138,6 +140,8 @@ fn numberic_literal_float_infer() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -199,6 +203,8 @@ fn numeric_literal_number_infer() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -258,6 +264,8 @@ fn invalid_numeric_literal_suffix() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -298,6 +306,8 @@ fn floating_point_literal_has_integral_suffix() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -342,6 +352,8 @@ fn bind_boolean_literal() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -353,6 +365,8 @@ fn bind_boolean_literal() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -410,6 +424,8 @@ fn bind_prefix_operator() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_prefix()
         .unwrap();
     let negate_expression = parse_expression(NEGATE_SOURCE)
@@ -417,6 +433,8 @@ fn bind_prefix_operator() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_prefix()
         .unwrap();
     let bitwise_not_expression = parse_expression(BITWISE_NOT_SOURCE)
@@ -424,6 +442,8 @@ fn bind_prefix_operator() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_prefix()
         .unwrap();
 
@@ -514,6 +534,8 @@ fn prefix_type_mismatched_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_prefix()
         .unwrap();
     let negate_expression = parse_expression(NEGATE_SOURCE)
@@ -521,6 +543,8 @@ fn prefix_type_mismatched_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_prefix()
         .unwrap();
     let bitwise_not_expression = parse_expression(BITWISE_NOT_SOURCE)
@@ -528,6 +552,8 @@ fn prefix_type_mismatched_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_prefix()
         .unwrap();
 
@@ -631,6 +657,8 @@ fn named_load() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -694,6 +722,8 @@ fn reference_of() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_prefix()
         .unwrap();
     let reference_of_mutable = parse_expression(REFERENCE_OF_MUTABLE)
@@ -701,6 +731,8 @@ fn reference_of() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_prefix()
         .unwrap();
 
@@ -768,6 +800,8 @@ fn reference_of_mutability_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_prefix()
         .unwrap();
 
@@ -825,6 +859,8 @@ fn dereference_as_value() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_prefix()
         .unwrap();
 
@@ -884,6 +920,8 @@ fn dereference_as_address() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_prefix()
         .unwrap();
 
@@ -969,6 +1007,8 @@ fn struct_expression() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -1031,6 +1071,8 @@ fn struct_uninitialized_field_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -1076,6 +1118,8 @@ fn struct_duplicated_initialization_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -1120,6 +1164,8 @@ fn struct_unknown_field_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -1175,6 +1221,8 @@ fn struct_field_is_not_accessible_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -1338,6 +1386,8 @@ fn variant_call() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_postfix()
@@ -1348,6 +1398,8 @@ fn variant_call() {
             .unwrap()
             .destruct()
             .0
+            .into_prefixable()
+            .unwrap()
             .into_postfixable()
             .unwrap()
             .into_postfix()
@@ -1447,6 +1499,8 @@ fn variant_call_mismatched_argument_count_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_postfix()
@@ -1477,6 +1531,8 @@ fn variant_call_mismatched_argument_count_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_postfix()
@@ -1509,6 +1565,8 @@ fn variant_call_mismatched_argument_count_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_postfix()
@@ -1561,6 +1619,8 @@ fn qualified_identifier_variant() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -1618,6 +1678,8 @@ fn qualified_identifier_variant_expected_associated_value_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_unit()
@@ -1721,6 +1783,8 @@ fn function_call() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_postfix()
@@ -1847,6 +1911,8 @@ fn function_call_mismatched_argument_count_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_postfix()
@@ -1857,6 +1923,8 @@ fn function_call_mismatched_argument_count_error() {
         .unwrap()
         .destruct()
         .0
+        .into_prefixable()
+        .unwrap()
         .into_postfixable()
         .unwrap()
         .into_postfix()
@@ -2219,8 +2287,15 @@ fn not_all_flow_path_express_value_error() {
 
     let (mut binder, storage) = test_template.create_binder();
 
-    let block =
-        parse_expression(BLOCK).into_brace().unwrap().into_block().unwrap();
+    let block = parse_expression(BLOCK)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_brace()
+        .unwrap()
+        .into_block()
+        .unwrap();
 
     let _ = binder
         .bind(&block, Config { target: Target::RValue }, &storage)
@@ -2248,8 +2323,15 @@ fn single_express_block() {
 
     let (mut binder, storage) = test_template.create_binder();
 
-    let block =
-        parse_expression(BLOCK).into_brace().unwrap().into_block().unwrap();
+    let block = parse_expression(BLOCK)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_brace()
+        .unwrap()
+        .into_block()
+        .unwrap();
 
     let numeric_literal = binder
         .bind(&block, Config { target: Target::RValue }, &storage)
@@ -2285,8 +2367,15 @@ fn multiple_express_block() {
 
     let (mut binder, storage) = test_template.create_binder();
 
-    let block =
-        parse_expression(BLOCK).into_brace().unwrap().into_block().unwrap();
+    let block = parse_expression(BLOCK)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
+        .into_brace()
+        .unwrap()
+        .into_block()
+        .unwrap();
 
     let register_id = binder
         .bind(&block, Config { target: Target::RValue }, &storage)
@@ -2346,6 +2435,10 @@ fn unrechable_block() {
     let (mut binder, storage) = test_template.create_binder();
 
     let block = parse_expression(BLOCK_WITH_EXPRESS)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
         .into_brace()
         .unwrap()
         .into_block()
@@ -2366,6 +2459,10 @@ fn unrechable_block() {
     assert_eq!(unreachable.r#type, Type::Primitive(Primitive::Int32));
 
     let block = parse_expression(BLOCK_NO_EXPRESS)
+        .into_binary()
+        .unwrap()
+        .destruct()
+        .0
         .into_brace()
         .unwrap()
         .into_block()
