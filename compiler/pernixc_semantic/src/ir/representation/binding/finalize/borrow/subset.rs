@@ -1565,7 +1565,8 @@ impl<
                     if let (false, Some(latest_updated_inst_index)) = (
                         changes
                             .overwritten_regions
-                            .contains(&region_at.to_region()),
+                            .contains(&region_at.to_region())
+                            && !region_at.to_region().is_universal(),
                         lastest_region_update,
                     ) {
                         let flow_from = RegionAt::new_location_sensitive(

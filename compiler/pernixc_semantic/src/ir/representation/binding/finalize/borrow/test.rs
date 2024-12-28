@@ -2161,3 +2161,68 @@ fn borrow_usage_in_drop() {
 
     assert!(error.usage.is_drop());
 }
+
+const UNIVERSAL_REGIONS_ALWAYS_FLOWS: &str = r#"
+public struct Test['a] {
+	public first: &'a int32,
+}
+
+public function test['a, 'b](test: &'b mutable Test['a], cond: bool) 
+where
+	'a: 'b
+{
+	let inner = 32;
+	let copy = test->first;
+
+	test->first = &inner;
+	test->first = copy;
+}
+"#;
+
+#[test]
+fn universal_regions_always_flows() {
+    let (table, errs) =
+        build_table(UNIVERSAL_REGIONS_ALWAYS_FLOWS).unwrap_err();
+
+    assert_eq!(errs.len(), 1);
+
+    let err = errs[0]
+        .as_any()
+        .downcast_ref::<VariableDoesNotLiveLongEnough>()
+        .unwrap();
+
+    let a_lt = table
+        .resolve_lifetime::<model::Default>(
+            &parse("'a"),
+            table.get_by_qualified_name(["test", "test"]).unwrap(),
+            Config::default(),
+            &Panic,
+        )
+        .unwrap()
+        .into_parameter()
+        .unwrap();
+    let b_lt = table
+        .resolve_lifetime::<model::Default>(
+            &parse("'b"),
+            table.get_by_qualified_name(["test", "test"]).unwrap(),
+            Config::default(),
+            &Panic,
+        )
+        .unwrap()
+        .into_parameter()
+        .unwrap();
+
+    assert_eq!(err.borrow_span.str(), "&inner");
+    assert_eq!(err.variable_span.str(), "inner");
+
+    let universal_regions = err.usage.as_by_universal_regions().unwrap();
+
+    assert_eq!(universal_regions.len(), 2);
+
+    assert!(
+        universal_regions.contains(&UniversalRegion::LifetimeParameter(a_lt))
+    );
+    assert!(
+        universal_regions.contains(&UniversalRegion::LifetimeParameter(b_lt))
+    );
+}
