@@ -31,6 +31,8 @@ strum_macros = { workspace = true }
 drain_filter_polyfill = { workspace = true }
 bit-vec = { workspace = true }
 displaydoc = { workspace = true }
+serde = { workspace = true }
+dashmap = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
