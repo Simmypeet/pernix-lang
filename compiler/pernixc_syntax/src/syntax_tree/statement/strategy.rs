@@ -1,5 +1,6 @@
 use std::fmt::{Display, Write};
 
+use enum_as_inner::EnumAsInner;
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
@@ -15,7 +16,7 @@ use crate::syntax_tree::{
     strategy::QualifiedIdentifier,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Statement {
     Expressive(Expressive),
@@ -122,7 +123,7 @@ impl Display for VariableDeclaration {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Expressive {
     Brace(Brace),
@@ -218,6 +219,27 @@ impl Arbitrary for Statements {
 
         proptest::collection::vec(statement, 0..=6)
             .prop_map(|statements| Self { statements })
+            .prop_filter(
+                "brace statement should be followed with prefixed expression",
+                |x| {
+                    !x.statements.windows(2).any(|window| {
+                        let first = &window[0];
+                        let second = &window[1];
+
+                        first
+                            .as_expressive()
+                            .and_then(|x| x.as_brace())
+                            .is_some()
+                            && second
+                                .as_expressive()
+                                .and_then(|x| x.as_semi())
+                                .and_then(|x| x.expression.as_binary())
+                                .and_then(|x| x.first.as_prefixable())
+                                .and_then(|x| x.as_prefix())
+                                .is_some()
+                    })
+                },
+            )
             .boxed()
     }
 }

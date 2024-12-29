@@ -1716,8 +1716,10 @@ impl BinaryOperator {
             ('+'.to_owned(), '='.no_skip().to_owned())
                 .map(|(start, end)| Self::CompoundAdd(start, end)),
             ('-'.to_owned(), '='.no_skip().to_owned())
+                .commit_in(2)
                 .map(|(start, end)| Self::CompoundSubtract(start, end)),
             ('*'.to_owned(), '='.no_skip().to_owned())
+                .commit_in(2)
                 .map(|(start, end)| Self::CompoundMultiply(start, end)),
             ('/'.to_owned(), '='.no_skip().to_owned())
                 .map(|(start, end)| Self::CompoundDivide(start, end)),
@@ -1785,6 +1787,7 @@ impl BinaryOperator {
     ) -> parse::Result<Self> {
         (
             ('&'.to_owned(), '='.no_skip().to_owned())
+                .commit_in(2)
                 .map(|(start, end)| Self::CompoundBitwiseAnd(start, end)),
             '&'.to_owned().map(Self::BitwiseAnd),
             ('|'.to_owned(), '='.no_skip().to_owned())
@@ -1806,6 +1809,7 @@ impl BinaryOperator {
             ('='.to_owned(), '='.no_skip().to_owned())
                 .map(|(start, end)| Self::Equal(start, end)),
             ('!'.to_owned(), '='.no_skip().to_owned())
+                .commit_in(2)
                 .map(|(start, end)| Self::NotEqual(start, end)),
             '='.to_owned().map(Self::Assign),
         )
