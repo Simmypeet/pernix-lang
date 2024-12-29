@@ -45,7 +45,7 @@ use crate::{
             resolution, Building, Table,
         },
         ConstantParameter, ConstantParameterID, GenericID, GenericParameter,
-        GenericParameters, GenericTemplate, GlobalID, ImplementationTemplate,
+        GenericParameters, GenericTemplate, ItemID, ImplementationTemplate,
         LifetimeParameter, LifetimeParameterID, ResolvableImplementationID,
         TraitImplementationMemberID, TraitMemberID, TypeParameter,
         TypeParameterID,
@@ -173,7 +173,7 @@ where
         parent_generic_arguments: &GenericArguments<M>,
         resolution_span: &Span,
         do_outlives_check: bool,
-        checking_site: GlobalID,
+        checking_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Option<Instantiation<M>> {
         // deduce the generic arguments
@@ -247,7 +247,7 @@ where
         generic_arguments: GenericArguments<M>,
         instantiation_span: &Span,
         do_outlives_check: bool,
-        checking_site: GlobalID,
+        checking_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         for error in self.predicate_satisfied(
@@ -283,7 +283,7 @@ where
         resolution: &resolution::Resolution<M>,
         resolution_span: &Span,
         do_outlives_check: bool,
-        checking_site: GlobalID,
+        checking_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match resolution {
@@ -317,9 +317,9 @@ where
                     | resolution::MemberGenericID::TraitType(_)) => {
                         let trait_id = self
                             .table()
-                            .get_global(id.into())
+                            .get_item(id.into())
                             .unwrap()
-                            .parent_global_id()
+                            .parent_item_id()
                             .expect("should have a parent")
                             .into_trait()
                             .expect("should've been a trait");
@@ -361,9 +361,9 @@ where
                     } else {
                         let parent_id = GenericID::try_from(
                             self.table()
-                                .get_global(member_generic.id.into())
+                                .get_item(member_generic.id.into())
                                 .unwrap()
-                                .parent_global_id()
+                                .parent_item_id()
                                 .expect("should have a parent"),
                         )
                         .expect("parent should be a generic");
@@ -427,7 +427,7 @@ where
         generic_arguments: GenericArguments<M>,
         instantiation_span: &Span,
         do_outlives_check: bool,
-        checking_site: GlobalID,
+        checking_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         // convert the generic arguments to an instantiation and delegate the
@@ -474,7 +474,7 @@ where
         instantiation: &Instantiation<M>,
         instantiation_span: &Span,
         do_outlives_check: bool,
-        checking_site: GlobalID,
+        checking_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         predicate::Predicate<M>: table::Display<table::Suboptimal>,
@@ -519,7 +519,7 @@ where
         instantiation: &Instantiation<M>,
         generic_arguments: &GenericArguments<M>,
         predicate_declaration_span: Option<Span>,
-        checking_site: GlobalID,
+        checking_site: ItemID,
         do_outlives_check: bool,
         is_not_general_enough: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
@@ -606,7 +606,7 @@ where
         pred_generic_arguments: &GenericArguments<M>,
         predicate_declaration_span: Option<Span>,
         do_outlives_check: bool,
-        checking_site: GlobalID,
+        checking_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> (BTreeSet<LifetimeConstraint<M>>, Vec<PredicateError<M>>) {
         match result {
@@ -662,7 +662,7 @@ where
         predicate: Predicate<M>,
         predicate_declaration_span: Option<Span>,
         do_outlives_check: bool,
-        checking_site: GlobalID,
+        checking_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Vec<PredicateError<M>> {
         let (result, mut extra_predicate_error) = match &predicate {
@@ -1010,7 +1010,7 @@ where
         &self,
         unpacked_term: U,
         instantiation_span: &Span,
-        checking_site: GlobalID,
+        checking_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         predicate::Predicate<M>:
@@ -1113,7 +1113,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     #[allow(unused)]
     pub fn check_where_clause(
         &self,
-        id: GlobalID,
+        id: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         if GenericID::try_from(id).is_err() {
@@ -1194,7 +1194,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     #[allow(unused)]
     pub fn check_occurrences(
         &self,
-        id: GlobalID,
+        id: ItemID,
         occurrences: &Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
@@ -1726,7 +1726,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     /// - Checks if the implementation's generic arguments satisfy the
     ///   implemented symbol's predicates.
     pub fn implementation_signature_check<
-        ParentID: Copy + Into<GlobalID>,
+        ParentID: Copy + Into<ItemID>,
         ImplementedID: Copy + Into<GenericID>,
         Definition: 'static,
     >(
@@ -1748,7 +1748,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 ParentID,
                 ImplementationTemplate<ImplementedID, Definition>,
             >,
-        >: Into<GlobalID> + Into<GenericID>,
+        >: Into<ItemID> + Into<GenericID>,
     {
         let implementation_sym = self.get(implementation_id).unwrap();
 

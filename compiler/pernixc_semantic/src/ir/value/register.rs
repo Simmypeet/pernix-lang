@@ -18,7 +18,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index, Table},
-        AdtID, CallableID, Field, GlobalID, ImplementationID,
+        AdtID, CallableID, Field, ItemID, ImplementationID,
     },
     type_system::{
         environment::Environment,
@@ -70,7 +70,7 @@ impl<M: Model> Values<M> {
     fn type_of_tuple_assignment<S: table::State>(
         &self,
         tuple: &Tuple<M>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             M,
             S,
@@ -119,7 +119,7 @@ impl<M: Model> Values<M> {
     fn type_of_load_assignment<S: table::State>(
         &self,
         load: &Load<M>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             M,
             S,
@@ -148,7 +148,7 @@ impl<M: Model> Values<M> {
     fn type_of_reference_of_assignment<S: table::State>(
         &self,
         reference_of: &Borrow<M>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             M,
             S,
@@ -204,7 +204,7 @@ impl<M: Model> Values<M> {
     fn type_of_prefix_assignment<S: table::State>(
         &self,
         prefix: &Prefix<M>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             M,
             S,
@@ -444,7 +444,7 @@ impl<M: Model> Values<M> {
     fn type_of_binary<S: table::State>(
         &self,
         binary: &Binary<M>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             M,
             S,
@@ -611,7 +611,7 @@ impl<M: Model> Values<M> {
     pub fn type_of_register<S: table::State>(
         &self,
         id: ID<Register<M>>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             M,
             S,

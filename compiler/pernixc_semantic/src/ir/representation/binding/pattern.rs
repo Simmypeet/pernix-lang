@@ -1047,7 +1047,7 @@ impl<
             .copied()
         else {
             handler.receive(Box::new(SymbolNotFound {
-                searched_global_id: Some(enum_id.into()),
+                searched_item_id: Some(enum_id.into()),
                 resolution_span: syntax_tree.identifier().span.clone(),
             }));
 

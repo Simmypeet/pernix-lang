@@ -25,7 +25,7 @@ use crate::{
     error::{
         self, ExpectModule, ExpectedImplementationWithBodyForAdt,
         FoundEmptyImplementationOnTrait, FoundImplementationWithBodyOnMarker,
-        GlobalRedifinition, InvalidSymbolInImplementation,
+        ItemRedifinition, InvalidSymbolInImplementation,
         MismatchedTraitMemberAndImplementationMember,
         NoGenericArgumentsRequired, SymbolIsMoreAccessibleThanParent,
         SymbolNotFound, ThisNotFound, UnexpectedAdtImplementationMember,
@@ -44,7 +44,7 @@ use crate::{
         Accessibility, AdtID, AdtImplementationDefinition,
         AdtImplementationFunction, Constant, Enum, Extern, Function,
         FunctionDefinition, FunctionTemplate, GenericDeclaration,
-        GenericTemplate, GlobalID, HierarchyRelationship, Marker, Module,
+        GenericTemplate, ItemID, HierarchyRelationship, Marker, Module,
         ModuleMemberID, NegativeMarkerImplementationDefinition,
         NegativeTraitImplementationDefinition,
         PositiveMarkerImplementationDefinition,
@@ -114,10 +114,10 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 .entry(variant_syn.span.str().to_owned())
             {
                 Entry::Occupied(entry) => {
-                    handler.receive(Box::new(GlobalRedifinition {
-                        existing_global_id: (*entry.get()).into(),
-                        new_global_id: variant_id.into(),
-                        in_global_id: enum_id.into(),
+                    handler.receive(Box::new(ItemRedifinition {
+                        existing_item_id: (*entry.get()).into(),
+                        new_item_id: variant_id.into(),
+                        in_item_id: enum_id.into(),
                     }));
                 }
                 Entry::Vacant(entry) => {
@@ -240,10 +240,10 @@ impl Table<Building<RwLockContainer, Drafter>> {
             + finalizing::Element,
 
         ID<GenericTemplate<ParentID, Definition>>:
-            Into<GlobalID> + Into<Parent::MemberID>,
+            Into<ItemID> + Into<Parent::MemberID>,
 
-        Parent::MemberID: Into<GlobalID>,
-        ID<Parent>: Into<GlobalID>,
+        Parent::MemberID: Into<ItemID>,
+        ID<Parent>: Into<ItemID>,
     {
         // extract the identifier and access modifier
         let identifier = identifier_fn(&syntax_tree);
@@ -261,10 +261,10 @@ impl Table<Building<RwLockContainer, Drafter>> {
 
         // check for duplication
         if let Some(existing) = insertion.duplication {
-            handler.receive(Box::new(GlobalRedifinition {
-                existing_global_id: existing.into(),
-                new_global_id: insertion.id.into(),
-                in_global_id: parent_id.into(),
+            handler.receive(Box::new(ItemRedifinition {
+                existing_item_id: existing.into(),
+                new_item_id: insertion.id.into(),
+                in_item_id: parent_id.into(),
             }));
         }
 
@@ -583,7 +583,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 .unwrap()
                 .member_ids_by_name
                 .get(
-                    self.get_global(trait_implementation_member_id.into())
+                    self.get_item(trait_implementation_member_id.into())
                         .unwrap()
                         .name(),
                 )
@@ -591,7 +591,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
             else {
                 handler.receive(Box::new(UnknownTraitImplementationMember {
                     identifier_span: self
-                        .get_global(trait_implementation_member_id.into())
+                        .get_item(trait_implementation_member_id.into())
                         .unwrap()
                         .span()
                         .cloned()
@@ -630,7 +630,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                             }
                         },
                         implementation_member_identifer_span: self
-                            .get_global(trait_implementation_member_id.into())
+                            .get_item(trait_implementation_member_id.into())
                             .unwrap()
                             .span()
                             .cloned()
@@ -764,10 +764,10 @@ impl Table<Building<RwLockContainer, Drafter>> {
 
                         let _ = self.state.finalizer.draft_symbol(new_id, syn);
 
-                        handler.receive(Box::new(GlobalRedifinition {
-                            existing_global_id: id,
-                            new_global_id: new_id.into(),
-                            in_global_id: adt_id.into(),
+                        handler.receive(Box::new(ItemRedifinition {
+                            existing_item_id: id,
+                            new_item_id: new_id.into(),
+                            in_item_id: adt_id.into(),
                         }));
                     } else {
                         let _: ID<AdtImplementationFunction> = self
@@ -896,7 +896,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
         defined_in_module_id: ID<Module>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        let mut current_id: GlobalID = match implementation
+        let mut current_id: ItemID = match implementation
             .signature()
             .qualified_identifier()
             .root()
@@ -928,7 +928,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                     })
                 else {
                     handler.receive(Box::new(SymbolNotFound {
-                        searched_global_id: Some(defined_in_module_id.into()),
+                        searched_item_id: Some(defined_in_module_id.into()),
                         resolution_span: generic_identifier
                             .identifier()
                             .span
@@ -963,7 +963,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 .and_then(|x| x.generic_arguments().as_ref())
             {
                 handler.receive(Box::new(NoGenericArgumentsRequired {
-                    global_id: current_id,
+                    item_id: current_id,
                     generic_argument_span: gen_args.span(),
                 }));
             }
@@ -981,7 +981,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                 generic_identifier.identifier().span.str(),
             ) else {
                 handler.receive(Box::new(SymbolNotFound {
-                    searched_global_id: Some(current_id),
+                    searched_item_id: Some(current_id),
                     resolution_span: generic_identifier
                         .identifier()
                         .span
@@ -1015,7 +1015,7 @@ impl Table<Building<RwLockContainer, Drafter>> {
                     generic_identifier.generic_arguments().as_ref()
                 {
                     handler.receive(Box::new(NoGenericArgumentsRequired {
-                        global_id: next_id,
+                        item_id: next_id,
                         generic_argument_span: gen_args.span(),
                     }));
                 }
@@ -1023,27 +1023,27 @@ impl Table<Building<RwLockContainer, Drafter>> {
         }
 
         match current_id {
-            GlobalID::Trait(id) => self.draft_trait_implementation(
+            ItemID::Trait(id) => self.draft_trait_implementation(
                 implementation,
                 defined_in_module_id,
                 id,
                 handler,
             ),
 
-            adt_id @ (GlobalID::Enum(_) | GlobalID::Struct(_)) => {
+            adt_id @ (ItemID::Enum(_) | ItemID::Struct(_)) => {
                 self.draft_adt_implementation(
                     implementation,
                     defined_in_module_id,
                     match adt_id {
-                        GlobalID::Struct(struct_id) => AdtID::Struct(struct_id),
-                        GlobalID::Enum(enum_id) => AdtID::Enum(enum_id),
+                        ItemID::Struct(struct_id) => AdtID::Struct(struct_id),
+                        ItemID::Enum(enum_id) => AdtID::Enum(enum_id),
                         _ => unreachable!(),
                     },
                     handler,
                 );
             }
 
-            GlobalID::Marker(id) => self.draft_marker_implementation(
+            ItemID::Marker(id) => self.draft_marker_implementation(
                 implementation,
                 defined_in_module_id,
                 id,
@@ -1051,9 +1051,9 @@ impl Table<Building<RwLockContainer, Drafter>> {
             ),
 
             // invalid id
-            invalid_global_id => {
+            invalid_item_id => {
                 handler.receive(Box::new(InvalidSymbolInImplementation {
-                    invalid_global_id,
+                    invalid_item_id,
                     qualified_identifier_span: implementation
                         .signature()
                         .qualified_identifier()

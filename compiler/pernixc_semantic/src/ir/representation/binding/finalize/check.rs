@@ -10,7 +10,7 @@ use crate::{
     },
     symbol::{
         table::{self, representation::Index},
-        CallableID, GenericID, GlobalID,
+        CallableID, GenericID, ItemID,
     },
     type_system::{
         environment::Environment,
@@ -85,7 +85,7 @@ impl Representation<ir::Model> {
     fn check_register_assignment<T: table::State>(
         &self,
         register_id: ID<Register<ir::Model>>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             ir::Model,
             T,
@@ -367,7 +367,7 @@ impl Representation<ir::Model> {
 
     pub(super) fn check<T: table::State>(
         &self,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             ir::Model,
             T,

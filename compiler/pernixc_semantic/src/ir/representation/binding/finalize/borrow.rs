@@ -15,7 +15,7 @@ use crate::{
             Representation, Values,
         },
     },
-    symbol::{table, GlobalID},
+    symbol::{table, ItemID},
     type_system::{
         environment::Environment, normalizer::Normalizer, observer::Observer,
         term::r#type::Qualifier, visitor::RecursiveIterator, Succeeded,
@@ -36,7 +36,7 @@ impl Values<BorrowModel> {
         &self,
         mut address: &Address<BorrowModel>,
         span: &Span,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,
@@ -96,7 +96,7 @@ impl Values<BorrowModel> {
         mut address: &Address<BorrowModel>,
         span: &Span,
         include_deref: bool,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,
@@ -176,7 +176,7 @@ impl Values<BorrowModel> {
 impl Representation<ir::Model> {
     pub(super) fn borrow_check<S: table::State>(
         &self,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,

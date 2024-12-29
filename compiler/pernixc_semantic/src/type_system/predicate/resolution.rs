@@ -10,7 +10,7 @@ use crate::{
             representation::{Element, Index, Representation},
             State,
         },
-        Generic, GlobalID, Implementation as _, Implemented,
+        Generic, Implementation as _, Implemented, ItemID,
         ResolvableImplementation, ResolvableImplementedID,
     },
     type_system::{
@@ -71,7 +71,7 @@ pub fn resolve_implementation_with_context<
     'a,
     M: Model,
     S: State,
-    ImplementationID: TryFrom<GlobalID> + Copy,
+    ImplementationID: TryFrom<ItemID> + Copy,
     ImplementedSymbol: Implemented<ImplementationID> + Element,
 >(
     implemented_id: ID<ImplementedSymbol>,
@@ -258,7 +258,7 @@ pub fn resolve_implementation<
     'a,
     M: Model,
     S: State,
-    ImplementationID: TryFrom<GlobalID> + Copy,
+    ImplementationID: TryFrom<ItemID> + Copy,
     ImplementedSymbol: Implemented<ImplementationID> + Element,
 >(
     implemented_id: ID<ImplementedSymbol>,
@@ -295,7 +295,7 @@ fn is_in_active_implementation<
     'a,
     M: Model,
     S: State,
-    ImplementationID: TryFrom<GlobalID> + Copy,
+    ImplementationID: TryFrom<ItemID> + Copy,
     ImplementedSymbol: Implemented<ImplementationID> + Element,
 >(
     implemented_id: ID<ImplementedSymbol>,
@@ -319,7 +319,7 @@ where
         return Ok(None);
     };
 
-    for global_id in
+    for item_id in
         if let Some(iter) = environment.table.scope_walker(query_site) {
             iter
         } else {
@@ -327,8 +327,7 @@ where
         }
     {
         // must be an implementation
-        let Ok(implementation_id) = ImplementationID::try_from(global_id)
-        else {
+        let Ok(implementation_id) = ImplementationID::try_from(item_id) else {
             continue;
         };
 

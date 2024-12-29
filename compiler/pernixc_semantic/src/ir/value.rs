@@ -6,7 +6,7 @@ use register::Register;
 use super::{representation::Values, Transform, TypeOfError};
 use crate::{
     arena::{Key, ID},
-    symbol::{table, GlobalID},
+    symbol::{table, ItemID},
     type_system::{
         environment::Environment, model::Model, normalizer::Normalizer,
         observer::Observer, simplify, term::r#type::Type, Succeeded,
@@ -69,7 +69,7 @@ impl<M: Model> Values<M> {
     pub fn type_of_value<S: table::State>(
         &self,
         value: &Value<M>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             M,
             S,

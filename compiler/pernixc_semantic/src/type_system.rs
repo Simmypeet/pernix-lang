@@ -16,7 +16,7 @@ use self::{
     predicate::Predicate,
     term::{lifetime::Lifetime, r#type::Type},
 };
-use crate::symbol::{table::State, GlobalID};
+use crate::symbol::{table::State, ItemID};
 
 pub mod compatible;
 pub mod deduction;
@@ -194,12 +194,12 @@ pub struct Premise<M: Model> {
     /// List of predicates that will be considered as facts.
     pub predicates: BTreeSet<Predicate<M>>,
 
-    /// An optional [`GlobalID`] specifying the site where the queries will be
+    /// An optional [`ItemID`] specifying the site where the queries will be
     /// taking place in.
     ///
     /// This can influence the result of resoliving the trait/marker
     /// implementations.
-    pub query_site: Option<GlobalID>,
+    pub query_site: Option<ItemID>,
 }
 
 /// A trait used for computing the result of the query.

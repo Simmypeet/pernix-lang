@@ -6,7 +6,7 @@ use pernixc_syntax::syntax_tree::expression::Expression;
 use super::{State, Table};
 use crate::{
     error,
-    symbol::GlobalID,
+    symbol::ItemID,
     type_system::{model::Default, term::constant::Constant},
 };
 
@@ -35,7 +35,7 @@ impl<S: State> Table<S> {
     pub fn evaluate(
         &self,
         _: &Expression,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Constant<Default>, Error> {
         todo!()

@@ -16,7 +16,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index as _},
-        AdtID, Field, GlobalID,
+        AdtID, Field, ItemID,
     },
     type_system::{
         environment::Environment,
@@ -823,7 +823,7 @@ pub fn get_live_usages<S: table::State>(
     point: Point<BorrowModel>,
     mut exit: &mut impl FnMut(&Instruction<BorrowModel>, Point<BorrowModel>) -> bool,
     representation: &ir::Representation<BorrowModel>,
-    current_site: GlobalID,
+    current_site: ItemID,
     environment: &Environment<
         BorrowModel,
         S,
@@ -867,7 +867,7 @@ struct LiveBorrowTraverser<
 
     representation: &'a ir::Representation<BorrowModel>,
     environment: &'a Environment<'a, BorrowModel, S, N, O>,
-    current_site: GlobalID,
+    current_site: ItemID,
 }
 
 impl<

@@ -13,7 +13,7 @@ use crate::{
             resolution::{self, Observer},
             Building, Table,
         },
-        Callable, CallableID, Generic, GenericID, GlobalID, LifetimeParameter,
+        Callable, CallableID, Generic, GenericID, ItemID, LifetimeParameter,
         LifetimeParameterID, Parameter,
     },
     type_system::{
@@ -76,7 +76,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         signature_occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn Error>>,
     ) where
-        ID<F>: Into<GlobalID> + Into<GenericID> + Into<CallableID>,
+        ID<F>: Into<ItemID> + Into<GenericID> + Into<CallableID>,
     {
         let active_premise =
             self.get_active_premise(function_id.into()).unwrap();

@@ -28,7 +28,7 @@ use crate::{
         self, Accessibility, Adt, AdtID, AdtImplementation,
         AdtImplementationFunction, Callable, CallableID, Constant, Enum,
         Function, Generic, GenericDeclaration, GenericID, GenericTemplate,
-        Global, GlobalID, HierarchyRelationship, Implementation,
+        Item, ItemID, HierarchyRelationship, Implementation,
         ImplementationID, ImplementationTemplate, Marker,
         MarkerImplementationID, Module, ModuleMemberID,
         NegativeMarkerImplementation, NegativeTraitImplementation,
@@ -409,12 +409,12 @@ macro_rules! get {
 pub enum GetByQualifiedNameError<'a> {
     #[error(
         "The given name `{name}` does not exist in the table (searched in \
-         `{searched_in_global_id:?}`)"
+         `{searched_in_item_id:?}`)"
     )]
     SymbolNotFound {
-        /// The global ID that was searched in. If `None`, the search was
+        /// The item ID that was searched in. If `None`, the search was
         /// started from the root.
-        searched_in_global_id: Option<GlobalID>,
+        searched_in_item_id: Option<ItemID>,
 
         /// The name that was searched.
         name: &'a str,
@@ -429,7 +429,7 @@ pub enum GetByQualifiedNameError<'a> {
 )]
 #[allow(missing_docs)]
 pub enum GetMemberError {
-    #[error("the given global ID is not valid")]
+    #[error("the given item ID is not valid")]
     InvalidID,
     #[error("the member with the given name is not found")]
     MemberNotFound,
@@ -512,7 +512,7 @@ impl<T: Container> Representation<T> {
         }
     }
 
-    /// Computes the [`HierarchyRelationship`] between the two given global IDs.
+    /// Computes the [`HierarchyRelationship`] between the two given item IDs.
     ///
     /// The returned [`HierarchyRelationship`] is based on the `first` symbol.
     ///
@@ -522,10 +522,10 @@ impl<T: Container> Representation<T> {
     #[must_use]
     pub fn symbol_hierarchy_relationship(
         &self,
-        first: GlobalID,
-        second: GlobalID,
+        first: ItemID,
+        second: ItemID,
     ) -> Option<HierarchyRelationship> {
-        if self.get_global(first).is_none() || self.get_global(second).is_none()
+        if self.get_item(first).is_none() || self.get_item(second).is_none()
         {
             return None;
         }
@@ -560,13 +560,13 @@ impl<T: Container> Representation<T> {
     #[must_use]
     pub fn is_accessible_from(
         &self,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         referred_accessibility: Accessibility,
     ) -> Option<bool> {
         match referred_accessibility {
             Accessibility::Public => {
                 // PEDANTIC: check if the referring site is a valid ID.
-                drop(self.get_global(referring_site)?);
+                drop(self.get_item(referring_site)?);
 
                 Some(true)
             }
@@ -595,73 +595,73 @@ impl<T: Container> Representation<T> {
     #[must_use]
     pub fn symbol_accessible(
         &self,
-        referring_site: GlobalID,
-        referred: GlobalID,
+        referring_site: ItemID,
+        referred: ItemID,
     ) -> Option<bool> {
         let referred_accessibility = self.get_accessibility(referred)?;
 
         self.is_accessible_from(referring_site, referred_accessibility)
     }
 
-    /// Returns the root [`Module`] ID that contains the given [`GlobalID`]
+    /// Returns the root [`Module`] ID that contains the given [`ItemID`]
     /// (including itself).
     #[must_use]
     pub fn get_root_module_id(
         &self,
-        mut global_id: GlobalID,
+        mut item_id: ItemID,
     ) -> Option<ID<Module>> {
         while let Some(parent_id) =
-            self.get_global(global_id)?.parent_global_id()
+            self.get_item(item_id)?.parent_item_id()
         {
-            global_id = parent_id;
+            item_id = parent_id;
         }
 
         Some(
-            global_id
+            item_id
                 .into_module()
                 .expect("It should be a module at the root."),
         )
     }
 
-    /// Returns the [`Module`] ID that is the closest to the given [`GlobalID`]
+    /// Returns the [`Module`] ID that is the closest to the given [`ItemID`]
     /// (including itself).
     #[must_use]
     pub fn get_closet_module_id(
         &self,
-        mut global_id: GlobalID,
+        mut item_id: ItemID,
     ) -> Option<ID<Module>> {
         // including itself
         loop {
-            if let GlobalID::Module(module_id) = global_id {
+            if let ItemID::Module(module_id) = item_id {
                 drop(self.get(module_id)?);
                 return Some(module_id);
             }
 
-            global_id = self
-                .get_global(global_id)?
-                .parent_global_id()
+            item_id = self
+                .get_item(item_id)?
+                .parent_item_id()
                 .expect("should've found at least one module");
         }
     }
 
-    /// Searches for a member with the given name in the given global ID.
+    /// Searches for a member with the given name in the given item ID.
     ///
     /// # Errors
     ///
     /// See [`GetMemberError`] for more information.
     pub fn get_member_of(
         &self,
-        global_id: GlobalID,
+        item_id: ItemID,
         member_name: &str,
-    ) -> Result<GlobalID, GetMemberError> {
-        match global_id {
-            GlobalID::Module(id) => self
+    ) -> Result<ItemID, GetMemberError> {
+        match item_id {
+            ItemID::Module(id) => self
                 .get(id)
                 .ok_or(GetMemberError::InvalidID)?
                 .member_ids_by_name
                 .get(member_name)
                 .map(|x| (*x).into()),
-            GlobalID::Struct(id) => self
+            ItemID::Struct(id) => self
                 .get(id)
                 .ok_or(GetMemberError::InvalidID)?
                 .implementations
@@ -673,13 +673,13 @@ impl<T: Container> Representation<T> {
                         .get(member_name)
                         .map(|x| (*x).into())
                 }),
-            GlobalID::Trait(id) => self
+            ItemID::Trait(id) => self
                 .get(id)
                 .ok_or(GetMemberError::InvalidID)?
                 .member_ids_by_name
                 .get(member_name)
                 .map(|x| (*x).into()),
-            GlobalID::Enum(id) => {
+            ItemID::Enum(id) => {
                 let enum_sym = self.get(id).ok_or(GetMemberError::InvalidID)?;
 
                 enum_sym
@@ -696,39 +696,39 @@ impl<T: Container> Representation<T> {
                         })
                     })
             }
-            GlobalID::PositiveTraitImplementation(id) => self
+            ItemID::PositiveTraitImplementation(id) => self
                 .get(id)
                 .ok_or(GetMemberError::InvalidID)?
                 .member_ids_by_name
                 .get(member_name)
                 .map(|x| (*x).into()),
-            GlobalID::AdtImplementation(x) => self
+            ItemID::AdtImplementation(x) => self
                 .get(x)
                 .ok_or(GetMemberError::InvalidID)?
                 .member_ids_by_name
                 .get(member_name)
                 .map(|x| (*x).into()),
 
-            GlobalID::NegativeTraitImplementation(_)
-            | GlobalID::TraitImplementationFunction(_)
-            | GlobalID::TraitImplementationType(_)
-            | GlobalID::TraitImplementationConstant(_)
-            | GlobalID::Type(_)
-            | GlobalID::Constant(_)
-            | GlobalID::Function(_)
-            | GlobalID::Variant(_)
-            | GlobalID::TraitType(_)
-            | GlobalID::TraitFunction(_)
-            | GlobalID::TraitConstant(_)
-            | GlobalID::AdtImplementationFunction(_)
-            | GlobalID::Marker(_)
-            | GlobalID::PositiveMarkerImplementation(_)
-            | GlobalID::NegativeMarkerImplementation(_) => None,
+            ItemID::NegativeTraitImplementation(_)
+            | ItemID::TraitImplementationFunction(_)
+            | ItemID::TraitImplementationType(_)
+            | ItemID::TraitImplementationConstant(_)
+            | ItemID::Type(_)
+            | ItemID::Constant(_)
+            | ItemID::Function(_)
+            | ItemID::Variant(_)
+            | ItemID::TraitType(_)
+            | ItemID::TraitFunction(_)
+            | ItemID::TraitConstant(_)
+            | ItemID::AdtImplementationFunction(_)
+            | ItemID::Marker(_)
+            | ItemID::PositiveMarkerImplementation(_)
+            | ItemID::NegativeMarkerImplementation(_) => None,
         }
         .ok_or(GetMemberError::MemberNotFound)
     }
 
-    /// Gets a [`GlobalID`] from the given qualified identifier.
+    /// Gets a [`ItemID`] from the given qualified identifier.
     ///
     /// # Errors
     ///
@@ -739,22 +739,22 @@ impl<T: Container> Representation<T> {
     pub fn get_by_qualified_name<'a>(
         &self,
         qualified_names: impl IntoIterator<Item = &'a str>,
-    ) -> Result<GlobalID, GetByQualifiedNameError<'a>> {
-        let mut current_id: Option<GlobalID> = None;
+    ) -> Result<ItemID, GetByQualifiedNameError<'a>> {
+        let mut current_id: Option<ItemID> = None;
 
         for name in qualified_names {
             match current_id {
-                Some(searched_in_global_id) => {
+                Some(searched_in_item_id) => {
                     current_id = Some(
-                        self.get_member_of(searched_in_global_id, name)
+                        self.get_member_of(searched_in_item_id, name)
                             .map_err(|err| match err {
                                 GetMemberError::InvalidID => {
                                     unreachable!("invalid ID in the table")
                                 }
                                 GetMemberError::MemberNotFound => {
                                     GetByQualifiedNameError::SymbolNotFound {
-                                        searched_in_global_id: Some(
-                                            searched_in_global_id,
+                                        searched_in_item_id: Some(
+                                            searched_in_item_id,
                                         ),
                                         name,
                                     }
@@ -766,10 +766,10 @@ impl<T: Container> Representation<T> {
                     current_id =
                         Some(self.root_module_ids_by_name.get(name).map_or(
                             Err(GetByQualifiedNameError::SymbolNotFound {
-                                searched_in_global_id: None,
+                                searched_in_item_id: None,
                                 name,
                             }),
-                            |some| Ok(GlobalID::Module(*some)),
+                            |some| Ok(ItemID::Module(*some)),
                         )?);
                 }
             }
@@ -778,27 +778,27 @@ impl<T: Container> Representation<T> {
         current_id.ok_or(GetByQualifiedNameError::EmptyIterator)
     }
 
-    /// Gets the fully qualified name of the given [`GlobalID`].
+    /// Gets the fully qualified name of the given [`ItemID`].
     ///
     /// # Returns
     ///
-    /// Returns `None` if the given [`GlobalID`] is not valid.
+    /// Returns `None` if the given [`ItemID`] is not valid.
     #[must_use]
     #[allow(clippy::too_many_lines)]
-    pub fn get_qualified_name(&self, global_id: GlobalID) -> Option<String> {
-        match global_id {
-            GlobalID::PositiveTraitImplementation(id) => {
+    pub fn get_qualified_name(&self, item_id: ItemID) -> Option<String> {
+        match item_id {
+            ItemID::PositiveTraitImplementation(id) => {
                 self.get_qualified_name(self.get(id)?.implemented_id.into())
             }
-            GlobalID::NegativeTraitImplementation(id) => {
-                self.get_qualified_name(self.get(id)?.implemented_id.into())
-            }
-
-            GlobalID::AdtImplementation(id) => {
+            ItemID::NegativeTraitImplementation(id) => {
                 self.get_qualified_name(self.get(id)?.implemented_id.into())
             }
 
-            GlobalID::AdtImplementationFunction(id) => {
+            ItemID::AdtImplementation(id) => {
+                self.get_qualified_name(self.get(id)?.implemented_id.into())
+            }
+
+            ItemID::AdtImplementationFunction(id) => {
                 let mut qualified_name = self.get_qualified_name(
                     self.get(self.get(id)?.parent_id)
                         .unwrap()
@@ -810,7 +810,7 @@ impl<T: Container> Representation<T> {
                 Some(qualified_name)
             }
 
-            GlobalID::TraitImplementationType(id) => {
+            ItemID::TraitImplementationType(id) => {
                 let mut qualified_name = self.get_qualified_name(
                     self.get(self.get(id)?.parent_id)
                         .unwrap()
@@ -821,7 +821,7 @@ impl<T: Container> Representation<T> {
                 qualified_name.push_str(self.get(id)?.name.as_str());
                 Some(qualified_name)
             }
-            GlobalID::TraitImplementationFunction(id) => {
+            ItemID::TraitImplementationFunction(id) => {
                 let mut qualified_name = self.get_qualified_name(
                     self.get(self.get(id)?.parent_id)
                         .unwrap()
@@ -832,7 +832,7 @@ impl<T: Container> Representation<T> {
                 qualified_name.push_str(self.get(id)?.name.as_str());
                 Some(qualified_name)
             }
-            GlobalID::TraitImplementationConstant(id) => {
+            ItemID::TraitImplementationConstant(id) => {
                 let mut qualified_name = self.get_qualified_name(
                     self.get(self.get(id)?.parent_id)
                         .unwrap()
@@ -848,16 +848,16 @@ impl<T: Container> Representation<T> {
                 let mut qualified_name = String::new();
 
                 loop {
-                    let global = self.get_global(normal)?;
+                    let item = self.get_item(normal)?;
 
                     if qualified_name.is_empty() {
-                        qualified_name.push_str(global.name());
+                        qualified_name.push_str(item.name());
                     } else {
                         qualified_name.insert_str(0, "::");
-                        qualified_name.insert_str(0, global.name());
+                        qualified_name.insert_str(0, item.name());
                     }
 
-                    if let Some(parent_id) = global.parent_global_id() {
+                    if let Some(parent_id) = item.parent_item_id() {
                         normal = parent_id;
                     } else {
                         break;
@@ -1187,22 +1187,22 @@ impl<T: Container> Representation<T> {
         Ok(current_min)
     }
 
-    /// Gets the active [`Premise`] starting at the given [`GlobalID`] scope
+    /// Gets the active [`Premise`] starting at the given [`ItemID`] scope
     /// mapped to their [`Span`]s of their declaration.
     ///
     /// # Returns
     ///
-    /// Returns [`None`] if the given `global_id` is not a valid ID.
+    /// Returns [`None`] if the given `item_id` is not a valid ID.
     #[must_use]
     pub fn get_active_premise_predicates_with_span<M: Model>(
         &self,
-        global_id: GlobalID,
+        item_id: ItemID,
     ) -> Option<HashMap<Predicate<M>, Vec<Span>>> {
         let mut spans_by_predicate: HashMap<Predicate<M>, Vec<Span>> =
             HashMap::default();
 
-        for global_id in self.scope_walker(global_id)? {
-            let Ok(generic_id) = GenericID::try_from(global_id) else {
+        for item_id in self.scope_walker(item_id)? {
+            let Ok(generic_id) = GenericID::try_from(item_id) else {
                 continue;
             };
 
@@ -1223,23 +1223,23 @@ impl<T: Container> Representation<T> {
         Some(spans_by_predicate)
     }
 
-    /// Gets the active [`Premise`] starting at the given [`GlobalID`] scope.
+    /// Gets the active [`Premise`] starting at the given [`ItemID`] scope.
     ///
     /// # Returns
     ///
-    /// Returns [`None`] if the given `global_id` is not a valid ID.
+    /// Returns [`None`] if the given `item_id` is not a valid ID.
     #[must_use]
     pub fn get_active_premise<M: Model>(
         &self,
-        global_id: GlobalID,
+        item_id: ItemID,
     ) -> Option<Premise<M>> {
         let mut premise = Premise {
             predicates: BTreeSet::new(),
-            query_site: Some(global_id),
+            query_site: Some(item_id),
         };
 
-        for global_id in self.scope_walker(global_id)? {
-            let Ok(generic_id) = GenericID::try_from(global_id) else {
+        for item_id in self.scope_walker(item_id)? {
+            let Ok(generic_id) = GenericID::try_from(item_id) else {
                 continue;
             };
 
@@ -1256,14 +1256,14 @@ impl<T: Container> Representation<T> {
     }
 
     /// Gets the [`ScopeWalker`] that walks through the scope hierarchy of the
-    /// given [`GlobalID`].
+    /// given [`ItemID`].
     ///
     /// See [`ScopeWalker`] for more information.
     #[must_use]
-    pub fn scope_walker(&self, global_id: GlobalID) -> Option<ScopeWalker<T>> {
-        drop(self.get_global(global_id)?);
+    pub fn scope_walker(&self, item_id: ItemID) -> Option<ScopeWalker<T>> {
+        drop(self.get_item(item_id)?);
 
-        Some(ScopeWalker { table: self, current_id: Some(global_id) })
+        Some(ScopeWalker { table: self, current_id: Some(item_id) })
     }
 
     /// Creates the [`Accessibility`] based on where the symbol is defined in
@@ -1275,7 +1275,7 @@ impl<T: Container> Representation<T> {
     #[must_use]
     pub fn create_accessibility(
         &self,
-        parent_id: GlobalID,
+        parent_id: ItemID,
         access_modifier: &AccessModifier,
     ) -> Option<Accessibility> {
         match access_modifier {
@@ -1293,16 +1293,16 @@ impl<T: Container> Representation<T> {
         }
     }
 
-    /// Gets the accessibility of the given [`GlobalID`].
+    /// Gets the accessibility of the given [`ItemID`].
     ///
     /// # Errors
     ///
-    /// Returns `None` if the given [`GlobalID`] is not a valid ID.
+    /// Returns `None` if the given [`ItemID`] is not a valid ID.
     #[must_use]
     #[allow(clippy::too_many_lines)]
     pub fn get_accessibility(
         &self,
-        global_id: GlobalID,
+        item_id: ItemID,
     ) -> Option<Accessibility> {
         macro_rules! arm_expression {
             ($table:ident, $id:ident, $kind:ident) => {
@@ -1328,7 +1328,7 @@ impl<T: Container> Representation<T> {
 
                 match $self {
                     $(
-                        GlobalID::$kind($self) =>
+                        ItemID::$kind($self) =>
                             arm_expression!($table, $self, $kind $(, $expr)?),
                     )*
                 }
@@ -1336,7 +1336,7 @@ impl<T: Container> Representation<T> {
         }
 
         get_accessibility!(
-            global_id,
+            item_id,
             self,
             (Module),
             (Struct),
@@ -1349,7 +1349,7 @@ impl<T: Container> Representation<T> {
             (
                 Variant,
                 self.get_accessibility(
-                    T::read(global_id).parent_enum_id.into()
+                    T::read(item_id).parent_enum_id.into()
                 )
             ),
             (TraitType),
@@ -1358,20 +1358,20 @@ impl<T: Container> Representation<T> {
             (
                 PositiveTraitImplementation,
                 self.get_accessibility(
-                    T::read(global_id).implemented_id.into()
+                    T::read(item_id).implemented_id.into()
                 )
             ),
             (Marker),
             (
                 PositiveMarkerImplementation,
                 self.get_accessibility(
-                    T::read(global_id).implemented_id.into()
+                    T::read(item_id).implemented_id.into()
                 )
             ),
             (
                 NegativeMarkerImplementation,
                 self.get_accessibility(
-                    T::read(global_id).implemented_id.into()
+                    T::read(item_id).implemented_id.into()
                 )
             ),
             (TraitImplementationType),
@@ -1380,11 +1380,11 @@ impl<T: Container> Representation<T> {
             (
                 NegativeTraitImplementation,
                 self.get_accessibility(
-                    T::read(global_id).implemented_id.into()
+                    T::read(item_id).implemented_id.into()
                 )
             ),
             (AdtImplementation, {
-                self.get_accessibility(T::read(global_id).implemented_id.into())
+                self.get_accessibility(T::read(item_id).implemented_id.into())
             })
         )
     }
@@ -1476,16 +1476,16 @@ impl<T: Container> Representation<T> {
         }
     }
 
-    /// Returns the [`Global`] symbol from the given [`GlobalID`].
+    /// Returns the [`Item`] symbol from the given [`ItemID`].
     #[must_use]
-    pub fn get_global(
+    pub fn get_item(
         &self,
-        global_id: GlobalID,
-    ) -> Option<T::MappedRead<'_, dyn Global>> {
+        item_id: ItemID,
+    ) -> Option<T::MappedRead<'_, dyn Item>> {
         get!(
             self,
-            global_id,
-            GlobalID,
+            item_id,
+            ItemID,
             Module,
             Struct,
             TraitType,
@@ -1519,20 +1519,20 @@ impl<T: Container> Representation<T> {
 #[derive(Debug, Clone)]
 pub struct ScopeWalker<'a, T: Container> {
     table: &'a Representation<T>,
-    current_id: Option<GlobalID>,
+    current_id: Option<ItemID>,
 }
 
 impl<'a, T: Container> Iterator for ScopeWalker<'a, T> {
-    type Item = GlobalID;
+    type Item = ItemID;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.current_id {
             Some(current_id) => {
                 let next_id = self
                     .table
-                    .get_global(current_id)
+                    .get_item(current_id)
                     .unwrap()
-                    .parent_global_id();
+                    .parent_item_id();
                 self.current_id = next_id;
                 Some(current_id)
             }
@@ -1605,7 +1605,7 @@ fn transition_to_building(
                     return;
                 };
 
-                let GlobalID::Module(id) = id else {
+                let ItemID::Module(id) = id else {
                     handler.receive(Box::new(ExpectModule {
                         module_path: a.simple_path().span(),
                         found_id: id,
@@ -1639,7 +1639,7 @@ fn transition_to_building(
                     .map(|x| {
                         drafting_table
                             .representation
-                            .get_global((*x).into())
+                            .get_item((*x).into())
                             .unwrap()
                             .span()
                             .cloned()
@@ -1684,7 +1684,7 @@ fn transition_to_building(
                     return;
                 };
 
-                let GlobalID::Module(from_id) = from_id else {
+                let ItemID::Module(from_id) = from_id else {
                     handler.receive(Box::new(ExpectModule {
                         module_path: a.from().simple_path().span(),
                         found_id: from_id,
@@ -1709,7 +1709,7 @@ fn transition_to_building(
                         .copied()
                     else {
                         handler.receive(Box::new(SymbolNotFound {
-                            searched_global_id: Some(from_id.into()),
+                            searched_item_id: Some(from_id.into()),
                             resolution_span: import.identifier().span.clone(),
                         }));
                         continue;
@@ -1719,7 +1719,7 @@ fn transition_to_building(
                         || {
                             drafting_table
                                 .representation
-                                .get_global(id.into())
+                                .get_item(id.into())
                                 .unwrap()
                                 .name()
                                 .to_owned()
@@ -1740,7 +1740,7 @@ fn transition_to_building(
                         .map(|x| {
                             drafting_table
                                 .representation
-                                .get_global((*x).into())
+                                .get_item((*x).into())
                                 .unwrap()
                                 .span()
                                 .cloned()
@@ -2015,7 +2015,7 @@ impl<T: Container> Representation<T> {
                 >,
             > + Eq
             + Hash,
-        Implemented: symbol::ImplementedMut<ImplementationID> + Element + Global,
+        Implemented: symbol::ImplementedMut<ImplementationID> + Element + Item,
         ImplementedID: Copy + From<ID<Implemented>>,
     >(
         &mut self,
@@ -2040,7 +2040,7 @@ impl<T: Container> Representation<T> {
             ImplementationTemplate<ImplementedID, Definition>,
         >: Element,
 
-        ID<Implemented>: Into<GlobalID>,
+        ID<Implemented>: Into<ItemID>,
     {
         if self.modules.get(parent_id).is_none() {
             return Err(InsertImplementationError::InvalidParentModuleID);

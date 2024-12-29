@@ -21,7 +21,7 @@ use crate::{
     symbol::{
         table::{representation::RwLockContainer, Building, Table},
         AdtImplementation, AdtImplementationFunction, Constant, Enum, Function,
-        GlobalID, Marker, NegativeMarkerImplementation,
+        ItemID, Marker, NegativeMarkerImplementation,
         NegativeTraitImplementation, PositiveMarkerImplementation,
         PositiveTraitImplementation, Struct, Trait, TraitConstant,
         TraitFunction, TraitImplementationConstant,
@@ -78,7 +78,7 @@ pub struct State<S: Finalize> {
     /// This is used to detect cyclic dependency, notifying the symbols that
     /// depends on it when the symbol is finalized, and avoiding deadlock
     /// when building the symbol.
-    dependants_by_flag: HashMap<Flag, HashSet<GlobalID>>,
+    dependants_by_flag: HashMap<Flag, HashSet<ItemID>>,
 }
 
 /// Finalizer is the state of the table used for finalizing the symbols.
@@ -137,26 +137,26 @@ pub struct Representation {
         State<NegativeMarkerImplementation>,
     >,
 
-    dependencies_by_dependant: HashMap<GlobalID, GlobalID>,
-    reported_cyclic_dependencies: HashSet<BTreeSet<GlobalID>>,
+    dependencies_by_dependant: HashMap<ItemID, ItemID>,
+    reported_cyclic_dependencies: HashSet<BTreeSet<ItemID>>,
 }
 
 impl Representation {
     const fn should_report_cyclic_error(
-        required_from: GlobalID,
+        required_from: ItemID,
         target_state_flag: Flag,
-        dependency_stack: &[(GlobalID, Flag)],
+        dependency_stack: &[(ItemID, Flag)],
     ) -> bool {
         let required_from_is_structural_dependency = {
             match required_from {
-                GlobalID::Enum(_) => {
+                ItemID::Enum(_) => {
                     target_state_flag
                         == super::symbol::r#enum::PRE_DEFINITION_STATE
                         || target_state_flag
                             == super::symbol::r#enum::DEFINITION_STATE
                 }
 
-                GlobalID::Struct(_) => {
+                ItemID::Struct(_) => {
                     target_state_flag
                         == super::symbol::r#struct::PRE_DEFINITION_STATE
                         || target_state_flag
@@ -169,13 +169,13 @@ impl Representation {
 
         let last_is_structural_dependency = {
             match dependency_stack.last() {
-                Some((GlobalID::Enum(_), state_flag)) => {
+                Some((ItemID::Enum(_), state_flag)) => {
                     *state_flag == super::symbol::r#enum::PRE_DEFINITION_STATE
                         || *state_flag
                             == super::symbol::r#enum::DEFINITION_STATE
                 }
 
-                Some((GlobalID::Struct(_), state_flag)) => {
+                Some((ItemID::Struct(_), state_flag)) => {
                     *state_flag == super::symbol::r#struct::PRE_DEFINITION_STATE
                         || *state_flag
                             == super::symbol::r#struct::DEFINITION_STATE
@@ -193,76 +193,76 @@ impl Representation {
 
     pub fn get_dependants_by_flag_of(
         &self,
-        id: GlobalID,
-    ) -> Option<&HashMap<Flag, HashSet<GlobalID>>> {
+        id: ItemID,
+    ) -> Option<&HashMap<Flag, HashSet<ItemID>>> {
         match id {
-            GlobalID::Struct(id) => {
+            ItemID::Struct(id) => {
                 self.structs.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::Enum(id) => {
+            ItemID::Enum(id) => {
                 self.enums.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::Constant(id) => {
+            ItemID::Constant(id) => {
                 self.constants.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::Function(id) => {
+            ItemID::Function(id) => {
                 self.functions.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::Type(id) => {
+            ItemID::Type(id) => {
                 self.types.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::AdtImplementation(id) => {
+            ItemID::AdtImplementation(id) => {
                 self.adt_implementations.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::AdtImplementationFunction(id) => self
+            ItemID::AdtImplementationFunction(id) => self
                 .adt_implementation_functions
                 .get(&id)
                 .map(|x| &x.dependants_by_flag),
-            GlobalID::Trait(id) => {
+            ItemID::Trait(id) => {
                 self.traits.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::TraitConstant(id) => {
+            ItemID::TraitConstant(id) => {
                 self.trait_constants.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::TraitFunction(id) => {
+            ItemID::TraitFunction(id) => {
                 self.trait_functions.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::PositiveTraitImplementation(id) => self
+            ItemID::PositiveTraitImplementation(id) => self
                 .positive_trait_implementations
                 .get(&id)
                 .map(|x| &x.dependants_by_flag),
-            GlobalID::TraitImplementationConstant(id) => self
+            ItemID::TraitImplementationConstant(id) => self
                 .trait_implementation_constants
                 .get(&id)
                 .map(|x| &x.dependants_by_flag),
-            GlobalID::TraitImplementationFunction(id) => self
+            ItemID::TraitImplementationFunction(id) => self
                 .trait_implementation_functions
                 .get(&id)
                 .map(|x| &x.dependants_by_flag),
-            GlobalID::TraitImplementationType(id) => self
+            ItemID::TraitImplementationType(id) => self
                 .trait_implementation_types
                 .get(&id)
                 .map(|x| &x.dependants_by_flag),
-            GlobalID::NegativeTraitImplementation(id) => self
+            ItemID::NegativeTraitImplementation(id) => self
                 .negative_trait_implementations
                 .get(&id)
                 .map(|x| &x.dependants_by_flag),
-            GlobalID::TraitType(id) => {
+            ItemID::TraitType(id) => {
                 self.trait_types.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::Marker(id) => {
+            ItemID::Marker(id) => {
                 self.markers.get(&id).map(|x| &x.dependants_by_flag)
             }
-            GlobalID::PositiveMarkerImplementation(id) => self
+            ItemID::PositiveMarkerImplementation(id) => self
                 .positive_marker_implementations
                 .get(&id)
                 .map(|x| &x.dependants_by_flag),
-            GlobalID::NegativeMarkerImplementation(id) => self
+            ItemID::NegativeMarkerImplementation(id) => self
                 .negative_marker_implementations
                 .get(&id)
                 .map(|x| &x.dependants_by_flag),
 
-            GlobalID::Variant(_) | GlobalID::Module(_) => None,
+            ItemID::Variant(_) | ItemID::Module(_) => None,
         }
     }
 
@@ -271,105 +271,105 @@ impl Representation {
     #[allow(clippy::too_many_lines)]
     pub fn is_depending_on(
         &self,
-        dependency: GlobalID,
-        dependent: GlobalID,
+        dependency: ItemID,
+        dependent: ItemID,
     ) -> Option<bool> {
         match dependency {
-            GlobalID::Struct(id) => self.structs.get(&id).map(|x| {
+            ItemID::Struct(id) => self.structs.get(&id).map(|x| {
                 x.dependants_by_flag.values().any(|x| x.contains(&dependent))
             }),
-            GlobalID::Enum(id) => self.enums.get(&id).map(|x| {
+            ItemID::Enum(id) => self.enums.get(&id).map(|x| {
                 x.dependants_by_flag.values().any(|x| x.contains(&dependent))
             }),
-            GlobalID::Constant(id) => self.constants.get(&id).map(|x| {
+            ItemID::Constant(id) => self.constants.get(&id).map(|x| {
                 x.dependants_by_flag.values().any(|x| x.contains(&dependent))
             }),
-            GlobalID::Function(id) => self.functions.get(&id).map(|x| {
+            ItemID::Function(id) => self.functions.get(&id).map(|x| {
                 x.dependants_by_flag.values().any(|x| x.contains(&dependent))
             }),
-            GlobalID::Type(id) => self.types.get(&id).map(|x| {
+            ItemID::Type(id) => self.types.get(&id).map(|x| {
                 x.dependants_by_flag.values().any(|x| x.contains(&dependent))
             }),
-            GlobalID::AdtImplementation(id) => {
+            ItemID::AdtImplementation(id) => {
                 self.adt_implementations.get(&id).map(|x| {
                     x.dependants_by_flag
                         .values()
                         .any(|x| x.contains(&dependent))
                 })
             }
-            GlobalID::AdtImplementationFunction(id) => {
+            ItemID::AdtImplementationFunction(id) => {
                 self.adt_implementation_functions.get(&id).map(|x| {
                     x.dependants_by_flag
                         .values()
                         .any(|x| x.contains(&dependent))
                 })
             }
-            GlobalID::Trait(id) => self.traits.get(&id).map(|x| {
+            ItemID::Trait(id) => self.traits.get(&id).map(|x| {
                 x.dependants_by_flag.values().any(|x| x.contains(&dependent))
             }),
-            GlobalID::TraitConstant(id) => {
+            ItemID::TraitConstant(id) => {
                 self.trait_constants.get(&id).map(|x| {
                     x.dependants_by_flag
                         .values()
                         .any(|x| x.contains(&dependent))
                 })
             }
-            GlobalID::TraitFunction(id) => {
+            ItemID::TraitFunction(id) => {
                 self.trait_functions.get(&id).map(|x| {
                     x.dependants_by_flag
                         .values()
                         .any(|x| x.contains(&dependent))
                 })
             }
-            GlobalID::PositiveTraitImplementation(id) => {
+            ItemID::PositiveTraitImplementation(id) => {
                 self.positive_trait_implementations.get(&id).map(|x| {
                     x.dependants_by_flag
                         .values()
                         .any(|x| x.contains(&dependent))
                 })
             }
-            GlobalID::TraitImplementationConstant(id) => {
+            ItemID::TraitImplementationConstant(id) => {
                 self.trait_implementation_constants.get(&id).map(|x| {
                     x.dependants_by_flag
                         .values()
                         .any(|x| x.contains(&dependent))
                 })
             }
-            GlobalID::TraitImplementationFunction(id) => {
+            ItemID::TraitImplementationFunction(id) => {
                 self.trait_implementation_functions.get(&id).map(|x| {
                     x.dependants_by_flag
                         .values()
                         .any(|x| x.contains(&dependent))
                 })
             }
-            GlobalID::TraitImplementationType(id) => {
+            ItemID::TraitImplementationType(id) => {
                 self.trait_implementation_types.get(&id).map(|x| {
                     x.dependants_by_flag
                         .values()
                         .any(|x| x.contains(&dependent))
                 })
             }
-            GlobalID::NegativeTraitImplementation(id) => {
+            ItemID::NegativeTraitImplementation(id) => {
                 self.negative_trait_implementations.get(&id).map(|x| {
                     x.dependants_by_flag
                         .values()
                         .any(|x| x.contains(&dependent))
                 })
             }
-            GlobalID::TraitType(id) => self.trait_types.get(&id).map(|x| {
+            ItemID::TraitType(id) => self.trait_types.get(&id).map(|x| {
                 x.dependants_by_flag.values().any(|x| x.contains(&dependent))
             }),
-            GlobalID::Marker(id) => self.markers.get(&id).map(|x| {
+            ItemID::Marker(id) => self.markers.get(&id).map(|x| {
                 x.dependants_by_flag.values().any(|x| x.contains(&dependent))
             }),
-            GlobalID::PositiveMarkerImplementation(id) => {
+            ItemID::PositiveMarkerImplementation(id) => {
                 self.positive_marker_implementations.get(&id).map(|x| {
                     x.dependants_by_flag
                         .values()
                         .any(|x| x.contains(&dependent))
                 })
             }
-            GlobalID::NegativeMarkerImplementation(id) => {
+            ItemID::NegativeMarkerImplementation(id) => {
                 self.negative_marker_implementations.get(&id).map(|x| {
                     x.dependants_by_flag
                         .values()
@@ -377,7 +377,7 @@ impl Representation {
                 })
             }
 
-            GlobalID::Variant(_) | GlobalID::Module(_) => None,
+            ItemID::Variant(_) | ItemID::Module(_) => None,
         }
     }
 }
@@ -499,7 +499,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), EntryNotFoundError>
     where
-        ID<T>: Into<GlobalID>,
+        ID<T>: Into<ItemID>,
     {
         let (synchronization, syntax_tree, data) = {
             let builder_read = self.state.read_recursive();
@@ -583,7 +583,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), EntryNotFoundError>
     where
-        ID<T>: Into<GlobalID>,
+        ID<T>: Into<ItemID>,
     {
         loop {
             let synchronization = T::get_states(&self.state.read_recursive())
@@ -650,12 +650,12 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     pub fn build_to<T: Finalize + Element>(
         &self,
         id: ID<T>,
-        required_from: Option<GlobalID>,
+        required_from: Option<ItemID>,
         to_flag: Flag,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), BuildSymbolError>
     where
-        ID<T>: Into<GlobalID>,
+        ID<T>: Into<ItemID>,
     {
         let mut builder_write = self.state.write();
 

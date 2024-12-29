@@ -24,7 +24,7 @@ use crate::{
         },
         Accessibility, AdtImplementation, AdtImplementationFunction,
         CallableID, ConstantParameterID, Field, GenericID, GenericKind,
-        GenericParameter, GlobalID, LocalGenericParameterID, MemberID, Module,
+        GenericParameter, ItemID, LocalGenericParameterID, MemberID, Module,
         PositiveTraitImplementation, ResolvableImplementationID, Struct, Trait,
         TraitFunction, TraitImplementationMemberID, TraitMemberID, Variant,
     },
@@ -50,20 +50,20 @@ use crate::{
 #[allow(clippy::module_name_repetitions)]
 pub struct ReportError;
 
-/// The global symbol with the same name already exists in the given scope.
+/// The item symbol with the same name already exists in the given scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GlobalRedifinition {
+pub struct ItemRedifinition {
     /// The ID of the existing symbol.
-    pub existing_global_id: GlobalID,
+    pub existing_item_id: ItemID,
 
     /// The ID of the new symbol.
-    pub new_global_id: GlobalID,
+    pub new_item_id: ItemID,
 
     /// The scope in which the duplication occurred.
-    pub in_global_id: GlobalID,
+    pub in_item_id: ItemID,
 }
 
-impl Report<&Table<Suboptimal>> for GlobalRedifinition {
+impl Report<&Table<Suboptimal>> for ItemRedifinition {
     type Error = ReportError;
 
     fn report(
@@ -75,9 +75,9 @@ impl Report<&Table<Suboptimal>> for GlobalRedifinition {
             Some(new_symbol),
             Some(scope_qualified_name),
         ) = (
-            table.get_global(self.existing_global_id),
-            table.get_global(self.new_global_id),
-            table.get_qualified_name(self.in_global_id),
+            table.get_item(self.existing_item_id),
+            table.get_item(self.new_item_id),
+            table.get_qualified_name(self.in_item_id),
         )
         else {
             return Err(ReportError);
@@ -112,10 +112,10 @@ impl Report<&Table<Suboptimal>> for GlobalRedifinition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SymbolIsMoreAccessibleThanParent {
     /// The ID of the symbol that is more accessible than the parent symbol.
-    pub symbol_id: GlobalID,
+    pub symbol_id: ItemID,
 
     /// The ID of the parent symbol.
-    pub parent_id: GlobalID,
+    pub parent_id: ItemID,
 }
 
 impl<T: State> Table<T> {
@@ -144,7 +144,7 @@ impl Report<&Table<Suboptimal>> for SymbolIsMoreAccessibleThanParent {
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
         let (Some(symbol_name), Some(parent_qualified_name)) = (
-            table.get_global(self.symbol_id).map(|x| x.name().to_owned()),
+            table.get_item(self.symbol_id).map(|x| x.name().to_owned()),
             table.get_qualified_name(self.parent_id),
         ) else {
             return Err(ReportError);
@@ -174,8 +174,8 @@ impl Report<&Table<Suboptimal>> for SymbolIsMoreAccessibleThanParent {
         };
 
         let (Some(symbol_span), Some(parent_span)) = (
-            table.get_global(self.symbol_id).and_then(|x| x.span().cloned()),
-            table.get_global(self.parent_id).map(|x| x.span().cloned()),
+            table.get_item(self.symbol_id).and_then(|x| x.span().cloned()),
+            table.get_item(self.parent_id).map(|x| x.span().cloned()),
         ) else {
             return Err(ReportError);
         };
@@ -215,7 +215,7 @@ impl Report<&Table<Suboptimal>> for SymbolIsMoreAccessibleThanParent {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InvalidSymbolInImplementation {
     /// The ID of the symbol that was found in the implementation.
-    pub invalid_global_id: GlobalID,
+    pub invalid_item_id: ItemID,
 
     /// The span where the invalid symbol was found.
     pub qualified_identifier_span: Span,
@@ -229,7 +229,7 @@ impl Report<&Table<Suboptimal>> for InvalidSymbolInImplementation {
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
         let qualified_name = table
-            .get_qualified_name(self.invalid_global_id)
+            .get_qualified_name(self.invalid_item_id)
             .ok_or(ReportError)?;
 
         Ok(Diagnostic {
@@ -252,10 +252,10 @@ pub struct ExpectModule {
     pub module_path: Span,
 
     /// The ID of the symbol that was found instead of a module.
-    pub found_id: GlobalID,
+    pub found_id: ItemID,
 }
 
-impl GlobalID {
+impl ItemID {
     /// Returns the kind of the symbol description as a string.
     #[must_use]
     pub const fn kind_str(&self) -> &'static str {
@@ -409,11 +409,11 @@ impl Report<&Table<Suboptimal>> for UsingDuplication {
 /// The symbol is not accessible from the referring site.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SymbolIsNotAccessible {
-    /// [`GlobalID`] where the [`Self::referred`] is referred.
-    pub referring_site: GlobalID,
+    /// [`ItemID`] where the [`Self::referred`] is referred.
+    pub referring_site: ItemID,
 
     /// The symbol that was referred and is not accessible.
-    pub referred: GlobalID,
+    pub referred: ItemID,
 
     /// The span where the [`Self::referred`] is referred from.
     pub referred_span: Span,
@@ -452,7 +452,7 @@ pub struct ResolutionAmbiguity {
     pub resolution_span: Span,
 
     /// The candidates that were found.
-    pub candidates: Vec<GlobalID>,
+    pub candidates: Vec<ItemID>,
 }
 
 impl Report<&Table<Suboptimal>> for ResolutionAmbiguity {
@@ -550,9 +550,9 @@ impl Report<&Table<Suboptimal>> for AmbiguousMethodCall {
 /// The symbol was not found in the given scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SymbolNotFound {
-    /// The [`GlobalID`] where the symbol was searched in. If `None`, the root
+    /// The [`ItemID`] where the symbol was searched in. If `None`, the root
     /// module was searched.
-    pub searched_global_id: Option<GlobalID>,
+    pub searched_item_id: Option<ItemID>,
 
     /// The span where the symbol was searched from.
     pub resolution_span: Span,
@@ -565,7 +565,7 @@ impl Report<&Table<Suboptimal>> for SymbolNotFound {
         &self,
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
-        if let Some(searched_in_module_id) = self.searched_global_id {
+        if let Some(searched_in_module_id) = self.searched_item_id {
             let qualified_name = table
                 .get_qualified_name(searched_in_module_id)
                 .ok_or(ReportError)?;
@@ -600,7 +600,7 @@ impl Report<&Table<Suboptimal>> for SymbolNotFound {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NoGenericArgumentsRequired {
     /// The symbol that  was supplied with generic arguments.
-    pub global_id: GlobalID,
+    pub item_id: ItemID,
 
     /// The span where the generic arguments were supplied.
     pub generic_argument_span: Span,
@@ -614,7 +614,7 @@ impl Report<&Table<Suboptimal>> for NoGenericArgumentsRequired {
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
         let qualified_name =
-            table.get_qualified_name(self.global_id).ok_or(ReportError)?;
+            table.get_qualified_name(self.item_id).ok_or(ReportError)?;
 
         Ok(Diagnostic {
             span: self.generic_argument_span.clone(),
@@ -633,7 +633,7 @@ impl Report<&Table<Suboptimal>> for NoGenericArgumentsRequired {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectedMarker {
     /// The ID of the symbol that was not a marker.
-    pub found_id: GlobalID,
+    pub found_id: ItemID,
 
     /// The span of the marker path.
     pub marker_path: Span,
@@ -667,7 +667,7 @@ impl Report<&Table<Suboptimal>> for ExpectedMarker {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectTrait {
     /// The ID of the symbol that was not a trait.
-    pub found_id: GlobalID,
+    pub found_id: ItemID,
 
     /// The span of the trait path.
     pub trait_path: Span,
@@ -701,7 +701,7 @@ impl Report<&Table<Suboptimal>> for ExpectTrait {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CyclicDependency {
     /// List of symbols that are involved in the cycle.
-    pub participants: BTreeSet<GlobalID>,
+    pub participants: BTreeSet<ItemID>,
 }
 
 impl Report<&Table<Suboptimal>> for CyclicDependency {
@@ -714,7 +714,7 @@ impl Report<&Table<Suboptimal>> for CyclicDependency {
         let first_symbol =
             self.participants.iter().next().ok_or(ReportError)?;
         let symbol_span = table
-            .get_global(*first_symbol)
+            .get_item(*first_symbol)
             .ok_or(ReportError)?
             .span()
             .ok_or(ReportError)?;
@@ -742,7 +742,7 @@ impl Report<&Table<Suboptimal>> for CyclicDependency {
                 .participants
                 .iter()
                 .filter_map(|&participant| {
-                    table.get_global(participant).and_then(|x| x.span())
+                    table.get_item(participant).and_then(|x| x.span())
                 })
                 .map(|x| Related {
                     span: x.clone(),
@@ -905,7 +905,7 @@ pub struct PrivateEntityLeakedToPublicInterface<T> {
     pub leaked_span: Span,
 
     /// The ID of the public interface that contains the leaked entity.
-    pub public_interface_id: GlobalID,
+    pub public_interface_id: ItemID,
 }
 
 impl<T: Display<Suboptimal>> Report<&Table<Suboptimal>>
@@ -987,8 +987,8 @@ pub struct LifetimeParameterNotFound {
     /// The span where the lifetime parameter was referred from.
     pub referred_span: Span,
 
-    /// The [`GlobalID`] where the referenced occurred from.
-    pub referring_site: GlobalID,
+    /// The [`ItemID`] where the referenced occurred from.
+    pub referring_site: ItemID,
 }
 
 impl Report<&Table<Suboptimal>> for LifetimeParameterNotFound {
@@ -1166,8 +1166,8 @@ pub struct ExpectType {
     /// The span where the non-type symbol was found.
     pub non_type_symbol_span: Span,
 
-    /// The [`GlobalID`] where the non-type symbol was found.
-    pub resolved_global_id: GlobalID,
+    /// The [`ItemID`] where the non-type symbol was found.
+    pub resolved_item_id: ItemID,
 }
 
 impl Report<&Table<Suboptimal>> for ExpectType {
@@ -1178,14 +1178,14 @@ impl Report<&Table<Suboptimal>> for ExpectType {
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
         let qualified_name = table
-            .get_qualified_name(self.resolved_global_id)
+            .get_qualified_name(self.resolved_item_id)
             .ok_or(ReportError)?;
 
         Ok(Diagnostic {
             span: self.non_type_symbol_span.clone(),
             message: format!(
                 "the type was expected but found {} `{qualified_name}`",
-                self.resolved_global_id.kind_str(),
+                self.resolved_item_id.kind_str(),
             ),
             severity: Severity::Error,
             help_message: None,
@@ -1339,7 +1339,7 @@ impl Report<&Table<Suboptimal>>
             .get_qualified_name(self.trait_member_id.into())
             .ok_or(ReportError)?;
         let trait_member_sym =
-            table.get_global(self.trait_member_id.into()).ok_or(ReportError)?;
+            table.get_item(self.trait_member_id.into()).ok_or(ReportError)?;
 
         let trait_member_kind = match self.trait_member_id {
             TraitMemberID::Type(_) => TraitMemberKind::Type,
@@ -1474,7 +1474,7 @@ impl Report<&Table<Suboptimal>> for AmbiguousImplementation {
 
         Ok(Diagnostic {
             span: table
-                .get_global(self.first_implementation_id.into())
+                .get_item(self.first_implementation_id.into())
                 .ok_or(ReportError)?
                 .span()
                 .ok_or(ReportError)?
@@ -1487,7 +1487,7 @@ impl Report<&Table<Suboptimal>> for AmbiguousImplementation {
             related: vec![
                 Related {
                     span: table
-                        .get_global(self.first_implementation_id.into())
+                        .get_item(self.first_implementation_id.into())
                         .ok_or(ReportError)?
                         .span()
                         .ok_or(ReportError)?
@@ -1498,7 +1498,7 @@ impl Report<&Table<Suboptimal>> for AmbiguousImplementation {
                 },
                 Related {
                     span: table
-                        .get_global(self.second_implementation_id.into())
+                        .get_item(self.second_implementation_id.into())
                         .ok_or(ReportError)?
                         .span()
                         .ok_or(ReportError)?
@@ -1573,7 +1573,7 @@ impl Report<&Table<Suboptimal>>
 
         Ok(Diagnostic {
             span: table
-                .get_global(self.implementation_member_id.into())
+                .get_item(self.implementation_member_id.into())
                 .and_then(|x| x.span())
                 .ok_or(ReportError)?
                 .clone(),
@@ -1585,7 +1585,7 @@ impl Report<&Table<Suboptimal>>
             severity: Severity::Error,
             help_message: None,
             related: table
-                .get_global(self.trait_member_id.into())
+                .get_item(self.trait_member_id.into())
                 .and_then(|x| x.span())
                 .map(|x| Related {
                     span: x.clone(),
@@ -1618,7 +1618,7 @@ impl Report<&Table<Suboptimal>> for UnknownTraitImplementationMember {
             .get_qualified_name(self.trait_id.into())
             .ok_or(ReportError)?;
         let trait_sym =
-            table.get_global(self.trait_id.into()).ok_or(ReportError)?;
+            table.get_item(self.trait_id.into()).ok_or(ReportError)?;
         let trait_span = trait_sym.span();
 
         Ok(Diagnostic {
@@ -1675,7 +1675,7 @@ impl Report<&Table<Suboptimal>> for AlreadyImplementedTraitMember {
             help_message: None,
             related: vec![Related {
                 span: table
-                    .get_global(self.implemented_id.into())
+                    .get_item(self.implemented_id.into())
                     .and_then(|x| x.span())
                     .ok_or(ReportError)?
                     .clone(),
@@ -1696,7 +1696,7 @@ pub struct FieldIsNotAccessible {
     pub struct_id: ID<Struct>,
 
     /// The ID to the scope where the field is not accessible.
-    pub referring_site: GlobalID,
+    pub referring_site: ItemID,
 
     /// The span where the field is referred from.
     pub referring_identifier_span: Span,
@@ -1826,7 +1826,7 @@ impl Report<&Table<Suboptimal>> for UnimplementedTraitMembers {
 
         Ok(Diagnostic {
             span: table
-                .get_global(self.implementation_id.into())
+                .get_item(self.implementation_id.into())
                 .and_then(|x| x.span())
                 .ok_or(ReportError)?
                 .clone(),
@@ -2053,7 +2053,7 @@ where
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
         let trait_implementation_symbol = table
-            .get_global(self.trait_implementation_id.into())
+            .get_item(self.trait_implementation_id.into())
             .ok_or(ReportError)?;
 
         let trait_implementation_symbol_span =
@@ -2184,7 +2184,7 @@ where
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
         let trait_implementation_symbol = table
-            .get_global(self.trait_implementation_member_id.into())
+            .get_item(self.trait_implementation_member_id.into())
             .ok_or(ReportError)?;
 
         let trait_implementation_symbol_span =
@@ -2960,7 +2960,7 @@ pub struct MismatchedArgumentCount {
     ///
     /// This can be an enum variant, function, trait function, trait
     /// implementation function, and ADT implementation function.
-    pub called_id: GlobalID,
+    pub called_id: ItemID,
 
     /// The expected argument count.
     pub expected_count: usize,
@@ -2999,7 +2999,7 @@ impl Report<&Table<Suboptimal>> for MismatchedArgumentCount {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SymbolIsNotCallable {
     /// The ID of the symbol that cannot be called.
-    pub called_id: GlobalID,
+    pub called_id: ItemID,
 
     /// The span of the call.
     pub span: Span,
@@ -3839,7 +3839,7 @@ where
         table: &Table<Suboptimal>,
     ) -> Result<Diagnostic, Self::Error> {
         let resolvable_implementation_symbol = table
-            .get_global(self.resolvable_implementation_id.into())
+            .get_item(self.resolvable_implementation_id.into())
             .ok_or(ReportError)?;
 
         Ok(Diagnostic {
@@ -4573,7 +4573,7 @@ pub struct SymbolCannotBeUsedAsAnExpression {
     pub span: Span,
 
     /// The ID of the symbol that cannot be used as an expression.
-    pub symbol: GlobalID,
+    pub symbol: ItemID,
 }
 
 impl Report<&Table<Suboptimal>> for SymbolCannotBeUsedAsAnExpression {

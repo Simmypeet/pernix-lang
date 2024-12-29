@@ -19,7 +19,7 @@ use crate::{
     },
     symbol::{
         table::{self, representation::Index},
-        AdtID, CallableID, GlobalID,
+        AdtID, CallableID, ItemID,
     },
     type_system::{
         environment::Environment,
@@ -41,7 +41,7 @@ pub(super) fn simplify_drops<
 >(
     drop_instructions: impl IntoIterator<Item = Instruction<M>>,
     values: &Values<M>,
-    current_site: GlobalID,
+    current_site: ItemID,
     environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
 ) -> Result<Vec<Instruction<M>>, TypeSystemOverflow<ir::Model>>
 where
@@ -74,7 +74,7 @@ pub(super) fn simplify_drop<
     drop: &Drop<M>,
     values: &Values<M>,
     visited_types: &mut HashSet<Type<M>>,
-    current_site: GlobalID,
+    current_site: ItemID,
     environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
 ) -> Result<Vec<Instruction<M>>, TypeSystemOverflow<ir::Model>>
 where

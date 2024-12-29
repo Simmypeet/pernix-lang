@@ -89,7 +89,7 @@ macro_rules! from_ids {
 
 from_ids!(
     GenericID,
-    GlobalID,
+    ItemID,
     (Struct, Struct),
     (Trait, Trait),
     (Enum, Enum),
@@ -130,7 +130,7 @@ macro_rules! try_from_ids {
 }
 
 try_from_ids!(
-    GlobalID,
+    ItemID,
     GenericID,
     (Struct, Struct),
     (Trait, Trait),
@@ -154,7 +154,7 @@ try_from_ids!(
 );
 
 /// Represents a kind of symbol that accepts generic arguments.
-pub trait Generic: Global {
+pub trait Generic: Item {
     /// Gets the [`GenericParameters`] of the symbol.
     fn generic_declaration(&self) -> &GenericDeclaration;
 
@@ -193,7 +193,7 @@ from_ids! {
 
 from_ids! {
     MemberFunctionID,
-    GlobalID,
+    ItemID,
     (Trait, TraitFunction),
     (TraitImplementation, TraitImplementationFunction),
     (AdtImplementation, AdtImplementationFunction)
@@ -208,7 +208,7 @@ from_ids! {
 }
 
 try_from_ids!(
-    GlobalID,
+    ItemID,
     MemberFunctionID,
     (TraitFunction, Trait),
     (TraitImplementationFunction, TraitImplementation),
@@ -238,7 +238,7 @@ pub enum CallableID {
 
 from_ids! {
     CallableID,
-    GlobalID,
+    ItemID,
     (Function, Function),
     (TraitFunction, TraitFunction),
     (TraitImplementationFunction, TraitImplementationFunction),
@@ -255,7 +255,7 @@ from_ids! {
 }
 
 try_from_ids!(
-    GlobalID,
+    ItemID,
     CallableID,
     (Function, Function),
     (TraitFunction, TraitFunction),
@@ -295,7 +295,7 @@ pub trait Callable: Generic {
     fn return_type_mut(&mut self) -> &mut r#type::Type<Default>;
 }
 
-impl<ParentID: Copy + Into<GlobalID>, Definition> Callable
+impl<ParentID: Copy + Into<ItemID>, Definition> Callable
     for GenericTemplate<ParentID, FunctionTemplate<Definition>>
 {
     fn parameters(&self) -> &Arena<Parameter> { &self.parameters }
@@ -338,12 +338,12 @@ pub struct GenericDeclaration {
     pub predicates: Vec<Predicate>,
 }
 
-/// An ID of all kinds of symbols that implements the [`Global`] trait.
+/// An ID of all kinds of symbols that implements the [`Item`] trait.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
 )]
 #[allow(missing_docs)]
-pub enum GlobalID {
+pub enum ItemID {
     Module(ID<Module>),
     Struct(ID<Struct>),
     Trait(ID<Trait>),
@@ -405,13 +405,13 @@ trait ParentMut: Parent {
 }
 
 /// Represents a kind of symbol that has a clear hierarchy/name and can be
-/// referenced globally by a qualified name.
-pub trait Global {
+/// referenced itemly by a qualified name.
+pub trait Item {
     /// The name of the symbol.
     fn name(&self) -> &str;
 
     /// The ID of the parent symbol.
-    fn parent_global_id(&self) -> Option<GlobalID>;
+    fn parent_item_id(&self) -> Option<ItemID>;
 
     /// Location of where the symbol is declared.
     fn span(&self) -> Option<&Span>;
@@ -442,7 +442,7 @@ pub enum ModuleMemberID {
     Marker(ID<Marker>),
 }
 
-/// A template for defining a global symbol with generic declaration.
+/// A template for defining a item symbol with generic declaration.
 #[derive(
     Debug, Clone, PartialEq, Eq, Default, CopyGetters, Getters, Deref, DerefMut,
 )]
@@ -472,19 +472,17 @@ pub struct GenericTemplate<ParentID: Copy, Definition> {
     pub definition: Definition,
 }
 
-impl<ParentID: Copy + Into<GlobalID>, Definition> Global
+impl<ParentID: Copy + Into<ItemID>, Definition> Item
     for GenericTemplate<ParentID, Definition>
 {
     fn name(&self) -> &str { &self.name }
 
-    fn parent_global_id(&self) -> Option<GlobalID> {
-        Some(self.parent_id.into())
-    }
+    fn parent_item_id(&self) -> Option<ItemID> { Some(self.parent_id.into()) }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
-impl<ParentID: Copy + Into<GlobalID>, Definition> Generic
+impl<ParentID: Copy + Into<ItemID>, Definition> Generic
     for GenericTemplate<ParentID, Definition>
 {
     fn generic_declaration(&self) -> &GenericDeclaration {
@@ -512,7 +510,7 @@ pub struct AdtTemplate<Definition> {
     pub definition: Definition,
 }
 
-impl<ParentID: Copy + Into<GlobalID>, Definition> Adt
+impl<ParentID: Copy + Into<ItemID>, Definition> Adt
     for GenericTemplate<ParentID, AdtTemplate<Definition>>
 {
     fn generic_parameter_variances(&self) -> &GenericParameterVariances {
@@ -522,7 +520,7 @@ impl<ParentID: Copy + Into<GlobalID>, Definition> Adt
 
 from_ids!(
     ModuleMemberID,
-    GlobalID,
+    ItemID,
     (Module, Module),
     (Enum, Enum),
     (Struct, Struct),
@@ -579,11 +577,11 @@ impl ParentMut for Module {
     }
 }
 
-impl Global for Module {
+impl Item for Module {
     fn name(&self) -> &str { &self.name }
 
-    fn parent_global_id(&self) -> Option<GlobalID> {
-        self.parent_module_id.map(GlobalID::Module)
+    fn parent_item_id(&self) -> Option<ItemID> {
+        self.parent_module_id.map(ItemID::Module)
     }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
@@ -998,7 +996,7 @@ pub struct Field {
 /// Represents a struct declaration, denoted by `struct NAME { ... }` syntax.
 pub type Struct = GenericTemplate<ID<Module>, AdtTemplate<StructDefinition>>;
 
-impl<ParentID: Copy + Into<GlobalID>, AdtDefinition>
+impl<ParentID: Copy + Into<ItemID>, AdtDefinition>
     Implemented<ID<AdtImplementation>>
     for GenericTemplate<ParentID, AdtTemplate<AdtDefinition>>
 {
@@ -1007,7 +1005,7 @@ impl<ParentID: Copy + Into<GlobalID>, AdtDefinition>
     }
 }
 
-impl<ParentID: Copy + Into<GlobalID>, AdtDefinition>
+impl<ParentID: Copy + Into<ItemID>, AdtDefinition>
     ImplementedMut<ID<AdtImplementation>>
     for GenericTemplate<ParentID, AdtTemplate<AdtDefinition>>
 {
@@ -1087,11 +1085,11 @@ pub struct Variant {
     span: Option<Span>,
 }
 
-impl Global for Variant {
+impl Item for Variant {
     fn name(&self) -> &str { &self.name }
 
-    fn parent_global_id(&self) -> Option<GlobalID> {
-        Some(GlobalID::Enum(self.parent_enum_id))
+    fn parent_item_id(&self) -> Option<ItemID> {
+        Some(ItemID::Enum(self.parent_enum_id))
     }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
@@ -1325,7 +1323,7 @@ pub struct ImplementationTemplate<ImplementedID: Copy, Definition> {
     pub definition: Definition,
 }
 
-impl<ParentID: Copy + Into<GlobalID>, ImplementedID: Copy, Definition>
+impl<ParentID: Copy + Into<ItemID>, ImplementedID: Copy, Definition>
     Implementation
     for GenericTemplate<
         ParentID,
@@ -1362,7 +1360,7 @@ pub enum AdtID {
     Enum(ID<Enum>),
 }
 
-from_ids!(AdtID, GlobalID, (Struct, Struct), (Enum, Enum));
+from_ids!(AdtID, ItemID, (Struct, Struct), (Enum, Enum));
 from_ids!(AdtID, GenericID, (Struct, Struct), (Enum, Enum));
 
 /// Represents a adt implementation, denoted by `implements<PARAM> adt<PARAM> {
@@ -1464,7 +1462,7 @@ pub enum TraitImplementationMemberID {
 
 from_ids!(
     TraitImplementationMemberID,
-    GlobalID,
+    ItemID,
     (Type, TraitImplementationType),
     (Function, TraitImplementationFunction),
     (Constant, TraitImplementationConstant)
@@ -1615,7 +1613,7 @@ pub enum TraitMemberID {
 
 from_ids!(
     TraitMemberID,
-    GlobalID,
+    ItemID,
     (Type, TraitType),
     (Function, TraitFunction),
     (Constant, TraitConstant)
@@ -1740,7 +1738,7 @@ pub enum MarkerImplementationID {
 }
 
 try_from_ids!(
-    GlobalID,
+    ItemID,
     MarkerImplementationID,
     (PositiveMarkerImplementation, Positive),
     (NegativeMarkerImplementation, Negative)
@@ -1786,7 +1784,7 @@ pub enum TraitImplementationID {
 
 from_ids!(
     TraitImplementationID,
-    GlobalID,
+    ItemID,
     (Positive, PositiveTraitImplementation),
     (Negative, NegativeTraitImplementation)
 );
@@ -1799,7 +1797,7 @@ from_ids!(
 );
 
 try_from_ids!(
-    GlobalID,
+    ItemID,
     TraitImplementationID,
     (PositiveTraitImplementation, Positive),
     (NegativeTraitImplementation, Negative)
@@ -1842,7 +1840,7 @@ pub enum ResolvableImplementationID {
     NegativeMarker(ID<NegativeMarkerImplementation>),
 }
 
-impl From<ResolvableImplementationID> for GlobalID {
+impl From<ResolvableImplementationID> for ItemID {
     fn from(value: ResolvableImplementationID) -> Self {
         match value {
             ResolvableImplementationID::PositiveTrait(id) => {
@@ -1921,7 +1919,7 @@ impl From<ResolvableImplementationID> for ImplementationID {
     }
 }
 
-impl From<ImplementationID> for GlobalID {
+impl From<ImplementationID> for ItemID {
     fn from(value: ImplementationID) -> Self {
         match value {
             ImplementationID::PositiveTrait(id) => {
@@ -1987,7 +1985,7 @@ pub enum AlgebraicKind {
     Struct(ID<Struct>),
 }
 
-impl From<AlgebraicKind> for GlobalID {
+impl From<AlgebraicKind> for ItemID {
     fn from(value: AlgebraicKind) -> Self {
         match value {
             AlgebraicKind::Enum(id) => Self::Enum(id),

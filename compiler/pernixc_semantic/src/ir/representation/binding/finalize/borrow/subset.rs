@@ -29,7 +29,7 @@ use crate::{
     },
     symbol::{
         table::{self, representation::Index},
-        CallableID, GenericID, GlobalID, LifetimeParameterID,
+        CallableID, GenericID, ItemID, LifetimeParameterID,
     },
     transitive_closure::TransitiveClosure,
     type_system::{
@@ -236,7 +236,7 @@ pub struct Builder<
 > {
     representation: &'a Representation<BorrowModel>,
     register_infos: &'a RegisterInfos,
-    current_site: GlobalID,
+    current_site: ItemID,
     environment: &'a Environment<'a, BorrowModel, S, N, O>,
     region_variances: &'a RegionVariances,
 
@@ -303,7 +303,7 @@ impl Values<BorrowModel> {
         &self,
         struct_lit: &Struct<BorrowModel>,
         span: &Span,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,
@@ -415,7 +415,7 @@ impl Values<BorrowModel> {
         &self,
         phi: &Phi<BorrowModel>,
         span: &Span,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,
@@ -497,7 +497,7 @@ impl Values<BorrowModel> {
         &self,
         array: &Array<BorrowModel>,
         span: &Span,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,
@@ -574,7 +574,7 @@ impl Values<BorrowModel> {
         &self,
         variant: &Variant<BorrowModel>,
         span: &Span,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,
@@ -683,7 +683,7 @@ impl Values<BorrowModel> {
         &self,
         tuple: &Tuple<BorrowModel>,
         span: &Span,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,
@@ -732,7 +732,7 @@ impl Values<BorrowModel> {
         &self,
         function_call: &FunctionCall<BorrowModel>,
         span: &Span,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,
@@ -908,7 +908,7 @@ impl Values<BorrowModel> {
         borrow: &Borrow<BorrowModel>,
         span: &Span,
         register_id: ID<Register<BorrowModel>>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,
@@ -946,7 +946,7 @@ impl Values<BorrowModel> {
         store_address: &Address<BorrowModel>,
         value_type: Succeeded<Type<BorrowModel>, BorrowModel>,
         span: &Span,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,
@@ -1023,7 +1023,7 @@ impl Values<BorrowModel> {
     pub(super) fn get_changes_of_store<S: table::State>(
         &self,
         store_inst: &Store<BorrowModel>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,
@@ -1669,7 +1669,7 @@ struct Context<
     O: Observer<BorrowModel, S>,
 > {
     representation: &'a ir::Representation<BorrowModel>,
-    current_site: GlobalID,
+    current_site: ItemID,
     environment: &'a Environment<'a, BorrowModel, S, N, O>,
     register_infos: &'a RegisterInfos,
     region_variances: &'a RegionVariances,
@@ -2129,7 +2129,7 @@ pub fn analyze<
     ir: &ir::Representation<BorrowModel>,
     register_infos: &RegisterInfos,
     region_variances: &RegionVariances,
-    current_site: GlobalID,
+    current_site: ItemID,
     environment: &Environment<BorrowModel, S, N, O>,
 ) -> Result<Subset, TypeSystemOverflow<ir::Model>> {
     let mut context = Context {

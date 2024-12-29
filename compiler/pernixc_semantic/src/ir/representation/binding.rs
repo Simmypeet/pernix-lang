@@ -42,7 +42,7 @@ use crate::{
             resolution::{self, ElidedTermProvider, Resolution},
             Table,
         },
-        FunctionTemplate, GenericID, GenericTemplate, GlobalID,
+        FunctionTemplate, GenericID, GenericTemplate, ItemID,
     },
     type_system::{
         self,
@@ -116,7 +116,7 @@ pub struct Binder<
     resolution_observer: RO,
     type_system_observer: TO,
 
-    current_site: GlobalID,
+    current_site: ItemID,
     premise: Premise<infer::Model>,
     stack: Stack,
 
@@ -191,7 +191,7 @@ impl<
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Self, CreateFunctionBinderError>
     where
-        GlobalID: From<P> + From<ID<GenericTemplate<P, FunctionTemplate<D>>>>,
+        ItemID: From<P> + From<ID<GenericTemplate<P, FunctionTemplate<D>>>>,
         GenericTemplate<P, FunctionTemplate<D>>: table::representation::Element,
     {
         let premise = table

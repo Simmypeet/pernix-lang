@@ -16,7 +16,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index as _, Table},
-        AdtID, GlobalID,
+        AdtID, ItemID,
     },
     type_system::{
         environment::Environment,
@@ -942,10 +942,10 @@ pub enum SetStateError {
     InvalidAddress,
 
     /**
-    An error that occurs when trying to access a global ID that is not
+    An error that occurs when trying to access a item ID that is not
     found in the table.
      */
-    GlobalIDNotFound(GlobalID),
+    ItemIDNotFound(ItemID),
 
     /// An error that occurs when isntantiating the struct field's type.
     MismatchedArgumentCount(
@@ -1263,7 +1263,7 @@ impl Scope {
                 let struct_symbol = environment
                     .table()
                     .get(struct_id)
-                    .ok_or(SetStateError::GlobalIDNotFound(struct_id.into()))?;
+                    .ok_or(SetStateError::ItemIDNotFound(struct_id.into()))?;
 
                 if !struct_symbol.field_declaration_order().contains(&field.id)
                 {
@@ -1439,7 +1439,7 @@ impl Scope {
                 let enum_symbol = environment
                     .table()
                     .get(enum_id)
-                    .ok_or(SetStateError::GlobalIDNotFound(enum_id.into()))?;
+                    .ok_or(SetStateError::ItemIDNotFound(enum_id.into()))?;
 
                 let variant_symbol = environment
                     .table()

@@ -18,7 +18,7 @@ use crate::{
             },
             Building, Representation, Table,
         },
-        GenericID, GlobalID, Implementation, Implemented,
+        GenericID, ItemID, Implementation, Implemented,
         ResolvableImplementation, ResolvableImplementationID,
     },
     type_system::{environment::Environment, normalizer, order, Premise},
@@ -50,7 +50,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         build_implementation_id: impl Fn(ImplementationID),
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        ID<ImplementedSymbol>: Into<GlobalID> + Into<GenericID>,
+        ID<ImplementedSymbol>: Into<ItemID> + Into<GenericID>,
 
         Representation<RwLockContainer>: Index<ImplementationID>,
 

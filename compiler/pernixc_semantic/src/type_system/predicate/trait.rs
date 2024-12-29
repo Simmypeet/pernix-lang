@@ -11,7 +11,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index, DisplayObject, State, Table},
-        Generic, GlobalID, TraitImplementationID,
+        Generic, ItemID, TraitImplementationID,
     },
     type_system::{
         instantiation::Instantiation,
@@ -521,14 +521,14 @@ fn is_in_trait<M: Model, S: State>(
         return Ok(None);
     };
 
-    for global_id in
+    for item_id in
         if let Some(iter) = environment.table.scope_walker(query_site) {
             iter
         } else {
             return Ok(None);
         }
     {
-        let GlobalID::Trait(env_trait_id) = global_id else {
+        let ItemID::Trait(env_trait_id) = item_id else {
             continue;
         };
 

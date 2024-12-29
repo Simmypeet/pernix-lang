@@ -36,7 +36,7 @@ use crate::{
     arena::ID,
     symbol::{
         table::{self, DisplayObject, State, Table},
-        GenericID, GenericParameter, GlobalID, MemberID,
+        GenericID, GenericParameter, ItemID, MemberID,
     },
     type_system::model::Default,
 };
@@ -256,7 +256,7 @@ impl<M: Model, ID> Symbol<M, ID> {
     }
 }
 
-impl<T: State, ID: Into<GlobalID> + Copy, M: Model> table::Display<T>
+impl<T: State, ID: Into<ItemID> + Copy, M: Model> table::Display<T>
     for Symbol<M, ID>
 where
     GenericArguments<M>: table::Display<T>,
@@ -336,7 +336,7 @@ impl<M: Model, ID> MemberSymbol<M, ID> {
     }
 }
 
-impl<T: State, ID: Copy + Into<GlobalID>, M: Model> table::Display<T>
+impl<T: State, ID: Copy + Into<ItemID>, M: Model> table::Display<T>
     for MemberSymbol<M, ID>
 where
     GenericArguments<M>: table::Display<T>,
@@ -346,9 +346,9 @@ where
         table: &Table<T>,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        let this_sym = table.get_global(self.id.into()).ok_or(fmt::Error)?;
+        let this_sym = table.get_item(self.id.into()).ok_or(fmt::Error)?;
         let parent_qualified_identifier = table
-            .get_qualified_name(this_sym.parent_global_id().ok_or(fmt::Error)?)
+            .get_qualified_name(this_sym.parent_item_id().ok_or(fmt::Error)?)
             .ok_or(fmt::Error)?;
 
         write!(f, "{parent_qualified_identifier}{}", DisplayObject {
@@ -1029,20 +1029,20 @@ impl<M: Model> GenericArguments<M> {
         Ok(Some(Succeeded::satisfied_with(constraints)))
     }
 
-    /// Gets the [`GlobalID`]s that occur in the generic arguments.
+    /// Gets the [`ItemID`]s that occur in the generic arguments.
     #[must_use]
-    pub fn get_global_id_dependencies(
+    pub fn get_item_id_dependencies(
         &self,
         table: &Table<impl State>,
-    ) -> Option<Vec<GlobalID>> {
+    ) -> Option<Vec<ItemID>> {
         let mut occurrences = Vec::new();
 
         for r#type in &self.types {
-            occurrences.extend(r#type.get_global_id_dependencies(table)?);
+            occurrences.extend(r#type.get_item_id_dependencies(table)?);
         }
 
         for constant in &self.constants {
-            occurrences.extend(constant.get_global_id_dependencies(table)?);
+            occurrences.extend(constant.get_item_id_dependencies(table)?);
         }
 
         occurrences.sort_unstable();

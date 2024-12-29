@@ -87,16 +87,16 @@ impl Finalize for AdtImplementationFunction {
                     handler,
                 );
 
-                for global_id in generic_parameter_occurrences
+                for item_id in generic_parameter_occurrences
                     .resolutions()
                     .iter()
                     .chain(where_clause_occurrences.resolutions().iter())
                     .chain(signature_occurrences.resolutions().iter())
-                    .map(|x| x.0.global_id())
+                    .map(|x| x.0.item_id())
                 {
                     let _ = builder::build_for_definition(
                         table,
-                        global_id,
+                        item_id,
                         Some(symbol_id.into()),
                         handler,
                     );

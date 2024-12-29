@@ -11,7 +11,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index, DisplayObject, State},
-        Generic, GlobalID, MarkerImplementationID,
+        Generic, ItemID, MarkerImplementationID,
     },
     type_system::{
         environment::Environment,
@@ -697,14 +697,14 @@ fn is_in_marker<M: Model, S: State>(
         return Ok(None);
     };
 
-    for global_id in
+    for item_id in
         if let Some(iter) = environment.table.scope_walker(query_site) {
             iter
         } else {
             return Ok(None);
         }
     {
-        let GlobalID::Marker(env_marker_id) = global_id else {
+        let ItemID::Marker(env_marker_id) = item_id else {
             continue;
         };
 

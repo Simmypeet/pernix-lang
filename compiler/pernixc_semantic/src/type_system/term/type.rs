@@ -18,7 +18,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index, DisplayObject, State, Table},
-        AdtID, GlobalID, MemberFunctionID, TraitImplementationMemberID,
+        AdtID, ItemID, MemberFunctionID, TraitImplementationMemberID,
         TypeParameter, TypeParameterID,
     },
     type_system::{
@@ -817,7 +817,7 @@ pub enum SymbolID {
     Function(ID<symbol::Function>),
 }
 
-impl From<SymbolID> for GlobalID {
+impl From<SymbolID> for ItemID {
     fn from(value: SymbolID) -> Self {
         match value {
             SymbolID::Adt(adt) => adt.into(),
@@ -835,7 +835,7 @@ pub enum MemberSymbolID {
     Function(MemberFunctionID),
 }
 
-impl From<MemberSymbolID> for GlobalID {
+impl From<MemberSymbolID> for ItemID {
     fn from(value: MemberSymbolID) -> Self {
         match value {
             MemberSymbolID::Function(function_id) => function_id.into(),
@@ -1650,12 +1650,12 @@ impl<M: Model> Type<M> {
         self
     }
 
-    /// Gets a list of [`GlobalID`]s that occur in the type.
+    /// Gets a list of [`ItemID`]s that occur in the type.
     #[must_use]
-    pub fn get_global_id_dependencies(
+    pub fn get_item_id_dependencies(
         &self,
         table: &Table<impl State>,
-    ) -> Option<Vec<GlobalID>> {
+    ) -> Option<Vec<ItemID>> {
         let mut occurrences = match self {
             Self::Error(_)
             | Self::Primitive(_)
@@ -1665,9 +1665,8 @@ impl<M: Model> Type<M> {
             }
 
             Self::Symbol(symbol) => {
-                let mut occurrences = symbol
-                    .generic_arguments
-                    .get_global_id_dependencies(table)?;
+                let mut occurrences =
+                    symbol.generic_arguments.get_item_id_dependencies(table)?;
                 occurrences.push(symbol.id.into());
                 occurrences
             }
@@ -1675,43 +1674,40 @@ impl<M: Model> Type<M> {
             Self::MemberSymbol(member_symbol) => {
                 let mut occurrences = member_symbol
                     .parent_generic_arguments
-                    .get_global_id_dependencies(table)?;
+                    .get_item_id_dependencies(table)?;
                 occurrences.extend(
                     member_symbol
                         .member_generic_arguments
-                        .get_global_id_dependencies(table)?,
+                        .get_item_id_dependencies(table)?,
                 );
 
                 occurrences.push(member_symbol.id.into());
                 occurrences.extend(
-                    table
-                        .get_global(member_symbol.id.into())?
-                        .parent_global_id(),
+                    table.get_item(member_symbol.id.into())?.parent_item_id(),
                 );
 
                 occurrences
             }
 
             Self::Pointer(symbol) => {
-                return symbol.pointee.get_global_id_dependencies(table);
+                return symbol.pointee.get_item_id_dependencies(table);
             }
             Self::Reference(symbol) => {
-                return symbol.pointee.get_global_id_dependencies(table);
+                return symbol.pointee.get_item_id_dependencies(table);
             }
 
             Self::Array(array) => {
                 let mut occurrences =
-                    array.r#type.get_global_id_dependencies(table)?;
+                    array.r#type.get_item_id_dependencies(table)?;
                 occurrences
-                    .extend(array.length.get_global_id_dependencies(table)?);
+                    .extend(array.length.get_item_id_dependencies(table)?);
                 occurrences
             }
             Self::Tuple(tuple) => {
                 let mut occurrences = Vec::new();
                 for element in &tuple.elements {
-                    occurrences.extend(
-                        element.term.get_global_id_dependencies(table)?,
-                    );
+                    occurrences
+                        .extend(element.term.get_item_id_dependencies(table)?);
                 }
                 occurrences
             }
@@ -1719,11 +1715,11 @@ impl<M: Model> Type<M> {
             Self::TraitMember(member_symbol) => {
                 let mut occurrences = member_symbol
                     .parent_generic_arguments
-                    .get_global_id_dependencies(table)?;
+                    .get_item_id_dependencies(table)?;
                 occurrences.extend(
                     member_symbol
                         .member_generic_arguments
-                        .get_global_id_dependencies(table)?,
+                        .get_item_id_dependencies(table)?,
                 );
 
                 occurrences.push(member_symbol.id.into());
@@ -1733,7 +1729,7 @@ impl<M: Model> Type<M> {
                 occurrences
             }
             Self::Phantom(phantom) => {
-                return phantom.0.get_global_id_dependencies(table);
+                return phantom.0.get_item_id_dependencies(table);
             }
         };
 

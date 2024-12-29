@@ -283,7 +283,7 @@ impl<
             };
 
             // invoke the resolution observer
-            self.resolution_observer.on_global_id_resolved(
+            self.resolution_observer.on_item_id_resolved(
                 self.table,
                 self.current_site,
                 &self.create_handler_wrapper(handler),
@@ -783,7 +783,7 @@ impl<
                 trait_method_candidates,
                 |_| {
                     std::iter::once(Box::new(SymbolNotFound {
-                        searched_global_id: Some(adt_id.into()),
+                        searched_item_id: Some(adt_id.into()),
                         resolution_span: method_ident.span(),
                     })
                         as Box<dyn error::Error>)
@@ -792,8 +792,8 @@ impl<
             );
         };
 
-        // this is considered as an global id resolution, notify the observer
-        self.resolution_observer.on_global_id_resolved(
+        // this is considered as an item id resolution, notify the observer
+        self.resolution_observer.on_item_id_resolved(
             self.table,
             self.current_site,
             handler,
@@ -2013,7 +2013,7 @@ impl<
                 // report symbol is not callable
                 self.create_handler_wrapper(handler).receive(Box::new(
                     SymbolIsNotCallable {
-                        called_id: resolution.global_id(),
+                        called_id: resolution.item_id(),
                         span: syntax_tree_span.clone(),
                     },
                 ));

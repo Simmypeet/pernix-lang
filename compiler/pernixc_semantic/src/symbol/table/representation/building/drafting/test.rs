@@ -29,7 +29,7 @@ use crate::{
             },
             Building, Table,
         },
-        Accessibility, GlobalID, ModuleMemberID, TraitMemberID,
+        Accessibility, ItemID, ModuleMemberID, TraitMemberID,
     },
 };
 
@@ -43,9 +43,9 @@ impl<T: Container> Representation<T> {
     fn validate_access_modifier(
         &self,
         access_modifier: AccessModifier,
-        global_id: GlobalID,
+        item_id: ItemID,
     ) -> TestCaseResult {
-        let found_accessibility = self.get_accessibility(global_id).unwrap();
+        let found_accessibility = self.get_accessibility(item_id).unwrap();
 
         match (found_accessibility, access_modifier) {
             (Accessibility::Public, AccessModifier::Public) => Ok(()),
@@ -57,15 +57,15 @@ impl<T: Container> Representation<T> {
             ) => {
                 let expected = match access_modifier {
                     AccessModifier::Private => self.get_closet_module_id(
-                        self.get_global(global_id)
+                        self.get_item(item_id)
                             .unwrap()
-                            .parent_global_id()
+                            .parent_item_id()
                             .unwrap(),
                     ),
                     AccessModifier::Internal => self.get_root_module_id(
-                        self.get_global(global_id)
+                        self.get_item(item_id)
                             .unwrap()
-                            .parent_global_id()
+                            .parent_item_id()
                             .unwrap(),
                     ),
                     AccessModifier::Public => unreachable!(),

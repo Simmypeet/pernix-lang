@@ -178,7 +178,7 @@ impl<
                 self.create_handler_wrapper(handler).receive(Box::new(
                     error::SymbolCannotBeUsedAsAnExpression {
                         span: syntax_tree.span(),
-                        symbol: resolution.global_id(),
+                        symbol: resolution.item_id(),
                     },
                 ));
 

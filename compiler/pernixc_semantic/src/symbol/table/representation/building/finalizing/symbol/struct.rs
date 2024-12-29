@@ -20,7 +20,7 @@ use crate::{
             resolution::{self, Observer},
             Building,
         },
-        Field, GenericParameterVariances, GlobalID, HierarchyRelationship,
+        Field, GenericParameterVariances, ItemID, HierarchyRelationship,
         Struct,
     },
     type_system::{environment::Environment, normalizer, variance::Variance},
@@ -207,10 +207,10 @@ impl Finalize for Struct {
                 for id in definition_occurrences
                     .resolutions()
                     .iter()
-                    .map(|x| x.0.global_id())
+                    .map(|x| x.0.item_id())
                 {
                     match id {
-                        GlobalID::Struct(id) => {
+                        ItemID::Struct(id) => {
                             let _ = table.build_to(
                                 id,
                                 Some(symbol_id.into()),
@@ -219,7 +219,7 @@ impl Finalize for Struct {
                             );
                         }
 
-                        GlobalID::Enum(id) => {
+                        ItemID::Enum(id) => {
                             let _ = table.build_to(
                                 id,
                                 Some(symbol_id.into()),
@@ -276,10 +276,10 @@ impl Finalize for Struct {
                 for id in definition_occurrences
                     .resolutions()
                     .iter()
-                    .map(|x| x.0.global_id())
+                    .map(|x| x.0.item_id())
                 {
                     match id {
-                        GlobalID::Struct(id) => {
+                        ItemID::Struct(id) => {
                             let _ = table.build_to(
                                 id,
                                 Some(symbol_id.into()),
@@ -288,7 +288,7 @@ impl Finalize for Struct {
                             );
                         }
 
-                        GlobalID::Enum(id) => {
+                        ItemID::Enum(id) => {
                             let _ = table.build_to(
                                 id,
                                 Some(symbol_id.into()),

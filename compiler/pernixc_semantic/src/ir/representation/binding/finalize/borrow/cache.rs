@@ -12,7 +12,7 @@ use crate::{
         },
         value::register::Register,
     },
-    symbol::{table, CallableID, GlobalID},
+    symbol::{table, CallableID, ItemID},
     type_system::{
         environment::Environment,
         normalizer::Normalizer,
@@ -42,7 +42,7 @@ impl RegisterInfos {
     /// IR.
     pub fn new<S: table::State>(
         ir: &Representation<BorrowModel>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,
@@ -105,7 +105,7 @@ impl RegionVariances {
     #[allow(clippy::uninhabited_references)]
     pub fn new<S: table::State>(
         ir: &Representation<BorrowModel>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,

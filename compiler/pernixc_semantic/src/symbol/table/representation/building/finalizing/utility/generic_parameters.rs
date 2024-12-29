@@ -15,7 +15,7 @@ use crate::{
             resolution::{self, Observer},
             Building, Table,
         },
-        ConstantParameter, Generic, GenericID, GenericKind, GlobalID,
+        ConstantParameter, Generic, GenericID, GenericKind, ItemID,
         LifetimeParameter, MemberID, TypeParameter,
     },
 };
@@ -30,7 +30,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        ID<T>: Into<GlobalID> + Into<GenericID>,
+        ID<T>: Into<ItemID> + Into<GenericID>,
     {
         let mut lifetime_parameter_syns = Vec::new();
         let mut type_parameter_syns = Vec::new();

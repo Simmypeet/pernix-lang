@@ -27,7 +27,7 @@ use crate::{
         },
         value::register::Register,
     },
-    symbol::{table, GlobalID},
+    symbol::{table, ItemID},
     type_system::{
         environment::Environment,
         normalizer::Normalizer,
@@ -120,7 +120,7 @@ pub struct Checker<
     #[get_copy = "pub"]
     register_infos: &'a RegisterInfos,
     #[get_copy = "pub"]
-    current_site: GlobalID,
+    current_site: ItemID,
     #[get_copy = "pub"]
     subset: &'a Subset,
 }
@@ -138,7 +138,7 @@ impl<
         reachability: &'a Reachability<BorrowModel>,
         register_infos: &'a RegisterInfos,
         region_variances: &'a RegionVariances,
-        current_site: GlobalID,
+        current_site: ItemID,
         subset: &'a Subset,
     ) -> Self {
         Self {

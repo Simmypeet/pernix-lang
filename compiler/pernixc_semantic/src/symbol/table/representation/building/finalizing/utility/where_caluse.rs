@@ -25,7 +25,7 @@ use crate::{
             },
             Building, Table,
         },
-        Generic, GenericID, GlobalID,
+        Generic, GenericID, ItemID,
     },
     type_system::{
         equality::Equality,
@@ -44,7 +44,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        ID<T>: Into<GlobalID> + Into<GenericID>,
+        ID<T>: Into<ItemID> + Into<GenericID>,
     {
         let higher_ranked_lifetimes = syntax_tree
             .higher_ranked_lifetimes()
@@ -130,7 +130,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        ID<T>: Into<GlobalID> + Into<GenericID>,
+        ID<T>: Into<ItemID> + Into<GenericID>,
     {
         for marker_bound in syntax_tree.bounds().elements() {
             let higher_ranked_lifetimes = marker_bound
@@ -192,7 +192,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 }
 
                 resolution => handler.receive(Box::new(ExpectedMarker {
-                    found_id: resolution.global_id(),
+                    found_id: resolution.item_id(),
                     marker_path: marker_bound.span(),
                 })),
             }
@@ -209,7 +209,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        ID<T>: Into<GlobalID> + Into<GenericID>,
+        ID<T>: Into<ItemID> + Into<GenericID>,
     {
         let mut bounds = Vec::new();
 
@@ -310,7 +310,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        ID<T>: Into<GlobalID> + Into<GenericID>,
+        ID<T>: Into<ItemID> + Into<GenericID>,
     {
         let mut basic = builder::Resolution::basic();
         let mut observer = basic.chain(occurrences);
@@ -361,7 +361,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        ID<T>: Into<GlobalID> + Into<GenericID>,
+        ID<T>: Into<ItemID> + Into<GenericID>,
     {
         for marker_bound in syntax_tree.bounds().elements() {
             let higher_ranked_lifetimes = marker_bound
@@ -420,7 +420,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 }
 
                 resolution => handler.receive(Box::new(ExpectTrait {
-                    found_id: resolution.global_id(),
+                    found_id: resolution.item_id(),
                     trait_path: marker_bound.span(),
                 })),
             }
@@ -436,7 +436,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        ID<T>: Into<GlobalID> + Into<GenericID>,
+        ID<T>: Into<ItemID> + Into<GenericID>,
     {
         for tuple in syntax_tree.operands().elements() {
             let higher_ranked_lifetimes = tuple
@@ -519,7 +519,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        ID<T>: Into<GlobalID> + Into<GenericID>,
+        ID<T>: Into<ItemID> + Into<GenericID>,
     {
         let Some(where_clause) = syntax_tree else {
             return;

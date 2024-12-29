@@ -18,7 +18,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index, DisplayObject, State, Table},
-        ConstantParameter, ConstantParameterID, GlobalID, Variant,
+        ConstantParameter, ConstantParameterID, ItemID, Variant,
     },
     type_system::{
         self,
@@ -788,13 +788,13 @@ where
 }
 
 impl<M: Model> Constant<M> {
-    /// Gets a list of [`GlobalID`]s that occur in the constant.
+    /// Gets a list of [`ItemID`]s that occur in the constant.
     #[must_use]
     #[allow(clippy::too_many_lines)]
-    pub fn get_global_id_dependencies(
+    pub fn get_item_id_dependencies(
         &self,
         table: &Table<impl State>,
-    ) -> Option<Vec<GlobalID>> {
+    ) -> Option<Vec<ItemID>> {
         let mut occurrences = match self {
             Self::Phantom
             | Self::Error(_)
@@ -810,8 +810,7 @@ impl<M: Model> Constant<M> {
                 occurrences.push(val.id.into());
 
                 for field in &val.fields {
-                    occurrences
-                        .extend(field.get_global_id_dependencies(table)?);
+                    occurrences.extend(field.get_item_id_dependencies(table)?);
                 }
 
                 occurrences
@@ -825,7 +824,7 @@ impl<M: Model> Constant<M> {
 
                 if let Some(associated_value) = &val.associated_value {
                     occurrences.extend(
-                        associated_value.get_global_id_dependencies(table)?,
+                        associated_value.get_item_id_dependencies(table)?,
                     );
                 }
 
@@ -836,7 +835,7 @@ impl<M: Model> Constant<M> {
 
                 for element in &val.elements {
                     occurrences
-                        .extend(element.get_global_id_dependencies(table)?);
+                        .extend(element.get_item_id_dependencies(table)?);
                 }
 
                 occurrences
@@ -845,9 +844,8 @@ impl<M: Model> Constant<M> {
                 let mut occurrences = Vec::new();
 
                 for element in &tuple.elements {
-                    occurrences.extend(
-                        element.term.get_global_id_dependencies(table)?,
-                    );
+                    occurrences
+                        .extend(element.term.get_item_id_dependencies(table)?);
                 }
 
                 occurrences

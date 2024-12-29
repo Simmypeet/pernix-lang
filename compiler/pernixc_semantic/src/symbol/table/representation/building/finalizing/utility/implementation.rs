@@ -17,7 +17,7 @@ use crate::{
             resolution::{self, Observer},
             Building, Table,
         },
-        GenericID, GenericTemplate, GlobalID, ImplementationTemplate,
+        GenericID, GenericTemplate, ItemID, ImplementationTemplate,
     },
     type_system::{
         model::{self},
@@ -42,7 +42,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
         handler: &dyn Handler<Box<dyn Error>>,
     ) -> term::GenericArguments<model::Default>
     where
-        ID<T>: Into<GenericID> + Into<GlobalID>,
+        ID<T>: Into<GenericID> + Into<ItemID>,
     {
         // make sure the implemented symbol has generic parameters already
         let _ = self.build_to(
@@ -75,7 +75,7 @@ impl Table<Building<RwLockContainer, Finalizer>> {
 
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn build_implementation<
-        ParentID: Copy + Into<GlobalID>,
+        ParentID: Copy + Into<ItemID>,
         Implemented: Finalize + finalizing::Element,
         Definition: 'static,
     >(
@@ -110,8 +110,8 @@ impl Table<Building<RwLockContainer, Finalizer>> {
                 ParentID,
                 ImplementationTemplate<ID<Implemented>, Definition>,
             >,
-        >: Into<GlobalID> + Into<GenericID>,
-        ID<Implemented>: Into<GlobalID> + Into<GenericID>,
+        >: Into<ItemID> + Into<GenericID>,
+        ID<Implemented>: Into<ItemID> + Into<GenericID>,
     {
         if state_flag == generic_parameter_state {
             self.create_generic_parameters(

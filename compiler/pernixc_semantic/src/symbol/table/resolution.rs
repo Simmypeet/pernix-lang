@@ -28,7 +28,7 @@ use crate::{
     },
     symbol::{
         self, AdtID, AdtImplementationFunction, Constant, ConstantParameter,
-        Enum, Function, GenericKind, GlobalID, LifetimeParameter,
+        Enum, Function, GenericKind, ItemID, LifetimeParameter,
         LifetimeParameterID, Marker, MemberID, Module,
         PositiveTraitImplementation, Struct, Trait, TraitConstant,
         TraitFunction, TraitImplementationConstant,
@@ -81,7 +81,7 @@ pub enum GenericID {
     TraitImplementationConstant(ID<TraitImplementationConstant>),
 }
 
-impl From<GenericID> for GlobalID {
+impl From<GenericID> for ItemID {
     fn from(value: GenericID) -> Self {
         match value {
             GenericID::Struct(id) => Self::Struct(id),
@@ -175,7 +175,7 @@ impl From<MemberGenericID> for symbol::GenericID {
     }
 }
 
-impl From<MemberGenericID> for GlobalID {
+impl From<MemberGenericID> for ItemID {
     fn from(value: MemberGenericID) -> Self {
         match value {
             MemberGenericID::TraitFunction(id) => Self::TraitFunction(id),
@@ -286,12 +286,12 @@ pub enum Resolution<M: Model> {
 }
 
 impl<M: Model> Resolution<M> {
-    /// Gets the [`GlobalID`] of the resolved symbol.
+    /// Gets the [`ItemID`] of the resolved symbol.
     #[must_use]
-    pub fn global_id(&self) -> GlobalID {
+    pub fn item_id(&self) -> ItemID {
         match self {
-            Self::Module(id) => GlobalID::Module(*id),
-            Self::Variant(variant) => GlobalID::Variant(variant.variant),
+            Self::Module(id) => ItemID::Module(*id),
+            Self::Variant(variant) => ItemID::Variant(variant.variant),
             Self::Generic(generic) => generic.id.into(),
             Self::MemberGeneric(member_generic) => member_generic.id.into(),
             Self::PositiveTraitImplementation(implementation) => {
@@ -369,25 +369,25 @@ pub struct Chain<'f, 's, F, S> {
 impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
     Observer<T, M> for Chain<'f, 's, F, S>
 {
-    fn on_global_id_resolved(
+    fn on_item_id_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
-        global_id: GlobalID,
+        item_id: ItemID,
         span: &Span,
     ) -> bool {
-        self.first.on_global_id_resolved(
+        self.first.on_item_id_resolved(
             table,
             referring_site,
             handler,
-            global_id,
+            item_id,
             span,
-        ) && self.second.on_global_id_resolved(
+        ) && self.second.on_item_id_resolved(
             table,
             referring_site,
             handler,
-            global_id,
+            item_id,
             span,
         )
     }
@@ -395,7 +395,7 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
     fn on_resolution_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         resolution: &Resolution<M>,
         span: &Span,
@@ -418,7 +418,7 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
     fn on_type_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         mut ty: r#type::Type<M>,
         syntax_tree: &syntax_tree::r#type::Type,
@@ -442,7 +442,7 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
     fn on_lifetime_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         mut lifetime: Lifetime<M>,
         syntax_tree: &syntax_tree::Lifetime,
@@ -466,7 +466,7 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
     fn on_constant_arguments_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         constant: &constant::Constant<M>,
         syntax_tree: &syntax_tree::Constant,
@@ -490,7 +490,7 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
     fn on_unpacked_type_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         ty: &r#type::Type<M>,
         syntax_tree: &syntax_tree::r#type::Type,
@@ -514,7 +514,7 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
     fn on_unpacked_constant_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         constant: &constant::Constant<M>,
         syntax_tree: &syntax_tree::expression::Expression,
@@ -543,18 +543,18 @@ impl<'f, 's, T: State, M: Model, F: Observer<T, M>, S: Observer<T, M>>
 ///
 /// This is primarily used for dependency injection.
 pub trait Observer<T: State, M: Model> {
-    /// Notifies the observer when a global ID is resolved.
+    /// Notifies the observer when a item ID is resolved.
     ///
     /// Returns `true` if the resolution should continue, otherwise `false`.
     ///
     /// When the resolution process is stopped, the term resolution will be
     /// replaced with the `*::Error` variant.
-    fn on_global_id_resolved(
+    fn on_item_id_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
-        global_id: GlobalID,
+        item_id: ItemID,
         span: &Span,
     ) -> bool;
 
@@ -567,7 +567,7 @@ pub trait Observer<T: State, M: Model> {
     fn on_resolution_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         resolution: &Resolution<M>,
         span: &Span,
@@ -577,7 +577,7 @@ pub trait Observer<T: State, M: Model> {
     fn on_type_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         ty: r#type::Type<M>,
         syntax_tree: &syntax_tree::r#type::Type,
@@ -587,7 +587,7 @@ pub trait Observer<T: State, M: Model> {
     fn on_lifetime_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         lifetime: Lifetime<M>,
         syntax_tree: &syntax_tree::Lifetime,
@@ -597,7 +597,7 @@ pub trait Observer<T: State, M: Model> {
     fn on_constant_arguments_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         constant: &constant::Constant<M>,
         syntax_tree: &syntax_tree::Constant,
@@ -608,7 +608,7 @@ pub trait Observer<T: State, M: Model> {
     fn on_unpacked_type_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         ty: &r#type::Type<M>,
         syntax_tree: &syntax_tree::r#type::Type,
@@ -619,7 +619,7 @@ pub trait Observer<T: State, M: Model> {
     fn on_unpacked_constant_resolved(
         &mut self,
         table: &Table<T>,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
         constant: &constant::Constant<M>,
         syntax_tree: &syntax_tree::expression::Expression,
@@ -642,12 +642,12 @@ pub trait Observer<T: State, M: Model> {
 pub struct NoOp;
 
 impl<T: State, M: Model> Observer<T, M> for NoOp {
-    fn on_global_id_resolved(
+    fn on_item_id_resolved(
         &mut self,
         _: &Table<T>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        _: GlobalID,
+        _: ItemID,
         _: &Span,
     ) -> bool {
         true
@@ -656,7 +656,7 @@ impl<T: State, M: Model> Observer<T, M> for NoOp {
     fn on_resolution_resolved(
         &mut self,
         _: &Table<T>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
         _: &Resolution<M>,
         _: &Span,
@@ -667,7 +667,7 @@ impl<T: State, M: Model> Observer<T, M> for NoOp {
     fn on_type_resolved(
         &mut self,
         _: &Table<T>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
         ty: r#type::Type<M>,
         _: &syntax_tree::r#type::Type,
@@ -678,7 +678,7 @@ impl<T: State, M: Model> Observer<T, M> for NoOp {
     fn on_lifetime_resolved(
         &mut self,
         _: &Table<T>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
         lt: Lifetime<M>,
         _: &syntax_tree::Lifetime,
@@ -689,7 +689,7 @@ impl<T: State, M: Model> Observer<T, M> for NoOp {
     fn on_constant_arguments_resolved(
         &mut self,
         _: &Table<T>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
         _: &constant::Constant<M>,
         _: &syntax_tree::Constant,
@@ -699,7 +699,7 @@ impl<T: State, M: Model> Observer<T, M> for NoOp {
     fn on_unpacked_type_resolved(
         &mut self,
         _: &Table<T>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
         _: &r#type::Type<M>,
         _: &syntax_tree::r#type::Type,
@@ -709,7 +709,7 @@ impl<T: State, M: Model> Observer<T, M> for NoOp {
     fn on_unpacked_constant_resolved(
         &mut self,
         _: &Table<T>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
         _: &constant::Constant<M>,
         _: &syntax_tree::expression::Expression,
@@ -774,7 +774,7 @@ impl<'lp, 'tp, 'cp, 'ob, 'hrlt, S: State, M: Model>
 }
 
 impl<S: Container> Representation<S> {
-    /// Resolves a [`SimplePath`] as a [`GlobalID`].
+    /// Resolves a [`SimplePath`] as a [`ItemID`].
     ///
     /// # Errors
     ///
@@ -782,11 +782,11 @@ impl<S: Container> Representation<S> {
     pub fn resolve_simple_path(
         &self,
         simple_path: &SimplePath,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         start_from_root: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<GlobalID, ResolveQualifiedIdentifierError> {
-        let root: GlobalID = match simple_path.root() {
+    ) -> Result<ItemID, ResolveQualifiedIdentifierError> {
+        let root: ItemID = match simple_path.root() {
             SimplePathRoot::Target(_) => {
                 self.get_root_module_id(referring_site).unwrap().into()
             }
@@ -798,7 +798,7 @@ impl<S: Container> Representation<S> {
                         .copied()
                     else {
                         handler.receive(Box::new(SymbolNotFound {
-                            searched_global_id: None,
+                            searched_item_id: None,
                             resolution_span: ident.span.clone(),
                         }));
 
@@ -824,7 +824,7 @@ impl<S: Container> Representation<S> {
                         })
                     else {
                         handler.receive(Box::new(SymbolNotFound {
-                            searched_global_id: Some(closet_module_id.into()),
+                            searched_item_id: Some(closet_module_id.into()),
                             resolution_span: ident.span.clone(),
                         }));
 
@@ -860,17 +860,17 @@ impl<S: Container> Representation<S> {
     pub fn resolve_sequence<'a>(
         &self,
         simple_path: impl Iterator<Item = &'a Identifier>,
-        referring_site: GlobalID,
-        root: GlobalID,
+        referring_site: ItemID,
+        root: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<GlobalID, ResolveSequenceError> {
+    ) -> Result<ItemID, ResolveSequenceError> {
         let mut lastest_resolution = root;
         for identifier in simple_path {
             let new_id = self
                 .get_member_of(lastest_resolution, identifier.span.str())
                 .map_err(|_| {
                     handler.receive(Box::new(SymbolNotFound {
-                        searched_global_id: Some(lastest_resolution),
+                        searched_item_id: Some(lastest_resolution),
                         resolution_span: identifier.span.clone(),
                     }));
                     ResolveQualifiedIdentifierError::SemanticError
@@ -903,7 +903,7 @@ impl<S: State> Table<S> {
     pub fn resolve_lifetime_parameter(
         &self,
         identifier: &Identifier,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Option<LifetimeParameterID>, ResolveTermError> {
         for scope in self
@@ -946,7 +946,7 @@ impl<S: State> Table<S> {
     pub fn resolve_lifetime<M: Model>(
         &self,
         lifetime_argument: &syntax_tree::Lifetime,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Lifetime<M>, ResolveTermError> {
@@ -1004,7 +1004,7 @@ impl<S: State> Table<S> {
     pub fn resolve_generic_arguments<M: Model>(
         &self,
         generic_arguments: &syntax_tree::GenericArguments,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<GenericArguments<M>, ResolveTermError> {
@@ -1212,7 +1212,7 @@ impl<S: State> Table<S> {
         &self,
         resolved_id: symbol::GenericID,
         generic_identifier: &syntax_tree::GenericIdentifier,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<GenericArguments<M>, ResolveTermError> {
@@ -1334,7 +1334,7 @@ impl<S: State> Table<S> {
     pub fn resolve_type<M: Model>(
         &self,
         syntax_tree: &syntax_tree::r#type::Type,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<r#type::Type<M>, ResolveTermError> {
@@ -1595,7 +1595,7 @@ impl<S: State> Table<S> {
     fn resolve_qualified_identifier_type<M: Model>(
         &self,
         syntax_tree: &syntax_tree::QualifiedIdentifier,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<r#type::Type<M>, ResolveTermError> {
@@ -1607,11 +1607,11 @@ impl<S: State> Table<S> {
 
         // try to resolve the identifier as a type parameter
         if is_simple_identifier {
-            for global_id in self
+            for item_id in self
                 .scope_walker(referring_site)
                 .ok_or(ResolveTermError::InvalidReferringSiteID)?
             {
-                let Ok(generic_id) = symbol::GenericID::try_from(global_id)
+                let Ok(generic_id) = symbol::GenericID::try_from(item_id)
                 else {
                     continue;
                 };
@@ -1664,7 +1664,7 @@ impl<S: State> Table<S> {
             Err(resolution) => {
                 handler.receive(Box::new(ExpectType {
                     non_type_symbol_span: syntax_tree.span(),
-                    resolved_global_id: resolution.global_id(),
+                    resolved_item_id: resolution.item_id(),
                 }));
 
                 Ok(r#type::Type::Error(term::Error))
@@ -1778,48 +1778,48 @@ impl<S: State> Table<S> {
 
     #[allow(clippy::too_many_lines)]
     fn to_resolution<M: Model>(
-        resolved_id: GlobalID,
+        resolved_id: ItemID,
         generic_arguments: Option<GenericArguments<M>>,
         latest_resolution: Resolution<M>,
     ) -> Resolution<M> {
         match resolved_id {
-            GlobalID::Module(id) => Resolution::Module(id),
-            GlobalID::Struct(id) => Resolution::Generic(Generic {
+            ItemID::Module(id) => Resolution::Module(id),
+            ItemID::Struct(id) => Resolution::Generic(Generic {
                 id: id.into(),
                 generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::Trait(id) => Resolution::Generic(Generic {
+            ItemID::Trait(id) => Resolution::Generic(Generic {
                 id: id.into(),
                 generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::Enum(id) => Resolution::Generic(Generic {
+            ItemID::Enum(id) => Resolution::Generic(Generic {
                 id: id.into(),
                 generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::Type(id) => Resolution::Generic(Generic {
+            ItemID::Type(id) => Resolution::Generic(Generic {
                 id: id.into(),
                 generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::Constant(id) => Resolution::Generic(Generic {
+            ItemID::Constant(id) => Resolution::Generic(Generic {
                 id: id.into(),
                 generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::Function(id) => Resolution::Generic(Generic {
+            ItemID::Function(id) => Resolution::Generic(Generic {
                 id: id.into(),
                 generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::Variant(id) => Resolution::Variant(Variant {
+            ItemID::Variant(id) => Resolution::Variant(Variant {
                 generic_arguments:
                     Self::get_parent_generic_arguments_from_latest_resolution(
                         latest_resolution,
                     ),
                 variant: id,
             }),
-            GlobalID::Marker(id) => Resolution::Generic(Generic {
+            ItemID::Marker(id) => Resolution::Generic(Generic {
                 id: id.into(),
                 generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::TraitType(id) => {
+            ItemID::TraitType(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
                     parent_generic_arguments: latest_resolution
@@ -1829,7 +1829,7 @@ impl<S: State> Table<S> {
                     generic_arguments: generic_arguments.unwrap(),
                 })
             }
-            GlobalID::TraitFunction(id) => {
+            ItemID::TraitFunction(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
                     parent_generic_arguments: latest_resolution
@@ -1839,7 +1839,7 @@ impl<S: State> Table<S> {
                     generic_arguments: generic_arguments.unwrap(),
                 })
             }
-            GlobalID::TraitConstant(id) => {
+            ItemID::TraitConstant(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
                     parent_generic_arguments: latest_resolution
@@ -1850,15 +1850,15 @@ impl<S: State> Table<S> {
                 })
             }
 
-            GlobalID::AdtImplementation(_)
-            | GlobalID::NegativeTraitImplementation(_)
-            | GlobalID::PositiveTraitImplementation(_)
-            | GlobalID::PositiveMarkerImplementation(_)
-            | GlobalID::NegativeMarkerImplementation(_) => {
+            ItemID::AdtImplementation(_)
+            | ItemID::NegativeTraitImplementation(_)
+            | ItemID::PositiveTraitImplementation(_)
+            | ItemID::PositiveMarkerImplementation(_)
+            | ItemID::NegativeMarkerImplementation(_) => {
                 unreachable!("impossible to refer to a trait implementation")
             }
 
-            GlobalID::AdtImplementationFunction(id) => {
+            ItemID::AdtImplementationFunction(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
                     parent_generic_arguments: match latest_resolution {
@@ -1874,7 +1874,7 @@ impl<S: State> Table<S> {
                 })
             }
 
-            GlobalID::TraitImplementationFunction(id) => {
+            ItemID::TraitImplementationFunction(id) => {
                 assert!(matches!(
                     latest_resolution,
                     Resolution::PositiveTraitImplementation(_)
@@ -1886,7 +1886,7 @@ impl<S: State> Table<S> {
                 })
             }
 
-            GlobalID::TraitImplementationType(id) => {
+            ItemID::TraitImplementationType(id) => {
                 assert!(matches!(
                     latest_resolution,
                     Resolution::PositiveTraitImplementation(_)
@@ -1898,7 +1898,7 @@ impl<S: State> Table<S> {
                 })
             }
 
-            GlobalID::TraitImplementationConstant(id) => {
+            ItemID::TraitImplementationConstant(id) => {
                 assert!(matches!(
                     latest_resolution,
                     Resolution::PositiveTraitImplementation(_)
@@ -1921,7 +1921,7 @@ impl<S: State> Table<S> {
     pub fn resolve_qualified_identifier_root<M: Model>(
         &self,
         root_syn: &QualifiedIdentifierRoot,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Resolution<M>, ResolveQualifiedIdentifierError> {
@@ -1933,7 +1933,7 @@ impl<S: State> Table<S> {
                 )?;
 
                 if let Some(observer) = config.observer.as_mut() {
-                    if !observer.on_global_id_resolved(
+                    if !observer.on_item_id_resolved(
                         self,
                         referring_site,
                         handler,
@@ -1967,9 +1967,9 @@ impl<S: State> Table<S> {
                         ResolveQualifiedIdentifierError::InvalidReferringSiteID,
                     )?
                     .find_map(|x| match x {
-                        id @ (GlobalID::Trait(_)
-                        | GlobalID::PositiveTraitImplementation(_)
-                        | GlobalID::AdtImplementation(_)) => Some(id),
+                        id @ (ItemID::Trait(_)
+                        | ItemID::PositiveTraitImplementation(_)
+                        | ItemID::AdtImplementation(_)) => Some(id),
                         _ => None,
                     });
 
@@ -1980,7 +1980,7 @@ impl<S: State> Table<S> {
                 };
 
                 if let Some(observer) = config.observer.as_mut() {
-                    if !observer.on_global_id_resolved(
+                    if !observer.on_item_id_resolved(
                         self,
                         referring_site,
                         handler,
@@ -1992,7 +1992,7 @@ impl<S: State> Table<S> {
                 }
 
                 let resolution = match this {
-                    GlobalID::Trait(trait_id) => Resolution::Generic(Generic {
+                    ItemID::Trait(trait_id) => Resolution::Generic(Generic {
                         id: trait_id.into(),
                         generic_arguments: self
                             .get(trait_id)
@@ -2001,10 +2001,10 @@ impl<S: State> Table<S> {
                             .parameters
                             .create_identity_generic_arguments(trait_id.into()),
                     }),
-                    GlobalID::PositiveTraitImplementation(id) => {
+                    ItemID::PositiveTraitImplementation(id) => {
                         Resolution::PositiveTraitImplementation(id)
                     }
-                    GlobalID::AdtImplementation(id) => {
+                    ItemID::AdtImplementation(id) => {
                         let implementation = self.get(id).unwrap();
                         let generic_arguments =
                             GenericArguments::from_default_model(
@@ -2056,7 +2056,7 @@ impl<S: State> Table<S> {
 
                 let Some(id) = id else {
                     handler.receive(Box::new(SymbolNotFound {
-                        searched_global_id: Some(current_module_id.into()),
+                        searched_item_id: Some(current_module_id.into()),
                         resolution_span: generic_identifier
                             .identifier()
                             .span
@@ -2067,7 +2067,7 @@ impl<S: State> Table<S> {
                 };
 
                 if let Some(observer) = config.observer.as_mut() {
-                    if !observer.on_global_id_resolved(
+                    if !observer.on_item_id_resolved(
                         self,
                         referring_site,
                         handler,
@@ -2079,7 +2079,7 @@ impl<S: State> Table<S> {
                 }
 
                 let generic_arguments = if let Ok(generic_id) =
-                    symbol::GenericID::try_from(GlobalID::from(id))
+                    symbol::GenericID::try_from(ItemID::from(id))
                 {
                     Some(self.resolve_generic_arguments_for(
                         generic_id,
@@ -2093,7 +2093,7 @@ impl<S: State> Table<S> {
                         generic_identifier.generic_arguments().as_ref()
                     {
                         handler.receive(Box::new(NoGenericArgumentsRequired {
-                            global_id: id.into(),
+                            item_id: id.into(),
                             generic_argument_span: gen_args.span(),
                         }));
                     }
@@ -2173,7 +2173,7 @@ impl<S: State> Table<S> {
     ///
     /// - `qualified_identifier`: The qualified identifier to resolve the symbol
     ///   for.
-    /// - `referring_site`: The global ID of the symbol that is referring to the
+    /// - `referring_site`: The item ID of the symbol that is referring to the
     ///   symbol to resolve.
     /// - `config`: The configuration to used resolution.
     /// - `handler`: The handler for the diagnostics.
@@ -2184,13 +2184,13 @@ impl<S: State> Table<S> {
     pub fn resolve<M: Model>(
         &self,
         qualified_identifier: &QualifiedIdentifier,
-        referring_site: GlobalID,
+        referring_site: ItemID,
         mut config: Config<S, M>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Resolution<M>, ResolveQualifiedIdentifierError> {
         // check if the given `referring_site` is a valid ID.
         drop(
-            self.get_global(referring_site).ok_or(
+            self.get_item(referring_site).ok_or(
                 ResolveQualifiedIdentifierError::InvalidReferringSiteID,
             )?,
         );
@@ -2204,8 +2204,8 @@ impl<S: State> Table<S> {
         )?;
 
         for (_, generic_identifier) in qualified_identifier.rest() {
-            let global_id = match self.get_member_of(
-                latest_resolution.global_id(),
+            let item_id = match self.get_member_of(
+                latest_resolution.item_id(),
                 generic_identifier.identifier().span.str(),
             ) {
                 Ok(id) => id,
@@ -2213,8 +2213,8 @@ impl<S: State> Table<S> {
                     representation::GetMemberError::InvalidID => unreachable!(),
                     representation::GetMemberError::MemberNotFound => {
                         handler.receive(Box::new(SymbolNotFound {
-                            searched_global_id: Some(
-                                latest_resolution.global_id(),
+                            searched_item_id: Some(
+                                latest_resolution.item_id(),
                             ),
                             resolution_span: generic_identifier
                                 .identifier()
@@ -2231,11 +2231,11 @@ impl<S: State> Table<S> {
 
             // invoke the observer
             if let Some(observer) = config.observer.as_mut() {
-                if !observer.on_global_id_resolved(
+                if !observer.on_item_id_resolved(
                     self,
                     referring_site,
                     handler,
-                    global_id,
+                    item_id,
                     &generic_identifier.identifier().span,
                 ) {
                     return Err(ResolveQualifiedIdentifierError::Abort);
@@ -2243,7 +2243,7 @@ impl<S: State> Table<S> {
             }
 
             let generic_arguments = if let Ok(generic_id) =
-                symbol::GenericID::try_from(global_id)
+                symbol::GenericID::try_from(item_id)
             {
                 Some(self.resolve_generic_arguments_for(
                     generic_id,
@@ -2257,7 +2257,7 @@ impl<S: State> Table<S> {
                     generic_identifier.generic_arguments().as_ref()
                 {
                     handler.receive(Box::new(NoGenericArgumentsRequired {
-                        global_id,
+                        item_id,
                         generic_argument_span: gen_args.span(),
                     }));
                 }
@@ -2266,7 +2266,7 @@ impl<S: State> Table<S> {
             };
 
             let next_resolution = Self::to_resolution(
-                global_id,
+                item_id,
                 generic_arguments,
                 latest_resolution,
             );

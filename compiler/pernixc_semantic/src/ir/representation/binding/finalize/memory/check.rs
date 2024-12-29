@@ -23,7 +23,7 @@ use crate::{
     },
     symbol::{
         table::{self, Table},
-        CallableID, GlobalID,
+        CallableID, ItemID,
     },
     type_system::{
         environment::Environment as TyEnvironment,
@@ -83,7 +83,7 @@ impl Values<ir::Model> {
         load: &Load<ir::Model>,
         register_span: Span,
         stack: &mut Stack,
-        current_site: GlobalID,
+        current_site: ItemID,
         ty_environment: &TyEnvironment<
             ir::Model,
             S,
@@ -182,7 +182,7 @@ impl Values<ir::Model> {
 fn sort_drop_addresses(
     addresses: &mut [Memory<ir::Model>],
     allocas: &Arena<Alloca<ir::Model>>,
-    current_site: GlobalID,
+    current_site: ItemID,
     table: &Table<impl table::State>,
 ) {
     let callable = CallableID::try_from(current_site)
@@ -249,7 +249,7 @@ struct Checker<
     /// block and the value is the starting environment of the looped block.
     target_stakcs_by_block_id: HashMap<ID<Block<ir::Model>>, Stack>,
 
-    current_site: GlobalID,
+    current_site: ItemID,
     ty_environment: &'a TyEnvironment<'a, ir::Model, S, N, O>,
 }
 
@@ -798,7 +798,7 @@ impl ir::Representation<ir::Model> {
     /// The entry point of the borrow checker.
     pub(in super::super) fn memory_check<S: table::State>(
         &mut self,
-        current_site: GlobalID,
+        current_site: ItemID,
         ty_environment: &TyEnvironment<
             ir::Model,
             S,

@@ -18,7 +18,7 @@ use crate::{
         },
         value::register::{Assignment, Load},
     },
-    symbol::{table, CallableID, GlobalID},
+    symbol::{table, CallableID, ItemID},
     type_system::{
         environment::Environment,
         normalizer::Normalizer,
@@ -316,7 +316,7 @@ impl Representation<BorrowModel> {
         register_infos: &RegisterInfos,
         region_variances: &RegionVariances,
         reachability: &Reachability<BorrowModel>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             BorrowModel,
             S,

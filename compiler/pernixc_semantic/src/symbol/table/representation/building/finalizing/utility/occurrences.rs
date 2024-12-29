@@ -14,7 +14,7 @@ use crate::{
             resolution::{Observer, Resolution},
             Building, State, Table,
         },
-        GlobalID,
+        ItemID,
     },
     type_system::{model::Default, term},
 };
@@ -54,7 +54,7 @@ impl Occurrences {
     // pub fn build_occurrences_to_definition(
     //     &self,
     //     table: &Table<impl State>,
-    //     referring_site: GlobalID,
+    //     referring_site: ItemID,
     //     handler: &dyn Handler<Box<dyn error::Error>>,
     // ) {
     //     let environment = Environment::new(
@@ -74,41 +74,41 @@ impl Occurrences {
     //     }
     // }
 
-    /// Get all the global IDs that has occurred so far.
-    pub fn get_all_global_id_occurrences(
+    /// Get all the item IDs that has occurred so far.
+    pub fn get_all_item_id_occurrences(
         &self,
         table: &Table<impl State>,
-    ) -> Option<Vec<GlobalID>> {
-        let mut global_ids = Vec::new();
+    ) -> Option<Vec<ItemID>> {
+        let mut item_ids = Vec::new();
 
         for (ty, _) in &self.types {
-            global_ids.extend(ty.get_global_id_dependencies(table)?);
+            item_ids.extend(ty.get_item_id_dependencies(table)?);
         }
 
         for (constant, _) in &self.constants {
-            global_ids.extend(constant.get_global_id_dependencies(table)?);
+            item_ids.extend(constant.get_item_id_dependencies(table)?);
         }
 
         for (ty, _) in &self.unpacked_types {
-            global_ids.extend(ty.get_global_id_dependencies(table)?);
+            item_ids.extend(ty.get_item_id_dependencies(table)?);
         }
 
         for (constant, _) in &self.unpacked_constants {
-            global_ids.extend(constant.get_global_id_dependencies(table)?);
+            item_ids.extend(constant.get_item_id_dependencies(table)?);
         }
 
         for (ty, _) in &self.constant_types {
-            global_ids.extend(ty.get_global_id_dependencies(table)?);
+            item_ids.extend(ty.get_item_id_dependencies(table)?);
         }
 
         for (resolution, _) in &self.resolutions {
-            global_ids.push(resolution.global_id());
+            item_ids.push(resolution.item_id());
         }
 
-        global_ids.sort_unstable();
-        global_ids.dedup();
+        item_ids.sort_unstable();
+        item_ids.dedup();
 
-        Some(global_ids)
+        Some(item_ids)
     }
 
     /// Add a type which appears as a type of constant generic parameter.
@@ -122,12 +122,12 @@ impl Occurrences {
 }
 
 impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
-    fn on_global_id_resolved(
+    fn on_item_id_resolved(
         &mut self,
         _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
-        _: GlobalID,
+        _: ItemID,
         _: &Span,
     ) -> bool {
         true
@@ -136,7 +136,7 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
     fn on_resolution_resolved(
         &mut self,
         _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
         resolution: &Resolution<Default>,
         generic_identifier: &Span,
@@ -148,7 +148,7 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
     fn on_type_resolved(
         &mut self,
         _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
         ty: term::r#type::Type<Default>,
         syntax_tree: &syntax_tree::r#type::Type,
@@ -161,7 +161,7 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
     fn on_lifetime_resolved(
         &mut self,
         _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
         lifetime: term::lifetime::Lifetime<Default>,
         syntax_tree: &syntax_tree::Lifetime,
@@ -174,7 +174,7 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
     fn on_constant_arguments_resolved(
         &mut self,
         _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
         constant: &term::constant::Constant<Default>,
         syntax_tree: &syntax_tree::Constant,
@@ -185,7 +185,7 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
     fn on_unpacked_type_resolved(
         &mut self,
         _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
         ty: &term::r#type::Type<Default>,
         syntax_tree: &syntax_tree::r#type::Type,
@@ -196,7 +196,7 @@ impl Observer<Building<RwLockContainer, Finalizer>, Default> for Occurrences {
     fn on_unpacked_constant_resolved(
         &mut self,
         _: &Table<Building<RwLockContainer, Finalizer>>,
-        _: GlobalID,
+        _: ItemID,
         _: &dyn Handler<Box<dyn error::Error>>,
         constant: &term::constant::Constant<Default>,
         syntax_tree: &syntax_tree::expression::Expression,

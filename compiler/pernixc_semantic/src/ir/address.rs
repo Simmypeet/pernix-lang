@@ -12,7 +12,7 @@ use crate::{
     symbol::{
         self,
         table::{self, representation::Index as _},
-        AdtID, CallableID, GlobalID, Parameter,
+        AdtID, CallableID, ItemID, Parameter,
     },
     type_system::{
         environment::Environment,
@@ -334,7 +334,7 @@ impl<M: Model> Values<M> {
     pub fn type_of_address<S: table::State>(
         &self,
         address: &Address<M>,
-        current_site: GlobalID,
+        current_site: ItemID,
         environment: &Environment<
             M,
             S,
