@@ -1,14 +1,12 @@
+//! The containing all the componenets used by the symbols.
+
 use std::collections::HashMap;
 
-use dashmap::DashMap;
-
-use super::{
-    table::representation::{Container, Representation, Representation2},
-    Global,
-};
+use super::{table::representation::Representation2, Global};
 use crate::arena::ID;
 
 pub mod accessibility;
+pub mod parent;
 pub mod syntax_tree;
 
 /// A tag struct used for signifying that the input component is required for

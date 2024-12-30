@@ -1,14 +1,13 @@
 //! Contains the definition of [`Representation`] and methods.
 
 use std::{
-    collections::{hash_map::Entry, BTreeSet, HashMap, HashSet},
+    collections::{hash_map::Entry, BTreeSet, HashMap},
     fmt::Debug,
     hash::Hash,
     ops::{Deref, DerefMut},
 };
 
 use building::drafting::Drafter;
-use dashmap::DashSet;
 use getset::Getters;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use paste::paste;
@@ -20,7 +19,7 @@ use pernixc_syntax::syntax_tree::{
     item::UsingKind, target::Target, AccessModifier, ConnectedList,
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use serde::{ser::SerializeMap, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use super::{Building, State, Suboptimal, Success, Table};
 use crate::{
@@ -255,14 +254,15 @@ impl Container for NoContainer {
     }
 }
 
+/// The internal representation of the table without any state information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Representation2 {
     symbol_names: HashMap<Global<ItemID>, String>,
 
     pub(in crate::symbol) accessibility_map: component::accessibility::Map,
-
     #[serde(skip)]
     pub(in crate::symbol) syntax_tree_map: component::syntax_tree::Map,
+    pub(in crate::symbol) parent_map: component::parent::Map,
 }
 
 /// The representation of the table without any state information.
