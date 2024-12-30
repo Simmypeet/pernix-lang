@@ -496,6 +496,8 @@ pub trait Item {
     Ord,
     Hash,
     EnumAsInner,
+    Serialize,
+    Deserialize,
     derive_more::From,
 )]
 #[allow(missing_docs)]
@@ -1518,6 +1520,8 @@ pub type TraitImplementationConstant = GenericTemplate<
     PartialOrd,
     Ord,
     Hash,
+    Serialize,
+    Deserialize,
     derive_more::From,
     EnumAsInner,
 )]
@@ -1669,6 +1673,8 @@ pub struct TraitConstantDefinition;
     PartialOrd,
     Ord,
     Hash,
+    Serialize,
+    Deserialize,
     derive_more::From,
     EnumAsInner,
 )]
