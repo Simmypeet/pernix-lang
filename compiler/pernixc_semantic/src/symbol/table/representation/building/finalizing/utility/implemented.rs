@@ -18,7 +18,7 @@ use crate::{
             },
             Building, Representation, Table,
         },
-        GenericID, ItemID, Implementation, Implemented,
+        GenericID, Implementation, Implemented, ItemID,
         ResolvableImplementation, ResolvableImplementationID,
     },
     type_system::{environment::Environment, normalizer, order, Premise},

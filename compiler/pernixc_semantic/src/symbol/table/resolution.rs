@@ -1819,16 +1819,14 @@ impl<S: State> Table<S> {
                 id: id.into(),
                 generic_arguments: generic_arguments.unwrap(),
             }),
-            ItemID::TraitType(id) => {
-                Resolution::MemberGeneric(MemberGeneric {
-                    id: id.into(),
-                    parent_generic_arguments: latest_resolution
-                        .into_generic()
-                        .unwrap()
-                        .generic_arguments,
-                    generic_arguments: generic_arguments.unwrap(),
-                })
-            }
+            ItemID::TraitType(id) => Resolution::MemberGeneric(MemberGeneric {
+                id: id.into(),
+                parent_generic_arguments: latest_resolution
+                    .into_generic()
+                    .unwrap()
+                    .generic_arguments,
+                generic_arguments: generic_arguments.unwrap(),
+            }),
             ItemID::TraitFunction(id) => {
                 Resolution::MemberGeneric(MemberGeneric {
                     id: id.into(),
@@ -2213,9 +2211,7 @@ impl<S: State> Table<S> {
                     representation::GetMemberError::InvalidID => unreachable!(),
                     representation::GetMemberError::MemberNotFound => {
                         handler.receive(Box::new(SymbolNotFound {
-                            searched_item_id: Some(
-                                latest_resolution.item_id(),
-                            ),
+                            searched_item_id: Some(latest_resolution.item_id()),
                             resolution_span: generic_identifier
                                 .identifier()
                                 .span
@@ -2242,28 +2238,27 @@ impl<S: State> Table<S> {
                 }
             }
 
-            let generic_arguments = if let Ok(generic_id) =
-                symbol::GenericID::try_from(item_id)
-            {
-                Some(self.resolve_generic_arguments_for(
-                    generic_id,
-                    generic_identifier,
-                    referring_site,
-                    config.reborrow(),
-                    handler,
-                )?)
-            } else {
-                if let Some(gen_args) =
-                    generic_identifier.generic_arguments().as_ref()
-                {
-                    handler.receive(Box::new(NoGenericArgumentsRequired {
-                        item_id,
-                        generic_argument_span: gen_args.span(),
-                    }));
-                }
+            let generic_arguments =
+                if let Ok(generic_id) = symbol::GenericID::try_from(item_id) {
+                    Some(self.resolve_generic_arguments_for(
+                        generic_id,
+                        generic_identifier,
+                        referring_site,
+                        config.reborrow(),
+                        handler,
+                    )?)
+                } else {
+                    if let Some(gen_args) =
+                        generic_identifier.generic_arguments().as_ref()
+                    {
+                        handler.receive(Box::new(NoGenericArgumentsRequired {
+                            item_id,
+                            generic_argument_span: gen_args.span(),
+                        }));
+                    }
 
-                None
-            };
+                    None
+                };
 
             let next_resolution = Self::to_resolution(
                 item_id,

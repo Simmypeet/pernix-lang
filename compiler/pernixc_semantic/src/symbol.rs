@@ -11,6 +11,7 @@ use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use paste::paste;
 use pernixc_base::source_file::Span;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     arena::{Arena, Map, ID},
@@ -23,10 +24,66 @@ use crate::{
     },
 };
 
+pub mod component;
 pub mod table;
 
+/// An ID for identifying a target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+pub enum TargetID {
+    /// Identifies the core target.
+    Core,
+
+    /// Identifies the normal target.
+    Normal(usize),
+}
+
+/// Used for identifying a symbol globally (able to reference the symbols cross
+/// targets).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+pub struct Global<ID> {
+    /// The ID of the target where the symbol is defined in.
+    pub target_id: TargetID,
+
+    /// The ID of the symbol.
+    pub id: ID,
+}
+
 /// Represents an accessibility of a symbol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
 pub enum Accessibility {
     /// The symbol is accessible from anywhere.
     #[default]
@@ -340,7 +397,18 @@ pub struct GenericDeclaration {
 
 /// An ID of all kinds of symbols that implements the [`Item`] trait.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    From,
+    Serialize,
+    Deserialize,
 )]
 #[allow(missing_docs)]
 pub enum ItemID {

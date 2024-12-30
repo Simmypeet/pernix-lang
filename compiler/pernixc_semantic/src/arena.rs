@@ -13,6 +13,8 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+use serde::Serialize;
+
 /// Represents a key type that can be used to index items in the [`Arena`].
 pub trait Key:
     Debug
@@ -91,6 +93,24 @@ impl<T> Ord for ID<T> {
 impl<T> std::hash::Hash for ID<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.index.hash(state);
+    }
+}
+
+impl<T> Serialize for ID<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.index.serialize(serializer)
+    }
+}
+
+impl<'de, T: 'static> serde::Deserialize<'de> for ID<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        usize::deserialize(deserializer).map(Self::from_index)
     }
 }
 

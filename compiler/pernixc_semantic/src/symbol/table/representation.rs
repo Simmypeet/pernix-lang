@@ -1,13 +1,14 @@
 //! Contains the definition of [`Representation`] and methods.
 
 use std::{
-    collections::{hash_map::Entry, BTreeSet, HashMap},
+    collections::{hash_map::Entry, BTreeSet, HashMap, HashSet},
     fmt::Debug,
     hash::Hash,
     ops::{Deref, DerefMut},
 };
 
 use building::drafting::Drafter;
+use dashmap::DashSet;
 use getset::Getters;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use paste::paste;
@@ -19,24 +20,24 @@ use pernixc_syntax::syntax_tree::{
     item::UsingKind, target::Target, AccessModifier, ConnectedList,
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use serde::{ser::SerializeMap, Deserialize, Serialize};
 
 use super::{Building, State, Suboptimal, Success, Table};
 use crate::{
     arena::{Arena, ID},
     error::{self, ConflictingUsing, ExpectModule, SymbolNotFound},
     symbol::{
-        self, Accessibility, Adt, AdtID, AdtImplementation,
+        self, component, Accessibility, Adt, AdtID, AdtImplementation,
         AdtImplementationFunction, Callable, CallableID, Constant, Enum,
         Function, Generic, GenericDeclaration, GenericID, GenericTemplate,
-        Item, ItemID, HierarchyRelationship, Implementation,
-        ImplementationID, ImplementationTemplate, Marker,
-        MarkerImplementationID, Module, ModuleMemberID,
-        NegativeMarkerImplementation, NegativeTraitImplementation,
-        PositiveMarkerImplementation, PositiveTraitImplementation,
-        ResolvableImplementation, Struct, Trait, TraitConstant, TraitFunction,
-        TraitImplementationConstant, TraitImplementationFunction,
-        TraitImplementationID, TraitImplementationType, TraitType, Type,
-        Variant,
+        Global, HierarchyRelationship, Implementation, ImplementationID,
+        ImplementationTemplate, Item, ItemID, Marker, MarkerImplementationID,
+        Module, ModuleMemberID, NegativeMarkerImplementation,
+        NegativeTraitImplementation, PositiveMarkerImplementation,
+        PositiveTraitImplementation, ResolvableImplementation, Struct, Trait,
+        TraitConstant, TraitFunction, TraitImplementationConstant,
+        TraitImplementationFunction, TraitImplementationID,
+        TraitImplementationType, TraitType, Type, Variant,
     },
     type_system::{
         model::{Default, Model},
@@ -252,6 +253,16 @@ impl Container for NoContainer {
     ) -> Self::Write<'_, T> {
         value
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Representation2 {
+    symbol_names: HashMap<Global<ItemID>, String>,
+
+    pub(in crate::symbol) accessibility_map: component::accessibility::Map,
+
+    #[serde(skip)]
+    pub(in crate::symbol) syntax_tree_map: component::syntax_tree::Map,
 }
 
 /// The representation of the table without any state information.
@@ -525,8 +536,7 @@ impl<T: Container> Representation<T> {
         first: ItemID,
         second: ItemID,
     ) -> Option<HierarchyRelationship> {
-        if self.get_item(first).is_none() || self.get_item(second).is_none()
-        {
+        if self.get_item(first).is_none() || self.get_item(second).is_none() {
             return None;
         }
 
@@ -610,17 +620,11 @@ impl<T: Container> Representation<T> {
         &self,
         mut item_id: ItemID,
     ) -> Option<ID<Module>> {
-        while let Some(parent_id) =
-            self.get_item(item_id)?.parent_item_id()
-        {
+        while let Some(parent_id) = self.get_item(item_id)?.parent_item_id() {
             item_id = parent_id;
         }
 
-        Some(
-            item_id
-                .into_module()
-                .expect("It should be a module at the root."),
-        )
+        Some(item_id.into_module().expect("It should be a module at the root."))
     }
 
     /// Returns the [`Module`] ID that is the closest to the given [`ItemID`]
@@ -746,8 +750,8 @@ impl<T: Container> Representation<T> {
             match current_id {
                 Some(searched_in_item_id) => {
                     current_id = Some(
-                        self.get_member_of(searched_in_item_id, name)
-                            .map_err(|err| match err {
+                        self.get_member_of(searched_in_item_id, name).map_err(
+                            |err| match err {
                                 GetMemberError::InvalidID => {
                                     unreachable!("invalid ID in the table")
                                 }
@@ -759,7 +763,8 @@ impl<T: Container> Representation<T> {
                                         name,
                                     }
                                 }
-                            })?,
+                            },
+                        )?,
                     );
                 }
                 None => {
@@ -1233,10 +1238,8 @@ impl<T: Container> Representation<T> {
         &self,
         item_id: ItemID,
     ) -> Option<Premise<M>> {
-        let mut premise = Premise {
-            predicates: BTreeSet::new(),
-            query_site: Some(item_id),
-        };
+        let mut premise =
+            Premise { predicates: BTreeSet::new(), query_site: Some(item_id) };
 
         for item_id in self.scope_walker(item_id)? {
             let Ok(generic_id) = GenericID::try_from(item_id) else {
@@ -1300,10 +1303,7 @@ impl<T: Container> Representation<T> {
     /// Returns `None` if the given [`ItemID`] is not a valid ID.
     #[must_use]
     #[allow(clippy::too_many_lines)]
-    pub fn get_accessibility(
-        &self,
-        item_id: ItemID,
-    ) -> Option<Accessibility> {
+    pub fn get_accessibility(&self, item_id: ItemID) -> Option<Accessibility> {
         macro_rules! arm_expression {
             ($table:ident, $id:ident, $kind:ident) => {
                 paste! {
@@ -1348,40 +1348,30 @@ impl<T: Container> Representation<T> {
             (AdtImplementationFunction),
             (
                 Variant,
-                self.get_accessibility(
-                    T::read(item_id).parent_enum_id.into()
-                )
+                self.get_accessibility(T::read(item_id).parent_enum_id.into())
             ),
             (TraitType),
             (TraitConstant),
             (TraitFunction),
             (
                 PositiveTraitImplementation,
-                self.get_accessibility(
-                    T::read(item_id).implemented_id.into()
-                )
+                self.get_accessibility(T::read(item_id).implemented_id.into())
             ),
             (Marker),
             (
                 PositiveMarkerImplementation,
-                self.get_accessibility(
-                    T::read(item_id).implemented_id.into()
-                )
+                self.get_accessibility(T::read(item_id).implemented_id.into())
             ),
             (
                 NegativeMarkerImplementation,
-                self.get_accessibility(
-                    T::read(item_id).implemented_id.into()
-                )
+                self.get_accessibility(T::read(item_id).implemented_id.into())
             ),
             (TraitImplementationType),
             (TraitImplementationFunction),
             (TraitImplementationConstant),
             (
                 NegativeTraitImplementation,
-                self.get_accessibility(
-                    T::read(item_id).implemented_id.into()
-                )
+                self.get_accessibility(T::read(item_id).implemented_id.into())
             ),
             (AdtImplementation, {
                 self.get_accessibility(T::read(item_id).implemented_id.into())
@@ -1528,11 +1518,8 @@ impl<'a, T: Container> Iterator for ScopeWalker<'a, T> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.current_id {
             Some(current_id) => {
-                let next_id = self
-                    .table
-                    .get_item(current_id)
-                    .unwrap()
-                    .parent_item_id();
+                let next_id =
+                    self.table.get_item(current_id).unwrap().parent_item_id();
                 self.current_id = next_id;
                 Some(current_id)
             }
