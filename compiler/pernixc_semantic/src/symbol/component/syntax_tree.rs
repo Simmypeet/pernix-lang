@@ -68,6 +68,7 @@ macro_rules! impl_syntax_tree {
 /// An enumeration of either a normal function syntax tee (with body) or an
 /// extern function syntax (only signature).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
 pub enum FunctionKind {
     Normal(syntax_tree::item::Function),
     Extern(syntax_tree::item::ExternFunction),
