@@ -9,7 +9,7 @@ use crate::{
     arena::ID,
     symbol::{
         component::{Input, Required},
-        table::representation::Representation2,
+        table::representation,
         Enum, Global, Module, ModuleMemberID, PositiveTraitImplementation,
         Trait, TraitImplementationMemberID, TraitMemberID, Variant,
     },
@@ -45,7 +45,7 @@ macro_rules! impl_member {
                     type Requirement = Required;
 
                     fn get_map(
-                        representation: &Representation2
+                        representation: &representation::Input
                     ) -> &HashMap<Global<ID<Self>>, Member<$id>> {
                         &representation.member_map.[< $name:snake s >]
                     }

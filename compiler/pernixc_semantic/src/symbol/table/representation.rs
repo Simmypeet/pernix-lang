@@ -254,9 +254,10 @@ impl Container for NoContainer {
     }
 }
 
-/// The internal representation of the table without any state information.
+/// Contains the input components information required for building the full
+/// table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Representation2 {
+pub struct Input {
     symbol_names: HashMap<Global<ItemID>, String>,
 
     /// The syntax tree map won't be serialized
