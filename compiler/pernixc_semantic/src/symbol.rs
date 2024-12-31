@@ -73,6 +73,13 @@ pub struct Global<ID> {
     pub id: ID,
 }
 
+impl<ID> Global<ID> {
+    /// Maps the ID of the symbol to another ID.
+    pub fn map<T, F: FnOnce(ID) -> T>(self, f: F) -> Global<T> {
+        Global::new(self.target_id, f(self.id))
+    }
+}
+
 /// Represents an accessibility of a symbol.
 #[derive(
     Debug,
@@ -1424,6 +1431,8 @@ pub struct AdtImplementationDefinition {
     PartialOrd,
     Ord,
     Hash,
+    Serialize,
+    Deserialize,
     derive_more::From,
     EnumAsInner,
 )]
