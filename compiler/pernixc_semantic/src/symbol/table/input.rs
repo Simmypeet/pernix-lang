@@ -17,4 +17,6 @@ pub struct Input {
     pub(in crate::symbol) accessibility_map: component::accessibility::Map,
     pub(in crate::symbol) parent_map: component::parent::Map,
     pub(in crate::symbol) member_map: component::member::Map,
+    pub(in crate::symbol) import_map: component::import::Map,
 }
+
