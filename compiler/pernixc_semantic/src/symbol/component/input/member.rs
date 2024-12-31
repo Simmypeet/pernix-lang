@@ -19,13 +19,16 @@ use crate::{
     Clone,
     PartialEq,
     Eq,
-    Default,
     Serialize,
     Deserialize,
     derive_more::Deref,
     derive_more::DerefMut,
 )]
 pub struct Member<ID>(pub HashMap<String, ID>);
+
+impl<ID> Default for Member<ID> {
+    fn default() -> Self { Self(HashMap::default()) }
+}
 
 macro_rules! impl_member {
     ($(($name:ident, $id:ty)),*) => {
@@ -45,13 +48,13 @@ macro_rules! impl_member {
                     fn get_map(
                         representation: &super::Map
                     ) -> &HashMap<Global<ID<Self>>, Member<$id>> {
-                        &representation.member_map.[< $name:snake s >]
+                        &representation.member.[< $name:snake s >]
                     }
 
                     fn get_map_mut(
                         representation: &mut super::Map
                     ) -> &mut HashMap<Global<ID<Self>>, Member<$id>> {
-                        &mut representation.member_map.[< $name:snake s >]
+                        &mut representation.member.[< $name:snake s >]
                     }
                 }
             )*

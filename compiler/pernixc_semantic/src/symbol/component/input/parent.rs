@@ -56,13 +56,13 @@ macro_rules! impl_parent {
                     fn get_map(
                         representation: &super::Map,
                     ) -> &HashMap<Global<ID<Self>>, Parent<$syn>> {
-                        &representation.parent_map.[< $name:snake s >]
+                        &representation.parent.[< $name:snake s >]
                     }
 
                     fn get_map_mut(
                         representation: &mut super::Map,
                     ) -> &mut HashMap<Global<ID<Self>>, Parent<$syn>> {
-                        &mut representation.parent_map.[< $name:snake s >]
+                        &mut representation.parent.[< $name:snake s >]
                     }
                 }
             )*

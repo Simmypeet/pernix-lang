@@ -55,13 +55,13 @@ macro_rules! impl_syntax_tree {
                     fn get_map(
                         representation: &super::Map,
                     ) -> &HashMap<Global<ID<Self>>, SyntaxTree<$syn>> {
-                        &representation.syntax_tree_map.[< $name:snake s >]
+                        &representation.syntax_tree.[< $name:snake s >]
                     }
 
                     fn get_map_mut(
                         representation: &mut super::Map,
                     ) -> &mut HashMap<Global<ID<Self>>, SyntaxTree<$syn>> {
-                        &mut representation.syntax_tree_map.[< $name:snake s >]
+                        &mut representation.syntax_tree.[< $name:snake s >]
                     }
                 }
             )*
@@ -90,9 +90,9 @@ impl_syntax_tree!(
     (PositiveMarkerImplementation, syntax_tree::item::ImplementationSignature),
     (PositiveTraitImplementation, syntax_tree::item::ImplementationSignature),
     (Struct, syntax_tree::item::Struct),
-    (TraitConstant, syntax_tree::item::Constant),
-    (TraitFunction, syntax_tree::item::Function),
-    (TraitType, syntax_tree::item::Type),
+    (TraitConstant, syntax_tree::item::TraitConstant),
+    (TraitFunction, syntax_tree::item::TraitFunction),
+    (TraitType, syntax_tree::item::TraitType),
     (TraitImplementationType, syntax_tree::item::Type),
     (TraitImplementationConstant, syntax_tree::item::Constant),
     (TraitImplementationFunction, syntax_tree::item::Function),

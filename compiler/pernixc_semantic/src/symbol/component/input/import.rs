@@ -26,12 +26,12 @@ impl Input<Import> for Module {
     fn get_map(
         representation: &super::Map,
     ) -> &HashMap<Global<ID<Self>>, Import> {
-        &representation.import_map.imports
+        &representation.import.imports
     }
 
     fn get_map_mut(
         representation: &mut super::Map,
     ) -> &mut HashMap<Global<ID<Self>>, Import> {
-        &mut representation.import_map.imports
+        &mut representation.import.imports
     }
 }

@@ -55,13 +55,13 @@ macro_rules! impl_accessibility {
                     fn get_map(
                         representation: &super::Map,
                     ) -> &HashMap<Global<ID<Self>>, Accessibility> {
-                        &representation.accessibility_map.[< $name:snake s >]
+                        &representation.accessibility.[< $name:snake s >]
                     }
 
                     fn get_map_mut(
                         representation: &mut super::Map,
                     ) -> &mut HashMap<Global<ID<Self>>, Accessibility> {
-                        &mut representation.accessibility_map.[< $name:snake s >]
+                        &mut representation.accessibility.[< $name:snake s >]
                     }
                 }
             )*

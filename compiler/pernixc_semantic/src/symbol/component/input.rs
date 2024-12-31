@@ -50,11 +50,11 @@ pub struct Map {
 
     /// The syntax tree map won't be serialized
     #[serde(skip)]
-    pub(in crate::symbol) syntax_tree_map: syntax_tree::Map,
-    pub(in crate::symbol) accessibility_map: accessibility::Map,
-    pub(in crate::symbol) parent_map: parent::Map,
-    pub(in crate::symbol) member_map: member::Map,
-    pub(in crate::symbol) import_map: import::Map,
+    syntax_tree: syntax_tree::Map,
+    accessibility: accessibility::Map,
+    parent: parent::Map,
+    member: member::Map,
+    import: import::Map,
 }
 
 impl Map {
