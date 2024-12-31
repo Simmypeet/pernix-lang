@@ -28,4 +28,10 @@ impl Input<Import> for Module {
     ) -> &HashMap<Global<ID<Self>>, Import> {
         &representation.import_map.imports
     }
+
+    fn get_map_mut(
+        representation: &mut table::Input,
+    ) -> &mut HashMap<Global<ID<Self>>, Import> {
+        &mut representation.import_map.imports
+    }
 }

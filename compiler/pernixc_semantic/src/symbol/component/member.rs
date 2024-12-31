@@ -49,6 +49,12 @@ macro_rules! impl_member {
                     ) -> &HashMap<Global<ID<Self>>, Member<$id>> {
                         &representation.member_map.[< $name:snake s >]
                     }
+
+                    fn get_map_mut(
+                        representation: &mut table::Input
+                    ) -> &mut HashMap<Global<ID<Self>>, Member<$id>> {
+                        &mut representation.member_map.[< $name:snake s >]
+                    }
                 }
             )*
         }

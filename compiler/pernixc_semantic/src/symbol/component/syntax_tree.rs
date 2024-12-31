@@ -58,6 +58,12 @@ macro_rules! impl_syntax_tree {
                     ) -> &HashMap<Global<ID<Self>>, SyntaxTree<$syn>> {
                         &representation.syntax_tree_map.[< $name:snake s >]
                     }
+
+                    fn get_map_mut(
+                        representation: &mut table::Input,
+                    ) -> &mut HashMap<Global<ID<Self>>, SyntaxTree<$syn>> {
+                        &mut representation.syntax_tree_map.[< $name:snake s >]
+                    }
                 }
             )*
         }

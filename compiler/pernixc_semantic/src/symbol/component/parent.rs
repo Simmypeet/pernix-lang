@@ -58,6 +58,12 @@ macro_rules! impl_parent {
                     ) -> &HashMap<Global<ID<Self>>, Parent<$syn>> {
                         &representation.parent_map.[< $name:snake s >]
                     }
+
+                    fn get_map_mut(
+                        representation: &mut table::Input,
+                    ) -> &mut HashMap<Global<ID<Self>>, Parent<$syn>> {
+                        &mut representation.parent_map.[< $name:snake s >]
+                    }
                 }
             )*
         }

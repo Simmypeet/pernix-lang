@@ -27,6 +27,10 @@ pub(super) trait Input<T> {
     type Requirement;
 
     fn get_map(representation: &table::Input) -> &HashMap<Global<ID<Self>>, T>;
+
+    fn get_map_mut(
+        representation: &mut table::Input,
+    ) -> &mut HashMap<Global<ID<Self>>, T>;
 }
 
 impl table::Input {
