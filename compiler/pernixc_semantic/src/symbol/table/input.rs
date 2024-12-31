@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use pernixc_base::handler::Handler;
-use pernixc_syntax::syntax_tree::target::Target;
+use pernixc_syntax::syntax_tree::{self, target::Target};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
     error,
     symbol::{
         component::{self, parent::Parent},
-        Global, ItemID, Module, TargetID,
+        Accessibility, Global, ItemID, Module, TargetID,
     },
 };
 
@@ -56,6 +56,7 @@ impl Input {
     /// # Panics
     ///
     /// If the given [`ItemID`] is not a module.
+    #[must_use]
     pub fn get_closet_module_id(
         &self,
         mut item_id: Global<ItemID>,
@@ -80,6 +81,7 @@ impl Input {
     /// # Panics
     ///
     /// If the `item_id` is not a valid item symbol ID.
+    #[must_use]
     pub fn get_parent_item_id(
         &self,
         item_id: Global<ItemID>,
@@ -140,5 +142,30 @@ impl Input {
         );
 
         parent_item_id.map(|x| Global::new(item_id.target_id, x))
+    }
+
+    /// Creates the [`Accessibility`] based on where the symbol is defined in
+    /// and the access modifier syntax tree.
+    ///
+    /// # Panics
+    ///
+    /// If the parent item ID is not found.
+    #[must_use]
+    pub fn create_accessibility(
+        &self,
+        parent_id: Global<ItemID>,
+        access_modifier: &syntax_tree::AccessModifier,
+    ) -> Accessibility {
+        match access_modifier {
+            syntax_tree::AccessModifier::Public(_) => Accessibility::Public,
+            syntax_tree::AccessModifier::Private(_) => {
+                let parent_module_id = self.get_closet_module_id(parent_id);
+
+                Accessibility::Scoped(parent_module_id.id)
+            }
+            syntax_tree::AccessModifier::Internal(_) => {
+                Accessibility::Scoped(self.root_module_id[&parent_id.target_id])
+            }
+        }
     }
 }
