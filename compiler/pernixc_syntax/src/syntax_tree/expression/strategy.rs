@@ -21,7 +21,7 @@ use crate::syntax_tree::{
     },
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Expression {
     Binary(Binary),
     Terminator(Terminator),
@@ -1740,7 +1740,7 @@ impl Display for Prefix {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Prefixable {
     Postfixable(Postfixable),
     Prefix(Prefix),
