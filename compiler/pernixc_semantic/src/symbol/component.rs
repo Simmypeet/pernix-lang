@@ -6,6 +6,7 @@ use super::{table, Global};
 use crate::arena::ID;
 
 pub mod accessibility;
+pub mod import;
 pub mod member;
 pub mod parent;
 pub mod syntax_tree;

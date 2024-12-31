@@ -42,7 +42,7 @@ pub enum Accessibility {
 macro_rules! impl_accessibility {
     ($($name:ident),*) => {
         paste! {
-            #[derive(Debug, Clone, Serialize, Deserialize)]
+            #[derive(Debug, Clone, Default, Serialize, Deserialize)]
             pub(in crate::symbol) struct Map {
                 $(
                     [< $name:snake s >]:

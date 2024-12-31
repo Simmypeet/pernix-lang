@@ -7,6 +7,7 @@ use std::{
 };
 
 use derive_more::{Deref, DerefMut, From};
+use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use paste::paste;
@@ -39,6 +40,7 @@ pub mod table;
     Hash,
     Serialize,
     Deserialize,
+    EnumAsInner,
 )]
 pub enum TargetID {
     /// Identifies the core target.
@@ -61,6 +63,7 @@ pub enum TargetID {
     Hash,
     Serialize,
     Deserialize,
+    new,
 )]
 pub struct Global<ID> {
     /// The ID of the target where the symbol is defined in.

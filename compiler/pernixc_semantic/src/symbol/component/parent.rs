@@ -66,8 +66,8 @@ macro_rules! impl_parent {
 
 impl_parent!(
     (Module, ID<Module>, Optional),
-    (Struct, ID<Struct>, Required),
-    (Trait, ID<Trait>, Required),
+    (Struct, ID<Module>, Required),
+    (Trait, ID<Module>, Required),
     (Enum, ID<Module>, Required),
     (Type, ID<Module>, Required),
     (Constant, ID<Module>, Required),

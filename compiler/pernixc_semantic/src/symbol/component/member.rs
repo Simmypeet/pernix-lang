@@ -32,7 +32,7 @@ pub struct Member<ID>(pub HashMap<String, ID>);
 macro_rules! impl_member {
     ($(($name:ident, $id:ty)),*) => {
         paste! {
-            #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+            #[derive(Debug, Clone, Default, Serialize, Deserialize)]
             pub(in crate::symbol) struct Map {
                 $(
                     [< $name:snake s >]:

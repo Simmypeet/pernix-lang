@@ -33,6 +33,7 @@ bit-vec = { workspace = true }
 displaydoc = { workspace = true }
 serde = { workspace = true }
 dashmap = { workspace = true }
+derive-new = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
