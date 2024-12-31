@@ -19,17 +19,16 @@ use pernixc_syntax::syntax_tree::{
     item::UsingKind, target::Target, AccessModifier, ConnectedList,
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use serde::{Deserialize, Serialize};
 
 use super::{Building, State, Suboptimal, Success, Table};
 use crate::{
     arena::{Arena, ID},
     error::{self, ConflictingUsing, ExpectModule, SymbolNotFound},
     symbol::{
-        self, component, Accessibility, Adt, AdtID, AdtImplementation,
+        self, Accessibility, Adt, AdtID, AdtImplementation,
         AdtImplementationFunction, Callable, CallableID, Constant, Enum,
         Function, Generic, GenericDeclaration, GenericID, GenericTemplate,
-        Global, HierarchyRelationship, Implementation, ImplementationID,
+        HierarchyRelationship, Implementation, ImplementationID,
         ImplementationTemplate, Item, ItemID, Marker, MarkerImplementationID,
         Module, ModuleMemberID, NegativeMarkerImplementation,
         NegativeTraitImplementation, PositiveMarkerImplementation,
@@ -254,19 +253,6 @@ impl Container for NoContainer {
     }
 }
 
-/// Contains the input components information required for building the full
-/// table.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Input {
-    symbol_names: HashMap<Global<ItemID>, String>,
-
-    /// The syntax tree map won't be serialized
-    #[serde(skip)]
-    pub(in crate::symbol) syntax_tree_map: component::syntax_tree::Map,
-    pub(in crate::symbol) accessibility_map: component::accessibility::Map,
-    pub(in crate::symbol) parent_map: component::parent::Map,
-    pub(in crate::symbol) member_map: component::member::Map,
-}
 
 /// The representation of the table without any state information.
 #[derive(Debug, Getters)]

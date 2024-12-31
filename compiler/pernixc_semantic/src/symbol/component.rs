@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use super::{table::representation, Global};
+use super::{table, Global};
 use crate::arena::ID;
 
 pub mod accessibility;
@@ -25,12 +25,10 @@ pub(super) trait Input<T> {
     /// If true the component must be present in the map for the symbol.
     type Requirement;
 
-    fn get_map(
-        representation: &representation::Input,
-    ) -> &HashMap<Global<ID<Self>>, T>;
+    fn get_map(representation: &table::Input) -> &HashMap<Global<ID<Self>>, T>;
 }
 
-impl representation::Input {
+impl table::Input {
     /// Gets the input component of a particular symbol.
     #[allow(private_bounds)]
     pub fn get_input<C, T: Input<C, Requirement = Required> + 'static>(

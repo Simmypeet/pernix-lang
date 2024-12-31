@@ -11,9 +11,8 @@ use crate::{
     arena::ID,
     symbol::{
         component::{Input, Optional},
-        table::representation,
-        AdtImplementation, AdtImplementationFunction, Constant, Enum, Function,
-        Global, Marker, NegativeMarkerImplementation,
+        table, AdtImplementation, AdtImplementationFunction, Constant, Enum,
+        Function, Global, Marker, NegativeMarkerImplementation,
         NegativeTraitImplementation, PositiveMarkerImplementation,
         PositiveTraitImplementation, Struct, Trait, TraitConstant,
         TraitFunction, TraitImplementationConstant,
@@ -55,7 +54,7 @@ macro_rules! impl_syntax_tree {
                     type Requirement = Optional;
 
                     fn get_map(
-                        representation: &representation::Input,
+                        representation: &table::Input,
                     ) -> &HashMap<Global<ID<Self>>, SyntaxTree<$syn>> {
                         &representation.syntax_tree_map.[< $name:snake s >]
                     }

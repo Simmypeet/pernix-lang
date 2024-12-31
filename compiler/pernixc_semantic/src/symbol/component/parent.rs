@@ -10,9 +10,8 @@ use crate::{
     arena::ID,
     symbol::{
         component::{Input, Optional, Required},
-        table::representation,
-        AdtImplementation, AdtImplementationFunction, Constant, Enum, Function,
-        Global, Marker, Module, NegativeMarkerImplementation,
+        table, AdtImplementation, AdtImplementationFunction, Constant, Enum,
+        Function, Global, Marker, Module, NegativeMarkerImplementation,
         NegativeTraitImplementation, PositiveMarkerImplementation,
         PositiveTraitImplementation, Struct, Trait, TraitConstant,
         TraitFunction, TraitImplementationConstant,
@@ -55,7 +54,7 @@ macro_rules! impl_parent {
                     type Requirement = $requirement;
 
                     fn get_map(
-                        representation: &representation::Input,
+                        representation: &table::Input,
                     ) -> &HashMap<Global<ID<Self>>, Parent<$syn>> {
                         &representation.parent_map.[< $name:snake s >]
                     }

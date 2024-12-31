@@ -10,9 +10,9 @@ use crate::{
     arena::ID,
     symbol::{
         component::{Input, Required},
-        table::representation,
-        AdtImplementationFunction, Constant, Enum, Function, Global, Marker,
-        Module, Struct, Trait, TraitConstant, TraitFunction, TraitType, Type,
+        table, AdtImplementationFunction, Constant, Enum, Function, Global,
+        Marker, Module, Struct, Trait, TraitConstant, TraitFunction, TraitType,
+        Type,
     },
 };
 
@@ -55,7 +55,7 @@ macro_rules! impl_accessibility {
                     type Requirement = Required;
 
                     fn get_map(
-                        representation: &representation::Input,
+                        representation: &table::Input,
                     ) -> &HashMap<Global<ID<Self>>, Accessibility> {
                         &representation.accessibility_map.[< $name:snake s >]
                     }
