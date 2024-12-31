@@ -6,12 +6,12 @@ use std::collections::HashMap;
 use paste::paste;
 use serde::{Deserialize, Serialize};
 
+use super::{Optional, Required};
 use crate::{
     arena::ID,
     symbol::{
-        component::{Input, Optional, Required},
-        table, AdtImplementation, AdtImplementationFunction, Constant, Enum,
-        Function, Global, Marker, Module, NegativeMarkerImplementation,
+        AdtImplementation, AdtImplementationFunction, Constant, Enum, Function,
+        Global, Marker, Module, NegativeMarkerImplementation,
         NegativeTraitImplementation, PositiveMarkerImplementation,
         PositiveTraitImplementation, Struct, Trait, TraitConstant,
         TraitFunction, TraitImplementationConstant,
@@ -50,17 +50,17 @@ macro_rules! impl_parent {
             }
 
             $(
-                impl Input<Parent<$syn>> for $name {
+                impl super::Input<Parent<$syn>> for $name {
                     type Requirement = $requirement;
 
                     fn get_map(
-                        representation: &table::Input,
+                        representation: &super::Map,
                     ) -> &HashMap<Global<ID<Self>>, Parent<$syn>> {
                         &representation.parent_map.[< $name:snake s >]
                     }
 
                     fn get_map_mut(
-                        representation: &mut table::Input,
+                        representation: &mut super::Map,
                     ) -> &mut HashMap<Global<ID<Self>>, Parent<$syn>> {
                         &mut representation.parent_map.[< $name:snake s >]
                     }

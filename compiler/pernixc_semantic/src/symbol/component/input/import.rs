@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use super::{Input, Required};
 use crate::{
     arena::ID,
-    symbol::{table, Global, Module},
+    symbol::{Global, Module},
 };
 
 /// Represents the import of a module.
@@ -24,13 +24,13 @@ impl Input<Import> for Module {
     type Requirement = Required;
 
     fn get_map(
-        representation: &table::Input,
+        representation: &super::Map,
     ) -> &HashMap<Global<ID<Self>>, Import> {
         &representation.import_map.imports
     }
 
     fn get_map_mut(
-        representation: &mut table::Input,
+        representation: &mut super::Map,
     ) -> &mut HashMap<Global<ID<Self>>, Import> {
         &mut representation.import_map.imports
     }

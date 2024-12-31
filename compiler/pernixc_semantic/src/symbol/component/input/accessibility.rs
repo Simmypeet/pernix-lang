@@ -9,10 +9,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     arena::ID,
     symbol::{
-        component::{Input, Required},
-        table, AdtImplementationFunction, Constant, Enum, Function, Global,
-        Marker, Module, Struct, Trait, TraitConstant, TraitFunction, TraitType,
-        Type,
+        AdtImplementationFunction, Constant, Enum, Function, Global, Marker,
+        Module, Struct, Trait, TraitConstant, TraitFunction, TraitType, Type,
     },
 };
 
@@ -51,17 +49,17 @@ macro_rules! impl_accessibility {
             }
 
             $(
-                impl Input<Accessibility> for $name {
-                    type Requirement = Required;
+                impl super::Input<Accessibility> for $name {
+                    type Requirement = super::Required;
 
                     fn get_map(
-                        representation: &table::Input,
+                        representation: &super::Map,
                     ) -> &HashMap<Global<ID<Self>>, Accessibility> {
                         &representation.accessibility_map.[< $name:snake s >]
                     }
 
                     fn get_map_mut(
-                        representation: &mut table::Input,
+                        representation: &mut super::Map,
                     ) -> &mut HashMap<Global<ID<Self>>, Accessibility> {
                         &mut representation.accessibility_map.[< $name:snake s >]
                     }

@@ -8,10 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     arena::ID,
     symbol::{
-        component::{Input, Required},
-        table, Enum, Global, Module, ModuleMemberID,
-        PositiveTraitImplementation, Trait, TraitImplementationMemberID,
-        TraitMemberID, Variant,
+        Enum, Global, Module, ModuleMemberID, PositiveTraitImplementation,
+        Trait, TraitImplementationMemberID, TraitMemberID, Variant,
     },
 };
 
@@ -41,17 +39,17 @@ macro_rules! impl_member {
             }
 
             $(
-                impl Input<Member<$id>> for $name {
-                    type Requirement = Required;
+                impl super::Input<Member<$id>> for $name {
+                    type Requirement = super::Required;
 
                     fn get_map(
-                        representation: &table::Input
+                        representation: &super::Map
                     ) -> &HashMap<Global<ID<Self>>, Member<$id>> {
                         &representation.member_map.[< $name:snake s >]
                     }
 
                     fn get_map_mut(
-                        representation: &mut table::Input
+                        representation: &mut super::Map
                     ) -> &mut HashMap<Global<ID<Self>>, Member<$id>> {
                         &mut representation.member_map.[< $name:snake s >]
                     }

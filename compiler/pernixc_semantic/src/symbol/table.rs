@@ -11,12 +11,8 @@ use derive_more::{Deref, DerefMut};
 use self::representation::{Container, NoContainer, Representation};
 
 pub mod evaluate;
-pub mod input;
 pub mod representation;
 pub mod resolution;
-
-// re-exports
-pub use input::Input;
 
 /// Contaains the display object that requires the table.
 ///

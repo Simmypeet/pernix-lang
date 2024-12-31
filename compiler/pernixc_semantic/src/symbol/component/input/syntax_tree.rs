@@ -10,9 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     arena::ID,
     symbol::{
-        component::{Input, Optional},
-        table, AdtImplementation, AdtImplementationFunction, Constant, Enum,
-        Function, Global, Marker, NegativeMarkerImplementation,
+        AdtImplementation, AdtImplementationFunction, Constant, Enum, Function,
+        Global, Marker, NegativeMarkerImplementation,
         NegativeTraitImplementation, PositiveMarkerImplementation,
         PositiveTraitImplementation, Struct, Trait, TraitConstant,
         TraitFunction, TraitImplementationConstant,
@@ -50,17 +49,17 @@ macro_rules! impl_syntax_tree {
             }
 
             $(
-                impl Input<SyntaxTree<$syn>> for $name {
-                    type Requirement = Optional;
+                impl super::Input<SyntaxTree<$syn>> for $name {
+                    type Requirement = super::Optional;
 
                     fn get_map(
-                        representation: &table::Input,
+                        representation: &super::Map,
                     ) -> &HashMap<Global<ID<Self>>, SyntaxTree<$syn>> {
                         &representation.syntax_tree_map.[< $name:snake s >]
                     }
 
                     fn get_map_mut(
-                        representation: &mut table::Input,
+                        representation: &mut super::Map,
                     ) -> &mut HashMap<Global<ID<Self>>, SyntaxTree<$syn>> {
                         &mut representation.syntax_tree_map.[< $name:snake s >]
                     }
