@@ -7,8 +7,12 @@ use pernixc_syntax::syntax_tree::target::Target;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    arena::ID,
     error,
-    symbol::{component, component::parent::Parent, Global, ItemID},
+    symbol::{
+        component::{self, parent::Parent},
+        Global, ItemID, Module, TargetID,
+    },
 };
 
 /// Contains the input components information required for building the full
@@ -16,6 +20,7 @@ use crate::{
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Input {
     symbol_names: HashMap<Global<ItemID>, String>,
+    root_module_id: HashMap<TargetID, ID<Module>>,
 
     /// The syntax tree map won't be serialized
     #[serde(skip)]
@@ -45,9 +50,32 @@ impl Input {
             .map_or(false, |x| *x != target_id)));
     }
 
+    /// Returns the [`Module`] ID that is closest to the given [`ItemID`]
+    /// (including itself).
+    ///
+    /// # Panics
+    ///
+    /// If the given [`ItemID`] is not a module.
+    pub fn get_closet_module_id(
+        &self,
+        mut item_id: Global<ItemID>,
+    ) -> Global<ID<Module>> {
+        // including the item_id itself
+        loop {
+            if let ItemID::Module(module_id) = item_id.id {
+                return Global::new(item_id.target_id, module_id);
+            }
+
+            item_id = self
+                .get_parent_item_id(item_id)
+                .expect("should've found at least one module");
+        }
+    }
+
     /// Gets the parent [`ItemID`] of the given item symbol.
     ///
-    /// If [None] is returned, it means the item symbol is a root module symbol.
+    /// If [`None`] is returned, it means the item symbol is a root module
+    /// symbol.
     ///
     /// # Panics
     ///

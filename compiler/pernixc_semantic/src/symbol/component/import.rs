@@ -1,3 +1,6 @@
+//! Contains the definition of [`Import`] and its implementation for
+//! components.
+
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
