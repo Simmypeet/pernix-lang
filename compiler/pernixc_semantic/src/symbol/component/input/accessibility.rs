@@ -41,9 +41,9 @@ macro_rules! impl_accessibility {
     ($($name:ident),*) => {
         paste! {
             #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-            pub(in crate::symbol) struct Map {
+            pub(super) struct Map {
                 $(
-                    [< $name:snake s >]:
+                    pub(super) [< $name:snake s >]:
                         HashMap<Global<ID<$name>>, Accessibility>,
                 )*
             }

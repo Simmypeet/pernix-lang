@@ -16,8 +16,8 @@ use crate::{
 pub struct Import(HashSet<Global<ID<Module>>>);
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(in crate::symbol) struct Map {
-    imports: HashMap<Global<ID<Module>>, Import>,
+pub(super) struct Map {
+    pub(super) imports: HashMap<Global<ID<Module>>, Import>,
 }
 
 impl Input<Import> for Module {

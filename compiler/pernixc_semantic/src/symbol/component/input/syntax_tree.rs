@@ -41,9 +41,9 @@ macro_rules! impl_syntax_tree {
     ($(($name:ident, $syn:ty)),*) => {
         paste! {
             #[derive(Debug, Clone, Default)]
-            pub(in crate::symbol) struct Map {
+            pub(super) struct Map {
                 $(
-                    [< $name:snake s >]:
+                    pub(super) [< $name:snake s >]:
                         HashMap<Global<ID<$name>>, SyntaxTree<$syn>>,
                 )*
             }

@@ -42,9 +42,9 @@ macro_rules! impl_parent {
     ($(($name:ident, $syn:ty, $requirement:ty)),*) => {
         paste! {
             #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-            pub(in crate::symbol) struct Map {
+            pub(super) struct Map {
                 $(
-                    [< $name:snake s >]:
+                    pub(super) [< $name:snake s >]:
                         HashMap<Global<ID<$name>>, Parent<$syn>>,
                 )*
             }
