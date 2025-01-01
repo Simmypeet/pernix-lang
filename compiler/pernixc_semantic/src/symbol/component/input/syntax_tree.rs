@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use paste::paste;
+use pernixc_base::source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +89,17 @@ pub struct ExternFunction {
 pub enum FunctionKind {
     Normal(syntax_tree::item::Function),
     Extern(ExternFunction),
+}
+
+impl SourceElement for FunctionKind {
+    fn span(&self) -> Span {
+        match self {
+            FunctionKind::Normal(function) => function.span(),
+            FunctionKind::Extern(extern_function) => {
+                extern_function.extern_function.span()
+            }
+        }
+    }
 }
 
 impl_syntax_tree!(

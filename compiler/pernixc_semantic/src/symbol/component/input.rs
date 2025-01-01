@@ -6,11 +6,15 @@ use std::{
 };
 
 use accessibility::Accessibility;
-use pernixc_base::handler::Handler;
+use pernixc_base::{
+    handler::Handler,
+    source_file::{SourceElement, Span},
+};
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{
-    item::Item, target::ModuleTree, AccessModifier, ConnectedList, SimplePath,
-    SimplePathRoot,
+    item::{Item, UsingKind},
+    target::ModuleTree,
+    AccessModifier, ConnectedList, SimplePath, SimplePathRoot,
 };
 use serde::{Deserialize, Serialize};
 use syntax_tree::FunctionKind;
@@ -18,8 +22,8 @@ use syntax_tree::FunctionKind;
 use crate::{
     arena::ID,
     error::{
-        self, ItemRedifinition, SymbolIsMoreAccessibleThanParent,
-        SymbolNotFound,
+        self, ConflictingUsing, ExpectModule, ItemRedifinition,
+        SymbolIsMoreAccessibleThanParent, SymbolNotFound,
     },
     symbol::{
         Constant, Enum, Function, Global, HierarchyRelationship, ItemID,
@@ -148,6 +152,7 @@ impl Map {
 
         let mut usings_by_module_id = HashMap::new();
         let mut implementations_by_module_id = HashMap::new();
+
         self.create_module(
             &mut (0..),
             target_id,
@@ -158,6 +163,11 @@ impl Map {
             &mut implementations_by_module_id,
             handler,
         );
+
+        dbg!(&usings_by_module_id);
+        dbg!(&implementations_by_module_id);
+
+        self.insert_usings(target_id, usings_by_module_id, handler);
     }
 
     /// Determines whether the given `referred` is accessible from the
@@ -765,6 +775,56 @@ impl Map {
 
         Some(lastest_resolution)
     }
+
+    /// Gets the span pointing to the location of the given item ID.
+    #[allow(unused)]
+    pub fn get_span(&self, item_id: Global<ItemID>) -> Option<Span> {
+        macro_rules! impl_get_span_arm {
+            ($id:ident, true) => {
+                None
+            };
+
+            ($id:ident, false) => {
+                self.try_get_input::<syntax_tree::SyntaxTree<_>, _>(
+                    Global::new(item_id.target_id, $id),
+                )
+                .map(|x| x.0.span())
+            };
+        }
+        macro_rules! impl_get_span {
+            ($(($name:ident, $test:ident)),*) => {
+                match item_id.id {
+                    $(
+                        ItemID::$name(id) => impl_get_span_arm!(id, $test),
+                    )*
+                }
+            };
+        }
+
+        impl_get_span!(
+            (Module, true),
+            (Struct, false),
+            (Enum, false),
+            (Trait, false),
+            (Type, false),
+            (Constant, false),
+            (Function, false),
+            (Variant, false),
+            (TraitType, false),
+            (TraitFunction, false),
+            (TraitConstant, false),
+            (PositiveTraitImplementation, false),
+            (NegativeTraitImplementation, false),
+            (TraitImplementationFunction, false),
+            (TraitImplementationType, false),
+            (TraitImplementationConstant, false),
+            (AdtImplementation, false),
+            (AdtImplementationFunction, false),
+            (Marker, false),
+            (PositiveMarkerImplementation, false),
+            (NegativeMarkerImplementation, false)
+        )
+    }
 }
 
 /// Represents an iterator that walks through the scope of the given symbol. It
@@ -807,11 +867,212 @@ impl Map {
         >,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        for (module_id, using) in
+        for (current_module_id, using) in
             usings_by_module_id.into_iter().flat_map(|(module_id, usings)| {
                 usings.into_iter().map(move |x| (module_id, x))
             })
-        {}
+        {
+            match using.kind() {
+                UsingKind::From(from) => {
+                    let Some(id) = self.resolve_simple_path(
+                        from.from().simple_path(),
+                        Global::new(
+                            TargetID::Normal(target_id),
+                            current_module_id.into(),
+                        ),
+                        true,
+                        handler,
+                    ) else {
+                        return;
+                    };
+
+                    let ItemID::Module(module_id) = id.id else {
+                        handler.receive(Box::new(ExpectModule {
+                            module_path: from.from().simple_path().span(),
+                            found_id: id.id,
+                        }));
+
+                        return;
+                    };
+                    let from_module_id = Global::new(id.target_id, module_id);
+
+                    for import in from
+                        .imports()
+                        .connected_list()
+                        .as_ref()
+                        .into_iter()
+                        .flat_map(ConnectedList::elements)
+                    {
+                        let Some(imported_id) = self
+                            .get_input::<member::Member<_>, _>(from_module_id)
+                            .get(import.identifier().span.str())
+                            .copied()
+                        else {
+                            handler.receive(Box::new(SymbolNotFound {
+                                searched_item_id: Some(
+                                    from_module_id.id.into(),
+                                ),
+                                resolution_span: import
+                                    .identifier()
+                                    .span
+                                    .clone(),
+                            }));
+                            continue;
+                        };
+
+                        let name = import.alias().as_ref().map_or_else(
+                            || {
+                                self.symbol_names
+                                    .get(&Global::new(
+                                        from_module_id.target_id,
+                                        imported_id.into(),
+                                    ))
+                                    .unwrap()
+                                    .clone()
+                            },
+                            |x| x.identifier().span.str().to_owned(),
+                        );
+
+                        if let Some(existing) = self
+                            .get_input::<member::Member<_>, _>(Global::new(
+                                TargetID::Normal(target_id),
+                                current_module_id,
+                            ))
+                            .get(&name)
+                            .map(|x| {
+                                self.get_span(Global::new(
+                                    TargetID::Normal(target_id),
+                                    (*x).into(),
+                                ))
+                            })
+                            .or_else(|| {
+                                self.get_input::<import::Import, _>(
+                                    Global::new(
+                                        TargetID::Normal(target_id),
+                                        current_module_id,
+                                    ),
+                                )
+                                .get(&name)
+                                .map(|x| x.span.clone())
+                            })
+                        {
+                            handler.receive(Box::new(ConflictingUsing {
+                                using_span: import
+                                    .alias()
+                                    .as_ref()
+                                    .map_or_else(
+                                        || import.identifier().span(),
+                                        SourceElement::span,
+                                    ),
+                                name: name.clone(),
+                                module_id,
+                                conflicting_span: existing,
+                            }));
+                        } else {
+                            self.get_input_mut::<import::Import, _>(
+                                Global::new(
+                                    TargetID::Normal(target_id),
+                                    current_module_id,
+                                ),
+                            )
+                            .insert(
+                                name,
+                                import::Using {
+                                    module_member_id: Global::new(
+                                        from_module_id.target_id,
+                                        imported_id.into(),
+                                    ),
+                                    span: Some(
+                                        import.alias().as_ref().map_or_else(
+                                            || import.identifier().span(),
+                                            SourceElement::span,
+                                        ),
+                                    ),
+                                },
+                            );
+                        }
+                    }
+                }
+
+                UsingKind::One(one) => {
+                    let Some(id) = self.resolve_simple_path(
+                        one.simple_path(),
+                        Global::new(
+                            TargetID::Normal(target_id),
+                            current_module_id.into(),
+                        ),
+                        true,
+                        handler,
+                    ) else {
+                        return;
+                    };
+
+                    let ItemID::Module(module_id) = id.id else {
+                        handler.receive(Box::new(ExpectModule {
+                            module_path: one.simple_path().span(),
+                            found_id: id.id,
+                        }));
+
+                        return;
+                    };
+                    let global_module_id = Global::new(id.target_id, module_id);
+
+                    let name = one.alias().as_ref().map_or_else(
+                        || {
+                            self.symbol_names
+                                .get(&global_module_id.map(Into::into))
+                                .unwrap()
+                                .clone()
+                        },
+                        |x| x.identifier().span.str().to_owned(),
+                    );
+
+                    if let Some(existing) = self
+                        .get_input::<member::Member<_>, _>(Global::new(
+                            TargetID::Normal(target_id),
+                            current_module_id,
+                        ))
+                        .get(&name)
+                        .map(|x| {
+                            self.get_span(Global::new(
+                                TargetID::Normal(target_id),
+                                (*x).into(),
+                            ))
+                        })
+                        .or_else(|| {
+                            self.get_input::<import::Import, _>(Global::new(
+                                TargetID::Normal(target_id),
+                                current_module_id,
+                            ))
+                            .get(&name)
+                            .map(|x| x.span.clone())
+                        })
+                    {
+                        handler.receive(Box::new(ConflictingUsing {
+                            using_span: one.alias().as_ref().map_or_else(
+                                || one.simple_path().span(),
+                                SourceElement::span,
+                            ),
+                            name: name.clone(),
+                            module_id,
+                            conflicting_span: existing,
+                        }));
+                    } else {
+                        self.get_input_mut::<import::Import, _>(Global::new(
+                            TargetID::Normal(target_id),
+                            current_module_id,
+                        ))
+                        .insert(name, import::Using {
+                            module_member_id: global_module_id.map(Into::into),
+                            span: Some(one.alias().as_ref().map_or_else(
+                                || one.simple_path().span(),
+                                SourceElement::span,
+                            )),
+                        });
+                    }
+                }
+            }
+        }
     }
 
     fn create_member_no_accessibility<T, S, P, Tp, Pt>(
@@ -1101,8 +1362,11 @@ impl Map {
 
         assert!(self
             .symbol_names
-            .insert(new_module_id.map(Into::into), name)
+            .insert(new_module_id.map(Into::into), name.clone())
             .is_none());
+
+        // insert import component
+        self.insert_input(new_module_id, import::Import::default());
 
         if let Some(parent_module_id) = parent_module_id {
             // insert the parent component
@@ -1139,6 +1403,11 @@ impl Map {
                 .insert(TargetID::Normal(target_id), new_module_id.id)
                 .is_none());
 
+            assert!(self
+                .target_ids_by_name
+                .insert(name, TargetID::Normal(target_id))
+                .is_none());
+
             // insert the accessibility
             assert!(self
                 .accessibility
@@ -1147,20 +1416,11 @@ impl Map {
         }
 
         // add member componenet
-        assert!(self
-            .member
-            .modules
-            .insert(new_module_id, member::Member::default())
-            .is_none());
-        // add import component
-        assert!(self
-            .import
-            .imports
-            .insert(new_module_id, import::Import::default())
-            .is_none());
+        self.insert_input(new_module_id, member::Member::default());
 
         let (_, content, submodule_by_name) = syntax_tree.dissolve();
         let (usings, items) = content.dissolve();
+
         usings_by_module_id.entry(new_module_id.id).or_default().extend(usings);
 
         // recusively create the submodules

@@ -253,7 +253,6 @@ impl Container for NoContainer {
     }
 }
 
-
 /// The representation of the table without any state information.
 #[derive(Debug, Getters)]
 pub struct Representation<T: Container> {
@@ -1632,7 +1631,7 @@ fn transition_to_building(
                         ),
                         name: name.clone(),
                         module_id: current_module_id,
-                        conflicting_span: existing,
+                        conflicting_span: Some(existing),
                     }));
                 } else {
                     module.imports.insert(
@@ -1736,7 +1735,7 @@ fn transition_to_building(
                             ),
                             name: name.clone(),
                             module_id: current_module_id,
-                            conflicting_span: existing,
+                            conflicting_span: Some(existing),
                         }));
                     } else {
                         module.imports.insert(

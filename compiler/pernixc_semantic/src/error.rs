@@ -2102,7 +2102,7 @@ pub struct ConflictingUsing {
     ///
     /// This can either be the span to the declared symbol or the previous
     /// using that uses the given name.
-    pub conflicting_span: Span,
+    pub conflicting_span: Option<Span>,
 }
 
 impl Report<&Table<Suboptimal>> for ConflictingUsing {
@@ -2125,10 +2125,15 @@ impl Report<&Table<Suboptimal>> for ConflictingUsing {
             ),
             severity: Severity::Error,
             help_message: None,
-            related: vec![Related {
-                span: self.conflicting_span.clone(),
-                message: "the conflicting name is declared here".to_string(),
-            }],
+            related: self
+                .conflicting_span
+                .as_ref()
+                .map(|conflicting_span| Related {
+                    span: conflicting_span.clone(),
+                    message: "conflicting name declared here".to_string(),
+                })
+                .into_iter()
+                .collect(),
         })
     }
 }
