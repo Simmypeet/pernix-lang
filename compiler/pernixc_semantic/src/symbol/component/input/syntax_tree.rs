@@ -52,16 +52,17 @@ macro_rules! impl_syntax_tree {
             $(
                 impl super::Input<SyntaxTree<$syn>> for $name {
                     type Requirement = super::Optional;
+                    type ID = ID<Self>;
 
                     fn get_map(
                         representation: &super::Map,
-                    ) -> &HashMap<Global<ID<Self>>, SyntaxTree<$syn>> {
+                    ) -> &HashMap<Global<Self::ID>, SyntaxTree<$syn>> {
                         &representation.syntax_tree.[< $name:snake s >]
                     }
 
                     fn get_map_mut(
                         representation: &mut super::Map,
-                    ) -> &mut HashMap<Global<ID<Self>>, SyntaxTree<$syn>> {
+                    ) -> &mut HashMap<Global<Self::ID>, SyntaxTree<$syn>> {
                         &mut representation.syntax_tree.[< $name:snake s >]
                     }
                 }

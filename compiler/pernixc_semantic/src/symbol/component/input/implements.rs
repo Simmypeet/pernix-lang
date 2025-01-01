@@ -1,4 +1,4 @@
-//! Contains the definition of [`Implemented`] and its implementation for
+//! Contains the definition of [`Implements`] and its implementation for
 //! components.
 
 use std::collections::HashMap;
@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     arena::ID,
     symbol::{
-        AdtID, AdtImplementation, Global, Marker, NegativeMarkerImplementation,
-        NegativeTraitImplementation, PositiveMarkerImplementation,
-        PositiveTraitImplementation, Trait,
+        AdtID, AdtImplementation, Global, Marker, MarkerImplementationID,
+        NegativeMarkerImplementation, NegativeTraitImplementation,
+        PositiveMarkerImplementation, PositiveTraitImplementation, Trait,
+        TraitImplementationID,
     },
 };
 
@@ -34,31 +35,34 @@ use crate::{
 )]
 pub struct Implements<ID>(pub ID);
 
-macro_rules! impl_implemented {
-    ($(($name:ident, $id:ty)),*) => {
-        paste! {
-            #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-            pub(super) struct Map {
-                $(
-                    pub(super) [< $name:snake s >]:
-                        HashMap<Global<ID<$name>>, Implements<$id>>,
-                )*
-            }
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(super) struct Map {
+    pub(super) trait_implementations:
+        HashMap<Global<TraitImplementationID>, Implements<ID<Trait>>>,
+    pub(super) marker_implementations:
+        HashMap<Global<MarkerImplementationID>, Implements<ID<Marker>>>,
+    pub(super) adt_implementations:
+        HashMap<Global<ID<AdtImplementation>>, Implements<AdtID>>,
+}
 
+macro_rules! impl_implemented {
+    ($(($name:ident, $id:ty, $impl_id:ty, $map_name:ident)),*) => {
+        paste! {
             $(
-                impl super::Input<Implements<$id>> for $name {
+                impl super::Input<Implements<$impl_id>> for $name {
                     type Requirement = super::Required;
+                    type ID = $id;
 
                     fn get_map(
                         representation: &super::Map,
-                    ) -> &HashMap<Global<ID<Self>>, Implements<$id>> {
-                        &representation.implemented.[< $name:snake s >]
+                    ) -> &HashMap<Global<Self::ID>, Implements<$impl_id>> {
+                        &representation.implemented.$map_name
                     }
 
                     fn get_map_mut(
                         representation: &mut super::Map,
-                    ) -> &mut HashMap<Global<ID<Self>>, Implements<$id>> {
-                        &mut representation.implemented.[< $name:snake s >]
+                    ) -> &mut HashMap<Global<Self::ID>, Implements<$impl_id>> {
+                        &mut representation.implemented.$map_name
                     }
                 }
             )*
@@ -67,9 +71,29 @@ macro_rules! impl_implemented {
 }
 
 impl_implemented!(
-    (PositiveTraitImplementation, ID<Trait>),
-    (NegativeTraitImplementation, ID<Trait>),
-    (PositiveMarkerImplementation, ID<Marker>),
-    (NegativeMarkerImplementation, ID<Marker>),
-    (AdtImplementation, AdtID)
+    (
+        PositiveTraitImplementation,
+        TraitImplementationID,
+        ID<Trait>,
+        trait_implementations
+    ),
+    (
+        NegativeTraitImplementation,
+        TraitImplementationID,
+        ID<Trait>,
+        trait_implementations
+    ),
+    (
+        PositiveMarkerImplementation,
+        MarkerImplementationID,
+        ID<Marker>,
+        marker_implementations
+    ),
+    (
+        NegativeMarkerImplementation,
+        MarkerImplementationID,
+        ID<Marker>,
+        marker_implementations
+    ),
+    (AdtImplementation, ID<AdtImplementation>, AdtID, adt_implementations)
 );

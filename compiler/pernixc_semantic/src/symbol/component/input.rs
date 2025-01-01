@@ -1,6 +1,9 @@
 //! Contains the input components for the symbol table.
 
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    hash::Hash,
+};
 
 use accessibility::Accessibility;
 use pernixc_base::handler::Handler;
@@ -24,6 +27,7 @@ use crate::{
 };
 
 pub mod accessibility;
+pub mod implemented;
 pub mod implements;
 pub mod import;
 pub mod member;
@@ -45,11 +49,14 @@ trait Input<T> {
     /// If true the component must be present in the map for the symbol.
     type Requirement;
 
-    fn get_map(representation: &Map) -> &HashMap<Global<ID<Self>>, T>;
+    /// The ID type used for accessing the input componenet.
+    type ID: From<ID<Self>> + Eq + Hash + 'static;
+
+    fn get_map(representation: &Map) -> &HashMap<Global<Self::ID>, T>;
 
     fn get_map_mut(
         representation: &mut Map,
-    ) -> &mut HashMap<Global<ID<Self>>, T>;
+    ) -> &mut HashMap<Global<Self::ID>, T>;
 }
 
 /// Contains the input components information required for building the full
@@ -72,13 +79,38 @@ pub struct Map {
 impl Map {
     /// Gets the input component of a particular symbol.
     #[allow(private_bounds)]
-    pub fn get_input<C, T: Input<C, Requirement = Required> + 'static>(
+    pub fn get_input<C, T: Input<C, Requirement = Required>>(
         &self,
         global_id: Global<ID<T>>,
     ) -> &C {
         T::get_map(self)
-            .get(&global_id)
+            .get(&global_id.map(Into::into))
             .unwrap_or_else(|| panic!("{global_id:?} not found"))
+    }
+
+    /// Gets the mutable input component of a particular symbol.
+    fn get_input_mut<C, T: Input<C, Requirement = Required>>(
+        &mut self,
+        global_id: Global<ID<T>>,
+    ) -> &mut C {
+        T::get_map_mut(self)
+            .get_mut(&global_id.map(Into::into))
+            .unwrap_or_else(|| panic!("{global_id:?} not found"))
+    }
+
+    /// Inserts the input component of a particular symbol.
+    ///
+    /// # Panics
+    ///
+    /// If the global ID is already used.
+    fn insert_input<C, T: Input<C>>(
+        &mut self,
+        global_id: Global<ID<T>>,
+        component: C,
+    ) {
+        assert!(T::get_map_mut(self)
+            .insert(global_id.map(Into::into), component)
+            .is_none());
     }
 
     /// Tries to get the optional input component of a particular symbol.
@@ -87,7 +119,7 @@ impl Map {
         &self,
         global_id: Global<ID<T>>,
     ) -> Option<&C> {
-        T::get_map(self).get(&global_id)
+        T::get_map(self).get(&global_id.map(Into::into))
     }
 }
 
@@ -382,24 +414,22 @@ impl Map {
             (TraitFunction, _a),
             (TraitConstant, _a),
             (PositiveTraitImplementation, id, {
-                let trait_id = self
-                    .implemented
-                    .positive_trait_implementations
-                    .get(&Global::new(item_id.target_id, id))
-                    .unwrap()
-                    .0;
+                let trait_id =
+                    **self.get_input::<implements::Implements<_>, _>(
+                        Global::new(item_id.target_id, id),
+                    );
+
                 self.get_accessibility(Global::new(
                     item_id.target_id,
                     trait_id.into(),
                 ))
             }),
             (NegativeTraitImplementation, id, {
-                let trait_id = self
-                    .implemented
-                    .negative_trait_implementations
-                    .get(&Global::new(item_id.target_id, id))
-                    .unwrap()
-                    .0;
+                let trait_id =
+                    **self.get_input::<implements::Implements<_>, _>(
+                        Global::new(item_id.target_id, id),
+                    );
+
                 self.get_accessibility(Global::new(
                     item_id.target_id,
                     trait_id.into(),
@@ -441,24 +471,22 @@ impl Map {
             (AdtImplementationFunction, _a),
             (Marker, _a),
             (PositiveMarkerImplementation, id, {
-                let marker_id = self
-                    .implemented
-                    .positive_marker_implementations
-                    .get(&Global::new(item_id.target_id, id))
-                    .unwrap()
-                    .0;
+                let marker_id =
+                    **self.get_input::<implements::Implements<_>, _>(
+                        Global::new(item_id.target_id, id),
+                    );
+
                 self.get_accessibility(Global::new(
                     item_id.target_id,
                     marker_id.into(),
                 ))
             }),
             (NegativeMarkerImplementation, id, {
-                let marker_id = self
-                    .implemented
-                    .negative_marker_implementations
-                    .get(&Global::new(item_id.target_id, id))
-                    .unwrap()
-                    .0;
+                let marker_id =
+                    **self.get_input::<implements::Implements<_>, _>(
+                        Global::new(item_id.target_id, id),
+                    );
+
                 self.get_accessibility(Global::new(
                     item_id.target_id,
                     marker_id.into(),
@@ -534,14 +562,14 @@ impl Map {
             .is_none());
 
         // add parent information
-        assert!(T::get_map_mut(self)
-            .insert(new_id, parent::Parent(Tp::from(parent_id)))
-            .is_none());
+        self.insert_input(new_id, parent::Parent(Tp::from(parent_id)));
 
         // add the member information
-        match P::get_map_mut(self)
-            .get_mut(&Global::new(TargetID::Normal(target_id), parent_id))
-            .unwrap()
+        match self
+            .get_input_mut::<member::Member<_>, _>(Global::new(
+                TargetID::Normal(target_id),
+                parent_id,
+            ))
             .entry(identifier.span.str().to_owned())
         {
             Entry::Occupied(occupied_entry) => {
@@ -557,9 +585,7 @@ impl Map {
         }
 
         // add the syntax tree information
-        assert!(T::get_map_mut(self)
-            .insert(new_id, syntax_tree::SyntaxTree(syntax_tree))
-            .is_none());
+        self.insert_input(new_id, syntax_tree::SyntaxTree(syntax_tree));
 
         new_id.id
     }
@@ -598,12 +624,10 @@ impl Map {
         );
 
         // add the accessibility information
-        assert!(T::get_map_mut(self)
-            .insert(
-                Global::new(TargetID::Normal(target_id), new_id),
-                accessibility
-            )
-            .is_none());
+        self.insert_input(
+            Global::new(TargetID::Normal(target_id), new_id),
+            accessibility,
+        );
 
         new_id
     }
@@ -789,8 +813,11 @@ impl Map {
             // insert the parent component
             assert!(self
                 .parent
-                .modules
-                .insert(new_module_id, parent::Parent(parent_module_id))
+                .module_members
+                .insert(
+                    new_module_id.map(Into::into),
+                    parent::Parent(parent_module_id)
+                )
                 .is_none());
             // insert the accessibility component
             let accessibility = syntax_tree.signature().as_ref().map_or(
@@ -808,8 +835,7 @@ impl Map {
 
             assert!(self
                 .accessibility
-                .modules
-                .insert(new_module_id, accessibility)
+                .insert(new_module_id.map(Into::into), accessibility)
                 .is_none());
         } else {
             // insert the root module ID
@@ -821,8 +847,7 @@ impl Map {
             // insert the accessibility
             assert!(self
                 .accessibility
-                .modules
-                .insert(new_module_id, Accessibility::Public)
+                .insert(new_module_id.map(Into::into), Accessibility::Public)
                 .is_none());
         }
 

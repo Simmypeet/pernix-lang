@@ -1815,7 +1815,17 @@ impl ResolvableImplementation<ID<Marker>> for NegativeMarkerImplementation {
 
 /// Enumeration of both positive and negative marker implementation ids.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    derive_more::From,
 )]
 #[allow(missing_docs)]
 pub enum MarkerImplementationID {
@@ -1860,6 +1870,8 @@ pub enum LocalGenericParameterID {
     Ord,
     Hash,
     EnumAsInner,
+    Serialize,
+    Deserialize,
     derive_more::From,
 )]
 #[allow(missing_docs)]
@@ -1975,7 +1987,17 @@ impl From<TraitImplementationID> for ResolvableImplementationID {
 
 /// Enumeration of all kinds of implementation symbol IDs.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    derive_more::From,
 )]
 #[allow(missing_docs)]
 pub enum ImplementationID {

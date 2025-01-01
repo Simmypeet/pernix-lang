@@ -44,6 +44,7 @@ macro_rules! impl_member {
             $(
                 impl super::Input<Member<$id>> for $name {
                     type Requirement = super::Required;
+                    type ID = ID<Self>;
 
                     fn get_map(
                         representation: &super::Map

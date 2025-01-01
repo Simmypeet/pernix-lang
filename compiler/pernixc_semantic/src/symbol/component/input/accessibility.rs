@@ -3,11 +3,10 @@
 
 use std::collections::HashMap;
 
-use paste::paste;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    arena::ID,
+    arena,
     symbol::{
         AdtImplementationFunction, Constant, Enum, Function, Global, Marker,
         Module, Struct, Trait, TraitConstant, TraitFunction, TraitType, Type,
@@ -34,38 +33,61 @@ pub enum Accessibility {
     Public,
 
     /// The symbol is accessible from the given module and its children.
-    Scoped(ID<Module>),
+    Scoped(arena::ID<Module>),
 }
 
 macro_rules! impl_accessibility {
     ($($name:ident),*) => {
-        paste! {
-            #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-            pub(super) struct Map {
-                $(
-                    pub(super) [< $name:snake s >]:
-                        HashMap<Global<ID<$name>>, Accessibility>,
-                )*
-            }
-
+        /// An enumeration of all IDs that have accessibility.
+        #[derive(
+            Debug,
+            Clone,
+            Copy,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Hash,
+            Serialize,
+            Deserialize,
+            derive_more::From
+        )]
+        #[allow(missing_docs)]
+        pub enum ID {
             $(
-                impl super::Input<Accessibility> for $name {
-                    type Requirement = super::Required;
-
-                    fn get_map(
-                        representation: &super::Map,
-                    ) -> &HashMap<Global<ID<Self>>, Accessibility> {
-                        &representation.accessibility.[< $name:snake s >]
-                    }
-
-                    fn get_map_mut(
-                        representation: &mut super::Map,
-                    ) -> &mut HashMap<Global<ID<Self>>, Accessibility> {
-                        &mut representation.accessibility.[< $name:snake s >]
-                    }
-                }
+                $name(arena::ID<$name>),
             )*
         }
+
+        #[derive(
+            Debug,
+            Clone,
+            Default,
+            Serialize,
+            Deserialize,
+            derive_more::Deref,
+            derive_more::DerefMut,
+        )]
+        pub(super) struct Map(pub HashMap<Global<ID>, Accessibility>);
+
+        $(
+            impl super::Input<Accessibility> for $name {
+                type Requirement = super::Required;
+                type ID = ID;
+
+                fn get_map(
+                    representation: &super::Map,
+                ) -> &HashMap<Global<Self::ID>, Accessibility> {
+                    &representation.accessibility.0
+                }
+
+                fn get_map_mut(
+                    representation: &mut super::Map,
+                ) -> &mut HashMap<Global<Self::ID>, Accessibility> {
+                    &mut representation.accessibility.0
+                }
+            }
+        )*
     };
 }
 

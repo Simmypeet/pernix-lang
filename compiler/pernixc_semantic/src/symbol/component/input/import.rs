@@ -22,6 +22,7 @@ pub(super) struct Map {
 
 impl Input<Import> for Module {
     type Requirement = Required;
+    type ID = ID<Self>;
 
     fn get_map(
         representation: &super::Map,
