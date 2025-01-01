@@ -71,13 +71,23 @@ macro_rules! impl_syntax_tree {
     };
 }
 
+/// Contains the calling convention and the extern function syntax tree.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExternFunction {
+    /// The calling convention string e.g. `extern "C"`.
+    pub calling_convention: pernixc_lexical::token::String,
+
+    /// The extern function syntax tree.
+    pub extern_function: syntax_tree::item::ExternFunction,
+}
+
 /// An enumeration of either a normal function syntax tee (with body) or an
 /// extern function syntax (only signature).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum FunctionKind {
     Normal(syntax_tree::item::Function),
-    Extern(syntax_tree::item::ExternFunction),
+    Extern(ExternFunction),
 }
 
 impl_syntax_tree!(

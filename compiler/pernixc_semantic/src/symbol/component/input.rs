@@ -9,7 +9,8 @@ use accessibility::Accessibility;
 use pernixc_base::handler::Handler;
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{
-    item::Item, target::ModuleTree, AccessModifier, ConnectedList,
+    item::Item, target::ModuleTree, AccessModifier, ConnectedList, SimplePath,
+    SimplePathRoot,
 };
 use serde::{Deserialize, Serialize};
 use syntax_tree::FunctionKind;
@@ -18,11 +19,11 @@ use crate::{
     arena::ID,
     error::{
         self, ItemRedifinition, SymbolIsMoreAccessibleThanParent,
-        UnknownExternCallingConvention,
+        SymbolNotFound,
     },
     symbol::{
-        Constant, Enum, Extern, Function, Global, HierarchyRelationship,
-        ItemID, Marker, Module, Struct, TargetID, Trait, TraitMemberID, Type,
+        Constant, Enum, Function, Global, HierarchyRelationship, ItemID,
+        Marker, Module, Struct, TargetID, Trait, TraitMemberID, Type,
     },
 };
 
@@ -64,7 +65,8 @@ trait Input<T> {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Map {
     symbol_names: HashMap<Global<ItemID>, String>,
-    root_module_id: HashMap<TargetID, ID<Module>>,
+    root_module_ids_by_target_id: HashMap<TargetID, ID<Module>>,
+    target_ids_by_name: HashMap<String, TargetID>,
 
     /// The syntax tree map won't be serialized
     #[serde(skip)]
@@ -73,7 +75,8 @@ pub struct Map {
     parent: parent::Map,
     member: member::Map,
     import: import::Map,
-    implemented: implements::Map,
+    implements: implements::Map,
+    implemented: implemented::Map,
 }
 
 impl Map {
@@ -142,14 +145,172 @@ impl Map {
             .map_or(false, |x| *x != target_id)));
 
         let (syntax_tree, name) = target_syn.dissolve();
+
+        let mut usings_by_module_id = HashMap::new();
+        let mut implementations_by_module_id = HashMap::new();
         self.create_module(
             &mut (0..),
             target_id,
             name,
             syntax_tree,
             None,
+            &mut usings_by_module_id,
+            &mut implementations_by_module_id,
             handler,
         );
+    }
+
+    /// Determines whether the given `referred` is accessible from the
+    /// `referring_site` as if the `referred` has the given
+    /// `referred_accessibility`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if `referred` or `referring_site` is not a valid ID.
+    #[must_use]
+    pub fn is_accessible_from(
+        &self,
+        referring_site: Global<ItemID>,
+        referred_target_id: TargetID,
+        referred_accessibility: Accessibility,
+    ) -> bool {
+        match referred_accessibility {
+            Accessibility::Public => true,
+
+            Accessibility::Scoped(module_id) => {
+                if referring_site.target_id != referred_target_id {
+                    return false;
+                }
+
+                let referring_site_module_id =
+                    self.get_closet_module_id(referring_site);
+
+                matches!(
+                    self.symbol_hierarchy_relationship(
+                        referred_target_id,
+                        module_id.into(),
+                        referring_site_module_id.into(),
+                    ),
+                    HierarchyRelationship::Parent
+                        | HierarchyRelationship::Equivalent
+                )
+            }
+        }
+    }
+
+    /// Checks if the `referred` is accessible from the `referring_site`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if `referred` or `referring_site` is not a valid ID.
+    #[must_use]
+    pub fn symbol_accessible(
+        &self,
+        referring_site: Global<ItemID>,
+        referred: Global<ItemID>,
+    ) -> bool {
+        let referred_accessibility = self.get_accessibility(referred);
+
+        self.is_accessible_from(
+            referring_site,
+            referred.target_id,
+            referred_accessibility,
+        )
+    }
+
+    /// Searches for a member with the given name in the given item ID.
+    #[must_use]
+    pub fn get_member_of(
+        &self,
+        item_id: Global<ItemID>,
+        member_name: &str,
+    ) -> Option<Global<ItemID>> {
+        match item_id.id {
+            ItemID::Module(id) => self
+                .get_input::<member::Member<_>, _>(Global::new(
+                    item_id.target_id,
+                    id,
+                ))
+                .get(member_name)
+                .copied()
+                .map(|x| Global::new(item_id.target_id, x.into())),
+            ItemID::Struct(id) => self
+                .get_input::<implemented::Implemented<_>, _>(Global::new(
+                    item_id.target_id,
+                    id,
+                ))
+                .iter()
+                .copied()
+                .find_map(|x| {
+                    self.get_input::<member::Member<_>, _>(x)
+                        .get(member_name)
+                        .copied()
+                        .map(|y| Global::new(x.target_id, y.into()))
+                }),
+            ItemID::Trait(id) => self
+                .get_input::<member::Member<_>, _>(Global::new(
+                    item_id.target_id,
+                    id,
+                ))
+                .get(member_name)
+                .copied()
+                .map(|x| Global::new(item_id.target_id, x.into())),
+            ItemID::PositiveTraitImplementation(id) => self
+                .get_input::<member::Member<_>, _>(Global::new(
+                    item_id.target_id,
+                    id,
+                ))
+                .get(member_name)
+                .copied()
+                .map(|x| Global::new(item_id.target_id, x.into())),
+            ItemID::AdtImplementation(id) => self
+                .get_input::<member::Member<_>, _>(Global::new(
+                    item_id.target_id,
+                    id,
+                ))
+                .get(member_name)
+                .copied()
+                .map(|x| Global::new(item_id.target_id, x.into())),
+            ItemID::Enum(id) => {
+                // search variant first then implementation
+                self.get_input::<member::Member<_>, _>(Global::new(
+                    item_id.target_id,
+                    id,
+                ))
+                .get(member_name)
+                .copied()
+                .map(|x| Global::new(item_id.target_id, x.into()))
+                .or_else(|| {
+                    self.get_input::<implemented::Implemented<_>, _>(
+                        Global::new(item_id.target_id, id),
+                    )
+                    .iter()
+                    .copied()
+                    .find_map(|x| {
+                        self.get_input::<member::Member<_>, _>(x)
+                            .get(member_name)
+                            .copied()
+                            .map(|y| Global::new(x.target_id, y.into()))
+                    })
+                })
+            }
+
+            ItemID::Type(_)
+            | ItemID::Constant(_)
+            | ItemID::Function(_)
+            | ItemID::Variant(_)
+            | ItemID::TraitType(_)
+            | ItemID::TraitFunction(_)
+            | ItemID::TraitConstant(_)
+            | ItemID::NegativeTraitImplementation(_)
+            | ItemID::TraitImplementationFunction(_)
+            | ItemID::TraitImplementationType(_)
+            | ItemID::TraitImplementationConstant(_)
+            | ItemID::AdtImplementationFunction(_)
+            | ItemID::Marker(_)
+            | ItemID::PositiveMarkerImplementation(_)
+            | ItemID::NegativeMarkerImplementation(_) => None,
+        }
     }
 
     /// Returns the [`Module`] ID that is closest to the given [`ItemID`]
@@ -162,11 +323,11 @@ impl Map {
     pub fn get_closet_module_id(
         &self,
         mut item_id: Global<ItemID>,
-    ) -> Global<ID<Module>> {
+    ) -> ID<Module> {
         // including the item_id itself
         loop {
             if let ItemID::Module(module_id) = item_id.id {
-                return Global::new(item_id.target_id, module_id);
+                return module_id;
             }
 
             item_id = Global::new(
@@ -265,11 +426,11 @@ impl Map {
             AccessModifier::Private(_) => {
                 let parent_module_id = self.get_closet_module_id(parent_id);
 
-                Accessibility::Scoped(parent_module_id.id)
+                Accessibility::Scoped(parent_module_id)
             }
-            AccessModifier::Internal(_) => {
-                Accessibility::Scoped(self.root_module_id[&parent_id.target_id])
-            }
+            AccessModifier::Internal(_) => Accessibility::Scoped(
+                self.root_module_ids_by_target_id[&parent_id.target_id],
+            ),
         }
     }
 
@@ -458,7 +619,7 @@ impl Map {
             }),
             (AdtImplementation, id, {
                 let adt_id = self
-                    .implemented
+                    .implements
                     .adt_implementations
                     .get(&Global::new(item_id.target_id, id))
                     .unwrap()
@@ -494,6 +655,116 @@ impl Map {
             })
         )
     }
+
+    /// Resolves a [`SimplePath`] as a [`ItemID`].
+    pub fn resolve_simple_path(
+        &self,
+        simple_path: &SimplePath,
+        referring_site: Global<ItemID>,
+        start_from_root: bool,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Option<Global<ItemID>> {
+        let root: Global<ItemID> = match simple_path.root() {
+            SimplePathRoot::Target(_) => Global::new(
+                referring_site.target_id,
+                self.root_module_ids_by_target_id[&referring_site.target_id]
+                    .into(),
+            ),
+            SimplePathRoot::Identifier(ident) => {
+                if start_from_root {
+                    let Some(id) =
+                        self.target_ids_by_name.get(ident.span.str()).copied()
+                    else {
+                        handler.receive(Box::new(SymbolNotFound {
+                            searched_item_id: None,
+                            resolution_span: ident.span.clone(),
+                        }));
+
+                        return None;
+                    };
+
+                    Global::new(
+                        referring_site.target_id,
+                        self.root_module_ids_by_target_id[&id].into(),
+                    )
+                } else {
+                    let closet_module_id =
+                        self.get_closet_module_id(referring_site);
+                    let global_closest_module_id =
+                        Global::new(referring_site.target_id, closet_module_id);
+
+                    let Some(id) = self
+                        .get_input::<member::Member<_>, _>(
+                            global_closest_module_id,
+                        )
+                        .get(ident.span.str())
+                        .map(|x| {
+                            Global::new(referring_site.target_id, (*x).into())
+                        })
+                        .or_else(|| {
+                            self.get_input::<import::Import, _>(
+                                global_closest_module_id,
+                            )
+                            .get(ident.span.str())
+                            .map(|x| x.module_member_id.map(Into::into))
+                        })
+                    else {
+                        handler.receive(Box::new(SymbolNotFound {
+                            searched_item_id: Some(closet_module_id.into()),
+                            resolution_span: ident.span.clone(),
+                        }));
+
+                        return None;
+                    };
+
+                    id
+                }
+            }
+        };
+
+        self.resolve_sequence(
+            simple_path.rest().iter().map(|x| &x.1),
+            referring_site,
+            root,
+            handler,
+        )
+    }
+
+    /// Resolves a sequence of identifier starting of from the given `root`.
+    pub fn resolve_sequence<'a>(
+        &self,
+        simple_path: impl Iterator<Item = &'a Identifier>,
+        referring_site: Global<ItemID>,
+        root: Global<ItemID>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Option<Global<ItemID>> {
+        let mut lastest_resolution = root;
+        for identifier in simple_path {
+            let Some(new_id) =
+                self.get_member_of(lastest_resolution, identifier.span.str())
+            else {
+                handler.receive(Box::new(SymbolNotFound {
+                    searched_item_id: Some(lastest_resolution.id),
+                    resolution_span: identifier.span.clone(),
+                }));
+
+                return None;
+            };
+
+            // non-fatal error, no need to return early
+            if !self.symbol_accessible(referring_site, new_id) {
+                handler.receive(Box::new(error::SymbolIsNotAccessible {
+                    referring_site: referring_site.id,
+                    referred: new_id.id,
+                    referred_span: identifier.span.clone(),
+                }));
+            }
+
+            lastest_resolution = new_id;
+        }
+
+        Some(lastest_resolution)
+    }
 }
 
 /// Represents an iterator that walks through the scope of the given symbol. It
@@ -527,6 +798,22 @@ impl<'a> Iterator for ScopeWalker<'a> {
 }
 
 impl Map {
+    fn insert_usings(
+        &mut self,
+        target_id: usize,
+        usings_by_module_id: HashMap<
+            ID<Module>,
+            Vec<pernixc_syntax::syntax_tree::item::Using>,
+        >,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        for (module_id, using) in
+            usings_by_module_id.into_iter().flat_map(|(module_id, usings)| {
+                usings.into_iter().map(move |x| (module_id, x))
+            })
+        {}
+    }
+
     fn create_member_no_accessibility<T, S, P, Tp, Pt>(
         &mut self,
         target_id: usize,
@@ -797,6 +1084,14 @@ impl Map {
         name: String,
         syntax_tree: ModuleTree,
         parent_module_id: Option<ID<Module>>,
+        usings_by_module_id: &mut HashMap<
+            ID<Module>,
+            Vec<pernixc_syntax::syntax_tree::item::Using>,
+        >,
+        implementations_by_module_id: &mut HashMap<
+            ID<Module>,
+            Vec<pernixc_syntax::syntax_tree::item::Implementation>,
+        >,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> ID<Module> {
         let new_module_id = Global::new(
@@ -840,7 +1135,7 @@ impl Map {
         } else {
             // insert the root module ID
             assert!(self
-                .root_module_id
+                .root_module_ids_by_target_id
                 .insert(TargetID::Normal(target_id), new_module_id.id)
                 .is_none());
 
@@ -866,6 +1161,7 @@ impl Map {
 
         let (_, content, submodule_by_name) = syntax_tree.dissolve();
         let (usings, items) = content.dissolve();
+        usings_by_module_id.entry(new_module_id.id).or_default().extend(usings);
 
         // recusively create the submodules
         for (name, submodule) in submodule_by_name {
@@ -875,6 +1171,8 @@ impl Map {
                 name.clone(),
                 submodule,
                 Some(new_module_id.id),
+                usings_by_module_id,
+                implementations_by_module_id,
                 handler,
             );
 
@@ -915,7 +1213,10 @@ impl Map {
                             }
                             syntax_tree::FunctionKind::Extern(
                                 extern_function,
-                            ) => extern_function.signature().identifier(),
+                            ) => extern_function
+                                .extern_function
+                                .signature()
+                                .identifier(),
                         },
                         accessibility,
                         handler,
@@ -953,7 +1254,12 @@ impl Map {
                         handler,
                     );
                 }
-                Item::Implementation(implementation) => {}
+                Item::Implementation(implementation) => {
+                    implementations_by_module_id
+                        .entry(new_module_id.id)
+                        .or_default()
+                        .push(implementation);
+                }
                 Item::Enum(syn) => {
                     self.create_enum(
                         id_generator,
@@ -1003,20 +1309,6 @@ impl Map {
                 Item::Extern(syn) => {
                     let (_, calling_convention, functions) = syn.dissolve();
 
-                    // get the calling convention of this extern
-                    let calling_convention =
-                        if calling_convention.value.as_deref() == Some("C") {
-                            Extern::C
-                        } else {
-                            handler.receive(Box::new(
-                                UnknownExternCallingConvention {
-                                    span: calling_convention.span.clone(),
-                                },
-                            ));
-
-                            Extern::Unknown
-                        };
-
                     for function in functions.dissolve().1 {
                         let accessibility = self.create_accessibility(
                             new_module_id.map(Into::into),
@@ -1026,14 +1318,23 @@ impl Map {
                         let _: ID<Function> = self.create_member(
                             target_id,
                             id_generator,
-                            syntax_tree::FunctionKind::Extern(function),
+                            syntax_tree::FunctionKind::Extern(
+                                syntax_tree::ExternFunction {
+                                    calling_convention: calling_convention
+                                        .clone(),
+                                    extern_function: function,
+                                },
+                            ),
                             new_module_id.id,
                             |x| match x {
                                 FunctionKind::Normal(function) => {
                                     function.signature().identifier()
                                 }
                                 FunctionKind::Extern(extern_function) => {
-                                    extern_function.signature().identifier()
+                                    extern_function
+                                        .extern_function
+                                        .signature()
+                                        .identifier()
                                 }
                             },
                             accessibility,

@@ -56,13 +56,13 @@ macro_rules! impl_implemented {
                     fn get_map(
                         representation: &super::Map,
                     ) -> &HashMap<Global<Self::ID>, Implements<$impl_id>> {
-                        &representation.implemented.$map_name
+                        &representation.implements.$map_name
                     }
 
                     fn get_map_mut(
                         representation: &mut super::Map,
                     ) -> &mut HashMap<Global<Self::ID>, Implements<$impl_id>> {
-                        &mut representation.implemented.$map_name
+                        &mut representation.implements.$map_name
                     }
                 }
             )*

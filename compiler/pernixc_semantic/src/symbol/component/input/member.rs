@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     arena::ID,
     symbol::{
-        Enum, Global, Module, ModuleMemberID, PositiveTraitImplementation,
-        Trait, TraitImplementationMemberID, TraitMemberID, Variant,
+        AdtImplementation, AdtImplementationFunction, Enum, Global, Module,
+        ModuleMemberID, PositiveTraitImplementation, Trait,
+        TraitImplementationMemberID, TraitMemberID, Variant,
     },
 };
 
@@ -67,5 +68,6 @@ impl_member!(
     (Module, ModuleMemberID),
     (Trait, TraitMemberID),
     (Enum, ID<Variant>),
-    (PositiveTraitImplementation, TraitImplementationMemberID)
+    (PositiveTraitImplementation, TraitImplementationMemberID),
+    (AdtImplementation, ID<AdtImplementationFunction>)
 );
