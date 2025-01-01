@@ -32,7 +32,7 @@ use crate::{
     derive_more::Deref,
     derive_more::DerefMut,
 )]
-pub struct Implemented<ID>(pub ID);
+pub struct Implements<ID>(pub ID);
 
 macro_rules! impl_implemented {
     ($(($name:ident, $id:ty)),*) => {
@@ -41,23 +41,23 @@ macro_rules! impl_implemented {
             pub(super) struct Map {
                 $(
                     pub(super) [< $name:snake s >]:
-                        HashMap<Global<ID<$name>>, Implemented<$id>>,
+                        HashMap<Global<ID<$name>>, Implements<$id>>,
                 )*
             }
 
             $(
-                impl super::Input<Implemented<$id>> for $name {
+                impl super::Input<Implements<$id>> for $name {
                     type Requirement = super::Required;
 
                     fn get_map(
                         representation: &super::Map,
-                    ) -> &HashMap<Global<ID<Self>>, Implemented<$id>> {
+                    ) -> &HashMap<Global<ID<Self>>, Implements<$id>> {
                         &representation.implemented.[< $name:snake s >]
                     }
 
                     fn get_map_mut(
                         representation: &mut super::Map,
-                    ) -> &mut HashMap<Global<ID<Self>>, Implemented<$id>> {
+                    ) -> &mut HashMap<Global<ID<Self>>, Implements<$id>> {
                         &mut representation.implemented.[< $name:snake s >]
                     }
                 }

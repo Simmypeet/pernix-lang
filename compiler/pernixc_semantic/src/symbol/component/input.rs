@@ -24,7 +24,7 @@ use crate::{
 };
 
 pub mod accessibility;
-pub mod implemented;
+pub mod implements;
 pub mod import;
 pub mod member;
 pub mod parent;
@@ -66,7 +66,7 @@ pub struct Map {
     parent: parent::Map,
     member: member::Map,
     import: import::Map,
-    implemented: implemented::Map,
+    implemented: implements::Map,
 }
 
 impl Map {
