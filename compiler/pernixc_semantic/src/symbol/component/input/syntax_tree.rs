@@ -16,6 +16,7 @@ use crate::{
         PositiveTraitImplementation, Struct, Trait, TraitConstant,
         TraitFunction, TraitImplementationConstant,
         TraitImplementationFunction, TraitImplementationType, TraitType, Type,
+        Variant,
     },
 };
 
@@ -82,7 +83,8 @@ impl_syntax_tree!(
     (AdtImplementationFunction, syntax_tree::item::Function),
     (AdtImplementation, syntax_tree::item::ImplementationSignature),
     (Constant, syntax_tree::item::Constant),
-    (Enum, syntax_tree::item::Enum),
+    (Enum, syntax_tree::item::EnumSignature),
+    (Variant, syntax_tree::item::Variant),
     (Function, FunctionKind),
     (Marker, syntax_tree::item::Marker),
     (NegativeMarkerImplementation, syntax_tree::item::ImplementationSignature),

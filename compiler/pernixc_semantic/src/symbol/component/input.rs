@@ -6,7 +6,7 @@ use accessibility::Accessibility;
 use pernixc_base::handler::Handler;
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{
-    item::Item, target::ModuleTree, AccessModifier,
+    item::Item, target::ModuleTree, AccessModifier, ConnectedList,
 };
 use serde::{Deserialize, Serialize};
 use syntax_tree::FunctionKind;
@@ -18,8 +18,8 @@ use crate::{
         UnknownExternCallingConvention,
     },
     symbol::{
-        Constant, Extern, Function, Global, HierarchyRelationship, ItemID,
-        Marker, Module, Struct, TargetID, Trait, TraitMemberID, Type,
+        Constant, Enum, Extern, Function, Global, HierarchyRelationship,
+        ItemID, Marker, Module, Struct, TargetID, Trait, TraitMemberID, Type,
     },
 };
 
@@ -499,21 +499,18 @@ impl<'a> Iterator for ScopeWalker<'a> {
 }
 
 impl Map {
-    fn create_member<T, S, P, Tp, Pt>(
+    fn create_member_no_accessibility<T, S, P, Tp, Pt>(
         &mut self,
         target_id: usize,
         id_generator: &mut impl Iterator<Item = usize>,
         syntax_tree: S,
         parent_id: ID<P>,
         identifier_fn: impl FnOnce(&S) -> &Identifier,
-        accessibility: Accessibility,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> ID<T>
     where
         // able to add parent id information
-        T: Input<parent::Parent<Tp>>
-            + Input<accessibility::Accessibility>
-            + Input<syntax_tree::SyntaxTree<S>>,
+        T: Input<parent::Parent<Tp>> + Input<syntax_tree::SyntaxTree<S>>,
         Tp: From<ID<P>>,
 
         // able to add member id information,
@@ -559,14 +556,104 @@ impl Map {
             }
         }
 
-        // add the accessibility information
-        assert!(T::get_map_mut(self).insert(new_id, accessibility).is_none());
         // add the syntax tree information
         assert!(T::get_map_mut(self)
             .insert(new_id, syntax_tree::SyntaxTree(syntax_tree))
             .is_none());
 
         new_id.id
+    }
+
+    fn create_member<T, S, P, Tp, Pt>(
+        &mut self,
+        target_id: usize,
+        id_generator: &mut impl Iterator<Item = usize>,
+        syntax_tree: S,
+        parent_id: ID<P>,
+        identifier_fn: impl FnOnce(&S) -> &Identifier,
+        accessibility: Accessibility,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> ID<T>
+    where
+        // able to add parent id information
+        T: Input<parent::Parent<Tp>>
+            + Input<accessibility::Accessibility>
+            + Input<syntax_tree::SyntaxTree<S>>,
+        Tp: From<ID<P>>,
+
+        // able to add member id information,
+        P: Input<member::Member<Pt>, Requirement = Required>,
+        Pt: From<ID<T>> + Into<ItemID> + Clone,
+
+        ID<T>: Into<ItemID>,
+        ID<P>: Into<ItemID>,
+    {
+        let new_id = self.create_member_no_accessibility(
+            target_id,
+            id_generator,
+            syntax_tree,
+            parent_id,
+            identifier_fn,
+            handler,
+        );
+
+        // add the accessibility information
+        assert!(T::get_map_mut(self)
+            .insert(
+                Global::new(TargetID::Normal(target_id), new_id),
+                accessibility
+            )
+            .is_none());
+
+        new_id
+    }
+
+    fn create_enum(
+        &mut self,
+        id_generator: &mut impl Iterator<Item = usize>,
+        target_id: usize,
+        syntax_tree: pernixc_syntax::syntax_tree::item::Enum,
+        parent_module_id: ID<Module>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        let (access_modifier, signature, body) = syntax_tree.dissolve();
+        let (_, variant_list, _) = body.dissolve();
+        let enum_accessibility = self.create_accessibility(
+            Global::new(TargetID::Normal(target_id), parent_module_id.into()),
+            &access_modifier,
+        );
+
+        let enum_id: ID<Enum> = self.create_member(
+            target_id,
+            id_generator,
+            signature,
+            parent_module_id,
+            |x| x.identifier(),
+            enum_accessibility,
+            handler,
+        );
+        let global_enum_id = Global::new(TargetID::Normal(target_id), enum_id);
+
+        // add the member information for the trait
+        assert!(self
+            .member
+            .enums
+            .insert(global_enum_id, member::Member::default())
+            .is_none());
+
+        for variant in
+            variant_list.into_iter().flat_map(ConnectedList::into_elements)
+        {
+            let _: ID<crate::symbol::Variant> = self
+                .create_member_no_accessibility(
+                    target_id,
+                    id_generator,
+                    variant,
+                    enum_id,
+                    |x| x.identifier(),
+                    handler,
+                );
+        }
     }
 
     fn create_trait(
@@ -842,7 +929,15 @@ impl Map {
                     );
                 }
                 Item::Implementation(implementation) => {}
-                Item::Enum(_) => {}
+                Item::Enum(syn) => {
+                    self.create_enum(
+                        id_generator,
+                        target_id,
+                        syn,
+                        new_module_id.id,
+                        handler,
+                    );
+                }
                 Item::Module(_) => {
                     unreachable!(
                         "should've been handled by the submodule creation"
