@@ -1,11 +1,13 @@
-//! A crate to
+//! A library for creating a component-based data structure.
 
 use std::{
     any::{Any, TypeId},
-    collections::{hash_map::Entry, HashMap},
     fmt::Debug,
     hash::Hash,
+    ops::Deref,
 };
+
+use dashmap::{DashMap, Entry};
 
 pub mod serde;
 
@@ -15,15 +17,15 @@ pub mod serde;
 /// except that it is prioritized for accessing individual components of an
 /// entity.
 #[derive(Debug)]
-pub struct Storage<ID> {
-    components: HashMap<(ID, TypeId), Box<dyn Any>>,
+pub struct Storage<ID: Eq + Hash> {
+    components: DashMap<(ID, TypeId), Box<dyn Any>>,
 }
 
-impl<ID> Default for Storage<ID> {
-    fn default() -> Self { Storage { components: HashMap::new() } }
+impl<ID: Eq + Hash> Default for Storage<ID> {
+    fn default() -> Self { Storage { components: DashMap::new() } }
 }
 
-impl<ID> Storage<ID> {
+impl<ID: Eq + Hash> Storage<ID> {
     /// Adds a new component to the entity of the given id.
     ///
     /// If entity already has a component of the same type, it will return false
@@ -34,13 +36,13 @@ impl<ID> Storage<ID> {
     /// ``` rust
     /// use pernixc_component::Storage;
     ///
-    /// let mut storage = Storage::default();
+    /// let storage = Storage::default();
     ///
     /// assert!(storage.add_component("Test".to_string(), 1));
     /// assert!(!storage.add_component("Test".to_string(), 2));
     /// ```
     #[must_use]
-    pub fn add_component<U: Any>(&mut self, id: ID, component: U) -> bool
+    pub fn add_component<U: Any>(&self, id: ID, component: U) -> bool
     where
         ID: Hash + Eq,
     {
@@ -62,13 +64,18 @@ impl<ID> Storage<ID> {
     }
 
     /// Gets the component of the given type from the entity of the given id.
-    pub fn get<'a, U: Any>(&'a self, id: ID) -> Option<&'a U>
+    pub fn get<'a, U: Any>(
+        &'a self,
+        id: ID,
+    ) -> Option<impl Deref<Target = U> + 'a>
     where
         ID: Clone + Hash + Eq,
     {
-        self.components
-            .get(&(id, TypeId::of::<U>()))
-            .map(|component| component.downcast_ref::<U>().unwrap())
+        self.components.get(&(id, TypeId::of::<U>())).map(|component| {
+            dashmap::mapref::one::Ref::map(component, |x| {
+                (*x).downcast_ref().unwrap()
+            })
+        })
     }
 
     /// Removes the component of the given type from the entity of the given id.
@@ -78,7 +85,7 @@ impl<ID> Storage<ID> {
     /// ``` rust
     /// use pernixc_component::Storage;
     ///
-    /// let mut storage = Storage::default();
+    /// let storage = Storage::default();
     ///
     /// storage.add_component("Test".to_string(), 1);
     /// storage.add_component("Test".to_string(), "Hello".to_string());
@@ -103,6 +110,6 @@ impl<ID> Storage<ID> {
     {
         self.components
             .remove(&(id, TypeId::of::<U>()))
-            .map(|component| component.downcast().unwrap())
+            .map(|component| component.1.downcast().unwrap())
     }
 }

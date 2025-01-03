@@ -12,6 +12,7 @@ serde = { workspace = true }
 erased-serde = { workspace = true }
 serde_json = { workspace = true }
 ron = { workspace = true }
+dashmap = { workspace = true }
 
 [lints]
 workspace = true

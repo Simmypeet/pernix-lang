@@ -6,7 +6,7 @@
 //! use pernixc_component::{serde::Reflector, Storage};
 //! use serde::de::DeserializeSeed;
 //!
-//! let mut storage = Storage::default();
+//! let storage = Storage::default();
 //!
 //! storage.add_component("a".to_string(), 1);
 //! storage.add_component("a".to_string(), true);
@@ -44,14 +44,17 @@
 //! let deserialized: Storage<String> =
 //!     reflector.deserialize(&mut deserializer).unwrap();
 //!
-//! assert_eq!(deserialized.get::<i32>("a".to_string()), Some(&1));
-//! assert_eq!(deserialized.get::<bool>("a".to_string()), Some(&true));
+//! assert_eq!(deserialized.get::<i32>("a".to_string()).as_deref(), Some(&1));
 //! assert_eq!(
-//!     deserialized.get::<String>("b".to_string()),
+//!     deserialized.get::<bool>("a".to_string()).as_deref(),
+//!     Some(&true)
+//! );
+//! assert_eq!(
+//!     deserialized.get::<String>("b".to_string()).as_deref(),
 //!     Some(&"Hello".to_string())
 //! );
 //! assert_eq!(
-//!     deserialized.get::<Vec<bool>>("c".to_string()),
+//!     deserialized.get::<Vec<bool>>("c".to_string()).as_deref(),
 //!     Some(&vec![true])
 //! );
 //! assert!(deserialized.get::<Vec<i32>>("c".to_string()).is_none());
@@ -59,7 +62,7 @@
 
 use std::{
     any::{Any, TypeId},
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     hash::Hash,
 };
 
@@ -140,10 +143,14 @@ impl<T, ID> Reflector<T, ID> {
             serializer(any);
         };
 
-        let (Entry::Vacant(ser), Entry::Vacant(de)) = (
+        let (
+            std::collections::hash_map::Entry::Vacant(ser),
+            std::collections::hash_map::Entry::Vacant(de),
+        ) = (
             self.serialization_meta_datas.entry(TypeId::of::<C>()),
             self.deserialization_meta_datas.entry(tag.clone()),
-        ) else {
+        )
+        else {
             return false;
         };
 
@@ -161,12 +168,12 @@ impl<T, ID> Reflector<T, ID> {
 
 /// The struct that enables the serialization of the [`Storage`] struct.
 #[derive(Debug)]
-pub struct SerializableStorage<'a, T, ID> {
+pub struct SerializableStorage<'a, T, ID: Eq + Hash> {
     storage: &'a Storage<ID>,
     reflector: &'a Reflector<T, ID>,
 }
 
-impl<'a, T, ID> SerializableStorage<'a, T, ID> {
+impl<'a, T, ID: Eq + Hash> SerializableStorage<'a, T, ID> {
     /// Create a new instance of [`SerializableStorage`].
     pub fn new(
         storage: &'a Storage<ID>,
@@ -184,18 +191,19 @@ impl<'a, T: serde::Serialize, ID: serde::Serialize + Eq + Hash + Clone>
         S: serde::Serializer,
     {
         let mut type_ids_by_id = HashMap::<_, HashSet<_>>::new();
-        for (id, type_id) in self.storage.components.keys() {
+
+        for entry in self.storage.components.iter() {
             type_ids_by_id
-                .entry(id)
+                .entry(entry.key().0.clone())
                 .or_insert_with(HashSet::new)
-                .insert(type_id);
+                .insert(entry.key().1);
         }
 
         let entity_count = type_ids_by_id
             .iter()
             .filter(|(_, type_ids)| {
                 type_ids.iter().any(|x| {
-                    self.reflector.serialization_meta_datas.contains_key(*x)
+                    self.reflector.serialization_meta_datas.contains_key(x)
                 })
             })
             .count();
@@ -213,8 +221,9 @@ impl<'a, T: serde::Serialize, ID: serde::Serialize + Eq + Hash + Clone>
                 continue;
             }
 
-            map.serialize_entry(id, &SerializeEntry {
-                id,
+            map.serialize_key(&id)?;
+            map.serialize_value(&SerializeEntry {
+                id: id.clone(),
                 type_ids,
                 reflector: self.reflector,
                 storage: self.storage,
@@ -225,9 +234,9 @@ impl<'a, T: serde::Serialize, ID: serde::Serialize + Eq + Hash + Clone>
     }
 }
 
-struct SerializeEntry<'a, T, ID> {
-    id: &'a ID,
-    type_ids: HashSet<&'a TypeId>,
+struct SerializeEntry<'a, T, ID: Eq + Hash> {
+    id: ID,
+    type_ids: HashSet<TypeId>,
 
     reflector: &'a Reflector<T, ID>,
     storage: &'a Storage<ID>,
@@ -264,11 +273,11 @@ impl<'a, T: serde::Serialize, ID: Eq + Hash + Clone> serde::Serialize
             let component = self
                 .storage
                 .components
-                .get(&(self.id.clone(), **type_id))
+                .get(&(self.id.clone(), *type_id))
                 .unwrap();
 
             map.serialize_entry(&serialize_meta.tag, &SerializeComponent {
-                component,
+                component: &component,
                 serialize_fn: serialize_meta.serialize_fn,
             })?;
         }
@@ -341,7 +350,7 @@ impl<
     where
         A: serde::de::MapAccess<'de>,
     {
-        let mut storage = Storage::default();
+        let storage = Storage::default();
 
         while let Some(id) = map.next_key::<ID>()? {
             let components = map.next_value_seed(ComponentMapVisitor {
@@ -352,13 +361,13 @@ impl<
                 let type_id = component.as_ref().type_id();
 
                 match storage.components.entry((id.clone(), type_id)) {
-                    Entry::Occupied(_) => {
+                    dashmap::Entry::Occupied(_) => {
                         return Err(serde::de::Error::custom(format!(
                             "duplicate component tag: {:?}",
                             tag
                         )));
                     }
-                    Entry::Vacant(vacant_entry) => {
+                    dashmap::Entry::Vacant(vacant_entry) => {
                         vacant_entry.insert(component);
                     }
                 }
