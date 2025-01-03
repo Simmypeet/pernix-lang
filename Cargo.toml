@@ -9,6 +9,7 @@ members = [
     "compiler/pernixc_driver",
     "compiler/pernixc",
     "lsp/pernix_server",
+    "compiler/pernixc_component",
 ]
 
 [workspace.dependencies]
@@ -48,6 +49,9 @@ tower-lsp = { version = "0.20.0", features = ["proposed"] }
 dashmap = { version = "6.1.0", features = ["serde"] }
 bit-vec = "0.8.0"
 displaydoc = "0.2.5"
+ron = "0.8.1"
+typetag = "0.2.19"
+erased-serde = "0.4.5"
 
 [workspace.package]
 version = "0.1.0"
