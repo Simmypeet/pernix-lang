@@ -4,7 +4,7 @@ use std::{
     any::{Any, TypeId},
     fmt::Debug,
     hash::Hash,
-    ops::Deref,
+    ops::{Deref, DerefMut},
 };
 
 use dashmap::{DashMap, Entry};
@@ -74,6 +74,22 @@ impl<ID: Eq + Hash> Storage<ID> {
         self.components.get(&(id, TypeId::of::<U>())).map(|component| {
             dashmap::mapref::one::Ref::map(component, |x| {
                 (*x).downcast_ref().unwrap()
+            })
+        })
+    }
+
+    /// Gets the mutable component of the given type from the entity of the
+    /// given id.
+    pub fn get_mut<'a, U: Any>(
+        &'a self,
+        id: ID,
+    ) -> Option<impl DerefMut<Target = U> + 'a>
+    where
+        ID: Clone + Hash + Eq,
+    {
+        self.components.get_mut(&(id, TypeId::of::<U>())).map(|component| {
+            dashmap::mapref::one::RefMut::map(component, |x| {
+                (*x).downcast_mut().unwrap()
             })
         })
     }
