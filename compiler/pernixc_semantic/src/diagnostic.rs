@@ -1,11 +1,13 @@
+//! Contains the definition of the [`Diagnostic`] trait.
+
 use std::{any::Any, fmt::Debug};
 
 use pernixc_base::diagnostic::Report;
 
 use crate::table::Representation;
 
-/// Implemented by all semantic errors.
-pub trait Error:
+/// Implemented by all diagnostic objects.
+pub trait Diagnostic:
     for<'a> Report<&'a Representation, Error = Box<dyn crate::error::Error>>
     + Debug
     + Any
@@ -29,7 +31,7 @@ impl<
             + Send
             + Sync
             + 'static,
-    > Error for U
+    > Diagnostic for U
 {
     fn as_any(&self) -> &dyn Any { self }
 

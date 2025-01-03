@@ -3,7 +3,7 @@
 pub mod arena;
 pub mod component;
 pub mod error;
-pub mod error2;
+pub mod diagnostic;
 pub mod ir;
 pub mod symbol;
 pub mod table;

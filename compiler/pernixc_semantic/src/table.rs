@@ -3,8 +3,13 @@
 
 use std::collections::{HashMap, HashSet};
 
+use derive_new::new;
 use pernixc_component::Storage;
+use pernixc_syntax::syntax_tree::AccessModifier;
 use serde::{Deserialize, Serialize};
+pub use target::AddTargetError;
+
+use crate::component::{Accessibility, Parent, SymbolKind};
 
 mod target;
 
@@ -21,13 +26,11 @@ mod target;
     Serialize,
     Deserialize,
 )]
-pub enum TargetID {
-    /// Identifies the normal use-written targets (should include the standard
-    /// library).
-    UserDefined(usize),
+pub struct TargetID(usize);
 
-    /// Identifies the core target which is always linked to every target.
-    Core,
+impl TargetID {
+    /// The core target.
+    pub const CORE: Self = Self(0);
 }
 
 /// Represents an identifier for a symbol within a target.
@@ -45,6 +48,11 @@ pub enum TargetID {
 )]
 pub struct ID(usize);
 
+impl ID {
+    /// The modue root symbol.
+    pub const ROOT_MODULE: Self = Self(0);
+}
+
 /// Represents an identifier for a symbol across the targets.
 #[derive(
     Debug,
@@ -57,6 +65,7 @@ pub struct ID(usize);
     Hash,
     Serialize,
     Deserialize,
+    new,
 )]
 pub struct GlobalID {
     /// The target in which the symbol is defined.
@@ -82,8 +91,6 @@ impl Target {
     }
 }
 
-pub use target::AddTargetError;
-
 /// Represents the semantic representation of the program.
 #[derive(Debug)]
 pub struct Representation {
@@ -91,4 +98,50 @@ pub struct Representation {
 
     targets_by_id: HashMap<TargetID, Target>,
     targets_by_name: HashMap<String, TargetID>,
+}
+
+impl Representation {
+    /// Returns the [`ID`]` that is the module and closest to the given
+    /// [`GlobalID`] (including itself).
+    ///
+    /// # Panics
+    ///
+    /// If the given [`GlobalID`] is not a module.
+    pub fn get_closet_module_id(&self, mut id: GlobalID) -> ID {
+        loop {
+            if *self.storage.get::<SymbolKind>(id).unwrap()
+                == SymbolKind::Module
+            {
+                return id.id;
+            }
+
+            id = GlobalID::new(
+                id.target_id,
+                **self.storage.get::<Parent>(id).unwrap(),
+            );
+        }
+    }
+
+    /// Creates the [`Accessibility`] based on where the symbol is defined in
+    /// and the access modifier syntax tree.
+    ///
+    /// # Panics
+    ///
+    /// If the parent item ID is not found.
+    pub fn create_accessibility(
+        &self,
+        parent_id: GlobalID,
+        access_modifier: &AccessModifier,
+    ) -> Accessibility {
+        match access_modifier {
+            AccessModifier::Public(_) => Accessibility::Public,
+            AccessModifier::Private(_) => {
+                let parent_module_id = self.get_closet_module_id(parent_id);
+                Accessibility::Scoped(parent_module_id)
+            }
+            AccessModifier::Internal(_) => {
+                Accessibility::Scoped(ID::ROOT_MODULE)
+            }
+        }
+    }
 }
