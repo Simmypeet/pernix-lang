@@ -14,7 +14,8 @@ use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{
     item::{Item, UsingKind},
     target::ModuleTree,
-    AccessModifier, ConnectedList, SimplePath, SimplePathRoot,
+    AccessModifier, ConnectedList, QualifiedIdentifierRoot, SimplePath,
+    SimplePathRoot,
 };
 use serde::{Deserialize, Serialize};
 use syntax_tree::FunctionKind;
@@ -23,7 +24,8 @@ use crate::{
     arena::ID,
     error::{
         self, ConflictingUsing, ExpectModule, ItemRedifinition,
-        SymbolIsMoreAccessibleThanParent, SymbolNotFound,
+        NoGenericArgumentsRequired, SymbolIsMoreAccessibleThanParent,
+        SymbolNotFound, ThisNotFound,
     },
     symbol::{
         Constant, Enum, Function, Global, HierarchyRelationship, ItemID,
@@ -167,7 +169,26 @@ impl Map {
         dbg!(&usings_by_module_id);
         dbg!(&implementations_by_module_id);
 
-        self.insert_usings(target_id, usings_by_module_id, handler);
+        for (module_id, using) in usings_by_module_id
+            .into_iter()
+            .flat_map(|x| x.1.into_iter().map(move |y| (x.0, y)))
+        {
+            self.insert_usings(
+                Global::new(TargetID::Normal(target_id), module_id),
+                using,
+                handler,
+            );
+        }
+        for (module_id, implementation) in implementations_by_module_id
+            .into_iter()
+            .flat_map(|x| x.1.into_iter().map(move |y| (x.0, y)))
+        {
+            self.insert_implements(
+                Global::new(TargetID::Normal(target_id), module_id),
+                implementation,
+                handler,
+            );
+        }
     }
 
     /// Determines whether the given `referred` is accessible from the
@@ -858,169 +879,255 @@ impl<'a> Iterator for ScopeWalker<'a> {
 }
 
 impl Map {
-    fn insert_usings(
+    fn create_trait_implementation(
         &mut self,
-        target_id: usize,
-        usings_by_module_id: HashMap<
-            ID<Module>,
-            Vec<pernixc_syntax::syntax_tree::item::Using>,
-        >,
+        id_generator: &mut impl Iterator<Item = usize>,
+        syntax_tree: pernixc_syntax::syntax_tree::item::Implementation,
+        implemented_trait_id: Global<ID<Trait>>,
+        defined_in_module_id: Global<ID<Module>>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        for (current_module_id, using) in
-            usings_by_module_id.into_iter().flat_map(|(module_id, usings)| {
-                usings.into_iter().map(move |x| (module_id, x))
-            })
+    }
+
+    fn insert_implements(
+        &mut self,
+        defined_in_module_id: Global<ID<Module>>,
+        implementation: pernixc_syntax::syntax_tree::item::Implementation,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        let mut current_id: Global<ItemID> = match implementation
+            .signature()
+            .qualified_identifier()
+            .root()
         {
-            match using.kind() {
-                UsingKind::From(from) => {
-                    let Some(id) = self.resolve_simple_path(
-                        from.from().simple_path(),
-                        Global::new(
-                            TargetID::Normal(target_id),
-                            current_module_id.into(),
-                        ),
-                        true,
-                        handler,
-                    ) else {
-                        return;
-                    };
+            QualifiedIdentifierRoot::Target(_) => Global::new(
+                defined_in_module_id.target_id,
+                self.root_module_ids_by_target_id
+                    [&defined_in_module_id.target_id]
+                    .into(),
+            ),
+            QualifiedIdentifierRoot::This(keyword) => {
+                handler
+                    .receive(Box::new(ThisNotFound { span: keyword.span() }));
+                return;
+            }
+            QualifiedIdentifierRoot::GenericIdentifier(generic_identifier) => {
+                let Some(id) = self
+                    .get_member_of(
+                        defined_in_module_id.map(Into::into),
+                        generic_identifier.identifier().span.str(),
+                    )
+                    .or_else(|| {
+                        self.get_input::<import::Import, _>(
+                            defined_in_module_id,
+                        )
+                        .get(generic_identifier.identifier().span.str())
+                        .map(|x| x.module_member_id.map(Into::into))
+                    })
+                else {
+                    handler.receive(Box::new(SymbolNotFound {
+                        searched_item_id: Some(defined_in_module_id.id.into()),
+                        resolution_span: generic_identifier
+                            .identifier()
+                            .span
+                            .clone(),
+                    }));
+                    return;
+                };
 
-                    let ItemID::Module(module_id) = id.id else {
-                        handler.receive(Box::new(ExpectModule {
-                            module_path: from.from().simple_path().span(),
-                            found_id: id.id,
-                        }));
+                id
+            }
+        };
 
-                        return;
-                    };
-                    let from_module_id = Global::new(id.target_id, module_id);
+        if !implementation.signature().qualified_identifier().rest().is_empty()
+        {
+            if !current_id.id.is_module() {
+                handler.receive(Box::new(ExpectModule {
+                    module_path: implementation
+                        .signature()
+                        .qualified_identifier()
+                        .root()
+                        .span(),
+                    found_id: current_id.id,
+                }));
+                return;
+            }
 
-                    for import in from
-                        .imports()
-                        .connected_list()
-                        .as_ref()
-                        .into_iter()
-                        .flat_map(ConnectedList::elements)
-                    {
-                        let Some(imported_id) = self
-                            .get_input::<member::Member<_>, _>(from_module_id)
-                            .get(import.identifier().span.str())
-                            .copied()
-                        else {
-                            handler.receive(Box::new(SymbolNotFound {
-                                searched_item_id: Some(
-                                    from_module_id.id.into(),
-                                ),
-                                resolution_span: import
-                                    .identifier()
-                                    .span
-                                    .clone(),
-                            }));
-                            continue;
-                        };
+            if let Some(gen_args) = implementation
+                .signature()
+                .qualified_identifier()
+                .root()
+                .as_generic_identifier()
+                .and_then(|x| x.generic_arguments().as_ref())
+            {
+                handler.receive(Box::new(NoGenericArgumentsRequired {
+                    item_id: current_id.id,
+                    generic_argument_span: gen_args.span(),
+                }));
+            }
+        }
 
-                        let name = import.alias().as_ref().map_or_else(
-                            || {
-                                self.symbol_names
-                                    .get(&Global::new(
-                                        from_module_id.target_id,
-                                        imported_id.into(),
-                                    ))
-                                    .unwrap()
-                                    .clone()
-                            },
-                            |x| x.identifier().span.str().to_owned(),
-                        );
+        for (index, (_, generic_identifier)) in implementation
+            .signature()
+            .qualified_identifier()
+            .rest()
+            .iter()
+            .enumerate()
+        {
+            let Some(next_id) = self.get_member_of(
+                current_id,
+                generic_identifier.identifier().span.str(),
+            ) else {
+                handler.receive(Box::new(SymbolNotFound {
+                    searched_item_id: Some(current_id.id),
+                    resolution_span: generic_identifier
+                        .identifier()
+                        .span
+                        .clone(),
+                }));
+                return;
+            };
 
-                        if let Some(existing) = self
-                            .get_input::<member::Member<_>, _>(Global::new(
-                                TargetID::Normal(target_id),
-                                current_module_id,
-                            ))
-                            .get(&name)
-                            .map(|x| {
-                                self.get_span(Global::new(
-                                    TargetID::Normal(target_id),
-                                    (*x).into(),
-                                ))
-                            })
-                            .or_else(|| {
-                                self.get_input::<import::Import, _>(
-                                    Global::new(
-                                        TargetID::Normal(target_id),
-                                        current_module_id,
-                                    ),
-                                )
-                                .get(&name)
-                                .map(|x| x.span.clone())
-                            })
-                        {
-                            handler.receive(Box::new(ConflictingUsing {
-                                using_span: import
-                                    .alias()
-                                    .as_ref()
-                                    .map_or_else(
-                                        || import.identifier().span(),
-                                        SourceElement::span,
-                                    ),
-                                name: name.clone(),
-                                module_id,
-                                conflicting_span: existing,
-                            }));
-                        } else {
-                            self.get_input_mut::<import::Import, _>(
-                                Global::new(
-                                    TargetID::Normal(target_id),
-                                    current_module_id,
-                                ),
-                            )
-                            .insert(
-                                name,
-                                import::Using {
-                                    module_member_id: Global::new(
-                                        from_module_id.target_id,
-                                        imported_id.into(),
-                                    ),
-                                    span: Some(
-                                        import.alias().as_ref().map_or_else(
-                                            || import.identifier().span(),
-                                            SourceElement::span,
-                                        ),
-                                    ),
-                                },
-                            );
-                        }
-                    }
+            // non-fatal error, no need to return early
+            if !self.symbol_accessible(
+                defined_in_module_id.map(Into::into),
+                next_id,
+            ) {
+                handler.receive(Box::new(error::SymbolIsNotAccessible {
+                    referring_site: defined_in_module_id.id.into(),
+                    referred: next_id.id,
+                    referred_span: generic_identifier.identifier().span.clone(),
+                }));
+            }
+
+            if index
+                == implementation
+                    .signature()
+                    .qualified_identifier()
+                    .rest()
+                    .len()
+                    - 1
+            {
+                current_id = next_id;
+            } else {
+                if !next_id.id.is_module() {
+                    handler.receive(Box::new(ExpectModule {
+                        module_path: generic_identifier
+                            .identifier()
+                            .span
+                            .clone(),
+                        found_id: next_id.id,
+                    }));
+                    return;
                 }
 
-                UsingKind::One(one) => {
-                    let Some(id) = self.resolve_simple_path(
-                        one.simple_path(),
-                        Global::new(
-                            TargetID::Normal(target_id),
-                            current_module_id.into(),
-                        ),
-                        true,
-                        handler,
-                    ) else {
-                        return;
-                    };
+                if let Some(gen_args) =
+                    generic_identifier.generic_arguments().as_ref()
+                {
+                    handler.receive(Box::new(NoGenericArgumentsRequired {
+                        item_id: next_id.id,
+                        generic_argument_span: gen_args.span(),
+                    }));
+                }
+            }
+        }
 
-                    let ItemID::Module(module_id) = id.id else {
-                        handler.receive(Box::new(ExpectModule {
-                            module_path: one.simple_path().span(),
-                            found_id: id.id,
+        /*
+        match current_id.id {
+            ItemID::Trait(id) => self.draft_trait_implementation(
+                implementation,
+                defined_in_module_id,
+                id,
+                handler,
+            ),
+
+            adt_id @ (ItemID::Enum(_) | ItemID::Struct(_)) => {
+                self.draft_adt_implementation(
+                    implementation,
+                    defined_in_module_id,
+                    match adt_id {
+                        ItemID::Struct(struct_id) => AdtID::Struct(struct_id),
+                        ItemID::Enum(enum_id) => AdtID::Enum(enum_id),
+                        _ => unreachable!(),
+                    },
+                    handler,
+                );
+            }
+
+            ItemID::Marker(id) => self.draft_marker_implementation(
+                implementation,
+                defined_in_module_id,
+                id,
+                handler,
+            ),
+
+            // invalid id
+            invalid_item_id => {
+                handler.receive(Box::new(InvalidSymbolInImplementation {
+                    invalid_item_id,
+                    qualified_identifier_span: implementation
+                        .signature()
+                        .qualified_identifier()
+                        .span(),
+                }));
+            }
+        }
+        */
+    }
+
+    fn insert_usings(
+        &mut self,
+        defined_in_module_id: Global<ID<Module>>,
+        using: pernixc_syntax::syntax_tree::item::Using,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        match using.kind() {
+            UsingKind::From(from) => {
+                let Some(id) = self.resolve_simple_path(
+                    from.from().simple_path(),
+                    defined_in_module_id.map(Into::into),
+                    true,
+                    handler,
+                ) else {
+                    return;
+                };
+
+                let ItemID::Module(module_id) = id.id else {
+                    handler.receive(Box::new(ExpectModule {
+                        module_path: from.from().simple_path().span(),
+                        found_id: id.id,
+                    }));
+
+                    return;
+                };
+                let from_module_id = Global::new(id.target_id, module_id);
+
+                for import in from
+                    .imports()
+                    .connected_list()
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(ConnectedList::elements)
+                {
+                    let Some(imported_id) = self
+                        .get_input::<member::Member<_>, _>(from_module_id)
+                        .get(import.identifier().span.str())
+                        .copied()
+                    else {
+                        handler.receive(Box::new(SymbolNotFound {
+                            searched_item_id: Some(from_module_id.id.into()),
+                            resolution_span: import.identifier().span.clone(),
                         }));
-
-                        return;
+                        continue;
                     };
-                    let global_module_id = Global::new(id.target_id, module_id);
 
-                    let name = one.alias().as_ref().map_or_else(
+                    let name = import.alias().as_ref().map_or_else(
                         || {
                             self.symbol_names
-                                .get(&global_module_id.map(Into::into))
+                                .get(&Global::new(
+                                    from_module_id.target_id,
+                                    imported_id.into(),
+                                ))
                                 .unwrap()
                                 .clone()
                         },
@@ -1028,29 +1135,25 @@ impl Map {
                     );
 
                     if let Some(existing) = self
-                        .get_input::<member::Member<_>, _>(Global::new(
-                            TargetID::Normal(target_id),
-                            current_module_id,
-                        ))
+                        .get_input::<member::Member<_>, _>(defined_in_module_id)
                         .get(&name)
                         .map(|x| {
                             self.get_span(Global::new(
-                                TargetID::Normal(target_id),
+                                defined_in_module_id.target_id,
                                 (*x).into(),
                             ))
                         })
                         .or_else(|| {
-                            self.get_input::<import::Import, _>(Global::new(
-                                TargetID::Normal(target_id),
-                                current_module_id,
-                            ))
+                            self.get_input::<import::Import, _>(
+                                defined_in_module_id,
+                            )
                             .get(&name)
                             .map(|x| x.span.clone())
                         })
                     {
                         handler.receive(Box::new(ConflictingUsing {
-                            using_span: one.alias().as_ref().map_or_else(
-                                || one.simple_path().span(),
+                            using_span: import.alias().as_ref().map_or_else(
+                                || import.identifier().span(),
                                 SourceElement::span,
                             ),
                             name: name.clone(),
@@ -1058,18 +1161,90 @@ impl Map {
                             conflicting_span: existing,
                         }));
                     } else {
-                        self.get_input_mut::<import::Import, _>(Global::new(
-                            TargetID::Normal(target_id),
-                            current_module_id,
-                        ))
+                        self.get_input_mut::<import::Import, _>(
+                            defined_in_module_id,
+                        )
                         .insert(name, import::Using {
-                            module_member_id: global_module_id.map(Into::into),
-                            span: Some(one.alias().as_ref().map_or_else(
-                                || one.simple_path().span(),
+                            module_member_id: Global::new(
+                                from_module_id.target_id,
+                                imported_id.into(),
+                            ),
+                            span: Some(import.alias().as_ref().map_or_else(
+                                || import.identifier().span(),
                                 SourceElement::span,
                             )),
                         });
                     }
+                }
+            }
+
+            UsingKind::One(one) => {
+                let Some(id) = self.resolve_simple_path(
+                    one.simple_path(),
+                    defined_in_module_id.map(Into::into),
+                    true,
+                    handler,
+                ) else {
+                    return;
+                };
+
+                let ItemID::Module(module_id) = id.id else {
+                    handler.receive(Box::new(ExpectModule {
+                        module_path: one.simple_path().span(),
+                        found_id: id.id,
+                    }));
+
+                    return;
+                };
+                let global_module_id = Global::new(id.target_id, module_id);
+
+                let name = one.alias().as_ref().map_or_else(
+                    || {
+                        self.symbol_names
+                            .get(&global_module_id.map(Into::into))
+                            .unwrap()
+                            .clone()
+                    },
+                    |x| x.identifier().span.str().to_owned(),
+                );
+
+                if let Some(existing) = self
+                    .get_input::<member::Member<_>, _>(defined_in_module_id)
+                    .get(&name)
+                    .map(|x| {
+                        self.get_span(Global::new(
+                            defined_in_module_id.target_id,
+                            (*x).into(),
+                        ))
+                    })
+                    .or_else(|| {
+                        self.get_input::<import::Import, _>(
+                            defined_in_module_id,
+                        )
+                        .get(&name)
+                        .map(|x| x.span.clone())
+                    })
+                {
+                    handler.receive(Box::new(ConflictingUsing {
+                        using_span: one.alias().as_ref().map_or_else(
+                            || one.simple_path().span(),
+                            SourceElement::span,
+                        ),
+                        name: name.clone(),
+                        module_id,
+                        conflicting_span: existing,
+                    }));
+                } else {
+                    self.get_input_mut::<import::Import, _>(
+                        defined_in_module_id,
+                    )
+                    .insert(name, import::Using {
+                        module_member_id: global_module_id.map(Into::into),
+                        span: Some(one.alias().as_ref().map_or_else(
+                            || one.simple_path().span(),
+                            SourceElement::span,
+                        )),
+                    });
                 }
             }
         }
