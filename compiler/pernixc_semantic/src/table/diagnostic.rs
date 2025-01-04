@@ -8,7 +8,7 @@ use pernixc_base::{
 
 use super::{GlobalID, Representation, Table, TargetID, ID};
 use crate::{
-    component::{Accessibility, LocationSpan, Name},
+    component::{Accessibility, LocationSpan, Name, SymbolKind},
     diagnostic::ReportError,
 };
 
@@ -180,6 +180,88 @@ impl Report<&Table> for UnknownExternCallingConvention {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
+        })
+    }
+}
+
+/// Expected a module in the module path, but found other kind of symbol.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectModule {
+    /// The module path that was expected to be a module.
+    pub module_path: Span,
+
+    /// The ID of the symbol that was found instead of a module.
+    pub found_id: GlobalID,
+}
+
+impl Report<&Table> for ExpectModule {
+    type Error = ReportError;
+
+    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
+        let found_symbol_qualified_name =
+            table.get_qualified_name(self.found_id).ok_or(ReportError)?;
+        let kind = table.get_component::<SymbolKind>(self.found_id).unwrap();
+
+        Ok(Diagnostic {
+            span: self.module_path.clone(),
+            message: format!(
+                "expected a module in the module path, but found `{} {}`",
+                kind.kind_str(),
+                found_symbol_qualified_name
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The name is already exists in the given module.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConflictingUsing {
+    /// The span of the using statement.
+    pub using_span: Span,
+
+    /// The name that conflicts with the existing name in the module.
+    pub name: String,
+
+    /// The module where the name is already defined.
+    pub module_id: GlobalID,
+
+    /// The span of the conflicting name.
+    ///
+    /// This can either be the span to the declared symbol or the previous
+    /// using that uses the given name.
+    pub conflicting_span: Option<Span>,
+}
+
+impl Report<&Table> for ConflictingUsing {
+    type Error = ReportError;
+
+    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
+        let module_qualified_name = table
+            .get_qualified_name(self.module_id.into())
+            .ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.using_span.clone(),
+            message: format!(
+                "the using `{name}` conflicts with the existing name in the \
+                 module `{module_qualified_name}`",
+                name = self.name,
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: self
+                .conflicting_span
+                .as_ref()
+                .map(|span| {
+                    vec![Related {
+                        span: span.clone(),
+                        message: "conflicting symbol defined here".to_string(),
+                    }]
+                })
+                .unwrap_or_default(),
         })
     }
 }

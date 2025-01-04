@@ -4,7 +4,8 @@ use pernixc_component::serde::Reflector;
 
 use super::{GlobalID, Table};
 use crate::component::{
-    Accessibility, Extern, Implements, Member, Name, Parent, SymbolKind,
+    Accessibility, Extern, Implemented, Implements, Member, Name, Parent,
+    SymbolKind,
 };
 
 impl Table {
@@ -27,6 +28,9 @@ impl Table {
         assert!(reflector.register_type::<Implements>("Implements".to_string()));
         assert!(reflector.register_type::<SymbolKind>("SymbolKind".to_string()));
         assert!(reflector.register_type::<Extern>("Extern".to_string()));
+        assert!(
+            reflector.register_type::<Implemented>("Implemented".to_string())
+        );
 
         reflector
     }

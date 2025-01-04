@@ -17,12 +17,13 @@ use serde::{
 pub use target::AddTargetError;
 
 use crate::component::{
-    Accessibility, HierarchyRelationship, Implements, Member, Name, Parent,
-    SymbolKind,
+    Accessibility, HierarchyRelationship, Implemented, Implements, Import,
+    Member, Name, Parent, SymbolKind,
 };
 
 pub mod diagnostic;
 pub mod reflector;
+pub mod resolution;
 
 mod target;
 
@@ -168,6 +169,18 @@ impl<'a> Iterator for ScopeWalker<'a> {
             None => None,
         }
     }
+}
+
+/// The error type returned by [`Representation::get_member_of()`].
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[allow(missing_docs)]
+pub enum GetMemberError {
+    #[error("the given item ID is not valid")]
+    InvalidID,
+    #[error("the member with the given name is not found")]
+    MemberNotFound,
 }
 
 impl Representation {
@@ -402,6 +415,119 @@ impl Representation {
         }
 
         current_id
+    }
+
+    /// Searches for a member with the given name in the given item ID.
+    #[must_use]
+    pub fn get_member_of(
+        &self,
+        id: GlobalID,
+        member_name: &str,
+    ) -> Result<GlobalID, GetMemberError> {
+        if let Some(via_member) = self
+            .get_component::<Member>(id)
+            .and_then(|x| x.get(member_name).copied())
+        {
+            return Ok(GlobalID::new(id.target_id, via_member));
+        }
+
+        let symbol_kind = self
+            .get_component::<SymbolKind>(id)
+            .ok_or(GetMemberError::InvalidID)?;
+
+        match (*symbol_kind == SymbolKind::Module, symbol_kind.is_adt()) {
+            (true, false) => {
+                let imports = self
+                    .get_component::<Import>(id)
+                    .ok_or(GetMemberError::InvalidID)?;
+
+                imports
+                    .get(member_name)
+                    .map(|x| x.id)
+                    .ok_or(GetMemberError::MemberNotFound)
+            }
+
+            // serach for the member of implementations
+            (false, true) => {
+                let implements = self
+                    .get_component::<Implemented>(id)
+                    .ok_or(GetMemberError::InvalidID)?;
+
+                for implementation_id in implements.iter().copied() {
+                    let Some(member) =
+                        self.get_component::<Member>(implementation_id)
+                    else {
+                        continue;
+                    };
+
+                    if let Some(id) = member.get(member_name) {
+                        return Ok(GlobalID::new(
+                            implementation_id.target_id,
+                            *id,
+                        ));
+                    }
+                }
+
+                Err(GetMemberError::MemberNotFound)
+            }
+
+            _ => Err(GetMemberError::MemberNotFound),
+        }
+    }
+
+    /// Determines whether the given `referred` is accessible from the
+    /// `referring_site` as if the `referred` has the given
+    /// `referred_accessibility`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if `referred` or `referring_site` is not a valid ID.
+    #[must_use]
+    pub fn is_accessible_from(
+        &self,
+        referring_site: ID,
+        referred_target_id: TargetID,
+        referred_accessibility: Accessibility,
+    ) -> Option<bool> {
+        match referred_accessibility {
+            Accessibility::Public => Some(true),
+
+            Accessibility::Scoped(module_id) => {
+                let referring_site_module_id = self.get_closet_module_id(
+                    GlobalID::new(referred_target_id, referring_site),
+                )?;
+
+                Some(matches!(
+                    self.symbol_hierarchy_relationship(
+                        referred_target_id,
+                        module_id.into(),
+                        referring_site_module_id.into(),
+                    ),
+                    HierarchyRelationship::Parent
+                        | HierarchyRelationship::Equivalent
+                ))
+            }
+        }
+    }
+
+    /// Checks if the `referred` is accessible from the `referring_site`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if `referred` or `referring_site` is not a valid ID.
+    #[must_use]
+    pub fn symbol_accessible(
+        &self,
+        referring_site: GlobalID,
+        referred: GlobalID,
+    ) -> Option<bool> {
+        let referred_accessibility = self.get_accessibility(referred)?;
+
+        self.is_accessible_from(
+            referring_site.id,
+            referred.target_id,
+            referred_accessibility,
+        )
     }
 }
 

@@ -1,10 +1,14 @@
 use pernixc_base::handler;
 
 use crate::{
-    component::{Accessibility, Member, Name, Parent},
+    component::{Accessibility, Import, Member, Name, Parent},
     diagnostic,
     table::{
-        diagnostic::{ItemRedifinition, SymbolIsMoreAccessibleThanParent},
+        diagnostic::{
+            ConflictingUsing, ItemRedifinition,
+            SymbolIsMoreAccessibleThanParent,
+        },
+        resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
         GlobalID, Table, ID,
     },
     test::build_target,
@@ -226,4 +230,81 @@ fn serialization() {
     assert!(deserialized
         .get_by_qualified_name(["test", "externalFunction"])
         .is_some());
+}
+
+const USINGS: &str = r#"
+using {
+    AnotherSymbol,
+    Inaccessible,
+    Symbol as Existing // collision
+} from test::inner;
+
+using test::anotherInner as something;
+using test::notFound; // not found
+
+
+public module inner {
+    public type Symbol = int32;
+    public type AnotherSymbol = int32;
+
+    // inaccessible
+    private type Inaccessible = int32;
+}
+
+public module anotherInner {}
+
+public struct Existing {}
+"#;
+
+#[test]
+fn usings() {
+    let target = build_target(USINGS);
+    let storage = handler::Storage::<Box<dyn diagnostic::Diagnostic>>::new();
+
+    let mut table = Table::default();
+    table
+        .representation
+        .add_target("test".to_string(), std::iter::empty(), target, &storage)
+        .unwrap();
+
+    let errors = storage.into_vec();
+
+    assert_eq!(errors.len(), 3);
+
+    let root_module = table.get_by_qualified_name(["test"]).unwrap();
+    let inaccessible_symbol =
+        table.get_by_qualified_name(["test", "inner", "Inaccessible"]).unwrap();
+
+    assert!(errors.iter().any(|x| {
+        x.as_any().downcast_ref::<SymbolIsNotAccessible>().map_or(
+            false,
+            |error| {
+                error.referring_site == root_module
+                    && error.referred == inaccessible_symbol
+            },
+        )
+    }));
+    assert!(errors.iter().any(|x| {
+        x.as_any().downcast_ref::<ConflictingUsing>().map_or(false, |x| {
+            x.module_id == root_module
+                && x.name == "Existing"
+                && x.conflicting_span
+                    .as_ref()
+                    .map_or(false, |x| x.str() == "Existing")
+        })
+    }));
+    assert!(errors.iter().any(|x| {
+        x.as_any().downcast_ref::<SymbolNotFound>().map_or(false, |x| {
+            x.searched_item_id == Some(root_module)
+                && x.resolution_span.str() == "notFound"
+        })
+    }));
+
+    let import = table.get_component::<Import>(root_module).unwrap();
+
+    assert_eq!(import.len(), 3);
+
+    assert!(import.contains_key("AnotherSymbol"));
+    assert!(import.contains_key("Inaccessible"));
+    assert!(import.contains_key("something"));
 }

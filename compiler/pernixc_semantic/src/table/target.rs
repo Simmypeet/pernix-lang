@@ -4,9 +4,12 @@ use std::{
     time::SystemTime,
 };
 
-use pernixc_base::handler::Handler;
+use pernixc_base::{
+    handler::Handler,
+    source_file::{Location, SourceElement},
+};
 use pernixc_lexical::token::Identifier;
-use pernixc_syntax::syntax_tree::{self, ConnectedList};
+use pernixc_syntax::syntax_tree::{self, item::UsingKind, ConnectedList};
 
 use super::{
     diagnostic::SymbolIsMoreAccessibleThanParent, GlobalID, Representation,
@@ -14,12 +17,16 @@ use super::{
 };
 use crate::{
     component::{
-        self, Accessibility, Extern, LocationSpan, Member, Name, Parent,
-        SymbolKind,
+        self, Accessibility, Extern, Implemented, Import, LocationSpan, Member,
+        Name, Parent, SymbolKind, Using,
     },
-    diagnostic,
+    diagnostic::Diagnostic,
     table::{
-        diagnostic::{ItemRedifinition, UnknownExternCallingConvention},
+        diagnostic::{
+            ConflictingUsing, ExpectModule, ItemRedifinition,
+            UnknownExternCallingConvention,
+        },
+        resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
         Target,
     },
 };
@@ -55,7 +62,7 @@ impl Representation {
         name: String,
         linked_targets: impl IntoIterator<Item = TargetID>,
         target_syntax: syntax_tree::target::Target,
-        handler: &dyn Handler<Box<dyn diagnostic::Diagnostic>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<TargetID, AddTargetError> {
         // make sure every target links to the core target
         let mut linked_targets_vec =
@@ -120,7 +127,217 @@ impl Representation {
             handler,
         );
 
+        for (defined_in_module_id, using) in usings_by_module_id
+            .into_iter()
+            .flat_map(|x| x.1.into_iter().map(move |y| (x.0, y)))
+        {
+            self.insert_usings(defined_in_module_id, using, handler);
+        }
+
         Ok(target_id)
+    }
+
+    fn insert_usings(
+        &mut self,
+        defined_in_module_id: GlobalID,
+        using: pernixc_syntax::syntax_tree::item::Using,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) {
+        assert_eq!(
+            *self.get_component::<SymbolKind>(defined_in_module_id).unwrap(),
+            SymbolKind::Module
+        );
+
+        match using.kind() {
+            UsingKind::From(from) => {
+                let Ok(from_id) = self.resolve_simple_path(
+                    from.from().simple_path(),
+                    defined_in_module_id,
+                    true,
+                    handler,
+                ) else {
+                    return;
+                };
+
+                // must be module
+                if *self.get_component::<SymbolKind>(from_id).unwrap()
+                    != SymbolKind::Module
+                {
+                    handler.receive(Box::new(ExpectModule {
+                        module_path: from.from().simple_path().span(),
+                        found_id: from_id,
+                    }));
+
+                    return;
+                }
+
+                for import in from
+                    .imports()
+                    .connected_list()
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(ConnectedList::elements)
+                {
+                    let Some(imported_id) = self
+                        .get_component::<Member>(from_id)
+                        .unwrap()
+                        .get(import.identifier().span.str())
+                        .copied()
+                    else {
+                        handler.receive(Box::new(SymbolNotFound {
+                            searched_item_id: Some(from_id),
+                            resolution_span: import.identifier().span.clone(),
+                        }));
+                        continue;
+                    };
+                    let imported_global_id =
+                        GlobalID::new(from_id.target_id, imported_id.into());
+
+                    // check if the symbol is accessible
+                    if !self
+                        .symbol_accessible(
+                            defined_in_module_id,
+                            imported_global_id,
+                        )
+                        .unwrap()
+                    {
+                        handler.receive(Box::new(SymbolIsNotAccessible {
+                            referring_site: defined_in_module_id,
+                            referred: imported_global_id,
+                            referred_span: import.identifier().span.clone(),
+                        }));
+                    }
+
+                    let name = import.alias().as_ref().map_or_else(
+                        || {
+                            self.get_component::<Name>(imported_global_id)
+                                .unwrap()
+                                .0
+                                .clone()
+                        },
+                        |x| x.identifier().span.str().to_owned(),
+                    );
+
+                    // check if there's existing symbol right now
+                    let existing = self
+                        .get_component::<Member>(defined_in_module_id)
+                        .unwrap()
+                        .get(&name)
+                        .map(|x| {
+                            self.get_component::<LocationSpan>(GlobalID::new(
+                                defined_in_module_id.target_id,
+                                *x,
+                            ))
+                            .map(|x| x.0.clone())
+                        })
+                        .or_else(|| {
+                            self.get_component::<Import>(defined_in_module_id)
+                                .unwrap()
+                                .get(&name)
+                                .map(|x| Some(x.span.clone()))
+                        });
+
+                    if let Some(existing) = existing {
+                        handler.receive(Box::new(ConflictingUsing {
+                            using_span: import.alias().as_ref().map_or_else(
+                                || import.identifier().span(),
+                                SourceElement::span,
+                            ),
+                            name: name.clone(),
+                            module_id: defined_in_module_id,
+                            conflicting_span: existing,
+                        }));
+                    } else {
+                        self.storage
+                            .get_mut::<Import>(defined_in_module_id)
+                            .unwrap()
+                            .insert(name, Using {
+                                id: GlobalID::new(
+                                    from_id.target_id,
+                                    imported_id.into(),
+                                ),
+                                span: import.alias().as_ref().map_or_else(
+                                    || import.identifier().span(),
+                                    SourceElement::span,
+                                ),
+                            });
+                    }
+                }
+            }
+
+            UsingKind::One(one) => {
+                let Ok(using_module_id) = self.resolve_simple_path(
+                    one.simple_path(),
+                    defined_in_module_id,
+                    true,
+                    handler,
+                ) else {
+                    return;
+                };
+
+                if *self.get_component::<SymbolKind>(using_module_id).unwrap()
+                    != SymbolKind::Module
+                {
+                    handler.receive(Box::new(ExpectModule {
+                        module_path: one.simple_path().span(),
+                        found_id: using_module_id,
+                    }));
+
+                    return;
+                }
+
+                let name = one.alias().as_ref().map_or_else(
+                    || {
+                        self.get_component::<Name>(using_module_id)
+                            .unwrap()
+                            .0
+                            .clone()
+                    },
+                    |x| x.identifier().span.str().to_owned(),
+                );
+
+                let existing = self
+                    .get_component::<Member>(defined_in_module_id)
+                    .unwrap()
+                    .get(&name)
+                    .map(|x| {
+                        self.get_component::<LocationSpan>(GlobalID::new(
+                            defined_in_module_id.target_id,
+                            *x,
+                        ))
+                        .map(|x| x.0.clone())
+                    })
+                    .or_else(|| {
+                        self.get_component::<Import>(defined_in_module_id)
+                            .unwrap()
+                            .get(&name)
+                            .map(|x| Some(x.span.clone()))
+                    });
+
+                if let Some(existing) = existing {
+                    handler.receive(Box::new(ConflictingUsing {
+                        using_span: one.alias().as_ref().map_or_else(
+                            || one.simple_path().span(),
+                            SourceElement::span,
+                        ),
+                        name: name.clone(),
+                        module_id: defined_in_module_id,
+                        conflicting_span: existing,
+                    }));
+                } else {
+                    self.storage
+                        .get_mut::<Import>(defined_in_module_id)
+                        .unwrap()
+                        .insert(name, Using {
+                            id: using_module_id,
+                            span: one.alias().as_ref().map_or_else(
+                                || one.simple_path().span(),
+                                SourceElement::span,
+                            ),
+                        });
+                }
+            }
+        }
     }
 
     fn insert_member(
@@ -132,7 +349,7 @@ impl Representation {
         has_member: bool,
         generic_parameters_syn: Option<syntax_tree::item::GenericParameters>,
         where_clause_syn: Option<syntax_tree::item::WhereClause>,
-        handler: &dyn Handler<Box<dyn diagnostic::Diagnostic>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> GlobalID {
         let new_symbol_id = GlobalID::new(
             parent_id.target_id,
@@ -196,7 +413,7 @@ impl Representation {
         &mut self,
         syntax_tree: syntax_tree::item::Enum,
         parent_module_id: GlobalID,
-        handler: &dyn Handler<Box<dyn diagnostic::Diagnostic>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> GlobalID {
         let (access_modifier, signature, body) = syntax_tree.dissolve();
         let (_, ident, generic_parameters, where_clause) = signature.dissolve();
@@ -214,6 +431,8 @@ impl Representation {
             where_clause,
             handler,
         );
+
+        assert!(self.storage.add_component(enum_id, Implemented::default()));
 
         for variant in
             body.dissolve().1.into_iter().flat_map(ConnectedList::into_elements)
@@ -245,7 +464,7 @@ impl Representation {
         &mut self,
         syntax_tree: syntax_tree::item::Trait,
         parent_module_id: GlobalID,
-        handler: &dyn Handler<Box<dyn diagnostic::Diagnostic>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> GlobalID {
         let (access_modifier, signature, content) = syntax_tree.dissolve();
         let (_, ident, generic_parameters, where_clause) = signature.dissolve();
@@ -263,6 +482,8 @@ impl Representation {
             where_clause,
             handler,
         );
+
+        assert!(self.storage.add_component(trait_id, Implemented::default()));
 
         for item in content.dissolve().1 {
             let member_id = match item {
@@ -398,7 +619,7 @@ impl Representation {
             GlobalID,
             Vec<syntax_tree::item::Implementation>,
         >,
-        handler: &dyn Handler<Box<dyn diagnostic::Diagnostic>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> GlobalID {
         // create the module id that we will operate on
         let module_id = GlobalID::new(
@@ -440,11 +661,18 @@ impl Representation {
                 .add_component(module_id, Accessibility::Public));
         }
 
+        assert!(self.storage.add_component(module_id, Import::default()));
         assert!(self.storage.add_component(module_id, SymbolKind::Module));
         assert!(self.storage.add_component(module_id, Member::default()));
         assert!(self.storage.add_component(module_id, Name(name.clone())));
 
-        let (_, content, submodule_by_name) = syntax_tree.dissolve();
+        let (signature, content, submodule_by_name) = syntax_tree.dissolve();
+        if let Some(signature) = signature {
+            assert!(self.storage.add_component(
+                module_id,
+                LocationSpan(signature.signature.identifier().span.clone())
+            ));
+        }
         let (usings, items) = content.dissolve();
 
         usings_by_module_id.entry(module_id).or_default().extend(usings);
@@ -558,6 +786,9 @@ impl Representation {
                         handler,
                     );
 
+                    assert!(self
+                        .storage
+                        .add_component(struct_id, Implemented::default()));
                     assert!(self.storage.add_component(struct_id, body));
                 }
                 syntax_tree::item::Item::Implementation(implementation) => {
@@ -607,7 +838,7 @@ impl Representation {
                     let (_, ident, generic_parameters, where_clause) =
                         signature.dissolve();
 
-                    self.insert_member(
+                    let marker_id = self.insert_member(
                         module_id,
                         &ident,
                         SymbolKind::Marker,
@@ -623,6 +854,10 @@ impl Representation {
                         where_clause,
                         handler,
                     );
+
+                    assert!(self
+                        .storage
+                        .add_component(marker_id, Implemented::default()));
                 }
                 syntax_tree::item::Item::Extern(syn) => {
                     let (_, calling_convention, functions) = syn.dissolve();
