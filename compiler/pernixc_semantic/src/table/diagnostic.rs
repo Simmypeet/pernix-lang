@@ -1,5 +1,7 @@
 //! Contains the diagnostic related to the table.
 
+use std::collections::HashSet;
+
 use pernixc_base::{
     diagnostic::{Diagnostic, Related, Report},
     log::Severity,
@@ -10,6 +12,7 @@ use super::{GlobalID, Representation, Table, TargetID, ID};
 use crate::{
     component::{Accessibility, LocationSpan, Name, SymbolKind},
     diagnostic::ReportError,
+    symbol::Global,
 };
 
 /// The item symbol with the same name already exists in the given scope.
@@ -262,6 +265,290 @@ impl Report<&Table> for ConflictingUsing {
                     }]
                 })
                 .unwrap_or_default(),
+        })
+    }
+}
+
+/// The symbol in the implementation is not trait, struct, or enum.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InvalidSymbolInImplementation {
+    /// The ID of the symbol that was found in the implementation.
+    pub invalid_item_id: GlobalID,
+
+    /// The span where invalid symbol was found.
+    pub qualified_identifier_span: Span,
+}
+
+impl Report<&Table> for InvalidSymbolInImplementation {
+    type Error = ReportError;
+
+    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
+        let qualified_name = table
+            .get_qualified_name(self.invalid_item_id)
+            .ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.qualified_identifier_span.clone(),
+            message: format!(
+                "the symbol `{qualified_name}` is not a trait, marker, \
+                 struct, or enum"
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// Empty implementation found on a trait implementation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FoundEmptyImplementationOnTrait {
+    /// The span where the empty implementation was found.
+    pub empty_implementation_signature_span: Span,
+}
+
+impl Report<&Table> for FoundEmptyImplementationOnTrait {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.empty_implementation_signature_span.clone(),
+            message: "empty implementation found on a trait; expected an \
+                      implementation with body or `delete` keyword"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The `const` implementation is invalid in this context.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InvalidConstImplementation {
+    /// The span where the invalid `const` implementation was found.
+    pub span: Span,
+}
+
+impl Report<&Table> for InvalidConstImplementation {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "invalid `const` implementation in this context"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The `final` implementation is invalid in this context.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InvalidFinalImplementation {
+    /// The span where the invalid final implementation was found.
+    pub span: Span,
+}
+
+impl Report<&Table> for InvalidFinalImplementation {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "invalid `final` implementation in this context"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// Implementation on marker must always be `final`
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NonFinalMarkerImplementation {
+    /// The span of the implementation.
+    pub span: Span,
+}
+
+impl Report<&Table> for NonFinalMarkerImplementation {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "implementation on marker must always be `final`"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: Some(
+                "prefix the keyword `final` before the `implements` keyword"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The implementation contains a member that is not a member of the trait.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnknownTraitImplementationMember {
+    /// The span to the identifier of the unknown member.
+    pub identifier_span: Span,
+
+    /// The ID of the trait implementation.
+    pub trait_id: GlobalID,
+}
+
+impl Report<&Table> for UnknownTraitImplementationMember {
+    type Error = ReportError;
+
+    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
+        let trait_qualified_name = table
+            .get_qualified_name(self.trait_id.into())
+            .ok_or(ReportError)?;
+        let trait_span = table
+            .get_component::<LocationSpan>(self.trait_id)
+            .map(|x| x.0.clone());
+
+        Ok(Diagnostic {
+            span: self.identifier_span.clone(),
+            message: format!(
+                "the symbol named `{}` is not a member of the trait \
+                 `{trait_qualified_name}`",
+                self.identifier_span.str()
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: trait_span
+                .map(|x| Related {
+                    span: x.clone(),
+                    message: "trait declared here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
+    }
+}
+
+/// An enumeration of all kinds of symbols in the implemetation.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::Display,
+)]
+#[allow(missing_docs)]
+pub enum TraitMemberKind {
+    #[display(fmt = "function")]
+    Function,
+    #[display(fmt = "type")]
+    Type,
+    #[display(fmt = "constant")]
+    Constant,
+}
+
+/// The trait member and the implementation member have different types.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedTraitMemberAndImplementationMember {
+    /// The ID of the trait member that is not implemented.
+    pub trait_member_id: GlobalID,
+
+    /// The implementation member kind
+    pub found_kind: TraitMemberKind,
+
+    /// The span of the implementation member's identifier.
+    pub implementation_member_identifer_span: Span,
+}
+
+impl Report<&Table> for MismatchedTraitMemberAndImplementationMember {
+    type Error = ReportError;
+
+    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
+        let trait_member_qualified_identifier = table
+            .get_qualified_name(self.trait_member_id.into())
+            .ok_or(ReportError)?;
+        let trait_member_sym_kind = *table
+            .get_component::<SymbolKind>(self.trait_member_id.into())
+            .ok_or(ReportError)?;
+        let trait_member_span = table
+            .get_component::<LocationSpan>(self.trait_member_id.into())
+            .map(|x| x.0.clone());
+
+        let trait_member_kind = match trait_member_sym_kind {
+            SymbolKind::TraitType => TraitMemberKind::Type,
+            SymbolKind::TraitFunction => TraitMemberKind::Function,
+            SymbolKind::TraitConstant => TraitMemberKind::Constant,
+            _ => return Err(ReportError),
+        };
+
+        Ok(Diagnostic {
+            span: self.implementation_member_identifer_span.clone(),
+            message: format!(
+                "the trait member `{trait_member_qualified_identifier}` is of \
+                 kind `{trait_member_kind}` but the implementation member is \
+                 of kind `{}`",
+                self.found_kind
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: trait_member_span
+                .map(|span| Related {
+                    span,
+                    message: "the trait member is defined here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
+    }
+}
+
+/// Not all trait members are implemented in the implementation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnimplementedTraitMembers {
+    /// The list of trait members that are not implemented.
+    pub unimplemented_trait_member_ids: HashSet<GlobalID>,
+
+    /// The ID of the implementation in which the trait members are not
+    pub implementation_id: GlobalID,
+}
+
+impl Report<&Table> for UnimplementedTraitMembers {
+    type Error = ReportError;
+
+    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
+        let trait_member_qualified_names = self
+            .unimplemented_trait_member_ids
+            .iter()
+            .map(|&trait_member_id| {
+                table
+                    .get_qualified_name(trait_member_id.into())
+                    .ok_or(ReportError)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let implementation_span = table
+            .get_component::<LocationSpan>(self.implementation_id.into())
+            .map(|x| x.0.clone())
+            .ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: implementation_span,
+            message: format!(
+                "not all trait member(s) are implemented in the \
+                 implementation: {}",
+                trait_member_qualified_names.join(", ")
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
         })
     }
 }

@@ -280,3 +280,38 @@ pub struct Using {
     derive_more::DerefMut,
 )]
 pub struct Import(HashMap<String, Using>);
+
+/// A component for tagging an implementation as the final implementation.
+///
+/// The trait and marker implementation can only have this component.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
+pub struct FinalImplementation;
+
+/// A component for tagging a positive trait implementation as a constant
+/// implementation.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
+pub struct ConstTraitImplementation;

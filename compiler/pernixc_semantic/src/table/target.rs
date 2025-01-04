@@ -4,27 +4,36 @@ use std::{
     time::SystemTime,
 };
 
-use pernixc_base::{
-    handler::Handler,
-    source_file::{Location, SourceElement},
-};
+use pernixc_base::{handler::Handler, source_file::SourceElement};
 use pernixc_lexical::token::Identifier;
-use pernixc_syntax::syntax_tree::{self, item::UsingKind, ConnectedList};
+use pernixc_syntax::syntax_tree::{
+    self,
+    item::{ImplementationKind, ImplementationMember, UsingKind},
+    ConnectedList, QualifiedIdentifierRoot,
+};
 
 use super::{
-    diagnostic::SymbolIsMoreAccessibleThanParent, GlobalID, Representation,
-    TargetID, ID,
+    diagnostic::{
+        FoundEmptyImplementationOnTrait, InvalidSymbolInImplementation,
+        MismatchedTraitMemberAndImplementationMember,
+        SymbolIsMoreAccessibleThanParent, TraitMemberKind,
+        UnimplementedTraitMembers, UnknownTraitImplementationMember,
+    },
+    resolution::diagnostic::{NoGenericArgumentsRequired, ThisNotFound},
+    GlobalID, Representation, TargetID, ID,
 };
 use crate::{
     component::{
-        self, Accessibility, Extern, Implemented, Import, LocationSpan, Member,
-        Name, Parent, SymbolKind, Using,
+        self, Accessibility, ConstTraitImplementation, Extern,
+        FinalImplementation, Implemented, Import, LocationSpan, Member, Name,
+        Parent, SymbolKind, Using,
     },
     diagnostic::Diagnostic,
     table::{
         diagnostic::{
-            ConflictingUsing, ExpectModule, ItemRedifinition,
-            UnknownExternCallingConvention,
+            ConflictingUsing, ExpectModule, InvalidConstImplementation,
+            InvalidFinalImplementation, ItemRedifinition,
+            NonFinalMarkerImplementation, UnknownExternCallingConvention,
         },
         resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
         Target,
@@ -134,7 +143,578 @@ impl Representation {
             self.insert_usings(defined_in_module_id, using, handler);
         }
 
+        for (defined_in_module_id, implementation) in
+            implementations_by_module_id
+                .into_iter()
+                .flat_map(|x| x.1.into_iter().map(move |y| (x.0, y)))
+        {
+            self.insert_implements(
+                defined_in_module_id,
+                implementation,
+                handler,
+            );
+        }
+
         Ok(target_id)
+    }
+
+    fn insert_implementation(
+        &mut self,
+        implemented_id: GlobalID,
+        defined_in_module_id: GlobalID,
+        symbol_kind: SymbolKind,
+        implementation_signature: syntax_tree::item::ImplementationSignature,
+        has_member: bool,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> GlobalID {
+        let new_symbol_id = GlobalID::new(
+            defined_in_module_id.target_id,
+            self.targets_by_id
+                .get_mut(&defined_in_module_id.target_id)
+                .unwrap()
+                .generate_id(),
+        );
+
+        assert!(self.storage.add_component(
+            new_symbol_id,
+            LocationSpan(
+                implementation_signature.qualified_identifier().span()
+            )
+        ));
+
+        let name =
+            self.get_component::<Name>(implemented_id).unwrap().0.clone();
+
+        assert!(self.storage.add_component(new_symbol_id, Name(name)));
+        assert!(self
+            .storage
+            .add_component(new_symbol_id, Parent(defined_in_module_id.id)));
+        assert!(self.storage.add_component(new_symbol_id, symbol_kind));
+
+        if has_member {
+            assert!(self
+                .storage
+                .add_component(new_symbol_id, Member::default()));
+        }
+
+        assert!(self
+            .storage
+            .get_mut::<Implemented>(implemented_id)
+            .unwrap()
+            .0
+            .insert(new_symbol_id));
+
+        let (
+            final_keword,
+            _,
+            generic_parameters,
+            const_keyword,
+            qualified_identifier,
+            where_clause,
+        ) = implementation_signature.dissolve();
+
+        if let Some(generic_parameters_syn) = generic_parameters {
+            assert!(self
+                .storage
+                .add_component(new_symbol_id, generic_parameters_syn,));
+        }
+        if let Some(where_clause_syn) = where_clause {
+            assert!(self
+                .storage
+                .add_component(new_symbol_id, where_clause_syn,));
+        }
+
+        match symbol_kind {
+            SymbolKind::PositiveTraitImplementation => {
+                if final_keword.is_some() {
+                    assert!(self
+                        .storage
+                        .add_component(new_symbol_id, FinalImplementation));
+                }
+
+                if const_keyword.is_some() {
+                    assert!(self.storage.add_component(
+                        new_symbol_id,
+                        ConstTraitImplementation
+                    ));
+                }
+            }
+
+            SymbolKind::NegativeTraitImplementation => {
+                if final_keword.is_some() {
+                    assert!(self
+                        .storage
+                        .add_component(new_symbol_id, FinalImplementation));
+                }
+
+                if let Some(const_keyword) = const_keyword {
+                    handler.receive(Box::new(InvalidConstImplementation {
+                        span: const_keyword.span.clone(),
+                    }));
+                }
+            }
+
+            SymbolKind::AdtImplementation => {
+                if let Some(final_keyword) = final_keword {
+                    handler.receive(Box::new(InvalidFinalImplementation {
+                        span: final_keyword.span.clone(),
+                    }));
+                }
+
+                if let Some(const_keyword) = const_keyword {
+                    handler.receive(Box::new(InvalidConstImplementation {
+                        span: const_keyword.span.clone(),
+                    }));
+                }
+            }
+
+            SymbolKind::PositiveMarkerImplementation => {
+                if final_keword.is_none() {
+                    handler.receive(Box::new(NonFinalMarkerImplementation {
+                        span: qualified_identifier.span(),
+                    }));
+                }
+
+                if let Some(const_keyword) = const_keyword {
+                    handler.receive(Box::new(InvalidConstImplementation {
+                        span: const_keyword.span.clone(),
+                    }));
+                }
+            }
+
+            SymbolKind::NegativeMarkerImplementation => {
+                if final_keword.is_none() {
+                    handler.receive(Box::new(NonFinalMarkerImplementation {
+                        span: qualified_identifier.span(),
+                    }));
+                }
+
+                if let Some(const_keyword) = const_keyword {
+                    handler.receive(Box::new(InvalidConstImplementation {
+                        span: const_keyword.span.clone(),
+                    }));
+                }
+            }
+
+            _ => panic!("invalid {symbol_kind:?}"),
+        }
+
+        // insert qualified identifier
+        assert!(self
+            .storage
+            .add_component(new_symbol_id, qualified_identifier));
+
+        new_symbol_id
+    }
+
+    fn create_trait_implementation(
+        &mut self,
+        implementation: syntax_tree::item::Implementation,
+        declared_in: GlobalID,
+        trait_id: GlobalID,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) {
+        let (signature, kind) = implementation.dissolve();
+
+        let symbol_kind = match &kind {
+            ImplementationKind::Negative(..) => {
+                SymbolKind::NegativeTraitImplementation
+            }
+            ImplementationKind::Positive(_) => {
+                SymbolKind::PositiveTraitImplementation
+            }
+
+            ImplementationKind::Empty(_) => {
+                handler.receive(Box::new(FoundEmptyImplementationOnTrait {
+                    empty_implementation_signature_span: signature.span(),
+                }));
+                return;
+            }
+        };
+
+        let implementation_id = self.insert_implementation(
+            trait_id,
+            declared_in,
+            symbol_kind,
+            signature,
+            if symbol_kind == SymbolKind::PositiveTraitImplementation {
+                true
+            } else {
+                false
+            },
+            handler,
+        );
+
+        if let ImplementationKind::Positive(body) = kind {
+            self.insert_positive_trait_implementation_members(
+                implementation_id,
+                trait_id,
+                body.dissolve().1,
+                handler,
+            );
+        }
+    }
+
+    fn insert_positive_trait_implementation_members(
+        &mut self,
+        implementation_id: GlobalID,
+        trait_id: GlobalID,
+        members: Vec<syntax_tree::item::ImplementationMember>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) {
+        for member in members {
+            let trait_implementation_member_id = match member {
+                ImplementationMember::Type(syn) => {
+                    let (_, signature, definition, _) = syn.dissolve();
+                    let (_, ident, generic_parameters) = signature.dissolve();
+                    let (_, ty, where_clause) = definition.dissolve();
+
+                    let ty_id = self.insert_member(
+                        implementation_id,
+                        &ident,
+                        SymbolKind::TraitImplementationType,
+                        None,
+                        false,
+                        generic_parameters,
+                        where_clause,
+                        handler,
+                    );
+
+                    assert!(self.storage.add_component(ty_id, ty));
+
+                    ty_id
+                }
+                ImplementationMember::Function(syn) => {
+                    let (_, _, signature, body) = syn.dissolve();
+                    let (
+                        _,
+                        ident,
+                        generic_parameters,
+                        parameters,
+                        return_type,
+                        where_clause,
+                    ) = signature.dissolve();
+
+                    let function_id = self.insert_member(
+                        implementation_id,
+                        &ident,
+                        SymbolKind::TraitImplementationFunction,
+                        None,
+                        false,
+                        generic_parameters,
+                        where_clause,
+                        handler,
+                    );
+
+                    // add the parameters
+                    assert!(self
+                        .storage
+                        .add_component(function_id, parameters));
+
+                    // add the return type
+                    if let Some(return_type) = return_type {
+                        assert!(self
+                            .storage
+                            .add_component(function_id, return_type));
+                    }
+
+                    // add the body
+                    assert!(self.storage.add_component(function_id, body));
+
+                    function_id
+                }
+                ImplementationMember::Constant(syn) => {
+                    let (_, signature, definition) = syn.dissolve();
+                    let (_, ident, generic_parameters, _, ty) =
+                        signature.dissolve();
+                    let (_, expression, where_caluse, _) =
+                        definition.dissolve();
+
+                    let constant_id = self.insert_member(
+                        implementation_id,
+                        &ident,
+                        SymbolKind::TraitImplementationConstant,
+                        None,
+                        false,
+                        generic_parameters,
+                        where_caluse,
+                        handler,
+                    );
+
+                    assert!(self.storage.add_component(constant_id, ty));
+                    assert!(self
+                        .storage
+                        .add_component(constant_id, expression));
+
+                    constant_id
+                }
+            };
+
+            // find the cooresponding trait member id
+            let Some(trait_member_id) = self
+                .get_component::<Member>(trait_id)
+                .unwrap()
+                .get(
+                    self.get_component::<Name>(trait_implementation_member_id)
+                        .unwrap()
+                        .as_str(),
+                )
+                .copied()
+            else {
+                handler.receive(Box::new(UnknownTraitImplementationMember {
+                    identifier_span: self
+                        .get_component::<LocationSpan>(
+                            trait_implementation_member_id,
+                        )
+                        .unwrap()
+                        .0
+                        .clone(),
+                    trait_id,
+                }));
+                continue;
+            };
+
+            let trait_member_id =
+                GlobalID::new(trait_id.target_id, trait_member_id.into());
+
+            let trait_member_kind =
+                *self.get_component::<SymbolKind>(trait_member_id).unwrap();
+            let trait_implementation_member_kind = *self
+                .get_component::<SymbolKind>(trait_implementation_member_id)
+                .unwrap();
+
+            match (trait_member_kind, trait_implementation_member_kind) {
+                (
+                    SymbolKind::TraitType,
+                    SymbolKind::TraitImplementationType,
+                )
+                | (
+                    SymbolKind::TraitFunction,
+                    SymbolKind::TraitImplementationFunction,
+                )
+                | (
+                    SymbolKind::TraitConstant,
+                    SymbolKind::TraitImplementationConstant,
+                ) => { /* do nothing, correct implementation */ }
+
+                (_, kind) => handler.receive(Box::new(
+                    MismatchedTraitMemberAndImplementationMember {
+                        trait_member_id,
+                        found_kind: match kind {
+                            SymbolKind::TraitImplementationType => {
+                                TraitMemberKind::Type
+                            }
+                            SymbolKind::TraitImplementationFunction => {
+                                TraitMemberKind::Function
+                            }
+                            SymbolKind::TraitImplementationConstant => {
+                                TraitMemberKind::Constant
+                            }
+                            _ => unreachable!(),
+                        },
+
+                        implementation_member_identifer_span: self
+                            .get_component::<LocationSpan>(
+                                trait_implementation_member_id,
+                            )
+                            .unwrap()
+                            .0
+                            .clone(),
+                    },
+                )),
+            }
+        }
+
+        let trait_members = self.get_component::<Member>(trait_id).unwrap();
+        let trait_implementation_members =
+            self.get_component::<Member>(implementation_id).unwrap();
+
+        // check if there are any missing members
+        let unimplemented_trait_member_ids = trait_members
+            .iter()
+            .filter_map(|(name, id)| {
+                (!trait_implementation_members.contains_key(name))
+                    .then_some(GlobalID::new(trait_id.target_id, *id))
+            })
+            .collect::<HashSet<_>>();
+
+        drop(trait_members);
+        drop(trait_implementation_members);
+
+        if !unimplemented_trait_member_ids.is_empty() {
+            handler.receive(Box::new(UnimplementedTraitMembers {
+                unimplemented_trait_member_ids,
+                implementation_id,
+            }));
+        }
+    }
+
+    fn insert_implements(
+        &mut self,
+        defined_in_module_id: GlobalID,
+        implementation: pernixc_syntax::syntax_tree::item::Implementation,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) {
+        let mut current_id: GlobalID = match implementation
+            .signature()
+            .qualified_identifier()
+            .root()
+        {
+            QualifiedIdentifierRoot::Target(_) => {
+                GlobalID::new(defined_in_module_id.target_id, ID::ROOT_MODULE)
+            }
+            QualifiedIdentifierRoot::This(keyword) => {
+                handler
+                    .receive(Box::new(ThisNotFound { span: keyword.span() }));
+                return;
+            }
+            QualifiedIdentifierRoot::GenericIdentifier(generic_identifier) => {
+                let Some(id) = self
+                    .get_member_of(
+                        defined_in_module_id,
+                        generic_identifier.identifier().span.str(),
+                    )
+                    .ok()
+                    .or_else(|| {
+                        self.get_component::<Import>(defined_in_module_id)
+                            .unwrap()
+                            .get(generic_identifier.identifier().span.str())
+                            .map(|x| x.id)
+                    })
+                else {
+                    handler.receive(Box::new(SymbolNotFound {
+                        searched_item_id: Some(defined_in_module_id),
+                        resolution_span: generic_identifier
+                            .identifier()
+                            .span
+                            .clone(),
+                    }));
+                    return;
+                };
+
+                id
+            }
+        };
+
+        if !implementation.signature().qualified_identifier().rest().is_empty()
+        {
+            if *self.get_component::<SymbolKind>(current_id).unwrap()
+                != SymbolKind::Module
+            {
+                handler.receive(Box::new(ExpectModule {
+                    module_path: implementation
+                        .signature()
+                        .qualified_identifier()
+                        .root()
+                        .span(),
+                    found_id: current_id,
+                }));
+                return;
+            }
+
+            if let Some(gen_args) = implementation
+                .signature()
+                .qualified_identifier()
+                .root()
+                .as_generic_identifier()
+                .and_then(|x| x.generic_arguments().as_ref())
+            {
+                handler.receive(Box::new(NoGenericArgumentsRequired {
+                    global_id: current_id,
+                    generic_argument_span: gen_args.span(),
+                }));
+            }
+        }
+
+        for (index, (_, generic_identifier)) in implementation
+            .signature()
+            .qualified_identifier()
+            .rest()
+            .iter()
+            .enumerate()
+        {
+            let Ok(next_id) = self.get_member_of(
+                current_id,
+                generic_identifier.identifier().span.str(),
+            ) else {
+                handler.receive(Box::new(SymbolNotFound {
+                    searched_item_id: Some(current_id),
+                    resolution_span: generic_identifier
+                        .identifier()
+                        .span
+                        .clone(),
+                }));
+                return;
+            };
+
+            // non-fatal error, no need to return early
+            if !self.symbol_accessible(defined_in_module_id, next_id).unwrap() {
+                handler.receive(Box::new(SymbolIsNotAccessible {
+                    referring_site: defined_in_module_id,
+                    referred: next_id,
+                    referred_span: generic_identifier.identifier().span.clone(),
+                }));
+            }
+
+            if index
+                == implementation
+                    .signature()
+                    .qualified_identifier()
+                    .rest()
+                    .len()
+                    - 1
+            {
+                current_id = next_id;
+            } else {
+                if *self.get_component::<SymbolKind>(next_id).unwrap()
+                    != SymbolKind::Module
+                {
+                    handler.receive(Box::new(ExpectModule {
+                        module_path: generic_identifier
+                            .identifier()
+                            .span
+                            .clone(),
+                        found_id: next_id,
+                    }));
+                    return;
+                }
+
+                if let Some(gen_args) =
+                    generic_identifier.generic_arguments().as_ref()
+                {
+                    handler.receive(Box::new(NoGenericArgumentsRequired {
+                        global_id: next_id,
+                        generic_argument_span: gen_args.span(),
+                    }));
+                }
+            }
+        }
+
+        let current_kind =
+            *self.get_component::<SymbolKind>(current_id).unwrap();
+
+        match current_kind {
+            SymbolKind::Trait => {
+                self.create_trait_implementation(
+                    implementation,
+                    defined_in_module_id,
+                    current_id,
+                    handler,
+                );
+            }
+
+            SymbolKind::Enum | SymbolKind::Struct => {}
+
+            _ => {
+                handler.receive(Box::new(InvalidSymbolInImplementation {
+                    invalid_item_id: current_id,
+                    qualified_identifier_span: implementation
+                        .signature()
+                        .qualified_identifier()
+                        .span(),
+                }));
+            }
+        }
     }
 
     fn insert_usings(

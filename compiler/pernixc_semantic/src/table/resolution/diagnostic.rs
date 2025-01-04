@@ -92,3 +92,58 @@ impl Report<&Table> for SymbolIsNotAccessible {
         })
     }
 }
+
+/// `this` keyword is used outside the allowed scope.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ThisNotFound {
+    /// The span where the `this` keyword was found.
+    pub span: Span,
+}
+
+impl Report<&Table> for ThisNotFound {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: "`this` keyword cannot be used here".to_string(),
+            severity: Severity::Error,
+            help_message: Some(
+                "`this` keyword can only be used in `trait` and `implements` \
+                 to refer to that particular symbol"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The symbol doesn't require any generic arguments but some were supplied.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NoGenericArgumentsRequired {
+    /// The symbol that  was supplied with generic arguments.
+    pub global_id: GlobalID,
+
+    /// The span where the generic arguments were supplied.
+    pub generic_argument_span: Span,
+}
+
+impl Report<&Table> for NoGenericArgumentsRequired {
+    type Error = ReportError;
+
+    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
+        let qualified_name =
+            table.get_qualified_name(self.global_id).ok_or(ReportError)?;
+
+        Ok(Diagnostic {
+            span: self.generic_argument_span.clone(),
+            message: format!(
+                "the symbol `{qualified_name}` doesn't require any generic \
+                 arguments"
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
