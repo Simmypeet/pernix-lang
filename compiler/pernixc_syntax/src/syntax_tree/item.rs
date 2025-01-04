@@ -1182,6 +1182,22 @@ impl SyntaxTree for TraitConstant {
     }
 }
 
+impl TraitConstant {
+    /// Dissolves the [`TraitConstant`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (AccessModifier, ConstantSignature, Option<WhereClause>, Punctuation)
+    {
+        (
+            self.access_modifier,
+            self.signature,
+            self.where_clause,
+            self.semicolon,
+        )
+    }
+}
+
 impl SourceElement for TraitConstant {
     fn span(&self) -> Span {
         self.access_modifier.span().join(&self.semicolon.span).unwrap()
@@ -2309,6 +2325,28 @@ pub struct ConstantSignature {
     colon: Punctuation,
     #[get = "pub"]
     r#type: r#type::Type,
+}
+
+impl ConstantSignature {
+    /// Dissolves the [`ConstantSignature`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (
+        Keyword,
+        Identifier,
+        Option<GenericParameters>,
+        Punctuation,
+        r#type::Type,
+    ) {
+        (
+            self.const_keyword,
+            self.identifier,
+            self.generic_parameters,
+            self.colon,
+            self.r#type,
+        )
+    }
 }
 
 impl SyntaxTree for ConstantSignature {

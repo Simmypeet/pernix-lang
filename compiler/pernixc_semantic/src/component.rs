@@ -6,7 +6,23 @@ use derive_more::{Deref, DerefMut};
 use pernixc_base::source_file::Span;
 use serde::{Deserialize, Serialize};
 
-use crate::table::ID;
+use crate::table::{GlobalID, ID};
+
+/// Describes the relationship between two symbols in the hierarchy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum HierarchyRelationship {
+    /// The first symbol is the parent of the second symbol.
+    Parent,
+
+    /// The first symbol is the child of the second symbol.
+    Child,
+
+    /// Both symbols are two equivalent symbols.
+    Equivalent,
+
+    /// Both symbols are defined in different hierarchy scope.
+    Unrelated,
+}
 
 /// Represents an accessibility of a symbol.
 #[derive(
@@ -87,6 +103,23 @@ pub struct Parent(pub ID);
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut,
 )]
 pub struct LocationSpan(pub Span);
+
+/// The component of the `implements` symbol.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Deref,
+    DerefMut,
+    Serialize,
+    Deserialize,
+)]
+pub struct Implements(pub GlobalID);
 
 /// An enumeration of all the kinds of symbols that can be defined.
 ///
