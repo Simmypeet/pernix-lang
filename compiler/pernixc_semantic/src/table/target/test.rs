@@ -147,16 +147,10 @@ fn trait_with_errors() {
     assert!(errors.iter().any(|x| {
         x.as_any().downcast_ref::<ItemRedifinition>().map_or(false, |x| {
             let existing_name = table
-                .get_component::<Name>(GlobalID::new(
-                    x.in_id.target_id,
-                    x.existing_id,
-                ))
+                .get_component::<Name>(x.existing_id)
                 .map_or(false, |x| x.as_str() == "second");
             let new_name = table
-                .get_component::<Name>(GlobalID::new(
-                    x.in_id.target_id,
-                    x.new_id,
-                ))
+                .get_component::<Name>(x.new_id)
                 .map_or(false, |x| x.as_str() == "second");
 
             existing_name && new_name && x.in_id == trait_symbol

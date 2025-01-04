@@ -14,10 +14,12 @@ use pernixc_syntax::syntax_tree::{
 
 use super::{
     diagnostic::{
-        FoundEmptyImplementationOnTrait, InvalidSymbolInImplementation,
+        FoundEmptyImplementationOnTrait, FoundImplementationWithBodyOnMarker,
+        InvalidSymbolInImplementation,
         MismatchedTraitMemberAndImplementationMember,
         SymbolIsMoreAccessibleThanParent, TraitMemberKind,
-        UnimplementedTraitMembers, UnknownTraitImplementationMember,
+        UnexpectedAdtImplementationMember, UnimplementedTraitMembers,
+        UnknownTraitImplementationMember,
     },
     resolution::diagnostic::{NoGenericArgumentsRequired, ThisNotFound},
     GlobalID, Representation, TargetID, ID,
@@ -31,7 +33,8 @@ use crate::{
     diagnostic::Diagnostic,
     table::{
         diagnostic::{
-            ConflictingUsing, ExpectModule, InvalidConstImplementation,
+            ConflictingUsing, ExpectModule,
+            ExpectedImplementationWithBodyForAdt, InvalidConstImplementation,
             InvalidFinalImplementation, ItemRedifinition,
             NonFinalMarkerImplementation, UnknownExternCallingConvention,
         },
@@ -164,7 +167,6 @@ impl Representation {
         defined_in_module_id: GlobalID,
         symbol_kind: SymbolKind,
         implementation_signature: syntax_tree::item::ImplementationSignature,
-        has_member: bool,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> GlobalID {
         let new_symbol_id = GlobalID::new(
@@ -191,7 +193,7 @@ impl Representation {
             .add_component(new_symbol_id, Parent(defined_in_module_id.id)));
         assert!(self.storage.add_component(new_symbol_id, symbol_kind));
 
-        if has_member {
+        if symbol_kind.has_member() {
             assert!(self
                 .storage
                 .add_component(new_symbol_id, Member::default()));
@@ -307,6 +309,173 @@ impl Representation {
         new_symbol_id
     }
 
+    fn create_adt_implementation(
+        &mut self,
+        implementation: syntax_tree::item::Implementation,
+        declared_in: GlobalID,
+        adt_id: GlobalID,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) {
+        let (signature, kind) = implementation.dissolve();
+        let implementation_body = match kind {
+            ImplementationKind::Empty(_) | ImplementationKind::Negative(_) => {
+                handler.receive(Box::new(
+                    ExpectedImplementationWithBodyForAdt {
+                        invalid_implementation_span: signature.span(),
+                    },
+                ));
+
+                return;
+            }
+            ImplementationKind::Positive(body) => body,
+        };
+        let (_, members, _) = implementation_body.dissolve();
+
+        // the implementation id
+        let adt_implementation_id = self.insert_implementation(
+            adt_id,
+            declared_in,
+            SymbolKind::AdtImplementation,
+            signature,
+            handler,
+        );
+
+        for member in members {
+            match member {
+                ImplementationMember::Constant(syn) => {
+                    handler.receive(Box::new(
+                        UnexpectedAdtImplementationMember {
+                            unexpected_member_span: syn.signature().span(),
+                        },
+                    ));
+                }
+                ImplementationMember::Type(syn) => {
+                    handler.receive(Box::new(
+                        UnexpectedAdtImplementationMember {
+                            unexpected_member_span: syn.signature().span(),
+                        },
+                    ));
+                }
+                ImplementationMember::Function(syn) => {
+                    let (access_modifier, _, signature, body) = syn.dissolve();
+                    let (
+                        _,
+                        ident,
+                        generic_parameters,
+                        parameters,
+                        return_type,
+                        where_clause,
+                    ) = signature.dissolve();
+
+                    let function_id = if let Ok(existing_id) =
+                        self.get_member_of(adt_id, ident.span.str())
+                    {
+                        let in_implementation = self
+                            .get_component::<Member>(adt_implementation_id)
+                            .unwrap()
+                            .contains_key(ident.span.str());
+
+                        let new_id = self.insert_member(
+                            adt_implementation_id,
+                            &ident,
+                            SymbolKind::AdtImplementationFunction,
+                            Some(
+                                self.create_accessibility(
+                                    adt_implementation_id,
+                                    &access_modifier,
+                                )
+                                .unwrap(),
+                            ),
+                            generic_parameters,
+                            where_clause,
+                            handler,
+                        );
+
+                        if !in_implementation {
+                            handler.receive(Box::new(ItemRedifinition {
+                                existing_id,
+                                new_id,
+                                in_id: adt_id,
+                            }));
+                        }
+
+                        new_id
+                    } else {
+                        self.insert_member(
+                            adt_implementation_id,
+                            &ident,
+                            SymbolKind::AdtImplementationFunction,
+                            Some(
+                                self.create_accessibility(
+                                    adt_implementation_id,
+                                    &access_modifier,
+                                )
+                                .unwrap(),
+                            ),
+                            generic_parameters,
+                            where_clause,
+                            handler,
+                        )
+                    };
+
+                    // add the parameters
+                    assert!(self
+                        .storage
+                        .add_component(function_id, parameters));
+
+                    // add the return type
+                    if let Some(return_type) = return_type {
+                        assert!(self
+                            .storage
+                            .add_component(function_id, return_type));
+                    }
+
+                    // add the body
+                    assert!(self.storage.add_component(function_id, body));
+                }
+            };
+        }
+    }
+
+    fn create_marker_implementation(
+        &mut self,
+        implementation: syntax_tree::item::Implementation,
+        declared_in: GlobalID,
+        marker_id: GlobalID,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) {
+        let (signature, kind) = implementation.dissolve();
+
+        let symbol_kind = match &kind {
+            ImplementationKind::Negative(..) => {
+                SymbolKind::NegativeMarkerImplementation
+            }
+            ImplementationKind::Positive(_) => {
+                handler.receive(Box::new(
+                    FoundImplementationWithBodyOnMarker {
+                        implementation_span: signature
+                            .qualified_identifier()
+                            .span(),
+                    },
+                ));
+
+                return;
+            }
+
+            ImplementationKind::Empty(_) => {
+                SymbolKind::PositiveMarkerImplementation
+            }
+        };
+
+        self.insert_implementation(
+            marker_id,
+            declared_in,
+            symbol_kind,
+            signature,
+            handler,
+        );
+    }
+
     fn create_trait_implementation(
         &mut self,
         implementation: syntax_tree::item::Implementation,
@@ -337,11 +506,6 @@ impl Representation {
             declared_in,
             symbol_kind,
             signature,
-            if symbol_kind == SymbolKind::PositiveTraitImplementation {
-                true
-            } else {
-                false
-            },
             handler,
         );
 
@@ -374,7 +538,6 @@ impl Representation {
                         &ident,
                         SymbolKind::TraitImplementationType,
                         None,
-                        false,
                         generic_parameters,
                         where_clause,
                         handler,
@@ -400,7 +563,6 @@ impl Representation {
                         &ident,
                         SymbolKind::TraitImplementationFunction,
                         None,
-                        false,
                         generic_parameters,
                         where_clause,
                         handler,
@@ -435,7 +597,6 @@ impl Representation {
                         &ident,
                         SymbolKind::TraitImplementationConstant,
                         None,
-                        false,
                         generic_parameters,
                         where_caluse,
                         handler,
@@ -703,7 +864,23 @@ impl Representation {
                 );
             }
 
-            SymbolKind::Enum | SymbolKind::Struct => {}
+            SymbolKind::Marker => {
+                self.create_marker_implementation(
+                    implementation,
+                    defined_in_module_id,
+                    current_id,
+                    handler,
+                );
+            }
+
+            SymbolKind::Enum | SymbolKind::Struct => {
+                self.create_adt_implementation(
+                    implementation,
+                    defined_in_module_id,
+                    current_id,
+                    handler,
+                );
+            }
 
             _ => {
                 handler.receive(Box::new(InvalidSymbolInImplementation {
@@ -926,7 +1103,6 @@ impl Representation {
         name: &Identifier,
         symbol_kind: SymbolKind,
         accessibility: Option<Accessibility>,
-        has_member: bool,
         generic_parameters_syn: Option<syntax_tree::item::GenericParameters>,
         where_clause_syn: Option<syntax_tree::item::WhereClause>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
@@ -954,7 +1130,7 @@ impl Representation {
             assert!(self.storage.add_component(new_symbol_id, accessibility));
         }
 
-        if has_member {
+        if symbol_kind.has_member() {
             assert!(self
                 .storage
                 .add_component(new_symbol_id, Member::default()));
@@ -976,8 +1152,11 @@ impl Representation {
         match parent.entry(name.span.str().to_owned()) {
             Entry::Occupied(entry) => {
                 handler.receive(Box::new(ItemRedifinition {
-                    existing_id: *entry.get(),
-                    new_id: new_symbol_id.id,
+                    existing_id: GlobalID::new(
+                        parent_id.target_id,
+                        *entry.get(),
+                    ),
+                    new_id: new_symbol_id,
                     in_id: parent_id,
                 }));
             }
@@ -1006,7 +1185,6 @@ impl Representation {
                 self.create_accessibility(parent_module_id, &access_modifier)
                     .unwrap(),
             ),
-            true,
             generic_parameters,
             where_clause,
             handler,
@@ -1024,7 +1202,6 @@ impl Representation {
                 &ident,
                 SymbolKind::Variant,
                 None,
-                false,
                 None,
                 None,
                 handler,
@@ -1057,7 +1234,6 @@ impl Representation {
                 self.create_accessibility(parent_module_id, &access_modifier)
                     .unwrap(),
             ),
-            true,
             generic_parameters,
             where_clause,
             handler,
@@ -1091,7 +1267,6 @@ impl Representation {
                             )
                             .unwrap(),
                         ),
-                        false,
                         generic_parameters_syn,
                         where_clause_syn,
                         handler,
@@ -1128,7 +1303,6 @@ impl Representation {
                             )
                             .unwrap(),
                         ),
-                        false,
                         generic_parameters,
                         where_clause,
                         handler,
@@ -1151,7 +1325,6 @@ impl Representation {
                             )
                             .unwrap(),
                         ),
-                        false,
                         generic_parameters,
                         where_clause,
                         handler,
@@ -1298,7 +1471,6 @@ impl Representation {
                             )
                             .unwrap(),
                         ),
-                        false,
                         generic_parameters,
                         where_clause,
                         handler,
@@ -1336,7 +1508,6 @@ impl Representation {
                             )
                             .unwrap(),
                         ),
-                        false,
                         generic_parameters,
                         where_clause,
                         handler,
@@ -1360,7 +1531,6 @@ impl Representation {
                             )
                             .unwrap(),
                         ),
-                        true,
                         generic_parameters,
                         where_clause,
                         handler,
@@ -1402,7 +1572,6 @@ impl Representation {
                             )
                             .unwrap(),
                         ),
-                        false,
                         generic_parameters,
                         where_caluse,
                         handler,
@@ -1429,7 +1598,6 @@ impl Representation {
                             )
                             .unwrap(),
                         ),
-                        false,
                         generic_parameters,
                         where_clause,
                         handler,
@@ -1480,7 +1648,6 @@ impl Representation {
                                 )
                                 .unwrap(),
                             ),
-                            false,
                             generic_parameters,
                             where_clause,
                             handler,

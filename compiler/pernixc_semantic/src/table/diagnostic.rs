@@ -8,21 +8,20 @@ use pernixc_base::{
     source_file::Span,
 };
 
-use super::{GlobalID, Representation, Table, TargetID, ID};
+use super::{GlobalID, Representation, Table, TargetID};
 use crate::{
     component::{Accessibility, LocationSpan, Name, SymbolKind},
     diagnostic::ReportError,
-    symbol::Global,
 };
 
 /// The item symbol with the same name already exists in the given scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ItemRedifinition {
     /// The ID of the existing symbol.
-    pub existing_id: ID,
+    pub existing_id: GlobalID,
 
     /// The ID of the new symbol.
-    pub new_id: ID,
+    pub new_id: GlobalID,
 
     /// The scope in which the duplication occurred.
     pub in_id: GlobalID,
@@ -36,23 +35,13 @@ impl Report<&Table> for ItemRedifinition {
         table: &Table,
     ) -> Result<pernixc_base::diagnostic::Diagnostic, Self::Error> {
         let existing_symbol_span = table
-            .get_component::<LocationSpan>(GlobalID::new(
-                self.in_id.target_id,
-                self.existing_id,
-            ))
+            .get_component::<LocationSpan>(self.existing_id)
             .ok_or(ReportError)?;
         let new_symbol_span = table
-            .get_component::<LocationSpan>(GlobalID::new(
-                self.in_id.target_id,
-                self.new_id,
-            ))
+            .get_component::<LocationSpan>(self.new_id)
             .ok_or(ReportError)?;
-        let existing_symbol_name = table
-            .get_component::<Name>(GlobalID::new(
-                self.in_id.target_id,
-                self.existing_id,
-            ))
-            .ok_or(ReportError)?;
+        let existing_symbol_name =
+            table.get_component::<Name>(self.existing_id).ok_or(ReportError)?;
         let in_name =
             table.get_qualified_name(self.in_id).ok_or(ReportError)?;
 
@@ -546,6 +535,76 @@ impl Report<&Table> for UnimplementedTraitMembers {
                  implementation: {}",
                 trait_member_qualified_names.join(", ")
             ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// Implementation with body found on a marker.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FoundImplementationWithBodyOnMarker {
+    /// The span where the implementation was found.
+    pub implementation_span: Span,
+}
+
+impl Report<&Table> for FoundImplementationWithBodyOnMarker {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.implementation_span.clone(),
+            message: "implementation with body found on a marker; expected an \
+                      implementation with `delete` keyword or empty \
+                      (delimited with semicolon)"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// The adt implementation expects an implementation with a body.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectedImplementationWithBodyForAdt {
+    /// The implementation that was found to be invalid.
+    pub invalid_implementation_span: Span,
+}
+
+impl Report<&Table> for ExpectedImplementationWithBodyForAdt {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.invalid_implementation_span.clone(),
+            message: "implementation on struct or enum expects an \
+                      implementation with a body"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}
+
+/// Adt implementation member can only be a function.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnexpectedAdtImplementationMember {
+    /// The span where the unexpected member was found.
+    pub unexpected_member_span: Span,
+}
+
+impl Report<&Table> for UnexpectedAdtImplementationMember {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.unexpected_member_span.clone(),
+            message: "adt (struct and enum) implementation can only contain \
+                      functions"
+                .to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
