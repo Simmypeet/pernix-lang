@@ -6,7 +6,9 @@ use crate::{
     table::{
         diagnostic::{
             ConflictingUsing, ItemRedifinition,
-            SymbolIsMoreAccessibleThanParent,
+            MismatchedTraitMemberAndImplementationMember,
+            SymbolIsMoreAccessibleThanParent, TraitMemberKind,
+            UnknownTraitImplementationMember,
         },
         resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
         GlobalID, Table, ID,
@@ -307,4 +309,57 @@ fn usings() {
     assert!(import.contains_key("AnotherSymbol"));
     assert!(import.contains_key("Inaccessible"));
     assert!(import.contains_key("something"));
+}
+
+const TRAIT_IMPLEMENTATIONS: &str = r#" 
+public trait Trait[T] {
+    public function someFunction();
+    public type SomeType;
+    public const SOME_VALUE: int32;
+}
+
+final implements const Trait[int32] {
+    public type someFunction = bool; // <- not a function
+    public type SomeType = int32;
+    public const SOME_VALUE: int32 = 42;
+
+    public function unknownFunction() {} // <- extraneous
+}
+"#;
+
+#[test]
+fn trait_implementations() {
+    let target = build_target(TRAIT_IMPLEMENTATIONS);
+
+    let storage = handler::Storage::<Box<dyn diagnostic::Diagnostic>>::new();
+
+    let mut table = Table::default();
+    table
+        .representation
+        .add_target("test".to_string(), std::iter::empty(), target, &storage)
+        .unwrap();
+
+    let errors = storage.into_vec();
+
+    assert_eq!(errors.len(), 2);
+
+    let trait_id = table.get_by_qualified_name(["test", "Trait"]).unwrap();
+
+    assert!(errors.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<MismatchedTraitMemberAndImplementationMember>()
+        .map_or(false, |x| {
+            x.found_kind == TraitMemberKind::Type
+                && x.implementation_member_identifer_span.str()
+                    == "someFunction"
+        })));
+    assert!(errors.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<UnknownTraitImplementationMember>()
+        .map_or(false, |x| {
+            x.trait_id == trait_id
+                && x.identifier_span.str() == "unknownFunction"
+        })));
+
+    dbg!(&errors);
 }

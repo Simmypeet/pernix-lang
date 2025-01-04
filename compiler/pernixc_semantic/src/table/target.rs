@@ -1143,7 +1143,7 @@ impl Representation {
                     let trait_constant_id = self.insert_member(
                         trait_id,
                         &ident,
-                        SymbolKind::Constant,
+                        SymbolKind::TraitConstant,
                         Some(
                             self.create_accessibility(
                                 trait_id,
