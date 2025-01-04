@@ -175,11 +175,8 @@ impl Representation {
         match parent.entry(name.span.str().to_owned()) {
             Entry::Occupied(entry) => {
                 handler.receive(Box::new(ItemRedifinition {
-                    existing_id: GlobalID::new(
-                        parent_id.target_id,
-                        *entry.get(),
-                    ),
-                    new_id: new_symbol_id,
+                    existing_id: *entry.get(),
+                    new_id: new_symbol_id.id,
                     in_id: parent_id,
                 }));
             }
@@ -393,9 +390,10 @@ impl Representation {
 
         usings_by_module_id.entry(module_id).or_default().extend(usings);
 
-        // recursively create the submodules
+        // recursively create the submodules, redifinitions are handled by the
+        // target parsing logic already
         for (name, submodule) in submodule_by_name {
-            let submodule_id = self.create_module(
+            self.create_module(
                 target_id,
                 name.clone(),
                 submodule,
@@ -404,11 +402,6 @@ impl Representation {
                 implementations_by_module_id,
                 handler,
             );
-
-            self.storage
-                .get_mut::<Member>(module_id)
-                .unwrap()
-                .insert(name, submodule_id.id);
         }
 
         for item in items {
@@ -433,3 +426,6 @@ impl Representation {
         module_id
     }
 }
+
+#[cfg(test)]
+mod test;

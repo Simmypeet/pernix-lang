@@ -5,7 +5,7 @@ use pernixc_base::{
     log::Severity,
 };
 
-use super::{GlobalID, Representation, Table, TargetID};
+use super::{GlobalID, Representation, Table, TargetID, ID};
 use crate::{
     component::{Accessibility, LocationSpan, Name},
     diagnostic::ReportError,
@@ -15,10 +15,10 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ItemRedifinition {
     /// The ID of the existing symbol.
-    pub existing_id: GlobalID,
+    pub existing_id: ID,
 
     /// The ID of the new symbol.
-    pub new_id: GlobalID,
+    pub new_id: ID,
 
     /// The scope in which the duplication occurred.
     pub in_id: GlobalID,
@@ -32,13 +32,23 @@ impl Report<&Table> for ItemRedifinition {
         table: &Table,
     ) -> Result<pernixc_base::diagnostic::Diagnostic, Self::Error> {
         let existing_symbol_span = table
-            .get_component::<LocationSpan>(self.existing_id)
+            .get_component::<LocationSpan>(GlobalID::new(
+                self.in_id.target_id,
+                self.existing_id,
+            ))
             .ok_or(ReportError)?;
         let new_symbol_span = table
-            .get_component::<LocationSpan>(self.new_id)
+            .get_component::<LocationSpan>(GlobalID::new(
+                self.in_id.target_id,
+                self.new_id,
+            ))
             .ok_or(ReportError)?;
-        let existing_symbol_name =
-            table.get_component::<Name>(self.existing_id).ok_or(ReportError)?;
+        let existing_symbol_name = table
+            .get_component::<Name>(GlobalID::new(
+                self.in_id.target_id,
+                self.existing_id,
+            ))
+            .ok_or(ReportError)?;
         let in_name =
             table.get_qualified_name(self.in_id).ok_or(ReportError)?;
 

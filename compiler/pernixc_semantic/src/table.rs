@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 pub use target::AddTargetError;
 
 use crate::component::{
-    Accessibility, HierarchyRelationship, Implements, Name, Parent, SymbolKind,
+    Accessibility, HierarchyRelationship, Implements, Member, Name, Parent,
+    SymbolKind,
 };
 
 pub mod diagnostic;
@@ -337,6 +338,42 @@ impl Representation {
                 **self.storage.get::<Implements>(id).unwrap(),
             ),
         }
+    }
+
+    /// Gets the [`GlobalID`] of the symbol with the given sequence of qualified
+    /// name.
+    pub fn get_by_qualified_name<'a>(
+        &self,
+        qualified_names: impl IntoIterator<Item = &'a str>,
+    ) -> Option<GlobalID> {
+        let mut current_id: Option<GlobalID> = None;
+
+        for name in qualified_names {
+            match current_id {
+                Some(searched_in_item_id) => {
+                    current_id = Some(
+                        self.storage
+                            .get::<Member>(searched_in_item_id)
+                            .and_then(|x| {
+                                x.get(name).copied().map(|x| {
+                                    GlobalID::new(
+                                        searched_in_item_id.target_id,
+                                        x,
+                                    )
+                                })
+                            })?,
+                    );
+                }
+                None => {
+                    current_id = self
+                        .targets_by_name
+                        .get(name)
+                        .map(|&x| GlobalID::new(x, ID::ROOT_MODULE));
+                }
+            }
+        }
+
+        current_id
     }
 }
 
