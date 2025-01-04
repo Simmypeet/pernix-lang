@@ -3,7 +3,7 @@
 #![allow(missing_docs)]
 
 use std::{
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     convert::Into,
     path::{Path, PathBuf},
     sync::Arc,
@@ -273,24 +273,6 @@ impl Target {
         module_content.items.drain_filter(|x| x.is_module()).par_bridge().for_each(|item| {
             let submodule = item.into_module().unwrap();
 
-            // check for redefinitions
-            if let Some(existing) =
-                module_contents_by_name.read().get(submodule.signature().identifier().span.str())
-            {
-                handler.receive(Error::ModuleRedefinition(ModuleRedefinition {
-                    existing_module_span: existing
-                        .signature()
-                        .as_ref()
-                        .unwrap()
-                        .signature
-                        .identifier()
-                        .span
-                        .clone(),
-                    redefinition_submodule_span: submodule.signature().identifier().span.clone(),
-                }));
-                return;
-            }
-
             let module_name = submodule.signature().identifier().span.str().to_owned();
             let module_tree = if let ModuleKind::Inline(inline_module_content) = submodule.kind {
                 let signature_with_access_modifier = ModuleSignatureWithAccessModifier {
@@ -362,7 +344,33 @@ impl Target {
                 }
             };
 
-            module_contents_by_name.write().insert(module_name, module_tree);
+            match module_contents_by_name.write().entry(module_name) {
+                Entry::Occupied(entry) => {
+                    handler.receive(Error::ModuleRedefinition(ModuleRedefinition {
+                        existing_module_span: entry.get()
+                            .signature()
+                            .as_ref()
+                            .unwrap()
+                            .signature
+                            .identifier()
+                            .span
+                            .clone(),
+                        redefinition_submodule_span: module_tree
+                            .signature()
+                            .as_ref()
+                            .unwrap()
+                            .signature
+                            .identifier()
+                            .span
+                            .clone(),
+                    }));
+                    return;
+                }
+
+                Entry::Vacant(vacant_entry) => {
+                    vacant_entry.insert(module_tree);
+                }
+            }
         });
 
         ModuleTree {
