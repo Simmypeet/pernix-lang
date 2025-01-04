@@ -160,3 +160,25 @@ pub enum SymbolKind {
     PositiveMarkerImplementation,
     NegativeMarkerImplementation,
 }
+
+/// The external linkage of a symbol.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+pub enum Extern {
+    /// The function is an external function that is implemented in the c call
+    /// convention.
+    C,
+
+    /// Unknown external linkage.
+    Unknown,
+}

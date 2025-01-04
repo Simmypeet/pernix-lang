@@ -2406,6 +2406,16 @@ pub struct ConstantDefinition {
     semicolon: Punctuation,
 }
 
+impl ConstantDefinition {
+    /// Dissolves the [`ConstantDefinition`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (Punctuation, Expression, Option<WhereClause>, Punctuation) {
+        (self.equals, self.expression, self.where_clause, self.semicolon)
+    }
+}
+
 impl SyntaxTree for ConstantDefinition {
     fn parse(
         state_machine: &mut StateMachine,

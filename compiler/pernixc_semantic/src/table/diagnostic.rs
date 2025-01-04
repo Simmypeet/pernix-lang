@@ -3,6 +3,7 @@
 use pernixc_base::{
     diagnostic::{Diagnostic, Related, Report},
     log::Severity,
+    source_file::Span,
 };
 
 use super::{GlobalID, Representation, Table, TargetID, ID};
@@ -155,6 +156,30 @@ impl Report<&Table> for SymbolIsMoreAccessibleThanParent {
                     "the parent symbol is {parent_accessibility_description}",
                 ),
             }],
+        })
+    }
+}
+
+/// The calling convention is an `extern` block is invalid.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnknownExternCallingConvention {
+    /// The span of the extern calling convention.
+    pub span: Span,
+}
+
+impl Report<&Table> for UnknownExternCallingConvention {
+    type Error = ReportError;
+
+    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "unknown calling convention `{}` in `extern`",
+                self.span.str()
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
         })
     }
 }
