@@ -11,7 +11,9 @@ use derive_more::Deref;
 use derive_new::new;
 use pernixc_component::Storage;
 use pernixc_syntax::syntax_tree::AccessModifier;
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::DeserializeSeed, Deserialize, Deserializer, Serialize, Serializer,
+};
 pub use target::AddTargetError;
 
 use crate::component::{
@@ -20,6 +22,7 @@ use crate::component::{
 };
 
 pub mod diagnostic;
+pub mod reflector;
 
 mod target;
 
@@ -102,12 +105,37 @@ impl Target {
 }
 
 /// Represents the semantic representation of the program.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Representation {
+    #[serde(
+        serialize_with = "storage_serializer",
+        deserialize_with = "deserialize_storage"
+    )]
     storage: Storage<GlobalID>,
 
     targets_by_id: HashMap<TargetID, Target>,
     targets_by_name: HashMap<String, TargetID>,
+}
+
+fn deserialize_storage<'de, D>(
+    deserializer: D,
+) -> Result<Storage<GlobalID>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let reflector = Table::reflector();
+    reflector.deserialize(deserializer)
+}
+
+fn storage_serializer<S>(
+    storage: &Storage<GlobalID>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let reflector = Table::reflector();
+    storage.as_serializable(&reflector).serialize(serializer)
 }
 
 /// Represents an iterator that walks through the scope of the given symbol. It
@@ -378,7 +406,7 @@ impl Representation {
 }
 
 /// Represents the semantic representation of the program.
-#[derive(Debug, Default, Deref)]
+#[derive(Debug, Default, Serialize, Deserialize, Deref)]
 pub struct Table {
     #[deref]
     representation: Representation,

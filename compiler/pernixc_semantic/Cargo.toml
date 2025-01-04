@@ -35,6 +35,7 @@ displaydoc = { workspace = true }
 serde = { workspace = true }
 dashmap = { workspace = true }
 derive-new = { workspace = true }
+ron = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

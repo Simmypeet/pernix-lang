@@ -428,6 +428,12 @@ impl Representation {
                     }
                 )
             ));
+            assert!(self
+                .storage
+                .get_mut::<Member>(parent_module_id)
+                .unwrap()
+                .insert(name.clone(), module_id.id)
+                .is_none());
         } else {
             assert!(self
                 .storage

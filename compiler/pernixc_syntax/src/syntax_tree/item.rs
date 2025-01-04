@@ -869,7 +869,7 @@ impl SyntaxTree for TraitBody {
 /// Syntax Synopsis:
 /// ```txt
 /// MarkerSignature:
-///     'marker' MarkerKind Identifier GenericParameters? WhereClause?
+///     'marker' Identifier GenericParameters? WhereClause?
 ///     '
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]

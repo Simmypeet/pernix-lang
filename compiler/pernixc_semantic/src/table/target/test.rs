@@ -157,3 +157,73 @@ fn trait_with_errors() {
         })
     }))
 }
+
+const SERIALIZATION: &str = r#"
+public module submodule {}
+public trait Trait {
+    public function first();
+    private function second();
+}
+public type TypeAlias = int32;
+public struct Struct {
+    public field: int32,
+}
+public enum Option[T] {
+    Some(T),
+    None,
+}
+public const VALUE: int32 = 42;
+public marker Marker[T];
+extern "C" {
+    public function externalFunction();
+}
+"#;
+
+#[test]
+fn serialization() {
+    let target = build_target(SERIALIZATION);
+    let mut table = Table::default();
+
+    table
+        .representation
+        .add_target(
+            "test".to_string(),
+            std::iter::empty(),
+            target,
+            &handler::Panic,
+        )
+        .unwrap();
+
+    let ron = ron::ser::to_string_pretty(&table, Default::default()).unwrap();
+
+    let deserialized: Table = ron::de::from_str(&ron).unwrap();
+
+    println!("{ron}");
+
+    // do brief check
+    assert!(deserialized
+        .get_by_qualified_name(["test", "submodule"])
+        .is_some());
+    assert!(deserialized.get_by_qualified_name(["test", "Trait"]).is_some());
+    assert!(deserialized
+        .get_by_qualified_name(["test", "Trait", "first"])
+        .is_some());
+    assert!(deserialized
+        .get_by_qualified_name(["test", "Trait", "second"])
+        .is_some());
+    assert!(deserialized
+        .get_by_qualified_name(["test", "TypeAlias"])
+        .is_some());
+    assert!(deserialized.get_by_qualified_name(["test", "Struct"]).is_some());
+    assert!(deserialized
+        .get_by_qualified_name(["test", "Option", "Some"])
+        .is_some());
+    assert!(deserialized
+        .get_by_qualified_name(["test", "Option", "None"])
+        .is_some());
+    assert!(deserialized.get_by_qualified_name(["test", "VALUE"]).is_some());
+    assert!(deserialized.get_by_qualified_name(["test", "Marker"]).is_some());
+    assert!(deserialized
+        .get_by_qualified_name(["test", "externalFunction"])
+        .is_some());
+}
