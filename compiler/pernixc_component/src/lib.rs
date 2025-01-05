@@ -2,7 +2,7 @@
 
 use std::{
     any::{Any, TypeId},
-    fmt::Debug,
+    fmt::{Debug, Display},
     hash::Hash,
     ops::{Deref, DerefMut},
 };
@@ -56,11 +56,20 @@ impl<ID: Eq + Hash> Storage<ID> {
     }
 
     /// Enables the serialization of the storage based on the given reflector.
-    pub fn as_serializable<'a, T>(
+    pub fn as_serializable<'a, T, E: Display + 'static>(
         &'a self,
-        reflector: &'a serde::Reflector<T, ID>,
-    ) -> serde::SerializableStorage<'a, T, ID> {
+        reflector: &'a serde::Reflector<T, ID, E>,
+    ) -> serde::SerializableStorage<'a, T, ID, E> {
         serde::SerializableStorage::new(self, reflector)
+    }
+
+    /// Enables in-place incremental deserialization based on the given
+    /// reflector.
+    pub fn as_inplace_deserializer<'a, T, E: Display + 'static>(
+        &'a self,
+        reflector: &'a serde::Reflector<T, ID, E>,
+    ) -> serde::InplaceDeserializer<'a, T, ID, E> {
+        serde::InplaceDeserializer::new(self, reflector)
     }
 
     /// Gets the component of the given type from the entity of the given id.
