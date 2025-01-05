@@ -431,9 +431,11 @@ impl<'a> serde::Serialize for SerializeComponent<'a> {
 
 impl<
         'de,
+        're,
         T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         ID: Eq + Hash + Clone + for<'x> serde::Deserialize<'x>,
-    > serde::de::DeserializeSeed<'de> for &Reflector<T, ID>
+        E: Display + 'static,
+    > serde::de::DeserializeSeed<'de> for &'re Reflector<T, ID, E>
 {
     type Value = Storage<ID>;
 
@@ -445,15 +447,16 @@ impl<
     }
 }
 
-struct EntitiyMapVisitor<'a, T, ID> {
-    reflector: &'a Reflector<T, ID>,
+struct EntitiyMapVisitor<'a, T, ID, E: Display + 'static> {
+    reflector: &'a Reflector<T, ID, E>,
 }
 
 impl<
         'de,
         T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         ID: Eq + Hash + Clone + for<'x> serde::Deserialize<'x>,
-    > serde::de::Visitor<'de> for EntitiyMapVisitor<'_, T, ID>
+        E: Display + 'static,
+    > serde::de::Visitor<'de> for EntitiyMapVisitor<'_, T, ID, E>
 {
     type Value = Storage<ID>;
 
@@ -503,7 +506,8 @@ impl<
         'de,
         T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         ID: Eq + Hash + Clone + for<'x> serde::Deserialize<'x>,
-    > serde::de::DeserializeSeed<'de> for ComponentMapVisitor<'_, T, ID>
+        E: Display + 'static,
+    > serde::de::DeserializeSeed<'de> for ComponentMapVisitor<'_, T, ID, E>
 {
     type Value = HashMap<T, Box<dyn Any>>;
 
@@ -515,8 +519,8 @@ impl<
     }
 }
 
-struct ComponentMapVisitor<'a, T, ID> {
-    reflector: &'a Reflector<T, ID>,
+struct ComponentMapVisitor<'a, T, ID, E: Display + 'static> {
+    reflector: &'a Reflector<T, ID, E>,
 }
 
 impl<
@@ -524,7 +528,8 @@ impl<
         'a,
         T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         ID: Eq + Hash + Clone + for<'x> serde::Deserialize<'x>,
-    > serde::de::Visitor<'de> for ComponentMapVisitor<'a, T, ID>
+        E: Display + 'static,
+    > serde::de::Visitor<'de> for ComponentMapVisitor<'a, T, ID, E>
 {
     type Value = HashMap<T, Box<dyn Any>>;
 
