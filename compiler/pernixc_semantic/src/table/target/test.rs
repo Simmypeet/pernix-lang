@@ -42,12 +42,12 @@ fn submodule() {
 
     assert_eq!(root_module_id.id, ID::ROOT_MODULE);
     assert_eq!(
-        table.get_component::<Accessibility>(root_module_id).as_deref(),
+        table.get::<Accessibility>(root_module_id).as_deref(),
         Some(&Accessibility::Public)
     );
-    assert!(table.get_component::<Parent>(root_module_id).is_none());
+    assert!(table.get::<Parent>(root_module_id).is_none());
 
-    let root_members = table.get_component::<Member>(root_module_id).unwrap();
+    let root_members = table.get::<Member>(root_module_id).unwrap();
 
     assert_eq!(root_members.len(), 2);
 
@@ -70,26 +70,26 @@ fn submodule() {
     );
 
     assert_eq!(
-        table.get_component::<Accessibility>(first_module_id).as_deref(),
+        table.get::<Accessibility>(first_module_id).as_deref(),
         Some(&Accessibility::Public)
     );
 
     assert_eq!(
-        table.get_component::<Accessibility>(second_module_id).as_deref(),
+        table.get::<Accessibility>(second_module_id).as_deref(),
         Some(&Accessibility::Scoped(root_module_id.id))
     );
 
     assert_eq!(
-        table.get_component::<Parent>(second_module_id).as_deref(),
+        table.get::<Parent>(second_module_id).as_deref(),
         Some(&Parent(root_module_id.id))
     );
     assert_eq!(
-        table.get_component::<Parent>(first_module_id).as_deref(),
+        table.get::<Parent>(first_module_id).as_deref(),
         Some(&Parent(root_module_id.id))
     );
 
     let second_members =
-        table.get_component::<Member>(second_module_id).unwrap();
+        table.get::<Member>(second_module_id).unwrap();
 
     assert_eq!(second_members.len(), 1);
 
@@ -103,7 +103,7 @@ fn submodule() {
         table.get_by_qualified_name(["test", "second", "third"]).unwrap()
     );
     assert_eq!(
-        table.get_component::<Accessibility>(third_module_id).as_deref(),
+        table.get::<Accessibility>(third_module_id).as_deref(),
         Some(&Accessibility::Scoped(second_module_id.id))
     );
 }
@@ -147,10 +147,10 @@ fn trait_with_errors() {
     assert!(errors.iter().any(|x| {
         x.as_any().downcast_ref::<ItemRedifinition>().map_or(false, |x| {
             let existing_name = table
-                .get_component::<Name>(x.existing_id)
+                .get::<Name>(x.existing_id)
                 .map_or(false, |x| x.as_str() == "second");
             let new_name = table
-                .get_component::<Name>(x.new_id)
+                .get::<Name>(x.new_id)
                 .map_or(false, |x| x.as_str() == "second");
 
             existing_name && new_name && x.in_id == trait_symbol
@@ -197,8 +197,6 @@ fn serialization() {
     let ron = ron::ser::to_string_pretty(&table, Default::default()).unwrap();
 
     let deserialized: Table = ron::de::from_str(&ron).unwrap();
-
-    println!("{ron}");
 
     // do brief check
     assert!(deserialized
@@ -296,7 +294,7 @@ fn usings() {
         })
     }));
 
-    let import = table.get_component::<Import>(root_module).unwrap();
+    let import = table.get::<Import>(root_module).unwrap();
 
     assert_eq!(import.len(), 3);
 
@@ -354,6 +352,36 @@ fn trait_implementations() {
             x.trait_id == trait_id
                 && x.identifier_span.str() == "unknownFunction"
         })));
+}
 
-    dbg!(&errors);
+const ADT_IMPLEMENTATION: &str = r#"
+public struct Test {}
+
+implements Test {
+    public function first() {}
+}
+
+implements Test {
+    public function first() {}
+}
+"#;
+
+#[test]
+fn adt_implementation() {
+    let target = build_target(ADT_IMPLEMENTATION);
+
+    let storage = handler::Storage::<Box<dyn diagnostic::Diagnostic>>::new();
+
+    let mut table = Table::default();
+    table
+        .representation
+        .add_target("test".to_string(), std::iter::empty(), target, &storage)
+        .unwrap();
+
+    let errors = storage.into_vec();
+
+    assert_eq!(errors.len(), 1);
+    assert!(errors
+        .iter()
+        .any(|x| x.as_any().downcast_ref::<ItemRedifinition>().is_some()))
 }

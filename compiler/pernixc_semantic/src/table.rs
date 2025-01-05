@@ -7,7 +7,7 @@ use std::{
     ops::Deref,
 };
 
-use derive_more::Deref;
+use derive_more::{Deref, DerefMut};
 use derive_new::new;
 use pernixc_component::Storage;
 use pernixc_syntax::syntax_tree::AccessModifier;
@@ -40,7 +40,7 @@ mod target;
     Serialize,
     Deserialize,
 )]
-pub struct TargetID(usize);
+pub struct TargetID(u64);
 
 impl TargetID {
     /// The core target.
@@ -185,7 +185,7 @@ pub enum GetMemberError {
 
 impl Representation {
     /// Gets the component of the given symbol.
-    pub fn get_component<C: Any>(
+    pub fn get<C: Any>(
         &self,
         id: GlobalID,
     ) -> Option<impl Deref<Target = C> + '_> {
@@ -424,22 +424,19 @@ impl Representation {
         id: GlobalID,
         member_name: &str,
     ) -> Result<GlobalID, GetMemberError> {
-        if let Some(via_member) = self
-            .get_component::<Member>(id)
-            .and_then(|x| x.get(member_name).copied())
+        if let Some(via_member) =
+            self.get::<Member>(id).and_then(|x| x.get(member_name).copied())
         {
             return Ok(GlobalID::new(id.target_id, via_member));
         }
 
-        let symbol_kind = self
-            .get_component::<SymbolKind>(id)
-            .ok_or(GetMemberError::InvalidID)?;
+        let symbol_kind =
+            self.get::<SymbolKind>(id).ok_or(GetMemberError::InvalidID)?;
 
         match (*symbol_kind == SymbolKind::Module, symbol_kind.is_adt()) {
             (true, false) => {
-                let imports = self
-                    .get_component::<Import>(id)
-                    .ok_or(GetMemberError::InvalidID)?;
+                let imports =
+                    self.get::<Import>(id).ok_or(GetMemberError::InvalidID)?;
 
                 imports
                     .get(member_name)
@@ -450,12 +447,11 @@ impl Representation {
             // serach for the member of implementations
             (false, true) => {
                 let implements = self
-                    .get_component::<Implemented>(id)
+                    .get::<Implemented>(id)
                     .ok_or(GetMemberError::InvalidID)?;
 
                 for implementation_id in implements.iter().copied() {
-                    let Some(member) =
-                        self.get_component::<Member>(implementation_id)
+                    let Some(member) = self.get::<Member>(implementation_id)
                     else {
                         continue;
                     };
@@ -532,8 +528,9 @@ impl Representation {
 }
 
 /// Represents the semantic representation of the program.
-#[derive(Debug, Default, Serialize, Deserialize, Deref)]
+#[derive(Debug, Default, Serialize, Deserialize, Deref, DerefMut)]
 pub struct Table {
     #[deref]
+    #[deref_mut]
     representation: Representation,
 }

@@ -83,14 +83,14 @@ impl Representation {
                     );
 
                     let Some(id) = self
-                        .get_component::<Member>(global_closest_module_id)
+                        .get::<Member>(global_closest_module_id)
                         .unwrap()
                         .get(ident.span.str())
                         .map(|x| {
                             GlobalID::new(referring_site.target_id, (*x).into())
                         })
                         .or_else(|| {
-                            self.get_component::<Import>(
+                            self.get::<Import>(
                                 global_closest_module_id,
                             )
                             .unwrap()

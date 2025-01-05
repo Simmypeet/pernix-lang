@@ -104,7 +104,7 @@ impl Representation {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             name.hash(&mut hasher);
             instant.hash(&mut hasher);
-            TargetID(hasher.finish() as usize)
+            TargetID(hasher.finish())
         };
 
         // keep generating target IDs until we find a unique one
@@ -115,7 +115,7 @@ impl Representation {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             name.hash(&mut hasher);
             instant.hash(&mut hasher);
-            target_id = TargetID(hasher.finish() as usize);
+            target_id = TargetID(hasher.finish());
         }
 
         let target =
@@ -184,8 +184,7 @@ impl Representation {
             )
         ));
 
-        let name =
-            self.get_component::<Name>(implemented_id).unwrap().0.clone();
+        let name = self.get::<Name>(implemented_id).unwrap().0.clone();
 
         assert!(self.storage.add_component(new_symbol_id, Name(name)));
         assert!(self
@@ -371,7 +370,7 @@ impl Representation {
                         self.get_member_of(adt_id, ident.span.str())
                     {
                         let in_implementation = self
-                            .get_component::<Member>(adt_implementation_id)
+                            .get::<Member>(adt_implementation_id)
                             .unwrap()
                             .contains_key(ident.span.str());
 
@@ -613,10 +612,10 @@ impl Representation {
 
             // find the cooresponding trait member id
             let Some(trait_member_id) = self
-                .get_component::<Member>(trait_id)
+                .get::<Member>(trait_id)
                 .unwrap()
                 .get(
-                    self.get_component::<Name>(trait_implementation_member_id)
+                    self.get::<Name>(trait_implementation_member_id)
                         .unwrap()
                         .as_str(),
                 )
@@ -624,9 +623,7 @@ impl Representation {
             else {
                 handler.receive(Box::new(UnknownTraitImplementationMember {
                     identifier_span: self
-                        .get_component::<LocationSpan>(
-                            trait_implementation_member_id,
-                        )
+                        .get::<LocationSpan>(trait_implementation_member_id)
                         .unwrap()
                         .0
                         .clone(),
@@ -639,9 +636,9 @@ impl Representation {
                 GlobalID::new(trait_id.target_id, trait_member_id.into());
 
             let trait_member_kind =
-                *self.get_component::<SymbolKind>(trait_member_id).unwrap();
+                *self.get::<SymbolKind>(trait_member_id).unwrap();
             let trait_implementation_member_kind = *self
-                .get_component::<SymbolKind>(trait_implementation_member_id)
+                .get::<SymbolKind>(trait_implementation_member_id)
                 .unwrap();
 
             match (trait_member_kind, trait_implementation_member_kind) {
@@ -675,9 +672,7 @@ impl Representation {
                         },
 
                         implementation_member_identifer_span: self
-                            .get_component::<LocationSpan>(
-                                trait_implementation_member_id,
-                            )
+                            .get::<LocationSpan>(trait_implementation_member_id)
                             .unwrap()
                             .0
                             .clone(),
@@ -686,9 +681,9 @@ impl Representation {
             }
         }
 
-        let trait_members = self.get_component::<Member>(trait_id).unwrap();
+        let trait_members = self.get::<Member>(trait_id).unwrap();
         let trait_implementation_members =
-            self.get_component::<Member>(implementation_id).unwrap();
+            self.get::<Member>(implementation_id).unwrap();
 
         // check if there are any missing members
         let unimplemented_trait_member_ids = trait_members
@@ -737,7 +732,7 @@ impl Representation {
                     )
                     .ok()
                     .or_else(|| {
-                        self.get_component::<Import>(defined_in_module_id)
+                        self.get::<Import>(defined_in_module_id)
                             .unwrap()
                             .get(generic_identifier.identifier().span.str())
                             .map(|x| x.id)
@@ -759,7 +754,7 @@ impl Representation {
 
         if !implementation.signature().qualified_identifier().rest().is_empty()
         {
-            if *self.get_component::<SymbolKind>(current_id).unwrap()
+            if *self.get::<SymbolKind>(current_id).unwrap()
                 != SymbolKind::Module
             {
                 handler.receive(Box::new(ExpectModule {
@@ -827,7 +822,7 @@ impl Representation {
             {
                 current_id = next_id;
             } else {
-                if *self.get_component::<SymbolKind>(next_id).unwrap()
+                if *self.get::<SymbolKind>(next_id).unwrap()
                     != SymbolKind::Module
                 {
                     handler.receive(Box::new(ExpectModule {
@@ -851,8 +846,7 @@ impl Representation {
             }
         }
 
-        let current_kind =
-            *self.get_component::<SymbolKind>(current_id).unwrap();
+        let current_kind = *self.get::<SymbolKind>(current_id).unwrap();
 
         match current_kind {
             SymbolKind::Trait => {
@@ -901,7 +895,7 @@ impl Representation {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
         assert_eq!(
-            *self.get_component::<SymbolKind>(defined_in_module_id).unwrap(),
+            *self.get::<SymbolKind>(defined_in_module_id).unwrap(),
             SymbolKind::Module
         );
 
@@ -917,7 +911,7 @@ impl Representation {
                 };
 
                 // must be module
-                if *self.get_component::<SymbolKind>(from_id).unwrap()
+                if *self.get::<SymbolKind>(from_id).unwrap()
                     != SymbolKind::Module
                 {
                     handler.receive(Box::new(ExpectModule {
@@ -936,7 +930,7 @@ impl Representation {
                     .flat_map(ConnectedList::elements)
                 {
                     let Some(imported_id) = self
-                        .get_component::<Member>(from_id)
+                        .get::<Member>(from_id)
                         .unwrap()
                         .get(import.identifier().span.str())
                         .copied()
@@ -967,7 +961,7 @@ impl Representation {
 
                     let name = import.alias().as_ref().map_or_else(
                         || {
-                            self.get_component::<Name>(imported_global_id)
+                            self.get::<Name>(imported_global_id)
                                 .unwrap()
                                 .0
                                 .clone()
@@ -977,18 +971,18 @@ impl Representation {
 
                     // check if there's existing symbol right now
                     let existing = self
-                        .get_component::<Member>(defined_in_module_id)
+                        .get::<Member>(defined_in_module_id)
                         .unwrap()
                         .get(&name)
                         .map(|x| {
-                            self.get_component::<LocationSpan>(GlobalID::new(
+                            self.get::<LocationSpan>(GlobalID::new(
                                 defined_in_module_id.target_id,
                                 *x,
                             ))
                             .map(|x| x.0.clone())
                         })
                         .or_else(|| {
-                            self.get_component::<Import>(defined_in_module_id)
+                            self.get::<Import>(defined_in_module_id)
                                 .unwrap()
                                 .get(&name)
                                 .map(|x| Some(x.span.clone()))
@@ -1032,7 +1026,7 @@ impl Representation {
                     return;
                 };
 
-                if *self.get_component::<SymbolKind>(using_module_id).unwrap()
+                if *self.get::<SymbolKind>(using_module_id).unwrap()
                     != SymbolKind::Module
                 {
                     handler.receive(Box::new(ExpectModule {
@@ -1044,28 +1038,23 @@ impl Representation {
                 }
 
                 let name = one.alias().as_ref().map_or_else(
-                    || {
-                        self.get_component::<Name>(using_module_id)
-                            .unwrap()
-                            .0
-                            .clone()
-                    },
+                    || self.get::<Name>(using_module_id).unwrap().0.clone(),
                     |x| x.identifier().span.str().to_owned(),
                 );
 
                 let existing = self
-                    .get_component::<Member>(defined_in_module_id)
+                    .get::<Member>(defined_in_module_id)
                     .unwrap()
                     .get(&name)
                     .map(|x| {
-                        self.get_component::<LocationSpan>(GlobalID::new(
+                        self.get::<LocationSpan>(GlobalID::new(
                             defined_in_module_id.target_id,
                             *x,
                         ))
                         .map(|x| x.0.clone())
                     })
                     .or_else(|| {
-                        self.get_component::<Import>(defined_in_module_id)
+                        self.get::<Import>(defined_in_module_id)
                             .unwrap()
                             .get(&name)
                             .map(|x| Some(x.span.clone()))
@@ -1337,13 +1326,13 @@ impl Representation {
             };
 
             let member_accessibility =
-                self.get_component::<Accessibility>(member_id).unwrap();
+                self.get::<Accessibility>(member_id).unwrap();
 
             if self
                 .accessibility_hierarchy_relationship(
                     parent_module_id.target_id,
                     *member_accessibility,
-                    *self.get_component(trait_id).unwrap(),
+                    *self.get(trait_id).unwrap(),
                 )
                 .unwrap()
                 == component::HierarchyRelationship::Parent
