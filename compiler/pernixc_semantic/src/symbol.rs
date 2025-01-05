@@ -25,7 +25,6 @@ use crate::{
     },
 };
 
-pub mod component;
 pub mod table;
 
 /// An ID for identifying a target.
