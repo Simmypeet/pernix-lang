@@ -1,4 +1,5 @@
 use pernixc_base::handler;
+use serde::de::DeserializeSeed;
 
 use crate::{
     component::{Accessibility, Import, Member, Name, Parent},
@@ -11,7 +12,7 @@ use crate::{
             UnknownTraitImplementationMember,
         },
         resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
-        GlobalID, Table, ID,
+        CompilationMetaData, GlobalID, Table, ID,
     },
     test::build_target,
 };
@@ -88,8 +89,7 @@ fn submodule() {
         Some(&Parent(root_module_id.id))
     );
 
-    let second_members =
-        table.get::<Member>(second_module_id).unwrap();
+    let second_members = table.get::<Member>(second_module_id).unwrap();
 
     assert_eq!(second_members.len(), 1);
 
@@ -184,7 +184,7 @@ fn serialization() {
     let target = build_target(SERIALIZATION);
     let mut table = Table::default();
 
-    table
+    let target_id = table
         .representation
         .add_target(
             "test".to_string(),
@@ -194,9 +194,22 @@ fn serialization() {
         )
         .unwrap();
 
-    let ron = ron::ser::to_string_pretty(&table, Default::default()).unwrap();
+    let compilation_meta_data = CompilationMetaData { target_id };
 
-    let deserialized: Table = ron::de::from_str(&ron).unwrap();
+    let ron = ron::ser::to_string_pretty(
+        &table.as_library(&compilation_meta_data),
+        Default::default(),
+    )
+    .unwrap();
+    let reflector = Table::reflector();
+    let mut deserialized = Table::default();
+
+    let deserialized_compilation_meta_data = deserialized
+        .as_incremental_library_deserializer(&reflector)
+        .deserialize(&mut ron::de::Deserializer::from_str(&ron).unwrap())
+        .unwrap();
+
+    assert_eq!(deserialized_compilation_meta_data, compilation_meta_data);
 
     // do brief check
     assert!(deserialized
@@ -269,6 +282,8 @@ fn usings() {
     let inaccessible_symbol =
         table.get_by_qualified_name(["test", "inner", "Inaccessible"]).unwrap();
 
+    dbg!(&errors);
+
     assert!(errors.iter().any(|x| {
         x.as_any().downcast_ref::<SymbolIsNotAccessible>().map_or(
             false,
@@ -303,7 +318,7 @@ fn usings() {
     assert!(import.contains_key("something"));
 }
 
-const TRAIT_IMPLEMENTATIONS: &str = r#" 
+const TRAIT_IMPLEMENTATIONS: &str = r#"
 public trait Trait[T] {
     public function someFunction();
     public type SomeType;

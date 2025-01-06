@@ -60,8 +60,16 @@ impl Representation {
             }
             SimplePathRoot::Identifier(ident) => {
                 if start_from_root {
-                    let Some(id) =
-                        self.targets_by_name.get(ident.span.str()).copied()
+                    let Some(id) = self
+                        .targets_by_name
+                        .get(ident.span.str())
+                        .copied()
+                        .filter(|x| {
+                            self.targets_by_id
+                                .get(&referring_site.target_id)
+                                .map_or(false, |y| y.linked_targets.contains(x))
+                                || x == &referring_site.target_id
+                        })
                     else {
                         handler.receive(Box::new(SymbolNotFound {
                             searched_item_id: None,
@@ -90,12 +98,10 @@ impl Representation {
                             GlobalID::new(referring_site.target_id, (*x).into())
                         })
                         .or_else(|| {
-                            self.get::<Import>(
-                                global_closest_module_id,
-                            )
-                            .unwrap()
-                            .get(ident.span.str())
-                            .map(|x| x.id)
+                            self.get::<Import>(global_closest_module_id)
+                                .unwrap()
+                                .get(ident.span.str())
+                                .map(|x| x.id)
                         })
                     else {
                         handler.receive(Box::new(SymbolNotFound {

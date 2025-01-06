@@ -1,5 +1,6 @@
-//! Contains the definition of [`Representation`] and [`Table`]: the semantic
-//! representation of the program.
+//! Contains the definition of [`Representation`] and [`Table`].
+//!
+//! The [`Table`] is the final representation of the semantic analysis phase.
 
 use std::{
     any::Any,
@@ -11,9 +12,7 @@ use derive_more::{Deref, DerefMut};
 use derive_new::new;
 use pernixc_component::Storage;
 use pernixc_syntax::syntax_tree::AccessModifier;
-use serde::{
-    de::DeserializeSeed, Deserialize, Deserializer, Serialize, Serializer,
-};
+use serde::{ser::SerializeMap, Deserialize, Serialize, Serializer};
 pub use target::AddTargetError;
 
 use crate::component::{
@@ -21,6 +20,7 @@ use crate::component::{
     Member, Name, Parent, SymbolKind,
 };
 
+pub mod deserialization;
 pub mod diagnostic;
 pub mod reflector;
 pub mod resolution;
@@ -106,37 +106,31 @@ impl Target {
 }
 
 /// Represents the semantic representation of the program.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default)]
 pub struct Representation {
-    #[serde(
-        serialize_with = "storage_serializer",
-        deserialize_with = "deserialize_storage"
-    )]
     storage: Storage<GlobalID>,
-
     targets_by_id: HashMap<TargetID, Target>,
     targets_by_name: HashMap<String, TargetID>,
 }
 
-fn deserialize_storage<'de, D>(
-    deserializer: D,
-) -> Result<Storage<GlobalID>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let reflector = Table::reflector();
-    reflector.deserialize(deserializer)
-}
+impl Serialize for Representation {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // for the of simplicity, we serialize as map
+        let mut map = serializer.serialize_map(None)?;
+        let reflector = Table::reflector();
 
-fn storage_serializer<S>(
-    storage: &Storage<GlobalID>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let reflector = Table::reflector();
-    storage.as_serializable(&reflector).serialize(serializer)
+        map.serialize_entry(
+            "storage",
+            &self.storage.as_serializable(&reflector),
+        )?;
+        map.serialize_entry("targets_by_id", &self.targets_by_id)?;
+        map.serialize_entry("targets_by_name", &self.targets_by_name)?;
+
+        map.end()
+    }
 }
 
 /// Represents an iterator that walks through the scope of the given symbol. It
@@ -190,6 +184,14 @@ impl Representation {
         id: GlobalID,
     ) -> Option<impl Deref<Target = C> + '_> {
         self.storage.get::<C>(id)
+    }
+
+    /// Creates a [`Library`] representation for serialization.
+    pub fn as_library<'a>(
+        &'a self,
+        compilation_meta_data: &'a CompilationMetaData,
+    ) -> Library {
+        Library { representation: self, compilation_meta_data }
     }
 
     /// Gets the qualified name of the symbol such as `module::function`.
@@ -528,9 +530,61 @@ impl Representation {
 }
 
 /// Represents the semantic representation of the program.
-#[derive(Debug, Default, Serialize, Deserialize, Deref, DerefMut)]
+#[derive(Debug, Default, Deref, DerefMut)]
 pub struct Table {
     #[deref]
     #[deref_mut]
     representation: Representation,
+}
+
+impl Serialize for Table {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.representation.serialize(serializer)
+    }
+}
+
+/// Contains the information of what and how program is being compiled.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+pub struct CompilationMetaData {
+    /// The target that is being compiled.
+    pub target_id: TargetID,
+}
+
+/// The serialization representation of the [`Table`] as a library.
+#[derive(Debug, Clone, Copy)]
+pub struct Library<'a> {
+    representation: &'a Representation,
+    compilation_meta_data: &'a CompilationMetaData,
+}
+
+impl Serialize for Library<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // for the of simplicity, we serialize as map
+        let mut map = serializer.serialize_map(None)?;
+
+        map.serialize_entry("representation", &self.representation)?;
+        map.serialize_entry(
+            "compilation_meta_data",
+            &self.compilation_meta_data,
+        )?;
+
+        map.end()
+    }
 }
