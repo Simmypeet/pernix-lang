@@ -91,6 +91,7 @@ impl Representation {
                     );
 
                     let Some(id) = self
+                        .storage
                         .get::<Member>(global_closest_module_id)
                         .unwrap()
                         .get(ident.span.str())
@@ -98,7 +99,8 @@ impl Representation {
                             GlobalID::new(referring_site.target_id, (*x).into())
                         })
                         .or_else(|| {
-                            self.get::<Import>(global_closest_module_id)
+                            self.storage
+                                .get::<Import>(global_closest_module_id)
                                 .unwrap()
                                 .get(ident.span.str())
                                 .map(|x| x.id)

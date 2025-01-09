@@ -2,16 +2,14 @@
 //!
 //! The [`Table`] is the final representation of the semantic analysis phase.
 
-use std::{
-    any::Any,
-    collections::{HashMap, HashSet},
-    ops::Deref,
-};
+use std::collections::{HashMap, HashSet};
 
 use derive_more::{Deref, DerefMut};
 use derive_new::new;
+use parking_lot::RwLock;
 use pernixc_component::Storage;
 use pernixc_syntax::syntax_tree::AccessModifier;
+use query::Context;
 use serde::{ser::SerializeMap, Deserialize, Serialize, Serializer};
 pub use target::AddTargetError;
 
@@ -22,6 +20,7 @@ use crate::component::{
 
 pub mod deserialization;
 pub mod diagnostic;
+pub mod query;
 pub mod reflector;
 pub mod resolution;
 
@@ -178,14 +177,6 @@ pub enum GetMemberError {
 }
 
 impl Representation {
-    /// Gets the component of the given symbol.
-    pub fn get<C: Any>(
-        &self,
-        id: GlobalID,
-    ) -> Option<impl Deref<Target = C> + '_> {
-        self.storage.get::<C>(id)
-    }
-
     /// Creates a [`Library`] representation for serialization.
     pub fn as_library<'a>(
         &'a self,
@@ -426,19 +417,25 @@ impl Representation {
         id: GlobalID,
         member_name: &str,
     ) -> Result<GlobalID, GetMemberError> {
-        if let Some(via_member) =
-            self.get::<Member>(id).and_then(|x| x.get(member_name).copied())
+        if let Some(via_member) = self
+            .storage
+            .get::<Member>(id)
+            .and_then(|x| x.get(member_name).copied())
         {
             return Ok(GlobalID::new(id.target_id, via_member));
         }
 
-        let symbol_kind =
-            self.get::<SymbolKind>(id).ok_or(GetMemberError::InvalidID)?;
+        let symbol_kind = self
+            .storage
+            .get::<SymbolKind>(id)
+            .ok_or(GetMemberError::InvalidID)?;
 
         match (*symbol_kind == SymbolKind::Module, symbol_kind.is_adt()) {
             (true, false) => {
-                let imports =
-                    self.get::<Import>(id).ok_or(GetMemberError::InvalidID)?;
+                let imports = self
+                    .storage
+                    .get::<Import>(id)
+                    .ok_or(GetMemberError::InvalidID)?;
 
                 imports
                     .get(member_name)
@@ -449,11 +446,13 @@ impl Representation {
             // serach for the member of implementations
             (false, true) => {
                 let implements = self
+                    .storage
                     .get::<Implemented>(id)
                     .ok_or(GetMemberError::InvalidID)?;
 
                 for implementation_id in implements.iter().copied() {
-                    let Some(member) = self.get::<Member>(implementation_id)
+                    let Some(member) =
+                        self.storage.get::<Member>(implementation_id)
                     else {
                         continue;
                     };
@@ -535,6 +534,8 @@ pub struct Table {
     #[deref]
     #[deref_mut]
     representation: Representation,
+
+    query_context: RwLock<Context>,
 }
 
 impl Serialize for Table {

@@ -184,7 +184,7 @@ impl Representation {
             )
         ));
 
-        let name = self.get::<Name>(implemented_id).unwrap().0.clone();
+        let name = self.storage.get::<Name>(implemented_id).unwrap().0.clone();
 
         assert!(self.storage.add_component(new_symbol_id, Name(name)));
         assert!(self
@@ -370,6 +370,7 @@ impl Representation {
                         self.get_member_of(adt_id, ident.span.str())
                     {
                         let in_implementation = self
+                            .storage
                             .get::<Member>(adt_implementation_id)
                             .unwrap()
                             .contains_key(ident.span.str());
@@ -612,10 +613,12 @@ impl Representation {
 
             // find the cooresponding trait member id
             let Some(trait_member_id) = self
+                .storage
                 .get::<Member>(trait_id)
                 .unwrap()
                 .get(
-                    self.get::<Name>(trait_implementation_member_id)
+                    self.storage
+                        .get::<Name>(trait_implementation_member_id)
                         .unwrap()
                         .as_str(),
                 )
@@ -623,6 +626,7 @@ impl Representation {
             else {
                 handler.receive(Box::new(UnknownTraitImplementationMember {
                     identifier_span: self
+                        .storage
                         .get::<LocationSpan>(trait_implementation_member_id)
                         .unwrap()
                         .0
@@ -636,8 +640,9 @@ impl Representation {
                 GlobalID::new(trait_id.target_id, trait_member_id.into());
 
             let trait_member_kind =
-                *self.get::<SymbolKind>(trait_member_id).unwrap();
+                *self.storage.get::<SymbolKind>(trait_member_id).unwrap();
             let trait_implementation_member_kind = *self
+                .storage
                 .get::<SymbolKind>(trait_implementation_member_id)
                 .unwrap();
 
@@ -672,6 +677,7 @@ impl Representation {
                         },
 
                         implementation_member_identifer_span: self
+                            .storage
                             .get::<LocationSpan>(trait_implementation_member_id)
                             .unwrap()
                             .0
@@ -681,9 +687,9 @@ impl Representation {
             }
         }
 
-        let trait_members = self.get::<Member>(trait_id).unwrap();
+        let trait_members = self.storage.get::<Member>(trait_id).unwrap();
         let trait_implementation_members =
-            self.get::<Member>(implementation_id).unwrap();
+            self.storage.get::<Member>(implementation_id).unwrap();
 
         // check if there are any missing members
         let unimplemented_trait_member_ids = trait_members
@@ -732,7 +738,8 @@ impl Representation {
                     )
                     .ok()
                     .or_else(|| {
-                        self.get::<Import>(defined_in_module_id)
+                        self.storage
+                            .get::<Import>(defined_in_module_id)
                             .unwrap()
                             .get(generic_identifier.identifier().span.str())
                             .map(|x| x.id)
@@ -754,7 +761,7 @@ impl Representation {
 
         if !implementation.signature().qualified_identifier().rest().is_empty()
         {
-            if *self.get::<SymbolKind>(current_id).unwrap()
+            if *self.storage.get::<SymbolKind>(current_id).unwrap()
                 != SymbolKind::Module
             {
                 handler.receive(Box::new(ExpectModule {
@@ -822,7 +829,7 @@ impl Representation {
             {
                 current_id = next_id;
             } else {
-                if *self.get::<SymbolKind>(next_id).unwrap()
+                if *self.storage.get::<SymbolKind>(next_id).unwrap()
                     != SymbolKind::Module
                 {
                     handler.receive(Box::new(ExpectModule {
@@ -846,7 +853,7 @@ impl Representation {
             }
         }
 
-        let current_kind = *self.get::<SymbolKind>(current_id).unwrap();
+        let current_kind = *self.storage.get::<SymbolKind>(current_id).unwrap();
 
         match current_kind {
             SymbolKind::Trait => {
@@ -895,7 +902,7 @@ impl Representation {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
         assert_eq!(
-            *self.get::<SymbolKind>(defined_in_module_id).unwrap(),
+            *self.storage.get::<SymbolKind>(defined_in_module_id).unwrap(),
             SymbolKind::Module
         );
 
@@ -911,7 +918,7 @@ impl Representation {
                 };
 
                 // must be module
-                if *self.get::<SymbolKind>(from_id).unwrap()
+                if *self.storage.get::<SymbolKind>(from_id).unwrap()
                     != SymbolKind::Module
                 {
                     handler.receive(Box::new(ExpectModule {
@@ -930,6 +937,7 @@ impl Representation {
                     .flat_map(ConnectedList::elements)
                 {
                     let Some(imported_id) = self
+                        .storage
                         .get::<Member>(from_id)
                         .unwrap()
                         .get(import.identifier().span.str())
@@ -961,7 +969,8 @@ impl Representation {
 
                     let name = import.alias().as_ref().map_or_else(
                         || {
-                            self.get::<Name>(imported_global_id)
+                            self.storage
+                                .get::<Name>(imported_global_id)
                                 .unwrap()
                                 .0
                                 .clone()
@@ -971,18 +980,21 @@ impl Representation {
 
                     // check if there's existing symbol right now
                     let existing = self
+                        .storage
                         .get::<Member>(defined_in_module_id)
                         .unwrap()
                         .get(&name)
                         .map(|x| {
-                            self.get::<LocationSpan>(GlobalID::new(
-                                defined_in_module_id.target_id,
-                                *x,
-                            ))
-                            .map(|x| x.0.clone())
+                            self.storage
+                                .get::<LocationSpan>(GlobalID::new(
+                                    defined_in_module_id.target_id,
+                                    *x,
+                                ))
+                                .map(|x| x.0.clone())
                         })
                         .or_else(|| {
-                            self.get::<Import>(defined_in_module_id)
+                            self.storage
+                                .get::<Import>(defined_in_module_id)
                                 .unwrap()
                                 .get(&name)
                                 .map(|x| Some(x.span.clone()))
@@ -1026,7 +1038,7 @@ impl Representation {
                     return;
                 };
 
-                if *self.get::<SymbolKind>(using_module_id).unwrap()
+                if *self.storage.get::<SymbolKind>(using_module_id).unwrap()
                     != SymbolKind::Module
                 {
                     handler.receive(Box::new(ExpectModule {
@@ -1038,23 +1050,32 @@ impl Representation {
                 }
 
                 let name = one.alias().as_ref().map_or_else(
-                    || self.get::<Name>(using_module_id).unwrap().0.clone(),
+                    || {
+                        self.storage
+                            .get::<Name>(using_module_id)
+                            .unwrap()
+                            .0
+                            .clone()
+                    },
                     |x| x.identifier().span.str().to_owned(),
                 );
 
                 let existing = self
+                    .storage
                     .get::<Member>(defined_in_module_id)
                     .unwrap()
                     .get(&name)
                     .map(|x| {
-                        self.get::<LocationSpan>(GlobalID::new(
-                            defined_in_module_id.target_id,
-                            *x,
-                        ))
-                        .map(|x| x.0.clone())
+                        self.storage
+                            .get::<LocationSpan>(GlobalID::new(
+                                defined_in_module_id.target_id,
+                                *x,
+                            ))
+                            .map(|x| x.0.clone())
                     })
                     .or_else(|| {
-                        self.get::<Import>(defined_in_module_id)
+                        self.storage
+                            .get::<Import>(defined_in_module_id)
                             .unwrap()
                             .get(&name)
                             .map(|x| Some(x.span.clone()))
@@ -1326,13 +1347,13 @@ impl Representation {
             };
 
             let member_accessibility =
-                self.get::<Accessibility>(member_id).unwrap();
+                self.storage.get::<Accessibility>(member_id).unwrap();
 
             if self
                 .accessibility_hierarchy_relationship(
                     parent_module_id.target_id,
                     *member_accessibility,
-                    *self.get(trait_id).unwrap(),
+                    *self.storage.get(trait_id).unwrap(),
                 )
                 .unwrap()
                 == component::HierarchyRelationship::Parent

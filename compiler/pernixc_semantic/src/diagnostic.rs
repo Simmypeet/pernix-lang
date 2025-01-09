@@ -42,3 +42,15 @@ impl<
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
+
+impl<
+        U: for<'a> Report<&'a Table, Error = ReportError>
+            + Debug
+            + Any
+            + Send
+            + Sync
+            + 'static,
+    > From<U> for Box<dyn Diagnostic>
+{
+    fn from(value: U) -> Self { Box::new(value) }
+}

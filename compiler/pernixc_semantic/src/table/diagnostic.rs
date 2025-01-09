@@ -35,13 +35,15 @@ impl Report<&Table> for ItemRedifinition {
         table: &Table,
     ) -> Result<pernixc_base::diagnostic::Diagnostic, Self::Error> {
         let existing_symbol_span = table
+            .storage
             .get::<LocationSpan>(self.existing_id)
             .ok_or(ReportError)?;
         let new_symbol_span = table
+            .storage
             .get::<LocationSpan>(self.new_id)
             .ok_or(ReportError)?;
         let existing_symbol_name =
-            table.get::<Name>(self.existing_id).ok_or(ReportError)?;
+            table.storage.get::<Name>(self.existing_id).ok_or(ReportError)?;
         let in_name =
             table.get_qualified_name(self.in_id).ok_or(ReportError)?;
 
@@ -98,7 +100,7 @@ impl Report<&Table> for SymbolIsMoreAccessibleThanParent {
         table: &Table,
     ) -> Result<pernixc_base::diagnostic::Diagnostic, Self::Error> {
         let (Some(symbol_name), Some(parent_qualified_name)) = (
-            table.get::<Name>(self.symbol_id),
+            table.storage.get::<Name>(self.symbol_id),
             table.get_qualified_name(self.parent_id),
         ) else {
             return Err(ReportError);
@@ -112,8 +114,8 @@ impl Report<&Table> for SymbolIsMoreAccessibleThanParent {
         };
 
         let (Some(symbol_span), Some(parent_span)) = (
-            table.get::<LocationSpan>(self.symbol_id),
-            table.get::<LocationSpan>(self.parent_id),
+            table.storage.get::<LocationSpan>(self.symbol_id),
+            table.storage.get::<LocationSpan>(self.parent_id),
         ) else {
             return Err(ReportError);
         };
@@ -192,7 +194,7 @@ impl Report<&Table> for ExpectModule {
     fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
         let found_symbol_qualified_name =
             table.get_qualified_name(self.found_id).ok_or(ReportError)?;
-        let kind = table.get::<SymbolKind>(self.found_id).unwrap();
+        let kind = table.storage.get::<SymbolKind>(self.found_id).unwrap();
 
         Ok(Diagnostic {
             span: self.module_path.clone(),
@@ -399,6 +401,7 @@ impl Report<&Table> for UnknownTraitImplementationMember {
             .get_qualified_name(self.trait_id.into())
             .ok_or(ReportError)?;
         let trait_span = table
+            .storage
             .get::<LocationSpan>(self.trait_id)
             .map(|x| x.0.clone());
 
@@ -465,9 +468,11 @@ impl Report<&Table> for MismatchedTraitMemberAndImplementationMember {
             .get_qualified_name(self.trait_member_id.into())
             .ok_or(ReportError)?;
         let trait_member_sym_kind = *table
+            .storage
             .get::<SymbolKind>(self.trait_member_id.into())
             .ok_or(ReportError)?;
         let trait_member_span = table
+            .storage
             .get::<LocationSpan>(self.trait_member_id.into())
             .map(|x| x.0.clone());
 
@@ -524,6 +529,7 @@ impl Report<&Table> for UnimplementedTraitMembers {
             .collect::<Result<Vec<_>, _>>()?;
 
         let implementation_span = table
+            .storage
             .get::<LocationSpan>(self.implementation_id.into())
             .map(|x| x.0.clone())
             .ok_or(ReportError)?;

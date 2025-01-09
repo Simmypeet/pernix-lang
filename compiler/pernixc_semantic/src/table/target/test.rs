@@ -43,12 +43,12 @@ fn submodule() {
 
     assert_eq!(root_module_id.id, ID::ROOT_MODULE);
     assert_eq!(
-        table.get::<Accessibility>(root_module_id).as_deref(),
+        table.storage.get::<Accessibility>(root_module_id).as_deref(),
         Some(&Accessibility::Public)
     );
-    assert!(table.get::<Parent>(root_module_id).is_none());
+    assert!(table.storage.get::<Parent>(root_module_id).is_none());
 
-    let root_members = table.get::<Member>(root_module_id).unwrap();
+    let root_members = table.storage.get::<Member>(root_module_id).unwrap();
 
     assert_eq!(root_members.len(), 2);
 
@@ -71,25 +71,25 @@ fn submodule() {
     );
 
     assert_eq!(
-        table.get::<Accessibility>(first_module_id).as_deref(),
+        table.storage.get::<Accessibility>(first_module_id).as_deref(),
         Some(&Accessibility::Public)
     );
 
     assert_eq!(
-        table.get::<Accessibility>(second_module_id).as_deref(),
+        table.storage.get::<Accessibility>(second_module_id).as_deref(),
         Some(&Accessibility::Scoped(root_module_id.id))
     );
 
     assert_eq!(
-        table.get::<Parent>(second_module_id).as_deref(),
+        table.storage.get::<Parent>(second_module_id).as_deref(),
         Some(&Parent(root_module_id.id))
     );
     assert_eq!(
-        table.get::<Parent>(first_module_id).as_deref(),
+        table.storage.get::<Parent>(first_module_id).as_deref(),
         Some(&Parent(root_module_id.id))
     );
 
-    let second_members = table.get::<Member>(second_module_id).unwrap();
+    let second_members = table.storage.get::<Member>(second_module_id).unwrap();
 
     assert_eq!(second_members.len(), 1);
 
@@ -103,7 +103,7 @@ fn submodule() {
         table.get_by_qualified_name(["test", "second", "third"]).unwrap()
     );
     assert_eq!(
-        table.get::<Accessibility>(third_module_id).as_deref(),
+        table.storage.get::<Accessibility>(third_module_id).as_deref(),
         Some(&Accessibility::Scoped(second_module_id.id))
     );
 }
@@ -147,9 +147,11 @@ fn trait_with_errors() {
     assert!(errors.iter().any(|x| {
         x.as_any().downcast_ref::<ItemRedifinition>().map_or(false, |x| {
             let existing_name = table
+                .storage
                 .get::<Name>(x.existing_id)
                 .map_or(false, |x| x.as_str() == "second");
             let new_name = table
+                .storage
                 .get::<Name>(x.new_id)
                 .map_or(false, |x| x.as_str() == "second");
 
@@ -309,7 +311,7 @@ fn usings() {
         })
     }));
 
-    let import = table.get::<Import>(root_module).unwrap();
+    let import = table.storage.get::<Import>(root_module).unwrap();
 
     assert_eq!(import.len(), 3);
 
