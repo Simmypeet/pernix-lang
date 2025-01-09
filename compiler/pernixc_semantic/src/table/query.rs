@@ -14,7 +14,7 @@ use pernixc_base::{diagnostic::Report, log::Severity};
 
 use super::{GlobalID, Table};
 use crate::{
-    component::{LocationSpan, Name},
+    component::{Derived, LocationSpan, Name},
     diagnostic::ReportError,
 };
 
@@ -84,18 +84,6 @@ impl Report<&Table> for CyclicDependency {
     }
 }
 
-/// Represents a component that can be later added to the table by processing
-/// the other components.
-pub trait Compute {
-    /// Creates the component of this type for the given `global_id`.
-    fn compute(global_id: GlobalID, table: &Table) -> Option<Self>
-    where
-        Self: Sized;
-
-    /// The name of the component (used for error messages and debugging).
-    fn component_name() -> &'static str;
-}
-
 /// A record to the [`Compute::compute`] call. This is primarily used to
 /// detect cyclic dependencies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -148,7 +136,7 @@ impl Table {
     ///
     /// The table will compute the component from scratch if the table cannot
     /// find the component in the storage.
-    pub fn query<T: Compute + Any>(
+    pub fn query<T: Derived + Any>(
         &self,
         global_id: GlobalID,
     ) -> Result<impl Deref<Target = T> + '_, Error> {

@@ -1,4 +1,22 @@
+//! Contains all the definition of the components that can be attached to a
+//! symbol.
 //!
+//! # Classification of Components
+//!
+//! ## Local vs Presistent Components
+//!
+//! The components are said to be **local** if they are only used during the
+//! compilation of the current target and is not being serialized.
+//!
+//! On the other hand, the components are said to be **persistent** if they can
+//! be serialized and deserialized.
+//!
+//! ## Input vs Derived Components
+//!
+//! The **input** components are the starting components that are used to derive
+//! other components from them.
+
+// TOOD: express these classifications in the type system.
 
 use std::collections::{HashMap, HashSet};
 
@@ -6,7 +24,22 @@ use derive_more::{Deref, DerefMut};
 use pernixc_base::source_file::Span;
 use serde::{Deserialize, Serialize};
 
-use crate::table::{GlobalID, ID};
+use crate::table::{GlobalID, Table, ID};
+
+/// Represents a component that can be later added to the table by processing
+/// the other components.
+pub trait Derived {
+    /// Creates the component of this type for the given `global_id`.
+    fn compute(global_id: GlobalID, table: &Table) -> Option<Self>
+    where
+        Self: Sized;
+
+    /// The name of the component (used for error messages and debugging).
+    fn component_name() -> &'static str;
+}
+
+/// A maker trait for the **input** components.
+pub trait Input {}
 
 /// Describes the relationship between two symbols in the hierarchy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -24,7 +57,8 @@ pub enum HierarchyRelationship {
     Unrelated,
 }
 
-/// Represents an accessibility of a symbol.
+/// A **presistent-input** component representing the accessibility of a
+/// symbol.
 #[derive(
     Debug,
     Clone,
@@ -47,7 +81,9 @@ pub enum Accessibility {
     Scoped(ID),
 }
 
-/// Represents a name of a symbol.
+impl Input for Accessibility {}
+
+/// A **presistent-input** component representing a name of a symbol.
 #[derive(
     Debug,
     Clone,
@@ -64,8 +100,10 @@ pub enum Accessibility {
 )]
 pub struct Name(pub String);
 
-/// A component for the symbols that can be implemented such as traits, structs,
-/// enums, and markers.
+impl Input for Name {}
+
+/// A **presistent-input** component for the symbols that can be implemented
+/// such as traits, structs, enums, and markers.
 #[derive(
     Debug,
     Clone,
@@ -79,8 +117,10 @@ pub struct Name(pub String);
 )]
 pub struct Implemented(pub HashSet<GlobalID>);
 
-/// A component for storing the symbols that are the defined in the scope of the
-/// current symbol.
+impl Input for Implemented {}
+
+/// A **presistent-input** component for storing the symbols that are the
+/// defined in the scope of the current symbol.
 #[derive(
     Debug,
     Clone,
@@ -94,7 +134,9 @@ pub struct Implemented(pub HashSet<GlobalID>);
 )]
 pub struct Member(pub HashMap<String, ID>);
 
-/// The ID of the parent of the current symbol.
+impl Input for Member {}
+
+/// A **presistent-input** component for storing the parent of the symbol.
 #[derive(
     Debug,
     Clone,
@@ -111,7 +153,9 @@ pub struct Member(pub HashMap<String, ID>);
 )]
 pub struct Parent(pub ID);
 
-/// The span of where the symbol is defined.
+impl Input for Parent {}
+
+/// A **local-input** component for storing the span of the symbol.
 ///
 /// This is mainly used for diagnostics reporting.
 #[derive(
@@ -119,7 +163,10 @@ pub struct Parent(pub ID);
 )]
 pub struct LocationSpan(pub Span);
 
-/// The component of the `implements` symbol.
+impl Input for LocationSpan {}
+
+/// A **presistent-input** component for storing the symbol that is being
+/// implemented by the current symbol.
 #[derive(
     Debug,
     Clone,
@@ -136,7 +183,10 @@ pub struct LocationSpan(pub Span);
 )]
 pub struct Implements(pub GlobalID);
 
-/// An enumeration of all the kinds of symbols that can be defined.
+impl Input for Implements {}
+
+/// A **presistent-input** component representing an enumeration of the
+/// different kinds of symbols.
 ///
 /// Every symbol should have a kind.
 #[derive(
@@ -175,6 +225,8 @@ pub enum SymbolKind {
     PositiveMarkerImplementation,
     NegativeMarkerImplementation,
 }
+
+impl Input for SymbolKind {}
 
 impl SymbolKind {
     /// Checks if this kind of symbol has a [`Member`] component.
@@ -237,7 +289,8 @@ impl SymbolKind {
     }
 }
 
-/// The external linkage of a symbol.
+/// A **presistent-input** component representing the external linkage of a
+/// [`SymbolKind::Function`] symbol.
 #[derive(
     Debug,
     Clone,
@@ -259,6 +312,8 @@ pub enum Extern {
     Unknown,
 }
 
+impl Input for Extern {}
+
 /// Represents the using of a module member.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Using {
@@ -269,7 +324,7 @@ pub struct Using {
     pub span: Span,
 }
 
-/// Represents the import of a module.
+/// A **local-input** component for storing the import statements of the module.
 #[derive(
     Debug,
     Clone,
@@ -281,7 +336,10 @@ pub struct Using {
 )]
 pub struct Import(HashMap<String, Using>);
 
-/// A component for tagging an implementation as the final implementation.
+impl Input for Import {}
+
+/// A **presistent-input** component for tagging various trait implementations
+/// as the final implementation.
 ///
 /// The trait and marker implementation can only have this component.
 #[derive(
@@ -299,8 +357,10 @@ pub struct Import(HashMap<String, Using>);
 )]
 pub struct FinalImplementation;
 
-/// A component for tagging a positive trait implementation as a constant
-/// implementation.
+impl Input for FinalImplementation {}
+
+/// A **presistent-input** component for tagging the
+/// [`SymbolKind::PositiveTraitImplementation`] as a constant implementation.
 #[derive(
     Debug,
     Clone,
@@ -315,3 +375,5 @@ pub struct FinalImplementation;
     Deserialize,
 )]
 pub struct ConstTraitImplementation;
+
+impl Input for ConstTraitImplementation {}

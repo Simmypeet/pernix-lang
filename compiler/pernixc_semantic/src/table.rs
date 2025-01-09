@@ -2,7 +2,10 @@
 //!
 //! The [`Table`] is the final representation of the semantic analysis phase.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    any::Any,
+    collections::{HashMap, HashSet},
+};
 
 use derive_more::{Deref, DerefMut};
 use derive_new::new;
@@ -15,7 +18,7 @@ pub use target::AddTargetError;
 
 use crate::component::{
     Accessibility, HierarchyRelationship, Implemented, Implements, Import,
-    Member, Name, Parent, SymbolKind,
+    Input, Member, Name, Parent, SymbolKind,
 };
 
 pub mod deserialization;
@@ -177,6 +180,15 @@ pub enum GetMemberError {
 }
 
 impl Representation {
+    /// Gets the **input** component of the given type from the symbol with the
+    /// given ID.
+    pub fn get<T: Input + Any>(
+        &self,
+        id: GlobalID,
+    ) -> Option<impl std::ops::Deref<Target = T> + '_> {
+        self.storage.get::<T>(id)
+    }
+
     /// Creates a [`Library`] representation for serialization.
     pub fn as_library<'a>(
         &'a self,
