@@ -1,13 +1,12 @@
 use super::{contains_error, Satisfiability};
 use crate::{
-    symbol::table::{self, DisplayObject, State, Table},
+    table::{self, DisplayObject, Table},
     type_system::{
         compatible::{Compatibility, Compatible},
         equivalence::get_equivalences_with_context,
         instantiation::{self, Instantiation},
         model::{Default, Model},
         normalizer::Normalizer,
-        observer::Observer,
         query::{self, Context, Sealed},
         term::{
             constant::Constant,
@@ -22,28 +21,14 @@ use crate::{
 };
 
 #[derive(Debug)]
-struct Visitor<
-    'a,
-    'c,
-    T: State,
-    N: Normalizer<M, T>,
-    O: Observer<M, T>,
-    M: Model,
-> {
+struct Visitor<'a, 'c, N: Normalizer<M>, M: Model> {
     constant_type: Result<Output<Satisfied, M>, OverflowError>,
-    environment: &'a Environment<'a, M, T, N, O>,
+    environment: &'a Environment<'a, M, N>,
     context: &'c mut Context<M>,
 }
 
-impl<
-        'a,
-        'c,
-        'v,
-        M: Model,
-        T: State,
-        N: Normalizer<M, T>,
-        O: Observer<M, T>,
-    > visitor::Visitor<'v, Lifetime<M>> for Visitor<'a, 'c, T, N, O, M>
+impl<'a, 'c, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Lifetime<M>>
+    for Visitor<'a, 'c, N, M>
 {
     fn visit(
         &mut self,
@@ -58,15 +43,8 @@ impl<
     }
 }
 
-impl<
-        'a,
-        'c,
-        'v,
-        M: Model,
-        T: State,
-        N: Normalizer<M, T>,
-        O: Observer<M, T>,
-    > visitor::Visitor<'v, Type<M>> for Visitor<'a, 'c, T, N, O, M>
+impl<'a, 'c, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Type<M>>
+    for Visitor<'a, 'c, N, M>
 {
     fn visit(
         &mut self,
@@ -99,15 +77,8 @@ impl<
     }
 }
 
-impl<
-        'a,
-        'c,
-        'v,
-        M: Model,
-        T: State,
-        N: Normalizer<M, T>,
-        O: Observer<M, T>,
-    > visitor::Visitor<'v, Constant<M>> for Visitor<'a, 'c, T, N, O, M>
+impl<'a, 'c, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Constant<M>>
+    for Visitor<'a, 'c, N, M>
 {
     fn visit(
         &mut self,
@@ -139,14 +110,9 @@ impl<M: Model> Compute for ConstantType<M> {
     type Parameter = ();
 
     #[allow(private_bounds, private_interfaces, clippy::too_many_lines)]
-    fn implementation<S: State>(
+    fn implementation(
         &self,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
         context: &mut Context<Self::Model>,
         (): Self::Parameter,
         _: Self::InProgress,
@@ -290,13 +256,13 @@ impl<M: Model> Compute for ConstantType<M> {
     }
 }
 
-impl<S: State, M: Model> table::Display<S> for ConstantType<M>
+impl<M: Model> table::Display for ConstantType<M>
 where
-    Type<M>: table::Display<S>,
+    Type<M>: table::Display,
 {
     fn fmt(
         &self,
-        table: &Table<S>,
+        table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         write!(f, "const type {}", DisplayObject { display: &self.0, table })

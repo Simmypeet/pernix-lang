@@ -18,11 +18,11 @@ use super::{
 };
 use crate::{
     arena::ID,
-    symbol::{
-        ConstantParameter, ConstantParameterID, GenericID, GenericKind,
-        GenericParameters, LifetimeParameter, LifetimeParameterID, MemberID,
-        TypeParameter, TypeParameterID,
+    component::generic_parameters::{
+        ConstantParameter, ConstantParameterID, GenericKind, GenericParameters,
+        LifetimeParameter, LifetimeParameterID, TypeParameter, TypeParameterID,
     },
+    table::{GlobalID, MemberID},
 };
 
 /// Represents an instantiation of generic parameters.
@@ -75,7 +75,7 @@ pub fn instantiate<T: Term>(
 )]
 pub struct MismatchedGenericArgumentCountError<M: Model> {
     /// The generic ID that the generic arguments were supplied for.
-    pub generic_id: GenericID,
+    pub generic_id: GlobalID,
 
     /// The number of generic parameters expected.
     pub expected: usize,
@@ -141,12 +141,12 @@ pub enum Collision<M: Model> {
 
 impl<M: Model> Instantiation<M> {
     fn append_from_arguments<
-        T: Term<Model = M> + From<MemberID<ID<T::GenericParameter>, GenericID>>,
+        T: Term<Model = M> + From<MemberID<ID<T::GenericParameter>>>,
     >(
         &mut self,
         terms: impl Iterator<Item = T>,
         term_parameter_order: impl Iterator<Item = ID<T::GenericParameter>>,
-        generic_id: GenericID,
+        generic_id: GlobalID,
         to_error: impl Fn(ID<T::GenericParameter>, T) -> Collision<M>,
         collisions: &mut Vec<Collision<M>>,
     ) {
@@ -180,7 +180,7 @@ impl<M: Model> Instantiation<M> {
     pub fn append_from_generic_arguments(
         &mut self,
         generic_arguments: GenericArguments<M>,
-        generic_id: GenericID,
+        generic_id: GlobalID,
         generic_parameters: &GenericParameters,
     ) -> Result<Vec<Collision<M>>, MismatchedGenericArgumentCountError<M>> {
         if generic_arguments.types.len()
@@ -266,7 +266,7 @@ impl<M: Model> Instantiation<M> {
     /// See [`MissingInstantiationError`] for the possible errors.
     pub fn create_generic_arguments(
         &self,
-        generic_id: GenericID,
+        global_id: GlobalID,
         parameters: &GenericParameters,
     ) -> Result<GenericArguments<M>, MissingInstantiationError> {
         Ok(GenericArguments {
@@ -277,7 +277,7 @@ impl<M: Model> Instantiation<M> {
                 .map(|x| {
                     let lifetime_parameter =
                         lifetime::Lifetime::Parameter(LifetimeParameterID {
-                            parent: generic_id,
+                            parent: global_id,
                             id: x,
                         });
 
@@ -296,7 +296,7 @@ impl<M: Model> Instantiation<M> {
                 .copied()
                 .map(|x| {
                     let type_parameter = Type::Parameter(TypeParameterID {
-                        parent: generic_id,
+                        parent: global_id,
                         id: x,
                     });
 
@@ -316,7 +316,7 @@ impl<M: Model> Instantiation<M> {
                 .map(|x| {
                     let constant_parameter =
                         Constant::Parameter(ConstantParameterID {
-                            parent: generic_id,
+                            parent: global_id,
                             id: x,
                         });
 
@@ -339,14 +339,14 @@ impl<M: Model> Instantiation<M> {
     /// See [`MismatchedGenericArgumentCountError`].
     pub fn from_generic_arguments(
         generic_arguments: GenericArguments<M>,
-        generic_id: GenericID,
+        global_id: GlobalID,
         generic_parameters: &GenericParameters,
     ) -> Result<Self, MismatchedGenericArgumentCountError<M>> {
         let mut substitution = Self::default();
 
         let collisions = substitution.append_from_generic_arguments(
             generic_arguments,
-            generic_id,
+            global_id,
             generic_parameters,
         )?;
         assert!(collisions.is_empty());

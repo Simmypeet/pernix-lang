@@ -13,7 +13,6 @@ use super::{
     equality::Equality,
     model::Model,
     normalizer::Normalizer,
-    observer::Observer,
     predicate::{
         self, ConstantTypeQuerySource, NegativeMarkerSatisfied, NegativeTrait,
         NegativeTraitSatisfied, PositiveMarkerSatisfied,
@@ -25,7 +24,6 @@ use super::{
     unification::{Unification, Unifier},
     OverflowError, Satisfied, Succeeded,
 };
-use crate::symbol::table::State;
 
 /// The result of a query.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -225,19 +223,13 @@ impl<M: Model> Context<M> {
     /// Returns `None` if this query hasn't been stored before, otherwise
     /// returns the [`Cached`] value of the query.
     #[allow(private_bounds, private_interfaces, clippy::type_complexity)]
-    pub fn mark_as_in_progress<Q: Sealed<Model = M>, T: State>(
+    pub fn mark_as_in_progress<Q: Sealed<Model = M>>(
         &mut self,
         query: Q,
         in_progress: Q::InProgress,
-        environment: &Environment<
-            M,
-            T,
-            impl Normalizer<M, T>,
-            impl Observer<M, T>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
     ) -> Result<Option<Cached<Q::InProgress, Q::Result>>, OverflowError> {
         let record = Q::into_query_call(query.clone(), in_progress.clone());
-        Observer::on_query(&record, environment, self)?;
 
         if self.current_count >= self.limit {
             return Err(OverflowError);

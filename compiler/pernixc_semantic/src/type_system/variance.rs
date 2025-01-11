@@ -1,20 +1,44 @@
 //! Contains the definition of [`Variance`]
 
 use enum_as_inner::EnumAsInner;
+use serde::{Deserialize, Serialize};
 
 use super::{
     environment::Environment,
     model::Model,
     normalizer::Normalizer,
-    observer::Observer,
     sub_term::{Location, SubLifetimeLocation, SubTypeLocation, TermLocation},
-    term::r#type::{self, Type},
+    term::{
+        r#type::{self, Type},
+        Symbol,
+    },
     OverflowError,
 };
-use crate::symbol::{table::State, AdtID};
+use crate::{
+    component::{
+        generic_parameters::GenericParameters,
+        variance::GenericParameterVariances, SymbolKind,
+    },
+    table::{
+        query::{self, CyclicDependency},
+        GlobalID,
+    },
+};
 
 /// An enumeration of either an invariant or covariant variance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
 pub enum Variance {
     /// The term is covariant and can be changed to a subtype.
     ///
@@ -74,30 +98,38 @@ impl Variance {
 /// An enumeration of errors that can occur when calling
 /// [`Type::get_variance_of()`]
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    thiserror::Error,
 )]
+#[allow(missing_docs)]
 pub enum GetVarianceError {
-    /// The location points to an invalid location in the term.
+    #[error("the location points to an invalid location in the term.")]
     InvalidLocation,
 
-    /// The term is a constant, the constant doesn't have a variance.
+    #[error("the term is a constant, the constant doesn't have a variance.")]
     Constant,
 
-    /// An overflow error occurred.
-    ///
-    /// Most likely caused by [`Observer::on_retrieving_variance()`].
-    Overflow(OverflowError),
+    #[error(
+        "a cyclic dependency was found while querying the generic parameter \
+         variances from the structs or enums."
+    )]
+    CyclicDependency(CyclicDependency),
 
-    /// Found an invalid ADT ID.
-    InvalidAdtID(AdtID),
-
-    /// The variance information is not available for the ADT.
-    NoVarianceInfo(AdtID),
+    #[error(
+        "the symbol id is not found in the table or its kind is not one of \
+         the expected kinds."
+    )]
+    InvalidSymbolID(GlobalID),
 }
 
-impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
-    Environment<'a, M, T, N, O>
-{
+impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
     /// Retrieves the variance of the term at the given location.
     ///
     /// This function early returns the `parent_variance` if the variance is
@@ -133,40 +165,45 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                             return Err(GetVarianceError::InvalidLocation);
                         }
 
-                        match symbol.id {
-                            r#type::SymbolID::Adt(adt_id) => {
-                                let adt = self.table().get_adt(adt_id).ok_or(
-                                    GetVarianceError::InvalidAdtID(adt_id),
-                                )?;
+                        let kind = self
+                            .table()
+                            .get::<SymbolKind>(symbol.id)
+                            .as_deref()
+                            .copied()
+                            .ok_or(GetVarianceError::InvalidSymbolID(
+                                symbol.id,
+                            ))?;
 
-                                // gets the id based on the position
-                                let id = adt
-                                    .generic_declaration()
-                                    .parameters
-                                    .lifetime_order()
-                                    .get(location.0)
-                                    .ok_or(GetVarianceError::InvalidLocation)?;
+                        if kind.is_adt() {
+                            let id = self
+                                .table()
+                                .query::<GenericParameters>(symbol.id)
+                                .map_err(
+                                    query::Error::unwrap_cyclic_dependency,
+                                )?
+                                .lifetime_order()
+                                .get(location.0)
+                                .copied()
+                                .ok_or(GetVarianceError::InvalidLocation)?;
 
-                                Observer::on_retrieving_variance(adt_id, self)
-                                    .map_err(|x| {
-                                        GetVarianceError::Overflow(x)
-                                    })?;
-
-                                Ok(parent_variance.xfrom(
-                                    *adt.generic_parameter_variances()
-                                        .variances_by_lifetime_ids
-                                        .get(id)
-                                        .ok_or(
-                                            GetVarianceError::NoVarianceInfo(
-                                                adt_id,
-                                            ),
-                                        )?,
-                                ))
-                            }
-
-                            r#type::SymbolID::Function(_) => {
-                                Ok(parent_variance.xfrom(Variance::Invariant))
-                            }
+                            Ok(parent_variance.xfrom(
+                                self.table
+                                    .query::<GenericParameterVariances>(
+                                        symbol.id,
+                                    )
+                                    .map_err(
+                                        query::Error::unwrap_cyclic_dependency,
+                                    )?
+                                    .variances_by_lifetime_ids
+                                    .get(&id)
+                                    .unwrap(),
+                            ))
+                        } else if kind == SymbolKind::Function {
+                            Ok(parent_variance.xfrom(Variance::Invariant))
+                        } else {
+                            return Err(GetVarianceError::InvalidSymbolID(
+                                symbol.id,
+                            ));
                         }
                     }
 
@@ -250,28 +287,39 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
                     (
                         r#type::SubTypeLocation::Symbol(location),
                         Type::Symbol(symbol),
-                    ) => match symbol.id {
-                        r#type::SymbolID::Adt(adt_id) => {
-                            let adt = self.table.get_adt(adt_id).ok_or(
-                                GetVarianceError::InvalidAdtID(adt_id),
-                            )?;
+                    ) => {
+                        let kind = self
+                            .table()
+                            .get::<SymbolKind>(symbol.id)
+                            .as_deref()
+                            .copied()
+                            .ok_or(GetVarianceError::InvalidSymbolID(
+                                symbol.id,
+                            ))?;
 
-                            // gets the id based on the position
-                            let id = adt
-                                .generic_declaration()
-                                .parameters
+                        if kind.is_adt() {
+                            let id = self
+                                .table()
+                                .query::<GenericParameters>(symbol.id)
+                                .map_err(
+                                    query::Error::unwrap_cyclic_dependency,
+                                )?
                                 .type_order()
                                 .get(location.0)
+                                .copied()
                                 .ok_or(GetVarianceError::InvalidLocation)?;
 
-                            let current_variance = parent_variance.xfrom(
-                                adt.generic_parameter_variances()
+                            let next_variance = parent_variance.xfrom(
+                                self.table
+                                    .query::<GenericParameterVariances>(
+                                        symbol.id,
+                                    )
+                                    .map_err(
+                                        query::Error::unwrap_cyclic_dependency,
+                                    )?
                                     .variances_by_type_ids
-                                    .get(id)
-                                    .copied()
-                                    .ok_or(GetVarianceError::NoVarianceInfo(
-                                        adt_id,
-                                    ))?,
+                                    .get(&id)
+                                    .unwrap(),
                             );
 
                             let inner_term = symbol
@@ -282,25 +330,17 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
 
                             self.get_variance_of(
                                 inner_term,
-                                current_variance,
+                                next_variance,
                                 locations,
                             )
+                        } else if kind == SymbolKind::Function {
+                            Ok(parent_variance.xfrom(Variance::Invariant))
+                        } else {
+                            return Err(GetVarianceError::InvalidSymbolID(
+                                symbol.id,
+                            ));
                         }
-
-                        r#type::SymbolID::Function(_) => {
-                            let inner_term = symbol
-                                .generic_arguments
-                                .types
-                                .get(location.0)
-                                .ok_or(GetVarianceError::InvalidLocation)?;
-
-                            self.get_variance_of(
-                                inner_term,
-                                parent_variance.xfrom(Variance::Invariant),
-                                locations,
-                            )
-                        }
-                    },
+                    }
 
                     (
                         r#type::SubTypeLocation::Reference,

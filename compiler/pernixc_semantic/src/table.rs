@@ -18,7 +18,7 @@ pub use target::AddTargetError;
 
 use crate::component::{
     Accessibility, HierarchyRelationship, Implemented, Implements, Import,
-    Input, Member, Name, Parent, SymbolKind,
+    Input, InputMut, Member, Name, Parent, SymbolKind,
 };
 
 pub mod deserialization;
@@ -187,6 +187,15 @@ impl Representation {
         id: GlobalID,
     ) -> Option<impl std::ops::Deref<Target = T> + '_> {
         self.storage.get::<T>(id)
+    }
+
+    /// Gets the mutable **input** component of the given type from the symbol
+    /// with the given ID.
+    pub fn get_mut<T: InputMut + Any>(
+        &self,
+        id: GlobalID,
+    ) -> Option<impl std::ops::DerefMut<Target = T> + '_> {
+        self.storage.get_mut::<T>(id)
     }
 
     /// Creates a [`Library`] representation for serialization.
@@ -600,4 +609,49 @@ impl Serialize for Library<'_> {
 
         map.end()
     }
+}
+
+/// Contaains the display object that requires the table.
+///
+/// Primarily used for implementing [`std::fmt::Display`] trait.
+#[derive(Debug, Clone, Copy)]
+pub struct DisplayObject<'a, D: ?Sized> {
+    /// The table in which the display object will refer to.
+    pub table: &'a Table,
+
+    /// The display object that requires the table.
+    pub display: &'a D,
+}
+
+impl<'a, Error: Display + ?Sized> std::fmt::Display
+    for DisplayObject<'a, Error>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.display.fmt(self.table, f)
+    }
+}
+
+/// Similar to [`std::fmt::Display`] but with the table in which the error
+/// occurred.
+pub trait Display {
+    #[allow(missing_docs, clippy::missing_errors_doc)]
+    fn fmt(
+        &self,
+        table: &Table,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result;
+}
+
+/// An ID used to refer to a particular symbol defined in a particular
+/// **parent** symbol.
+///
+/// This can refer to anything that is defined in a parent symbol depending on
+/// the context.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MemberID<ChildID> {
+    /// Symbol ID of the parent symbol.
+    pub parent: GlobalID,
+
+    /// Symbol ID of the child symbol.
+    pub id: ChildID,
 }

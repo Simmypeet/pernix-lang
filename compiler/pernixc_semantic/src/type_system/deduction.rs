@@ -13,7 +13,6 @@ use super::{
     mapping::Mapping,
     model::Model,
     normalizer::Normalizer,
-    observer::Observer,
     query::Context,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
@@ -24,7 +23,7 @@ use super::{
     Compute, Environment, Output, Satisfied, Succeeded,
 };
 use crate::{
-    symbol::{table::State, GenericKind},
+    component::generic_parameters::GenericKind,
     type_system::{
         predicate::Outlives, LifetimeConstraint, LifetimeUnifyingPredicate,
     },
@@ -71,15 +70,10 @@ impl<M: Model> unification::Predicate<Constant<M>> for DuductionPredicate {
     }
 }
 
-fn unify<T: Term, S: State>(
+fn unify<T: Term>(
     lhs: &[T],
     rhs: &[T],
-    environment: &Environment<
-        T::Model,
-        S,
-        impl Normalizer<T::Model, S>,
-        impl Observer<T::Model, S>,
-    >,
+    environment: &Environment<T::Model, impl Normalizer<T::Model>>,
     context: &mut Context<T::Model>,
     mut existing: Succeeded<Mapping<T::Model>, T::Model>,
 ) -> Result<Output<Mapping<T::Model>, T::Model>, Error> {
@@ -119,20 +113,15 @@ fn extract<K: Ord, V>(
     (positive, negative)
 }
 
-fn mapping_equals<
-    T: Term,
-    S: State,
-    N: Normalizer<T::Model, S>,
-    O: Observer<T::Model, S>,
->(
+fn mapping_equals<T: Term, N: Normalizer<T::Model>>(
     unification: BTreeMap<T, BTreeSet<T>>,
     substitution: &Instantiation<T::Model>,
-    environment: &Environment<T::Model, S, N, O>,
+    environment: &Environment<T::Model, N>,
     context: &mut Context<T::Model>,
     mut compatible: impl FnMut(
         &T,
         &T,
-        &Environment<T::Model, S, N, O>,
+        &Environment<T::Model, N>,
         &mut Context<T::Model>,
     ) -> Result<Output<Satisfied, T::Model>, Error>,
 ) -> Result<Output<Satisfied, T::Model>, Error> {
@@ -158,19 +147,14 @@ fn mapping_equals<
 }
 
 #[allow(clippy::type_complexity)]
-fn from_unification_to_substitution<
-    T: Term,
-    S: State,
-    N: Normalizer<T::Model, S>,
-    O: Observer<T::Model, S>,
->(
+fn from_unification_to_substitution<T: Term, N: Normalizer<T::Model>>(
     unification: BTreeMap<T, BTreeSet<T>>,
-    environment: &Environment<T::Model, S, N, O>,
+    environment: &Environment<T::Model, N>,
     context: &mut Context<T::Model>,
     mut compatible: impl FnMut(
         &T,
         &T,
-        &Environment<T::Model, S, N, O>,
+        &Environment<T::Model, N>,
         &mut Context<T::Model>,
     ) -> Result<
         Output<Satisfied, T::Model>,
@@ -255,29 +239,19 @@ impl<M: Model> GenericArguments<M> {
     /// # Errors
     ///
     /// See [`Error`] for more information.
-    pub fn deduce<S: State>(
+    pub fn deduce(
         &self,
         target: &Self,
-        environment: &Environment<
-            M,
-            S,
-            impl Normalizer<M, S>,
-            impl Observer<M, S>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
     ) -> Result<Succeeded<Deduction<M>, M>, Error> {
         self.deduce_with_context(target, environment, &mut Context::new())
     }
 
     #[allow(clippy::too_many_lines)]
-    pub(super) fn deduce_with_context<S: State>(
+    pub(super) fn deduce_with_context(
         &self,
         target: &Self,
-        environment: &Environment<
-            M,
-            S,
-            impl Normalizer<M, S>,
-            impl Observer<M, S>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
         context: &mut Context<M>,
     ) -> Result<Succeeded<Deduction<M>, M>, Error> {
         // arity check

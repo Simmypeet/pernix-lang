@@ -26,6 +26,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::table::{GlobalID, Table, ID};
 
+pub mod generic_parameters;
+pub mod occurrences;
+pub mod variance;
+pub mod where_clause;
+
 /// Represents a component that can be later added to the table by processing
 /// the other components.
 pub trait Derived {
@@ -40,6 +45,9 @@ pub trait Derived {
 
 /// A maker trait for the **input** components.
 pub trait Input {}
+
+/// A maker trait for the **input** components that can be mutated.
+pub trait InputMut: Input {}
 
 /// Describes the relationship between two symbols in the hierarchy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

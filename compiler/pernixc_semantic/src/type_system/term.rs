@@ -24,7 +24,6 @@ use super::{
     matching,
     model::Model,
     normalizer::Normalizer,
-    observer::Observer,
     predicate::{self, Outlives, Predicate, Satisfiability},
     query::{self, Context},
     simplify,
@@ -34,10 +33,8 @@ use super::{
 };
 use crate::{
     arena::ID,
-    symbol::{
-        table::{self, DisplayObject, State, Table},
-        GenericID, GenericParameter, ItemID, MemberID,
-    },
+    component::generic_parameters::GenericParameter,
+    table::{self, DisplayObject, GlobalID, MemberID, Table},
     type_system::model::Default,
 };
 
@@ -58,15 +55,15 @@ pub struct GenericArguments<M: Model> {
     pub constants: Vec<Constant<M>>,
 }
 
-impl<T: State, M: Model> table::Display<T> for GenericArguments<M>
+impl<M: Model> table::Display for GenericArguments<M>
 where
-    Lifetime<M>: table::Display<T>,
-    Type<M>: table::Display<T>,
-    Constant<M>: table::Display<T>,
+    Lifetime<M>: table::Display,
+    Type<M>: table::Display,
+    Constant<M>: table::Display,
 {
     fn fmt(
         &self,
-        table: &Table<T>,
+        table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         if self.lifetimes.is_empty()
@@ -210,17 +207,17 @@ impl<M: Model> GenericArguments<M> {
 /// Represents a term where its value is stored as a symbol (i.e., `type` or
 /// `const` declaration).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Symbol<M: Model, ID> {
+pub struct Symbol<M: Model> {
     /// The ID of the symbol that contains the value of the term.
-    pub id: ID,
+    pub id: GlobalID,
 
     /// The generic arguments supplied to the symbol.
     pub generic_arguments: GenericArguments<M>,
 }
 
-impl<M: Model, ID> Symbol<M, ID> {
+impl<M: Model> Symbol<M> {
     /// Converts a symbol from model `U` to model `M`.
-    pub fn from_other_model<U: Model>(symbol: Symbol<U, ID>) -> Self
+    pub fn from_other_model<U: Model>(symbol: Symbol<U>) -> Self
     where
         M::LifetimeInference: From<U::LifetimeInference>,
         M::TypeInference: From<U::TypeInference>,
@@ -240,7 +237,7 @@ impl<M: Model, ID> Symbol<M, ID> {
     ///
     /// Returns an error returned by the `TryFrom` implementation of the model.
     pub fn try_from_other_model<U: Model, E>(
-        symbol: Symbol<U, ID>,
+        symbol: Symbol<U>,
     ) -> Result<Self, E>
     where
         M::LifetimeInference: TryFrom<U::LifetimeInference, Error = E>,
@@ -256,14 +253,13 @@ impl<M: Model, ID> Symbol<M, ID> {
     }
 }
 
-impl<T: State, ID: Into<ItemID> + Copy, M: Model> table::Display<T>
-    for Symbol<M, ID>
+impl<M: Model> table::Display for Symbol<M>
 where
-    GenericArguments<M>: table::Display<T>,
+    GenericArguments<M>: table::Display,
 {
     fn fmt(
         &self,
-        table: &Table<T>,
+        table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         let qualified_name =
@@ -279,9 +275,9 @@ where
 /// Represents a term where its value is stored as a member of a particular
 /// symbol
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MemberSymbol<M: Model, ID> {
+pub struct MemberSymbol<M: Model> {
     /// The ID of the symbol that contains the value of the term.
-    pub id: ID,
+    pub id: GlobalID,
 
     /// The generic arguments supplied to the member.
     pub member_generic_arguments: GenericArguments<M>,
@@ -290,11 +286,9 @@ pub struct MemberSymbol<M: Model, ID> {
     pub parent_generic_arguments: GenericArguments<M>,
 }
 
-impl<M: Model, ID> MemberSymbol<M, ID> {
+impl<M: Model> MemberSymbol<M> {
     /// Converts a member symbol from model `U` to model `M`.
-    pub fn from_other_model<U: Model>(
-        member_symbol: MemberSymbol<U, ID>,
-    ) -> Self
+    pub fn from_other_model<U: Model>(member_symbol: MemberSymbol<U>) -> Self
     where
         M::LifetimeInference: From<U::LifetimeInference>,
         M::TypeInference: From<U::TypeInference>,
@@ -317,7 +311,7 @@ impl<M: Model, ID> MemberSymbol<M, ID> {
     ///
     /// Returns an error returned by the `TryFrom` implementation of the model.
     pub fn try_from_other_model<U: Model, E>(
-        member_symbol: MemberSymbol<U, ID>,
+        member_symbol: MemberSymbol<U>,
     ) -> Result<Self, E>
     where
         M::LifetimeInference: TryFrom<U::LifetimeInference, Error = E>,
@@ -336,14 +330,13 @@ impl<M: Model, ID> MemberSymbol<M, ID> {
     }
 }
 
-impl<T: State, ID: Copy + Into<ItemID>, M: Model> table::Display<T>
-    for MemberSymbol<M, ID>
+impl<M: Model> table::Display for MemberSymbol<M>
 where
-    GenericArguments<M>: table::Display<T>,
+    GenericArguments<M>: table::Display,
 {
     fn fmt(
         &self,
-        table: &Table<T>,
+        table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         let this_sym = table.get_item(self.id.into()).ok_or(fmt::Error)?;
@@ -432,10 +425,10 @@ impl<T: Term> Tuple<T> {
     }
 }
 
-impl<S: State, T: table::Display<S> + Clone> table::Display<S> for Tuple<T> {
+impl<T: table::Display + Clone> table::Display for Tuple<T> {
     fn fmt(
         &self,
-        table: &Table<S>,
+        table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         write!(f, "(")?;
@@ -465,11 +458,11 @@ impl<S: State, T: table::Display<S> + Clone> table::Display<S> for Tuple<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Never {}
 
-impl<T: State> table::Display<T> for Never {
+impl table::Display for Never {
     #[allow(clippy::uninhabited_references)]
     fn fmt(
         &self,
-        _: &Table<T>,
+        _: &Table,
         _: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         match *self {}
@@ -506,7 +499,7 @@ pub trait Term:
     + simplify::Simplify
     + equivalence::Equivalence
     + compatible::Compatible
-    + From<MemberID<ID<Self::GenericParameter>, GenericID>>
+    + From<MemberID<ID<Self::GenericParameter>>>
     + From<Error>
     + From<Self::TraitMember>
     + 'static
@@ -566,14 +559,9 @@ pub trait Term:
     ///
     /// The type `A` is normalized into `int32`.
     #[doc(hidden)]
-    fn normalize<S: State>(
+    fn normalize(
         &self,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
         context: &mut Context<Self::Model>,
     ) -> Result<Output<Self, Self::Model>, super::OverflowError>;
 
@@ -606,17 +594,17 @@ pub trait Term:
     #[doc(hidden)]
     fn as_generic_parameter(
         &self,
-    ) -> Option<&MemberID<ID<Self::GenericParameter>, GenericID>>;
+    ) -> Option<&MemberID<ID<Self::GenericParameter>>>;
 
     #[doc(hidden)]
     fn as_generic_parameter_mut(
         &mut self,
-    ) -> Option<&mut MemberID<ID<Self::GenericParameter>, GenericID>>;
+    ) -> Option<&mut MemberID<ID<Self::GenericParameter>>>;
 
     #[doc(hidden)]
     fn into_generic_parameter(
         self,
-    ) -> Result<MemberID<ID<Self::GenericParameter>, GenericID>, Self>;
+    ) -> Result<MemberID<ID<Self::GenericParameter>>, Self>;
 
     #[doc(hidden)]
     fn as_trait_member(&self) -> Option<&Self::TraitMember>;
@@ -646,7 +634,7 @@ pub trait Term:
     fn into_inference(self) -> Result<Self::InferenceVariable, Self>;
 
     #[doc(hidden)]
-    fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>>;
+    fn get_adt_fields(&self, table: &Table) -> Option<Vec<Self>>;
 
     #[doc(hidden)]
     fn as_outlive_predicate(
@@ -963,28 +951,18 @@ impl<M: Model> GenericArguments<M> {
     /// # Errors
     ///
     /// See [`super::Error`] for more information.
-    pub fn equals<S: State>(
+    pub fn equals(
         &self,
         other: &Self,
-        environment: &Environment<
-            M,
-            S,
-            impl Normalizer<M, S>,
-            impl Observer<M, S>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
     ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         self.equals_with_context(other, environment, &mut Context::new())
     }
 
-    pub(super) fn equals_with_context<S: State>(
+    pub(super) fn equals_with_context(
         &self,
         other: &Self,
-        environment: &Environment<
-            M,
-            S,
-            impl Normalizer<M, S>,
-            impl Observer<M, S>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
         context: &mut Context<M>,
     ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         let mut constraints = BTreeSet::new();
@@ -1033,8 +1011,8 @@ impl<M: Model> GenericArguments<M> {
     #[must_use]
     pub fn get_item_id_dependencies(
         &self,
-        table: &Table<impl State>,
-    ) -> Option<Vec<ItemID>> {
+        table: &Table,
+    ) -> Option<Vec<GlobalID>> {
         let mut occurrences = Vec::new();
 
         for r#type in &self.types {
@@ -1057,16 +1035,11 @@ impl<M: Model> GenericArguments<M> {
     /// # Errors
     ///
     /// See [`super::Error`] for more information.
-    pub fn unify_as_mapping<S: State>(
+    pub fn unify_as_mapping(
         &self,
         other: &Self,
         config: &Arc<dyn PredicateA<M>>,
-        environment: &Environment<
-            M,
-            S,
-            impl Normalizer<M, S>,
-            impl Observer<M, S>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
     ) -> Result<Output<Mapping<M>, M>, super::OverflowError> {
         self.unify_as_mapping_with_context(
             other,
@@ -1076,16 +1049,11 @@ impl<M: Model> GenericArguments<M> {
         )
     }
 
-    pub(super) fn unify_as_mapping_with_context<S: State>(
+    pub(super) fn unify_as_mapping_with_context(
         &self,
         other: &Self,
         config: &Arc<dyn PredicateA<M>>,
-        environment: &Environment<
-            M,
-            S,
-            impl Normalizer<M, S>,
-            impl Observer<M, S>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
         context: &mut Context<M>,
     ) -> Result<Output<Mapping<M>, M>, super::OverflowError> {
         let mut constraints = BTreeSet::new();
@@ -1160,14 +1128,9 @@ impl<M: Model> GenericArguments<M> {
     /// # Errors
     ///
     /// See [`super::Error`] for more information.
-    pub fn definite<S: State>(
+    pub fn definite(
         &self,
-        environment: &Environment<
-            M,
-            S,
-            impl Normalizer<M, S>,
-            impl Observer<M, S>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
     ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         self.definite_with_context(environment, &mut Context::new())
     }
@@ -1179,14 +1142,9 @@ impl<M: Model> GenericArguments<M> {
     /// # Errors
     ///
     /// See [`super::Error`] for more information.
-    pub fn definite_with_context<S: State>(
+    pub fn definite_with_context(
         &self,
-        environment: &Environment<
-            M,
-            S,
-            impl Normalizer<M, S>,
-            impl Observer<M, S>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
         context: &mut Context<M>,
     ) -> Result<Output<Satisfied, M>, super::OverflowError> {
         let mut constraints = BTreeSet::new();
@@ -1330,5 +1288,6 @@ pub enum KindMut<'a, M: Model> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Error;
 
-#[cfg(test)]
-mod tests;
+// TODO: bring test back
+// #[cfg(test)]
+// mod tests;

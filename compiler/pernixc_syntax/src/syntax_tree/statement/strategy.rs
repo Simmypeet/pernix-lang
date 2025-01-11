@@ -157,9 +157,9 @@ impl Arbitrary for Expressive {
                 Expression::Binary(binary)
                     if binary.first.is_brace() && binary.chain.is_empty() =>
                 {
-                    Expressive::Brace(binary.first.into_brace().unwrap())
+                    Self::Brace(binary.first.into_brace().unwrap())
                 }
-                expression => Expressive::Semi(Semi { expression }),
+                expression => Self::Semi(Semi { expression }),
             })
             .boxed()
     }

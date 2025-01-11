@@ -101,7 +101,7 @@ pub struct SubMemberSymbolLocation {
     pub from_parent: bool,
 }
 
-impl<ID, M: Model> MemberSymbol<M, ID> {
+impl<M: Model> MemberSymbol<M> {
     /// Returns a mutable reference to a particular sub-term of this generic
     /// arguments.
     ///
@@ -216,7 +216,7 @@ where
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SubSymbolLocation(pub usize);
 
-impl<ID, M: Model> Symbol<M, ID> {
+impl<M: Model> Symbol<M> {
     /// Returns a mutable reference to a particular sub-term of this generic
     /// arguments.
     ///

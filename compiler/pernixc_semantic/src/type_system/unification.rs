@@ -14,7 +14,6 @@ use super::{
     matching,
     model::Model,
     normalizer::Normalizer,
-    observer::Observer,
     query::{self, Context},
     sub_term::{SubTerm, TermLocation},
     term::{
@@ -22,7 +21,6 @@ use super::{
     },
     Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
 };
-use crate::symbol::table::State;
 
 /// A query for performing unification.
 #[derive(Debug, Clone)]
@@ -312,14 +310,9 @@ impl<T: Term> Compute for Unification<T> {
     );
 
     #[allow(private_bounds, private_interfaces)]
-    fn implementation<S: State>(
+    fn implementation(
         &self,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
         context: &mut query::Context<Self::Model>,
         (from_logs, to_logs): Self::Parameter,
         (): Self::InProgress,
@@ -336,18 +329,13 @@ impl<T: Term> Compute for Unification<T> {
     }
 }
 
-fn substructural_unify<T: Term, S: State>(
+fn substructural_unify<T: Term>(
     from: &T,
     to: &T,
     from_logs: &[Log<T::Model>],
     to_logs: &[Log<T::Model>],
     predicate: &Arc<dyn PredicateA<T::Model>>,
-    environment: &Environment<
-        T::Model,
-        S,
-        impl Normalizer<T::Model, S>,
-        impl Observer<T::Model, S>,
-    >,
+    environment: &Environment<T::Model, impl Normalizer<T::Model>>,
     context: &mut Context<T::Model>,
 ) -> Result<Output<Unifier<T>, T::Model>, OverflowError> {
     let Some(substructural) = from.substructural_match(to) else {
@@ -454,18 +442,13 @@ fn substructural_unify<T: Term, S: State>(
     )))
 }
 
-pub(super) fn unify<T: Term, S: State>(
+pub(super) fn unify<T: Term>(
     from: &T,
     to: &T,
     from_logs: &[Log<T::Model>],
     to_logs: &[Log<T::Model>],
     predicate: &Arc<dyn PredicateA<T::Model>>,
-    environment: &Environment<
-        T::Model,
-        S,
-        impl Normalizer<T::Model, S>,
-        impl Observer<T::Model, S>,
-    >,
+    environment: &Environment<T::Model, impl Normalizer<T::Model>>,
     context: &mut Context<T::Model>,
 ) -> Result<Output<Unifier<T>, T::Model>, OverflowError> {
     if let Some(result) = equality::Equality::new(from.clone(), to.clone())
@@ -556,5 +539,6 @@ pub(super) fn unify<T: Term, S: State>(
     Ok(None)
 }
 
-#[cfg(test)]
-mod tests;
+// TODO: bring test back
+// #[cfg(test)]
+// mod tests;

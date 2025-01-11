@@ -1,6 +1,7 @@
 use core::fmt;
 use std::collections::{BTreeMap, BTreeSet};
 
+use derive_new::new;
 use enum_as_inner::EnumAsInner;
 
 use super::{
@@ -8,17 +9,12 @@ use super::{
 };
 use crate::{
     arena::ID,
-    symbol::{
-        self,
-        table::{self, representation::Index, DisplayObject, State},
-        Generic, ItemID, MarkerImplementationID,
-    },
+    table::{self, DisplayObject, GlobalID},
     type_system::{
         environment::Environment,
         instantiation::Instantiation,
         model::{Default, Model},
         normalizer::Normalizer,
-        observer::Observer,
         predicate::Predicate,
         query::{self, Context},
         term::{
@@ -32,30 +28,21 @@ use crate::{
 };
 
 /// Predicates specifying that the marker is satisfied.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
 pub struct Positive<M: Model> {
     /// The id of the marker.
-    pub id: ID<symbol::Marker>,
+    pub marker_id: GlobalID,
 
     /// The generic arguments supplied to the marker.
     pub generic_arguments: GenericArguments<M>,
 }
 
 impl<M: Model> Positive<M> {
-    /// Creates a new [`Positive`] with the given id and generic arguments.
-    #[must_use]
-    pub const fn new(
-        id: ID<symbol::Marker>,
-        generic_arguments: GenericArguments<M>,
-    ) -> Self {
-        Self { id, generic_arguments }
-    }
-
     /// Converts the [`Positive`] with [`Default`] model to the model `M`.
     #[must_use]
     pub fn from_default_model(predicate: Positive<Default>) -> Self {
         Self {
-            id: predicate.id,
+            marker_id: predicate.marker_id,
             generic_arguments: GenericArguments::from_default_model(
                 predicate.generic_arguments,
             ),
@@ -75,16 +62,16 @@ impl<M: Model> Positive<M> {
 
     /// Converts a positive marker with the model `U` into the model `M`.
     #[must_use]
-    pub fn from_other_model<U: Model>(term: Positive<U>) -> Self
+    pub fn from_other_model<U: Model>(pred: Positive<U>) -> Self
     where
         M::LifetimeInference: From<U::LifetimeInference>,
         M::TypeInference: From<U::TypeInference>,
         M::ConstantInference: From<U::ConstantInference>,
     {
         Self {
-            id: term.id,
+            marker_id: pred.marker_id,
             generic_arguments: GenericArguments::from_other_model(
-                term.generic_arguments,
+                pred.generic_arguments,
             ),
         }
     }
@@ -96,7 +83,7 @@ impl<M: Model> Positive<M> {
     ///
     /// Returns an error returned by the `TryFrom` implementation of the model.
     pub fn try_from_other_model<U: Model, E>(
-        term: Positive<U>,
+        pred: Positive<U>,
     ) -> Result<Self, E>
     where
         M::LifetimeInference: TryFrom<U::LifetimeInference, Error = E>,
@@ -104,21 +91,21 @@ impl<M: Model> Positive<M> {
         M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
     {
         Ok(Self {
-            id: term.id,
+            marker_id: pred.marker_id,
             generic_arguments: GenericArguments::try_from_other_model(
-                term.generic_arguments,
+                pred.generic_arguments,
             )?,
         })
     }
 }
 
-impl<T: State, M: Model> table::Display<T> for Positive<M>
+impl<M: Model> table::Display for Positive<M>
 where
-    GenericArguments<M>: table::Display<T>,
+    GenericArguments<M>: table::Display,
 {
     fn fmt(
         &self,
-        table: &table::Table<T>,
+        table: &table::Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         write!(

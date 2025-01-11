@@ -26,9 +26,9 @@ use super::{
 };
 use crate::{
     component::{
-        self, Accessibility, ConstTraitImplementation, Extern,
-        FinalImplementation, Implemented, Import, LocationSpan, Member, Name,
-        Parent, SymbolKind, Using,
+        self, occurrences::Occurrences, Accessibility,
+        ConstTraitImplementation, Extern, FinalImplementation, Implemented,
+        Import, LocationSpan, Member, Name, Parent, SymbolKind, Using,
     },
     diagnostic::Diagnostic,
     table::{
@@ -177,6 +177,9 @@ impl Representation {
                 .generate_id(),
         );
 
+        assert!(self
+            .storage
+            .add_component(new_symbol_id, Occurrences::default()));
         assert!(self.storage.add_component(
             new_symbol_id,
             LocationSpan(
@@ -1125,6 +1128,9 @@ impl Representation {
                 .generate_id(),
         );
 
+        assert!(self
+            .storage
+            .add_component(new_symbol_id, Occurrences::default()));
         assert!(self
             .storage
             .add_component(new_symbol_id, LocationSpan(name.span.clone())));

@@ -5,14 +5,8 @@ use thiserror::Error;
 use super::Predicate;
 use crate::{
     arena::ID,
-    symbol::{
-        table::{
-            representation::{Element, Index, Representation},
-            State,
-        },
-        Generic, Implementation as _, Implemented, ItemID,
-        ResolvableImplementation, ResolvableImplementedID,
-    },
+    component::Implemented,
+    table::GlobalID,
     type_system::{
         compatible::Compatible,
         deduction::{self, Deduction},
@@ -20,7 +14,6 @@ use crate::{
         instantiation::Instantiation,
         model::{self, Model},
         normalizer::Normalizer,
-        observer::Observer,
         order,
         query::Context,
         term::{r#type::Type, GenericArguments},
@@ -31,13 +24,13 @@ use crate::{
 
 /// A result of a implementation resolution query.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Implementation<ID, M: Model> {
+pub struct Implementation<M: Model> {
     /// The deduced substitution for the generic arguments of the trait
     /// implementation.
     pub instantiation: Instantiation<M>,
 
-    /// The ID of the resolved trait implementation.
-    pub id: ID,
+    /// The ID of the resolved implementation.
+    pub id: GlobalID,
 
     /// If `true`, the implementation is not general enough to accomodate the
     /// forall lifetime requirements.
@@ -66,42 +59,17 @@ pub enum Error {
 /// # Errors
 ///
 /// See [`Error`] for more information.
+///
+/// # Parameters
+///
+/// - `implemented_id`: The ID of either a trait or a marker symbol.
 #[allow(clippy::too_many_lines)]
-pub fn resolve_implementation_with_context<
-    'a,
-    M: Model,
-    S: State,
-    ImplementationID: TryFrom<ItemID> + Copy,
-    ImplementedSymbol: Implemented<ImplementationID> + Element,
->(
-    implemented_id: ID<ImplementedSymbol>,
+pub fn resolve_implementation_with_context<'a, M: Model>(
+    implemented_id: GlobalID,
     generic_arguments: &GenericArguments<M>,
-    environment: &Environment<
-        'a,
-        M,
-        S,
-        impl Normalizer<M, S>,
-        impl Observer<M, S>,
-    >,
+    environment: &Environment<'a, M, impl Normalizer<M>>,
     context: &mut Context<M>,
-) -> Result<Succeeded<Implementation<ImplementationID, M>, M>, Error>
-where
-    Representation<S::Container>: Index<ImplementationID>,
-
-    <Representation<S::Container> as Index<ImplementationID>>::Output<'a>:
-        Deref,
-
-    <<Representation<S::Container> as Index<ImplementationID>>::Output<'a>
-        as Deref>::Target: ResolvableImplementation<ID<ImplementedSymbol>>,
-
-    ID<ImplementedSymbol>: Into<ResolvableImplementedID>,
-{
-    Observer::on_resolving_implementation(
-        implemented_id.into(),
-        generic_arguments,
-        environment,
-    )?;
-
+) -> Result<Succeeded<Implementation<M>, M>, Error> {
     // we might be in the implementation site already
     if let Some(result) = is_in_active_implementation(
         implemented_id,
@@ -118,24 +86,24 @@ where
     let (default_environment, _) =
         Environment::<M, _, _, _>::new(Premise::default(), environment.table());
 
-    let implemented_symbol = Index::<ID<ImplementedSymbol>>::get(
-        &**environment.table(),
-        implemented_id,
-    )
-    .ok_or(Error::InvalidID)?;
-
     // the current candidate
     #[allow(clippy::type_complexity)]
     let mut candidate: Option<(
-        ImplementationID,
+        GlobalID,
         Deduction<M>,
         BTreeSet<LifetimeConstraint<M>>,
         GenericArguments<M>,
     )> = None;
 
-    for implementation_id in
-        implemented_symbol.implementations().iter().copied()
-    {
+    let implementations = environment
+        .table()
+        .get::<Implemented>(implemented_id)
+        .ok_or(Error::InvalidID)?
+        .iter()
+        .copied()
+        .collect::<Vec<_>>();
+
+    for implementation_id in implementations {
         // build the unification
         let implementation_symbol = Index::<ImplementationID>::get(
             &**environment.table(),
@@ -144,9 +112,7 @@ where
         .unwrap();
 
         let implementation_generic_arguments =
-            GenericArguments::from_default_model(
-                implementation_symbol.arguments().clone(),
-            );
+            GenericArguments::from_default_model();
 
         // build the unification
         let Succeeded { result: deduction, constraints: lifetime_constraints } =

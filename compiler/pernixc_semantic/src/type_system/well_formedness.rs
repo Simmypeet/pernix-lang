@@ -11,7 +11,6 @@ use super::{
     instantiation::{self, Instantiation},
     model::Model,
     normalizer::Normalizer,
-    observer::Observer,
     predicate::{
         self, NegativeMarkerSatisfied, NegativeTraitSatisfied, Outlives,
         PositiveMarkerSatisfied, PositiveTraitSatisfied, Predicate,
@@ -21,7 +20,6 @@ use super::{
     visitor::RecursiveIterator,
     Compute, LifetimeConstraint, OverflowError, Satisfied, Succeeded,
 };
-use crate::symbol::{table, GenericID, ResolvableImplementationID};
 
 /// Representing an unsatisfied in where clause predicate.csjjj
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

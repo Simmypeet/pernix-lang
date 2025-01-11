@@ -15,14 +15,12 @@ use super::{
     model::{Default, Model},
     sub_term::TermLocation,
     term::{
-        constant::Constant,
-        lifetime::Lifetime,
-        r#type::{self, Type},
-        GenericArguments, MemberSymbol, Term,
+        constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
+        MemberSymbol, Term,
     },
     visitor::{accept_recursive, Recursive},
 };
-use crate::symbol::table::{self, State};
+use crate::table;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct ContainsErrorVisitor {
@@ -127,7 +125,7 @@ pub use tuple::Tuple;
 )]
 #[allow(missing_docs)]
 pub enum Predicate<M: Model> {
-    TraitTypeEquality(Equality<r#type::TraitMember<M>, Type<M>>),
+    TraitTypeEquality(Equality<MemberSymbol<M>, Type<M>>),
     ConstantType(ConstantType<M>),
     LifetimeOutlives(Outlives<Lifetime<M>>),
     TypeOutlives(Outlives<Type<M>>),
@@ -191,22 +189,22 @@ impl<M: Model> Predicate<M> {
     }
 }
 
-impl<T: State, M: Model> table::Display<T> for Predicate<M>
+impl<M: Model> table::Display for Predicate<M>
 where
-    Equality<r#type::TraitMember<M>, Type<M>>: table::Display<T>,
-    ConstantType<M>: table::Display<T>,
-    Outlives<Lifetime<M>>: table::Display<T>,
-    Outlives<Type<M>>: table::Display<T>,
-    Tuple<Type<M>>: table::Display<T>,
-    Tuple<Constant<M>>: table::Display<T>,
-    PositiveTrait<M>: table::Display<T>,
-    NegativeTrait<M>: table::Display<T>,
-    PositiveMarker<M>: table::Display<T>,
-    NegativeMarker<M>: table::Display<T>,
+    Equality<MemberSymbol<M>, Type<M>>: table::Display,
+    ConstantType<M>: table::Display,
+    Outlives<Lifetime<M>>: table::Display,
+    Outlives<Type<M>>: table::Display,
+    Tuple<Type<M>>: table::Display,
+    Tuple<Constant<M>>: table::Display,
+    PositiveTrait<M>: table::Display,
+    NegativeTrait<M>: table::Display,
+    PositiveMarker<M>: table::Display,
+    NegativeMarker<M>: table::Display,
 {
     fn fmt(
         &self,
-        table: &table::Table<T>,
+        table: &table::Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         match self {
@@ -392,7 +390,7 @@ impl<T: Term> Equality<T::TraitMember, T> {
     }
 }
 
-impl<M: Model> Equality<r#type::TraitMember<M>, Type<M>> {
+impl<M: Model> Equality<MemberSymbol<M>, Type<M>> {
     /// Applies the instantiation to both [`Equality::lhs`] and
     /// [`Equality::rhs`].
     pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {

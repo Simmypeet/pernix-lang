@@ -22,7 +22,7 @@ pub struct Storage<ID: Eq + Hash> {
 }
 
 impl<ID: Eq + Hash> Default for Storage<ID> {
-    fn default() -> Self { Storage { components: DashMap::new() } }
+    fn default() -> Self { Self { components: DashMap::new() } }
 }
 
 impl<ID: Eq + Hash> Storage<ID> {
@@ -56,6 +56,7 @@ impl<ID: Eq + Hash> Storage<ID> {
     }
 
     /// Enables the serialization of the storage based on the given reflector.
+    #[must_use]
     pub fn as_serializable<'a, T, E: Display + 'static>(
         &'a self,
         reflector: &'a serde::Reflector<T, ID, E>,
@@ -65,6 +66,7 @@ impl<ID: Eq + Hash> Storage<ID> {
 
     /// Enables in-place incremental deserialization based on the given
     /// reflector.
+    #[must_use]
     pub fn as_inplace_deserializer<'a, T, E: Display + 'static>(
         &'a self,
         reflector: &'a serde::Reflector<T, ID, E>,
@@ -73,10 +75,8 @@ impl<ID: Eq + Hash> Storage<ID> {
     }
 
     /// Gets the component of the given type from the entity of the given id.
-    pub fn get<'a, U: Any>(
-        &'a self,
-        id: ID,
-    ) -> Option<impl Deref<Target = U> + 'a>
+    #[must_use]
+    pub fn get<U: Any>(&self, id: ID) -> Option<impl Deref<Target = U> + '_>
     where
         ID: Clone + Hash + Eq,
     {
@@ -89,10 +89,10 @@ impl<ID: Eq + Hash> Storage<ID> {
 
     /// Gets the mutable component of the given type from the entity of the
     /// given id.
-    pub fn get_mut<'a, U: Any>(
-        &'a self,
+    pub fn get_mut<U: Any>(
+        &self,
         id: ID,
-    ) -> Option<impl DerefMut<Target = U> + 'a>
+    ) -> Option<impl DerefMut<Target = U> + '_>
     where
         ID: Clone + Hash + Eq,
     {

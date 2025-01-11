@@ -9,7 +9,6 @@ use super::{
     equality::Equality,
     model::Model,
     normalizer::Normalizer,
-    observer::Observer,
     predicate::Outlives,
     query::Context,
     sub_term::{SubTypeLocation, TermLocation},
@@ -24,10 +23,7 @@ use super::{
     visitor, Compute, Environment, LifetimeConstraint, Output, OverflowError,
     Satisfied, Succeeded,
 };
-use crate::{
-    symbol::table::State,
-    type_system::sub_term::{Location, SubLifetimeLocation},
-};
+use crate::type_system::sub_term::{Location, SubLifetimeLocation};
 
 /// The result of matching the lifetime with the forall lifetimes.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -224,11 +220,11 @@ impl<M: Model> unification::Predicate<Constant<M>>
 }
 
 #[must_use]
-fn append_matchings_from_unification<M: Model, T: State>(
+fn append_matchings_from_unification<M: Model>(
     mut current_from: Type<M>,
     unifier: unification::Unifier<Type<M>>,
     parent_variance: Variance,
-    environment: &Environment<M, T, impl Normalizer<M, T>, impl Observer<M, T>>,
+    environment: &Environment<M, impl Normalizer<M>>,
     matching: &mut BTreeMap<Lifetime<M>, Vec<(Lifetime<M>, Variance)>>,
 ) -> bool {
     if let Some(rewritten_from) = unifier.rewritten_from {
@@ -315,17 +311,11 @@ pub trait Compatible: ModelOf {
     /// # Errors
     ///
     /// See [`OverflowError`] for more information.
-    fn compatible_with_context<S: State>(
+    fn compatible_with_context(
         &self,
         target: &Self,
         variance: Variance,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
-
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
         context: &mut Context<Self::Model>,
     ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>;
 
@@ -335,16 +325,11 @@ pub trait Compatible: ModelOf {
     /// # Errors
     ///
     /// See [`OverflowError`] for more information.
-    fn compatible<S: State>(
+    fn compatible(
         &self,
         target: &Self,
         variance: Variance,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
     ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>
     {
         self.compatible_with_context(
@@ -357,16 +342,11 @@ pub trait Compatible: ModelOf {
 }
 
 impl<M: Model> Compatible for Lifetime<M> {
-    fn compatible_with_context<S: State>(
+    fn compatible_with_context(
         &self,
         target: &Self,
         variance: Variance,
-        _: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
+        _: &Environment<Self::Model, impl Normalizer<Self::Model>>,
         _: &mut Context<Self::Model>,
     ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>
     {
@@ -580,16 +560,11 @@ fn matching_to_compatiblity<M: Model>(
 }
 
 impl<M: Model> Compatible for Type<M> {
-    fn compatible_with_context<S: State>(
+    fn compatible_with_context(
         &self,
         target: &Self,
         variance: Variance,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
         context: &mut Context<Self::Model>,
     ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>
     {
@@ -626,16 +601,11 @@ impl<M: Model> Compatible for Type<M> {
 }
 
 impl<M: Model> Compatible for Constant<M> {
-    fn compatible_with_context<S: State>(
+    fn compatible_with_context(
         &self,
         target: &Self,
         _: Variance,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
         context: &mut Context<Self::Model>,
     ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>
     {
@@ -654,16 +624,11 @@ impl<M: Model> Compatible for Constant<M> {
 }
 
 impl<M: Model> GenericArguments<M> {
-    pub(super) fn compatible_with_context<S: State>(
+    pub(super) fn compatible_with_context(
         &self,
         target: &Self,
         variance: Variance,
-        environment: &Environment<
-            M,
-            S,
-            impl Normalizer<M, S>,
-            impl Observer<M, S>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
         context: &mut Context<M>,
     ) -> Result<Output<Compatibility<M>, M>, OverflowError> {
         let mut constraints = BTreeSet::new();

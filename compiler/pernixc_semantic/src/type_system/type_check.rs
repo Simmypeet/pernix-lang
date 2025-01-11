@@ -8,18 +8,12 @@ use super::{
     instantiation::MismatchedGenericArgumentCountError,
     model::Model,
     normalizer::Normalizer,
-    observer::Observer,
     query::Context,
     term::{constant::Constant, r#type::Type, ModelOf, Symbol, Term},
     Compute, Environment, Output, Satisfied, Succeeded,
 };
 use crate::{
     arena::ID,
-    symbol::{
-        self,
-        table::{representation::Index, State},
-        AdtID, ConstantParameterID,
-    },
     type_system::{
         instantiation::{self, Instantiation},
         term::{constant, r#type, Tuple},

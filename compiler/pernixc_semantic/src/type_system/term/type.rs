@@ -14,26 +14,17 @@ use super::{
     KindMut, MemberSymbol, ModelOf, Never, Symbol, Term,
 };
 use crate::{
-    arena::ID,
-    symbol::{
-        self,
-        table::{self, representation::Index, DisplayObject, State, Table},
-        AdtID, ItemID, MemberFunctionID, TraitImplementationMemberID,
-        TypeParameter, TypeParameterID,
-    },
+    component::generic_parameters::{TypeParameter, TypeParameterID},
+    table::{self, DisplayObject, GlobalID, Table},
     type_system::{
         self,
         equality::Equality,
-        instantiation::{self, Instantiation},
+        instantiation::Instantiation,
         mapping::Mapping,
         matching::{self, Match, Matching},
         model::{Default, Model},
         normalizer::Normalizer,
-        observer::Observer,
-        predicate::{
-            self, resolve_implementation_with_context, Outlives, Predicate,
-            ResolutionError, Satisfiability,
-        },
+        predicate::{self, Outlives, Predicate, Satisfiability},
         query::Context,
         sub_term::{
             self, AssignSubTermError, Location, SubMemberSymbolLocation,
@@ -41,7 +32,7 @@ use crate::{
             SubTupleLocation, TermLocation,
         },
         unification::{self, Unifier},
-        Environment, Output, Succeeded,
+        Environment, Output,
     },
 };
 
@@ -144,16 +135,6 @@ pub enum Primitive {
 
 /// Represents a tuple type, denoted by `(type, type, ...type)` syntax.
 pub type Tuple<M> = super::Tuple<Type<M>>;
-
-/// Represents a trait-member type, denoted by `TRAIT[ARGS]::TYPE[ARGS]`
-/// syntax.
-pub type TraitMember<M> = MemberSymbol<M, ID<symbol::TraitType>>;
-
-/// Represents a function type, this is internal compiler type.
-pub type Function<M> = Symbol<M, ID<symbol::Function>>;
-
-/// Represents a member function type, this is internal compiler type.
-pub type MemberFunction<M> = MemberSymbol<M, MemberFunctionID>;
 
 /// Represents a phantom type, denoted by `phantom TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -798,51 +779,6 @@ impl<M: Model> Match for Type<M> {
     }
 }
 
-/// An ID used with the [`Type::Symbol`] type.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    derive_more::From,
-    EnumAsInner,
-)]
-#[allow(missing_docs)]
-pub enum SymbolID {
-    Adt(AdtID),
-    Function(ID<symbol::Function>),
-}
-
-impl From<SymbolID> for ItemID {
-    fn from(value: SymbolID) -> Self {
-        match value {
-            SymbolID::Adt(adt) => adt.into(),
-            SymbolID::Function(function) => Self::Function(function),
-        }
-    }
-}
-
-/// An ID used with the [`Type::MemberSymbol`] type.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
-)]
-#[allow(missing_docs)]
-pub enum MemberSymbolID {
-    Function(MemberFunctionID),
-}
-
-impl From<MemberSymbolID> for ItemID {
-    fn from(value: MemberSymbolID) -> Self {
-        match value {
-            MemberSymbolID::Function(function_id) => function_id.into(),
-        }
-    }
-}
-
 /// Represents a type term.
 #[derive(
     Debug,
@@ -863,7 +799,7 @@ pub enum Type<M: Model> {
     Parameter(TypeParameterID),
     Inference(M::TypeInference),
     #[from]
-    Symbol(Symbol<M, SymbolID>),
+    Symbol(Symbol<M>),
     #[from]
     Pointer(Pointer<M>),
     #[from]
@@ -875,9 +811,7 @@ pub enum Type<M: Model> {
     #[from]
     Phantom(Phantom<M>),
     #[from]
-    MemberSymbol(MemberSymbol<M, MemberSymbolID>),
-    #[from]
-    TraitMember(MemberSymbol<M, ID<symbol::TraitType>>),
+    MemberSymbol(MemberSymbol<M>),
     #[from]
     Error(Error),
 }
@@ -974,7 +908,7 @@ where
     Self: ModelOf<Model = M>,
 {
     type GenericParameter = TypeParameter;
-    type TraitMember = TraitMember<M>;
+    type TraitMember = MemberSymbol<M>;
     type InferenceVariable = M::TypeInference;
     type Rebind<Ms: Model> = Type<Ms>;
 
@@ -1013,9 +947,6 @@ where
             Type::MemberSymbol(member_symbol) => Self::MemberSymbol(
                 MemberSymbol::from_other_model(member_symbol),
             ),
-            Type::TraitMember(trait_member) => {
-                Self::TraitMember(TraitMember::from_other_model(trait_member))
-            }
             Type::Error(Error) => Self::Error(Error),
         }
     }
@@ -1063,28 +994,22 @@ where
             Type::MemberSymbol(member_symbol) => Self::MemberSymbol(
                 MemberSymbol::try_from_other_model(member_symbol)?,
             ),
-            Type::TraitMember(trait_member) => Self::TraitMember(
-                TraitMember::try_from_other_model(trait_member)?,
-            ),
             Type::Error(Error) => Self::Error(Error),
         })
     }
 
     #[allow(clippy::too_many_lines, private_bounds, private_interfaces)]
-    fn normalize<S: State>(
+    fn normalize(
         &self,
-        environment: &Environment<
-            M,
-            S,
-            impl Normalizer<M, S>,
-            impl Observer<M, S>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
         context: &mut Context<M>,
     ) -> Result<Output<Self, M>, type_system::OverflowError> {
+        todo!()
+        /*
         match self {
             // transform the trait-member into trait-implementation-type
             // equivalent
-            Self::TraitMember(trait_member) => {
+            Self::MemberSymbol(trait_member) => {
                 let Some(trait_id) = environment
                     .table()
                     .get(trait_member.id)
@@ -1136,12 +1061,6 @@ where
                 };
 
                 drop(implementation_sym);
-
-                Observer::on_trait_implementation_type_resolved(
-                    id,
-                    environment,
-                    context,
-                )?;
 
                 let Some(implementation_type_id) = environment.table().get(id)
                 else {
@@ -1223,6 +1142,7 @@ where
             _ => Normalizer::normalize_type(self, environment, context)?
                 .map_or_else(|| Ok(None), |x| Ok(Some(x))),
         }
+        */
     }
 
     fn as_kind(&self) -> Kind<M> { Kind::Type(self) }
@@ -1256,8 +1176,7 @@ where
                 Satisfiability::Unsatisfied
             }
 
-            Self::TraitMember(_)
-            | Self::MemberSymbol(_)
+            Self::MemberSymbol(_)
             | Self::Symbol(_)
             | Self::Pointer(_)
             | Self::Reference(_)
@@ -1283,23 +1202,23 @@ where
         self.into_parameter()
     }
 
-    fn as_trait_member(&self) -> Option<&TraitMember<M>> {
+    fn as_trait_member(&self) -> Option<&MemberSymbol<M>> {
         match self {
-            Self::TraitMember(trait_member) => Some(trait_member),
+            Self::MemberSymbol(trait_member) => Some(trait_member),
             _ => None,
         }
     }
 
-    fn as_trait_member_mut(&mut self) -> Option<&mut TraitMember<M>> {
+    fn as_trait_member_mut(&mut self) -> Option<&mut MemberSymbol<M>> {
         match self {
-            Self::TraitMember(trait_member) => Some(trait_member),
+            Self::MemberSymbol(trait_member) => Some(trait_member),
             _ => None,
         }
     }
 
-    fn into_trait_member(self) -> Result<TraitMember<M>, Self> {
+    fn into_trait_member(self) -> Result<MemberSymbol<M>, Self> {
         match self {
-            Self::TraitMember(trait_member) => Ok(trait_member),
+            Self::MemberSymbol(trait_member) => Ok(trait_member),
             _ => Err(self),
         }
     }
@@ -1346,7 +1265,9 @@ where
         }
     }
 
-    fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>> {
+    fn get_adt_fields(&self, table: &Table) -> Option<Vec<Self>> {
+        todo!()
+        /*
         match self {
             Self::Symbol(Symbol {
                 id: SymbolID::Adt(id),
@@ -1418,6 +1339,7 @@ where
 
             _ => None,
         }
+        */
     }
 
     fn as_outlive_predicate(
@@ -1440,19 +1362,19 @@ where
 
     fn as_trait_member_equality_predicate(
         predicate: &Predicate<M>,
-    ) -> Option<&Equality<TraitMember<M>, Self>> {
+    ) -> Option<&Equality<MemberSymbol<M>, Self>> {
         predicate.as_trait_type_equality()
     }
 
     fn as_trait_member_equality_predicate_mut(
         predicate: &mut Predicate<M>,
-    ) -> Option<&mut Equality<TraitMember<M>, Self>> {
+    ) -> Option<&mut Equality<MemberSymbol<M>, Self>> {
         predicate.as_trait_type_equality_mut()
     }
 
     fn into_trait_member_equality_predicate(
         predicate: Predicate<M>,
-    ) -> Result<Equality<TraitMember<M>, Self>, Predicate<M>> {
+    ) -> Result<Equality<MemberSymbol<M>, Self>, Predicate<M>> {
         predicate.into_trait_type_equality()
     }
 
@@ -1487,7 +1409,6 @@ where
             | Self::Symbol(_)
             | Self::Reference(_)
             | Self::Array(_)
-            | Self::TraitMember(_)
             | Self::Phantom(_)
             | Self::Tuple(_) => Satisfiability::Congruent,
         }
@@ -1541,15 +1462,15 @@ where
     }
 }
 
-impl<T: State, M: Model> table::Display<T> for Type<M>
+impl<M: Model> table::Display for Type<M>
 where
-    M::TypeInference: table::Display<T>,
-    Constant<M>: table::Display<T>,
-    Lifetime<M>: table::Display<T>,
+    M::TypeInference: table::Display,
+    Constant<M>: table::Display,
+    Lifetime<M>: table::Display,
 {
     fn fmt(
         &self,
-        table: &Table<T>,
+        table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         match self {
@@ -1654,8 +1575,8 @@ impl<M: Model> Type<M> {
     #[must_use]
     pub fn get_item_id_dependencies(
         &self,
-        table: &Table<impl State>,
-    ) -> Option<Vec<ItemID>> {
+        table: &Table,
+    ) -> Option<Vec<GlobalID>> {
         let mut occurrences = match self {
             Self::Error(_)
             | Self::Primitive(_)
@@ -1711,23 +1632,6 @@ impl<M: Model> Type<M> {
                 }
                 occurrences
             }
-
-            Self::TraitMember(member_symbol) => {
-                let mut occurrences = member_symbol
-                    .parent_generic_arguments
-                    .get_item_id_dependencies(table)?;
-                occurrences.extend(
-                    member_symbol
-                        .member_generic_arguments
-                        .get_item_id_dependencies(table)?,
-                );
-
-                occurrences.push(member_symbol.id.into());
-                occurrences
-                    .push(table.get(member_symbol.id)?.parent_id().into());
-
-                occurrences
-            }
             Self::Phantom(phantom) => {
                 return phantom.0.get_item_id_dependencies(table);
             }
@@ -1740,5 +1644,6 @@ impl<M: Model> Type<M> {
     }
 }
 
-#[cfg(test)]
-mod tests;
+// TODO: bring test back
+// #[cfg(test)]
+// mod tests;

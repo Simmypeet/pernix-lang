@@ -5,11 +5,14 @@ members = [
     "compiler/pernixc_lexical",
     "compiler/pernixc_syntax",
     "compiler/pernixc_tests",
-    "compiler/pernixc_semantic",
-    "compiler/pernixc_driver",
-    "compiler/pernixc",
-    "lsp/pernix_server",
+    # "compiler/pernixc_semantic",
     "compiler/pernixc_component",
+    "compiler/pernixc_table",
+    "compiler/pernixc_arena",
+    "compiler/pernixc_term",
+    # "compiler/pernixc_driver",
+    # "compiler/pernixc",
+    # "lsp/pernix_server",
 ]
 
 [workspace.dependencies]
@@ -52,6 +55,9 @@ displaydoc = "0.2.5"
 ron = "0.8.1"
 typetag = "0.2.19"
 erased-serde = "0.4.5"
+bincode = "1.3.3"
+bitcode = "0.6.3"
+serde_yaml = "0.9.0"
 
 [workspace.package]
 version = "0.1.0"

@@ -15,6 +15,11 @@ pernixc_lexical = { path = "../pernixc_lexical" }
 pernixc_syntax = { path = "../pernixc_syntax" }
 pernixc_semantic = { path = "../pernixc_semantic" }
 rayon = { workspace = true }
+serde_json = { workspace = true }
+ron = { workspace = true }
+bincode = { workspace = true }
+serde_yaml = { workspace = true }
+serde = { workspace = true }
 
 [lints]
 workspace = true

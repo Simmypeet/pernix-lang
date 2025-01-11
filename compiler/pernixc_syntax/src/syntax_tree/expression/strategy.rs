@@ -83,7 +83,7 @@ impl Arbitrary for Expression {
                 ))
                 .prop_map(Expression::Binary),
                 Terminator::arbitrary_with((
-                    Some(inner.clone()),
+                    Some(inner),
                     args.0.clone(),
                     args.1.clone(),
                     args.2.clone()

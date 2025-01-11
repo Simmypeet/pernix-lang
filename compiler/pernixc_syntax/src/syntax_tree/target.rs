@@ -364,7 +364,6 @@ impl Target {
                             .span
                             .clone(),
                     }));
-                    return;
                 }
 
                 Entry::Vacant(vacant_entry) => {

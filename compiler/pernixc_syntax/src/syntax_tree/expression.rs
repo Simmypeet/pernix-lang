@@ -511,7 +511,7 @@ impl SyntaxTree for TerminatorTarget {
             )
                 .map(
                     |(label_specifier, unsafe_keyword, statements, chain)| {
-                        TerminatorTarget(
+                        Self(
                             None,
                             Some(Binary {
                                 first: BinaryNode::Brace(Brace::Block(Block {
@@ -525,7 +525,7 @@ impl SyntaxTree for TerminatorTarget {
                     },
                 ),
             (Label::parse.or_none(), Binary::parse.or_none())
-                .map(|(label, binary)| TerminatorTarget(label, binary)),
+                .map(|(label, binary)| Self(label, binary)),
         )
             .branch()
             .parse(state_machine, handler)

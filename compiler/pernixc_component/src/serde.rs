@@ -133,36 +133,42 @@ use crate::Storage;
 
 #[derive(Debug)]
 struct SerializationMetaData<T> {
+    #[allow(clippy::type_complexity)]
     serialize_fn: fn(&dyn Any, &mut dyn FnMut(&dyn erased_serde::Serialize)),
     tag: T,
 }
 
 #[derive(Debug)]
 struct DeserializationMetaData {
+    #[allow(clippy::type_complexity)]
     deserialize_fn: fn(
         &mut dyn erased_serde::Deserializer,
     ) -> Result<Box<dyn Any>, erased_serde::Error>,
+
     merger_fn: &'static dyn Any,
+
+    #[allow(clippy::type_complexity)]
     final_merger_fn: fn(
         &dyn Any,
         &mut dyn Any,
         &mut dyn erased_serde::Deserializer,
     ) -> Result<(), erased_serde::Error>,
+
     type_id: TypeId,
 }
 
 /// Uesd to serialize/deserialize the [`Storage`] struct.
 #[derive(Debug)]
-pub struct Reflector<T, ID, E: Display + 'static = Infallible> {
+pub struct Reflector<T, ID, E = Infallible> {
     serialization_meta_datas: HashMap<TypeId, SerializationMetaData<T>>,
     deserialization_meta_datas: HashMap<T, DeserializationMetaData>,
 
     _phantom: std::marker::PhantomData<(ID, E)>,
 }
 
-impl<T, ID, E: Display + 'static> Default for Reflector<T, ID, E> {
+impl<T, ID, E> Default for Reflector<T, ID, E> {
     fn default() -> Self {
-        Reflector {
+        Self {
             serialization_meta_datas: HashMap::new(),
             deserialization_meta_datas: HashMap::new(),
 
@@ -176,8 +182,9 @@ pub type MergerFn<T, E> = fn(&mut T, T) -> Result<(), E>;
 
 impl<T, ID, E: Display + 'static> Reflector<T, ID, E> {
     /// Create a new instance of [`Reflector`].
+    #[must_use]
     pub fn new() -> Self {
-        Reflector {
+        Self {
             serialization_meta_datas: HashMap::new(),
             deserialization_meta_datas: HashMap::new(),
 
@@ -206,6 +213,7 @@ impl<T, ID, E: Display + 'static> Reflector<T, ID, E> {
     where
         T: Clone + Eq + Hash,
     {
+        #[allow(clippy::unnecessary_wraps)]
         fn no_op_merger_fn<C, E>(_: &mut C, _: C) -> Result<(), E> { Ok(()) }
 
         self.register_type_with_merger(
@@ -252,7 +260,7 @@ impl<T, ID, E: Display + 'static> Reflector<T, ID, E> {
             serializer: &mut dyn FnMut(&dyn erased_serde::Serialize),
         ) {
             let component = component.downcast_ref::<C>().unwrap();
-            serializer(component)
+            serializer(component);
         }
 
         fn final_inplace_merger_fn<
@@ -313,7 +321,7 @@ impl<
     {
         let mut type_ids_by_id = HashMap::<_, HashSet<_>>::new();
 
-        for entry in self.storage.components.iter() {
+        for entry in &self.storage.components {
             type_ids_by_id
                 .entry(entry.key().0.clone())
                 .or_insert_with(HashSet::new)
@@ -409,6 +417,8 @@ impl<'a, T: serde::Serialize, ID: Eq + Hash + Clone, E: Display + 'static>
 
 struct SerializeComponent<'a> {
     component: &'a Box<dyn Any>,
+
+    #[allow(clippy::type_complexity)]
     serialize_fn: fn(&dyn Any, &mut dyn FnMut(&dyn erased_serde::Serialize)),
 }
 
@@ -487,8 +497,7 @@ impl<
                 match storage.components.entry((id.clone(), type_id)) {
                     dashmap::Entry::Occupied(_) => {
                         return Err(serde::de::Error::custom(format!(
-                            "duplicate component tag: {:?}",
-                            tag
+                            "duplicate component tag: {tag:?}",
                         )));
                     }
                     dashmap::Entry::Vacant(vacant_entry) => {
@@ -554,8 +563,7 @@ impl<
                 self.reflector.deserialization_meta_datas.get(&key)
             else {
                 return Err(serde::de::Error::custom(format!(
-                    "no deserialization meta data found for tag: {:?}",
-                    key
+                    "no deserialization meta data found for tag: {key:?}",
                 )));
             };
 
@@ -565,8 +573,7 @@ impl<
 
             if components.contains_key(&key) {
                 return Err(serde::de::Error::custom(format!(
-                    "duplicate component tag: {:?}",
-                    key
+                    "duplicate component tag: {key:?}",
                 )));
             }
 
@@ -578,6 +585,7 @@ impl<
 }
 
 struct ComponentDeserialzer {
+    #[allow(clippy::type_complexity)]
     deserialize_fn: fn(
         &mut dyn erased_serde::Deserializer,
     ) -> Result<Box<dyn Any>, erased_serde::Error>,
@@ -725,8 +733,7 @@ impl<
                 .get(&tag)
             else {
                 return Err(serde::de::Error::custom(format!(
-                    "no deserialization meta data found for tag: {:?}",
-                    tag
+                    "no deserialization meta data found for tag: {tag:?}",
                 )));
             };
 
@@ -760,6 +767,8 @@ impl<
 struct InplaceComponentDeserializer<'current> {
     source: &'current mut dyn Any,
     merger_fn: &'static dyn Any,
+
+    #[allow(clippy::type_complexity)]
     final_merger_fn: fn(
         &dyn Any,
         &mut dyn Any,

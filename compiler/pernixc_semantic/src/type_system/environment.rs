@@ -8,17 +8,13 @@ use super::{
     equality::Equality,
     model::Model,
     normalizer::{self, Normalizer},
-    observer::{self, Observer},
     predicate::Predicate,
     query::Context,
-    term::{
-        r#type::{self, Type},
-        GenericArguments,
-    },
+    term::{r#type::Type, GenericArguments, MemberSymbol},
     Premise,
 };
 use crate::{
-    symbol::table::{State, Table},
+    table::Table,
     type_system::{
         term::Kind, unification::Unification, visitor::RecursiveIterator,
         Compute, LifetimeUnifyingPredicate,
@@ -27,40 +23,26 @@ use crate::{
 
 /// A structure that contains the environment of the semantic logic.
 #[derive(Debug, Getters, CopyGetters)]
-pub struct Environment<
-    'a,
-    M: Model,
-    T: State,
-    N: Normalizer<M, T>,
-    O: Observer<M, T>,
-> {
+pub struct Environment<'a, M: Model, N: Normalizer<M>> {
     /// The premise of the semantic logic.
     #[get = "pub"]
     pub(super) premise: Premise<M>,
 
     /// The table that contains the information of symbols.
     #[get_copy = "pub"]
-    pub(super) table: &'a Table<T>,
+    pub(super) table: &'a Table,
 
     /// The normalizer used to normalize the inference variables.
     #[get_copy = "pub"]
     pub(super) normalizer: &'a N,
-
-    /// The observer used to observe all the query records made throughout the
-    /// computation.
-    #[get_copy = "pub"]
-    pub(super) observer: &'a O,
 }
 
-impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>> Clone
-    for Environment<'a, M, T, N, O>
-{
+impl<'a, M: Model, N: Normalizer<M>> Clone for Environment<'a, M, N> {
     fn clone(&self) -> Self {
         Self {
             premise: self.premise.clone(),
             table: self.table,
             normalizer: self.normalizer,
-            observer: self.observer,
         }
     }
 }
@@ -82,9 +64,7 @@ pub enum Error<M: Model> {
     DefinintePremise(Predicate<M>),
 
     /// The [`Equality::lhs`] occurs in the [`Equality::rhs`].
-    RecursiveTraitTypeEqualityPredicate(
-        Equality<r#type::TraitMember<M>, Type<M>>,
-    ),
+    RecursiveTraitTypeEqualityPredicate(Equality<MemberSymbol<M>, Type<M>>),
 
     /// Encounters the [`super::Error`] while calculating the requirements for
     /// the given [`Predicate`].
@@ -94,18 +74,16 @@ pub enum Error<M: Model> {
 fn check_definite_predicate<
     T: Clone + Into<Predicate<M>> + Debug,
     M: Model,
-    S: State,
-    N: Normalizer<M, S>,
-    O: Observer<M, S>,
+    N: Normalizer<M>,
 >(
-    environment: &mut Environment<M, S, N, O>,
+    environment: &mut Environment<M, N>,
     remove_on_check: bool,
     predicates: &[T],
     overflow_predicates: &mut Vec<(Predicate<M>, super::OverflowError)>,
     definite_predicates: &mut Vec<Predicate<M>>,
     definite_check: impl Fn(
         &T,
-        &Environment<M, S, N, O>,
+        &Environment<M, N>,
     ) -> Result<bool, super::OverflowError>,
 ) {
     // pick a predicate
@@ -164,11 +142,9 @@ fn check_definite_predicate<
 fn check_ambiguous_predicates<
     T: Clone + Into<Predicate<M>> + Debug,
     M: Model,
-    S: State,
-    N: Normalizer<M, S>,
-    O: Observer<M, S>,
+    N: Normalizer<M>,
 >(
-    environment: &mut Environment<M, S, N, O>,
+    environment: &mut Environment<M, N>,
     remove_on_check: bool,
     predicates: &[T],
     overflow_predicates: &mut Vec<(Predicate<M>, super::OverflowError)>,
@@ -176,7 +152,7 @@ fn check_ambiguous_predicates<
     ambiguity_check: impl Fn(
         &T,
         &T,
-        &Environment<M, S, N, O>,
+        &Environment<M, N>,
     ) -> Result<bool, super::OverflowError>,
 ) {
     // pick a predicate
@@ -299,10 +275,10 @@ fn check_ambiguous_predicates<
     }
 }
 
-fn check_ambiguous_generic_arguments<M: Model, S: State>(
+fn check_ambiguous_generic_arguments<M: Model>(
     lhs: &GenericArguments<M>,
     rhs: &GenericArguments<M>,
-    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
+    environment: &Environment<M, impl Normalizer<M>>,
 ) -> Result<bool, super::OverflowError> {
     // check if the arguments counts are the same
     if lhs.lifetimes.len() != rhs.lifetimes.len()
@@ -338,9 +314,7 @@ fn check_ambiguous_generic_arguments<M: Model, S: State>(
     Ok(true)
 }
 
-impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
-    Environment<'a, M, T, N, O>
-{
+impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
     /// Creates a new [`Environment`].
     ///
     /// The ambiguous predicates will be removed from the environment and is
@@ -348,11 +322,10 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
     #[allow(clippy::too_many_lines)]
     pub fn new_with(
         premise: Premise<M>,
-        table: &'a Table<T>,
+        table: &'a Table,
         normalizer: &'a N,
-        observer: &'a O,
     ) -> (Self, Vec<Error<M>>) {
-        let mut environment = Self { premise, table, normalizer, observer };
+        let mut environment = Self { premise, table, normalizer };
 
         let mut ambiguous_positive_trait_predicates_set = Vec::new();
         let mut ambiguous_negative_trait_predicates_set = Vec::new();
@@ -790,18 +763,13 @@ impl<'a, M: Model, T: State, N: Normalizer<M, T>, O: Observer<M, T>>
     }
 }
 
-impl<'a, M: Model, S: State>
-    Environment<'a, M, S, normalizer::NoOp, observer::NoOp>
-{
+impl<'a, M: Model> Environment<'a, M, normalizer::NoOp> {
     /// Creates a new [`Environment`].
     ///
     /// The ambiguous predicates will be removed from the environment and is
     /// extracted out to the vector of [`Error`].
-    pub fn new(
-        premise: Premise<M>,
-        table: &'a Table<S>,
-    ) -> (Self, Vec<Error<M>>) {
-        Self::new_with(premise, table, normalizer::NO_OP, observer::NO_OP)
+    pub fn new(premise: Premise<M>, table: &'a Table) -> (Self, Vec<Error<M>>) {
+        Self::new_with(premise, table, normalizer::NO_OP)
     }
 }
 

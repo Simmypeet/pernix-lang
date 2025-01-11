@@ -4,7 +4,6 @@ use std::collections::BTreeSet;
 
 use enum_as_inner::EnumAsInner;
 use environment::Environment;
-use observer::Observer;
 use predicate::Outlives;
 use query::{Cached, Context, Record, Sealed};
 use term::constant::Constant;
@@ -16,7 +15,7 @@ use self::{
     predicate::Predicate,
     term::{lifetime::Lifetime, r#type::Type},
 };
-use crate::symbol::{table::State, ItemID};
+use crate::table::{query::CyclicDependency, GlobalID};
 
 pub mod compatible;
 pub mod deduction;
@@ -30,7 +29,6 @@ pub mod mapping;
 pub mod matching;
 pub mod model;
 pub mod normalizer;
-pub mod observer;
 pub mod order;
 pub mod predicate;
 pub mod query;
@@ -100,6 +98,30 @@ impl<M: Model> unification::Predicate<Constant<M>>
 #[error("exceeded the limit of the number of queries")]
 #[allow(missing_docs)]
 pub struct OverflowError;
+
+/// A common abrupt error that aborts the query and returns the error.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    thiserror::Error,
+    EnumAsInner,
+)]
+pub enum Error {
+    #[error(transparent)]
+    Overflow(#[from] OverflowError),
+
+    #[error(
+        "cyclic dependency error occurred while querying a particular \
+         symbol's component to the table; this error should be reported to \
+         the users"
+    )]
+    CyclicDependency(#[from] CyclicDependency),
+}
 
 /// A tag type signaling that the predicate/query is satisfied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -194,12 +216,12 @@ pub struct Premise<M: Model> {
     /// List of predicates that will be considered as facts.
     pub predicates: BTreeSet<Predicate<M>>,
 
-    /// An optional [`ItemID`] specifying the site where the queries will be
+    /// An optional [`GlobalID`] specifying the site where the queries will be
     /// taking place in.
     ///
     /// This can influence the result of resoliving the trait/marker
     /// implementations.
-    pub query_site: Option<ItemID>,
+    pub query_site: Option<GlobalID>,
 }
 
 /// A trait used for computing the result of the query.
@@ -217,14 +239,9 @@ pub trait Compute: Sealed {
     /// (mark_as_done, clear_query).
     #[doc(hidden)]
     #[allow(private_interfaces, private_bounds)]
-    fn implementation<S: State>(
+    fn implementation(
         &self,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
         context: &mut Context<Self::Model>,
         parameter: Self::Parameter,
         in_progress: Self::InProgress,
@@ -245,14 +262,9 @@ pub trait Compute: Sealed {
 
     /// Queries the result.
     #[allow(private_interfaces, private_bounds)]
-    fn query<S: State>(
+    fn query(
         &self,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
     ) -> Result<Option<Self::Result>, Self::Error> {
         let mut context = Context::default();
         self.query_with_context(environment, &mut context)
@@ -261,14 +273,9 @@ pub trait Compute: Sealed {
     /// Queries the result with the explicitly specified context.
     #[doc(hidden)]
     #[allow(private_interfaces, private_bounds)]
-    fn query_with_context<S: State>(
+    fn query_with_context(
         &self,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
         context: &mut Context<Self::Model>,
     ) -> Result<Option<Self::Result>, Self::Error> {
         self.query_with_context_full(
@@ -283,14 +290,9 @@ pub trait Compute: Sealed {
     /// state, and additional parameters.
     #[doc(hidden)]
     #[allow(private_interfaces, private_bounds)]
-    fn query_with_context_full<S: State>(
+    fn query_with_context_full(
         &self,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
         context: &mut Context<Self::Model>,
         parameter: Self::Parameter,
         in_progress: Self::InProgress,

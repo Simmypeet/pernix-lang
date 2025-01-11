@@ -12,7 +12,6 @@ use super::{
     mapping::Mapping,
     model::Model,
     normalizer::Normalizer,
-    observer::Observer,
     query::Context,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
@@ -21,7 +20,6 @@ use super::{
     unification::{self, Log, Unification},
     Environment, Output, OverflowError, Satisfied, Succeeded,
 };
-use crate::{symbol::table::State, type_system::Compute};
 
 /// The order in terms of specificity of the generic arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -80,16 +78,11 @@ impl<M: Model> unification::Predicate<Constant<M>> for CompatiblePredicate {
     }
 }
 
-fn append_mapping<T: Term, S: State>(
+fn append_mapping<T: Term>(
     mapping: &mut Mapping<T::Model>,
     this: &[T],
     other: &[T],
-    environment: &Environment<
-        T::Model,
-        S,
-        impl Normalizer<T::Model, S>,
-        impl Observer<T::Model, S>,
-    >,
+    environment: &Environment<T::Model, impl Normalizer<T::Model>>,
     context: &mut Context<T::Model>,
 ) -> Result<bool, OverflowError> {
     let compatible_predicate = Arc::new(CompatiblePredicate);
@@ -110,15 +103,10 @@ fn append_mapping<T: Term, S: State>(
     Ok(true)
 }
 
-fn matching_copmatible<T: Term, S: State>(
+fn matching_copmatible<T: Term>(
     matching: BTreeMap<T, BTreeSet<T>>,
     filter: impl Fn(&T) -> bool,
-    environment: &Environment<
-        T::Model,
-        S,
-        impl Normalizer<T::Model, S>,
-        impl Observer<T::Model, S>,
-    >,
+    environment: &Environment<T::Model, impl Normalizer<T::Model>>,
     context: &mut Context<T::Model>,
 ) -> Result<bool, OverflowError> {
     let compatible = Arc::new(CompatiblePredicate);
@@ -149,10 +137,10 @@ fn matching_copmatible<T: Term, S: State>(
     Ok(true)
 }
 
-fn get_generic_arguments_matching_count<M: Model, S: State>(
+fn get_generic_arguments_matching_count<M: Model>(
     this: &GenericArguments<M>,
     other: &GenericArguments<M>,
-    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
+    environment: &Environment<M, impl Normalizer<M>>,
     context: &mut Context<M>,
 ) -> Result<Option<usize>, OverflowError> {
     let mut mapping = Mapping::default();
@@ -199,15 +187,10 @@ impl<M: Model> GenericArguments<M> {
     /// # Errors
     ///
     /// See  for more information.
-    pub fn order<S: State>(
+    pub fn order(
         &self,
         other: &Self,
-        environment: &Environment<
-            M,
-            S,
-            impl Normalizer<M, S>,
-            impl Observer<M, S>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
     ) -> Result<Order, OverflowError> {
         self.order_with_context(other, environment, &mut Context::new())
     }
@@ -217,15 +200,10 @@ impl<M: Model> GenericArguments<M> {
     /// # Errors
     ///
     /// See [`OverflowError`] for more information.
-    pub fn order_with_context<S: State>(
+    pub fn order_with_context(
         &self,
         other: &Self,
-        environment: &Environment<
-            M,
-            S,
-            impl Normalizer<M, S>,
-            impl Observer<M, S>,
-        >,
+        environment: &Environment<M, impl Normalizer<M>>,
         context: &mut Context<M>,
     ) -> Result<Order, OverflowError> {
         if self.lifetimes.len() != other.lifetimes.len()
