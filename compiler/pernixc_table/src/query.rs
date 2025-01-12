@@ -9,6 +9,7 @@ use std::{
     thread::ThreadId,
 };
 
+use enum_as_inner::EnumAsInner;
 use parking_lot::{Condvar, Mutex};
 use pernixc_base::{diagnostic::Report, log::Severity};
 
@@ -19,7 +20,13 @@ use crate::{
 };
 
 /// A cyclic dependency between symbols detected during the query.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error(
+    "a cylic dependency detected while building a component for the \
+     particular symbol"
+)]
 pub struct CyclicDependency {
     /// The stack of records that caused the cyclic dependency.
     pub records_stack: Vec<Record>,
@@ -109,7 +116,7 @@ pub struct Context {
 }
 
 /// An error that can occur during the query.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, EnumAsInner, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum Error {
     #[error("cyclic dependency detected")]

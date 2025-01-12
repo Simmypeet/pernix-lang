@@ -1,26 +1,31 @@
+use std::sync::Arc;
+
+use pernixc_table::{DisplayObject, Table};
+use serde::{Deserialize, Serialize};
+
 use super::contains_error;
-use crate::{
-    symbol::table::{self, DisplayObject, State, Table},
-    type_system::{
-        compatible::Compatibility,
-        equivalence::get_equivalences_with_context,
-        instantiation::{self, Instantiation},
-        normalizer::Normalizer,
-        observer::Observer,
-        term::Term,
-        variance::Variance,
-        Compute, Environment, OverflowError, Succeeded,
-    },
+use crate::type_system::{
+    self,
+    compatible::Compatibility,
+    equivalence::get_equivalences,
+    instantiation::{self, Instantiation},
+    normalizer::Normalizer,
+    query::Query,
+    term::Term,
+    variance::Variance,
+    Environment, Satisfied, Succeeded,
 };
 
 /// The predicate meaning that the term is a tuple and is unpackable.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Tuple<T>(pub T);
 
-impl<S: State, T: table::Display<S>> table::Display<S> for Tuple<T> {
+impl<T: pernixc_table::Display> pernixc_table::Display for Tuple<T> {
     fn fmt(
         &self,
-        table: &Table<S>,
+        table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         write!(f, "tuple {}", DisplayObject { display: &self.0, table })
@@ -38,26 +43,22 @@ impl<T: Term> Tuple<T> {
     }
 }
 
-impl<T: Term> Compute for Tuple<T> {
-    type Error = OverflowError;
+impl<T: Term> Query for Tuple<T> {
+    type Model = T::Model;
     type Parameter = ();
+    type InProgress = ();
+    type Result = Succeeded<Satisfied, T::Model>;
+    type Error = type_system::AbruptError;
 
-    #[allow(private_bounds, private_interfaces)]
-    fn implementation<S: State>(
+    fn query(
         &self,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
-        context: &mut crate::type_system::query::Context<Self::Model>,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
         (): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<Self::Result>, Self::Error> {
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
         // trivially satisfied
         if self.0.as_tuple().is_some() {
-            return Ok(Some(Succeeded::satisfied()));
+            return Ok(Some(Arc::new(Succeeded::satisfied())));
         }
 
         // check from predicates
@@ -70,28 +71,27 @@ impl<T: Term> Compute for Tuple<T> {
             if let Some(Succeeded {
                 result: Compatibility { forall_lifetime_errors, .. },
                 constraints,
-            }) = self.0.compatible_with_context(
+            }) = self.0.compatible(
                 &predicate.0,
                 Variance::Covariant,
                 environment,
-                context,
             )? {
                 if !forall_lifetime_errors.is_empty() {
                     continue;
                 }
 
-                return Ok(Some(Succeeded::satisfied_with(constraints)));
+                return Ok(Some(Arc::new(Succeeded::satisfied_with(
+                    constraints,
+                ))));
             }
         }
 
         // get the equivalences
-        for Succeeded { result: eq, constraints } in
-            get_equivalences_with_context(&self.0, environment, context)?
+        for Succeeded { result: eq, mut constraints } in
+            get_equivalences(&self.0, environment)?
         {
-            if let Some(mut result) =
-                Self(eq).query_with_context(environment, context)?
-            {
-                result.constraints.extend(constraints);
+            if let Some(result) = environment.query(&Self(eq))? {
+                constraints.extend(result.constraints.iter().cloned());
                 return Ok(Some(result));
             }
         }

@@ -631,11 +631,33 @@ pub struct CompilationMetaData {
 }
 
 /// The serialization representation of the [`Table`] as a library.
-#[derive(Debug, Clone, Copy)]
+#[derive(Copy)]
 pub struct Library<'a, T, E> {
     representation: &'a Representation,
     compilation_meta_data: &'a CompilationMetaData,
     reflector: &'a Reflector<T, GlobalID, E>,
+}
+
+impl<T: std::fmt::Debug, E: std::fmt::Debug> std::fmt::Debug
+    for Library<'_, T, E>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Library")
+            .field("representation", &self.representation)
+            .field("compilation_meta_data", &self.compilation_meta_data)
+            .field("reflector", &self.reflector)
+            .finish()
+    }
+}
+
+impl<T, E> Clone for Library<'_, T, E> {
+    fn clone(&self) -> Self {
+        Self {
+            representation: self.representation,
+            compilation_meta_data: self.compilation_meta_data,
+            reflector: self.reflector,
+        }
+    }
 }
 
 impl<T: Serialize, E: std::fmt::Display + 'static> Serialize

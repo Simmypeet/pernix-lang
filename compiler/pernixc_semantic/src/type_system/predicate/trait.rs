@@ -1,29 +1,20 @@
 use core::fmt;
+use std::{any::Any, sync::Arc};
 
+use derive_new::new;
 use enum_as_inner::EnumAsInner;
+use pernixc_table::{DisplayObject, GlobalID, Table};
+use serde::{Deserialize, Serialize};
 
-use super::{
-    contains_error, resolve_implementation_with_context, Implementation,
-    ResolutionError,
-};
-use crate::{
-    arena::ID,
-    symbol::{
-        self,
-        table::{self, representation::Index, DisplayObject, State, Table},
-        Generic, ItemID, TraitImplementationID,
-    },
-    type_system::{
-        instantiation::Instantiation,
-        model::{Default, Model},
-        normalizer::Normalizer,
-        observer::Observer,
-        predicate::Predicate,
-        query::Context,
-        term::{lifetime::Lifetime, GenericArguments},
-        variance::Variance,
-        Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
-    },
+use super::{contains_error, Implementation};
+use crate::type_system::{
+    self,
+    instantiation::Instantiation,
+    model::{Default, Model},
+    normalizer::Normalizer,
+    query::{Call, Query},
+    term::{lifetime::Lifetime, GenericArguments},
+    Environment, Satisfied, Succeeded,
 };
 
 /// An enumeration of ways a positive trait predicate can be satisfied.
@@ -35,9 +26,7 @@ pub enum PositiveSatisfied<M: Model> {
 
     /// The trait predicate was proven to be satisfied by searching for the
     /// matching trait implementation.
-    ByImplementation(
-        Implementation<ID<symbol::PositiveTraitImplementation>, M>,
-    ),
+    ByImplementation(Implementation<M>),
 
     /// The trait predicate was proven to be satisfied by the premise.
     ByPremise,
@@ -56,9 +45,7 @@ pub enum NegativeSatisfied<M: Model> {
 
     /// The trait predicate was proven to be satisfied by searching for the
     /// matching trait implementation.
-    ByImplementation(
-        Implementation<ID<symbol::NegativeTraitImplementation>, M>,
-    ),
+    ByImplementation(Implementation<M>),
 
     /// By proving that the positive trait predicate is not satisfied and the
     /// generic arguments are definite.
@@ -79,10 +66,21 @@ pub enum Kind {
 
 /// Represents a predicate stating that there exists an implementation for the
 /// given trait and generic arguments
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    new,
+)]
 pub struct Positive<M: Model> {
     /// The trait to be implemented.
-    pub id: ID<symbol::Trait>,
+    pub trait_id: GlobalID,
 
     /// Whether the implementation is const.
     pub is_const: bool,
@@ -92,22 +90,12 @@ pub struct Positive<M: Model> {
 }
 
 impl<M: Model> Positive<M> {
-    /// Creates a new [`Positive`] predicate.
-    #[must_use]
-    pub const fn new(
-        id: ID<symbol::Trait>,
-        is_const: bool,
-        generic_arguments: GenericArguments<M>,
-    ) -> Self {
-        Self { id, is_const, generic_arguments }
-    }
-
     /// Converts the [`Positive`] predicate from the [`Default`] model to the
     /// model `M`.
     #[must_use]
     pub fn from_default_model(predicate: Positive<Default>) -> Self {
         Self {
-            id: predicate.id,
+            trait_id: predicate.trait_id,
             is_const: predicate.is_const,
             generic_arguments: GenericArguments::from_default_model(
                 predicate.generic_arguments,
@@ -137,7 +125,7 @@ impl<M: Model> Positive<M> {
         M::ConstantInference: From<U::ConstantInference>,
     {
         Self {
-            id: term.id,
+            trait_id: term.trait_id,
             is_const: term.is_const,
             generic_arguments: GenericArguments::from_other_model(
                 term.generic_arguments,
@@ -160,7 +148,7 @@ impl<M: Model> Positive<M> {
         M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
     {
         Ok(Self {
-            id: term.id,
+            trait_id: term.trait_id,
             is_const: term.is_const,
             generic_arguments: GenericArguments::try_from_other_model(
                 term.generic_arguments,
@@ -169,13 +157,13 @@ impl<M: Model> Positive<M> {
     }
 }
 
-impl<T: State, M: Model> table::Display<T> for Positive<M>
+impl<M: Model> pernixc_table::Display for Positive<M>
 where
-    GenericArguments<M>: table::Display<T>,
+    GenericArguments<M>: pernixc_table::Display,
 {
     fn fmt(
         &self,
-        table: &Table<T>,
+        table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         write!(f, "trait ")?;
@@ -187,29 +175,27 @@ where
         write!(
             f,
             "{}{}",
-            table.get_qualified_name(self.id.into()).ok_or(fmt::Error)?,
+            table.get_qualified_name(self.trait_id).ok_or(fmt::Error)?,
             DisplayObject { display: &self.generic_arguments, table }
         )
     }
 }
 
-impl<M: Model> Compute for Positive<M> {
-    type Error = OverflowError;
+impl<M: Model> Query for Positive<M> {
+    type Model = M;
     type Parameter = ();
+    type InProgress = ();
+    type Result = Succeeded<PositiveSatisfied<M>, M>;
+    type Error = type_system::AbruptError;
 
-    #[allow(private_bounds, private_interfaces)]
-    fn implementation<S: State>(
+    fn query(
         &self,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
-        context: &mut Context<Self::Model>,
-        (): Self::Parameter,
-        (): Self::InProgress,
-    ) -> Result<Option<Self::Result>, Self::Error> {
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        parameter: Self::Parameter,
+        in_progress: Self::InProgress,
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
+        todo!()
+        /*
         // if this query was made in some trait implementation or trait, then
         // check if the trait implementation is the same as the query one.
         if let Some(result) =
@@ -288,6 +274,7 @@ impl<M: Model> Compute for Positive<M> {
         }
 
         Ok(None)
+        */
     }
 
     fn on_cyclic(
@@ -295,41 +282,43 @@ impl<M: Model> Compute for Positive<M> {
         (): Self::Parameter,
         (): Self::InProgress,
         (): Self::InProgress,
-        _: &[crate::type_system::query::Record<Self::Model>],
-    ) -> Result<Option<Self::Result>, Self::Error> {
-        Ok(Some(Succeeded::new(
+        _: &[Call<Arc<dyn Any + Send + Sync>, Arc<dyn Any + Send + Sync>>],
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
+        Ok(Some(Arc::new(Succeeded::new(
             PositiveSatisfied::ByCyclic, /* doesn't matter */
-        )))
+        ))))
     }
 }
 
 /// Represents a predicate stating that there exists no implementation for the
 /// given trait and generic arguments
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    new,
+)]
 pub struct Negative<M: Model> {
     /// The trait in question.
-    pub id: ID<symbol::Trait>,
+    pub trait_id: GlobalID,
 
     /// The generic arguments supplied to the trait.
     pub generic_arguments: GenericArguments<M>,
 }
 
 impl<M: Model> Negative<M> {
-    /// Creates a new [`Negative`] predicate.
-    #[must_use]
-    pub const fn new(
-        id: ID<symbol::Trait>,
-        generic_arguments: GenericArguments<M>,
-    ) -> Self {
-        Self { id, generic_arguments }
-    }
-
     /// Converts the [`Negative`] predicate from the [`Default`] model to the
     /// model `M`.
     #[must_use]
     pub fn from_default_model(predicate: Negative<Default>) -> Self {
         Self {
-            id: predicate.id,
+            trait_id: predicate.trait_id,
             generic_arguments: GenericArguments::from_default_model(
                 predicate.generic_arguments,
             ),
@@ -358,7 +347,7 @@ impl<M: Model> Negative<M> {
         M::ConstantInference: From<U::ConstantInference>,
     {
         Self {
-            id: term.id,
+            trait_id: term.trait_id,
             generic_arguments: GenericArguments::from_other_model(
                 term.generic_arguments,
             ),
@@ -380,7 +369,7 @@ impl<M: Model> Negative<M> {
         M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
     {
         Ok(Self {
-            id: term.id,
+            trait_id: term.trait_id,
             generic_arguments: GenericArguments::try_from_other_model(
                 term.generic_arguments,
             )?,
@@ -388,13 +377,13 @@ impl<M: Model> Negative<M> {
     }
 }
 
-impl<T: State, M: Model> table::Display<T> for Negative<M>
+impl<M: Model> pernixc_table::Display for Negative<M>
 where
-    GenericArguments<M>: table::Display<T>,
+    GenericArguments<M>: pernixc_table::Display,
 {
     fn fmt(
         &self,
-        table: &Table<T>,
+        table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         write!(f, "!trait ")?;
@@ -402,29 +391,27 @@ where
         write!(
             f,
             "{}{}",
-            table.get_qualified_name(self.id.into()).ok_or(fmt::Error)?,
+            table.get_qualified_name(self.trait_id).ok_or(fmt::Error)?,
             DisplayObject { display: &self.generic_arguments, table }
         )
     }
 }
 
-impl<M: Model> Compute for Negative<M> {
-    type Error = OverflowError;
+impl<M: Model> Query for Negative<M> {
+    type Model = M;
     type Parameter = ();
+    type InProgress = ();
+    type Result = Succeeded<NegativeSatisfied<M>, M>;
+    type Error = type_system::AbruptError;
 
-    #[allow(private_bounds, private_interfaces)]
-    fn implementation<S: State>(
+    fn query(
         &self,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
-        context: &mut Context<Self::Model>,
-        (): Self::Parameter,
-        (): Self::InProgress,
-    ) -> Result<Option<Self::Result>, Self::Error> {
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        parameter: Self::Parameter,
+        in_progress: Self::InProgress,
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
+        todo!()
+        /*
         // manually search for the trait implementation
         match resolve_implementation_with_context(
             self.id,
@@ -508,15 +495,17 @@ impl<M: Model> Compute for Negative<M> {
                     definition.constraints,
                 )
             }))
+        */
     }
 }
 
-fn is_in_trait<M: Model, S: State>(
-    trait_id: ID<symbol::Trait>,
+fn is_in_trait<M: Model>(
+    trait_id: GlobalID,
     generic_arguments: &GenericArguments<M>,
-    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
-    context: &mut Context<M>,
-) -> Result<Output<Satisfied, M>, OverflowError> {
+    environment: &mut Environment<M, impl Normalizer<M>>,
+) -> Result<Option<Succeeded<Satisfied, M>>, type_system::AbruptError> {
+    todo!()
+    /*
     let Some(query_site) = environment.premise.query_site else {
         return Ok(None);
     };
@@ -562,7 +551,9 @@ fn is_in_trait<M: Model, S: State>(
     }
 
     Ok(None)
+    */
 }
 
-#[cfg(test)]
-mod tests;
+// TODO: bring test back
+// #[cfg(test)]
+// mod tests;

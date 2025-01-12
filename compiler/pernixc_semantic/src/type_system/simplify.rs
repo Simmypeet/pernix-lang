@@ -9,11 +9,11 @@ use super::{
         constant::Constant, lifetime::Lifetime, r#type::Type, ModelOf, Term,
     },
     visitor::Mutable,
-    Environment, LifetimeConstraint, OverflowError, Succeeded,
+    AbruptError, Environment, LifetimeConstraint, Succeeded,
 };
 use crate::type_system::{
-    mapping::Mapping, predicate::Outlives, query::Context,
-    unification::Unification, Compute, LifetimeUnifyingPredicate,
+    mapping::Mapping, predicate::Outlives, unification::Unification,
+    LifetimeUnifyingPredicate,
 };
 
 pub(super) trait Simplify: ModelOf + Sized {
@@ -51,18 +51,18 @@ struct Simplified<M: Model> {
     constants: BTreeSet<Constant<M>>,
 }
 
-struct Visitor<'e, 's, N: Normalizer<M>, M: Model> {
-    environment: &'e Environment<'e, M, N>,
+struct Visitor<'e, 't, 's, N: Normalizer<M>, M: Model> {
+    environment: &'e Environment<'t, M, N>,
     simplified: &'s mut Simplified<M>,
     lifetime_constraints: BTreeSet<LifetimeConstraint<M>>,
-    overflow_error: Option<OverflowError>,
+    abrupt_error: Option<AbruptError>,
 }
 
-impl<'e, 's, U: Term, N: Normalizer<U::Model>> Mutable<U>
-    for Visitor<'e, 's, N, U::Model>
+impl<'e, 't, 's, U: Term, N: Normalizer<U::Model>> Mutable<U>
+    for Visitor<'e, 't, 's, N, U::Model>
 {
     fn visit(&mut self, term: &mut U, _: U::Location) -> bool {
-        if self.overflow_error.is_some() {
+        if self.abrupt_error.is_some() {
             return false;
         }
 
@@ -77,7 +77,7 @@ impl<'e, 's, U: Term, N: Normalizer<U::Model>> Mutable<U>
             Ok(None) => true,
 
             Err(err) => {
-                self.overflow_error = Some(err);
+                self.abrupt_error = Some(err);
                 false
             }
         }
@@ -89,7 +89,7 @@ fn simplify_internal<T: Term>(
     term: &T,
     environment: &Environment<T::Model, impl Normalizer<T::Model>>,
     simplified: &mut Simplified<T::Model>,
-) -> Result<Option<Succeeded<T, T::Model>>, OverflowError> {
+) -> Result<Option<Succeeded<T, T::Model>>, AbruptError> {
     if !T::simplified_mut(simplified).insert(term.clone()) {
         return Ok(None);
     }
@@ -100,14 +100,14 @@ fn simplify_internal<T: Term>(
         environment,
         simplified,
         lifetime_constraints: BTreeSet::new(),
-        overflow_error: None,
+        abrupt_error: None,
     };
     let _ = new_term.accept_one_level_mut(&mut visitor);
 
     // extract out the lifetime constraints
     let Visitor {
         lifetime_constraints: mut outside_constraints,
-        overflow_error,
+        abrupt_error: overflow_error,
         ..
     } = visitor;
 
@@ -150,14 +150,13 @@ fn simplify_internal<T: Term>(
                 .predicates
                 .remove(trait_type_equality));
 
-            if let Some(Succeeded { result: unifier, mut constraints }) =
-                Unification::new(
-                    new_term.clone(),
-                    lhs_trait_member,
-                    Arc::new(LifetimeUnifyingPredicate),
-                )
-                .query(&environment_cloned)?
-            {
+            if let Some(unifier) = environment.query(&Unification::new(
+                new_term.clone(),
+                lhs_trait_member,
+                Arc::new(LifetimeUnifyingPredicate),
+            ))? {
+                let mut constraints = unifier.constraints.clone();
+
                 for (j, another_trait_type_equality) in
                     all_trait_type_equalities.iter().enumerate()
                 {
@@ -180,14 +179,13 @@ fn simplify_internal<T: Term>(
                         unreachable!()
                     };
 
-                    let unification = Unification::new(
+                    let unification = environment.query(&Unification::new(
                         trait_type_equality_unwrapped.rhs.clone(),
                         T::from(
                             another_trait_type_equality_unwrapped.lhs.clone(),
                         ),
                         Arc::new(LifetimeUnifyingPredicate),
-                    )
-                    .query(&environment_cloned)?;
+                    ))?;
 
                     // add back the other trait type equality
                     environment_cloned
@@ -210,7 +208,7 @@ fn simplify_internal<T: Term>(
                     break 'out;
                 }
 
-                let mappings = Mapping::from_unifier(unifier);
+                let mappings = Mapping::from_unifier(unifier.result.clone());
 
                 assert!(mappings.types.is_empty());
                 assert!(mappings.constants.is_empty());
@@ -273,7 +271,7 @@ fn simplify_internal<T: Term>(
     // do normalization
     'out: {
         let Ok(Some(Succeeded { result: normalized, constraints })) =
-            new_term.normalize(environment, &mut Context::new())
+            new_term.normalize(environment)
         else {
             break 'out;
         };
@@ -304,8 +302,8 @@ fn simplify_internal<T: Term>(
 /// equality.
 pub fn simplify<T: Term>(
     term: &T,
-    environment: &Environment<T::Model, impl Normalizer<T::Model>>,
-) -> Result<Succeeded<T, T::Model>, OverflowError> {
+    environment: &mut Environment<T::Model, impl Normalizer<T::Model>>,
+) -> Result<Succeeded<T, T::Model>, AbruptError> {
     simplify_internal(term, environment, &mut Simplified::default())
         .map(|x| x.unwrap_or_else(|| Succeeded::new(term.clone())))
 }

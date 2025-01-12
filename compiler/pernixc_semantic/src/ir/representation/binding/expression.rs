@@ -1,7 +1,5 @@
 //! Contains the code for binding the expression syntax tree.
 
-// TODO: this file is too intense, split it into multiple modules
-
 use std::collections::HashMap;
 
 use enum_as_inner::EnumAsInner;

@@ -1,23 +1,22 @@
 //! Contains the definition of [`Lifetime`].
 
 use core::fmt;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 use enum_as_inner::EnumAsInner;
-use getset::Getters;
+use pernixc_arena::{Key, ID};
 use pernixc_base::source_file::Span;
+use pernixc_table::{DisplayObject, GlobalID, MemberID, Table};
+use serde::{Deserialize, Serialize};
 
 use super::{
     constant::Constant, r#type::Type, AssignSubTermError, Error,
     GenericArguments, Kind, KindMut, ModelOf, Never, Term, Tuple,
 };
 use crate::{
-    arena::{Key, ID},
-    component::generic_parameters::{LifetimeParameter, LifetimeParameterID},
-    table::{self, DisplayObject, MemberID, Table},
+    component::generic_parameters::{
+        GenericParameters, LifetimeParameter, LifetimeParameterID,
+    },
     type_system::{
         self,
         equality::Equality,
@@ -27,41 +26,34 @@ use crate::{
         model::{Default, Model},
         normalizer::Normalizer,
         predicate::{self, Outlives, Predicate, Satisfiability},
-        query::Context,
         sub_term::{Location, SubTerm, TermLocation},
         unification::{Substructural, Unifier},
-        Environment, Output,
+        Environment, Succeeded,
     },
 };
 
 /// Represents a for-all quantified lifetime, denoted by `for['a]` syntax, used
 /// in higher-ranked predicates.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Forall {
-    /// The unique ID of the forall lifetime.
-    id: usize,
+    /// The global ID where the forall lifetime was declared.
+    pub global_id: GlobalID,
+
+    /// The unique ID of the forall lifetime within the global ID scope.
+    pub id: usize,
 
     /// The span where the forall lifetime was declared.
     ///
     /// This field doesn't influence the equality, ordering, and hashing od the
     /// this struct.
+    #[serde(skip)]
     pub span: Option<Span>,
 }
 
-impl Forall {
-    /// Generates a new higher-ranked lifetime.
-    #[allow(missing_docs)]
-    pub fn generate(span: Option<Span>) -> Self {
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-        let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-
-        Self { id, span }
-    }
-}
-
 impl PartialEq for Forall {
-    fn eq(&self, other: &Self) -> bool { self.id == other.id }
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.global_id == other.global_id
+    }
 }
 
 impl Eq for Forall {}
@@ -73,11 +65,16 @@ impl PartialOrd for Forall {
 }
 
 impl Ord for Forall {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.id.cmp(&other.id) }
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id.cmp(&other.id).then(self.global_id.cmp(&other.global_id))
+    }
 }
 
 impl std::hash::Hash for Forall {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.id.hash(state) }
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+        self.global_id.hash(state);
+    }
 }
 
 /// Represents a lifetime annotation term.
@@ -90,6 +87,8 @@ impl std::hash::Hash for Forall {
     Ord,
     Hash,
     EnumAsInner,
+    Serialize,
+    Deserialize,
     derive_more::From,
 )]
 #[allow(missing_docs)]
@@ -272,9 +271,8 @@ where
 
     fn normalize(
         &self,
-        _: &Environment<M, impl Normalizer<M>>,
-        _: &mut Context<M>,
-    ) -> Result<Output<Self, M>, type_system::OverflowError> {
+        _: & Environment<M, impl Normalizer<M>>,
+    ) -> Result<Option<Succeeded<Self, M>>, type_system::AbruptError> {
         Ok(None)
     }
 
@@ -473,9 +471,9 @@ where
     }
 }
 
-impl<M: Model> table::Display for Lifetime<M>
+impl<M: Model> pernixc_table::Display for Lifetime<M>
 where
-    M::LifetimeInference: table::Display,
+    M::LifetimeInference: pernixc_table::Display,
 {
     fn fmt(
         &self,
@@ -486,10 +484,8 @@ where
             Self::Static => write!(f, "'static"),
             Self::Parameter(parameter) => {
                 match &table
-                    .get_generic(parameter.parent)
-                    .ok_or(fmt::Error)?
-                    .generic_declaration()
-                    .parameters
+                    .query::<GenericParameters>(parameter.parent)
+                    .map_err(|_| fmt::Error)?
                     .lifetimes()
                     .get(parameter.id)
                     .ok_or(fmt::Error)?

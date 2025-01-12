@@ -1,21 +1,19 @@
 //! Contains the semantic logic of the compiler (i.e. type checking/system).
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use environment::Environment;
+use pernixc_table::{query::CyclicDependency, GlobalID};
 use predicate::Outlives;
-use query::{Cached, Context, Record, Sealed};
 use term::constant::Constant;
 use unification::Log;
 
 use self::{
     model::Model,
-    normalizer::Normalizer,
     predicate::Predicate,
     term::{lifetime::Lifetime, r#type::Type},
 };
-use crate::table::{query::CyclicDependency, GlobalID};
 
 pub mod compatible;
 pub mod deduction;
@@ -34,12 +32,14 @@ pub mod predicate;
 pub mod query;
 pub mod simplify;
 pub mod sub_term;
-pub mod term;
-pub mod type_check;
 pub mod unification;
 pub mod variance;
 pub mod visitor;
-pub mod well_formedness;
+
+pub mod term;
+
+// pub mod type_check;
+// pub mod well_formedness;
 
 /// A struct implementing the [`unification::Predicate`] that allows the
 /// lifetime to be unified.
@@ -55,7 +55,7 @@ impl<M: Model> unification::Predicate<Lifetime<M>>
         _: &Lifetime<M>,
         _: &[Log<M>],
         _: &[Log<M>],
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Satisfied, M> {
         Ok(Some(Succeeded::satisfied()))
     }
 }
@@ -67,7 +67,7 @@ impl<M: Model> unification::Predicate<Type<M>> for LifetimeUnifyingPredicate {
         _: &Type<M>,
         _: &[Log<M>],
         _: &[Log<M>],
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Satisfied, M> {
         Ok(None)
     }
 }
@@ -81,7 +81,7 @@ impl<M: Model> unification::Predicate<Constant<M>>
         _: &Constant<M>,
         _: &[Log<M>],
         _: &[Log<M>],
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Satisfied, M> {
         Ok(None)
     }
 }
@@ -111,15 +111,11 @@ pub struct OverflowError;
     thiserror::Error,
     EnumAsInner,
 )]
-pub enum Error {
+pub enum AbruptError {
     #[error(transparent)]
     Overflow(#[from] OverflowError),
 
-    #[error(
-        "cyclic dependency error occurred while querying a particular \
-         symbol's component to the table; this error should be reported to \
-         the users"
-    )]
+    #[error(transparent)]
     CyclicDependency(#[from] CyclicDependency),
 }
 
@@ -204,12 +200,6 @@ impl<M: Model> Succeeded<Satisfied, M> {
     }
 }
 
-/// The type alias for the [`Option`] of [`Succeeded`].
-///
-/// The [`None`] is returned if failed to prove the query. Otherwise, the
-/// [`Succeeded`] is returned with the result and additional constraints.
-pub type Output<Result, M> = Option<Succeeded<Result, M>>;
-
 /// Contains the premise of the semantic logic.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Premise<M: Model> {
@@ -224,121 +214,35 @@ pub struct Premise<M: Model> {
     pub query_site: Option<GlobalID>,
 }
 
-/// A trait used for computing the result of the query.
-#[allow(private_bounds)]
-pub trait Compute: Sealed {
-    /// The error type of the computation
-    type Error: From<OverflowError>;
+/// An alias for the result where the Ok variant can be `Option::Some(Succeeded
+/// {..})` or `None`.
+pub type Result<T, M, E = AbruptError> =
+    std::result::Result<Option<Succeeded<T, M>>, E>;
 
-    #[doc(hidden)]
-    type Parameter: Default;
+/// An alias for the result where the Ok variant can be
+/// `Option::Some(Arc<Succeeded {..})` or `None`.
+pub type ResultArc<T, M, E = AbruptError> =
+    std::result::Result<Option<Arc<Succeeded<T, M>>>, E>;
 
-    /// The raw implementation of the query.
-    ///
-    /// The implementation shouldn't include the context's state mutation
-    /// (mark_as_done, clear_query).
-    #[doc(hidden)]
-    #[allow(private_interfaces, private_bounds)]
-    fn implementation(
-        &self,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        context: &mut Context<Self::Model>,
-        parameter: Self::Parameter,
-        in_progress: Self::InProgress,
-    ) -> Result<Option<Self::Result>, Self::Error>;
+/// A trait implemented for [`std::result::Result<T,
+/// pernixc::table::query::Error>`] that will only accept [`CyclicDependency`]
+/// error variant.
+pub trait ResultExt<T> {
+    fn extract_cyclic_dependency(
+        self,
+    ) -> std::result::Result<Option<T>, CyclicDependency>;
+}
 
-    /// The result to return of the query when the query is cyclic.
-    #[doc(hidden)]
-    #[allow(private_interfaces, private_bounds)]
-    fn on_cyclic(
-        &self,
-        _: Self::Parameter,
-        _: Self::InProgress,
-        _: Self::InProgress,
-        _: &[Record<Self::Model>],
-    ) -> Result<Option<Self::Result>, Self::Error> {
-        Ok(None) /* the default implementation is to make the query fails */
-    }
-
-    /// Queries the result.
-    #[allow(private_interfaces, private_bounds)]
-    fn query(
-        &self,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-    ) -> Result<Option<Self::Result>, Self::Error> {
-        let mut context = Context::default();
-        self.query_with_context(environment, &mut context)
-    }
-
-    /// Queries the result with the explicitly specified context.
-    #[doc(hidden)]
-    #[allow(private_interfaces, private_bounds)]
-    fn query_with_context(
-        &self,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        context: &mut Context<Self::Model>,
-    ) -> Result<Option<Self::Result>, Self::Error> {
-        self.query_with_context_full(
-            environment,
-            context,
-            Self::Parameter::default(),
-            Self::InProgress::default(),
-        )
-    }
-
-    /// Queries the result with the explicitly specified context, in-progress
-    /// state, and additional parameters.
-    #[doc(hidden)]
-    #[allow(private_interfaces, private_bounds)]
-    fn query_with_context_full(
-        &self,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        context: &mut Context<Self::Model>,
-        parameter: Self::Parameter,
-        in_progress: Self::InProgress,
-    ) -> Result<Option<Self::Result>, Self::Error> {
-        match context.mark_as_in_progress(
-            self.clone(),
-            in_progress.clone(),
-            environment,
-        )? {
-            Some(Cached::Done(result)) => return Ok(Some(result)),
-            Some(Cached::InProgress(new_in_progress)) => {
-                let position = context
-                    .call_stack()
-                    .iter()
-                    .position(|x| {
-                        Self::from_call(x).map_or(false, |x| &x.query == self)
-                    })
-                    .expect("should exist");
-
-                // circular dependency
-                let result = self.on_cyclic(
-                    parameter,
-                    in_progress,
-                    new_in_progress,
-                    &context.call_stack()[position..],
-                )?;
-
-                return Ok(result);
-            }
-            None => { /*no circular dependency, continue...*/ }
-        }
-
-        let result =
-            self.implementation(environment, context, parameter, in_progress);
-
-        match result {
-            Ok(Some(result)) => {
-                // remembers the result
-                assert!(context.mark_as_done(self, result.clone()));
-                Ok(Some(result))
-            }
-            result @ (Ok(None) | Err(_)) => {
-                // reset the query state
-                assert!(context.clear_query(self).is_some());
-                result
-            }
+impl<T> ResultExt<T> for std::result::Result<T, pernixc_table::query::Error> {
+    fn extract_cyclic_dependency(
+        self,
+    ) -> std::result::Result<Option<T>, CyclicDependency> {
+        match self {
+            Ok(t) => Ok(Some(t)),
+            Err(pernixc_table::query::Error::CyclicDependency(err)) => Err(err),
+            Err(
+                pernixc_table::query::Error::SymbolNotFoundOrInvalidComponent,
+            ) => Ok(None),
         }
     }
 }

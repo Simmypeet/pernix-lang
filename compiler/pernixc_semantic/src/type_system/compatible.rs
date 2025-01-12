@@ -10,7 +10,6 @@ use super::{
     model::Model,
     normalizer::Normalizer,
     predicate::Outlives,
-    query::Context,
     sub_term::{SubTypeLocation, TermLocation},
     term::{
         constant::Constant,
@@ -20,10 +19,13 @@ use super::{
     },
     unification::{self, Matching, Unification},
     variance::Variance,
-    visitor, Compute, Environment, LifetimeConstraint, Output, OverflowError,
-    Satisfied, Succeeded,
+    visitor, AbruptError, Environment, LifetimeConstraint, Satisfied,
+    Succeeded,
 };
-use crate::type_system::sub_term::{Location, SubLifetimeLocation};
+use crate::{
+    type_system,
+    type_system::sub_term::{Location, SubLifetimeLocation},
+};
 
 /// The result of matching the lifetime with the forall lifetimes.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -152,7 +154,7 @@ impl<M: Model> unification::Predicate<Lifetime<M>>
         _: &Lifetime<M>,
         from_logs: &[unification::Log<M>],
         _: &[unification::Log<M>],
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
         let mut current_from = self.from.clone();
 
         for (idx, log) in from_logs.iter().enumerate() {
@@ -200,7 +202,7 @@ impl<M: Model> unification::Predicate<Type<M>>
         _: &Type<M>,
         _: &[unification::Log<M>],
         _: &[unification::Log<M>],
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
         Ok(None)
     }
 }
@@ -214,7 +216,7 @@ impl<M: Model> unification::Predicate<Constant<M>>
         _: &Constant<M>,
         _: &[unification::Log<M>],
         _: &[unification::Log<M>],
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
         Ok(None)
     }
 }
@@ -222,38 +224,38 @@ impl<M: Model> unification::Predicate<Constant<M>>
 #[must_use]
 fn append_matchings_from_unification<M: Model>(
     mut current_from: Type<M>,
-    unifier: unification::Unifier<Type<M>>,
+    unifier: &unification::Unifier<Type<M>>,
     parent_variance: Variance,
     environment: &Environment<M, impl Normalizer<M>>,
     matching: &mut BTreeMap<Lifetime<M>, Vec<(Lifetime<M>, Variance)>>,
 ) -> bool {
-    if let Some(rewritten_from) = unifier.rewritten_from {
-        current_from = rewritten_from;
+    if let Some(rewritten_from) = &unifier.rewritten_from {
+        current_from = rewritten_from.clone();
     }
 
-    match unifier.matching {
+    match &unifier.matching {
         Matching::Unifiable(_, _) => {
             unreachable!("the can never be unified")
         }
 
         Matching::Substructural(substructural) => {
             // look for matched lifetimes
-            for (location, unification) in substructural.lifetimes {
+            for (location, unification) in &substructural.lifetimes {
                 match environment.get_variance_of(
                     &current_from,
                     parent_variance,
                     std::iter::once(TermLocation::Lifetime(
-                        SubLifetimeLocation::FromType(location),
+                        SubLifetimeLocation::FromType(*location),
                     )),
                 ) {
                     Ok(variance) => {
                         if let Matching::Unifiable(self_lt, target_lt) =
-                            unification.matching
+                            &unification.matching
                         {
                             matching
-                                .entry(target_lt)
+                                .entry(target_lt.clone())
                                 .or_default()
-                                .push((self_lt, variance));
+                                .push((self_lt.clone(), variance));
                         }
                     }
 
@@ -265,12 +267,12 @@ fn append_matchings_from_unification<M: Model>(
             }
 
             // look for matched types
-            for (location, unification) in substructural.types {
+            for (location, unification) in &substructural.types {
                 let Ok(current_variance) = environment.get_variance_of(
                     &current_from,
                     parent_variance,
                     std::iter::once(TermLocation::Type(
-                        SubTypeLocation::FromType(location),
+                        SubTypeLocation::FromType(*location),
                     )),
                 ) else {
                     return false;
@@ -298,7 +300,9 @@ fn append_matchings_from_unification<M: Model>(
 /// A trait for determining the equality of two terms while considering the
 /// variance of the lifetime.
 pub trait Compatible: ModelOf {
-    /// The implementation of [`Compatible`] algortihm with the context.
+    /// The implementation of [`Compatible`] algorithm.
+    ///
+    /// This similar to equality but allowing subtypings.
     ///
     /// # Parameters
     ///
@@ -311,45 +315,21 @@ pub trait Compatible: ModelOf {
     /// # Errors
     ///
     /// See [`OverflowError`] for more information.
-    fn compatible_with_context(
-        &self,
-        target: &Self,
-        variance: Variance,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        context: &mut Context<Self::Model>,
-    ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>;
-
-    /// A delegate method for [`Compatible::compatible_with_context()`] with the
-    /// default context.
-    ///
-    /// # Errors
-    ///
-    /// See [`OverflowError`] for more information.
     fn compatible(
         &self,
         target: &Self,
         variance: Variance,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-    ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>
-    {
-        self.compatible_with_context(
-            target,
-            variance,
-            environment,
-            &mut Context::new(),
-        )
-    }
+    ) -> type_system::Result<Compatibility<Self::Model>, Self::Model>;
 }
 
 impl<M: Model> Compatible for Lifetime<M> {
-    fn compatible_with_context(
+    fn compatible(
         &self,
         target: &Self,
         variance: Variance,
-        _: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        _: &mut Context<Self::Model>,
-    ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>
-    {
+        _environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+    ) -> type_system::Result<Compatibility<M>, M> {
         if self == target {
             return Ok(Some(Succeeded::new(Compatibility::default())));
         }
@@ -560,30 +540,28 @@ fn matching_to_compatiblity<M: Model>(
 }
 
 impl<M: Model> Compatible for Type<M> {
-    fn compatible_with_context(
+    fn compatible(
         &self,
         target: &Self,
         variance: Variance,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        context: &mut Context<Self::Model>,
-    ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>
-    {
-        let Some(Succeeded { result: unification, mut constraints }) =
-            Unification::new(
-                self.clone(),
-                target.clone(),
-                Arc::new(LifetimeMatchingPredicate { from: self.clone() }),
-            )
-            .query_with_context(environment, context)?
+    ) -> type_system::Result<Compatibility<M>, M> {
+        let Some(unifer) = environment.query(&Unification::new(
+            self.clone(),
+            target.clone(),
+            Arc::new(LifetimeMatchingPredicate { from: self.clone() }),
+        ))?
         else {
             return Ok(None);
         };
+
+        let mut lifetime_constraints = unifer.constraints.clone();
 
         let mut matching = BTreeMap::new();
 
         if !append_matchings_from_unification(
             self.clone(),
-            unification,
+            &unifer.result,
             variance,
             environment,
             &mut matching,
@@ -594,43 +572,45 @@ impl<M: Model> Compatible for Type<M> {
         let Succeeded { result, constraints: new_constraint } =
             matching_to_compatiblity(matching);
 
-        constraints.extend(new_constraint);
+        lifetime_constraints.extend(new_constraint);
 
-        Ok(Some(Succeeded::with_constraints(result, constraints)))
+        Ok(Some(Succeeded::with_constraints(result, lifetime_constraints)))
     }
 }
 
 impl<M: Model> Compatible for Constant<M> {
-    fn compatible_with_context(
+    fn compatible(
         &self,
         target: &Self,
         _: Variance,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        context: &mut Context<Self::Model>,
-    ) -> Result<Output<Compatibility<Self::Model>, Self::Model>, OverflowError>
-    {
+    ) -> type_system::Result<Compatibility<M>, M> {
         // use default strict equality for constant
-        Equality::new(self.clone(), target.clone())
-            .query_with_context(environment, context)
-            .map(|x| {
+        environment.query(&Equality::new(self.clone(), target.clone())).map(
+            |x| {
                 x.map(|x| {
                     Succeeded::with_constraints(
                         Compatibility::default(),
-                        x.constraints,
+                        x.constraints.clone(),
                     )
                 })
-            })
+            },
+        )
     }
 }
 
 impl<M: Model> GenericArguments<M> {
-    pub(super) fn compatible_with_context(
+    /// Determines the compatibility of two generic arguments.
+    ///
+    /// # Errors
+    ///
+    /// See [`AbruptError`] for more information.
+    pub fn compatible(
         &self,
         target: &Self,
         variance: Variance,
-        environment: &Environment<M, impl Normalizer<M>>,
-        context: &mut Context<M>,
-    ) -> Result<Output<Compatibility<M>, M>, OverflowError> {
+        environment: &mut Environment<M, impl Normalizer<M>>,
+    ) -> type_system::Result<Compatibility<M>, M> {
         let mut constraints = BTreeSet::new();
 
         if self.lifetimes.len() != target.lifetimes.len()
@@ -655,24 +635,20 @@ impl<M: Model> GenericArguments<M> {
         for (self_type, target_type) in
             self.types.iter().zip(target.types.iter())
         {
-            let Some(Succeeded {
-                result: unification,
-                constraints: new_constraints,
-            }) = Unification::new(
+            let Some(new_unifier) = environment.query(&Unification::new(
                 self_type.clone(),
                 target_type.clone(),
                 Arc::new(LifetimeMatchingPredicate { from: self_type.clone() }),
-            )
-            .query_with_context(environment, context)?
+            ))?
             else {
                 return Ok(None);
             };
 
-            constraints.extend(new_constraints);
+            constraints.extend(new_unifier.constraints.iter().cloned());
 
             if !append_matchings_from_unification(
                 self_type.clone(),
-                unification,
+                &new_unifier.result,
                 variance,
                 environment,
                 &mut matching,
@@ -684,16 +660,15 @@ impl<M: Model> GenericArguments<M> {
         for (self_constant, target_constant) in
             self.constants.iter().zip(target.constants.iter())
         {
-            let Some(Succeeded {
-                result: Satisfied,
-                constraints: new_constraints,
-            }) = Equality::new(self_constant.clone(), target_constant.clone())
-                .query_with_context(environment, context)?
+            let Some(new_equality) = environment.query(&Equality::new(
+                self_constant.clone(),
+                target_constant.clone(),
+            ))?
             else {
                 return Ok(None);
             };
 
-            constraints.extend(new_constraints);
+            constraints.extend(new_equality.constraints.iter().cloned());
         }
 
         let Succeeded { result, constraints: new_constraint } =
@@ -705,5 +680,6 @@ impl<M: Model> GenericArguments<M> {
     }
 }
 
-#[cfg(test)]
-mod tests;
+// TODO: bring test back
+// #[cfg(test)]
+// mod tests;

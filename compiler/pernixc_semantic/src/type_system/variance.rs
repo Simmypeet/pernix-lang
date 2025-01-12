@@ -1,6 +1,11 @@
 //! Contains the definition of [`Variance`]
 
 use enum_as_inner::EnumAsInner;
+use pernixc_table::{
+    component::SymbolKind,
+    query::{CyclicDependency, Error as QueryError},
+    GlobalID,
+};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -8,21 +13,10 @@ use super::{
     model::Model,
     normalizer::Normalizer,
     sub_term::{Location, SubLifetimeLocation, SubTypeLocation, TermLocation},
-    term::{
-        r#type::{self, Type},
-        Symbol,
-    },
-    OverflowError,
+    term::r#type::{self, Type},
 };
-use crate::{
-    component::{
-        generic_parameters::GenericParameters,
-        variance::GenericParameterVariances, SymbolKind,
-    },
-    table::{
-        query::{self, CyclicDependency},
-        GlobalID,
-    },
+use crate::component::{
+    generic_parameters::GenericParameters, variance::GenericParameterVariances,
 };
 
 /// An enumeration of either an invariant or covariant variance.
@@ -116,11 +110,8 @@ pub enum GetVarianceError {
     #[error("the term is a constant, the constant doesn't have a variance.")]
     Constant,
 
-    #[error(
-        "a cyclic dependency was found while querying the generic parameter \
-         variances from the structs or enums."
-    )]
-    CyclicDependency(CyclicDependency),
+    #[error(transparent)]
+    CyclicDependency(#[from] CyclicDependency),
 
     #[error(
         "the symbol id is not found in the table or its kind is not one of \
@@ -178,9 +169,7 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
                             let id = self
                                 .table()
                                 .query::<GenericParameters>(symbol.id)
-                                .map_err(
-                                    query::Error::unwrap_cyclic_dependency,
-                                )?
+                                .map_err(QueryError::unwrap_cyclic_dependency)?
                                 .lifetime_order()
                                 .get(location.0)
                                 .copied()
@@ -192,10 +181,11 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
                                         symbol.id,
                                     )
                                     .map_err(
-                                        query::Error::unwrap_cyclic_dependency,
+                                        QueryError::unwrap_cyclic_dependency,
                                     )?
                                     .variances_by_lifetime_ids
                                     .get(&id)
+                                    .copied()
                                     .unwrap(),
                             ))
                         } else if kind == SymbolKind::Function {
@@ -207,7 +197,7 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
                         }
                     }
 
-                    // lifetime in the member function
+                    // lifetime in the member function and trait member
                     (
                         r#type::SubLifetimeLocation::MemberSymbol(location),
                         Type::MemberSymbol(member_symbol),
@@ -251,31 +241,6 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
                         Ok(parent_variance.xfrom(Variance::Covariant))
                     }
 
-                    // lifetime in the trait member
-                    (
-                        r#type::SubLifetimeLocation::TraitMember(location),
-                        Type::TraitMember(term),
-                    ) => {
-                        // there's no sub-term in the lifetime
-                        if locations.next().is_some() {
-                            return Err(GetVarianceError::InvalidLocation);
-                        }
-
-                        let invalid = if location.0.from_parent {
-                            location.0.index
-                                >= term.parent_generic_arguments.lifetimes.len()
-                        } else {
-                            location.0.index
-                                >= term.member_generic_arguments.lifetimes.len()
-                        };
-
-                        if invalid {
-                            return Err(GetVarianceError::InvalidLocation);
-                        }
-
-                        Ok(parent_variance.xfrom(Variance::Invariant))
-                    }
-
                     _ => Err(GetVarianceError::InvalidLocation),
                 }
             }
@@ -301,9 +266,7 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
                             let id = self
                                 .table()
                                 .query::<GenericParameters>(symbol.id)
-                                .map_err(
-                                    query::Error::unwrap_cyclic_dependency,
-                                )?
+                                .map_err(QueryError::unwrap_cyclic_dependency)?
                                 .type_order()
                                 .get(location.0)
                                 .copied()
@@ -315,10 +278,11 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
                                         symbol.id,
                                     )
                                     .map_err(
-                                        query::Error::unwrap_cyclic_dependency,
+                                        QueryError::unwrap_cyclic_dependency,
                                     )?
                                     .variances_by_type_ids
                                     .get(&id)
+                                    .copied()
                                     .unwrap(),
                             );
 
@@ -439,33 +403,6 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
                                 .member_generic_arguments
                                 .types
                                 .get(location.index)
-                        }
-                        .ok_or(GetVarianceError::InvalidLocation)?;
-
-                        let current_variance =
-                            parent_variance.xfrom(Variance::Invariant);
-
-                        self.get_variance_of(
-                            inner_term,
-                            current_variance,
-                            locations,
-                        )
-                    }
-
-                    (
-                        r#type::SubTypeLocation::TraitMember(location),
-                        Type::TraitMember(symbol),
-                    ) => {
-                        let inner_term = if location.0.from_parent {
-                            symbol
-                                .parent_generic_arguments
-                                .types
-                                .get(location.0.index)
-                        } else {
-                            symbol
-                                .member_generic_arguments
-                                .types
-                                .get(location.0.index)
                         }
                         .ok_or(GetVarianceError::InvalidLocation)?;
 

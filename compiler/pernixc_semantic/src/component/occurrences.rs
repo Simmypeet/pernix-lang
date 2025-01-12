@@ -2,8 +2,8 @@
 
 use getset::Getters;
 use pernixc_syntax::syntax_tree;
+use pernixc_table::component::{Input, InputMut};
 
-use super::{Input, InputMut};
 use crate::type_system::{model::Default, term};
 
 /// A **local-input** component containing the list of all resolution resolved

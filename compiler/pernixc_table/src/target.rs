@@ -1359,7 +1359,11 @@ impl Representation {
         trait_id
     }
 
-    #[allow(clippy::too_many_lines, clippy::cognitive_complexity, clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cognitive_complexity,
+        clippy::too_many_arguments
+    )]
     fn create_module(
         &mut self,
         target_id: TargetID,

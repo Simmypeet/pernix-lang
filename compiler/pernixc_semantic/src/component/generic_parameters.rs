@@ -4,17 +4,16 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use getset::Getters;
 use paste::paste;
-use pernixc_base::source_file::Span;
+use pernixc_arena::{Arena, ID};
+use pernixc_base::{handler::Handler, source_file::Span};
+use pernixc_table::{
+    component::Derived, diagnostic::Diagnostic, GlobalID, MemberID, Table,
+};
 use serde::{Deserialize, Serialize};
 
-use super::Derived;
-use crate::{
-    arena::{Arena, ID},
-    table::{GlobalID, MemberID, Table},
-    type_system::{
-        model::Default,
-        term::{constant, r#type},
-    },
+use crate::type_system::{
+    model::Default,
+    term::{constant, r#type},
 };
 
 /// A **presistent-derived** component representing the generic parameters
@@ -115,13 +114,16 @@ pub trait GenericParameter: Sized + 'static {
 }
 
 /// Represents a lifetime parameter, denoted by `'a` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct LifetimeParameter {
     /// The name of the lifetime parameter (if none, then it is anonymous
     /// lifetime parameter )
     pub name: Option<String>,
 
     /// Location of where the lifetime parameter is declared.
+    #[serde(skip)]
     pub span: Option<Span>,
 }
 
@@ -159,12 +161,15 @@ impl GenericParameter for LifetimeParameter {
 }
 
 /// Represents a type parameter, denoted by `T` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct TypeParameter {
     /// The name of the type parameter.
     pub name: Option<String>,
 
     /// The kind of the type parameter.
+    #[serde(skip)]
     pub span: Option<Span>,
 }
 
@@ -202,7 +207,9 @@ impl GenericParameter for TypeParameter {
 }
 
 /// Represents a constant parameter, denoted by `const C: TYPE` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct ConstantParameter {
     /// The name of the constant parameter.
     pub name: Option<String>,
@@ -211,6 +218,7 @@ pub struct ConstantParameter {
     pub r#type: r#type::Type<Default>,
 
     /// The type of the constant parameter.
+    #[serde(skip)]
     pub span: Option<Span>,
 }
 
@@ -389,10 +397,11 @@ impl GenericParameters {
 }
 
 impl Derived for GenericParameters {
-    fn compute(global_id: GlobalID, table: &Table) -> Option<Self>
-    where
-        Self: Sized,
-    {
+    fn compute(
+        global_id: GlobalID,
+        table: &Table,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Option<Self> {
         todo!()
     }
 

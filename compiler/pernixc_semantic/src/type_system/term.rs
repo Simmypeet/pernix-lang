@@ -12,7 +12,13 @@ use std::{
 use constant::Constant;
 use enum_as_inner::EnumAsInner;
 use lifetime::Lifetime;
+use pernixc_arena::ID;
+use pernixc_table::{
+    component::{Name, Parent},
+    DisplayObject, GlobalID, MemberID, Table,
+};
 use r#type::Type;
+use serde::{Deserialize, Serialize};
 
 use super::{
     compatible,
@@ -25,16 +31,13 @@ use super::{
     model::Model,
     normalizer::Normalizer,
     predicate::{self, Outlives, Predicate, Satisfiability},
-    query::{self, Context},
     simplify,
     sub_term::{self, AssignSubTermError, SubTupleLocation},
     unification::{self, PredicateA, Unification, Unifier},
-    visitor, Compute, Environment, Output, Satisfied, Succeeded,
+    visitor, AbruptError, Environment, Satisfied, Succeeded,
 };
 use crate::{
-    arena::ID,
     component::generic_parameters::GenericParameter,
-    table::{self, DisplayObject, GlobalID, MemberID, Table},
     type_system::model::Default,
 };
 
@@ -43,7 +46,18 @@ pub mod lifetime;
 pub mod r#type;
 
 /// Represents a generic arguments supplied to a term (i.e., `type[ARGS]`).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
 pub struct GenericArguments<M: Model> {
     /// The lifetimes supplied to the term.
     pub lifetimes: Vec<Lifetime<M>>,
@@ -55,11 +69,11 @@ pub struct GenericArguments<M: Model> {
     pub constants: Vec<Constant<M>>,
 }
 
-impl<M: Model> table::Display for GenericArguments<M>
+impl<M: Model> pernixc_table::Display for GenericArguments<M>
 where
-    Lifetime<M>: table::Display,
-    Type<M>: table::Display,
-    Constant<M>: table::Display,
+    Lifetime<M>: pernixc_table::Display,
+    Type<M>: pernixc_table::Display,
+    Constant<M>: pernixc_table::Display,
 {
     fn fmt(
         &self,
@@ -206,7 +220,9 @@ impl<M: Model> GenericArguments<M> {
 
 /// Represents a term where its value is stored as a symbol (i.e., `type` or
 /// `const` declaration).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Symbol<M: Model> {
     /// The ID of the symbol that contains the value of the term.
     pub id: GlobalID,
@@ -253,9 +269,9 @@ impl<M: Model> Symbol<M> {
     }
 }
 
-impl<M: Model> table::Display for Symbol<M>
+impl<M: Model> pernixc_table::Display for Symbol<M>
 where
-    GenericArguments<M>: table::Display,
+    GenericArguments<M>: pernixc_table::Display,
 {
     fn fmt(
         &self,
@@ -274,7 +290,9 @@ where
 
 /// Represents a term where its value is stored as a member of a particular
 /// symbol
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct MemberSymbol<M: Model> {
     /// The ID of the symbol that contains the value of the term.
     pub id: GlobalID,
@@ -330,18 +348,18 @@ impl<M: Model> MemberSymbol<M> {
     }
 }
 
-impl<M: Model> table::Display for MemberSymbol<M>
+impl<M: Model> pernixc_table::Display for MemberSymbol<M>
 where
-    GenericArguments<M>: table::Display,
+    GenericArguments<M>: pernixc_table::Display,
 {
     fn fmt(
         &self,
         table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        let this_sym = table.get_item(self.id.into()).ok_or(fmt::Error)?;
+        let parent_id = table.get::<Parent>(self.id).ok_or(fmt::Error)?.0;
         let parent_qualified_identifier = table
-            .get_qualified_name(this_sym.parent_item_id().ok_or(fmt::Error)?)
+            .get_qualified_name(GlobalID::new(self.id.target_id, parent_id))
             .ok_or(fmt::Error)?;
 
         write!(f, "{parent_qualified_identifier}{}", DisplayObject {
@@ -349,15 +367,19 @@ where
             display: &self.parent_generic_arguments
         })?;
 
-        write!(f, "::{}{}", this_sym.name(), DisplayObject {
-            table,
-            display: &self.member_generic_arguments
-        })
+        write!(
+            f,
+            "::{}{}",
+            table.get::<Name>(self.id).ok_or(fmt::Error)?.0,
+            DisplayObject { table, display: &self.member_generic_arguments }
+        )
     }
 }
 
 /// Represents a single element of a tuple.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct TupleElement<Term> {
     /// The term stored in this element.
     pub term: Term,
@@ -367,8 +389,19 @@ pub struct TupleElement<Term> {
 }
 
 /// Represents a tuple of terms.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Tuple<Term: Clone> {
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
+pub struct Tuple<Term> {
     /// The elements of the tuple.
     pub elements: Vec<TupleElement<Term>>,
 }
@@ -425,7 +458,7 @@ impl<T: Term> Tuple<T> {
     }
 }
 
-impl<T: table::Display + Clone> table::Display for Tuple<T> {
+impl<T: pernixc_table::Display + Clone> pernixc_table::Display for Tuple<T> {
     fn fmt(
         &self,
         table: &Table,
@@ -455,10 +488,21 @@ impl<T: table::Display + Clone> table::Display for Tuple<T> {
 }
 
 /// A type that can't never be instantiated.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 pub enum Never {}
 
-impl table::Display for Never {
+impl pernixc_table::Display for Never {
     #[allow(clippy::uninhabited_references)]
     fn fmt(
         &self,
@@ -493,7 +537,6 @@ pub trait Term:
     + ModelOf
     + visitor::Element
     + unification::Element
-    + query::Element
     + matching::Match
     + sub_term::SubTerm
     + simplify::Simplify
@@ -502,6 +545,8 @@ pub trait Term:
     + From<MemberID<ID<Self::GenericParameter>>>
     + From<Error>
     + From<Self::TraitMember>
+    + Send
+    + Sync
     + 'static
 {
     /// The type of generic parameters of this term kind.
@@ -562,8 +607,7 @@ pub trait Term:
     fn normalize(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        context: &mut Context<Self::Model>,
-    ) -> Result<Output<Self, Self::Model>, super::OverflowError>;
+    ) -> Result<Option<Succeeded<Self, Self::Model>>, AbruptError>;
 
     #[doc(hidden)]
     fn as_kind(&self) -> Kind<Self::Model>;
@@ -950,21 +994,12 @@ impl<M: Model> GenericArguments<M> {
     ///
     /// # Errors
     ///
-    /// See [`super::Error`] for more information.
+    /// See [`AbruptError`] for more information.
     pub fn equals(
         &self,
         other: &Self,
-        environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
-        self.equals_with_context(other, environment, &mut Context::new())
-    }
-
-    pub(super) fn equals_with_context(
-        &self,
-        other: &Self,
-        environment: &Environment<M, impl Normalizer<M>>,
-        context: &mut Context<M>,
-    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
+        environment: &mut Environment<M, impl Normalizer<M>>,
+    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
         let mut constraints = BTreeSet::new();
 
         if self.lifetimes.len() != other.lifetimes.len()
@@ -975,33 +1010,33 @@ impl<M: Model> GenericArguments<M> {
         }
 
         for (lhs, rhs) in self.lifetimes.iter().zip(&other.lifetimes) {
-            let Some(result) = Equality::new(lhs.clone(), rhs.clone())
-                .query_with_context(environment, context)?
+            let Some(result) =
+                environment.query(&Equality::new(lhs.clone(), rhs.clone()))?
             else {
                 return Ok(None);
             };
 
-            constraints.extend(result.constraints);
+            constraints.extend(result.constraints.iter().cloned());
         }
 
         for (lhs, rhs) in self.types.iter().zip(&other.types) {
-            let Some(result) = Equality::new(lhs.clone(), rhs.clone())
-                .query_with_context(environment, context)?
+            let Some(result) =
+                environment.query(&Equality::new(lhs.clone(), rhs.clone()))?
             else {
                 return Ok(None);
             };
 
-            constraints.extend(result.constraints);
+            constraints.extend(result.constraints.iter().cloned());
         }
 
         for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
-            let Some(result) = Equality::new(lhs.clone(), rhs.clone())
-                .query_with_context(environment, context)?
+            let Some(result) =
+                environment.query(&Equality::new(lhs.clone(), rhs.clone()))?
             else {
                 return Ok(None);
             };
 
-            constraints.extend(result.constraints);
+            constraints.extend(result.constraints.iter().cloned());
         }
 
         Ok(Some(Succeeded::satisfied_with(constraints)))
@@ -1040,22 +1075,7 @@ impl<M: Model> GenericArguments<M> {
         other: &Self,
         config: &Arc<dyn PredicateA<M>>,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Output<Mapping<M>, M>, super::OverflowError> {
-        self.unify_as_mapping_with_context(
-            other,
-            config,
-            environment,
-            &mut Context::new(),
-        )
-    }
-
-    pub(super) fn unify_as_mapping_with_context(
-        &self,
-        other: &Self,
-        config: &Arc<dyn PredicateA<M>>,
-        environment: &Environment<M, impl Normalizer<M>>,
-        context: &mut Context<M>,
-    ) -> Result<Output<Mapping<M>, M>, super::OverflowError> {
+    ) -> Result<Option<Succeeded<Mapping<M>, M>>, AbruptError> {
         let mut constraints = BTreeSet::new();
 
         let mut mapping = Mapping::default();
@@ -1068,39 +1088,45 @@ impl<M: Model> GenericArguments<M> {
         }
 
         for (lhs, rhs) in self.lifetimes.iter().zip(&other.lifetimes) {
-            let Some(unification) =
-                Unification::new(lhs.clone(), rhs.clone(), config.clone())
-                    .query_with_context(environment, context)?
+            let Some(unification) = environment.query(&Unification::new(
+                lhs.clone(),
+                rhs.clone(),
+                config.clone(),
+            ))?
             else {
                 return Ok(None);
             };
 
-            constraints.extend(unification.constraints);
-            mapping.append_from_unifier(unification.result);
+            constraints.extend(unification.constraints.iter().cloned());
+            mapping.append_from_unifier(unification.result.clone());
         }
 
         for (lhs, rhs) in self.types.iter().zip(&other.types) {
-            let Some(unification) =
-                Unification::new(lhs.clone(), rhs.clone(), config.clone())
-                    .query_with_context(environment, context)?
+            let Some(unification) = environment.query(&Unification::new(
+                lhs.clone(),
+                rhs.clone(),
+                config.clone(),
+            ))?
             else {
                 return Ok(None);
             };
 
-            constraints.extend(unification.constraints);
-            mapping.append_from_unifier(unification.result);
+            constraints.extend(unification.constraints.iter().cloned());
+            mapping.append_from_unifier(unification.result.clone());
         }
 
         for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
-            let Some(unification) =
-                Unification::new(lhs.clone(), rhs.clone(), config.clone())
-                    .query_with_context(environment, context)?
+            let Some(unification) = environment.query(&Unification::new(
+                lhs.clone(),
+                rhs.clone(),
+                config.clone(),
+            ))?
             else {
                 return Ok(None);
             };
 
-            constraints.extend(unification.constraints);
-            mapping.append_from_unifier(unification.result);
+            constraints.extend(unification.constraints.iter().cloned());
+            mapping.append_from_unifier(unification.result.clone());
         }
 
         Ok(Some(Succeeded::with_constraints(mapping, constraints)))
@@ -1127,56 +1153,41 @@ impl<M: Model> GenericArguments<M> {
     ///
     /// # Errors
     ///
-    /// See [`super::Error`] for more information.
+    /// See [`AbruptError`] for more information.
     pub fn definite(
         &self,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
-        self.definite_with_context(environment, &mut Context::new())
-    }
-
-    /// Checks if all the generic arguments are definite.
-    ///
-    /// See [`Definite`] for more information.
-    ///
-    /// # Errors
-    ///
-    /// See [`super::Error`] for more information.
-    pub fn definite_with_context(
-        &self,
-        environment: &Environment<M, impl Normalizer<M>>,
-        context: &mut Context<M>,
-    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
         let mut constraints = BTreeSet::new();
 
         for lifetime in &self.lifetimes {
-            let Some(result) = Definite::new(lifetime.clone())
-                .query_with_context(environment, context)?
+            let Some(result) =
+                environment.query(&Definite::new(lifetime.clone()))?
             else {
                 return Ok(None);
             };
 
-            constraints.extend(result.constraints);
+            constraints.extend(result.constraints.iter().cloned());
         }
 
         for r#type in &self.types {
-            let Some(result) = Definite::new(r#type.clone())
-                .query_with_context(environment, context)?
+            let Some(result) =
+                environment.query(&Definite::new(r#type.clone()))?
             else {
                 return Ok(None);
             };
 
-            constraints.extend(result.constraints);
+            constraints.extend(result.constraints.iter().cloned());
         }
 
         for constant in &self.constants {
-            let Some(result) = Definite::new(constant.clone())
-                .query_with_context(environment, context)?
+            let Some(result) =
+                environment.query(&Definite::new(constant.clone()))?
             else {
                 return Ok(None);
             };
 
-            constraints.extend(result.constraints);
+            constraints.extend(result.constraints.iter().cloned());
         }
 
         Ok(Some(Succeeded::satisfied_with(constraints)))
@@ -1285,7 +1296,18 @@ pub enum KindMut<'a, M: Model> {
 
 /// Represents an errornuos term. Used for representing errors in the type
 /// system.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 pub struct Error;
 
 // TODO: bring test back

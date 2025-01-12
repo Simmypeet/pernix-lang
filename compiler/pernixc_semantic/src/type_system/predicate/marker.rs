@@ -1,34 +1,39 @@
 use core::fmt;
-use std::collections::{BTreeMap, BTreeSet};
+use std::{any::Any, collections::BTreeMap, sync::Arc};
 
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
+use pernixc_table::{DisplayObject, GlobalID, Table};
+use serde::{Deserialize, Serialize};
 
-use super::{
-    resolve_implementation_with_context, Implementation, ResolutionError,
-};
-use crate::{
-    arena::ID,
-    table::{self, DisplayObject, GlobalID},
-    type_system::{
-        environment::Environment,
-        instantiation::Instantiation,
-        model::{Default, Model},
-        normalizer::Normalizer,
-        predicate::Predicate,
-        query::{self, Context},
-        term::{
-            constant::Constant, lifetime::Lifetime, r#type::Type,
-            GenericArguments, Term,
-        },
-        variance::Variance,
-        visitor::{self, Element, VisitNonApplicationTermError},
-        Compute, Output, OverflowError, Satisfied, Succeeded,
+use super::Implementation;
+use crate::type_system::{
+    self,
+    environment::Environment,
+    instantiation::Instantiation,
+    model::{Default, Model},
+    normalizer::Normalizer,
+    query::{Call, DynArc, Query},
+    term::{
+        constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
     },
+    visitor::{self, Element},
+    AbruptError, OverflowError, Satisfied, Succeeded,
 };
 
 /// Predicates specifying that the marker is satisfied.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    new,
+)]
 pub struct Positive<M: Model> {
     /// The id of the marker.
     pub marker_id: GlobalID,
@@ -99,19 +104,19 @@ impl<M: Model> Positive<M> {
     }
 }
 
-impl<M: Model> table::Display for Positive<M>
+impl<M: Model> pernixc_table::Display for Positive<M>
 where
-    GenericArguments<M>: table::Display,
+    GenericArguments<M>: pernixc_table::Display,
 {
     fn fmt(
         &self,
-        table: &table::Table,
+        table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         write!(
             f,
             "marker {}{}",
-            table.get_qualified_name(self.id.into()).ok_or(fmt::Error)?,
+            table.get_qualified_name(self.marker_id).ok_or(fmt::Error)?,
             DisplayObject { display: &self.generic_arguments, table }
         )
     }
@@ -124,9 +129,7 @@ pub enum PositiveSatisfied<M: Model> {
     ByPremise,
 
     /// Found a matching implementation.
-    ByImplementation(
-        Implementation<ID<symbol::PositiveMarkerImplementation>, M>,
-    ),
+    ByImplementation(Implementation<M>),
 
     /// Satisfied by proving that all the fields/sub-terms are satisfied.
     ByCongruence(BTreeMap<Positive<M>, Succeeded<PositiveSatisfied<M>, M>>),
@@ -142,43 +145,29 @@ pub enum PositiveSatisfied<M: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum VisitorState<M: Model> {
     Failed,
-    Overflowed,
-    Succeeded(BTreeMap<Positive<M>, Succeeded<PositiveSatisfied<M>, M>>),
+    AbruptError(AbruptError),
+    Succeeded(BTreeMap<Positive<M>, Arc<Succeeded<PositiveSatisfied<M>, M>>>),
 }
 
 #[derive(Debug)]
-struct Visitor<
-    'a,
-    'c,
-    'p,
-    T: State,
-    N: Normalizer<M, T>,
-    O: Observer<M, T>,
-    M: Model,
-> {
+struct Visitor<'t, 'p, N: Normalizer<M>, M: Model> {
     original: &'p Positive<M>,
     state: VisitorState<M>,
-    environment: &'a Environment<'a, M, T, N, O>,
-    context: &'c mut Context<M>,
+    environment: &'t Environment<'t, M, N>,
 }
 
-impl<
-        'a,
-        'c,
-        'p,
-        T: State,
-        N: Normalizer<M, T>,
-        O: Observer<M, T>,
-        M: Model,
-    > visitor::Visitor<'_, Lifetime<M>> for Visitor<'a, 'c, 'p, T, N, O, M>
+impl<'t, 'p, N: Normalizer<M>, M: Model> visitor::Visitor<'_, Lifetime<M>>
+    for Visitor<'t, 'p, N, M>
 {
     fn visit(
         &mut self,
         _: &Lifetime<M>,
         _: <Lifetime<M> as Element>::Location,
     ) -> bool {
-        if matches!(self.state, VisitorState::Failed | VisitorState::Overflowed)
-        {
+        if matches!(
+            self.state,
+            VisitorState::Failed | VisitorState::AbruptError(_)
+        ) {
             return false;
         }
 
@@ -186,15 +175,8 @@ impl<
     }
 }
 
-impl<
-        'a,
-        'c,
-        'p,
-        T: State,
-        N: Normalizer<M, T>,
-        O: Observer<M, T>,
-        M: Model,
-    > visitor::Visitor<'_, Type<M>> for Visitor<'a, 'c, 'p, T, N, O, M>
+impl<'t, 'p, N: Normalizer<M>, M: Model> visitor::Visitor<'_, Type<M>>
+    for Visitor<'t, 'p, N, M>
 {
     fn visit(
         &mut self,
@@ -206,7 +188,7 @@ impl<
         };
 
         let new_query = Positive {
-            id: self.original.id,
+            marker_id: self.original.marker_id,
             generic_arguments: GenericArguments {
                 lifetimes: self.original.generic_arguments.lifetimes.clone(),
                 types: {
@@ -219,7 +201,7 @@ impl<
             },
         };
 
-        match new_query.query_with_context(self.environment, self.context) {
+        match self.environment.query(&new_query) {
             Ok(Some(result)) => {
                 states.insert(new_query, result);
                 true
@@ -228,31 +210,26 @@ impl<
                 self.state = VisitorState::Failed;
                 false
             }
-            Err(OverflowError) => {
-                self.state = VisitorState::Overflowed;
+            Err(err) => {
+                self.state = VisitorState::AbruptError(err);
                 false
             }
         }
     }
 }
 
-impl<
-        'a,
-        'c,
-        'p,
-        T: State,
-        N: Normalizer<M, T>,
-        O: Observer<M, T>,
-        M: Model,
-    > visitor::Visitor<'_, Constant<M>> for Visitor<'a, 'c, 'p, T, N, O, M>
+impl<'t, 'p, N: Normalizer<M>, M: Model> visitor::Visitor<'_, Constant<M>>
+    for Visitor<'t, 'p, N, M>
 {
     fn visit(
         &mut self,
         _: &Constant<M>,
         _: <Constant<M> as Element>::Location,
     ) -> bool {
-        if matches!(self.state, VisitorState::Failed | VisitorState::Overflowed)
-        {
+        if matches!(
+            self.state,
+            VisitorState::Failed | VisitorState::AbruptError(_)
+        ) {
             return false;
         }
 
@@ -260,23 +237,21 @@ impl<
     }
 }
 
-impl<M: Model> Compute for Positive<M> {
-    type Error = OverflowError;
+impl<M: Model> Query for Positive<M> {
+    type Model = M;
     type Parameter = ();
+    type InProgress = ();
+    type Result = Succeeded<PositiveSatisfied<M>, M>;
+    type Error = type_system::AbruptError;
 
-    #[allow(clippy::too_many_lines)]
-    fn implementation<S: symbol::table::State>(
+    fn query(
         &self,
-        environment: &crate::type_system::environment::Environment<
-            Self::Model,
-            S,
-            impl crate::type_system::normalizer::Normalizer<Self::Model, S>,
-            impl crate::type_system::observer::Observer<Self::Model, S>,
-        >,
-        context: &mut crate::type_system::query::Context<Self::Model>,
-        (): Self::Parameter,
-        (): Self::InProgress,
-    ) -> Result<Option<Self::Result>, Self::Error> {
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        parameter: Self::Parameter,
+        in_progress: Self::InProgress,
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
+        todo!()
+        /*
         // if this query was made in marker, then check if the marker is the
         // same as the query one.
         if let Some(result) = is_in_marker(
@@ -399,7 +374,7 @@ impl<M: Model> Compute for Positive<M> {
                         .flatten()
                     {
                         let new_query = Self {
-                            id: self.id,
+                            marker_id: self.marker_id,
                             generic_arguments: GenericArguments {
                                 lifetimes: self
                                     .generic_arguments
@@ -440,27 +415,38 @@ impl<M: Model> Compute for Positive<M> {
         }
 
         Ok(None)
+        */
     }
 
-    #[allow(private_bounds, private_interfaces)]
     fn on_cyclic(
         &self,
         (): Self::Parameter,
         (): Self::InProgress,
         (): Self::InProgress,
-        _: &[query::Record<Self::Model>],
-    ) -> Result<Option<Self::Result>, Self::Error> {
-        Ok(Some(Succeeded::new(
+        _: &[Call<DynArc, DynArc>],
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
+        Ok(Some(Arc::new(Succeeded::new(
             PositiveSatisfied::ByCyclic, /* doesn't matter */
-        )))
+        ))))
     }
 }
 
 /// The predicate specifying that the marker will never be satisfied.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    new,
+)]
 pub struct Negative<M: Model> {
     /// The id of the marker.
-    pub id: ID<symbol::Marker>,
+    pub marker_id: GlobalID,
 
     /// The generic arguments supplied to the marker.
     pub generic_arguments: GenericArguments<M>,
@@ -473,133 +459,36 @@ pub enum NegativeSatisfied<M: Model> {
     ByPremise,
 
     /// Found a matching negative implementation.
-    ByImplementation(
-        Implementation<ID<symbol::NegativeMarkerImplementation>, M>,
-    ),
+    ByImplementation(Implementation<M>),
 
     /// Satisfied by proving that the [`Positive`] isn't satisfied and the
     /// generic arguments are definite.
     ByUnsatisfiedPositive,
 }
 
-impl<M: Model> Compute for Negative<M> {
-    type Error = OverflowError;
+impl<M: Model> Query for Negative<M> {
+    type Model = M;
     type Parameter = ();
+    type InProgress = ();
+    type Result = Succeeded<NegativeSatisfied<M>, M>;
+    type Error = type_system::AbruptError;
 
-    #[allow(private_bounds, private_interfaces)]
-    fn implementation<S: State>(
+    fn query(
         &self,
-        environment: &Environment<
-            Self::Model,
-            S,
-            impl Normalizer<Self::Model, S>,
-            impl Observer<Self::Model, S>,
-        >,
-        context: &mut Context<Self::Model>,
-        (): Self::Parameter,
-        (): Self::InProgress,
-    ) -> Result<Option<Self::Result>, Self::Error> {
-        // manually search for the trait implementation
-        match resolve_implementation_with_context(
-            self.id,
-            &self.generic_arguments,
-            environment,
-            context,
-        ) {
-            Ok(Succeeded {
-                result:
-                    Implementation {
-                        instantiation,
-                        id: MarkerImplementationID::Negative(id),
-                        is_not_general_enough,
-                    },
-                constraints,
-            }) => {
-                return Ok(Some(Succeeded::with_constraints(
-                    NegativeSatisfied::ByImplementation(Implementation {
-                        instantiation,
-                        id,
-                        is_not_general_enough,
-                    }),
-                    constraints,
-                )));
-            }
-
-            Err(ResolutionError::Overflow(exceed_limit_error)) => {
-                return Err(exceed_limit_error);
-            }
-
-            Err(_) | Ok(_) => {}
-        }
-
-        // look for the premise that matches
-        for marker_premise in environment
-            .premise
-            .predicates
-            .iter()
-            .filter_map(Predicate::as_negative_marker)
-        {
-            // skip if the trait id is different
-            if marker_premise.id != self.id {
-                continue;
-            }
-
-            let Some(compatiblity) =
-                self.generic_arguments.compatible_with_context(
-                    &marker_premise.generic_arguments,
-                    Variance::Invariant,
-                    environment,
-                    context,
-                )?
-            else {
-                continue;
-            };
-
-            if !compatiblity.result.forall_lifetime_errors.is_empty() {
-                continue;
-            }
-
-            return Ok(Some(Succeeded::with_constraints(
-                NegativeSatisfied::ByPremise,
-                compatiblity.constraints,
-            )));
-        }
-
-        // must be definite and failed to prove the positive trait
-        let Some(definition) = self
-            .generic_arguments
-            .definite_with_context(environment, context)?
-        else {
-            return Ok(None);
-        };
-
-        Ok(Positive::new(self.id, self.generic_arguments.clone())
-            .query_with_context(environment, context)?
-            .is_none()
-            .then(|| {
-                Succeeded::with_constraints(
-                    NegativeSatisfied::ByUnsatisfiedPositive,
-                    definition.constraints,
-                )
-            }))
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        parameter: Self::Parameter,
+        in_progress: Self::InProgress,
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
+        todo!()
     }
 }
 
 impl<M: Model> Negative<M> {
-    /// Creates a new [`Negative`] with the given id and generic arguments.
-    #[must_use]
-    pub const fn new(
-        id: ID<symbol::Marker>,
-        generic_arguments: GenericArguments<M>,
-    ) -> Self {
-        Self { id, generic_arguments }
-    }
-
     /// Converts the [`Negative`] with [`Default`] model to the model `M`.
     #[must_use]
     pub fn from_default_model(predicate: Negative<Default>) -> Self {
         Self {
-            id: predicate.id,
+            marker_id: predicate.marker_id,
             generic_arguments: GenericArguments::from_default_model(
                 predicate.generic_arguments,
             ),
@@ -626,7 +515,7 @@ impl<M: Model> Negative<M> {
         M::ConstantInference: From<U::ConstantInference>,
     {
         Self {
-            id: term.id,
+            marker_id: term.marker_id,
             generic_arguments: GenericArguments::from_other_model(
                 term.generic_arguments,
             ),
@@ -648,7 +537,7 @@ impl<M: Model> Negative<M> {
         M::ConstantInference: TryFrom<U::ConstantInference, Error = E>,
     {
         Ok(Self {
-            id: term.id,
+            marker_id: term.marker_id,
             generic_arguments: GenericArguments::try_from_other_model(
                 term.generic_arguments,
             )?,
@@ -656,30 +545,31 @@ impl<M: Model> Negative<M> {
     }
 }
 
-impl<T: State, M: Model> table::Display<T> for Negative<M>
+impl<M: Model> pernixc_table::Display for Negative<M>
 where
-    GenericArguments<M>: table::Display<T>,
+    GenericArguments<M>: pernixc_table::Display,
 {
     fn fmt(
         &self,
-        table: &table::Table<T>,
+        table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         write!(
             f,
             "marker !{}{}",
-            table.get_qualified_name(self.id.into()).ok_or(fmt::Error)?,
+            table.get_qualified_name(self.marker_id).ok_or(fmt::Error)?,
             DisplayObject { display: &self.generic_arguments, table }
         )
     }
 }
 
-fn is_in_marker<M: Model, S: State>(
-    marker_id: ID<symbol::Marker>,
+fn is_in_marker<M: Model>(
+    marker_id: GlobalID,
     generic_arguments: &GenericArguments<M>,
-    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
-    context: &mut Context<M>,
-) -> Result<Output<Satisfied, M>, OverflowError> {
+    environment: &mut Environment<M, impl Normalizer<M>>,
+) -> Result<Option<Succeeded<Satisfied, M>>, OverflowError> {
+    todo!()
+    /*
     let Some(query_site) = environment.premise.query_site else {
         return Ok(None);
     };
@@ -725,4 +615,5 @@ fn is_in_marker<M: Model, S: State>(
     }
 
     Ok(None)
+    */
 }

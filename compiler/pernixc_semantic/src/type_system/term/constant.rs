@@ -5,17 +5,22 @@ use std::{
     self,
     collections::{BTreeMap, BTreeSet},
     ops::Deref,
+    option::Option,
+    result::Result,
 };
 
 use enum_as_inner::EnumAsInner;
+use pernixc_table::{component::Parent, DisplayObject, GlobalID, Table};
+use serde::{Deserialize, Serialize};
 
 use super::{
     lifetime::Lifetime, r#type::Type, Error, GenericArguments, Kind, KindMut,
     ModelOf, Never, Term,
 };
 use crate::{
-    component::generic_parameters::{ConstantParameter, ConstantParameterID},
-    table::{self, DisplayObject, GlobalID, Table},
+    component::generic_parameters::{
+        ConstantParameter, ConstantParameterID, GenericParameters,
+    },
     type_system::{
         self,
         equality::Equality,
@@ -25,13 +30,12 @@ use crate::{
         model::{Default, Model},
         normalizer::Normalizer,
         predicate::{self, Outlives, Predicate, Satisfiability},
-        query::Context,
         sub_term::{
             self, AssignSubTermError, Location, SubTerm, SubTupleLocation,
             TermLocation,
         },
         unification::{self, Unifier},
-        Environment, Output,
+        Environment, Succeeded,
     },
 };
 
@@ -45,6 +49,8 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
+    Serialize,
+    Deserialize,
     derive_more::Display,
 )]
 #[allow(missing_docs)]
@@ -56,7 +62,9 @@ pub enum Primitive {
 }
 
 /// Represents a struct constant value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Struct<M: Model> {
     /// The ID to the struct.
     pub id: GlobalID,
@@ -66,7 +74,9 @@ pub struct Struct<M: Model> {
 }
 
 /// Represents an enum constant value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Enum<M: Model> {
     /// The variant that the enum constant value is.
     pub variant_id: GlobalID,
@@ -76,7 +86,9 @@ pub struct Enum<M: Model> {
 }
 
 /// Represents an array constant value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Array<M: Model> {
     /// The value of each element in the array constant value.
     pub elements: Vec<Constant<M>>,
@@ -248,6 +260,8 @@ impl<M: Model> Location<Constant<M>, Constant<M>> for SubConstantLocation {
     Ord,
     Hash,
     EnumAsInner,
+    Serialize,
+    Deserialize,
     derive_more::From,
 )]
 #[allow(missing_docs)]
@@ -562,9 +576,8 @@ where
     fn normalize(
         &self,
         environment: &Environment<M, impl Normalizer<M>>,
-        context: &mut Context<M>,
-    ) -> Result<Output<Self, M>, type_system::OverflowError> {
-        Normalizer::normalize_constant(self, environment, context)?
+    ) -> Result<Option<Succeeded<Self, M>>, type_system::AbruptError> {
+        Normalizer::normalize_constant(self, environment)?
             .map_or_else(|| Ok(None), |x| Ok(Some(x)))
     }
 
@@ -804,8 +817,10 @@ impl<M: Model> Constant<M> {
                 occurrences
             }
             Self::Enum(val) => {
-                let parent_enum_id =
-                    table.get(val.variant_id)?.parent_enum_id();
+                let parent_enum_id = GlobalID::new(
+                    val.variant_id.target_id,
+                    table.get::<Parent>(val.variant_id)?.0,
+                );
 
                 let mut occurrences =
                     vec![parent_enum_id.into(), val.variant_id.into()];
@@ -847,9 +862,9 @@ impl<M: Model> Constant<M> {
     }
 }
 
-impl<M: Model> table::Display for Constant<M>
+impl<M: Model> pernixc_table::Display for Constant<M>
 where
-    M::ConstantInference: table::Display,
+    M::ConstantInference: pernixc_table::Display,
 {
     fn fmt(
         &self,
@@ -919,10 +934,8 @@ where
                     f,
                     "{}",
                     table
-                        .get_generic(parameter.parent)
-                        .ok_or(fmt::Error)?
-                        .generic_declaration()
-                        .parameters
+                        .query::<GenericParameters>(parameter.parent)
+                        .map_err(|_| fmt::Error)?
                         .constants()
                         .get(parameter.id)
                         .ok_or(fmt::Error)?

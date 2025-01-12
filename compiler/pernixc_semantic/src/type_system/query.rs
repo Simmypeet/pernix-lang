@@ -1,32 +1,111 @@
-#![allow(clippy::type_complexity)]
-
-//! Contains the definition of [`Query`] and [`Context`].
-
-use std::collections::{btree_map::Entry, BTreeMap};
-
-use enum_as_inner::EnumAsInner;
-use getset::Getters;
-
-use super::{
-    definite::Definite,
-    environment::Environment,
-    equality::Equality,
-    model::Model,
-    normalizer::Normalizer,
-    predicate::{
-        self, ConstantTypeQuerySource, NegativeMarkerSatisfied, NegativeTrait,
-        NegativeTraitSatisfied, PositiveMarkerSatisfied,
-        PositiveTraitSatisfied,
-    },
-    sub_term::SubTerm,
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-    type_check::TypeCheck,
-    unification::{Unification, Unifier},
-    OverflowError, Satisfied, Succeeded,
+use std::{
+    any::Any,
+    cmp::Ordering,
+    collections::{hash_map::Entry, HashMap},
+    hash::{Hash, Hasher},
+    sync::Arc,
 };
 
+use enum_as_inner::EnumAsInner;
+
+use super::{
+    environment::Environment, model::Model, normalizer::Normalizer,
+    OverflowError,
+};
+
+/// Type-erased `Arc<dyn Any + Send + Sync>`.
+pub type DynArc = Arc<dyn Any + Send + Sync>;
+
+/// A trait for identifying type's equality dynamically.
+pub trait DynIdent: Any + Send + Sync + 'static {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    fn dyn_eq(&self, other: &dyn DynIdent) -> bool;
+    fn dyn_hash(&self, state: &mut dyn Hasher);
+    fn dyn_ord(&self, other: &dyn DynIdent) -> Ordering;
+}
+
+impl<T: Any + Send + Sync + Eq + Hash + Ord> DynIdent for T {
+    fn as_any(&self) -> &dyn Any { self }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+
+    fn dyn_eq(&self, other: &dyn DynIdent) -> bool {
+        other.as_any().downcast_ref::<T>().map_or(false, |other| self == other)
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) { self.hash(&mut state); }
+
+    fn dyn_ord(&self, other: &dyn DynIdent) -> Ordering {
+        other
+            .as_any()
+            .downcast_ref::<T>()
+            .map_or(Ordering::Less, |other| self.cmp(other))
+    }
+}
+
+impl PartialEq for dyn DynIdent {
+    fn eq(&self, other: &Self) -> bool { self.dyn_eq(other) }
+}
+
+impl Eq for dyn DynIdent {}
+
+impl Hash for dyn DynIdent {
+    fn hash<H: Hasher>(&self, state: &mut H) { self.dyn_hash(state); }
+}
+
+impl PartialOrd for dyn DynIdent {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for dyn DynIdent {
+    fn cmp(&self, other: &Self) -> Ordering { self.dyn_ord(other) }
+}
+
+/// The trait implemented by all the query types.
+pub trait Query: Clone + Eq + Ord + Hash + DynIdent {
+    /// The model in which the query is computed.
+    type Model: Model;
+
+    /// The optional parameter provided to the query
+    type Parameter: Default;
+
+    /// The additional in-progress state of the query.
+    type InProgress: Clone + DynIdent + Default;
+
+    /// The result of the query.
+    type Result: Any + Send + Sync;
+
+    /// The error type of the query.
+    type Error: From<OverflowError>;
+
+    /// The function that computes the query.
+    #[allow(clippy::missing_errors_doc)]
+    fn query(
+        &self,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        parameter: Self::Parameter,
+        in_progress: Self::InProgress,
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error>;
+
+    /// The result to return of the query when the query is cyclic.
+    #[allow(clippy::missing_errors_doc)]
+    fn on_cyclic(
+        &self,
+        _: Self::Parameter,
+        _: Self::InProgress,
+        _: Self::InProgress,
+        _: &[Call<DynArc, DynArc>],
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
+        Ok(None) /* the default implementation is to make the query fails */
+    }
+}
+
 /// The result of a query.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Cached<I, T> {
     /// The query is in progress.
     InProgress(I),
@@ -43,206 +122,86 @@ pub struct Call<Q, I> {
     pub in_progress: I,
 }
 
-impl<Q, I> Call<Q, I> {
-    /// Creates a new call.
-    #[must_use]
-    pub const fn new(query: Q, in_progress: I) -> Self {
-        Self { query, in_progress }
-    }
-}
+#[derive(Clone)]
+pub struct Context {
+    #[allow(clippy::type_complexity)]
+    map: HashMap<Arc<dyn DynIdent>, Cached<DynArc, DynArc>>,
 
-/// An enumeration of all kinds of queries in the type system.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum Record<M: Model> {
-    LifetimeEquality(Call<Equality<Lifetime<M>>, ()>),
-    TypeEquality(Call<Equality<Type<M>>, ()>),
-    ConstantEquality(Call<Equality<Constant<M>>, ()>),
-
-    LifetimeDefinite(Call<Definite<Lifetime<M>>, ()>),
-    TypeDefinite(Call<Definite<Type<M>>, ()>),
-    ConstantDefinite(Call<Definite<Constant<M>>, ()>),
-
-    LifetimeUnification(Call<Unification<Lifetime<M>>, ()>),
-    TypeUnification(Call<Unification<Type<M>>, ()>),
-    ConstantUnification(Call<Unification<Constant<M>>, ()>),
-
-    LifetimeTuple(Call<predicate::Tuple<Lifetime<M>>, ()>),
-    TypeTuple(Call<predicate::Tuple<Type<M>>, ()>),
-    ConstantTuple(Call<predicate::Tuple<Constant<M>>, ()>),
-
-    LifetimeOutlives(Call<predicate::Outlives<Lifetime<M>>, ()>),
-    TypeOutlives(Call<predicate::Outlives<Type<M>>, ()>),
-    ConstantOutlives(Call<predicate::Outlives<Constant<M>>, ()>),
-
-    ConstantType(Call<predicate::ConstantType<M>, ConstantTypeQuerySource>),
-
-    #[from]
-    PositiveTraitSatisfiability(Call<predicate::PositiveTrait<M>, ()>),
-    #[from]
-    NegativeTraitSatisfiability(Call<predicate::NegativeTrait<M>, ()>),
-
-    #[from]
-    PositiveMarkerSatisfiability(Call<predicate::PositiveMarker<M>, ()>),
-    #[from]
-    NegativeMarkerSatisfiability(Call<predicate::NegativeMarker<M>, ()>),
-
-    #[from]
-    TypeCheck(Call<TypeCheck<M>, ()>),
-}
-
-/// Used for storing the state of all kinds of queries in the type system.
-#[derive(Debug, Clone, Getters)]
-pub struct Context<M: Model> {
-    lifetime_equality:
-        BTreeMap<Equality<Lifetime<M>>, Cached<(), Succeeded<Satisfied, M>>>,
-    type_equality:
-        BTreeMap<Equality<Type<M>>, Cached<(), Succeeded<Satisfied, M>>>,
-    constant_equality:
-        BTreeMap<Equality<Constant<M>>, Cached<(), Succeeded<Satisfied, M>>>,
-
-    lifetime_definite:
-        BTreeMap<Definite<Lifetime<M>>, Cached<(), Succeeded<Satisfied, M>>>,
-    type_definite:
-        BTreeMap<Definite<Type<M>>, Cached<(), Succeeded<Satisfied, M>>>,
-    constant_definite:
-        BTreeMap<Definite<Constant<M>>, Cached<(), Succeeded<Satisfied, M>>>,
-
-    lifetime_unification: BTreeMap<
-        Unification<Lifetime<M>>,
-        Cached<(), Succeeded<Unifier<Lifetime<M>>, M>>,
-    >,
-    type_unification: BTreeMap<
-        Unification<Type<M>>,
-        Cached<(), Succeeded<Unifier<Type<M>>, M>>,
-    >,
-    constant_unification: BTreeMap<
-        Unification<Constant<M>>,
-        Cached<(), Succeeded<Unifier<Constant<M>>, M>>,
-    >,
-
-    lifetime_tuple: BTreeMap<
-        predicate::Tuple<Lifetime<M>>,
-        Cached<(), Succeeded<Satisfied, M>>,
-    >,
-    type_tuple: BTreeMap<
-        predicate::Tuple<Type<M>>,
-        Cached<(), Succeeded<Satisfied, M>>,
-    >,
-    constant_tuple: BTreeMap<
-        predicate::Tuple<Constant<M>>,
-        Cached<(), Succeeded<Satisfied, M>>,
-    >,
-
-    lifetime_outlives:
-        BTreeMap<predicate::Outlives<Lifetime<M>>, Cached<(), Satisfied>>,
-    type_outlives:
-        BTreeMap<predicate::Outlives<Type<M>>, Cached<(), Satisfied>>,
-    constant_outlives:
-        BTreeMap<predicate::Outlives<Constant<M>>, Cached<(), Satisfied>>,
-
-    constant_type: BTreeMap<
-        predicate::ConstantType<M>,
-        Cached<ConstantTypeQuerySource, Succeeded<Satisfied, M>>,
-    >,
-
-    positive_trait_satisfiability: BTreeMap<
-        predicate::PositiveTrait<M>,
-        Cached<(), Succeeded<PositiveTraitSatisfied<M>, M>>,
-    >,
-    negative_trait_satisfiability: BTreeMap<
-        predicate::NegativeTrait<M>,
-        Cached<(), Succeeded<NegativeTraitSatisfied<M>, M>>,
-    >,
-
-    positive_marker_satisfiability: BTreeMap<
-        predicate::PositiveMarker<M>,
-        Cached<(), Succeeded<PositiveMarkerSatisfied<M>, M>>,
-    >,
-    negative_marker_satisfiability: BTreeMap<
-        predicate::NegativeMarker<M>,
-        Cached<(), Succeeded<NegativeMarkerSatisfied<M>, M>>,
-    >,
-
-    type_check: BTreeMap<TypeCheck<M>, Cached<(), Succeeded<Satisfied, M>>>,
-
-    /// The call stack of the queries.
-    #[get = "pub"]
-    call_stack: Vec<Record<M>>,
+    call_stack: Vec<Call<DynArc, DynArc>>,
 
     limit: usize,
     current_count: usize,
 }
 
-impl<M: Model> Default for Context<M> {
+impl Default for Context {
     fn default() -> Self {
         Self {
-            lifetime_equality: BTreeMap::default(),
-            type_equality: BTreeMap::default(),
-            constant_equality: BTreeMap::default(),
-            lifetime_definite: BTreeMap::default(),
-            type_definite: BTreeMap::default(),
-            constant_definite: BTreeMap::default(),
-            lifetime_unification: BTreeMap::default(),
-            type_unification: BTreeMap::default(),
-            constant_unification: BTreeMap::default(),
-            lifetime_tuple: BTreeMap::default(),
-            type_tuple: BTreeMap::default(),
-            constant_tuple: BTreeMap::default(),
-            lifetime_outlives: BTreeMap::default(),
-            type_outlives: BTreeMap::default(),
-            constant_outlives: BTreeMap::default(),
-            constant_type: BTreeMap::default(),
-            positive_trait_satisfiability: BTreeMap::default(),
-            negative_trait_satisfiability: BTreeMap::default(),
-            negative_marker_satisfiability: BTreeMap::default(),
-            positive_marker_satisfiability: BTreeMap::default(),
-            type_check: BTreeMap::default(),
-
+            map: HashMap::new(),
             call_stack: Vec::new(),
-
-            limit: 65_536,
+            limit: 69_420, // hehe
             current_count: 0,
         }
     }
 }
 
-impl<M: Model> Context<M> {
-    /// Creates a new context.
-    #[must_use]
-    pub fn new() -> Self { Self::default() }
-
-    /// Specifies the given query that it's being computed.
+impl Context {
+    /// Specifies that the given query is being computed.
     ///
     /// # Errors
     ///
-    /// Returns [`OverflowError`] if the number of queries exceeds the limit.
+    /// Returns [`OverflowError`] if the limit of the number of queries is
+    /// reached. All the in-progress queries are removed from the state and
+    /// the query counter is reset.
     ///
     /// # Returns
     ///
     /// Returns `None` if this query hasn't been stored before, otherwise
     /// returns the [`Cached`] value of the query.
-    #[allow(private_bounds, private_interfaces, clippy::type_complexity)]
-    pub fn mark_as_in_progress<Q: Sealed<Model = M>>(
+    #[allow(clippy::type_complexity)]
+    pub fn mark_as_in_progress<Q: Query>(
         &mut self,
         query: Q,
         in_progress: Q::InProgress,
-        environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Option<Cached<Q::InProgress, Q::Result>>, OverflowError> {
-        let record = Q::into_query_call(query.clone(), in_progress.clone());
-
+    ) -> Result<Option<Cached<Arc<Q::InProgress>, Arc<Q::Result>>>, OverflowError>
+    {
         if self.current_count >= self.limit {
+            let removing_keys = self
+                .map
+                .iter()
+                .filter(|&x| x.1.is_in_progress())
+                .map(|x| x.0.clone())
+                .collect::<Vec<_>>();
+            for key in removing_keys {
+                self.map.remove(&key);
+            }
+            self.current_count = 0;
+
             return Err(OverflowError);
         }
         self.current_count += 1;
 
-        match Q::get_map_mut(self).entry(query) {
+        let query_rc = Arc::new(query);
+        let in_progress_rc = Arc::new(in_progress);
+
+        match self.map.entry(query_rc.clone()) {
             Entry::Vacant(entry) => {
-                entry.insert(Cached::InProgress(in_progress));
-                self.call_stack.push(record);
+                entry.insert(Cached::InProgress(in_progress_rc.clone()));
+                self.call_stack.push(Call {
+                    query: query_rc,
+                    in_progress: in_progress_rc,
+                });
+
                 Ok(None)
             }
-            Entry::Occupied(entry) => Ok(Some(entry.get().clone())),
+
+            Entry::Occupied(entry) => Ok(Some(match entry.get().clone() {
+                Cached::InProgress(in_progress_rc) => Cached::InProgress(
+                    in_progress_rc.downcast::<Q::InProgress>().unwrap(),
+                ),
+                Cached::Done(result_rc) => {
+                    Cached::Done(result_rc.downcast::<Q::Result>().unwrap())
+                }
+            })),
         }
     }
 
@@ -254,25 +213,30 @@ impl<M: Model> Context<M> {
     ///
     /// Returns `false` if the `query` is not the last query in the call stack.
     #[must_use]
-    #[allow(private_bounds, private_interfaces)]
-    pub fn mark_as_done<Q: Sealed<Model = M>>(
+    pub fn mark_as_done<Q: Query>(
         &mut self,
         query: &Q,
-        result: Q::Result,
+        result: Arc<Q::Result>,
     ) -> bool {
         let Some(last) = self.call_stack.last() else {
             return false;
         };
 
-        if Q::from_call(last).map(|x| &x.query) != Some(query) {
+        if last.query.downcast_ref::<Q>().map_or(true, |x| x != query) {
             return false;
         }
 
-        if let Some(x) = Q::get_map_mut(self).get_mut(query) {
+        if let Some(x) = self.map.get_mut(query as &dyn DynIdent) {
             *x = Cached::Done(result);
+        } else {
+            return false;
         }
 
         self.call_stack.pop();
+
+        if self.call_stack.is_empty() {
+            self.current_count = 0;
+        }
 
         true
     }
@@ -284,911 +248,113 @@ impl<M: Model> Context<M> {
     /// # Returns
     ///
     /// Returns `false` if the `query` is not the last query in the call stack.
-    #[allow(private_bounds, private_interfaces)]
-    pub fn clear_query<Q: Sealed<Model = M>>(
+    #[allow(clippy::type_complexity)]
+    pub fn clear_query<Q: Query>(
         &mut self,
         query: &Q,
-    ) -> Option<Cached<Q::InProgress, Q::Result>> {
+    ) -> Option<Cached<Arc<Q::InProgress>, Arc<Q::Result>>> {
         let last = self.call_stack.last()?;
 
-        if Q::from_call(last).map(|x| &x.query) != Some(query) {
+        if last.query.downcast_ref::<Q>().map_or(true, |x| x != query) {
             return None;
         }
 
-        let result = Q::get_map_mut(self).remove(query)?;
+        let result = self.map.remove(query as &dyn DynIdent)?;
+
         self.call_stack.pop();
 
-        Some(result)
+        if self.call_stack.is_empty() {
+            self.current_count = 0;
+        }
+
+        Some(match result {
+            Cached::InProgress(rc) => {
+                Cached::InProgress(rc.downcast::<Q::InProgress>().unwrap())
+            }
+            Cached::Done(rc) => {
+                Cached::Done(rc.downcast::<Q::Result>().unwrap())
+            }
+        })
     }
 }
 
-/// The trait implemented by all the query types.
-///
-/// It specifies the informations required to compute the query NOT the
-/// implementation logic.
-pub trait Query {
-    /// The model in which the query is computed.
-    type Model: Model;
-
-    /// The additional in-progress state of the query.
-    type InProgress: Clone + Default;
-
-    /// The result of the query.
-    type Result: Clone;
-}
-
-pub(super) trait Sealed: Clone + Ord + Query {
-    /// Gets the map of the query from the context.
-    #[allow(dead_code)]
-    fn get_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>>;
-
-    /// Gets the mutable map of the query from the context.
-    fn get_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>>;
-
-    /// Converts the [`QueryCall`] to the [`Call`] type of this query.
-    fn from_call(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Self, Self::InProgress>>;
-
-    /// Converts this query and its in progress state to a [`QueryCall`].
-    fn into_query_call(
-        query: Self,
-        in_progress: Self::InProgress,
-    ) -> Record<Self::Model>;
-}
-
-/// A trait implemented by all kinds of terms which is used for retrieving the
-/// map from the [`Context`] based on the type of the term.
-pub(super) trait Element: SubTerm {
-    fn get_equality_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Equality<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>;
-    fn get_equality_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        Equality<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    >;
-    fn from_call_to_equality(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Equality<Self>, ()>>;
-    fn equality_into_call(equality: Equality<Self>) -> Record<Self::Model>;
-
-    fn get_definite_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Definite<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>;
-    fn get_definite_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        Definite<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    >;
-    fn from_call_to_definite(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Definite<Self>, ()>>;
-    fn definite_into_call(definite: Definite<Self>) -> Record<Self::Model>;
-
-    fn get_unification_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<
-        Unification<Self>,
-        Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
-    >;
-    fn get_unification_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        Unification<Self>,
-        Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
-    >;
-    fn from_call_to_unification(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Unification<Self>, ()>>;
-    fn unification_into_call(
-        unification: Unification<Self>,
-    ) -> Record<Self::Model>;
-
-    fn get_tuple_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<
-        predicate::Tuple<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    >;
-    fn get_tuple_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        predicate::Tuple<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    >;
-    fn from_call_to_tuple(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<predicate::Tuple<Self>, ()>>;
-    fn tuple_into_call(tuple: predicate::Tuple<Self>) -> Record<Self::Model>;
-
-    fn get_outlives_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>>;
-    fn get_outlives_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>>;
-    fn from_call_to_outlives(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<predicate::Outlives<Self>, ()>>;
-    fn outlives_into_call(
-        outlives: predicate::Outlives<Self>,
-    ) -> Record<Self::Model>;
-}
-
-impl<M: Model> Element for Lifetime<M> {
-    fn get_equality_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Equality<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
-    {
-        &context.lifetime_equality
-    }
-
-    fn get_equality_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        Equality<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    > {
-        &mut context.lifetime_equality
-    }
-
-    fn from_call_to_equality(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Equality<Self>, ()>> {
-        call.as_lifetime_equality()
-    }
-
-    fn equality_into_call(equality: Equality<Self>) -> Record<Self::Model> {
-        Record::LifetimeEquality(Call::new(equality, ()))
-    }
-
-    fn get_definite_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Definite<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
-    {
-        &context.lifetime_definite
-    }
-
-    fn get_definite_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        Definite<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    > {
-        &mut context.lifetime_definite
-    }
-
-    fn from_call_to_definite(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Definite<Self>, ()>> {
-        call.as_lifetime_definite()
-    }
-
-    fn definite_into_call(definite: Definite<Self>) -> Record<Self::Model> {
-        Record::LifetimeDefinite(Call::new(definite, ()))
-    }
-
-    fn get_unification_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<
-        Unification<Self>,
-        Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
-    > {
-        &context.lifetime_unification
-    }
-
-    fn get_unification_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        Unification<Self>,
-        Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
-    > {
-        &mut context.lifetime_unification
-    }
-
-    fn from_call_to_unification(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Unification<Self>, ()>> {
-        call.as_lifetime_unification()
-    }
-
-    fn unification_into_call(
-        unification: Unification<Self>,
-    ) -> Record<Self::Model> {
-        Record::LifetimeUnification(Call::new(unification, ()))
-    }
-
-    fn get_tuple_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<
-        predicate::Tuple<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    > {
-        &context.lifetime_tuple
-    }
-
-    fn get_tuple_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        predicate::Tuple<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    > {
-        &mut context.lifetime_tuple
-    }
-
-    fn from_call_to_tuple(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<predicate::Tuple<Self>, ()>> {
-        call.as_lifetime_tuple()
-    }
-
-    fn tuple_into_call(tuple: predicate::Tuple<Self>) -> Record<Self::Model> {
-        Record::LifetimeTuple(Call::new(tuple, ()))
-    }
-
-    fn get_outlives_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
-        &context.lifetime_outlives
-    }
-
-    fn get_outlives_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
-        &mut context.lifetime_outlives
-    }
-
-    fn from_call_to_outlives(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<predicate::Outlives<Self>, ()>> {
-        call.as_lifetime_outlives()
-    }
-
-    fn outlives_into_call(
-        outlives: predicate::Outlives<Self>,
-    ) -> Record<Self::Model> {
-        Record::LifetimeOutlives(Call::new(outlives, ()))
-    }
-}
-
-impl<M: Model> Element for Type<M> {
-    fn get_equality_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Equality<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
-    {
-        &context.type_equality
-    }
-
-    fn get_equality_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        Equality<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    > {
-        &mut context.type_equality
-    }
-
-    fn from_call_to_equality(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Equality<Self>, ()>> {
-        call.as_type_equality()
-    }
-
-    fn equality_into_call(equality: Equality<Self>) -> Record<Self::Model> {
-        Record::TypeEquality(Call::new(equality, ()))
-    }
-
-    fn get_definite_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Definite<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
-    {
-        &context.type_definite
-    }
-
-    fn get_definite_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        Definite<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    > {
-        &mut context.type_definite
-    }
-
-    fn from_call_to_definite(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Definite<Self>, ()>> {
-        call.as_type_definite()
-    }
-
-    fn definite_into_call(definite: Definite<Self>) -> Record<Self::Model> {
-        Record::TypeDefinite(Call::new(definite, ()))
-    }
-
-    fn get_unification_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<
-        Unification<Self>,
-        Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
-    > {
-        &context.type_unification
-    }
-
-    fn get_unification_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        Unification<Self>,
-        Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
-    > {
-        &mut context.type_unification
-    }
-
-    fn from_call_to_unification(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Unification<Self>, ()>> {
-        call.as_type_unification()
-    }
-
-    fn unification_into_call(
-        unification: Unification<Self>,
-    ) -> Record<Self::Model> {
-        Record::TypeUnification(Call::new(unification, ()))
-    }
-
-    fn get_tuple_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<
-        predicate::Tuple<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    > {
-        &context.type_tuple
-    }
-
-    fn get_tuple_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        predicate::Tuple<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    > {
-        &mut context.type_tuple
-    }
-
-    fn from_call_to_tuple(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<predicate::Tuple<Self>, ()>> {
-        call.as_type_tuple()
-    }
-
-    fn tuple_into_call(tuple: predicate::Tuple<Self>) -> Record<Self::Model> {
-        Record::TypeTuple(Call::new(tuple, ()))
-    }
-
-    fn get_outlives_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
-        &context.type_outlives
-    }
-
-    fn get_outlives_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
-        &mut context.type_outlives
-    }
-
-    fn from_call_to_outlives(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<predicate::Outlives<Self>, ()>> {
-        call.as_type_outlives()
-    }
-
-    fn outlives_into_call(
-        outlives: predicate::Outlives<Self>,
-    ) -> Record<Self::Model> {
-        Record::TypeOutlives(Call::new(outlives, ()))
-    }
-}
-
-impl<M: Model> Element for Constant<M> {
-    fn get_equality_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Equality<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
-    {
-        &context.constant_equality
-    }
-
-    fn get_equality_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        Equality<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    > {
-        &mut context.constant_equality
-    }
-
-    fn from_call_to_equality(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Equality<Self>, ()>> {
-        call.as_constant_equality()
-    }
-
-    fn equality_into_call(equality: Equality<Self>) -> Record<Self::Model> {
-        Record::ConstantEquality(Call::new(equality, ()))
-    }
-
-    fn get_definite_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Definite<Self>, Cached<(), Succeeded<Satisfied, Self::Model>>>
-    {
-        &context.constant_definite
-    }
-
-    fn get_definite_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        Definite<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    > {
-        &mut context.constant_definite
-    }
-
-    fn from_call_to_definite(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Definite<Self>, ()>> {
-        call.as_constant_definite()
-    }
-
-    fn definite_into_call(definite: Definite<Self>) -> Record<Self::Model> {
-        Record::ConstantDefinite(Call::new(definite, ()))
-    }
-
-    fn get_unification_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<
-        Unification<Self>,
-        Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
-    > {
-        &context.constant_unification
-    }
-
-    fn get_unification_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        Unification<Self>,
-        Cached<(), Succeeded<Unifier<Self>, Self::Model>>,
-    > {
-        &mut context.constant_unification
-    }
-
-    fn from_call_to_unification(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Unification<Self>, ()>> {
-        call.as_constant_unification()
-    }
-
-    fn unification_into_call(
-        unification: Unification<Self>,
-    ) -> Record<Self::Model> {
-        Record::ConstantUnification(Call::new(unification, ()))
-    }
-
-    fn get_tuple_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<
-        predicate::Tuple<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    > {
-        &context.constant_tuple
-    }
-
-    fn get_tuple_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<
-        predicate::Tuple<Self>,
-        Cached<(), Succeeded<Satisfied, Self::Model>>,
-    > {
-        &mut context.constant_tuple
-    }
-
-    fn from_call_to_tuple(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<predicate::Tuple<Self>, ()>> {
-        call.as_constant_tuple()
-    }
-
-    fn tuple_into_call(tuple: predicate::Tuple<Self>) -> Record<Self::Model> {
-        Record::ConstantTuple(Call::new(tuple, ()))
-    }
-
-    fn get_outlives_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
-        &context.constant_outlives
-    }
-
-    fn get_outlives_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<predicate::Outlives<Self>, Cached<(), Satisfied>> {
-        &mut context.constant_outlives
-    }
-
-    fn from_call_to_outlives(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<predicate::Outlives<Self>, ()>> {
-        call.as_constant_outlives()
-    }
-
-    fn outlives_into_call(
-        outlives: predicate::Outlives<Self>,
-    ) -> Record<Self::Model> {
-        Record::ConstantOutlives(Call::new(outlives, ()))
-    }
-}
-
-impl<T: Term> Query for Equality<T> {
-    type Model = T::Model;
-    type InProgress = ();
-    type Result = Succeeded<Satisfied, T::Model>;
-}
-
-impl<T: Term> Sealed for Equality<T> {
-    fn get_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        T::get_equality_map(context)
-    }
-
-    fn get_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        T::get_equality_map_mut(context)
-    }
-
-    fn from_call(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Self, Self::InProgress>> {
-        T::from_call_to_equality(call)
-    }
-
-    fn into_query_call(
-        query: Self,
-        (): Self::InProgress,
-    ) -> Record<Self::Model> {
-        T::equality_into_call(query)
-    }
-}
-
-impl<T: Term> Query for Definite<T> {
-    type Model = T::Model;
-    type InProgress = ();
-    type Result = Succeeded<Satisfied, T::Model>;
-}
-
-impl<T: Term> Sealed for Definite<T> {
-    fn get_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        T::get_definite_map(context)
-    }
-
-    fn get_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        T::get_definite_map_mut(context)
-    }
-
-    fn from_call(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Self, Self::InProgress>> {
-        T::from_call_to_definite(call)
-    }
-
-    fn into_query_call(
-        query: Self,
-        (): Self::InProgress,
-    ) -> Record<Self::Model> {
-        T::definite_into_call(query)
-    }
-}
-
-impl<T: Term> Query for Unification<T> {
-    type Model = T::Model;
-    type InProgress = ();
-    type Result = Succeeded<Unifier<T>, T::Model>;
-}
-
-impl<T: Term> Sealed for Unification<T> {
-    fn get_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        T::get_unification_map(context)
-    }
-
-    fn get_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        T::get_unification_map_mut(context)
-    }
-
-    fn from_call(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Self, Self::InProgress>> {
-        T::from_call_to_unification(call)
-    }
-
-    fn into_query_call(
-        query: Self,
-        (): Self::InProgress,
-    ) -> Record<Self::Model> {
-        T::unification_into_call(query)
-    }
-}
-
-impl<T: Term> Query for predicate::Tuple<T> {
-    type Model = T::Model;
-    type InProgress = ();
-    type Result = Succeeded<Satisfied, T::Model>;
-}
-
-impl<T: Term> Sealed for predicate::Tuple<T> {
-    fn get_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        T::get_tuple_map(context)
-    }
-
-    fn get_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        T::get_tuple_map_mut(context)
-    }
-
-    fn from_call(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Self, Self::InProgress>> {
-        T::from_call_to_tuple(call)
-    }
-
-    fn into_query_call(
-        query: Self,
-        (): Self::InProgress,
-    ) -> Record<Self::Model> {
-        T::tuple_into_call(query)
-    }
-}
-
-impl<T: Term> Query for predicate::Outlives<T> {
-    type Model = T::Model;
-    type InProgress = ();
-    type Result = Satisfied;
-}
-
-impl<T: Term> Sealed for predicate::Outlives<T> {
-    fn get_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        T::get_outlives_map(context)
-    }
-
-    fn get_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        T::get_outlives_map_mut(context)
-    }
-
-    fn from_call(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Self, Self::InProgress>> {
-        T::from_call_to_outlives(call)
-    }
-
-    fn into_query_call(
-        query: Self,
-        (): Self::InProgress,
-    ) -> Record<Self::Model> {
-        T::outlives_into_call(query)
-    }
-}
-
-impl<M: Model> Query for predicate::ConstantType<M> {
-    type Model = M;
-    type InProgress = ConstantTypeQuerySource;
-    type Result = Succeeded<Satisfied, M>;
-}
-
-impl<M: Model> Sealed for predicate::ConstantType<M> {
-    fn get_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &context.constant_type
-    }
-
-    fn get_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &mut context.constant_type
-    }
-
-    fn from_call(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Self, Self::InProgress>> {
-        call.as_constant_type()
-    }
-
-    fn into_query_call(
-        query: Self,
-        in_progress: Self::InProgress,
-    ) -> Record<Self::Model> {
-        Record::ConstantType(Call::new(query, in_progress))
-    }
-}
-
-impl<M: Model> Query for predicate::PositiveTrait<M> {
-    type Model = M;
-    type InProgress = ();
-    type Result = Succeeded<PositiveTraitSatisfied<M>, M>;
-}
-
-impl<M: Model> Sealed for predicate::PositiveTrait<M> {
-    fn get_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &context.positive_trait_satisfiability
-    }
-
-    fn get_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &mut context.positive_trait_satisfiability
-    }
-
-    fn from_call(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Self, Self::InProgress>> {
-        call.as_positive_trait_satisfiability()
-    }
-
-    fn into_query_call(
-        query: Self,
-        (): Self::InProgress,
-    ) -> Record<Self::Model> {
-        Record::PositiveTraitSatisfiability(Call::new(query, ()))
-    }
-}
-
-impl<M: Model> Query for NegativeTrait<M> {
-    type Model = M;
-    type InProgress = ();
-    type Result = Succeeded<NegativeTraitSatisfied<M>, M>;
-}
-
-impl<M: Model> Sealed for NegativeTrait<M> {
-    fn get_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &context.negative_trait_satisfiability
-    }
-
-    fn get_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &mut context.negative_trait_satisfiability
-    }
-
-    fn from_call(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Self, Self::InProgress>> {
-        call.as_negative_trait_satisfiability()
-    }
-
-    fn into_query_call(
-        query: Self,
-        (): Self::InProgress,
-    ) -> Record<Self::Model> {
-        Record::NegativeTraitSatisfiability(Call::new(query, ()))
-    }
-}
-
-impl<M: Model> Query for predicate::PositiveMarker<M> {
-    type Model = M;
-    type InProgress = ();
-    type Result = Succeeded<PositiveMarkerSatisfied<M>, M>;
-}
-
-impl<M: Model> Sealed for predicate::PositiveMarker<M> {
-    fn get_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &context.positive_marker_satisfiability
-    }
-
-    fn get_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &mut context.positive_marker_satisfiability
-    }
-
-    fn from_call(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Self, Self::InProgress>> {
-        call.as_positive_marker_satisfiability()
-    }
-
-    fn into_query_call(
-        query: Self,
-        in_progress: Self::InProgress,
-    ) -> Record<Self::Model> {
-        Record::PositiveMarkerSatisfiability(Call::new(query, in_progress))
-    }
-}
-
-impl<M: Model> Query for predicate::NegativeMarker<M> {
-    type Model = M;
-    type InProgress = ();
-    type Result = Succeeded<NegativeMarkerSatisfied<M>, M>;
-}
-
-impl<M: Model> Sealed for predicate::NegativeMarker<M> {
-    fn get_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &context.negative_marker_satisfiability
-    }
-
-    fn get_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &mut context.negative_marker_satisfiability
-    }
-
-    fn from_call(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Self, Self::InProgress>> {
-        call.as_negative_marker_satisfiability()
-    }
-
-    fn into_query_call(
-        query: Self,
-        (): Self::InProgress,
-    ) -> Record<Self::Model> {
-        Record::NegativeMarkerSatisfiability(Call::new(query, ()))
-    }
-}
-
-impl<M: Model> Query for TypeCheck<M> {
-    type Model = M;
-    type InProgress = ();
-    type Result = Succeeded<Satisfied, M>;
-}
-
-impl<M: Model> Sealed for TypeCheck<M> {
-    fn get_map(
-        context: &Context<Self::Model>,
-    ) -> &BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &context.type_check
-    }
-
-    fn get_map_mut(
-        context: &mut Context<Self::Model>,
-    ) -> &mut BTreeMap<Self, Cached<Self::InProgress, Self::Result>> {
-        &mut context.type_check
-    }
-
-    fn from_call(
-        call: &Record<Self::Model>,
-    ) -> Option<&Call<Self, Self::InProgress>> {
-        call.as_type_check()
-    }
-
-    fn into_query_call(
-        query: Self,
-        (): Self::InProgress,
-    ) -> Record<Self::Model> {
-        Record::TypeCheck(Call::new(query, ()))
+impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
+    /// Performs the query.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error of the query.
+    pub fn query<Q: Query<Model = M>>(
+        &self,
+        query: &Q,
+    ) -> Result<Option<Arc<Q::Result>>, Q::Error> {
+        self.query_with(
+            query,
+            Q::Parameter::default(),
+            Q::InProgress::default(),
+        )
+    }
+
+    /// Performs the query with the given parameter and in-progress state.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error of the query.
+    pub fn query_with<Q: Query<Model = M>>(
+        &self,
+        query: &Q,
+        parameter: Q::Parameter,
+        in_progress: Q::InProgress,
+    ) -> Result<Option<Arc<Q::Result>>, Q::Error> {
+        let in_progress_result = self
+            .context
+            .borrow_mut()
+            .mark_as_in_progress(query.clone(), in_progress.clone())?;
+
+        match in_progress_result {
+            Some(Cached::Done(result)) => return Ok(Some(result)),
+            Some(Cached::InProgress(new_in_progress)) => {
+                let context = self.context.borrow();
+
+                let position = context
+                    .call_stack
+                    .iter()
+                    .position(|x| {
+                        x.query
+                            .downcast_ref::<Q>()
+                            .map_or(false, |x| x == query)
+                    })
+                    .expect("should exist");
+
+                // circular dependency
+                let result = query.on_cyclic(
+                    parameter,
+                    in_progress,
+                    (*new_in_progress).clone(),
+                    &context.call_stack[position..],
+                )?;
+
+                return Ok(result);
+            }
+            None => { /*no circular dependency, continue...*/ }
+        }
+
+        match query.query(self, parameter, in_progress) {
+            Ok(Some(result)) => {
+                // remember the result
+                assert!(self
+                    .context
+                    .borrow_mut()
+                    .mark_as_done(query, result.clone()));
+
+                Ok(Some(result))
+            }
+            result @ (Ok(None) | Err(_)) => {
+                // reset the query
+                assert!(self.context.borrow_mut().clear_query(query).is_some());
+
+                result
+            }
+        }
     }
 }

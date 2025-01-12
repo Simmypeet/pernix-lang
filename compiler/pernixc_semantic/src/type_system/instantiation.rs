@@ -5,6 +5,9 @@ use std::{
     hash::Hash,
 };
 
+use pernixc_arena::ID;
+use pernixc_table::{GlobalID, MemberID};
+
 use super::{
     model::Model,
     sub_term::TermLocation,
@@ -16,13 +19,9 @@ use super::{
     },
     visitor::{self, MutableRecursive},
 };
-use crate::{
-    arena::ID,
-    component::generic_parameters::{
-        ConstantParameter, ConstantParameterID, GenericKind, GenericParameters,
-        LifetimeParameter, LifetimeParameterID, TypeParameter, TypeParameterID,
-    },
-    table::{GlobalID, MemberID},
+use crate::component::generic_parameters::{
+    ConstantParameter, ConstantParameterID, GenericKind, GenericParameters,
+    LifetimeParameter, LifetimeParameterID, TypeParameter, TypeParameterID,
 };
 
 /// Represents an instantiation of generic parameters.

@@ -6,12 +6,11 @@ use super::{
     model::Model,
     normalizer::Normalizer,
     predicate::Predicate,
-    query::Context,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, ModelOf, Term,
     },
     variance::Variance,
-    Environment, OverflowError, Succeeded,
+    AbruptError, Environment, Succeeded,
 };
 
 /// A trait used for retrieving equivalences of a term based on the equality
@@ -20,16 +19,14 @@ pub(super) trait Equivalence: ModelOf + Sized {
     fn get_equivalences(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        context: &mut Context<Self::Model>,
-    ) -> Result<Vec<Succeeded<Self, Self::Model>>, OverflowError>;
+    ) -> Result<Vec<Succeeded<Self, Self::Model>>, AbruptError>;
 }
 
 impl<M: Model> Equivalence for Lifetime<M> {
     fn get_equivalences(
         &self,
         _: &Environment<M, impl Normalizer<M>>,
-        _: &mut Context<M>,
-    ) -> Result<Vec<Succeeded<Self, M>>, OverflowError> {
+    ) -> Result<Vec<Succeeded<Self, M>>, AbruptError> {
         Ok(Vec::new())
     }
 }
@@ -38,8 +35,7 @@ impl<M: Model> Equivalence for Type<M> {
     fn get_equivalences(
         &self,
         environment: &Environment<M, impl Normalizer<M>>,
-        context: &mut Context<M>,
-    ) -> Result<Vec<Succeeded<Self, M>>, OverflowError> {
+    ) -> Result<Vec<Succeeded<Self, M>>, AbruptError> {
         let mut equivalences = Vec::new();
 
         if !self.is_trait_member() {
@@ -63,12 +59,8 @@ impl<M: Model> Equivalence for Type<M> {
                         forall_lifetime_errors,
                     },
                 constraints,
-            }) = self.compatible_with_context(
-                lhs,
-                Variance::Covariant,
-                environment,
-                context,
-            )? {
+            }) = self.compatible(lhs, Variance::Covariant, environment)?
+            {
                 let mut result = rhs.clone();
 
                 // instantiate the forall lifetime
@@ -90,24 +82,9 @@ impl<M: Model> Equivalence for Constant<M> {
     fn get_equivalences(
         &self,
         _: &Environment<M, impl Normalizer<M>>,
-        _: &mut Context<M>,
-    ) -> Result<Vec<Succeeded<Self, M>>, OverflowError> {
+    ) -> Result<Vec<Succeeded<Self, M>>, AbruptError> {
         Ok(Vec::new())
     }
-}
-
-pub(super) fn get_equivalences_with_context<T: Term>(
-    term: &T,
-    environment: &Environment<T::Model, impl Normalizer<T::Model>>,
-    context: &mut Context<T::Model>,
-) -> Result<Vec<Succeeded<T, T::Model>>, OverflowError> {
-    let mut equivalences = term.get_equivalences(environment, context)?;
-
-    if let Some(normalization) = term.normalize(environment, context)? {
-        equivalences.push(normalization);
-    }
-
-    Ok(equivalences)
 }
 
 /// Retrieves the equivalences of the given term based on the equality premises
@@ -119,7 +96,12 @@ pub(super) fn get_equivalences_with_context<T: Term>(
 pub fn get_equivalences<T: Term>(
     term: &T,
     environment: &Environment<T::Model, impl Normalizer<T::Model>>,
-) -> Result<Vec<Succeeded<T, T::Model>>, OverflowError> {
-    let mut context = Context::new();
-    get_equivalences_with_context(term, environment, &mut context)
+) -> Result<Vec<Succeeded<T, T::Model>>, AbruptError> {
+    let mut equivalences = term.get_equivalences(environment)?;
+
+    if let Some(normalization) = term.normalize(environment)? {
+        equivalences.push(normalization);
+    }
+
+    Ok(equivalences)
 }

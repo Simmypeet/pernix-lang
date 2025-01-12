@@ -8,6 +8,8 @@ mod r#trait;
 mod tuple;
 
 use enum_as_inner::EnumAsInner;
+use pernixc_table::Table;
+use serde::{Deserialize, Serialize};
 
 use super::{
     equality::Equality,
@@ -15,12 +17,13 @@ use super::{
     model::{Default, Model},
     sub_term::TermLocation,
     term::{
-        constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
-        MemberSymbol, Term,
+        constant::Constant,
+        lifetime::Lifetime,
+        r#type::{TraitMember, Type},
+        GenericArguments, MemberSymbol, Term,
     },
     visitor::{accept_recursive, Recursive},
 };
-use crate::table;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct ContainsErrorVisitor {
@@ -106,8 +109,7 @@ pub use r#trait::{
     PositiveSatisfied as PositiveTraitSatisfied,
 };
 pub use resolution::{
-    resolve_implementation, resolve_implementation_with_context,
-    Error as ResolutionError, Implementation,
+    resolve_implementation, Error as ResolutionError, Implementation,
 };
 pub use tuple::Tuple;
 
@@ -121,11 +123,13 @@ pub use tuple::Tuple;
     Ord,
     Hash,
     EnumAsInner,
+    Serialize,
+    Deserialize,
     derive_more::From,
 )]
 #[allow(missing_docs)]
 pub enum Predicate<M: Model> {
-    TraitTypeEquality(Equality<MemberSymbol<M>, Type<M>>),
+    TraitTypeEquality(Equality<TraitMember<M>, Type<M>>),
     ConstantType(ConstantType<M>),
     LifetimeOutlives(Outlives<Lifetime<M>>),
     TypeOutlives(Outlives<Type<M>>),
@@ -143,17 +147,17 @@ impl<M: Model> Predicate<M> {
         match predicate {
             Predicate::TraitTypeEquality(x) => {
                 Self::TraitTypeEquality(Equality {
-                    lhs: MemberSymbol {
-                        id: x.lhs.id,
+                    lhs: TraitMember(MemberSymbol {
+                        id: x.lhs.0.id,
                         member_generic_arguments:
                             GenericArguments::from_default_model(
-                                x.lhs.member_generic_arguments,
+                                x.lhs.0.member_generic_arguments,
                             ),
                         parent_generic_arguments:
                             GenericArguments::from_default_model(
-                                x.lhs.parent_generic_arguments,
+                                x.lhs.0.parent_generic_arguments,
                             ),
-                    },
+                    }),
                     rhs: M::from_default_type(x.rhs),
                 })
             }
@@ -189,22 +193,22 @@ impl<M: Model> Predicate<M> {
     }
 }
 
-impl<M: Model> table::Display for Predicate<M>
+impl<M: Model> pernixc_table::Display for Predicate<M>
 where
-    Equality<MemberSymbol<M>, Type<M>>: table::Display,
-    ConstantType<M>: table::Display,
-    Outlives<Lifetime<M>>: table::Display,
-    Outlives<Type<M>>: table::Display,
-    Tuple<Type<M>>: table::Display,
-    Tuple<Constant<M>>: table::Display,
-    PositiveTrait<M>: table::Display,
-    NegativeTrait<M>: table::Display,
-    PositiveMarker<M>: table::Display,
-    NegativeMarker<M>: table::Display,
+    Equality<TraitMember<M>, Type<M>>: pernixc_table::Display,
+    ConstantType<M>: pernixc_table::Display,
+    Outlives<Lifetime<M>>: pernixc_table::Display,
+    Outlives<Type<M>>: pernixc_table::Display,
+    Tuple<Type<M>>: pernixc_table::Display,
+    Tuple<Constant<M>>: pernixc_table::Display,
+    PositiveTrait<M>: pernixc_table::Display,
+    NegativeTrait<M>: pernixc_table::Display,
+    PositiveMarker<M>: pernixc_table::Display,
+    NegativeMarker<M>: pernixc_table::Display,
 {
     fn fmt(
         &self,
-        table: &table::Table,
+        table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         match self {
@@ -269,17 +273,17 @@ impl<M: Model> Predicate<M> {
         match predicate {
             Predicate::TraitTypeEquality(equality) => {
                 Self::TraitTypeEquality(Equality::new(
-                    MemberSymbol {
-                        id: equality.lhs.id,
+                    TraitMember(MemberSymbol {
+                        id: equality.lhs.0.id,
                         member_generic_arguments:
                             GenericArguments::from_other_model(
-                                equality.lhs.member_generic_arguments,
+                                equality.lhs.0.member_generic_arguments,
                             ),
                         parent_generic_arguments:
                             GenericArguments::from_other_model(
-                                equality.lhs.parent_generic_arguments,
+                                equality.lhs.0.parent_generic_arguments,
                             ),
-                    },
+                    }),
                     Type::from_other_model(equality.rhs),
                 ))
             }
@@ -333,17 +337,17 @@ impl<M: Model> Predicate<M> {
         Ok(match predicate {
             Predicate::TraitTypeEquality(equality) => {
                 Self::TraitTypeEquality(Equality::new(
-                    MemberSymbol {
-                        id: equality.lhs.id,
+                    TraitMember(MemberSymbol {
+                        id: equality.lhs.0.id,
                         member_generic_arguments:
                             GenericArguments::try_from_other_model(
-                                equality.lhs.member_generic_arguments,
+                                equality.lhs.0.member_generic_arguments,
                             )?,
                         parent_generic_arguments:
                             GenericArguments::try_from_other_model(
-                                equality.lhs.parent_generic_arguments,
+                                equality.lhs.0.parent_generic_arguments,
                             )?,
-                    },
+                    }),
                     Type::try_from_other_model(equality.rhs)?,
                 ))
             }
@@ -390,12 +394,12 @@ impl<T: Term> Equality<T::TraitMember, T> {
     }
 }
 
-impl<M: Model> Equality<MemberSymbol<M>, Type<M>> {
+impl<M: Model> Equality<TraitMember<M>, Type<M>> {
     /// Applies the instantiation to both [`Equality::lhs`] and
     /// [`Equality::rhs`].
     pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
-        self.lhs.member_generic_arguments.instantiate(instantiation);
-        self.lhs.parent_generic_arguments.instantiate(instantiation);
+        self.lhs.0.member_generic_arguments.instantiate(instantiation);
+        self.lhs.0.parent_generic_arguments.instantiate(instantiation);
         instantiation::instantiate(&mut self.rhs, instantiation);
     }
 }

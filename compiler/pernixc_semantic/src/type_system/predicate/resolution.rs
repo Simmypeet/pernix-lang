@@ -1,25 +1,10 @@
-use std::{collections::BTreeSet, ops::Deref};
-
+use pernixc_table::GlobalID;
 use thiserror::Error;
 
-use super::Predicate;
-use crate::{
-    arena::ID,
-    component::Implemented,
-    table::GlobalID,
-    type_system::{
-        compatible::Compatible,
-        deduction::{self, Deduction},
-        environment::Environment,
-        instantiation::Instantiation,
-        model::{self, Model},
-        normalizer::Normalizer,
-        order,
-        query::Context,
-        term::{r#type::Type, GenericArguments},
-        variance::Variance,
-        Compute, LifetimeConstraint, OverflowError, Premise, Succeeded,
-    },
+use crate::type_system::{
+    environment::Environment, instantiation::Instantiation, model::Model,
+    normalizer::Normalizer, term::GenericArguments, AbruptError, OverflowError,
+    Succeeded,
 };
 
 /// A result of a implementation resolution query.
@@ -37,7 +22,7 @@ pub struct Implementation<M: Model> {
     pub is_not_general_enough: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
 #[allow(missing_docs)]
 pub enum Error {
     #[error("the `implemented_id` is invalid to the table")]
@@ -50,26 +35,23 @@ pub enum Error {
     #[error("no matching implementation was found")]
     NotFound,
     #[error(transparent)]
-    Overflow(#[from] OverflowError),
+    Abrupt(#[from] AbruptError),
 }
 
 /// Resolves the implementation for the given `implemented_id` and
-/// `generic_arguments` with explicitly specified `context`.
+/// `generic_arguments`.
 ///
 /// # Errors
 ///
 /// See [`Error`] for more information.
-///
-/// # Parameters
-///
-/// - `implemented_id`: The ID of either a trait or a marker symbol.
 #[allow(clippy::too_many_lines)]
-pub fn resolve_implementation_with_context<'a, M: Model>(
+pub fn resolve_implementation<M: Model>(
     implemented_id: GlobalID,
     generic_arguments: &GenericArguments<M>,
-    environment: &Environment<'a, M, impl Normalizer<M>>,
-    context: &mut Context<M>,
+    environment: &Environment<M, impl Normalizer<M>>,
 ) -> Result<Succeeded<Implementation<M>, M>, Error> {
+    todo!()
+    /*
     // we might be in the implementation site already
     if let Some(result) = is_in_active_implementation(
         implemented_id,
@@ -212,197 +194,140 @@ pub fn resolve_implementation_with_context<'a, M: Model>(
         }
         None => Err(Error::NotFound),
     }
-}
-
-/// Resolves the implementation for the given `implemented_id` and
-/// `generic_arguments`.
-///
-/// # Errors
-///
-/// See [`Error`] for more information.
-pub fn resolve_implementation<
-    'a,
-    M: Model,
-    S: State,
-    ImplementationID: TryFrom<ItemID> + Copy,
-    ImplementedSymbol: Implemented<ImplementationID> + Element,
->(
-    implemented_id: ID<ImplementedSymbol>,
-    generic_arguments: &GenericArguments<M>,
-    environment: &Environment<
-        'a,
-        M,
-        S,
-        impl Normalizer<M, S>,
-        impl Observer<M, S>,
-    >,
-) -> Result<Succeeded<Implementation<ImplementationID, M>, M>, Error>
-where
-    Representation<S::Container>: Index<ImplementationID>,
-
-    <Representation<S::Container> as Index<ImplementationID>>::Output<'a>:
-        Deref,
-
-    <<Representation<S::Container> as Index<ImplementationID>>::Output<'a>
-        as Deref>::Target: ResolvableImplementation<ID<ImplementedSymbol>>,
-
-    ID<ImplementedSymbol>: Into<ResolvableImplementedID>,
-{
-    resolve_implementation_with_context(
-        implemented_id,
-        generic_arguments,
-        environment,
-        &mut Context::default(),
-    )
+    */
 }
 
 #[allow(clippy::type_complexity)]
-fn is_in_active_implementation<
-    'a,
-    M: Model,
-    S: State,
-    ImplementationID: TryFrom<ItemID> + Copy,
-    ImplementedSymbol: Implemented<ImplementationID> + Element,
->(
-    implemented_id: ID<ImplementedSymbol>,
+fn is_in_active_implementation<M: Model>(
+    implemented_id: GlobalID,
     generic_arguments: &GenericArguments<M>,
-    environment: &Environment<'a,M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
-    context: &mut Context<M>,
-)  -> Result<Option<Succeeded<Implementation<ImplementationID, M>, M>>, Error>
-where
-    Representation<S::Container>: Index<ImplementationID>,
-
-    <Representation<S::Container> as Index<ImplementationID>>::Output<'a>:
-        Deref,
-
-    <<Representation<S::Container> as Index<ImplementationID>>::Output<'a>
-        as Deref>::Target: ResolvableImplementation<ID<ImplementedSymbol>>,
-
-    ID<ImplementedSymbol>: Into<ResolvableImplementedID>,
-
-{
-    let Some(query_site) = environment.premise.query_site else {
-        return Ok(None);
-    };
-
-    for item_id in
-        if let Some(iter) = environment.table.scope_walker(query_site) {
-            iter
-        } else {
+    environment: &mut Environment<M, impl Normalizer<M>>,
+) -> Result<Option<Succeeded<Implementation<M>, M>>, Error> {
+    todo!()
+    /*
+        let Some(query_site) = environment.premise.query_site else {
             return Ok(None);
-        }
-    {
-        // must be an implementation
-        let Ok(implementation_id) = ImplementationID::try_from(item_id) else {
-            continue;
         };
 
-        let implementation = Index::<ImplementationID>::get(
-            &**environment.table,
-            implementation_id,
-        )
-        .unwrap();
+        for item_id in
+            if let Some(iter) = environment.table.scope_walker(query_site) {
+                iter
+            } else {
+                return Ok(None);
+            }
+        {
+            // must be an implementation
+            let Ok(implementation_id) = ImplementationID::try_from(item_id) else {
+                continue;
+            };
 
-        // the implemented_id must be the same
-        if implementation.implemented_id() != implemented_id {
-            continue;
-        }
+            let implementation = Index::<ImplementationID>::get(
+                &**environment.table,
+                implementation_id,
+            )
+            .unwrap();
 
-        let implementation_arguments = GenericArguments::from_default_model(
-            implementation.arguments().clone(),
-        );
-        let Some(_) = generic_arguments.compatible_with_context(
-            &implementation_arguments,
-            Variance::Invariant,
-            environment,
-            context,
-        )?
-        else {
-            continue;
-        };
-
-        match generic_arguments.deduce_with_context(
-            &implementation_arguments,
-            environment,
-            context,
-        ) {
-            Ok(result) => {
-                return Ok(Some(Succeeded {
-                    result: Implementation {
-                        instantiation: result.result.instantiation,
-                        id: implementation_id,
-                        is_not_general_enough: result
-                            .result
-                            .is_not_general_enough,
-                    },
-                    constraints: result.constraints,
-                }))
+            // the implemented_id must be the same
+            if implementation.implemented_id() != implemented_id {
+                continue;
             }
 
-            Err(deduction::Error::Overflow(err)) => {
-                return Err(Error::Overflow(err))
-            }
+            let implementation_arguments = GenericArguments::from_default_model(
+                implementation.arguments().clone(),
+            );
+            let Some(_) = generic_arguments.compatible_with_context(
+                &implementation_arguments,
+                Variance::Invariant,
+                environment,
+                context,
+            )?
+            else {
+                continue;
+            };
 
-            _ => continue,
+            match generic_arguments.deduce_with_context(
+                &implementation_arguments,
+                environment,
+                context,
+            ) {
+                Ok(result) => {
+                    return Ok(Some(Succeeded {
+                        result: Implementation {
+                            instantiation: result.result.instantiation,
+                            id: implementation_id,
+                            is_not_general_enough: result
+                                .result
+                                .is_not_general_enough,
+                        },
+                        constraints: result.constraints,
+                    }))
+                }
+
+                Err(deduction::Error::Overflow(err)) => {
+                    return Err(Error::Overflow(err))
+                }
+
+                _ => continue,
+            }
         }
+
+        Ok(None)
     }
 
-    Ok(None)
-}
+    fn predicate_satisfies<'a, M: Model, S: State>(
+        predicates: impl Iterator<Item = &'a Predicate<model::Default>>,
+        substitution: &Instantiation<M>,
+        environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
+        context: &mut Context<M>,
+    ) -> Result<bool, OverflowError> {
+        // check if satisfies all the predicate
+        for mut predicate in
+            predicates.map(|x| Predicate::from_default_model(x.clone()))
+        {
+            predicate.instantiate(substitution);
 
-fn predicate_satisfies<'a, M: Model, S: State>(
-    predicates: impl Iterator<Item = &'a Predicate<model::Default>>,
-    substitution: &Instantiation<M>,
-    environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
-    context: &mut Context<M>,
-) -> Result<bool, OverflowError> {
-    // check if satisfies all the predicate
-    for mut predicate in
-        predicates.map(|x| Predicate::from_default_model(x.clone()))
-    {
-        predicate.instantiate(substitution);
+            if !match predicate {
+                Predicate::TraitTypeEquality(equality) => {
+                    Type::TraitMember(equality.lhs)
+                        .compatible_with_context(
+                            &equality.rhs,
+                            Variance::Covariant,
+                            environment,
+                            context,
+                        )?
+                        .is_some()
+                }
 
-        if !match predicate {
-            Predicate::TraitTypeEquality(equality) => {
-                Type::TraitMember(equality.lhs)
-                    .compatible_with_context(
-                        &equality.rhs,
-                        Variance::Covariant,
-                        environment,
-                        context,
-                    )?
-                    .is_some()
+                Predicate::ConstantType(constant_type) => constant_type
+                    .query_with_context(environment, context)?
+                    .is_some(),
+
+                Predicate::TupleType(tuple_type) => {
+                    tuple_type.query_with_context(environment, context)?.is_some()
+                }
+
+                Predicate::PositiveTrait(tr) => {
+                    tr.query_with_context(environment, context)?.is_some()
+                }
+
+                Predicate::NegativeTrait(tr) => {
+                    tr.query_with_context(environment, context)?.is_some()
+                }
+
+                Predicate::PositiveMarker(tr) => {
+                    tr.query_with_context(environment, context)?.is_some()
+                }
+
+                Predicate::NegativeMarker(tr) => {
+                    tr.query_with_context(environment, context)?.is_some()
+                }
+
+                Predicate::TypeOutlives(_) | Predicate::LifetimeOutlives(_) => true,
+            } {
+                return Ok(false);
             }
-
-            Predicate::ConstantType(constant_type) => constant_type
-                .query_with_context(environment, context)?
-                .is_some(),
-
-            Predicate::TupleType(tuple_type) => {
-                tuple_type.query_with_context(environment, context)?.is_some()
-            }
-
-            Predicate::PositiveTrait(tr) => {
-                tr.query_with_context(environment, context)?.is_some()
-            }
-
-            Predicate::NegativeTrait(tr) => {
-                tr.query_with_context(environment, context)?.is_some()
-            }
-
-            Predicate::PositiveMarker(tr) => {
-                tr.query_with_context(environment, context)?.is_some()
-            }
-
-            Predicate::NegativeMarker(tr) => {
-                tr.query_with_context(environment, context)?.is_some()
-            }
-
-            Predicate::TypeOutlives(_) | Predicate::LifetimeOutlives(_) => true,
-        } {
-            return Ok(false);
         }
-    }
 
-    Ok(true)
+        Ok(true)
+        */
 }

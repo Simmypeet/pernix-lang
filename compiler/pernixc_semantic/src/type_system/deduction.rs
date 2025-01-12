@@ -13,19 +13,19 @@ use super::{
     mapping::Mapping,
     model::Model,
     normalizer::Normalizer,
-    query::Context,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
     },
     unification::{self, Log, Unification},
     variance::Variance,
-    Compute, Environment, Output, Satisfied, Succeeded,
+    AbruptError, Environment, Satisfied, Succeeded,
 };
 use crate::{
     component::generic_parameters::GenericKind,
     type_system::{
-        predicate::Outlives, LifetimeConstraint, LifetimeUnifyingPredicate,
+        self, predicate::Outlives, LifetimeConstraint,
+        LifetimeUnifyingPredicate,
     },
 };
 
@@ -39,7 +39,7 @@ impl<M: Model> unification::Predicate<Lifetime<M>> for DuductionPredicate {
         _: &Lifetime<M>,
         _: &[Log<M>],
         _: &[Log<M>],
-    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
+    ) -> type_system::Result<Satisfied, M> {
         Ok(Some(Succeeded::satisfied()))
     }
 }
@@ -51,7 +51,7 @@ impl<M: Model> unification::Predicate<Type<M>> for DuductionPredicate {
         _: &Type<M>,
         _: &[Log<M>],
         _: &[Log<M>],
-    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
+    ) -> type_system::Result<Satisfied, M> {
         Ok(matches!(from, Type::Parameter(_) | Type::TraitMember(_))
             .then_some(Succeeded::satisfied()))
     }
@@ -64,7 +64,7 @@ impl<M: Model> unification::Predicate<Constant<M>> for DuductionPredicate {
         _: &Constant<M>,
         _: &[Log<M>],
         _: &[Log<M>],
-    ) -> Result<Output<Satisfied, M>, super::OverflowError> {
+    ) -> type_system::Result<Satisfied, M> {
         Ok(matches!(from, Constant::Parameter(_))
             .then_some(Succeeded::satisfied()))
     }
@@ -74,22 +74,20 @@ fn unify<T: Term>(
     lhs: &[T],
     rhs: &[T],
     environment: &Environment<T::Model, impl Normalizer<T::Model>>,
-    context: &mut Context<T::Model>,
     mut existing: Succeeded<Mapping<T::Model>, T::Model>,
-) -> Result<Output<Mapping<T::Model>, T::Model>, Error> {
+) -> type_system::Result<Mapping<T::Model>, T::Model, Error> {
     for (lhs, rhs) in lhs.iter().zip(rhs.iter()) {
-        let Some(new) = Unification::new(
+        let Some(new) = environment.query(&Unification::new(
             lhs.clone(),
             rhs.clone(),
             Arc::new(DuductionPredicate),
-        )
-        .query_with_context(environment, context)?
+        ))?
         else {
             return Ok(None);
         };
 
-        existing.constraints.extend(new.constraints);
-        existing.result.append_from_unifier(new.result);
+        existing.constraints.extend(new.constraints.iter().cloned());
+        existing.result.append_from_unifier(new.result.clone());
     }
 
     Ok(Some(existing))
@@ -117,14 +115,15 @@ fn mapping_equals<T: Term, N: Normalizer<T::Model>>(
     unification: BTreeMap<T, BTreeSet<T>>,
     substitution: &Instantiation<T::Model>,
     environment: &Environment<T::Model, N>,
-    context: &mut Context<T::Model>,
     mut compatible: impl FnMut(
         &T,
         &T,
         &Environment<T::Model, N>,
-        &mut Context<T::Model>,
-    ) -> Result<Output<Satisfied, T::Model>, Error>,
-) -> Result<Output<Satisfied, T::Model>, Error> {
+    ) -> Result<
+        Option<Succeeded<Satisfied, T::Model>>,
+        Error,
+    >,
+) -> type_system::Result<Satisfied, T::Model, Error> {
     let mut constraints = BTreeSet::new();
 
     for (mut key, values) in unification {
@@ -134,7 +133,7 @@ fn mapping_equals<T: Term, N: Normalizer<T::Model>>(
             let Some(Succeeded {
                 result: Satisfied,
                 constraints: new_constraint,
-            }) = compatible(&key, &value, environment, context)?
+            }) = compatible(&key, &value, environment)?
             else {
                 continue;
             };
@@ -150,17 +149,15 @@ fn mapping_equals<T: Term, N: Normalizer<T::Model>>(
 fn from_unification_to_substitution<T: Term, N: Normalizer<T::Model>>(
     unification: BTreeMap<T, BTreeSet<T>>,
     environment: &Environment<T::Model, N>,
-    context: &mut Context<T::Model>,
     mut compatible: impl FnMut(
         &T,
         &T,
         &Environment<T::Model, N>,
-        &mut Context<T::Model>,
     ) -> Result<
-        Output<Satisfied, T::Model>,
-        super::OverflowError,
+        Option<Succeeded<Satisfied, T::Model>>,
+        super::AbruptError,
     >,
-) -> Result<Output<BTreeMap<T, T>, T::Model>, super::OverflowError> {
+) -> type_system::Result<BTreeMap<T, T>, T::Model, AbruptError> {
     let mut result = BTreeMap::new();
 
     let mut constraints = BTreeSet::new();
@@ -171,8 +168,7 @@ fn from_unification_to_substitution<T: Term, N: Normalizer<T::Model>>(
         let sampled = values.next().expect("should at least have one element");
 
         for value in values {
-            let Some(compat) =
-                compatible(&sampled, &value, environment, context)?
+            let Some(compat) = compatible(&sampled, &value, environment)?
             else {
                 return Ok(None);
             };
@@ -208,12 +204,12 @@ pub struct MismatchedGenericArgumentCountError {
 pub struct UnificationFailureError;
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
 pub enum Error {
     #[error(transparent)]
-    Overflow(#[from] super::OverflowError),
+    Abrupt(#[from] super::AbruptError),
 
     #[error(transparent)]
     MismatchedGenericArgumentCount(#[from] MismatchedGenericArgumentCountError),
@@ -239,20 +235,11 @@ impl<M: Model> GenericArguments<M> {
     /// # Errors
     ///
     /// See [`Error`] for more information.
+    #[allow(clippy::too_many_lines)]
     pub fn deduce(
         &self,
         target: &Self,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Succeeded<Deduction<M>, M>, Error> {
-        self.deduce_with_context(target, environment, &mut Context::new())
-    }
-
-    #[allow(clippy::too_many_lines)]
-    pub(super) fn deduce_with_context(
-        &self,
-        target: &Self,
-        environment: &Environment<M, impl Normalizer<M>>,
-        context: &mut Context<M>,
     ) -> Result<Succeeded<Deduction<M>, M>, Error> {
         // arity check
         if self.lifetimes.len() != target.lifetimes.len() {
@@ -285,19 +272,13 @@ impl<M: Model> GenericArguments<M> {
             &self.lifetimes,
             &target.lifetimes,
             environment,
-            context,
             Succeeded::new(Mapping::default()),
         )?
         else {
             return Err(UnificationFailureError.into());
         };
-        let Some(unification) = unify(
-            &self.types,
-            &target.types,
-            environment,
-            context,
-            unification,
-        )?
+        let Some(unification) =
+            unify(&self.types, &target.types, environment, unification)?
         else {
             return Err(UnificationFailureError.into());
         };
@@ -305,7 +286,6 @@ impl<M: Model> GenericArguments<M> {
             &self.constants,
             &target.constants,
             environment,
-            context,
             unification,
         )?
         else {
@@ -357,8 +337,7 @@ impl<M: Model> GenericArguments<M> {
             }) = from_unification_to_substitution(
                 lifetime_param_map,
                 environment,
-                context,
-                |lhs, rhs, _, _| {
+                |lhs, rhs, _| {
                     if lhs == rhs {
                         Ok(Some(Succeeded::satisfied()))
                     } else if lhs.is_forall() || rhs.is_forall() {
@@ -391,23 +370,20 @@ impl<M: Model> GenericArguments<M> {
                 from_unification_to_substitution(
                     type_param_map,
                     environment,
-                    context,
-                    |lhs, rhs, environment, context| {
-                        let Some(Succeeded {
-                            result: unification,
-                            mut constraints,
-                        }) = Unification::new(
-                            lhs.clone(),
-                            rhs.clone(),
-                            Arc::new(LifetimeUnifyingPredicate),
-                        )
-                        .query_with_context(environment, context)?
+                    |lhs, rhs, environment| {
+                        let Some(unifier) =
+                            environment.query(&Unification::new(
+                                lhs.clone(),
+                                rhs.clone(),
+                                Arc::new(LifetimeUnifyingPredicate),
+                            ))?
                         else {
                             return Ok(None);
                         };
+                        let mut constraints = unifier.constraints.clone();
 
                         let mut mapping = Mapping::default();
-                        mapping.append_from_unifier(unification);
+                        mapping.append_from_unifier(unifier.result.clone());
 
                         assert!(mapping.types.is_empty());
                         assert!(mapping.constants.is_empty());
@@ -453,10 +429,10 @@ impl<M: Model> GenericArguments<M> {
             }) = from_unification_to_substitution(
                 constant_param_map,
                 environment,
-                context,
-                |lhs, rhs, environment, context| {
-                    Equality::new(lhs.clone(), rhs.clone())
-                        .query_with_context(environment, context)
+                |lhs, rhs, environment| {
+                    environment
+                        .query(&Equality::new(lhs.clone(), rhs.clone()))
+                        .map(|x| x.map(|x| (*x).clone()))
                 },
             )?
             else {
@@ -473,14 +449,11 @@ impl<M: Model> GenericArguments<M> {
                 trait_type_map,
                 &base_unification,
                 environment,
-                context,
-                |term, target, environment, context| match term
-                    .compatible_with_context(
-                        target,
-                        Variance::Covariant,
-                        environment,
-                        context,
-                    )? {
+                |term, target, environment| match term.compatible(
+                    target,
+                    Variance::Covariant,
+                    environment,
+                )? {
                     Some(Succeeded {
                         result: Compatibility { forall_lifetime_errors, .. },
                         constraints,

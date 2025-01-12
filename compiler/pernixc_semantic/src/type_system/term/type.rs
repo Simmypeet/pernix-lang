@@ -3,10 +3,17 @@
 use core::fmt;
 use std::{
     collections::{BTreeMap, BTreeSet},
+    env,
     fmt::Debug,
 };
 
+use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
+use pernixc_table::{
+    component::{Member, Name, Parent, SymbolKind},
+    DisplayObject, GlobalID, Table,
+};
+use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 
 use super::{
@@ -14,25 +21,31 @@ use super::{
     KindMut, MemberSymbol, ModelOf, Never, Symbol, Term,
 };
 use crate::{
-    component::generic_parameters::{TypeParameter, TypeParameterID},
-    table::{self, DisplayObject, GlobalID, Table},
+    component::{
+        generic_parameters::{
+            GenericParameters, TypeParameter, TypeParameterID,
+        },
+        type_alias::TypeAlias,
+    },
     type_system::{
         self,
         equality::Equality,
-        instantiation::Instantiation,
+        instantiation::{self, Instantiation},
         mapping::Mapping,
         matching::{self, Match, Matching},
         model::{Default, Model},
         normalizer::Normalizer,
-        predicate::{self, Outlives, Predicate, Satisfiability},
-        query::Context,
+        predicate::{
+            self, resolve_implementation, Outlives, Predicate, ResolutionError,
+            Satisfiability,
+        },
         sub_term::{
             self, AssignSubTermError, Location, SubMemberSymbolLocation,
             SubSymbolLocation, SubTerm, SubTraitMemberLocation,
             SubTupleLocation, TermLocation,
         },
         unification::{self, Unifier},
-        Environment, Output,
+        Environment, ResultExt, Succeeded,
     },
 };
 
@@ -46,6 +59,8 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
+    Serialize,
+    Deserialize,
     derive_more::Display,
 )]
 #[allow(missing_docs)]
@@ -57,7 +72,9 @@ pub enum Qualifier {
 }
 
 /// Represents a pointer type, denoted by `*mutable? TYPE` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Pointer<M: Model> {
     /// Determines whether the pointer is mutable.
     pub mutable: bool,
@@ -67,7 +84,9 @@ pub struct Pointer<M: Model> {
 }
 
 /// Represents a reference type, denoted by `&'LIFETIME QUALIFIER TYPE` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Reference<M: Model> {
     /// The qualifier applied to the reference.
     pub qualifier: Qualifier,
@@ -80,7 +99,9 @@ pub struct Reference<M: Model> {
 }
 
 /// Represents an array type, denoted by `[ELEMENT: LENGTH]` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Array<M: Model> {
     /// Constant representing the length of the array.
     pub length: Constant<M>,
@@ -100,6 +121,8 @@ pub struct Array<M: Model> {
     Ord,
     Hash,
     EnumAsInner,
+    Serialize,
+    Deserialize,
     derive_more::Display,
     EnumIter,
 )]
@@ -137,7 +160,9 @@ pub enum Primitive {
 pub type Tuple<M> = super::Tuple<Type<M>>;
 
 /// Represents a phantom type, denoted by `phantom TYPE` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Phantom<M: Model>(pub Box<Type<M>>);
 
 /// The location pointing to a sub-lifetime term in a type.
@@ -191,6 +216,7 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
 
             (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
                 trait_member
+                    .0
                     .get_term_mut(location.0)
                     .ok_or(AssignSubTermError::InvalidLocation)?
             }
@@ -218,7 +244,7 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
             ) => member_symbol.get_term(location).cloned(),
 
             (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.get_term(location.0).cloned()
+                trait_member.0.get_term(location.0).cloned()
             }
 
             _ => None,
@@ -241,7 +267,7 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
             ) => member_symbol.get_term(location),
 
             (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.get_term(location.0)
+                trait_member.0.get_term(location.0)
             }
 
             _ => None,
@@ -264,7 +290,7 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
             ) => member_symbol.get_term_mut(location),
 
             (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.get_term_mut(location.0)
+                trait_member.0.get_term_mut(location.0)
             }
 
             _ => None,
@@ -346,6 +372,7 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
 
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member
+                    .0
                     .get_term_mut(location.0)
                     .ok_or(AssignSubTermError::InvalidLocation)?
             }
@@ -388,12 +415,12 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
                 Type::MemberSymbol(trait_member),
             ) => trait_member.get_term(location).cloned(),
 
-            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.get_term(location.0).cloned()
-            }
-
             (Self::Phantom, Type::Phantom(phantom)) => {
                 Some((*phantom.0).clone())
+            }
+
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member.0.get_term(location.0).cloned()
             }
 
             _ => None,
@@ -426,11 +453,11 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
                 Type::MemberSymbol(member_symbol),
             ) => member_symbol.get_term(location),
 
-            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.get_term(location.0)
-            }
-
             (Self::Phantom, Type::Phantom(phantom)) => Some(&*phantom.0),
+
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member.0.get_term(location.0)
+            }
 
             _ => None,
         }
@@ -465,7 +492,7 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
             ) => member_symbol.get_term_mut(location),
 
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.get_term_mut(location.0)
+                trait_member.0.get_term_mut(location.0)
             }
 
             (Self::Phantom, Type::Phantom(phantom)) => Some(&mut *phantom.0),
@@ -524,6 +551,7 @@ impl<M: Model> Location<Type<M>, Constant<M>> for SubConstantLocation {
 
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member
+                    .0
                     .get_term_mut(location.0)
                     .ok_or(AssignSubTermError::InvalidLocation)?
             }
@@ -549,7 +577,7 @@ impl<M: Model> Location<Type<M>, Constant<M>> for SubConstantLocation {
             ) => member_symbol.get_term(location).cloned(),
 
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.get_term(location.0).cloned()
+                trait_member.0.get_term(location.0).cloned()
             }
 
             _ => None,
@@ -570,7 +598,7 @@ impl<M: Model> Location<Type<M>, Constant<M>> for SubConstantLocation {
             ) => member_symbol.get_term(location),
 
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.get_term(location.0)
+                trait_member.0.get_term(location.0)
             }
 
             _ => None,
@@ -591,7 +619,7 @@ impl<M: Model> Location<Type<M>, Constant<M>> for SubConstantLocation {
             ) => member_symbol.get_term_mut(location),
 
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.get_term_mut(location.0)
+                trait_member.0.get_term_mut(location.0)
             }
 
             _ => None,
@@ -685,36 +713,6 @@ impl<M: Model> Match for Type<M> {
                 lhs.substructural_match(rhs)
             }
 
-            (Self::TraitMember(lhs), Self::TraitMember(rhs))
-                if lhs.id == rhs.id =>
-            {
-                lhs.parent_generic_arguments
-                    .substructural_match(
-                        &rhs.parent_generic_arguments,
-                        matching::Substructural::default(),
-                        |x| {
-                            SubTraitMemberLocation(SubMemberSymbolLocation {
-                                index: x,
-                                from_parent: true,
-                            })
-                        },
-                    )
-                    .and_then(|x| {
-                        lhs.member_generic_arguments.substructural_match(
-                            &rhs.member_generic_arguments,
-                            x,
-                            |x| {
-                                SubTraitMemberLocation(
-                                    SubMemberSymbolLocation {
-                                        index: x,
-                                        from_parent: false,
-                                    },
-                                )
-                            },
-                        )
-                    })
-            }
-
             (Self::MemberSymbol(lhs), Self::MemberSymbol(rhs))
                 if lhs.id == rhs.id =>
             {
@@ -779,6 +777,22 @@ impl<M: Model> Match for Type<M> {
     }
 }
 
+/// A new type wrapper representing a trait associated type.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Deref,
+    DerefMut,
+)]
+pub struct TraitMember<M: Model>(pub MemberSymbol<M>);
+
 /// Represents a type term.
 #[derive(
     Debug,
@@ -789,6 +803,8 @@ impl<M: Model> Match for Type<M> {
     Ord,
     Hash,
     EnumAsInner,
+    Serialize,
+    Deserialize,
     derive_more::From,
 )]
 #[allow(missing_docs)]
@@ -812,6 +828,8 @@ pub enum Type<M: Model> {
     Phantom(Phantom<M>),
     #[from]
     MemberSymbol(MemberSymbol<M>),
+    #[from]
+    TraitMember(TraitMember<M>),
     #[from]
     Error(Error),
 }
@@ -908,7 +926,7 @@ where
     Self: ModelOf<Model = M>,
 {
     type GenericParameter = TypeParameter;
-    type TraitMember = MemberSymbol<M>;
+    type TraitMember = TraitMember<M>;
     type InferenceVariable = M::TypeInference;
     type Rebind<Ms: Model> = Type<Ms>;
 
@@ -947,6 +965,9 @@ where
             Type::MemberSymbol(member_symbol) => Self::MemberSymbol(
                 MemberSymbol::from_other_model(member_symbol),
             ),
+            Type::TraitMember(trait_member) => Self::TraitMember(TraitMember(
+                MemberSymbol::from_other_model(trait_member.0),
+            )),
             Type::Error(Error) => Self::Error(Error),
         }
     }
@@ -994,6 +1015,9 @@ where
             Type::MemberSymbol(member_symbol) => Self::MemberSymbol(
                 MemberSymbol::try_from_other_model(member_symbol)?,
             ),
+            Type::TraitMember(trait_member) => Self::TraitMember(TraitMember(
+                MemberSymbol::try_from_other_model(trait_member.0)?,
+            )),
             Type::Error(Error) => Self::Error(Error),
         })
     }
@@ -1002,32 +1026,28 @@ where
     fn normalize(
         &self,
         environment: &Environment<M, impl Normalizer<M>>,
-        context: &mut Context<M>,
-    ) -> Result<Output<Self, M>, type_system::OverflowError> {
-        todo!()
-        /*
+    ) -> Result<Option<Succeeded<Self, M>>, type_system::AbruptError> {
         match self {
             // transform the trait-member into trait-implementation-type
             // equivalent
-            Self::MemberSymbol(trait_member) => {
+            Self::TraitMember(trait_member) => {
                 let Some(trait_id) = environment
                     .table()
-                    .get(trait_member.id)
-                    .map(|x| x.parent_id())
+                    .get::<Parent>(trait_member.id)
+                    .map(|x| x.0)
                 else {
                     return Ok(None);
                 };
 
                 // resolve the trait implementation
-                let mut resoltion = match resolve_implementation_with_context(
-                    trait_id,
+                let mut resolution = match resolve_implementation(
+                    GlobalID::new(trait_member.id.target_id, trait_id),
                     &trait_member.parent_generic_arguments,
                     environment,
-                    context,
                 ) {
                     Ok(resolution) => resolution,
 
-                    Err(ResolutionError::Overflow(error)) => {
+                    Err(ResolutionError::Abrupt(error)) => {
                         return Err(error);
                     }
 
@@ -1036,68 +1056,84 @@ where
 
                 let trait_member_name = environment
                     .table()
-                    .get(trait_member.id)
+                    .get::<Name>(trait_member.id)
                     .unwrap()
-                    .name()
                     .clone();
 
-                let Some(implementation_sym) = resoltion
-                    .result
-                    .id
-                    .into_positive()
-                    .ok()
-                    .and_then(|x| environment.table().get(x))
-                else {
-                    return Ok(None);
-                };
-
-                let Some(TraitImplementationMemberID::Type(id)) =
-                    implementation_sym
-                        .member_ids_by_name()
-                        .get(&trait_member_name)
-                        .copied()
-                else {
-                    return Ok(None);
-                };
-
-                drop(implementation_sym);
-
-                let Some(implementation_type_id) = environment.table().get(id)
-                else {
-                    return Ok(None);
-                };
-
-                // should have no collision and no mismatched generic arguments
-                // count
-                if resoltion
-                    .result
-                    .instantiation
-                    .append_from_generic_arguments(
-                        trait_member.member_generic_arguments.clone(),
-                        id.into(),
-                        &implementation_type_id.generic_declaration.parameters,
-                    )
-                    .map_or(true, |x| !x.is_empty())
+                // not a trait implementation
+                if environment
+                    .table
+                    .get::<SymbolKind>(resolution.result.id)
+                    .map_or(true, |x| {
+                        *x != SymbolKind::PositiveTraitImplementation
+                    })
                 {
                     return Ok(None);
                 }
 
+                let Some(implementation_member_id) = environment
+                    .table
+                    .get::<Member>(resolution.result.id)
+                    .and_then(|x| {
+                        x.0.get(&trait_member_name.0).copied().map(|x| {
+                            GlobalID::new(resolution.result.id.target_id, x)
+                        })
+                    })
+                else {
+                    return Ok(None);
+                };
+
+                // check if is the type
+                if environment
+                    .table()
+                    .get::<SymbolKind>(implementation_member_id)
+                    .map_or(true, |x| *x != SymbolKind::TraitImplementationType)
+                {
+                    return Ok(None);
+                }
+
+                // should have no collision and no mismatched generic arguments
+                // count
+                {
+                    let Some(generic_parameter) = environment
+                        .table()
+                        .query::<GenericParameters>(implementation_member_id)
+                        .extract_cyclic_dependency()?
+                    else {
+                        return Ok(None);
+                    };
+
+                    if resolution
+                        .result
+                        .instantiation
+                        .append_from_generic_arguments(
+                            trait_member.member_generic_arguments.clone(),
+                            implementation_member_id,
+                            &generic_parameter,
+                        )
+                        .map_or(true, |x| !x.is_empty())
+                    {
+                        return Ok(None);
+                    }
+                }
+
                 let Some(mut new_term) = environment
                     .table()
-                    .get(id)
-                    .map(|x| M::from_default_type(x.r#type.clone()))
+                    .query::<TypeAlias>(implementation_member_id)
+                    .extract_cyclic_dependency()?
+                    .map(|x| M::from_default_type(x.0.clone()))
                 else {
                     return Ok(None);
                 };
 
                 instantiation::instantiate(
                     &mut new_term,
-                    &resoltion.result.instantiation,
+                    &resolution.result.instantiation,
                 );
 
                 Ok(Some(Succeeded::with_constraints(
                     new_term,
-                    resoltion.constraints,
+                    resolution.constraints,
                 )))
             }
 
@@ -1132,17 +1168,15 @@ where
 
                 let new_type = Self::Tuple(Tuple { elements: result });
 
-                Normalizer::normalize_type(&new_type, environment, context)?
-                    .map_or_else(
-                        || Ok(Some(Succeeded::new(new_type))),
-                        |x| Ok(Some(x)),
-                    )
+                Normalizer::normalize_type(&new_type, environment)?.map_or_else(
+                    || Ok(Some(Succeeded::new(new_type))),
+                    |x| Ok(Some(x)),
+                )
             }
 
-            _ => Normalizer::normalize_type(self, environment, context)?
+            _ => Normalizer::normalize_type(self, environment)?
                 .map_or_else(|| Ok(None), |x| Ok(Some(x))),
         }
-        */
     }
 
     fn as_kind(&self) -> Kind<M> { Kind::Type(self) }
@@ -1182,6 +1216,7 @@ where
             | Self::Reference(_)
             | Self::Array(_)
             | Self::Tuple(_)
+            | Self::TraitMember(_)
             | Self::Phantom(_) => Satisfiability::Congruent,
         }
     }
@@ -1202,23 +1237,23 @@ where
         self.into_parameter()
     }
 
-    fn as_trait_member(&self) -> Option<&MemberSymbol<M>> {
+    fn as_trait_member(&self) -> Option<&TraitMember<M>> {
         match self {
-            Self::MemberSymbol(trait_member) => Some(trait_member),
+            Self::TraitMember(trait_member) => Some(trait_member),
             _ => None,
         }
     }
 
-    fn as_trait_member_mut(&mut self) -> Option<&mut MemberSymbol<M>> {
+    fn as_trait_member_mut(&mut self) -> Option<&mut TraitMember<M>> {
         match self {
-            Self::MemberSymbol(trait_member) => Some(trait_member),
+            Self::TraitMember(trait_member) => Some(trait_member),
             _ => None,
         }
     }
 
-    fn into_trait_member(self) -> Result<MemberSymbol<M>, Self> {
+    fn into_trait_member(self) -> Result<TraitMember<M>, Self> {
         match self {
-            Self::MemberSymbol(trait_member) => Ok(trait_member),
+            Self::TraitMember(trait_member) => Ok(trait_member),
             _ => Err(self),
         }
     }
@@ -1362,19 +1397,19 @@ where
 
     fn as_trait_member_equality_predicate(
         predicate: &Predicate<M>,
-    ) -> Option<&Equality<MemberSymbol<M>, Self>> {
+    ) -> Option<&Equality<TraitMember<M>, Self>> {
         predicate.as_trait_type_equality()
     }
 
     fn as_trait_member_equality_predicate_mut(
         predicate: &mut Predicate<M>,
-    ) -> Option<&mut Equality<MemberSymbol<M>, Self>> {
+    ) -> Option<&mut Equality<TraitMember<M>, Self>> {
         predicate.as_trait_type_equality_mut()
     }
 
     fn into_trait_member_equality_predicate(
         predicate: Predicate<M>,
-    ) -> Result<Equality<MemberSymbol<M>, Self>, Predicate<M>> {
+    ) -> Result<Equality<TraitMember<M>, Self>, Predicate<M>> {
         predicate.into_trait_type_equality()
     }
 
@@ -1410,6 +1445,7 @@ where
             | Self::Reference(_)
             | Self::Array(_)
             | Self::Phantom(_)
+            | Self::TraitMember(_)
             | Self::Tuple(_) => Satisfiability::Congruent,
         }
     }
@@ -1462,11 +1498,11 @@ where
     }
 }
 
-impl<M: Model> table::Display for Type<M>
+impl<M: Model> pernixc_table::Display for Type<M>
 where
-    M::TypeInference: table::Display,
-    Constant<M>: table::Display,
-    Lifetime<M>: table::Display,
+    M::TypeInference: pernixc_table::Display,
+    Constant<M>: pernixc_table::Display,
+    Lifetime<M>: pernixc_table::Display,
 {
     fn fmt(
         &self,
@@ -1482,10 +1518,8 @@ where
                     f,
                     "{}",
                     table
-                        .get_generic(type_parameter.parent)
-                        .ok_or(fmt::Error)?
-                        .generic_declaration()
-                        .parameters
+                        .query::<GenericParameters>(type_parameter.parent)
+                        .map_err(|_| fmt::Error)?
                         .types()
                         .get(type_parameter.id)
                         .ok_or(fmt::Error)?
@@ -1542,7 +1576,7 @@ where
                 write!(f, "{}", DisplayObject { table, display: tuple })
             }
             Self::TraitMember(ty) => {
-                write!(f, "{}", DisplayObject { table, display: ty })
+                write!(f, "{}", DisplayObject { table, display: &ty.0 })
             }
             Self::Phantom(phantom) => {
                 write!(f, "phantom {}", DisplayObject {
@@ -1603,9 +1637,31 @@ impl<M: Model> Type<M> {
                 );
 
                 occurrences.push(member_symbol.id.into());
+                occurrences.push(GlobalID::new(
+                    member_symbol.id.target_id,
+                    table.get::<Parent>(member_symbol.id)?.0,
+                ));
+
+                occurrences
+            }
+
+            Self::TraitMember(trait_member) => {
+                let mut occurrences = trait_member
+                    .0
+                    .parent_generic_arguments
+                    .get_item_id_dependencies(table)?;
                 occurrences.extend(
-                    table.get_item(member_symbol.id.into())?.parent_item_id(),
+                    trait_member
+                        .0
+                        .member_generic_arguments
+                        .get_item_id_dependencies(table)?,
                 );
+
+                occurrences.push(trait_member.0.id.into());
+                occurrences.push(GlobalID::new(
+                    trait_member.0.id.target_id,
+                    table.get::<Parent>(trait_member.0.id)?.0,
+                ));
 
                 occurrences
             }

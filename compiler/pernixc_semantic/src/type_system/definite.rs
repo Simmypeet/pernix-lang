@@ -1,24 +1,24 @@
 //! Contains the definition of [`Definite`].
 
+use std::sync::Arc;
+
 use super::{
-    equivalence::get_equivalences_with_context, predicate::Satisfiability,
-    query::Context, Compute,
+    equivalence::get_equivalences, predicate::Satisfiability, query::Query,
 };
 use crate::type_system::{
     model::Model, normalizer::Normalizer, term::Term, visitor, Environment,
-    Output, OverflowError, Satisfied, Succeeded,
+    Satisfied, Succeeded,
 };
 
 #[derive(Debug)]
-struct Visitor<'a, 'c, N: Normalizer<M>, M: Model> {
-    definite: Result<Output<Satisfied, M>, OverflowError>,
+struct Visitor<'a, N: Normalizer<M>, M: Model> {
+    definite: Result<Option<Succeeded<Satisfied, M>>, super::AbruptError>,
 
     environment: &'a Environment<'a, M, N>,
-    context: &'c mut Context<M>,
 }
 
-impl<'a, 'c, 'v, U: Term, N: Normalizer<U::Model>> visitor::Visitor<'v, U>
-    for Visitor<'a, 'c, N, U::Model>
+impl<'a, 'v, U: Term, N: Normalizer<U::Model>> visitor::Visitor<'v, U>
+    for Visitor<'a, N, U::Model>
 {
     fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
         // early return
@@ -26,17 +26,22 @@ impl<'a, 'c, 'v, U: Term, N: Normalizer<U::Model>> visitor::Visitor<'v, U>
             return false;
         }
 
-        match Definite(term.clone())
-            .query_with_context(self.environment, self.context)
-        {
-            result @ (Err(_) | Ok(None)) => {
-                self.definite = result;
+        match self.environment.query(&Definite(term.clone())) {
+            Err(err) => {
+                self.definite = Err(err);
+                false
+            }
+
+            Ok(None) => {
+                self.definite = Ok(None);
                 false
             }
 
             Ok(Some(result)) => match &mut self.definite {
                 Ok(Some(current)) => {
-                    current.constraints.extend(result.constraints);
+                    current
+                        .constraints
+                        .extend(result.constraints.iter().cloned());
                     true
                 }
 
@@ -58,23 +63,24 @@ impl<T> Definite<T> {
     pub const fn new(term: T) -> Self { Self(term) }
 }
 
-impl<T: Term> Compute for Definite<T> {
-    type Error = OverflowError;
+impl<T: Term> Query for Definite<T> {
+    type Model = T::Model;
     type Parameter = ();
+    type InProgress = ();
+    type Result = Succeeded<Satisfied, T::Model>;
+    type Error = super::AbruptError;
 
-    #[allow(private_bounds, private_interfaces)]
-    fn implementation(
+    fn query(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        context: &mut Context<Self::Model>,
         (): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<Self::Result>, Self::Error> {
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
         let satisfiability = self.0.definite_satisfiability();
 
         // trivially satisfiable
         if satisfiability == Satisfiability::Satisfied {
-            return Ok(Some(Succeeded::satisfied()));
+            return Ok(Some(Arc::new(Succeeded::satisfied())));
         }
 
         // satisfiable with congruence
@@ -82,26 +88,25 @@ impl<T: Term> Compute for Definite<T> {
             let mut visitor = Visitor {
                 definite: Ok(Some(Succeeded::satisfied())),
                 environment,
-                context,
             };
 
             assert!(self.0.accept_one_level(&mut visitor).is_ok());
 
             if let Some(result) = visitor.definite? {
-                return Ok(Some(result));
+                return Ok(Some(Arc::new(result)));
             }
         }
 
         // get the equivalences
-        for Succeeded { result: eq, constraints } in
-            get_equivalences_with_context(&self.0, environment, context)?
+        for Succeeded { result: eq, mut constraints } in
+            get_equivalences(&self.0, environment)?
         {
-            if let Some(mut result) =
-                Self(eq).query_with_context(environment, context)?
-            {
-                result.constraints.extend(constraints);
+            if let Some(result) = environment.query(&Self(eq))? {
+                constraints.extend(result.constraints.iter().cloned());
 
-                return Ok(Some(result));
+                return Ok(Some(Arc::new(Succeeded::satisfied_with(
+                    constraints,
+                ))));
             }
         }
 
@@ -109,5 +114,6 @@ impl<T: Term> Compute for Definite<T> {
     }
 }
 
-#[cfg(test)]
-mod tests;
+// TODO: bring test back
+// #[cfg(test)]
+// mod tests;

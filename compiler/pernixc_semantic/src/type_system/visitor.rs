@@ -523,8 +523,9 @@ macro_rules! implements_type {
                             }
                         ),
             ),
-            Self::TraitMember(trait_member) => Ok(
-                trait_member
+            Self::TraitMember(term) => Ok(
+                term
+                    .0
                     .parent_generic_arguments
                     .$accept_one_level::<Self, _, _>(
                         $visitor,
@@ -533,7 +534,8 @@ macro_rules! implements_type {
                             from_parent: true,
                         })
                     )
-                    && trait_member
+                    && term
+                        .0
                         .member_generic_arguments
                         .$accept_one_level::<Self, _, _>(
                             $visitor,

@@ -2,6 +2,8 @@
 
 use std::{fmt::Debug, hash::Hash};
 
+use serde::{Deserialize, Serialize};
+
 use super::term::{
     constant::Constant, lifetime::Lifetime, r#type::Type, Never,
 };
@@ -34,6 +36,8 @@ pub trait Model:
         + 'static
         + Send
         + Sync
+        + Serialize
+        + for<'x> Deserialize<'x>
         + From<Never>;
 
     /// The type to use for type inference.
@@ -47,6 +51,8 @@ pub trait Model:
         + 'static
         + Send
         + Sync
+        + Serialize
+        + for<'x> Deserialize<'x>
         + From<Never>;
 
     /// The type to use for constant inference.
@@ -60,6 +66,8 @@ pub trait Model:
         + 'static
         + Send
         + Sync
+        + Serialize
+        + for<'x> Deserialize<'x>
         + From<Never>;
 
     /// Converts a type from the default model to the current model.
@@ -73,7 +81,19 @@ pub trait Model:
 }
 
 /// The default model where all inferences are [`Never`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
 pub struct Default;
 
 impl Model for Default {

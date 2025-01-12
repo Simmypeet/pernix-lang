@@ -1,34 +1,36 @@
+use std::sync::Arc;
+
+use pernixc_table::{DisplayObject, Table};
+use serde::{Deserialize, Serialize};
+
 use super::{contains_error, Satisfiability};
-use crate::{
-    table::{self, DisplayObject, Table},
-    type_system::{
-        compatible::{Compatibility, Compatible},
-        equivalence::get_equivalences_with_context,
-        instantiation::{self, Instantiation},
-        model::{Default, Model},
-        normalizer::Normalizer,
-        query::{self, Context, Sealed},
-        term::{
-            constant::Constant,
-            lifetime::Lifetime,
-            r#type::{Primitive, Type},
-            Term,
-        },
-        variance::Variance,
-        visitor::{self, Element},
-        Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
+use crate::type_system::{
+    self,
+    compatible::{Compatibility, Compatible},
+    equivalence::get_equivalences,
+    instantiation::{self, Instantiation},
+    model::{Default, Model},
+    normalizer::Normalizer,
+    query::{Call, DynArc, Query},
+    term::{
+        constant::Constant,
+        lifetime::Lifetime,
+        r#type::{Primitive, Type},
+        Term,
     },
+    variance::Variance,
+    visitor::{self, Element},
+    AbruptError, Environment, Satisfied, Succeeded,
 };
 
 #[derive(Debug)]
-struct Visitor<'a, 'c, N: Normalizer<M>, M: Model> {
-    constant_type: Result<Output<Satisfied, M>, OverflowError>,
-    environment: &'a Environment<'a, M, N>,
-    context: &'c mut Context<M>,
+struct Visitor<'t, N: Normalizer<M>, M: Model> {
+    constant_type: Result<Option<Succeeded<Satisfied, M>>, AbruptError>,
+    environment: &'t Environment<'t, M, N>,
 }
 
-impl<'a, 'c, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Lifetime<M>>
-    for Visitor<'a, 'c, N, M>
+impl<'t, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Lifetime<M>>
+    for Visitor<'t, N, M>
 {
     fn visit(
         &mut self,
@@ -43,8 +45,8 @@ impl<'a, 'c, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Lifetime<M>>
     }
 }
 
-impl<'a, 'c, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Type<M>>
-    for Visitor<'a, 'c, N, M>
+impl<'a, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Type<M>>
+    for Visitor<'a, N, M>
 {
     fn visit(
         &mut self,
@@ -53,21 +55,25 @@ impl<'a, 'c, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Type<M>>
     ) -> bool {
         match &mut self.constant_type {
             Ok(Some(satisified)) => {
-                match ConstantType(term.clone()).query_with_context_full(
-                    self.environment,
-                    self.context,
+                match self.environment.query_with(
+                    &ConstantType(term.clone()),
                     (),
                     QuerySource::Normal,
                 ) {
                     Ok(Some(new_satisfied)) => {
                         satisified
                             .constraints
-                            .extend(new_satisfied.constraints);
+                            .extend(new_satisfied.constraints.iter().cloned());
                         true
                     }
 
-                    result @ (Ok(None) | Err(_)) => {
-                        self.constant_type = result;
+                    Ok(None) => {
+                        self.constant_type = Ok(None);
+                        false
+                    }
+
+                    Err(err) => {
+                        self.constant_type = Err(err);
                         false
                     }
                 }
@@ -77,8 +83,8 @@ impl<'a, 'c, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Type<M>>
     }
 }
 
-impl<'a, 'c, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Constant<M>>
-    for Visitor<'a, 'c, N, M>
+impl<'a, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Constant<M>>
+    for Visitor<'a, N, M>
 {
     fn visit(
         &mut self,
@@ -102,21 +108,24 @@ pub enum QuerySource {
 }
 
 /// Represents a type can be used as a type of a compile-time constant value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct ConstantType<M: Model>(pub Type<M>);
 
-impl<M: Model> Compute for ConstantType<M> {
-    type Error = OverflowError;
+impl<M: Model> Query for ConstantType<M> {
+    type Model = M;
     type Parameter = ();
+    type InProgress = QuerySource;
+    type Result = Succeeded<Satisfied, M>;
+    type Error = type_system::AbruptError;
 
-    #[allow(private_bounds, private_interfaces, clippy::too_many_lines)]
-    fn implementation(
+    fn query(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        context: &mut Context<Self::Model>,
         (): Self::Parameter,
         _: Self::InProgress,
-    ) -> Result<Option<Self::Result>, Self::Error> {
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
         let satisfiability = match self.0 {
             Type::Primitive(primitive_type) => match primitive_type {
                 Primitive::Int8
@@ -152,7 +161,7 @@ impl<M: Model> Compute for ConstantType<M> {
 
         // trivially satisfiable
         if satisfiability == Satisfiability::Satisfied {
-            return Ok(Some(Succeeded::satisfied()));
+            return Ok(Some(Arc::new(Succeeded::satisfied())));
         }
 
         // if the term is congruent, then we need to check the sub-terms
@@ -160,7 +169,6 @@ impl<M: Model> Compute for ConstantType<M> {
             let mut visitor = Visitor {
                 constant_type: Ok(Some(Succeeded::satisfied())),
                 environment,
-                context,
             };
 
             assert!(self.0.accept_one_level(&mut visitor).is_ok());
@@ -170,24 +178,24 @@ impl<M: Model> Compute for ConstantType<M> {
                 let mut found_error = false;
                 if let Some(fields) = self.0.get_adt_fields(environment.table) {
                     for field in fields {
-                        let Some(new_result) = Self(field.clone())
-                            .query_with_context_full(
-                                environment,
-                                context,
-                                (),
-                                QuerySource::Normal,
-                            )?
+                        let Some(new_result) = environment.query_with(
+                            &Self(field.clone()),
+                            (),
+                            QuerySource::Normal,
+                        )?
                         else {
                             found_error = true;
                             break;
                         };
 
-                        result.constraints.extend(new_result.constraints);
+                        result
+                            .constraints
+                            .extend(new_result.constraints.iter().cloned());
                     }
                 }
 
                 if !found_error {
-                    return Ok(Some(result));
+                    return Ok(Some(Arc::new(result)));
                 }
             }
         }
@@ -202,53 +210,57 @@ impl<M: Model> Compute for ConstantType<M> {
             if let Some(Succeeded {
                 result: Compatibility { forall_lifetime_errors, .. },
                 constraints,
-            }) = self.0.compatible_with_context(
+            }) = self.0.compatible(
                 &premise_term.0,
                 Variance::Covariant,
                 environment,
-                context,
             )? {
                 if !forall_lifetime_errors.is_empty() {
                     continue;
                 }
 
-                return Ok(Some(Succeeded::satisfied_with(constraints)));
+                return Ok(Some(Arc::new(Succeeded::satisfied_with(
+                    constraints,
+                ))));
             }
         }
 
         // satisfiable with equivalence
-        for Succeeded { result: eq, constraints } in
-            get_equivalences_with_context(&self.0, environment, context)?
+        for Succeeded { result: eq, mut constraints } in
+            get_equivalences(&self.0, environment)?
         {
-            if let Some(mut result) = Self(eq.clone()).query_with_context_full(
-                environment,
-                context,
+            if let Some(result) = environment.query_with(
+                &Self(eq.clone()),
                 (),
                 QuerySource::FromEquivalence,
             )? {
-                result.constraints.extend(constraints);
-                return Ok(Some(result));
+                constraints.extend(result.constraints.iter().cloned());
+                return Ok(Some(Arc::new(Succeeded::satisfied_with(
+                    constraints,
+                ))));
             }
         }
 
         Ok(None)
     }
 
-    #[allow(private_bounds, private_interfaces)]
     fn on_cyclic(
         &self,
         (): Self::Parameter,
         _: Self::InProgress,
         _: Self::InProgress,
-        call_stacks: &[query::Record<Self::Model>],
-    ) -> Result<Option<Self::Result>, Self::Error> {
+        call_stacks: &[Call<DynArc, DynArc>],
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
         for call in call_stacks.iter().skip(1) {
-            let Some(query) = <Self as Sealed>::from_call(call) else {
+            let (Some(_), Some(in_progress)) = (
+                call.query.downcast_ref::<Self>(),
+                call.in_progress.downcast_ref::<QuerySource>(),
+            ) else {
                 continue;
             };
 
-            if query.in_progress == QuerySource::Normal {
-                return Ok(Some(Succeeded::satisfied()));
+            if *in_progress == QuerySource::Normal {
+                return Ok(Some(Arc::new(Succeeded::satisfied())));
             }
         }
 
@@ -256,9 +268,9 @@ impl<M: Model> Compute for ConstantType<M> {
     }
 }
 
-impl<M: Model> table::Display for ConstantType<M>
+impl<M: Model> pernixc_table::Display for ConstantType<M>
 where
-    Type<M>: table::Display,
+    Type<M>: pernixc_table::Display,
 {
     fn fmt(
         &self,

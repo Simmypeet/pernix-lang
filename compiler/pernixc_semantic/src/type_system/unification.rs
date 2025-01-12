@@ -9,18 +9,19 @@ use std::{
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    equality,
-    equivalence::get_equivalences_with_context,
+    equality::Equality,
+    equivalence::get_equivalences,
     matching,
     model::Model,
     normalizer::Normalizer,
-    query::{self, Context},
+    query::Query,
     sub_term::{SubTerm, TermLocation},
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, ModelOf, Term,
     },
-    Compute, Environment, Output, OverflowError, Satisfied, Succeeded,
+    AbruptError, Environment, Satisfied, Succeeded,
 };
+use crate::type_system;
 
 /// A query for performing unification.
 #[derive(Debug, Clone)]
@@ -77,6 +78,8 @@ impl<T: ModelOf> Unification<T> {
 pub trait PredicateA<M: Model>:
     std::fmt::Debug
     + std::any::Any
+    + Send
+    + Sync
     + Predicate<Lifetime<M>>
     + Predicate<Type<M>>
     + Predicate<Constant<M>>
@@ -105,7 +108,9 @@ impl<
             + PartialEq
             + Eq
             + PartialOrd
-            + Ord,
+            + Ord
+            + Send
+            + Sync,
     > PredicateA<M> for T
 {
     fn as_any(&self) -> &dyn std::any::Any { self }
@@ -160,14 +165,14 @@ pub trait Predicate<T: Term> {
     ///
     /// # Errors
     ///
-    /// See [`OverflowError`] for more information.
+    /// See [`type_system::Error`] for more information.
     fn unifiable(
         &self,
         from: &T,
         to: &T,
         from_logs: &[Log<T::Model>],
         to_logs: &[Log<T::Model>],
-    ) -> Result<Output<Satisfied, T::Model>, OverflowError>;
+    ) -> Result<Option<Succeeded<Satisfied, T::Model>>, type_system::AbruptError>;
 }
 
 /// A trait implemented by terms that can be unified.
@@ -176,14 +181,17 @@ pub trait Element: ModelOf {
     ///
     /// # Errors
     ///
-    /// See [`OverflowError`] for more information.
+    /// See [`type_system::Error`] for more information.
     fn unifiable(
         from: &Self,
         to: &Self,
         from_logs: &[Log<Self::Model>],
         to_logs: &[Log<Self::Model>],
         config: &dyn PredicateA<Self::Model>,
-    ) -> Result<Output<Satisfied, Self::Model>, OverflowError>;
+    ) -> Result<
+        Option<Succeeded<Satisfied, Self::Model>>,
+        type_system::AbruptError,
+    >;
 
     /// Converts the term into a [`Log`] record as a rewitten term.
     fn into_rewritten(self) -> Log<Self::Model>;
@@ -196,7 +204,7 @@ impl<M: Model> Element for Lifetime<M> {
         from_logs: &[Log<M>],
         to_logs: &[Log<M>],
         config: &dyn PredicateA<M>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, type_system::AbruptError> {
         config.unifiable(from, to, from_logs, to_logs)
     }
 
@@ -210,7 +218,7 @@ impl<M: Model> Element for Type<M> {
         from_logs: &[Log<M>],
         to_logs: &[Log<M>],
         config: &dyn PredicateA<M>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, type_system::AbruptError> {
         config.unifiable(from, to, from_logs, to_logs)
     }
 
@@ -224,7 +232,7 @@ impl<M: Model> Element for Constant<M> {
         from_logs: &[Log<M>],
         to_logs: &[Log<M>],
         config: &dyn PredicateA<M>,
-    ) -> Result<Output<Satisfied, M>, OverflowError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, type_system::AbruptError> {
         config.unifiable(from, to, from_logs, to_logs)
     }
 
@@ -302,21 +310,22 @@ pub struct Unifier<T: SubTerm> {
     pub matching: Matching<T>,
 }
 
-impl<T: Term> Compute for Unification<T> {
-    type Error = OverflowError;
+impl<T: Term> Query for Unification<T> {
+    type Model = T::Model;
     type Parameter = (
         Vec<Log<T::Model>>, /* from logs */
         Vec<Log<T::Model>>, /* to logs */
     );
+    type InProgress = ();
+    type Result = Succeeded<Unifier<T>, T::Model>;
+    type Error = AbruptError;
 
-    #[allow(private_bounds, private_interfaces)]
-    fn implementation(
+    fn query(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        context: &mut query::Context<Self::Model>,
         (from_logs, to_logs): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<Self::Result>, Self::Error> {
+    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
         unify(
             &self.from,
             &self.to,
@@ -324,7 +333,6 @@ impl<T: Term> Compute for Unification<T> {
             &to_logs,
             &self.predicate,
             environment,
-            context,
         )
     }
 }
@@ -336,8 +344,7 @@ fn substructural_unify<T: Term>(
     to_logs: &[Log<T::Model>],
     predicate: &Arc<dyn PredicateA<T::Model>>,
     environment: &Environment<T::Model, impl Normalizer<T::Model>>,
-    context: &mut Context<T::Model>,
-) -> Result<Output<Unifier<T>, T::Model>, OverflowError> {
+) -> Result<Option<Succeeded<Unifier<T>, T::Model>>, AbruptError> {
     let Some(substructural) = from.substructural_match(to) else {
         return Ok(None);
     };
@@ -358,20 +365,20 @@ fn substructural_unify<T: Term>(
         let mut to_logs = to_logs.to_vec();
         to_logs.push(Log::Substructural(to_location.into()));
 
-        let Some(new) =
-            Unification::new(from.clone(), to.clone(), predicate.clone())
-                .query_with_context_full(
-                    environment,
-                    context,
-                    (from_logs, to_logs),
-                    (),
-                )?
+        let Some(new) = environment.query_with(
+            &Unification::new(from.clone(), to.clone(), predicate.clone()),
+            (from_logs, to_logs),
+            (),
+        )?
         else {
             return Ok(None);
         };
 
-        constraints.extend(new.constraints);
-        assert!(result.lifetimes.insert(from_location, new.result).is_none());
+        constraints.extend(new.constraints.iter().cloned());
+        assert!(result
+            .lifetimes
+            .insert(from_location, new.result.clone())
+            .is_none());
     }
 
     for matching::Matching {
@@ -387,20 +394,20 @@ fn substructural_unify<T: Term>(
         let mut to_logs = to_logs.to_vec();
         to_logs.push(Log::Substructural(to_location.into()));
 
-        let Some(new) =
-            Unification::new(from.clone(), to.clone(), predicate.clone())
-                .query_with_context_full(
-                    environment,
-                    context,
-                    (from_logs, to_logs),
-                    (),
-                )?
+        let Some(new) = environment.query_with(
+            &Unification::new(from.clone(), to.clone(), predicate.clone()),
+            (from_logs, to_logs),
+            (),
+        )?
         else {
             return Ok(None);
         };
 
-        constraints.extend(new.constraints);
-        assert!(result.types.insert(from_location, new.result).is_none());
+        constraints.extend(new.constraints.iter().cloned());
+        assert!(result
+            .types
+            .insert(from_location, new.result.clone())
+            .is_none());
     }
 
     for matching::Matching {
@@ -416,20 +423,20 @@ fn substructural_unify<T: Term>(
         let mut to_logs = to_logs.to_vec();
         to_logs.push(Log::Substructural(to_location.into()));
 
-        let Some(new) =
-            Unification::new(from.clone(), to.clone(), predicate.clone())
-                .query_with_context_full(
-                    environment,
-                    context,
-                    (from_logs, to_logs),
-                    (),
-                )?
+        let Some(new) = environment.query_with(
+            &Unification::new(from.clone(), to.clone(), predicate.clone()),
+            (from_logs, to_logs),
+            (),
+        )?
         else {
             return Ok(None);
         };
 
-        constraints.extend(new.constraints);
-        assert!(result.constants.insert(from_location, new.result).is_none());
+        constraints.extend(new.constraints.iter().cloned());
+        assert!(result
+            .constants
+            .insert(from_location, new.result.clone())
+            .is_none());
     }
 
     Ok(Some(Succeeded::with_constraints(
@@ -449,33 +456,32 @@ pub(super) fn unify<T: Term>(
     to_logs: &[Log<T::Model>],
     predicate: &Arc<dyn PredicateA<T::Model>>,
     environment: &Environment<T::Model, impl Normalizer<T::Model>>,
-    context: &mut Context<T::Model>,
-) -> Result<Output<Unifier<T>, T::Model>, OverflowError> {
-    if let Some(result) = equality::Equality::new(from.clone(), to.clone())
-        .query_with_context(environment, context)?
+) -> Result<Option<Arc<Succeeded<Unifier<T>, T::Model>>>, AbruptError> {
+    if let Some(result) =
+        environment.query(&Equality::new(from.clone(), to.clone()))?
     {
-        return Ok(Some(Succeeded::with_constraints(
+        return Ok(Some(Arc::new(Succeeded::with_constraints(
             Unifier {
                 rewritten_from: None,
                 rewritten_right: None,
                 matching: Matching::Equality,
             },
-            result.constraints,
-        )));
+            result.constraints.clone(),
+        ))));
     }
 
     // check if the predicate can unify the two terms
     if let Some(constraint) =
         T::unifiable(from, to, &from_logs, &to_logs, &**predicate)?
     {
-        return Ok(Some(Succeeded::with_constraints(
+        return Ok(Some(Arc::new(Succeeded::with_constraints(
             Unifier {
                 rewritten_from: None,
                 rewritten_right: None,
                 matching: Matching::Unifiable(from.clone(), to.clone()),
             },
             constraint.constraints,
-        )));
+        ))));
     }
 
     if let Some(unification) = substructural_unify(
@@ -485,54 +491,53 @@ pub(super) fn unify<T: Term>(
         to_logs,
         predicate,
         environment,
-        context,
     )? {
-        return Ok(Some(unification));
+        return Ok(Some(Arc::new(unification)));
     }
 
     // try to look for equivalences
-    for Succeeded { result: eq_from, constraints } in
-        get_equivalences_with_context(from, environment, context)?
+    for Succeeded { result: eq_from, mut constraints } in
+        get_equivalences(from, environment)?
     {
         let mut from_logs = from_logs.to_vec();
         from_logs.push(eq_from.clone().into_rewritten());
 
-        if let Some(mut unification) =
-            Unification::new(eq_from.clone(), to.clone(), predicate.clone())
-                .query_with_context_full(
-                    environment,
-                    context,
-                    (from_logs, to_logs.to_vec()),
-                    (),
-                )?
-        {
-            unification.result.rewritten_from =
-                unification.result.rewritten_from.or(Some(eq_from));
-            unification.constraints.extend(constraints);
+        if let Some(unifier) = environment.query_with(
+            &Unification::new(eq_from.clone(), to.clone(), predicate.clone()),
+            (from_logs, to_logs.to_vec()),
+            (),
+        )? {
+            constraints.extend(unifier.constraints.iter().cloned());
 
-            return Ok(Some(unification));
+            let mut unifier = unifier.result.clone();
+            unifier.rewritten_from = unifier.rewritten_from.or(Some(eq_from));
+
+            return Ok(Some(Arc::new(Succeeded::with_constraints(
+                unifier,
+                constraints,
+            ))));
         }
     }
-    for Succeeded { result: eq_to, constraints } in
-        get_equivalences_with_context(to, environment, context)?
+    for Succeeded { result: eq_to, mut constraints } in
+        get_equivalences(to, environment)?
     {
         let mut to_logs = to_logs.to_vec();
         to_logs.push(eq_to.clone().into_rewritten());
 
-        if let Some(mut unification) =
-            Unification::new(from.clone(), eq_to.clone(), predicate.clone())
-                .query_with_context_full(
-                    environment,
-                    context,
-                    (from_logs.to_vec(), to_logs),
-                    (),
-                )?
-        {
-            unification.result.rewritten_right =
-                unification.result.rewritten_right.or(Some(eq_to));
-            unification.constraints.extend(constraints);
+        if let Some(unifier) = environment.query_with(
+            &Unification::new(from.clone(), eq_to.clone(), predicate.clone()),
+            (from_logs.to_vec(), to_logs),
+            (),
+        )? {
+            constraints.extend(unifier.constraints.iter().cloned());
 
-            return Ok(Some(unification));
+            let mut unifier = unifier.result.clone();
+            unifier.rewritten_right = unifier.rewritten_right.or(Some(eq_to));
+
+            return Ok(Some(Arc::new(Succeeded::with_constraints(
+                unifier,
+                constraints,
+            ))));
         }
     }
 
