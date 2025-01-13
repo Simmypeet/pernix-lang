@@ -18,7 +18,7 @@ use pernixc_term::{
 
 use crate::{
     environment::Environment, equivalences, normalizer::Normalizer,
-    unification, AbruptError, Succeeded,
+    unification, AbruptError, Satisfiability, Succeeded,
 };
 
 /// A trait implemented by all three fundamental terms of the language:
@@ -98,6 +98,9 @@ pub trait Term:
 
     #[doc(hidden)]
     fn as_trait_member(&self) -> Option<&Self::TraitMember>;
+
+    #[doc(hidden)]
+    fn definite_satisfiability(&self) -> Satisfiability;
 }
 
 impl<M: Model> Term for Lifetime<M> {
@@ -132,6 +135,10 @@ impl<M: Model> Term for Lifetime<M> {
     }
 
     fn as_trait_member(&self) -> Option<&Self::TraitMember> { None }
+
+    fn definite_satisfiability(&self) -> Satisfiability {
+        Satisfiability::Satisfied
+    }
 }
 
 impl<M: Model> Term for Type<M> {
@@ -182,6 +189,25 @@ impl<M: Model> Term for Type<M> {
             None
         }
     }
+
+    fn definite_satisfiability(&self) -> Satisfiability {
+        match self {
+            Self::Error(_) | Self::Parameter(_) | Self::Inference(_) => {
+                Satisfiability::Unsatisfied
+            }
+
+            Self::Primitive(_) => Satisfiability::Satisfied,
+
+            Self::MemberSymbol(_)
+            | Self::Pointer(_)
+            | Self::Symbol(_)
+            | Self::Reference(_)
+            | Self::Array(_)
+            | Self::Phantom(_)
+            | Self::TraitMember(_)
+            | Self::Tuple(_) => Satisfiability::Congruent,
+        }
+    }
 }
 
 impl<M: Model> Term for Constant<M> {
@@ -216,4 +242,19 @@ impl<M: Model> Term for Constant<M> {
     }
 
     fn as_trait_member(&self) -> Option<&Self::TraitMember> { None }
+
+    fn definite_satisfiability(&self) -> Satisfiability {
+        match self {
+            Self::Error(_) | Self::Parameter(_) | Self::Inference(_) => {
+                Satisfiability::Unsatisfied
+            }
+
+            Self::Phantom | Self::Primitive(_) => Satisfiability::Satisfied,
+
+            Self::Struct(_)
+            | Self::Enum(_)
+            | Self::Array(_)
+            | Self::Tuple(_) => Satisfiability::Congruent,
+        }
+    }
 }

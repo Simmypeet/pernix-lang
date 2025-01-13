@@ -7,6 +7,7 @@ use pernixc_table::query::CyclicDependency;
 use pernixc_term::{lifetime::Lifetime, predicate::Outlives, Model};
 
 pub mod compatible;
+pub mod definite;
 pub mod environment;
 pub mod equality;
 pub mod equivalences;
@@ -65,7 +66,6 @@ pub enum LifetimeConstraint<M: Model> {
 pub struct Succeeded<Result, M: Model> {
     /// The result of the query in the success case.
     pub result: Result,
-
     /// The additional constraints related to lifetimes that must be satisfied
     /// for the query to be considered successful.
     pub constraints: BTreeSet<LifetimeConstraint<M>>,
@@ -171,4 +171,18 @@ impl<T> ResultExt<T> for std::result::Result<T, pernixc_table::query::Error> {
             ) => Ok(None),
         }
     }
+}
+
+/// Describes a satisfiability of a certain predicate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Satisfiability {
+    /// The predicate is satisfiable.
+    Satisfied,
+
+    /// The predicate is unsatisfiable.
+    Unsatisfied,
+
+    /// If all the sub-term of the predicate are satisfiable, then the
+    /// predicate is satisfiable.
+    Congruent,
 }

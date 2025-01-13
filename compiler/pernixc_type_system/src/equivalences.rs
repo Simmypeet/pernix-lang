@@ -15,14 +15,14 @@ use crate::{
 /// premises.
 pub trait Equivalence: ModelOf + Sized {
     #[doc(hidden)]
-    fn get_equivalences(
+    fn get_equivalences_internal(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
     ) -> Result<Vec<Succeeded<Self, Self::Model>>, AbruptError>;
 }
 
 impl<M: Model> Equivalence for Lifetime<M> {
-    fn get_equivalences(
+    fn get_equivalences_internal(
         &self,
         _: &Environment<M, impl Normalizer<M>>,
     ) -> Result<Vec<Succeeded<Self, M>>, AbruptError> {
@@ -31,7 +31,7 @@ impl<M: Model> Equivalence for Lifetime<M> {
 }
 
 impl<M: Model> Equivalence for Type<M> {
-    fn get_equivalences(
+    fn get_equivalences_internal(
         &self,
         environment: &Environment<M, impl Normalizer<M>>,
     ) -> Result<Vec<Succeeded<Self, M>>, AbruptError> {
@@ -78,7 +78,7 @@ impl<M: Model> Equivalence for Type<M> {
 }
 
 impl<M: Model> Equivalence for Constant<M> {
-    fn get_equivalences(
+    fn get_equivalences_internal(
         &self,
         _: &Environment<M, impl Normalizer<M>>,
     ) -> Result<Vec<Succeeded<Self, M>>, AbruptError> {
@@ -97,7 +97,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
         &self,
         term: &T,
     ) -> Result<Vec<Succeeded<T, M>>, AbruptError> {
-        let mut equivalences = term.get_equivalences(self)?;
+        let mut equivalences = term.get_equivalences_internal(self)?;
 
         if let Some(normalization) = term.normalize(self)? {
             equivalences.push(normalization);

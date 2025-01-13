@@ -93,7 +93,6 @@ pub type Tuple<M> = super::Tuple<Constant<M>>;
     derive_more::From,
 )]
 #[allow(missing_docs)]
-#[non_exhaustive]
 pub enum Constant<M: Model> {
     #[from]
     Primitive(Primitive),
