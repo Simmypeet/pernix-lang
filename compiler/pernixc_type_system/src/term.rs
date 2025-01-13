@@ -9,6 +9,7 @@ use pernixc_term::{
     generic_parameter::{
         ConstantParameter, GenericParameter, LifetimeParameter, TypeParameter,
     },
+    instantiation,
     lifetime::Lifetime,
     matching,
     predicate::{Compatible, Predicate},
@@ -41,6 +42,7 @@ pub trait Term:
     + unification::Element
     + equivalences::Equivalence
     + mapping::Element
+    + instantiation::Element
     + From<MemberID<ID<Self::GenericParameter>>>
     + From<pernixc_term::Error>
     + From<Self::TraitMember>

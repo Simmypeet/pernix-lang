@@ -64,10 +64,7 @@ impl<T> Tuple<T> {
     /// Applies a instantiation to the [`Tuple`] term.
     pub fn instantiate(&mut self, instantiation: &Instantiation<T::Model>)
     where
-        T: ModelOf
-            + instantiation::Element<T::Model>
-            + visitor::Element
-            + Clone,
+        T: ModelOf + instantiation::Element + visitor::Element + Clone,
     {
         instantiation::instantiate(&mut self.0, instantiation);
     }

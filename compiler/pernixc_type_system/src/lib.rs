@@ -4,9 +4,14 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_table::query::CyclicDependency;
-use pernixc_term::{lifetime::Lifetime, predicate::Outlives, Model};
+use pernixc_term::{
+    constant::Constant, lifetime::Lifetime, predicate::Outlives, r#type::Type,
+    Model,
+};
+use unification::Log;
 
 pub mod compatible;
+pub mod deduction;
 pub mod definite;
 pub mod environment;
 pub mod equality;
@@ -17,6 +22,51 @@ pub mod order;
 pub mod term;
 pub mod unification;
 pub mod variance;
+
+/// A struct implementing the [`unification::Predicate`] that allows the
+/// lifetime to be unified.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct LifetimeUnifyingPredicate;
+
+impl<M: Model> unification::Predicate<Lifetime<M>>
+    for LifetimeUnifyingPredicate
+{
+    fn unifiable(
+        &self,
+        _: &Lifetime<M>,
+        _: &Lifetime<M>,
+        _: &[Log<M>],
+        _: &[Log<M>],
+    ) -> Result<Satisfied, M> {
+        Ok(Some(Succeeded::satisfied()))
+    }
+}
+
+impl<M: Model> unification::Predicate<Type<M>> for LifetimeUnifyingPredicate {
+    fn unifiable(
+        &self,
+        _: &Type<M>,
+        _: &Type<M>,
+        _: &[Log<M>],
+        _: &[Log<M>],
+    ) -> Result<Satisfied, M> {
+        Ok(None)
+    }
+}
+
+impl<M: Model> unification::Predicate<Constant<M>>
+    for LifetimeUnifyingPredicate
+{
+    fn unifiable(
+        &self,
+        _: &Constant<M>,
+        _: &Constant<M>,
+        _: &[Log<M>],
+        _: &[Log<M>],
+    ) -> Result<Satisfied, M> {
+        Ok(None)
+    }
+}
 
 /// An error that occurs when the number of queries exceeds the limit.
 ///

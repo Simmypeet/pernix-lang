@@ -37,7 +37,7 @@ struct Instantiater<'a, M: Model> {
     substitution: &'a Instantiation<M>,
 }
 
-impl<'a, T: ModelOf + Element<T::Model> + Clone + Ord> MutableRecursive<T>
+impl<'a, T: Element + Clone + Ord> MutableRecursive<T>
     for Instantiater<'a, T::Model>
 {
     fn visit(
@@ -54,9 +54,7 @@ impl<'a, T: ModelOf + Element<T::Model> + Clone + Ord> MutableRecursive<T>
 }
 
 /// Applies the given substitution to the term.
-pub fn instantiate<
-    T: ModelOf + Element<T::Model> + Clone + visitor::Element,
->(
+pub fn instantiate<T: Element + Clone + visitor::Element>(
     term: &mut T,
     instantiation: &Instantiation<T::Model>,
 ) {
@@ -141,7 +139,7 @@ pub enum Collision<M: Model> {
 }
 
 impl<M: Model> Instantiation<M> {
-    fn append_from_arguments<T: Element<M> + Ord, U>(
+    fn append_from_arguments<T: Element<Model = M> + Ord, U>(
         &mut self,
         terms: impl Iterator<Item = T>,
         term_parameter_order: impl Iterator<Item = ID<U>>,
@@ -359,19 +357,19 @@ impl<M: Model> Instantiation<M> {
 /// A trait for retrieving the instantiation map from the [`Instantiation`]
 /// struct.
 #[allow(missing_docs)]
-pub trait Element<M: Model> {
-    fn get(instantiation: &Instantiation<M>) -> &BTreeMap<Self, Self>
+pub trait Element: ModelOf {
+    fn get(instantiation: &Instantiation<Self::Model>) -> &BTreeMap<Self, Self>
     where
         Self: Sized;
 
     fn get_mut(
-        instantiation: &mut Instantiation<M>,
+        instantiation: &mut Instantiation<Self::Model>,
     ) -> &mut BTreeMap<Self, Self>
     where
         Self: Sized;
 }
 
-impl<M: Model> Element<M> for Lifetime<M> {
+impl<M: Model> Element for Lifetime<M> {
     fn get(instantiation: &Instantiation<M>) -> &BTreeMap<Self, Self> {
         &instantiation.lifetimes
     }
@@ -383,7 +381,7 @@ impl<M: Model> Element<M> for Lifetime<M> {
     }
 }
 
-impl<M: Model> Element<M> for Type<M> {
+impl<M: Model> Element for Type<M> {
     fn get(instantiation: &Instantiation<M>) -> &BTreeMap<Self, Self> {
         &instantiation.types
     }
@@ -395,7 +393,7 @@ impl<M: Model> Element<M> for Type<M> {
     }
 }
 
-impl<M: Model> Element<M> for Constant<M> {
+impl<M: Model> Element for Constant<M> {
     fn get(instantiation: &Instantiation<M>) -> &BTreeMap<Self, Self> {
         &instantiation.constants
     }

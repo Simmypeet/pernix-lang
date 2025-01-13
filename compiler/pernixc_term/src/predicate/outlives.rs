@@ -94,7 +94,7 @@ impl<T: ModelOf> Outlives<T> {
     /// [`Outlives::bound`].
     pub fn instantiate(&mut self, instantiation: &Instantiation<T::Model>)
     where
-        T: instantiation::Element<T::Model> + visitor::Element + Clone,
+        T: instantiation::Element + visitor::Element + Clone,
     {
         instantiation::instantiate(&mut self.operand, instantiation);
         instantiation::instantiate(&mut self.bound, instantiation);
