@@ -23,6 +23,8 @@ pub mod term;
 pub mod unification;
 pub mod variance;
 
+mod predicate;
+
 /// A struct implementing the [`unification::Predicate`] that allows the
 /// lifetime to be unified.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]

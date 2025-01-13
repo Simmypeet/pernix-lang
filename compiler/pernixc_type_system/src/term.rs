@@ -3,7 +3,7 @@
 use std::{cmp::Eq, fmt::Debug, hash::Hash};
 
 use pernixc_arena::ID;
-use pernixc_table::MemberID;
+use pernixc_table::{MemberID, Table};
 use pernixc_term::{
     constant::Constant,
     generic_parameter::{
@@ -104,6 +104,9 @@ pub trait Term:
 
     #[doc(hidden)]
     fn definite_satisfiability(&self) -> Satisfiability;
+
+    #[doc(hidden)]
+    fn get_adt_fields(&self, table: &Table) -> Option<Vec<Self>>;
 }
 
 impl<M: Model> Term for Lifetime<M> {
@@ -142,6 +145,8 @@ impl<M: Model> Term for Lifetime<M> {
     fn definite_satisfiability(&self) -> Satisfiability {
         Satisfiability::Satisfied
     }
+
+    fn get_adt_fields(&self, _: &Table) -> Option<Vec<Self>> { None }
 }
 
 impl<M: Model> Term for Type<M> {
@@ -153,6 +158,7 @@ impl<M: Model> Term for Type<M> {
         &self,
         _: &Environment<Self::Model, impl Normalizer<Self::Model>>,
     ) -> Result<Option<Succeeded<Self, Self::Model>>, AbruptError> {
+        // TODO: implements this
         Ok(None)
     }
 
@@ -211,6 +217,11 @@ impl<M: Model> Term for Type<M> {
             | Self::Tuple(_) => Satisfiability::Congruent,
         }
     }
+
+    fn get_adt_fields(&self, _: &Table) -> Option<Vec<Self>> {
+        // TODO: Implement this
+        None
+    }
 }
 
 impl<M: Model> Term for Constant<M> {
@@ -222,6 +233,7 @@ impl<M: Model> Term for Constant<M> {
         &self,
         _: &Environment<Self::Model, impl Normalizer<Self::Model>>,
     ) -> Result<Option<Succeeded<Self, Self::Model>>, AbruptError> {
+        // TODO: implements this
         Ok(None)
     }
 
@@ -260,4 +272,6 @@ impl<M: Model> Term for Constant<M> {
             | Self::Tuple(_) => Satisfiability::Congruent,
         }
     }
+
+    fn get_adt_fields(&self, _: &Table) -> Option<Vec<Self>> { None }
 }
