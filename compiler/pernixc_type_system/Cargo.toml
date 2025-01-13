@@ -15,6 +15,9 @@ pernixc_base = { path = "../pernixc_base" }
 serde = { workspace = true }
 getset = { workspace = true }
 thiserror = { workspace = true }
+derive_more = { workspace = true }
+derive-new = { workspace = true }
+
 
 [dev-dependencies]
 proptest = { workspace = true }

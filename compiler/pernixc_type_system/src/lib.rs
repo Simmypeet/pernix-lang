@@ -1,15 +1,19 @@
 //! Contains the type-system logic of the complier.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_table::query::CyclicDependency;
 use pernixc_term::{lifetime::Lifetime, predicate::Outlives, Model};
 
+pub mod compatible;
 pub mod environment;
 pub mod equality;
+pub mod equivalences;
 pub mod normalizer;
 pub mod term;
+pub mod unification;
+pub mod variance;
 
 /// An error that occurs when the number of queries exceeds the limit.
 ///
@@ -127,5 +131,44 @@ impl<M: Model> Succeeded<Satisfied, M> {
     pub fn combine(mut self, other: Self) -> Self {
         self.constraints.extend(other.constraints);
         self
+    }
+}
+
+/// An alias for the result where the Ok variant can be `Option::Some(Succeeded
+/// {..})` or `None`.
+pub type Result<T, M, E = AbruptError> =
+    std::result::Result<Option<Succeeded<T, M>>, E>;
+
+/// An alias for the result where the Ok variant can be
+/// `Option::Some(Arc<Succeeded {..})` or `None`.
+pub type ResultArc<T, M, E = AbruptError> =
+    std::result::Result<Option<Arc<Succeeded<T, M>>>, E>;
+
+/// A trait implemented for [`std::result::Result<T,
+/// pernixc::table::query::Error>`] that will only accept [`CyclicDependency`]
+/// error variant.
+pub trait ResultExt<T> {
+    /// Only allows [`CyclicDependency`] error variant to be returned.
+    ///
+    /// If the error variant is not [`CyclicDependency`], it will be converted
+    /// to `Ok(None)`.
+    #[allow(clippy::missing_errors_doc)]
+    fn extract_cyclic_dependency(
+        self,
+    ) -> std::result::Result<Option<T>, CyclicDependency>;
+}
+
+impl<T> ResultExt<T> for std::result::Result<T, pernixc_table::query::Error> {
+    fn extract_cyclic_dependency(
+        self,
+    ) -> std::result::Result<Option<T>, CyclicDependency> {
+        match self {
+            Ok(t) => Ok(Some(t)),
+            Err(pernixc_table::query::Error::CyclicDependency(err)) => Err(err),
+            Err(
+                pernixc_table::query::Error::NoBuilderFound
+                | pernixc_table::query::Error::SymbolNotFoundOrInvalidComponent,
+            ) => Ok(None),
+        }
     }
 }

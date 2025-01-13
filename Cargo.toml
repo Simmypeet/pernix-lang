@@ -79,5 +79,12 @@ broken_intra_doc_links = "deny"
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
-nursery = { level = "deny", priority = -1 }
 missing_panics_doc = "allow"
+use_self = "deny"
+useless_let_if_seq = "deny"
+set_contains_or_insert = "deny"
+option_if_let_else = "deny"
+needless_collect = "deny"
+missing_const_for_fn = "deny"
+equatable_if_let = "deny"
+redundant_clone = "deny"

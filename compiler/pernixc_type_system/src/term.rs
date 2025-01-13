@@ -17,7 +17,8 @@ use pernixc_term::{
 };
 
 use crate::{
-    environment::Environment, normalizer::Normalizer, AbruptError, Succeeded,
+    environment::Environment, equivalences, normalizer::Normalizer,
+    unification, AbruptError, Succeeded,
 };
 
 /// A trait implemented by all three fundamental terms of the language:
@@ -37,6 +38,8 @@ pub trait Term:
     + visitor::Element
     + matching::Match
     + sub_term::SubTerm
+    + unification::Element
+    + equivalences::Equivalence
     + From<MemberID<ID<Self::GenericParameter>>>
     + From<pernixc_term::Error>
     + From<Self::TraitMember>
