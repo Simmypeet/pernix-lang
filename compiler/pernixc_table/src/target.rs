@@ -61,12 +61,15 @@ pub enum AddTargetError {
 }
 
 impl Representation {
-    /// Adds a target to the representation.
+    /// Adds a target syntax tree to the compilation target. 
+    /// 
+    /// The function will analyse the syntax tree and create the symbols and
+    /// their input components in the table.
     ///
     /// # Errors
     ///
     /// See [`AddTargetError`] for possible errors.
-    pub fn add_target(
+    pub fn add_compilation_target(
         &mut self,
         name: String,
         linked_targets: impl IntoIterator<Item = TargetID>,

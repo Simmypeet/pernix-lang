@@ -19,24 +19,15 @@
 use std::collections::{HashMap, HashSet};
 
 use derive_more::{Deref, DerefMut};
-use pernixc_base::{handler::Handler, source_file::Span};
+use pernixc_base::source_file::Span;
 use serde::{Deserialize, Serialize};
 
-use crate::{diagnostic::Diagnostic, GlobalID, Table, ID};
+use crate::{GlobalID, ID};
 
-/// Represents a component that can be later added to the table by processing
-/// the other components.
+/// Represents a component that can be later added to the table by being built
+/// by the [`crate::query::Builder`] trait.
 pub trait Derived {
-    /// Creates the component of this type for the given `global_id`.
-    fn compute(
-        global_id: GlobalID,
-        table: &Table,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Self>
-    where
-        Self: Sized;
-
-    /// The name of the component (used for error messages and debugging).
+    /// Returns the name of the component; used for debugging and diagnostics.
     fn component_name() -> &'static str;
 }
 

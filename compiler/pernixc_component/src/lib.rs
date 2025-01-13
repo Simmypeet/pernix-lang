@@ -55,6 +55,30 @@ impl<ID: Eq + Hash> Storage<ID> {
         }
     }
 
+    /// Similar to [`Storage::add_component`] but takes a boxed component.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the boxed component is not of the correct type.
+    pub fn add_component_boxed<U: Any>(
+        &self,
+        id: ID,
+        component: Box<dyn Any>,
+    ) -> bool
+    where
+        ID: Hash + Eq,
+    {
+        assert!(component.is::<U>());
+
+        match self.components.entry((id, TypeId::of::<U>())) {
+            Entry::Occupied(_) => false,
+            Entry::Vacant(entry) => {
+                entry.insert(component);
+                true
+            }
+        }
+    }
+
     /// Enables the serialization of the storage based on the given reflector.
     #[must_use]
     pub fn as_serializable<'a, T, E: Display + 'static>(

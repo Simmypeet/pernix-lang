@@ -31,7 +31,7 @@ fn submodule() {
 
     table
         .representation
-        .add_target(
+        .add_compilation_target(
             "test".to_string(),
             std::iter::empty(),
             target,
@@ -126,7 +126,12 @@ fn trait_with_errors() {
 
     table
         .representation
-        .add_target("test".to_string(), std::iter::empty(), target, &*storage)
+        .add_compilation_target(
+            "test".to_string(),
+            std::iter::empty(),
+            target,
+            &*storage,
+        )
         .unwrap();
 
     let trait_symbol = table.get_by_qualified_name(["test", "Test"]).unwrap();
@@ -191,7 +196,12 @@ fn serialization() {
 
     let target_id = table
         .representation
-        .add_target("test".to_string(), std::iter::empty(), target, &*storage)
+        .add_compilation_target(
+            "test".to_string(),
+            std::iter::empty(),
+            target,
+            &*storage,
+        )
         .unwrap();
 
     let reflector = Table::reflector();
@@ -272,7 +282,12 @@ fn usings() {
     let mut table = Table::new(storage.clone());
     table
         .representation
-        .add_target("test".to_string(), std::iter::empty(), target, &*storage)
+        .add_compilation_target(
+            "test".to_string(),
+            std::iter::empty(),
+            target,
+            &*storage,
+        )
         .unwrap();
 
     let errors = storage.as_vec();
@@ -343,7 +358,12 @@ fn trait_implementations() {
     let mut table = Table::new(storage.clone());
     table
         .representation
-        .add_target("test".to_string(), std::iter::empty(), target, &*storage)
+        .add_compilation_target(
+            "test".to_string(),
+            std::iter::empty(),
+            target,
+            &*storage,
+        )
         .unwrap();
 
     let errors = storage.as_vec();
@@ -391,7 +411,12 @@ fn adt_implementation() {
     let mut table = Table::new(storage.clone());
     table
         .representation
-        .add_target("test".to_string(), std::iter::empty(), target, &*storage)
+        .add_compilation_target(
+            "test".to_string(),
+            std::iter::empty(),
+            target,
+            &*storage,
+        )
         .unwrap();
 
     let errors = storage.as_vec();

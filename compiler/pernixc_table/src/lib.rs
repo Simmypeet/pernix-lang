@@ -7,6 +7,7 @@ use std::{
     sync::Arc,
 };
 
+use component::Derived;
 use derive_more::{Deref, DerefMut};
 use derive_new::new;
 use diagnostic::Diagnostic;
@@ -15,7 +16,7 @@ use parking_lot::RwLock;
 use pernixc_base::handler::Handler;
 use pernixc_component::{serde::Reflector, Storage};
 use pernixc_syntax::syntax_tree::AccessModifier;
-use query::Context;
+use query::{Builder, Context};
 use serde::{ser::SerializeMap, Deserialize, Serialize, Serializer};
 pub use target::AddTargetError;
 
@@ -600,6 +601,20 @@ impl Table {
             query_context: RwLock::new(Context::default()),
             handler,
         }
+    }
+
+    /// Sets the builder for the given derived component type.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if there's no existing builder for the given type.
+    /// Otherwise, returns `false` and the builder is not set.
+    #[must_use]
+    pub fn set_builder<T: Derived + Any>(
+        &mut self,
+        builder: Arc<dyn Builder>,
+    ) -> bool {
+        self.query_context.get_mut().set_builder::<T>(builder)
     }
 }
 

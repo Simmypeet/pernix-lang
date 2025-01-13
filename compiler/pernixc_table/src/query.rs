@@ -1,8 +1,8 @@
-//! Contains the logic for building the table.
+//! Contains the logic for building the symbol.
 
 use std::{
     any::{Any, TypeId},
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     fmt::Debug,
     ops::Deref,
     sync::Arc,
@@ -11,12 +11,12 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use parking_lot::{Condvar, Mutex};
-use pernixc_base::{diagnostic::Report, log::Severity};
+use pernixc_base::{diagnostic::Report, handler::Handler, log::Severity};
 
 use super::{GlobalID, Table};
 use crate::{
     component::{Derived, LocationSpan, Name},
-    diagnostic::ReportError,
+    diagnostic::{Diagnostic, ReportError},
 };
 
 /// A cyclic dependency between symbols detected during the query.
@@ -106,13 +106,48 @@ pub struct Record {
 }
 
 /// A struct that manages/synchronizes the query.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Context {
     record_stacks_by_thread_id: HashMap<ThreadId, Vec<Record>>,
     condvars_by_record: HashMap<Record, Arc<(Condvar, Mutex<()>)>>,
+    builders_by_type_id: HashMap<TypeId, Arc<dyn Builder>>,
 
     // key ---requires---> value
     dependencies_by_dependent: HashMap<Record, Record>,
+}
+
+impl Context {
+    /// Sets the builder for the given derived component type.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if there's no existing builder for the given type.
+    /// Otherwise, returns `false` and the builder is not set.
+    pub fn set_builder<T: Derived + Any>(
+        &mut self,
+        builder: Arc<dyn Builder>,
+    ) -> bool {
+        match self.builders_by_type_id.entry(TypeId::of::<T>()) {
+            Entry::Occupied(_) => false,
+            Entry::Vacant(entry) => {
+                entry.insert(builder);
+                true
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Context")
+            .field(
+                "record_stacks_by_thread_id",
+                &self.record_stacks_by_thread_id,
+            )
+            .field("condvars_by_record", &self.condvars_by_record)
+            .field("dependencies_by_dependent", &self.dependencies_by_dependent)
+            .finish_non_exhaustive()
+    }
 }
 
 /// An error that can occur during the query.
@@ -126,6 +161,12 @@ pub enum Error {
         "the symbol is not found or the component shouldn't be in given symbol"
     )]
     SymbolNotFoundOrInvalidComponent,
+
+    #[error(
+        "the component of the symbol is not found and there is no builder for \
+         it"
+    )]
+    NoBuilderFound,
 }
 
 impl Error {
@@ -134,11 +175,29 @@ impl Error {
     pub fn unwrap_cyclic_dependency(self) -> CyclicDependency {
         match self {
             Self::CyclicDependency(x) => x,
-            Self::SymbolNotFoundOrInvalidComponent => {
+
+            Self::NoBuilderFound | Self::SymbolNotFoundOrInvalidComponent => {
                 panic!("not a cyclic dependency")
             }
         }
     }
+}
+
+/// A trait implemented by the **component builders**.
+///
+/// The implementation of this trait will be used to build the component for the
+/// symbol of particular type.
+pub trait Builder {
+    /// Builds the component for the given `global_id`.
+    ///
+    /// Invoked when the component for a particular type is not found in the
+    /// storage.
+    fn build(
+        &self,
+        global_id: GlobalID,
+        table: &Table,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Option<Box<dyn Any>>;
 }
 
 impl Table {
@@ -159,6 +218,16 @@ impl Table {
         if let Some(result) = self.storage.get::<T>(global_id) {
             return Ok(result);
         }
+
+        let Some(builder) = self
+            .query_context
+            .read()
+            .builders_by_type_id
+            .get(&TypeId::of::<T>())
+            .cloned()
+        else {
+            return Err(Error::NoBuilderFound);
+        };
 
         let target_record = Record {
             global_id,
@@ -232,10 +301,12 @@ impl Table {
 
             drop(context); // release the context lock
 
-            let component = T::compute(global_id, self, &*self.handler);
+            let component = builder.build(global_id, self, &*self.handler);
 
             if let Some(succeeded) = component {
-                assert!(self.storage.add_component(global_id, succeeded));
+                assert!(self
+                    .storage
+                    .add_component_boxed::<T>(global_id, succeeded));
             }
 
             // notify the other threads that the component is computed
