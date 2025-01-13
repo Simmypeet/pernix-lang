@@ -17,7 +17,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    environment::Environment, equivalences, normalizer::Normalizer,
+    environment::Environment, equivalences, mapping, normalizer::Normalizer,
     unification, AbruptError, Satisfiability, Succeeded,
 };
 
@@ -40,6 +40,7 @@ pub trait Term:
     + sub_term::SubTerm
     + unification::Element
     + equivalences::Equivalence
+    + mapping::Element
     + From<MemberID<ID<Self::GenericParameter>>>
     + From<pernixc_term::Error>
     + From<Self::TraitMember>
