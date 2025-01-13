@@ -228,6 +228,12 @@ impl Representation {
         Library { representation: self, compilation_meta_data, reflector }
     }
 
+    /// Adds a component to the storage.
+    #[must_use]
+    pub fn add_component<T: Any>(&self, id: GlobalID, component: T) -> bool {
+        self.storage.add_component(id, component)
+    }
+
     /// Gets the qualified name of the symbol such as `module::function`.
     ///
     /// # Returns

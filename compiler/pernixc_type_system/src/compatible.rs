@@ -680,6 +680,5 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
     }
 }
 
-// TODO: bring test back
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod test;
