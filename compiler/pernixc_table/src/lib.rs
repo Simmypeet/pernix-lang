@@ -32,6 +32,7 @@ pub mod query;
 pub mod reflector;
 pub mod resolution;
 
+mod arbitrary;
 mod target;
 
 /// Represents an identifier for a target.
@@ -47,7 +48,7 @@ mod target;
     Serialize,
     Deserialize,
 )]
-pub struct TargetID(u64);
+pub struct TargetID(pub u64);
 
 impl TargetID {
     /// The core target.
@@ -67,7 +68,7 @@ impl TargetID {
     Serialize,
     Deserialize,
 )]
-pub struct ID(usize);
+pub struct ID(pub usize);
 
 impl ID {
     /// The modue root symbol.
@@ -745,6 +746,7 @@ pub trait Display {
     Hash,
     Serialize,
     Deserialize,
+    new,
 )]
 pub struct MemberID<ChildID> {
     /// Symbol ID of the parent symbol.

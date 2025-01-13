@@ -18,6 +18,8 @@ use crate::{
     Error, MemberSymbol, Model, ModelOf, Never, Symbol,
 };
 
+mod arbitrary;
+
 /// A qualifier that can be applied to references/pointers.
 #[derive(
     Debug,
@@ -846,6 +848,36 @@ impl<M: Model> Match for Type<M> {
 
             (Self::Tuple(lhs), Self::Tuple(rhs)) => {
                 lhs.substructural_match(rhs)
+            }
+
+            (Self::TraitMember(lhs), Self::TraitMember(rhs))
+                if lhs.0.id == rhs.0.id =>
+            {
+                lhs.parent_generic_arguments
+                    .substructural_match(
+                        &rhs.parent_generic_arguments,
+                        matching::Substructural::default(),
+                        |x| {
+                            SubTraitMemberLocation(SubMemberSymbolLocation {
+                                index: x,
+                                from_parent: true,
+                            })
+                        },
+                    )
+                    .and_then(|x| {
+                        lhs.member_generic_arguments.substructural_match(
+                            &rhs.member_generic_arguments,
+                            x,
+                            |x| {
+                                SubTraitMemberLocation(
+                                    SubMemberSymbolLocation {
+                                        index: x,
+                                        from_parent: false,
+                                    },
+                                )
+                            },
+                        )
+                    })
             }
 
             (Self::MemberSymbol(lhs), Self::MemberSymbol(rhs))

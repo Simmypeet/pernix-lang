@@ -8,6 +8,8 @@ use crate::{
     ModelOf,
 };
 
+mod arbitrary;
+
 /// Represents a generic arguments supplied to a term (i.e., `type[ARGS]`).
 #[derive(
     Debug,

@@ -20,6 +20,7 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 displaydoc = { workspace = true }
 derive-new = { workspace = true }
+proptest = { workspace = true }
 
 [lints]
 workspace = true

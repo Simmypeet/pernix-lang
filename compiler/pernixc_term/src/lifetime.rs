@@ -17,6 +17,8 @@ use crate::{
     Error, Model, ModelOf, Never,
 };
 
+mod arbitrary;
+
 /// Represents a for-all quantified lifetime, denoted by `for['a]` syntax, used
 /// in higher-ranked predicates.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -276,4 +278,8 @@ impl<M: Model> Match for Lifetime<M> {
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
         &mut substructural.lifetimes
     }
+}
+
+impl<M: Model> From<Never> for Lifetime<M> {
+    fn from(value: Never) -> Self { match value {} }
 }

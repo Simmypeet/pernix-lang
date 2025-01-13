@@ -14,7 +14,11 @@ pub mod matching;
 pub mod predicate;
 pub mod sub_term;
 pub mod r#type;
+pub mod type_alias;
 pub mod visitor;
+pub mod where_clause;
+
+mod arbitrary;
 
 use constant::Constant;
 use enum_as_inner::EnumAsInner;

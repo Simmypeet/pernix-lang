@@ -17,6 +17,8 @@ use crate::{
     Error, Model, ModelOf, Never,
 };
 
+mod arbitrary;
+
 /// Represents a primitive constant.
 #[derive(
     Debug,

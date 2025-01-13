@@ -15,6 +15,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+mod arbitrary;
+
 /// Represents a key type that can be used to index items in the [`Arena`].
 pub trait Key:
     Debug

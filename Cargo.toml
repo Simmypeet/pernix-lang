@@ -10,6 +10,7 @@ members = [
     "compiler/pernixc_table",
     "compiler/pernixc_arena",
     "compiler/pernixc_term",
+    "compiler/pernixc_type_system",
     # "compiler/pernixc_term",
     # "compiler/pernixc_driver",
     # "compiler/pernixc",
