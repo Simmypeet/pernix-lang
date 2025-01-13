@@ -6,10 +6,13 @@ use getset::Getters;
 use paste::paste;
 use pernixc_arena::{Arena, ID};
 use pernixc_base::source_file::Span;
-use pernixc_table::{component::Derived, MemberID};
+use pernixc_table::{component::Derived, GlobalID, MemberID};
 use serde::{Deserialize, Serialize};
 
-use crate::{constant::Constant, r#type::Type, Default};
+use crate::{
+    constant::Constant, generic_arguments::GenericArguments,
+    lifetime::Lifetime, r#type::Type, Default, Model,
+};
 
 /// A **presistent-derived** component representing the generic parameters
 /// declaration of a sybmol e.g. `struct Test['a, X, Y, const C: int32]`.
@@ -347,13 +350,12 @@ impl GenericParameters {
 
     implements_add_parameter!(self, Constant);
 
-    /*
     /// Creates a [`GenericArguments`] that all of its parameters are the
     /// generic parameters of this [`GenericParameters`].
     #[must_use]
     pub fn create_identity_generic_arguments<M: Model>(
         &self,
-        generic_id: GenericID,
+        global_id: GlobalID,
     ) -> GenericArguments<M> {
         GenericArguments {
             lifetimes: self
@@ -361,34 +363,25 @@ impl GenericParameters {
                 .iter()
                 .copied()
                 .map(|id| {
-                    lifetime::Lifetime::Parameter(MemberID {
-                        parent: generic_id,
-                        id,
-                    })
+                    Lifetime::Parameter(MemberID { parent: global_id, id })
                 })
                 .collect(),
             types: self
                 .type_order
                 .iter()
                 .copied()
-                .map(|id| {
-                    r#type::Type::Parameter(MemberID { parent: generic_id, id })
-                })
+                .map(|id| Type::Parameter(MemberID { parent: global_id, id }))
                 .collect(),
             constants: self
                 .constant_order
                 .iter()
                 .copied()
                 .map(|id| {
-                    constant::Constant::Parameter(MemberID {
-                        parent: generic_id,
-                        id,
-                    })
+                    Constant::Parameter(MemberID { parent: global_id, id })
                 })
                 .collect(),
         }
     }
-    */
 }
 
 impl Derived for GenericParameters {

@@ -406,3 +406,20 @@ impl<M: Model> Element<M> for Constant<M> {
         &mut instantiation.constants
     }
 }
+
+impl<M: Model> GenericArguments<M> {
+    /// Applies the instantiation to all the generic arguments.
+    pub fn instantiate(&mut self, instantiation: &Instantiation<M>) {
+        for lifetime in &mut self.lifetimes {
+            instantiate(lifetime, instantiation);
+        }
+
+        for r#type in &mut self.types {
+            instantiate(r#type, instantiation);
+        }
+
+        for constant in &mut self.constants {
+            instantiate(constant, instantiation);
+        }
+    }
+}

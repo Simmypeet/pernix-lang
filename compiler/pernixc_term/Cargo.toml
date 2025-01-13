@@ -19,6 +19,7 @@ strum_macros = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 displaydoc = { workspace = true }
+derive-new = { workspace = true }
 
 [lints]
 workspace = true
