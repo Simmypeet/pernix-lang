@@ -3,12 +3,12 @@ use std::sync::Arc;
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,
+    predicate::ConstantType,
     r#type::{Primitive, Type},
     variance::Variance,
     visitor::{self, Element},
     Model,
 };
-use serde::{Deserialize, Serialize};
 
 use crate::{
     compatible::Compatibility,
@@ -101,12 +101,6 @@ pub enum QuerySource {
     #[default]
     Normal,
 }
-
-/// Represents a type can be used as a type of a compile-time constant value.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
-pub struct ConstantType<M: Model>(pub Type<M>);
 
 impl<M: Model> Query for ConstantType<M> {
     type Model = M;

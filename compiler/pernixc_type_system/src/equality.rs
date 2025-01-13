@@ -215,4 +215,4 @@ fn equals_without_mapping<T: Term>(
 }
 
 #[cfg(test)]
-mod test;
+pub(super) mod test;

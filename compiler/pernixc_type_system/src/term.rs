@@ -12,14 +12,15 @@ use pernixc_term::{
     instantiation,
     lifetime::Lifetime,
     matching,
-    predicate::{Compatible, Predicate},
+    predicate::{Compatible, Outlives, Predicate},
     r#type::{TraitMember, Type},
     sub_term, visitor, Model, ModelOf, Never,
 };
 
 use crate::{
-    environment::Environment, equivalences, mapping, normalizer::Normalizer,
-    unification, AbruptError, Satisfiability, Succeeded,
+    compatible, environment::Environment, equivalences, mapping,
+    normalizer::Normalizer, unification, AbruptError, Satisfiability,
+    Succeeded,
 };
 
 /// A trait implemented by all three fundamental terms of the language:
@@ -43,6 +44,7 @@ pub trait Term:
     + equivalences::Equivalence
     + mapping::Element
     + instantiation::Element
+    + compatible::Compatible
     + From<MemberID<ID<Self::GenericParameter>>>
     + From<pernixc_term::Error>
     + From<Self::TraitMember>
@@ -107,6 +109,17 @@ pub trait Term:
 
     #[doc(hidden)]
     fn get_adt_fields(&self, table: &Table) -> Option<Vec<Self>>;
+
+    #[doc(hidden)]
+    fn outlives_satisfiability(
+        &self,
+        lifetime: &Lifetime<Self::Model>,
+    ) -> Satisfiability;
+
+    #[doc(hidden)]
+    fn as_outlives_predicate(
+        predicate: &Predicate<Self::Model>,
+    ) -> Option<&Outlives<Self>>;
 }
 
 impl<M: Model> Term for Lifetime<M> {
@@ -147,6 +160,24 @@ impl<M: Model> Term for Lifetime<M> {
     }
 
     fn get_adt_fields(&self, _: &Table) -> Option<Vec<Self>> { None }
+
+    fn outlives_satisfiability(&self, other: &Self) -> Satisfiability {
+        if self == other {
+            return Satisfiability::Satisfied;
+        }
+
+        if self.is_static() {
+            Satisfiability::Satisfied
+        } else {
+            Satisfiability::Unsatisfied
+        }
+    }
+
+    fn as_outlives_predicate(
+        predicate: &Predicate<Self::Model>,
+    ) -> Option<&Outlives<Self>> {
+        predicate.as_lifetime_outlives()
+    }
 }
 
 impl<M: Model> Term for Type<M> {
@@ -222,6 +253,31 @@ impl<M: Model> Term for Type<M> {
         // TODO: Implement this
         None
     }
+
+    fn outlives_satisfiability(&self, _: &Lifetime<M>) -> Satisfiability {
+        match self {
+            Self::Primitive(_) => Satisfiability::Satisfied,
+
+            Self::Error(_) | Self::Inference(_) | Self::Parameter(_) => {
+                Satisfiability::Unsatisfied
+            }
+
+            Self::MemberSymbol(_)
+            | Self::Symbol(_)
+            | Self::Pointer(_)
+            | Self::Reference(_)
+            | Self::Array(_)
+            | Self::Tuple(_)
+            | Self::TraitMember(_)
+            | Self::Phantom(_) => Satisfiability::Congruent,
+        }
+    }
+
+    fn as_outlives_predicate(
+        predicate: &Predicate<Self::Model>,
+    ) -> Option<&Outlives<Self>> {
+        predicate.as_type_outlives()
+    }
 }
 
 impl<M: Model> Term for Constant<M> {
@@ -274,4 +330,15 @@ impl<M: Model> Term for Constant<M> {
     }
 
     fn get_adt_fields(&self, _: &Table) -> Option<Vec<Self>> { None }
+
+    fn outlives_satisfiability(&self, _: &Lifetime<M>) -> Satisfiability {
+        // constants value do not have lifetimes
+        Satisfiability::Satisfied
+    }
+
+    fn as_outlives_predicate(
+        _: &Predicate<Self::Model>,
+    ) -> Option<&Outlives<Self>> {
+        None
+    }
 }

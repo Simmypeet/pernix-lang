@@ -268,6 +268,7 @@ impl Context {
                 self.map.remove(&key);
             }
             self.current_count = 0;
+            self.call_stack.clear();
 
             return Err(OverflowError);
         }
@@ -278,12 +279,13 @@ impl Context {
         match self.map.entry(query_rc.clone()) {
             Entry::Vacant(entry) => {
                 entry.insert(Cached::InProgress(in_progress_rc.clone()));
+
                 self.call_stack.push(Call {
                     query: query_rc,
                     in_progress: in_progress_rc,
                 });
-
                 self.current_count += 1;
+
                 Ok(None)
             }
 
@@ -442,9 +444,16 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
 
                 Ok(Some(result))
             }
+
             result @ (Ok(None) | Err(_)) => {
                 // reset the query
-                assert!(self.context.borrow_mut().clear_query(query).is_some());
+                if matches!(result, Ok(None)) {
+                    assert!(self
+                        .context
+                        .borrow_mut()
+                        .clear_query(query)
+                        .is_some());
+                }
 
                 result
             }
