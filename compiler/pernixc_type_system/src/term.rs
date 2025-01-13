@@ -12,7 +12,7 @@ use pernixc_term::{
     instantiation,
     lifetime::Lifetime,
     matching,
-    predicate::{Compatible, Outlives, Predicate},
+    predicate::{self, Compatible, Outlives, Predicate},
     r#type::{TraitMember, Type},
     sub_term, visitor, Model, ModelOf, Never,
 };
@@ -120,6 +120,14 @@ pub trait Term:
     fn as_outlives_predicate(
         predicate: &Predicate<Self::Model>,
     ) -> Option<&Outlives<Self>>;
+
+    #[doc(hidden)]
+    fn as_tuple_predicate(
+        predicate: &Predicate<Self::Model>,
+    ) -> Option<&predicate::Tuple<Self>>;
+
+    #[doc(hidden)]
+    fn as_tuple(&self) -> Option<&pernixc_term::Tuple<Self>>;
 }
 
 impl<M: Model> Term for Lifetime<M> {
@@ -178,6 +186,14 @@ impl<M: Model> Term for Lifetime<M> {
     ) -> Option<&Outlives<Self>> {
         predicate.as_lifetime_outlives()
     }
+
+    fn as_tuple_predicate(
+        _: &Predicate<Self::Model>,
+    ) -> Option<&predicate::Tuple<Self>> {
+        None
+    }
+
+    fn as_tuple(&self) -> Option<&pernixc_term::Tuple<Self>> { None }
 }
 
 impl<M: Model> Term for Type<M> {
@@ -278,6 +294,20 @@ impl<M: Model> Term for Type<M> {
     ) -> Option<&Outlives<Self>> {
         predicate.as_type_outlives()
     }
+
+    fn as_tuple_predicate(
+        predicate: &Predicate<Self::Model>,
+    ) -> Option<&predicate::Tuple<Self>> {
+        predicate.as_tuple_type()
+    }
+
+    fn as_tuple(&self) -> Option<&pernixc_term::Tuple<Self>> {
+        if let Self::Tuple(tuple) = self {
+            Some(tuple)
+        } else {
+            None
+        }
+    }
 }
 
 impl<M: Model> Term for Constant<M> {
@@ -341,4 +371,12 @@ impl<M: Model> Term for Constant<M> {
     ) -> Option<&Outlives<Self>> {
         None
     }
+
+    fn as_tuple_predicate(
+        _: &Predicate<Self::Model>,
+    ) -> Option<&predicate::Tuple<Self>> {
+        None
+    }
+
+    fn as_tuple(&self) -> Option<&pernixc_term::Tuple<Self>> { None }
 }
