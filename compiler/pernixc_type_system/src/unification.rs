@@ -451,6 +451,5 @@ pub(super) fn unify<T: Term>(
     Ok(None)
 }
 
-// TODO: bring test back
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod test;
