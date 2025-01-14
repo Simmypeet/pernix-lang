@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use pernixc_component::variance_map::VarianceMap;
 use pernixc_table::{component::SymbolKind, GlobalID, Table, TargetID};
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -161,7 +162,7 @@ fn compatible_with_adt() {
 
         assert!(table.add_component(adt_id, generic_parameter));
 
-        let mut variance_map = variance::Map::default();
+        let mut variance_map = VarianceMap::default();
         variance_map.variances_by_lifetime_ids.insert(lifetime_id, variance);
 
         assert!(table.add_component(adt_id, variance_map));

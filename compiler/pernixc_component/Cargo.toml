@@ -1,5 +1,5 @@
 [package]
-name = "pernixc_type_system"
+name = "pernixc_component"
 version.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -7,21 +7,11 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-enum-as-inner = { workspace = true }
+pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_table = { path = "../pernixc_table" }
 pernixc_term = { path = "../pernixc_term" }
 pernixc_arena = { path = "../pernixc_arena" }
-pernixc_handler = { path = "../pernixc_handler" }
-pernixc_component = { path = "../pernixc_component" }
 serde = { workspace = true }
-getset = { workspace = true }
-thiserror = { workspace = true }
-derive-new = { workspace = true }
-
-
-[dev-dependencies]
-proptest = { workspace = true }
-
 
 [lints]
 workspace = true

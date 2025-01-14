@@ -14,7 +14,6 @@ pernixc_log = { path = "../pernixc_log" }
 pernixc_storage = { path = "../pernixc_storage" }
 pernixc_syntax = { path = "../pernixc_syntax" }
 pernixc_lexical = { path = "../pernixc_lexical" }
-pernixc_arena = { path = "../pernixc_arena" }
 serde = { workspace = true }
 derive_more = { workspace = true }
 derive-new = { workspace = true }
@@ -23,7 +22,6 @@ parking_lot = { workspace = true }
 displaydoc = { workspace = true }
 getset = { workspace = true }
 enum-as-inner = { workspace = true }
-paste = { workspace = true }
 proptest = { workspace = true }
 
 [dev-dependencies]

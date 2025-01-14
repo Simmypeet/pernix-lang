@@ -17,17 +17,14 @@ pernixc_lexical = { path = "../pernixc_lexical" }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
 getset = { workspace = true }
-lazy_static = { workspace = true }
 derive_more = { workspace = true }
 tempfile = { workspace = true }
 rayon = { workspace = true }
 parking_lot = { workspace = true }
 drain_filter_polyfill = { workspace = true }
-take_mut = { workspace = true }
 pernixc_test_input = { path = "../pernixc_test_input" }
 proptest = { workspace = true }
 displaydoc = { workspace = true }
-static_assertions = { workspace = true }
 paste = { workspace = true }
 
 [lints]

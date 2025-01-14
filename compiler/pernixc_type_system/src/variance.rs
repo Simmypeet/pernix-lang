@@ -1,6 +1,7 @@
 //! Contains the function [`Environment::get_variance_of()`]
 
 use enum_as_inner::EnumAsInner;
+use pernixc_component::variance_map::VarianceMap;
 use pernixc_table::{component::SymbolKind, GlobalID};
 use pernixc_term::{
     generic_parameter::GenericParameters,
@@ -93,7 +94,7 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
 
                             Ok(parent_variance.xfrom(
                                 self.table()
-                                    .query::<variance::Map>(symbol.id)?
+                                    .query::<VarianceMap>(symbol.id)?
                                     .variances_by_lifetime_ids
                                     .get(&id)
                                     .copied()
@@ -184,7 +185,7 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
 
                             let next_variance = parent_variance.xfrom(
                                 self.table()
-                                    .query::<variance::Map>(symbol.id)?
+                                    .query::<VarianceMap>(symbol.id)?
                                     .variances_by_type_ids
                                     .get(&id)
                                     .copied()

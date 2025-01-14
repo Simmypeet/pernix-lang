@@ -16,11 +16,11 @@ getset = { workspace = true }
 pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_arena = { path = "../pernixc_arena" }
 strum_macros = { workspace = true }
-strum = { workspace = true }
 thiserror = { workspace = true }
 displaydoc = { workspace = true }
 derive-new = { workspace = true }
 proptest = { workspace = true }
+strum = { workspace = true }
 
 [lints]
 workspace = true
