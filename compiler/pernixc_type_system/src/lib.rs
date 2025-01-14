@@ -20,6 +20,7 @@ pub mod mapping;
 pub mod normalizer;
 pub mod order;
 pub mod predicate;
+pub mod resolution;
 pub mod term;
 pub mod unification;
 pub mod variance;
