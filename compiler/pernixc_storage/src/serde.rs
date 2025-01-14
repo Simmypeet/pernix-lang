@@ -1,9 +1,9 @@
-//! The `serde` support for the `pernixc_component` crate.
+//! The `serde` support for the `pernixc_storage` crate.
 //!
 //! # Example
 //!
 //! ``` rust
-//! use pernixc_component::{serde::Reflector, Storage};
+//! use pernixc_storage::{serde::Reflector, Storage};
 //! use serde::de::DeserializeSeed;
 //!
 //! let storage = Storage::default();
@@ -65,7 +65,7 @@
 //! ``` rust
 //! use std::convert::Infallible;
 //!
-//! use pernixc_component::{
+//! use pernixc_storage::{
 //!     serde::{MergerFn, Reflector},
 //!     Storage,
 //! };

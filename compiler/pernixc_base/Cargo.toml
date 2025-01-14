@@ -19,15 +19,5 @@ derive-new = { workspace = true }
 parking_lot = { workspace = true }
 displaydoc = { workspace = true }
 
-[lints.rust]
-missing_docs = "deny"
-missing_copy_implementations = "deny"
-missing_debug_implementations = "deny"
-
-[lints.rustdoc]
-broken_intra_doc_links = "deny"
-
-[lints.clippy]
-all = "deny"
-pedantic = "deny"
-nursery = "deny"
+[lints]
+workspace = true

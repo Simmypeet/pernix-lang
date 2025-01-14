@@ -34,7 +34,7 @@ impl<ID: Eq + Hash> Storage<ID> {
     /// # Example
     ///
     /// ``` rust
-    /// use pernixc_component::Storage;
+    /// use pernixc_storage::Storage;
     ///
     /// let storage = Storage::default();
     ///
@@ -132,7 +132,7 @@ impl<ID: Eq + Hash> Storage<ID> {
     /// # Example
     ///
     /// ``` rust
-    /// use pernixc_component::Storage;
+    /// use pernixc_storage::Storage;
     ///
     /// let storage = Storage::default();
     ///

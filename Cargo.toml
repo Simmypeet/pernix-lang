@@ -6,7 +6,7 @@ members = [
     "compiler/pernixc_syntax",
     "compiler/pernixc_tests",
     # "compiler/pernixc_semantic",
-    "compiler/pernixc_component",
+    "compiler/pernixc_storage",
     "compiler/pernixc_table",
     "compiler/pernixc_arena",
     "compiler/pernixc_term",

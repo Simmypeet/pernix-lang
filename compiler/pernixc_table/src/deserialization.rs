@@ -7,7 +7,7 @@ use std::{
 };
 
 use derive_new::new;
-use pernixc_component::serde::Reflector;
+use pernixc_storage::serde::Reflector;
 use serde::{
     de::{DeserializeSeed, Visitor},
     Deserialize,
