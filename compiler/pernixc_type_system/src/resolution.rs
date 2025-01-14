@@ -83,7 +83,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
             .ok_or(Error::InvalidID)?;
 
         // check that it must be trait or marker
-        if matches!(symbol_kind, SymbolKind::Trait | SymbolKind::Marker) {
+        if !matches!(symbol_kind, SymbolKind::Trait | SymbolKind::Marker) {
             return Err(Error::NotTraitOrMarker);
         }
 

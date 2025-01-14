@@ -275,18 +275,6 @@ impl Context {
     ) -> Result<Option<Cached<Arc<Q::InProgress>, Arc<Q::Result>>>, OverflowError>
     {
         if self.current_count >= self.limit {
-            let removing_keys = self
-                .map
-                .iter()
-                .filter(|&x| x.1.is_in_progress())
-                .map(|x| x.0.clone())
-                .collect::<Vec<_>>();
-            for key in removing_keys {
-                self.map.remove(&key);
-            }
-            self.current_count = 0;
-            self.call_stack.clear();
-
             return Err(OverflowError);
         }
 
@@ -464,13 +452,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
 
             result @ (Ok(None) | Err(_)) => {
                 // reset the query
-                if matches!(result, Ok(None)) {
-                    assert!(self
-                        .context
-                        .borrow_mut()
-                        .clear_query(query)
-                        .is_some());
-                }
+                assert!(self.context.borrow_mut().clear_query(query).is_some());
 
                 result
             }

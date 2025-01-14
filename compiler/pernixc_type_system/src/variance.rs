@@ -7,7 +7,7 @@ use pernixc_term::{
     generic_parameter::GenericParameters,
     r#type::{self, Type},
     sub_term::{Location, SubLifetimeLocation, SubTypeLocation, TermLocation},
-    variance::{self, Variance},
+    variance::Variance,
     Model,
 };
 

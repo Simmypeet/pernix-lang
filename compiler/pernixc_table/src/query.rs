@@ -188,7 +188,7 @@ impl Error {
 ///
 /// The implementation of this trait will be used to build the component for the
 /// symbol of particular type.
-pub trait Builder {
+pub trait Builder: Send + Sync {
     /// Builds the component for the given `global_id`.
     ///
     /// Invoked when the component for a particular type is not found in the

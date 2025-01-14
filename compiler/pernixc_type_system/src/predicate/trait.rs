@@ -311,6 +311,5 @@ fn is_in_trait<M: Model>(
     Ok(None)
 }
 
-// TODO: bring test back
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod test;
