@@ -7,7 +7,7 @@ use std::{
 
 use derive_more::{Deref, DerefMut};
 use lazy_static::lazy_static;
-use pernixc_tests::input::Input;
+use pernixc_test_input::Input;
 use proptest::{
     prelude::Arbitrary,
     prop_assert, prop_assert_eq, prop_oneof,

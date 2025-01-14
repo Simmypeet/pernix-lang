@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "compiler/pernixc_lexical",
     "compiler/pernixc_syntax",
-    "compiler/pernixc_tests",
+    "compiler/pernixc_test_input",
     # "compiler/pernixc_semantic",
     "compiler/pernixc_storage",
     "compiler/pernixc_table",

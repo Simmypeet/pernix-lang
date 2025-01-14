@@ -2,7 +2,7 @@
 
 use std::fmt::{Display, Write};
 
-use pernixc_tests::input::Input;
+use pernixc_test_input::Input;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Just, Strategy, TestCaseError},
     prop_assert_eq, prop_oneof,

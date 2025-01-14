@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Display, path::Path, str::FromStr};
 
 use derive_more::From;
 use pernixc_lexical::token::KeywordKind;
-use pernixc_tests::input::Input;
+use pernixc_test_input::Input;
 use proptest::{
     prelude::Arbitrary, prop_assert_eq, strategy::Strategy,
     test_runner::TestCaseError,

@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display, Write};
 
-use pernixc_tests::input::Input;
+use pernixc_test_input::Input;
 use proptest::{
     arbitrary::Arbitrary,
     prop_assert_eq, prop_oneof,

@@ -1,4 +1,4 @@
-use pernixc_tests::input::Input;
+use pernixc_test_input::Input;
 use proptest::{prelude::Arbitrary, proptest};
 
 use crate::syntax_tree::{self, predicate::strategy::Predicate};

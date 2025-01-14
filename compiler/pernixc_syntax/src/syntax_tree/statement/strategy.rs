@@ -1,7 +1,7 @@
 use std::fmt::{Display, Write};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_tests::input::Input;
+use pernixc_test_input::Input;
 use proptest::{
     prelude::Arbitrary,
     prop_oneof,

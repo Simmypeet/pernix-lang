@@ -4,7 +4,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Storage;
 use pernixc_source_file::SourceFile;
-use pernixc_tests::input::Input;
+use pernixc_test_input::Input;
 use proptest::{
     prelude::{Arbitrary, TestCaseError},
     proptest,

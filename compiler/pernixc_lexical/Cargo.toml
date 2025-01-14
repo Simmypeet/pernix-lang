@@ -22,7 +22,7 @@ lazy_static = { workspace = true }
 derive_more = { workspace = true }
 derive-new = { workspace = true }
 bimap = { workspace = true }
-pernixc_tests = { path = "../pernixc_tests" }
+pernixc_test_input = { path = "../pernixc_test_input" }
 proptest = { workspace = true }
 displaydoc = { workspace = true }
 

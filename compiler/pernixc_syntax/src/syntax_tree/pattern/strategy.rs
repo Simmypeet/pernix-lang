@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::token;
-use pernixc_tests::input::Input;
+use pernixc_test_input::Input;
 use proptest::{
     prelude::Arbitrary,
     prop_assert_eq, prop_oneof,
