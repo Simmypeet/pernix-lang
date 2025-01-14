@@ -94,9 +94,12 @@ where
     }
 }
 
-impl<M: Model> GenericArguments<M> {
+impl<M: Model> ModelOf for GenericArguments<M> {
+    type Model = M;
+    type Rebind<U: Model> = GenericArguments<U>;
+
     /// Converts a generic arguments with the model `U` into the model `M`.
-    pub fn from_other_model<U: Model>(term: GenericArguments<U>) -> Self
+    fn from_other_model<U: Model>(term: GenericArguments<U>) -> Self
     where
         M::LifetimeInference: From<U::LifetimeInference>,
         M::TypeInference: From<U::TypeInference>,
@@ -117,21 +120,13 @@ impl<M: Model> GenericArguments<M> {
         }
     }
 
-    /// Checks if there's any errornous term in the generic arguments.
-    #[must_use]
-    pub fn contains_error(&self) -> bool {
-        self.lifetimes.iter().any(Lifetime::is_error)
-            || self.types.iter().any(Type::is_error)
-            || self.constants.iter().any(Constant::is_error)
-    }
-
     /// Tries to convert a generic arguments with the model `U` into the model
     /// `M`.
     ///
     /// # Errors
     ///
     /// Returns an error returned by the `TryFrom` implementation of the model.
-    pub fn try_from_other_model<U: Model, E>(
+    fn try_from_other_model<U: Model, E>(
         term: GenericArguments<U>,
     ) -> Result<Self, E>
     where
@@ -156,6 +151,16 @@ impl<M: Model> GenericArguments<M> {
                 .map(Constant::try_from_other_model)
                 .collect::<Result<Vec<_>, _>>()?,
         })
+    }
+}
+
+impl<M: Model> GenericArguments<M> {
+    /// Checks if there's any errornous term in the generic arguments.
+    #[must_use]
+    pub fn contains_error(&self) -> bool {
+        self.lifetimes.iter().any(Lifetime::is_error)
+            || self.types.iter().any(Type::is_error)
+            || self.constants.iter().any(Constant::is_error)
     }
 
     /// Converts the generic arguments with the default model into the model `M`

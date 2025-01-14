@@ -7,7 +7,7 @@ use std::{
 };
 
 use derive_new::new;
-use pernixc_storage::serde::Reflector;
+use pernixc_storage::{serde::Reflector, ArcTrait};
 use serde::{
     de::{DeserializeSeed, Visitor},
     Deserialize,
@@ -18,10 +18,11 @@ use crate::Table;
 
 /// A struct used for incrementally deserialize the table and merge them
 /// together.
-#[derive(Debug, new)]
+#[derive(new)]
+#[allow(missing_debug_implementations)]
 pub struct IncrementalLibraryDeserializer<'t, 'r, T, E: Display + 'static> {
     table: &'t mut Table,
-    reflector: &'r Reflector<T, GlobalID, E>,
+    reflector: &'r Reflector<GlobalID, ArcTrait, T, E>,
 }
 
 impl Table {
@@ -34,7 +35,7 @@ impl Table {
         E: Display + 'static,
     >(
         &'t mut self,
-        reflector: &'r Reflector<T, GlobalID, E>,
+        reflector: &'r Reflector<GlobalID, ArcTrait, T, E>,
     ) -> IncrementalLibraryDeserializer<'t, 'r, T, E> {
         IncrementalLibraryDeserializer::new(self, reflector)
     }

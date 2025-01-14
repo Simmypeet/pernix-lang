@@ -14,7 +14,7 @@ use diagnostic::Diagnostic;
 use getset::Getters;
 use parking_lot::RwLock;
 use pernixc_handler::Handler;
-use pernixc_storage::{serde::Reflector, Storage};
+use pernixc_storage::{serde::Reflector, ArcTrait, GetMutError, Storage};
 use pernixc_syntax::syntax_tree::AccessModifier;
 use query::{Builder, Context};
 use serde::{ser::SerializeMap, Deserialize, Serialize, Serializer};
@@ -116,14 +116,14 @@ impl Target {
 /// Represents the semantic representation of the program.
 #[derive(Debug, Default)]
 pub struct Representation {
-    storage: Storage<GlobalID>,
+    storage: Storage<GlobalID, ArcTrait>,
     targets_by_id: HashMap<TargetID, Target>,
     targets_by_name: HashMap<String, TargetID>,
 }
 
 struct SerializableRepresentation<'a, T, E> {
     representation: &'a Representation,
-    reflector: &'a Reflector<T, GlobalID, E>,
+    reflector: &'a Reflector<GlobalID, ArcTrait, T, E>,
 }
 
 impl<'a, T: Serialize, E: std::fmt::Display + 'static> Serialize
@@ -201,20 +201,25 @@ impl Representation {
     /// Gets the **input** component of the given type from the symbol with the
     /// given ID.
     #[must_use]
-    pub fn get<T: Input + Any>(
+    pub fn get<T: Input + Any + Send + Sync>(
         &self,
         id: GlobalID,
-    ) -> Option<impl std::ops::Deref<Target = T> + '_> {
-        self.storage.get::<T>(id)
+    ) -> Option<Arc<T>> {
+        self.storage.get_cloned::<T>(id)
     }
 
     /// Gets the mutable **input** component of the given type from the symbol
     /// with the given ID.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// - [`GetMutError::NotFound`]: if the component or symbol is not found.
+    /// - [`GetMutError::ArcNotUnique`]: if the component is shared and cannot
+    ///   be uniquely borrowed.
     pub fn get_mut<T: InputMut + Any>(
         &self,
         id: GlobalID,
-    ) -> Option<impl std::ops::DerefMut<Target = T> + '_> {
+    ) -> Result<impl std::ops::DerefMut<Target = T> + '_, GetMutError> {
         self.storage.get_mut::<T>(id)
     }
 
@@ -223,14 +228,18 @@ impl Representation {
     pub const fn as_library<'a, T, E>(
         &'a self,
         compilation_meta_data: &'a CompilationMetaData,
-        reflector: &'a Reflector<T, GlobalID, E>,
+        reflector: &'a Reflector<GlobalID, ArcTrait, T, E>,
     ) -> Library<T, E> {
         Library { representation: self, compilation_meta_data, reflector }
     }
 
     /// Adds a component to the storage.
     #[must_use]
-    pub fn add_component<T: Any>(&self, id: GlobalID, component: T) -> bool {
+    pub fn add_component<T: Any + Send + Sync>(
+        &self,
+        id: GlobalID,
+        component: T,
+    ) -> bool {
         self.storage.add_component(id, component)
     }
 
@@ -305,7 +314,7 @@ impl Representation {
     }
 
     /// Gets the [`ScopeWalker`] that walks through the scope hierarchy of the
-    /// given [`ItemID`].
+    /// given [`GlobalID`].
     ///
     /// See [`ScopeWalker`] for more information.
     #[must_use]
@@ -657,7 +666,7 @@ pub struct CompilationMetaData {
 pub struct Library<'a, T, E> {
     representation: &'a Representation,
     compilation_meta_data: &'a CompilationMetaData,
-    reflector: &'a Reflector<T, GlobalID, E>,
+    reflector: &'a Reflector<GlobalID, ArcTrait, T, E>,
 }
 
 impl<T: std::fmt::Debug, E: std::fmt::Debug> std::fmt::Debug
@@ -667,8 +676,7 @@ impl<T: std::fmt::Debug, E: std::fmt::Debug> std::fmt::Debug
         f.debug_struct("Library")
             .field("representation", &self.representation)
             .field("compilation_meta_data", &self.compilation_meta_data)
-            .field("reflector", &self.reflector)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

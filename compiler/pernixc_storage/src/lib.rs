@@ -20,7 +20,9 @@ pub trait Ptr {
     type Wrap<T: ?Sized>: Deref<Target = T>;
 
     /// Wraps a value in a pointer type.
-    fn wrap<U: Any>(value: U) -> Self::Wrap<dyn Any>;
+    fn wrap<U: Any + Send + Sync>(
+        value: U,
+    ) -> Self::Wrap<dyn Any + Send + Sync>;
 
     /// Tries to get a mutable reference to the inner value.
     fn try_get_mut<U: ?Sized>(value: &mut Self::Wrap<U>) -> Option<&mut U>;
@@ -45,7 +47,11 @@ pub struct BoxTrait;
 impl Ptr for BoxTrait {
     type Wrap<T: ?Sized> = Box<T>;
 
-    fn wrap<U: Any>(value: U) -> Self::Wrap<dyn Any> { Box::new(value) }
+    fn wrap<U: Any + Send + Sync>(
+        value: U,
+    ) -> Self::Wrap<dyn Any + Send + Sync> {
+        Box::new(value)
+    }
 
     fn try_get_mut<U: ?Sized>(value: &mut Self::Wrap<U>) -> Option<&mut U> {
         Some(&mut **value)
@@ -71,7 +77,11 @@ pub struct ArcTrait;
 impl Ptr for ArcTrait {
     type Wrap<T: ?Sized> = Arc<T>;
 
-    fn wrap<U: Any>(value: U) -> Self::Wrap<dyn Any> { Arc::new(value) }
+    fn wrap<U: Any + Send + Sync>(
+        value: U,
+    ) -> Self::Wrap<dyn Any + Send + Sync> {
+        Arc::new(value)
+    }
 
     fn try_get_mut<U: ?Sized>(value: &mut Self::Wrap<U>) -> Option<&mut U> {
         Arc::get_mut(value)
@@ -85,7 +95,7 @@ impl Ptr for ArcTrait {
 /// entity.
 #[derive(Debug)]
 pub struct Storage<ID: Eq + Hash, P: Ptr = BoxTrait> {
-    components: DashMap<(ID, TypeId), P::Wrap<dyn Any>>,
+    components: DashMap<(ID, TypeId), P::Wrap<dyn Any + Send + Sync>>,
 }
 
 impl<ID: Eq + Hash, P: Ptr> Default for Storage<ID, P> {
@@ -109,7 +119,11 @@ impl<ID: Eq + Hash, P: Ptr> Storage<ID, P> {
     /// assert!(!storage.add_component("Test".to_string(), 2));
     /// ```
     #[must_use]
-    pub fn add_component<U: Any>(&self, id: ID, component: U) -> bool
+    pub fn add_component<U: Any + Send + Sync>(
+        &self,
+        id: ID,
+        component: U,
+    ) -> bool
     where
         ID: Hash + Eq,
     {
@@ -127,10 +141,10 @@ impl<ID: Eq + Hash, P: Ptr> Storage<ID, P> {
     /// # Panics
     ///
     /// Panics if the boxed component is not of the correct type.
-    pub fn add_component_raw<U: Any>(
+    pub fn add_component_raw<U: Any + Send + Sync>(
         &self,
         id: ID,
-        component: P::Wrap<dyn Any>,
+        component: P::Wrap<dyn Any + Send + Sync>,
     ) -> bool
     where
         ID: Hash + Eq,
@@ -276,5 +290,15 @@ impl<ID: Eq + Hash> Storage<ID, ArcTrait> {
             Arc::get_mut(x).map(|x| x.downcast_mut::<U>().unwrap())
         })
         .map_err(|_| GetMutError::ArcNotUnique)
+    }
+}
+
+impl<ID: Eq + Hash> Storage<ID, ArcTrait> {
+    /// Gets a cloned version of the component of the given type from the entity
+    /// of the given id.
+    pub fn get_cloned<U: Any + Send + Sync>(&self, id: ID) -> Option<Arc<U>> {
+        self.components
+            .get(&(id, TypeId::of::<U>()))
+            .map(|x| Arc::clone(&*x).clone().downcast::<U>().unwrap())
     }
 }

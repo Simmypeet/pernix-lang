@@ -27,9 +27,9 @@ use super::{
 };
 use crate::{
     component::{
-        self, Accessibility, ConstTraitImplementation, Extern,
-        FinalImplementation, Implemented, Import, LocationSpan, Member, Name,
-        Parent, SymbolKind, Using,
+        self, Accessibility, Extern, Implemented, Import, LocationSpan, Member,
+        Name, Parent, PositiveTraitImplementation, SymbolKind,
+        TraitImplementation, Using,
     },
     diagnostic::{
         ConflictingUsing, Diagnostic, ExpectModule,
@@ -229,26 +229,25 @@ impl Representation {
 
         match symbol_kind {
             SymbolKind::PositiveTraitImplementation => {
-                if final_keword.is_some() {
-                    assert!(self
-                        .storage
-                        .add_component(new_symbol_id, FinalImplementation));
-                }
-
-                if const_keyword.is_some() {
-                    assert!(self.storage.add_component(
-                        new_symbol_id,
-                        ConstTraitImplementation
-                    ));
-                }
+                assert!(self.storage.add_component(
+                    new_symbol_id,
+                    PositiveTraitImplementation {
+                        is_const: const_keyword.is_some(),
+                    },
+                ));
+                assert!(self
+                    .storage
+                    .add_component(new_symbol_id, TraitImplementation {
+                        is_final: final_keword.is_some(),
+                    }));
             }
 
             SymbolKind::NegativeTraitImplementation => {
-                if final_keword.is_some() {
-                    assert!(self
-                        .storage
-                        .add_component(new_symbol_id, FinalImplementation));
-                }
+                assert!(self
+                    .storage
+                    .add_component(new_symbol_id, TraitImplementation {
+                        is_final: final_keword.is_some(),
+                    }));
 
                 if let Some(const_keyword) = const_keyword {
                     handler.receive(Box::new(InvalidConstImplementation {

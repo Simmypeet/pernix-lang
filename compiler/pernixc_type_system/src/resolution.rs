@@ -1,13 +1,28 @@
 //! Contains the logic for resolving implementation for traits and markers.
 
-use pernixc_table::GlobalID;
+use std::collections::BTreeSet;
+
+use pernixc_component::{
+    implementation::Implementation as ImplementationComponent,
+    where_clause::WhereClause,
+};
+use pernixc_table::{
+    component::{Implemented, Implements, SymbolKind, TraitImplementation},
+    query::CyclicDependency,
+    GlobalID,
+};
 use pernixc_term::{
-    generic_arguments::GenericArguments, instantiation::Instantiation, Model,
+    generic_arguments::GenericArguments, instantiation::Instantiation,
+    predicate::Predicate, r#type::Type, variance::Variance, Default, Model,
 };
 use thiserror::Error;
 
 use crate::{
-    environment::Environment, normalizer::Normalizer, AbruptError, Succeeded,
+    deduction::{self, Deduction},
+    environment::Environment,
+    normalizer::Normalizer,
+    order::Order,
+    AbruptError, LifetimeConstraint, ResultExt, Succeeded,
 };
 
 /// A result of a implementation resolution query.
@@ -39,6 +54,14 @@ pub enum Error {
     NotFound,
     #[error(transparent)]
     Abrupt(#[from] AbruptError),
+    #[error("the given `implemented_id` is not a trait or marker")]
+    NotTraitOrMarker,
+}
+
+impl From<CyclicDependency> for Error {
+    fn from(value: CyclicDependency) -> Self {
+        Self::Abrupt(AbruptError::CyclicDependency(value))
+    }
 }
 
 impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
@@ -54,23 +77,30 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
         implemented_id: GlobalID,
         generic_arguments: &GenericArguments<M>,
     ) -> Result<Succeeded<Implementation<M>, M>, Error> {
-        todo!()
-        /*
+        let symbol_kind = *self
+            .table()
+            .get::<SymbolKind>(implemented_id)
+            .ok_or(Error::InvalidID)?;
+
+        // check that it must be trait or marker
+        if matches!(symbol_kind, SymbolKind::Trait | SymbolKind::Marker) {
+            return Err(Error::NotTraitOrMarker);
+        }
+
         // we might be in the implementation site already
         if let Some(result) = is_in_active_implementation(
             implemented_id,
+            symbol_kind,
             generic_arguments,
-            environment,
-            context,
+            self,
         )? {
             return Ok(result);
         }
 
-        let definite =
-            generic_arguments.definite_with_context(environment, context)?;
+        let definite = self.generic_arguments_definite(generic_arguments)?;
 
-        let (default_environment, _) =
-            Environment::<M, _, _, _>::new(Premise::default(), environment.table());
+        let default_environment =
+            Environment::<M, _>::with_default(self.table());
 
         // the current candidate
         #[allow(clippy::type_complexity)]
@@ -81,7 +111,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
             GenericArguments<M>,
         )> = None;
 
-        let implementations = environment
+        let implementations = self
             .table()
             .get::<Implemented>(implemented_id)
             .ok_or(Error::InvalidID)?
@@ -89,59 +119,81 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
             .copied()
             .collect::<Vec<_>>();
 
-        for implementation_id in implementations {
+        for current_impl_id in implementations {
+            let Some(implementation_generic_arguments) = self
+                .table()
+                .query::<ImplementationComponent>(current_impl_id)
+                .extract_cyclic_dependency()?
+                .map(|x| {
+                    GenericArguments::from_default_model(
+                        x.generic_arguments.clone(),
+                    )
+                })
+            else {
+                continue;
+            };
+
             // build the unification
-            let implementation_symbol = Index::<ImplementationID>::get(
-                &**environment.table(),
-                implementation_id,
-            )
-            .unwrap();
+            let Succeeded {
+                result: deduction,
+                constraints: lifetime_constraints,
+            } = match self
+                .deduce(&implementation_generic_arguments, generic_arguments)
+            {
+                Ok(unification) => unification,
 
-            let implementation_generic_arguments =
-                GenericArguments::from_default_model();
+                Err(deduction::Error::Abrupt(error)) => {
+                    return Err(error.into())
+                }
 
-            // build the unification
-            let Succeeded { result: deduction, constraints: lifetime_constraints } =
-                match implementation_generic_arguments.deduce_with_context(
-                    generic_arguments,
-                    environment,
-                    context,
-                ) {
-                    Ok(unification) => unification,
+                Err(
+                    deduction::Error::MismatchedGenericArgumentCount(_)
+                    | deduction::Error::UnificationFailure(_),
+                ) => continue,
+            };
+            let is_final = match symbol_kind {
+                SymbolKind::Trait => {
+                    let Some(is_final) = self
+                        .table()
+                        .get::<TraitImplementation>(current_impl_id)
+                        .map(|x| x.is_final)
+                    else {
+                        continue;
+                    };
 
-                    Err(deduction::Error::Overflow(overflow)) => {
-                        return Err(overflow.into())
-                    }
+                    is_final
+                }
 
-                    Err(
-                        deduction::Error::MismatchedGenericArgumentCount(_)
-                        | deduction::Error::UnificationFailure(_),
-                    ) => continue,
-                };
+                // every marker's implementaions are final
+                SymbolKind::Marker => true,
 
-            if !implementation_symbol.is_final() {
-                // the implementation is not final, therefore, it requires generic
-                // arguments to be definite
+                _ => unreachable!(),
+            };
+
+            if !is_final {
+                // the implementation is not final, therefore, it requires
+                // generic arguments to be definite
                 if definite.is_none() {
                     continue;
                 }
 
                 // all predicates must satisfy to continue
+                let Some(where_clause) = self
+                    .table()
+                    .query::<WhereClause>(current_impl_id)
+                    .extract_cyclic_dependency()?
+                else {
+                    continue;
+                };
+
                 if !predicate_satisfies(
-                    implementation_symbol
-                        .generic_declaration()
-                        .predicates
-                        .iter()
-                        .map(|x| &x.predicate),
+                    where_clause.predicates.iter().map(|x| &x.predicate),
                     &deduction.instantiation,
-                    environment,
-                    context,
+                    self,
                 )? {
                     continue;
                 }
             }
-
-            drop(implementation_symbol);
 
             // compare with the current candidate
             match &mut candidate {
@@ -152,17 +204,19 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
                     candidate_generic_arguments,
                 )) => {
                     // check which one is more specific
-                    match implementation_generic_arguments
-                        .order(candidate_generic_arguments, &default_environment)?
-                    {
-                        order::Order::Ambiguous | order::Order::Incompatible => {
+                    match default_environment.order(
+                        &implementation_generic_arguments,
+                        candidate_generic_arguments,
+                    )? {
+                        Order::Ambiguous | Order::Incompatible => {
                             return Err(Error::Ambiguous)
                         }
-                        order::Order::MoreGeneral => {}
-                        order::Order::MoreSpecific => {
-                            *candidate_id = implementation_id;
+                        Order::MoreGeneral => {}
+                        Order::MoreSpecific => {
+                            *candidate_id = current_impl_id;
                             *candidate_instantiation = deduction;
-                            *candidate_lifetime_constraints = lifetime_constraints;
+                            *candidate_lifetime_constraints =
+                                lifetime_constraints;
                             *candidate_generic_arguments =
                                 implementation_generic_arguments;
                         }
@@ -171,7 +225,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
 
                 candidate @ None => {
                     *candidate = Some((
-                        implementation_id,
+                        current_impl_id,
                         deduction,
                         lifetime_constraints,
                         implementation_generic_arguments,
@@ -181,158 +235,167 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
         }
 
         match candidate {
-            Some((implementation_id, deduction, mut lifetime_constraints, _)) => {
-                Ok(Succeeded {
-                    result: Implementation {
-                        instantiation: deduction.instantiation,
-                        id: implementation_id,
-                        is_not_general_enough: deduction.is_not_general_enough,
-                    },
-                    constraints: {
-                        lifetime_constraints.extend(
-                            definite.into_iter().flat_map(|x| x.constraints),
-                        );
-                        lifetime_constraints
-                    },
-                })
-            }
+            Some((
+                implementation_id,
+                deduction,
+                mut lifetime_constraints,
+                _,
+            )) => Ok(Succeeded {
+                result: Implementation {
+                    instantiation: deduction.instantiation,
+                    id: implementation_id,
+                    is_not_general_enough: deduction.is_not_general_enough,
+                },
+                constraints: {
+                    lifetime_constraints.extend(
+                        definite.into_iter().flat_map(|x| x.constraints),
+                    );
+                    lifetime_constraints
+                },
+            }),
             None => Err(Error::NotFound),
         }
-        */
     }
 }
 
 #[allow(clippy::type_complexity)]
 fn is_in_active_implementation<M: Model>(
     implemented_id: GlobalID,
+    implemented_kind: SymbolKind, /* either trait or marker */
     generic_arguments: &GenericArguments<M>,
-    environment: &mut Environment<M, impl Normalizer<M>>,
+    environment: &Environment<M, impl Normalizer<M>>,
 ) -> Result<Option<Succeeded<Implementation<M>, M>>, Error> {
-    todo!()
-    /*
-        let Some(query_site) = environment.premise.query_site else {
-            return Ok(None);
+    let Some(query_site) = environment.premise().query_site else {
+        return Ok(None);
+    };
+
+    for current_id in environment.table().scope_walker(query_site) {
+        let current_id = GlobalID::new(query_site.target_id, current_id);
+        let Some(current_kind) =
+            environment.table().get::<SymbolKind>(current_id).map(|x| *x)
+        else {
+            continue;
         };
 
-        for item_id in
-            if let Some(iter) = environment.table.scope_walker(query_site) {
-                iter
-            } else {
-                return Ok(None);
-            }
-        {
-            // must be an implementation
-            let Ok(implementation_id) = ImplementationID::try_from(item_id) else {
-                continue;
-            };
-
-            let implementation = Index::<ImplementationID>::get(
-                &**environment.table,
-                implementation_id,
-            )
-            .unwrap();
-
-            // the implemented_id must be the same
-            if implementation.implemented_id() != implemented_id {
-                continue;
-            }
-
-            let implementation_arguments = GenericArguments::from_default_model(
-                implementation.arguments().clone(),
-            );
-            let Some(_) = generic_arguments.compatible_with_context(
-                &implementation_arguments,
-                Variance::Invariant,
-                environment,
-                context,
-            )?
-            else {
-                continue;
-            };
-
-            match generic_arguments.deduce_with_context(
-                &implementation_arguments,
-                environment,
-                context,
-            ) {
-                Ok(result) => {
-                    return Ok(Some(Succeeded {
-                        result: Implementation {
-                            instantiation: result.result.instantiation,
-                            id: implementation_id,
-                            is_not_general_enough: result
-                                .result
-                                .is_not_general_enough,
-                        },
-                        constraints: result.constraints,
-                    }))
+        // must be the implementation kind
+        match implemented_kind {
+            SymbolKind::Trait => {
+                if !matches!(
+                    current_kind,
+                    SymbolKind::PositiveTraitImplementation
+                        | SymbolKind::NegativeTraitImplementation
+                ) {
+                    continue;
                 }
-
-                Err(deduction::Error::Overflow(err)) => {
-                    return Err(Error::Overflow(err))
-                }
-
-                _ => continue,
             }
+
+            SymbolKind::Marker => {
+                if !matches!(
+                    current_kind,
+                    SymbolKind::PositiveMarkerImplementation
+                        | SymbolKind::NegativeMarkerImplementation
+                ) {
+                    continue;
+                }
+            }
+
+            _ => unreachable!(),
         }
 
-        Ok(None)
+        // must be an implementation
+        if environment
+            .table()
+            .get::<Implements>(current_id)
+            .map_or(true, |x| x.0 != implemented_id)
+        {
+            continue;
+        }
+
+        let Some(implementation_arguments) = environment
+            .table()
+            .query::<ImplementationComponent>(current_id)
+            .extract_cyclic_dependency()?
+            .map(|x| {
+                GenericArguments::from_default_model(
+                    x.generic_arguments.clone(),
+                )
+            })
+        else {
+            continue;
+        };
+
+        let Some(_) = environment.generic_arguments_compatible(
+            generic_arguments,
+            &implementation_arguments,
+            Variance::Invariant,
+        )?
+        else {
+            continue;
+        };
+
+        match environment.deduce(generic_arguments, &implementation_arguments) {
+            Ok(result) => {
+                return Ok(Some(Succeeded {
+                    result: Implementation {
+                        instantiation: result.result.instantiation,
+                        id: current_id,
+                        is_not_general_enough: result
+                            .result
+                            .is_not_general_enough,
+                    },
+                    constraints: result.constraints,
+                }))
+            }
+
+            Err(deduction::Error::Abrupt(err)) => {
+                return Err(Error::Abrupt(err))
+            }
+
+            _ => continue,
+        }
     }
 
-    fn predicate_satisfies<'a, M: Model, S: State>(
-        predicates: impl Iterator<Item = &'a Predicate<model::Default>>,
-        substitution: &Instantiation<M>,
-        environment: &Environment<M, S, impl Normalizer<M, S>, impl Observer<M, S>>,
-        context: &mut Context<M>,
-    ) -> Result<bool, OverflowError> {
-        // check if satisfies all the predicate
-        for mut predicate in
-            predicates.map(|x| Predicate::from_default_model(x.clone()))
-        {
-            predicate.instantiate(substitution);
+    Ok(None)
+}
 
-            if !match predicate {
-                Predicate::TraitTypeEquality(equality) => {
-                    Type::TraitMember(equality.lhs)
-                        .compatible_with_context(
-                            &equality.rhs,
-                            Variance::Covariant,
-                            environment,
-                            context,
-                        )?
-                        .is_some()
-                }
+fn predicate_satisfies<'a, M: Model>(
+    predicates: impl IntoIterator<Item = &'a Predicate<Default>>,
+    substitution: &Instantiation<M>,
+    environment: &Environment<M, impl Normalizer<M>>,
+) -> Result<bool, AbruptError> {
+    // check if satisfies all the predicate
+    for mut predicate in
+        predicates.into_iter().map(|x| Predicate::from_other_model(x.clone()))
+    {
+        predicate.instantiate(substitution);
 
-                Predicate::ConstantType(constant_type) => constant_type
-                    .query_with_context(environment, context)?
-                    .is_some(),
+        if !match predicate {
+            Predicate::TraitTypeCompatible(equality) => environment
+                .compatible(
+                    &Type::TraitMember(equality.lhs),
+                    &equality.rhs,
+                    Variance::Covariant,
+                )?
+                .is_some(),
 
-                Predicate::TupleType(tuple_type) => {
-                    tuple_type.query_with_context(environment, context)?.is_some()
-                }
-
-                Predicate::PositiveTrait(tr) => {
-                    tr.query_with_context(environment, context)?.is_some()
-                }
-
-                Predicate::NegativeTrait(tr) => {
-                    tr.query_with_context(environment, context)?.is_some()
-                }
-
-                Predicate::PositiveMarker(tr) => {
-                    tr.query_with_context(environment, context)?.is_some()
-                }
-
-                Predicate::NegativeMarker(tr) => {
-                    tr.query_with_context(environment, context)?.is_some()
-                }
-
-                Predicate::TypeOutlives(_) | Predicate::LifetimeOutlives(_) => true,
-            } {
-                return Ok(false);
+            Predicate::ConstantType(constant_type) => {
+                environment.query(&constant_type)?.is_some()
             }
-        }
 
-        Ok(true)
-        */
+            Predicate::TupleType(tuple_type) => {
+                environment.query(&tuple_type)?.is_some()
+            }
+
+            Predicate::PositiveTrait(tr) => environment.query(&tr)?.is_some(),
+            Predicate::NegativeTrait(tr) => environment.query(&tr)?.is_none(),
+            Predicate::PositiveMarker(tr) => environment.query(&tr)?.is_some(),
+            Predicate::NegativeMarker(tr) => environment.query(&tr)?.is_none(),
+
+            Predicate::TypeOutlives(_) | Predicate::LifetimeOutlives(_) => true,
+        } {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
 }

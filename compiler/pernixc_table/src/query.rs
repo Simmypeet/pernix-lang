@@ -4,7 +4,6 @@ use std::{
     any::{Any, TypeId},
     collections::{hash_map::Entry, HashMap},
     fmt::Debug,
-    ops::Deref,
     sync::Arc,
     thread::ThreadId,
 };
@@ -199,7 +198,7 @@ pub trait Builder {
         global_id: GlobalID,
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Box<dyn Any>>;
+    ) -> Option<Arc<dyn Any + Send + Sync>>;
 }
 
 impl Table {
@@ -212,12 +211,12 @@ impl Table {
     ///
     /// See [`Error`] for more information.
     #[allow(clippy::significant_drop_tightening)]
-    pub fn query<T: Derived + Any>(
+    pub fn query<T: Derived + Any + Send + Sync>(
         &self,
         global_id: GlobalID,
-    ) -> Result<impl Deref<Target = T> + '_, Error> {
+    ) -> Result<Arc<T>, Error> {
         // if the component is already computed, return it
-        if let Some(result) = self.storage.get::<T>(global_id) {
+        if let Some(result) = self.storage.get_cloned::<T>(global_id) {
             return Ok(result);
         }
 
@@ -308,7 +307,7 @@ impl Table {
             if let Some(succeeded) = component {
                 assert!(self
                     .storage
-                    .add_component_boxed::<T>(global_id, succeeded));
+                    .add_component_raw::<T>(global_id, succeeded));
             }
 
             // notify the other threads that the component is computed
@@ -342,7 +341,7 @@ impl Table {
 
         // return the component
         self.storage
-            .get::<T>(global_id)
+            .get_cloned::<T>(global_id)
             .ok_or(Error::SymbolNotFoundOrInvalidComponent)
     }
 }

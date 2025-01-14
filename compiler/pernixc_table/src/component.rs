@@ -340,10 +340,9 @@ pub struct Import(HashMap<String, Using>);
 
 impl Input for Import {}
 
-/// A **presistent-input** component for tagging various trait implementations
-/// as the final implementation.
-///
-/// The trait and marker implementation can only have this component.
+/// A **presistent-input** component exclusively for both positive and negative
+/// trait implementations; primarily used for indentifying whether the
+/// implementation is `final`
 #[derive(
     Debug,
     Clone,
@@ -357,12 +356,16 @@ impl Input for Import {}
     Serialize,
     Deserialize,
 )]
-pub struct FinalImplementation;
+pub struct TraitImplementation {
+    /// `true` if the implementation is final.
+    pub is_final: bool,
+}
 
-impl Input for FinalImplementation {}
+impl Input for TraitImplementation {}
 
 /// A **presistent-input** component for tagging the
-/// [`SymbolKind::PositiveTraitImplementation`] as a constant implementation.
+/// [`SymbolKind::PositiveTraitImplementation`] exclusively as a constant
+/// implementation.
 #[derive(
     Debug,
     Clone,
@@ -376,6 +379,9 @@ impl Input for FinalImplementation {}
     Serialize,
     Deserialize,
 )]
-pub struct ConstTraitImplementation;
+pub struct PositiveTraitImplementation {
+    /// `true` if the implementation is a constant implementation.
+    pub is_const: bool,
+}
 
-impl Input for ConstTraitImplementation {}
+impl Input for PositiveTraitImplementation {}

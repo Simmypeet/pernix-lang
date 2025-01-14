@@ -1,8 +1,8 @@
 //! Contains the definition of [`Definite`].
 
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
-use pernixc_term::{visitor, Model};
+use pernixc_term::{generic_arguments::GenericArguments, visitor, Model};
 
 use crate::{
     environment::{Environment, Query},
@@ -112,6 +112,48 @@ impl<T: Term> Query for Definite<T> {
         }
 
         Ok(None)
+    }
+}
+
+impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
+    /// Checks if all the generic arguments are definite.
+    ///
+    /// See [`Definite`] for more information.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn generic_arguments_definite(
+        &self,
+        generic_arguments: &GenericArguments<M>,
+    ) -> crate::Result<Satisfied, M> {
+        let mut constraints = BTreeSet::new();
+
+        for lifetime in &generic_arguments.lifetimes {
+            let Some(result) = self.query(&Definite::new(lifetime.clone()))?
+            else {
+                return Ok(None);
+            };
+
+            constraints.extend(result.constraints.iter().cloned());
+        }
+
+        for r#type in &generic_arguments.types {
+            let Some(result) = self.query(&Definite::new(r#type.clone()))?
+            else {
+                return Ok(None);
+            };
+
+            constraints.extend(result.constraints.iter().cloned());
+        }
+
+        for constant in &generic_arguments.constants {
+            let Some(result) = self.query(&Definite::new(constant.clone()))?
+            else {
+                return Ok(None);
+            };
+
+            constraints.extend(result.constraints.iter().cloned());
+        }
+
+        Ok(Some(Succeeded::satisfied_with(constraints)))
     }
 }
 

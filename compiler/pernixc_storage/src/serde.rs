@@ -144,9 +144,11 @@ struct SerializationMetaData<T> {
 #[derive(Debug)]
 struct DeserializationMetaData<P: Ptr> {
     #[allow(clippy::type_complexity)]
-    deserialize_fn: fn(
-        &mut dyn erased_serde::Deserializer,
-    ) -> Result<P::Wrap<dyn Any>, erased_serde::Error>,
+    deserialize_fn:
+        fn(
+            &mut dyn erased_serde::Deserializer,
+        )
+            -> Result<P::Wrap<dyn Any + Send + Sync>, erased_serde::Error>,
 
     merger_fn: &'static dyn Any,
 
@@ -208,7 +210,7 @@ impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
     /// the component with the tag is found, it will return an error.
     #[must_use]
     pub fn register_type<
-        C: Any + serde::Serialize + for<'x> serde::Deserialize<'x>,
+        C: Any + Send + Sync + serde::Serialize + for<'x> serde::Deserialize<'x>,
     >(
         &mut self,
         tag: T,
@@ -238,7 +240,7 @@ impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
     /// the component with the tag is found, it will return an error.
     #[must_use]
     pub fn register_type_with_merger<
-        C: Any + serde::Serialize + for<'x> serde::Deserialize<'x>,
+        C: Any + Send + Sync + serde::Serialize + for<'x> serde::Deserialize<'x>,
     >(
         &mut self,
         tag: T,
@@ -249,10 +251,15 @@ impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
     {
         fn deserialize_fn<
             P: Ptr,
-            C: Any + serde::Serialize + for<'x> serde::Deserialize<'x>,
+            C: Any
+                + Send
+                + Sync
+                + serde::Serialize
+                + for<'x> serde::Deserialize<'x>,
         >(
             deserializer: &mut dyn erased_serde::Deserializer,
-        ) -> Result<P::Wrap<dyn Any>, erased_serde::Error> {
+        ) -> Result<P::Wrap<dyn Any + Send + Sync>, erased_serde::Error>
+        {
             let value = C::deserialize(deserializer)?;
             Ok(P::wrap(value))
         }
@@ -436,7 +443,7 @@ impl<
 }
 
 struct SerializeComponent<'a, P: Ptr> {
-    component: &'a P::Wrap<dyn Any>,
+    component: &'a P::Wrap<dyn Any + Send + Sync>,
 
     #[allow(clippy::type_complexity)]
     serialize_fn: fn(&dyn Any, &mut dyn FnMut(&dyn erased_serde::Serialize)),
@@ -541,7 +548,7 @@ impl<
         E: Display + 'static,
     > serde::de::DeserializeSeed<'de> for ComponentMapVisitor<'_, ID, P, T, E>
 {
-    type Value = HashMap<T, P::Wrap<dyn Any>>;
+    type Value = HashMap<T, P::Wrap<dyn Any + Send + Sync>>;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
@@ -564,7 +571,7 @@ impl<
         E: Display + 'static,
     > serde::de::Visitor<'de> for ComponentMapVisitor<'a, ID, P, T, E>
 {
-    type Value = HashMap<T, P::Wrap<dyn Any>>;
+    type Value = HashMap<T, P::Wrap<dyn Any + Send + Sync>>;
 
     fn expecting(
         &self,
@@ -610,13 +617,15 @@ impl<
 
 struct ComponentDeserialzer<P: Ptr> {
     #[allow(clippy::type_complexity)]
-    deserialize_fn: fn(
-        &mut dyn erased_serde::Deserializer,
-    ) -> Result<P::Wrap<dyn Any>, erased_serde::Error>,
+    deserialize_fn:
+        fn(
+            &mut dyn erased_serde::Deserializer,
+        )
+            -> Result<P::Wrap<dyn Any + Send + Sync>, erased_serde::Error>,
 }
 
 impl<'de, P: Ptr> serde::de::DeserializeSeed<'de> for ComponentDeserialzer<P> {
-    type Value = P::Wrap<dyn Any>;
+    type Value = P::Wrap<dyn Any + Send + Sync>;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where

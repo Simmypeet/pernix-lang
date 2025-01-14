@@ -1,11 +1,14 @@
 //! Contains the function used for creating the [`Reflector`] instance.
 
-use pernixc_storage::serde::{MergerFn, Reflector};
+use pernixc_storage::{
+    serde::{MergerFn, Reflector},
+    ArcTrait,
+};
 
 use super::{GlobalID, Table};
 use crate::component::{
-    Accessibility, ConstTraitImplementation, Extern, FinalImplementation,
-    Implemented, Implements, Member, Name, Parent, SymbolKind,
+    Accessibility, Extern, Implemented, Implements, Member, Name, Parent,
+    PositiveTraitImplementation, SymbolKind, TraitImplementation,
 };
 
 impl Table {
@@ -18,7 +21,7 @@ impl Table {
     /// added to the reflector instance as well.
     #[must_use]
     #[allow(clippy::too_many_lines)]
-    pub fn reflector() -> Reflector<String, GlobalID, String> {
+    pub fn reflector() -> Reflector<GlobalID, ArcTrait, String, String> {
         // FIXME: probably use macros to generate this code
         let mut reflector = Reflector::new();
 
@@ -100,27 +103,28 @@ impl Table {
                 Ok(())
             }) as MergerFn<Implemented, String>)
         ));
-        assert!(reflector.register_type_with_merger::<FinalImplementation>(
-            "FinalImplementation".to_owned(),
+        assert!(reflector.register_type_with_merger::<TraitImplementation>(
+            "TraitImplementation".to_owned(),
             &((|a, b| {
                 if *a == b {
                     Ok(())
                 } else {
-                    Err("Incompatible FinalImplementation".to_owned())
+                    Err("Incompatible TraitImplementation".to_owned())
                 }
-            }) as MergerFn<FinalImplementation, String>)
+            }) as MergerFn<TraitImplementation, String>)
         ));
         assert!(reflector
-            .register_type_with_merger::<ConstTraitImplementation>(
+            .register_type_with_merger::<PositiveTraitImplementation>(
                 "ConstTraitImplementation".to_owned(),
                 &((|a, b| {
                     if *a == b {
                         Ok(())
                     } else {
-                        Err("Incompatible ConstTraitImplementation".to_owned())
+                        Err("Incompatible PositiveTraitImplementation"
+                            .to_owned())
                     }
                 })
-                    as MergerFn<ConstTraitImplementation, String>)
+                    as MergerFn<PositiveTraitImplementation, String>)
             ));
 
         reflector

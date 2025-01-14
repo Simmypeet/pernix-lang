@@ -2,6 +2,7 @@
 
 use std::{
     any::Any,
+    borrow::Cow,
     cell::RefCell,
     cmp::Ordering,
     collections::{hash_map::Entry, BTreeSet, HashMap},
@@ -14,7 +15,10 @@ use getset::{CopyGetters, Getters};
 use pernixc_table::{GlobalID, Table};
 use pernixc_term::{predicate::Predicate, Model};
 
-use crate::{normalizer::Normalizer, OverflowError};
+use crate::{
+    normalizer::{self, Normalizer},
+    OverflowError,
+};
 
 /// Contains the premise of the semantic logic.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -35,7 +39,7 @@ pub struct Premise<M: Model> {
 pub struct Environment<'a, M: Model, N> {
     /// The premise of the semantic logic.
     #[get = "pub"]
-    premise: &'a Premise<M>,
+    premise: Cow<'a, Premise<M>>,
 
     /// The table that contains the information of symbols.
     #[get_copy = "pub"]
@@ -48,6 +52,19 @@ pub struct Environment<'a, M: Model, N> {
     context: RefCell<Context>,
 }
 
+impl<'a, M: Model> Environment<'a, M, normalizer::NoOp> {
+    /// Creates a new environment with the given table, default premise, and
+    /// default normalizer.
+    pub fn with_default(table: &'a Table) -> Self {
+        Self {
+            premise: Cow::Owned(Premise::default()),
+            table,
+            normalizer: normalizer::NO_OP,
+            context: RefCell::new(Context::default()),
+        }
+    }
+}
+
 impl<'a, M: Model, N> Environment<'a, M, N> {
     #[cfg(test)]
     #[must_use]
@@ -57,7 +74,7 @@ impl<'a, M: Model, N> Environment<'a, M, N> {
         normalizer: &'a N,
     ) -> Self {
         Self {
-            premise,
+            premise: Cow::Borrowed(premise),
             table,
             normalizer,
             context: RefCell::new(Context::default()),
@@ -88,7 +105,7 @@ impl<'a, M: Model, N: std::fmt::Debug> std::fmt::Debug
 impl<'a, M: Model, N: Clone> Clone for Environment<'a, M, N> {
     fn clone(&self) -> Self {
         Self {
-            premise: self.premise,
+            premise: self.premise.clone(),
             table: self.table,
             normalizer: self.normalizer,
             context: self.context.clone(),

@@ -1,21 +1,22 @@
-use core::fmt;
 use std::{any::Any, sync::Arc};
 
-use derive_new::new;
 use enum_as_inner::EnumAsInner;
-use pernixc_table::{DisplayObject, GlobalID, Table};
+use pernixc_table::{component::SymbolKind, GlobalID};
 use pernixc_term::{
     generic_arguments::GenericArguments,
-    predicate::{NegativeTrait as Negative, PositiveTrait as Positive},
+    generic_parameter::GenericParameters,
+    predicate::{
+        NegativeTrait as Negative, PositiveTrait as Positive, Predicate,
+    },
+    variance::Variance,
     Model,
 };
-use serde::{Deserialize, Serialize};
 
 use crate::{
     environment::{Call, Environment, Query},
     normalizer::Normalizer,
-    resolution::Implementation,
-    AbruptError, Satisfied, Succeeded,
+    resolution::{self, Implementation},
+    AbruptError, ResultExt, Satisfied, Succeeded,
 };
 
 /// An enumeration of ways a positive trait predicate can be satisfied.
@@ -53,18 +54,6 @@ pub enum NegativeSatisfied<M: Model> {
     UnsatisfiedPositive,
 }
 
-/// The kind of the trait predicate; either positive or negative.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum Kind {
-    Positive {
-        /// Whether the implementation is const.
-        is_const: bool,
-    },
-
-    Negative,
-}
-
 impl<M: Model> Query for Positive<M> {
     type Model = M;
     type Parameter = ();
@@ -75,74 +64,71 @@ impl<M: Model> Query for Positive<M> {
     fn query(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        parameter: Self::Parameter,
-        in_progress: Self::InProgress,
+        (): Self::Parameter,
+        (): Self::InProgress,
     ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        todo!()
-        /*
         // if this query was made in some trait implementation or trait, then
         // check if the trait implementation is the same as the query one.
         if let Some(result) =
-            is_in_trait(self.id, &self.generic_arguments, environment, context)?
+            is_in_trait(self.trait_id, &self.generic_arguments, environment)?
         {
-            return Ok(Some(Succeeded::with_constraints(
-                PositiveSatisfied::ByEnvironment,
+            return Ok(Some(Arc::new(Succeeded::with_constraints(
+                PositiveSatisfied::Environment,
                 result.constraints,
-            )));
+            ))));
         }
 
         // manually search for the trait implementation
-        match resolve_implementation_with_context(
-            self.id,
-            &self.generic_arguments,
-            environment,
-            context,
-        ) {
+        match environment
+            .resolve_implementation(self.trait_id, &self.generic_arguments)
+        {
             Ok(Succeeded {
                 result:
-                    Implementation {
-                        instantiation,
-                        id: TraitImplementationID::Positive(id),
-                        is_not_general_enough,
-                    },
+                    Implementation { instantiation, id, is_not_general_enough },
                 constraints,
             }) => {
-                return Ok(Some(Succeeded::with_constraints(
-                    PositiveSatisfied::ByImplementation(Implementation {
-                        instantiation,
-                        id,
-                        is_not_general_enough,
-                    }),
-                    constraints,
-                )));
+                if environment
+                    .table()
+                    .get::<SymbolKind>(id)
+                    .map_or(false, |x| {
+                        *x == SymbolKind::PositiveTraitImplementation
+                    })
+                {
+                    return Ok(Some(Arc::new(Succeeded::with_constraints(
+                        PositiveSatisfied::Implementation(Implementation {
+                            instantiation,
+                            id,
+                            is_not_general_enough,
+                        }),
+                        constraints,
+                    ))));
+                }
             }
 
-            Err(ResolutionError::Overflow(exceed_limit_error)) => {
-                return Err(exceed_limit_error);
+            Err(resolution::Error::Abrupt(abrupt_error)) => {
+                return Err(abrupt_error);
             }
 
-            Err(_) | Ok(_) => {}
+            Err(_) => {}
         }
 
         // look for the premise that matches
         for trait_premise in environment
-            .premise
+            .premise()
             .predicates
             .iter()
             .filter_map(Predicate::as_positive_trait)
         {
             // skip if the trait id is different
-            if trait_premise.id != self.id {
+            if trait_premise.trait_id != self.trait_id {
                 continue;
             }
 
-            let Some(compatiblity) =
-                self.generic_arguments.compatible_with_context(
-                    &trait_premise.generic_arguments,
-                    Variance::Invariant,
-                    environment,
-                    context,
-                )?
+            let Some(compatiblity) = environment.generic_arguments_compatible(
+                &self.generic_arguments,
+                &trait_premise.generic_arguments,
+                Variance::Invariant,
+            )?
             else {
                 continue;
             };
@@ -151,14 +137,13 @@ impl<M: Model> Query for Positive<M> {
                 continue;
             }
 
-            return Ok(Some(Succeeded::with_constraints(
-                PositiveSatisfied::ByPremise,
+            return Ok(Some(Arc::new(Succeeded::with_constraints(
+                PositiveSatisfied::Premise,
                 compatiblity.constraints,
-            )));
+            ))));
         }
 
         Ok(None)
-        */
     }
 
     fn on_cyclic(
@@ -184,63 +169,60 @@ impl<M: Model> Query for Negative<M> {
     fn query(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        parameter: Self::Parameter,
-        in_progress: Self::InProgress,
+        (): Self::Parameter,
+        (): Self::InProgress,
     ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        todo!()
-        /*
         // manually search for the trait implementation
-        match resolve_implementation_with_context(
-            self.id,
-            &self.generic_arguments,
-            environment,
-            context,
-        ) {
+        match environment
+            .resolve_implementation(self.trait_id, &self.generic_arguments)
+        {
             Ok(Succeeded {
                 result:
-                    Implementation {
-                        instantiation,
-                        id: TraitImplementationID::Negative(id),
-                        is_not_general_enough,
-                    },
+                    Implementation { instantiation, id, is_not_general_enough },
                 constraints,
             }) => {
-                return Ok(Some(Succeeded::with_constraints(
-                    NegativeSatisfied::ByImplementation(Implementation {
-                        instantiation,
-                        id,
-                        is_not_general_enough,
-                    }),
-                    constraints,
-                )));
+                if environment
+                    .table()
+                    .get::<SymbolKind>(id)
+                    .map_or(false, |x| {
+                        *x == SymbolKind::NegativeTraitImplementation
+                    })
+                {
+                    return Ok(Some(Arc::new(Succeeded::with_constraints(
+                        NegativeSatisfied::Implementation(Implementation {
+                            instantiation,
+                            id,
+                            is_not_general_enough,
+                        }),
+                        constraints,
+                    ))));
+                }
             }
 
-            Err(ResolutionError::Overflow(exceed_limit_error)) => {
-                return Err(exceed_limit_error);
+            Err(resolution::Error::Abrupt(abrupt_error)) => {
+                return Err(abrupt_error);
             }
 
-            Err(_) | Ok(_) => {}
+            Err(_) => {}
         }
 
         // look for the premise that matches
         for trait_premise in environment
-            .premise
+            .premise()
             .predicates
             .iter()
             .filter_map(Predicate::as_negative_trait)
         {
             // skip if the trait id is different
-            if trait_premise.id != self.id {
+            if trait_premise.trait_id != self.trait_id {
                 continue;
             }
 
-            let Some(compatiblity) =
-                self.generic_arguments.compatible_with_context(
-                    &trait_premise.generic_arguments,
-                    Variance::Invariant,
-                    environment,
-                    context,
-                )?
+            let Some(compatiblity) = environment.generic_arguments_compatible(
+                &self.generic_arguments,
+                &trait_premise.generic_arguments,
+                Variance::Invariant,
+            )?
             else {
                 continue;
             };
@@ -249,86 +231,84 @@ impl<M: Model> Query for Negative<M> {
                 continue;
             }
 
-            return Ok(Some(Succeeded::with_constraints(
-                NegativeSatisfied::ByPremise,
+            return Ok(Some(Arc::new(Succeeded::with_constraints(
+                NegativeSatisfied::Premise,
                 compatiblity.constraints,
-            )));
+            ))));
         }
 
         // must be definite and failed to prove the positive trait
-        let Some(definition) = self
-            .generic_arguments
-            .definite_with_context(environment, context)?
+        let Some(definition) =
+            environment.generic_arguments_definite(&self.generic_arguments)?
         else {
             return Ok(None);
         };
 
-        Ok(Positive::new(self.id, false, self.generic_arguments.clone())
-            .query_with_context(environment, context)?
+        Ok(environment
+            .query(&Positive::new(
+                self.trait_id,
+                false,
+                self.generic_arguments.clone(),
+            ))?
             .is_none()
             .then(|| {
-                Succeeded::with_constraints(
-                    NegativeSatisfied::ByUnsatisfiedPositive,
+                Arc::new(Succeeded::with_constraints(
+                    NegativeSatisfied::UnsatisfiedPositive,
                     definition.constraints,
-                )
+                ))
             }))
-        */
     }
 }
 
 fn is_in_trait<M: Model>(
     trait_id: GlobalID,
     generic_arguments: &GenericArguments<M>,
-    environment: &mut Environment<M, impl Normalizer<M>>,
+    environment: &Environment<M, impl Normalizer<M>>,
 ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
-    todo!()
-    /*
-    let Some(query_site) = environment.premise.query_site else {
+    let Some(query_site) = environment.premise().query_site else {
         return Ok(None);
     };
 
-    for item_id in
-        if let Some(iter) = environment.table.scope_walker(query_site) {
-            iter
-        } else {
-            return Ok(None);
-        }
-    {
-        let ItemID::Trait(env_trait_id) = item_id else {
+    for current_id in environment.table().scope_walker(query_site) {
+        let current_id = GlobalID::new(query_site.target_id, current_id);
+
+        let Some(SymbolKind::Trait) =
+            environment.table().get::<SymbolKind>(current_id).map(|x| *x)
+        else {
             continue;
         };
 
         // must be the same id
-        if env_trait_id != trait_id {
-            return Ok(None);
+        if current_id != trait_id {
+            continue;
         }
 
-        let trait_symbol = environment.table.get(trait_id).unwrap();
-
-        let trait_generic_arguments = trait_symbol
-            .generic_declaration()
-            .parameters
-            .create_identity_generic_arguments(env_trait_id.into());
-
-        let Some(compatiblity) = generic_arguments.compatible_with_context(
-            &trait_generic_arguments,
-            Variance::Invariant,
-            environment,
-            context,
-        )?
+        let Some(trait_generic_arguments) = environment
+            .table()
+            .query::<GenericParameters>(current_id)
+            .map(|x| x.create_identity_generic_arguments(current_id))
+            .extract_cyclic_dependency()?
         else {
-            return Ok(None);
+            continue;
         };
 
-        if compatiblity.result.forall_lifetime_errors.is_empty() {
+        let Some(compatibility) = environment.generic_arguments_compatible(
+            generic_arguments,
+            &trait_generic_arguments,
+            Variance::Invariant,
+        )?
+        else {
+            continue;
+        };
+
+        if compatibility.result.forall_lifetime_errors.is_empty() {
             return Ok(Some(Succeeded::satisfied_with(
-                compatiblity.constraints,
+                compatibility.constraints,
             )));
         }
     }
 
     Ok(None)
-    */
 }
 
 // TODO: bring test back
