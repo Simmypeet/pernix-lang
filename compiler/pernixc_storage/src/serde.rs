@@ -3,6 +3,8 @@
 //! # Example
 //!
 //! ``` rust
+//! use std::convert::Infallible;
+//!
 //! use pernixc_storage::{serde::Reflector, Storage};
 //! use serde::de::DeserializeSeed;
 //!
@@ -22,7 +24,7 @@
 //! reflector.register_type::<Vec<bool>>("Vec<bool>".to_string());
 //! // intentionally not registering Vec<i32>
 //!
-//! let serializable = storage.as_serializable(&reflector);
+//! let serializable = storage.as_serializable::<_, Infallible>(&reflector);
 //!
 //! let serialized = serde_json::to_value(&serializable).unwrap();
 //!
@@ -67,7 +69,7 @@
 //!
 //! use pernixc_storage::{
 //!     serde::{MergerFn, Reflector},
-//!     Storage,
+//!     BoxTrait, Storage,
 //! };
 //! use serde::de::DeserializeSeed;
 //!
@@ -80,7 +82,7 @@
 //!
 //! second.add_component("myNumber".to_string(), 2);
 //!
-//! let mut reflector: Reflector<_, _, Infallible> = Reflector::new();
+//! let mut reflector: Reflector<_, BoxTrait, _, Infallible> = Reflector::new();
 //!
 //! reflector.register_type_with_merger::<i32>(
 //!     "i32".to_string(),
@@ -124,12 +126,13 @@ use std::{
     convert::Infallible,
     fmt::{Debug, Display},
     hash::Hash,
+    ops::Deref,
 };
 
 use derive_new::new;
 use serde::{de::Error, ser::SerializeMap};
 
-use crate::Storage;
+use crate::{Ptr, Storage};
 
 #[derive(Debug)]
 struct SerializationMetaData<T> {
@@ -139,11 +142,11 @@ struct SerializationMetaData<T> {
 }
 
 #[derive(Debug)]
-struct DeserializationMetaData {
+struct DeserializationMetaData<P: Ptr> {
     #[allow(clippy::type_complexity)]
     deserialize_fn: fn(
         &mut dyn erased_serde::Deserializer,
-    ) -> Result<Box<dyn Any>, erased_serde::Error>,
+    ) -> Result<P::Wrap<dyn Any>, erased_serde::Error>,
 
     merger_fn: &'static dyn Any,
 
@@ -158,15 +161,15 @@ struct DeserializationMetaData {
 }
 
 /// Uesd to serialize/deserialize the [`Storage`] struct.
-#[derive(Debug)]
-pub struct Reflector<T, ID, E = Infallible> {
+#[allow(missing_debug_implementations)]
+pub struct Reflector<ID, P: Ptr, T, E = Infallible> {
     serialization_meta_datas: HashMap<TypeId, SerializationMetaData<T>>,
-    deserialization_meta_datas: HashMap<T, DeserializationMetaData>,
+    deserialization_meta_datas: HashMap<T, DeserializationMetaData<P>>,
 
     _phantom: std::marker::PhantomData<(ID, E)>,
 }
 
-impl<T, ID, E> Default for Reflector<T, ID, E> {
+impl<ID, P: Ptr, T, E> Default for Reflector<ID, P, T, E> {
     fn default() -> Self {
         Self {
             serialization_meta_datas: HashMap::new(),
@@ -180,7 +183,7 @@ impl<T, ID, E> Default for Reflector<T, ID, E> {
 /// The function pointer type used to merge two components of the same type.
 pub type MergerFn<T, E> = fn(&mut T, T) -> Result<(), E>;
 
-impl<T, ID, E: Display + 'static> Reflector<T, ID, E> {
+impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
     /// Create a new instance of [`Reflector`].
     #[must_use]
     pub fn new() -> Self {
@@ -245,12 +248,13 @@ impl<T, ID, E: Display + 'static> Reflector<T, ID, E> {
         T: Clone + Eq + Hash,
     {
         fn deserialize_fn<
+            P: Ptr,
             C: Any + serde::Serialize + for<'x> serde::Deserialize<'x>,
         >(
             deserializer: &mut dyn erased_serde::Deserializer,
-        ) -> Result<Box<dyn Any>, erased_serde::Error> {
+        ) -> Result<P::Wrap<dyn Any>, erased_serde::Error> {
             let value = C::deserialize(deserializer)?;
-            Ok(Box::new(value))
+            Ok(P::wrap(value))
         }
 
         fn serialize_fn<
@@ -291,7 +295,7 @@ impl<T, ID, E: Display + 'static> Reflector<T, ID, E> {
             tag,
         });
         de.insert(DeserializationMetaData {
-            deserialize_fn: deserialize_fn::<C>,
+            deserialize_fn: deserialize_fn::<P, C>,
             merger_fn: merger,
             final_merger_fn: final_inplace_merger_fn::<C, E>,
             type_id: TypeId::of::<C>(),
@@ -302,18 +306,26 @@ impl<T, ID, E: Display + 'static> Reflector<T, ID, E> {
 }
 
 /// The struct that enables the serialization of the [`Storage`] struct.
-#[derive(Debug, new)]
-pub struct SerializableStorage<'a, T, ID: Eq + Hash, E: Display + 'static> {
-    storage: &'a Storage<ID>,
-    reflector: &'a Reflector<T, ID, E>,
+#[derive(new)]
+#[allow(missing_debug_implementations)]
+pub struct SerializableStorage<
+    'a,
+    ID: Eq + Hash,
+    P: Ptr,
+    T,
+    E: Display + 'static,
+> {
+    storage: &'a Storage<ID, P>,
+    reflector: &'a Reflector<ID, P, T, E>,
 }
 
 impl<
         'a,
-        T: serde::Serialize,
         ID: serde::Serialize + Eq + Hash + Clone,
+        P: Ptr,
+        T: serde::Serialize,
         E: Display + 'static,
-    > serde::Serialize for SerializableStorage<'a, T, ID, E>
+    > serde::Serialize for SerializableStorage<'a, ID, P, T, E>
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -363,16 +375,21 @@ impl<
     }
 }
 
-struct SerializeEntry<'a, T, ID: Eq + Hash, E: Display + 'static> {
+struct SerializeEntry<'a, ID: Eq + Hash, P: Ptr, T, E: Display + 'static> {
     id: ID,
     type_ids: HashSet<TypeId>,
 
-    reflector: &'a Reflector<T, ID, E>,
-    storage: &'a Storage<ID>,
+    reflector: &'a Reflector<ID, P, T, E>,
+    storage: &'a Storage<ID, P>,
 }
 
-impl<'a, T: serde::Serialize, ID: Eq + Hash + Clone, E: Display + 'static>
-    serde::Serialize for SerializeEntry<'a, T, ID, E>
+impl<
+        'a,
+        ID: Eq + Hash + Clone,
+        P: Ptr,
+        T: serde::Serialize,
+        E: Display + 'static,
+    > serde::Serialize for SerializeEntry<'a, ID, P, T, E>
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -405,24 +422,27 @@ impl<'a, T: serde::Serialize, ID: Eq + Hash + Clone, E: Display + 'static>
                 .get(&(self.id.clone(), *type_id))
                 .unwrap();
 
-            map.serialize_entry(&serialize_meta.tag, &SerializeComponent {
-                component: &component,
-                serialize_fn: serialize_meta.serialize_fn,
-            })?;
+            map.serialize_entry(
+                &serialize_meta.tag,
+                &SerializeComponent::<P> {
+                    component: &component,
+                    serialize_fn: serialize_meta.serialize_fn,
+                },
+            )?;
         }
 
         map.end()
     }
 }
 
-struct SerializeComponent<'a> {
-    component: &'a Box<dyn Any>,
+struct SerializeComponent<'a, P: Ptr> {
+    component: &'a P::Wrap<dyn Any>,
 
     #[allow(clippy::type_complexity)]
     serialize_fn: fn(&dyn Any, &mut dyn FnMut(&dyn erased_serde::Serialize)),
 }
 
-impl<'a> serde::Serialize for SerializeComponent<'a> {
+impl<'a, P: Ptr> serde::Serialize for SerializeComponent<'a, P> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -430,7 +450,7 @@ impl<'a> serde::Serialize for SerializeComponent<'a> {
         let mut result = None;
         let mut serializer = Some(serializer);
 
-        (self.serialize_fn)(self.component.as_ref(), &mut |x| {
+        (self.serialize_fn)(&**self.component, &mut |x| {
             result =
                 Some(erased_serde::serialize(x, serializer.take().unwrap()));
         });
@@ -442,12 +462,13 @@ impl<'a> serde::Serialize for SerializeComponent<'a> {
 impl<
         'de,
         're,
-        T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         ID: Eq + Hash + Clone + for<'x> serde::Deserialize<'x>,
+        P: Ptr,
+        T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         E: Display + 'static,
-    > serde::de::DeserializeSeed<'de> for &'re Reflector<T, ID, E>
+    > serde::de::DeserializeSeed<'de> for &'re Reflector<ID, P, T, E>
 {
-    type Value = Storage<ID>;
+    type Value = Storage<ID, P>;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
@@ -457,18 +478,19 @@ impl<
     }
 }
 
-struct EntitiyMapVisitor<'a, T, ID, E: Display + 'static> {
-    reflector: &'a Reflector<T, ID, E>,
+struct EntitiyMapVisitor<'a, ID, P: Ptr, T, E: Display + 'static> {
+    reflector: &'a Reflector<ID, P, T, E>,
 }
 
 impl<
         'de,
-        T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         ID: Eq + Hash + Clone + for<'x> serde::Deserialize<'x>,
+        P: Ptr,
+        T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         E: Display + 'static,
-    > serde::de::Visitor<'de> for EntitiyMapVisitor<'_, T, ID, E>
+    > serde::de::Visitor<'de> for EntitiyMapVisitor<'_, ID, P, T, E>
 {
-    type Value = Storage<ID>;
+    type Value = Storage<ID, P>;
 
     fn expecting(
         &self,
@@ -484,7 +506,7 @@ impl<
     where
         A: serde::de::MapAccess<'de>,
     {
-        let storage = Storage::default();
+        let storage = Storage::<ID, P>::default();
 
         while let Some(id) = map.next_key::<ID>()? {
             let components = map.next_value_seed(ComponentMapVisitor {
@@ -492,7 +514,7 @@ impl<
             })?;
 
             for (tag, component) in components {
-                let type_id = component.as_ref().type_id();
+                let type_id = component.deref().type_id();
 
                 match storage.components.entry((id.clone(), type_id)) {
                     dashmap::Entry::Occupied(_) => {
@@ -513,12 +535,13 @@ impl<
 
 impl<
         'de,
-        T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         ID: Eq + Hash + Clone + for<'x> serde::Deserialize<'x>,
+        P: Ptr,
+        T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         E: Display + 'static,
-    > serde::de::DeserializeSeed<'de> for ComponentMapVisitor<'_, T, ID, E>
+    > serde::de::DeserializeSeed<'de> for ComponentMapVisitor<'_, ID, P, T, E>
 {
-    type Value = HashMap<T, Box<dyn Any>>;
+    type Value = HashMap<T, P::Wrap<dyn Any>>;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
@@ -528,19 +551,20 @@ impl<
     }
 }
 
-struct ComponentMapVisitor<'a, T, ID, E: Display + 'static> {
-    reflector: &'a Reflector<T, ID, E>,
+struct ComponentMapVisitor<'a, ID, P: Ptr, T, E: Display + 'static> {
+    reflector: &'a Reflector<ID, P, T, E>,
 }
 
 impl<
         'de,
         'a,
-        T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         ID: Eq + Hash + Clone + for<'x> serde::Deserialize<'x>,
+        P: Ptr,
+        T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         E: Display + 'static,
-    > serde::de::Visitor<'de> for ComponentMapVisitor<'a, T, ID, E>
+    > serde::de::Visitor<'de> for ComponentMapVisitor<'a, ID, P, T, E>
 {
-    type Value = HashMap<T, Box<dyn Any>>;
+    type Value = HashMap<T, P::Wrap<dyn Any>>;
 
     fn expecting(
         &self,
@@ -567,7 +591,7 @@ impl<
                 )));
             };
 
-            let component = map.next_value_seed(ComponentDeserialzer {
+            let component = map.next_value_seed(ComponentDeserialzer::<P> {
                 deserialize_fn: deserialize_meta.deserialize_fn,
             })?;
 
@@ -584,15 +608,15 @@ impl<
     }
 }
 
-struct ComponentDeserialzer {
+struct ComponentDeserialzer<P: Ptr> {
     #[allow(clippy::type_complexity)]
     deserialize_fn: fn(
         &mut dyn erased_serde::Deserializer,
-    ) -> Result<Box<dyn Any>, erased_serde::Error>,
+    ) -> Result<P::Wrap<dyn Any>, erased_serde::Error>,
 }
 
-impl<'de> serde::de::DeserializeSeed<'de> for ComponentDeserialzer {
-    type Value = Box<dyn Any>;
+impl<'de, P: Ptr> serde::de::DeserializeSeed<'de> for ComponentDeserialzer<P> {
+    type Value = P::Wrap<dyn Any>;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
@@ -609,19 +633,21 @@ impl<'de> serde::de::DeserializeSeed<'de> for ComponentDeserialzer {
 /// storage.
 ///
 /// See [`Storage::as_inplace_deserializer`].
-#[derive(Debug, new)]
+#[derive(new)]
+#[allow(missing_debug_implementations)]
 pub struct InplaceDeserializer<
     'a,
-    T,
     ID: Eq + Hash,
+    P: Ptr,
+    T,
     E: Display + 'static = Infallible,
 > {
-    storage: &'a Storage<ID>,
-    reflector: &'a Reflector<T, ID, E>,
+    storage: &'a Storage<ID, P>,
+    reflector: &'a Reflector<ID, P, T, E>,
 }
 
-impl<T, ID: Eq + Hash, E: Display + 'static> Clone
-    for InplaceDeserializer<'_, T, ID, E>
+impl<ID: Eq + Hash, P: Ptr, T, E: Display + 'static> Clone
+    for InplaceDeserializer<'_, ID, P, T, E>
 {
     fn clone(&self) -> Self {
         Self { reflector: self.reflector, storage: self.storage }
@@ -630,10 +656,12 @@ impl<T, ID: Eq + Hash, E: Display + 'static> Clone
 
 impl<
         'de,
-        T: for<'x> serde::Deserialize<'x> + Eq + Hash + Debug,
         ID: for<'x> serde::Deserialize<'x> + Eq + Hash + Clone,
+        P: Ptr,
+        T: for<'x> serde::Deserialize<'x> + Eq + Hash + Debug,
         E: Display + 'static,
-    > serde::de::DeserializeSeed<'de> for &InplaceDeserializer<'_, T, ID, E>
+    > serde::de::DeserializeSeed<'de>
+    for &InplaceDeserializer<'_, ID, P, T, E>
 {
     type Value = ();
 
@@ -647,10 +675,11 @@ impl<
 
 impl<
         'de,
-        T: for<'x> serde::Deserialize<'x> + Eq + Hash + Debug,
         ID: for<'x> serde::Deserialize<'x> + Eq + Hash + Clone,
+        P: Ptr,
+        T: for<'x> serde::Deserialize<'x> + Eq + Hash + Debug,
         E: Display + 'static,
-    > serde::de::Visitor<'de> for &InplaceDeserializer<'_, T, ID, E>
+    > serde::de::Visitor<'de> for &InplaceDeserializer<'_, ID, P, T, E>
 {
     type Value = ();
 
@@ -679,18 +708,25 @@ impl<
     }
 }
 
-struct InplaceComponentMapVisitor<'a, T, ID: Eq + Hash, E: Display + 'static> {
-    inplace_deserializer: InplaceDeserializer<'a, T, ID, E>,
+struct InplaceComponentMapVisitor<
+    'a,
+    ID: Eq + Hash,
+    P: Ptr,
+    T,
+    E: Display + 'static,
+> {
+    inplace_deserializer: InplaceDeserializer<'a, ID, P, T, E>,
     entity_id: ID,
 }
 
 impl<
         'de,
-        T: for<'x> serde::Deserialize<'x> + Eq + Hash + Debug,
         ID: for<'x> serde::Deserialize<'x> + Eq + Hash + Clone,
+        P: Ptr,
+        T: for<'x> serde::Deserialize<'x> + Eq + Hash + Debug,
         E: Display + 'static,
     > serde::de::DeserializeSeed<'de>
-    for InplaceComponentMapVisitor<'_, T, ID, E>
+    for InplaceComponentMapVisitor<'_, ID, P, T, E>
 {
     type Value = ();
 
@@ -704,10 +740,11 @@ impl<
 
 impl<
         'de,
-        T: for<'x> serde::Deserialize<'x> + Eq + Hash + Debug,
         ID: for<'x> serde::Deserialize<'x> + Eq + Hash + Clone,
+        P: Ptr,
+        T: for<'x> serde::Deserialize<'x> + Eq + Hash + Debug,
         E: Display + 'static,
-    > serde::de::Visitor<'de> for InplaceComponentMapVisitor<'_, T, ID, E>
+    > serde::de::Visitor<'de> for InplaceComponentMapVisitor<'_, ID, P, T, E>
 {
     type Value = ();
 
@@ -745,15 +782,22 @@ impl<
             {
                 dashmap::Entry::Occupied(mut occupied_entry) => {
                     map.next_value_seed(InplaceComponentDeserializer {
-                        source: &mut **occupied_entry.get_mut(),
+                        source: P::try_get_mut(occupied_entry.get_mut())
+                            .ok_or_else(|| {
+                                serde::de::Error::custom(
+                                    "failed to obtain mutable reference to \
+                                     merge the component",
+                                )
+                            })?,
                         merger_fn: deserialize_meta.merger_fn,
                         final_merger_fn: deserialize_meta.final_merger_fn,
                     })?;
                 }
                 dashmap::Entry::Vacant(vacant_entry) => {
-                    let value = map.next_value_seed(ComponentDeserialzer {
-                        deserialize_fn: deserialize_meta.deserialize_fn,
-                    })?;
+                    let value =
+                        map.next_value_seed(ComponentDeserialzer::<P> {
+                            deserialize_fn: deserialize_meta.deserialize_fn,
+                        })?;
 
                     vacant_entry.insert(value);
                 }

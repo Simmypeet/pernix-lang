@@ -5,11 +5,78 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
     ops::{Deref, DerefMut},
+    sync::Arc,
 };
 
+use ::serde::{Deserialize, Serialize};
 use dashmap::{DashMap, Entry};
 
 pub mod serde;
+
+/// A trait for wrapping a value in a pointer type. This makes the [`Storage`]
+/// be generic over the smart pointer type it uses.
+pub trait Ptr {
+    /// Wraps a value in a pointer type.
+    type Wrap<T: ?Sized>: Deref<Target = T>;
+
+    /// Wraps a value in a pointer type.
+    fn wrap<U: Any>(value: U) -> Self::Wrap<dyn Any>;
+
+    /// Tries to get a mutable reference to the inner value.
+    fn try_get_mut<U: ?Sized>(value: &mut Self::Wrap<U>) -> Option<&mut U>;
+}
+
+/// A struct implementing the [`Ptr`] trait for the [`Box`] type.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
+pub struct BoxTrait;
+
+impl Ptr for BoxTrait {
+    type Wrap<T: ?Sized> = Box<T>;
+
+    fn wrap<U: Any>(value: U) -> Self::Wrap<dyn Any> { Box::new(value) }
+
+    fn try_get_mut<U: ?Sized>(value: &mut Self::Wrap<U>) -> Option<&mut U> {
+        Some(&mut **value)
+    }
+}
+
+/// A struct implementing the [`Ptr`] trait for the [`Arc`] type.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
+pub struct ArcTrait;
+
+impl Ptr for ArcTrait {
+    type Wrap<T: ?Sized> = Arc<T>;
+
+    fn wrap<U: Any>(value: U) -> Self::Wrap<dyn Any> { Arc::new(value) }
+
+    fn try_get_mut<U: ?Sized>(value: &mut Self::Wrap<U>) -> Option<&mut U> {
+        Arc::get_mut(value)
+    }
+}
 
 /// The data structure used for dynamically attaching componenet to entities.
 ///
@@ -17,15 +84,15 @@ pub mod serde;
 /// except that it is prioritized for accessing individual components of an
 /// entity.
 #[derive(Debug)]
-pub struct Storage<ID: Eq + Hash> {
-    components: DashMap<(ID, TypeId), Box<dyn Any>>,
+pub struct Storage<ID: Eq + Hash, P: Ptr = BoxTrait> {
+    components: DashMap<(ID, TypeId), P::Wrap<dyn Any>>,
 }
 
-impl<ID: Eq + Hash> Default for Storage<ID> {
+impl<ID: Eq + Hash, P: Ptr> Default for Storage<ID, P> {
     fn default() -> Self { Self { components: DashMap::new() } }
 }
 
-impl<ID: Eq + Hash> Storage<ID> {
+impl<ID: Eq + Hash, P: Ptr> Storage<ID, P> {
     /// Adds a new component to the entity of the given id.
     ///
     /// If entity already has a component of the same type, it will return false
@@ -49,7 +116,7 @@ impl<ID: Eq + Hash> Storage<ID> {
         match self.components.entry((id, TypeId::of::<U>())) {
             Entry::Occupied(_) => false,
             Entry::Vacant(entry) => {
-                entry.insert(Box::new(component));
+                entry.insert(P::wrap(component));
                 true
             }
         }
@@ -60,10 +127,10 @@ impl<ID: Eq + Hash> Storage<ID> {
     /// # Panics
     ///
     /// Panics if the boxed component is not of the correct type.
-    pub fn add_component_boxed<U: Any>(
+    pub fn add_component_raw<U: Any>(
         &self,
         id: ID,
-        component: Box<dyn Any>,
+        component: P::Wrap<dyn Any>,
     ) -> bool
     where
         ID: Hash + Eq,
@@ -83,8 +150,8 @@ impl<ID: Eq + Hash> Storage<ID> {
     #[must_use]
     pub fn as_serializable<'a, T, E: Display + 'static>(
         &'a self,
-        reflector: &'a serde::Reflector<T, ID, E>,
-    ) -> serde::SerializableStorage<'a, T, ID, E> {
+        reflector: &'a serde::Reflector<ID, P, T, E>,
+    ) -> serde::SerializableStorage<'a, ID, P, T, E> {
         serde::SerializableStorage::new(self, reflector)
     }
 
@@ -93,8 +160,8 @@ impl<ID: Eq + Hash> Storage<ID> {
     #[must_use]
     pub fn as_inplace_deserializer<'a, T, E: Display + 'static>(
         &'a self,
-        reflector: &'a serde::Reflector<T, ID, E>,
-    ) -> serde::InplaceDeserializer<'a, T, ID, E> {
+        reflector: &'a serde::Reflector<ID, P, T, E>,
+    ) -> serde::InplaceDeserializer<'a, ID, P, T, E> {
         serde::InplaceDeserializer::new(self, reflector)
     }
 
@@ -110,23 +177,9 @@ impl<ID: Eq + Hash> Storage<ID> {
             })
         })
     }
+}
 
-    /// Gets the mutable component of the given type from the entity of the
-    /// given id.
-    pub fn get_mut<U: Any>(
-        &self,
-        id: ID,
-    ) -> Option<impl DerefMut<Target = U> + '_>
-    where
-        ID: Clone + Hash + Eq,
-    {
-        self.components.get_mut(&(id, TypeId::of::<U>())).map(|component| {
-            dashmap::mapref::one::RefMut::map(component, |x| {
-                (*x).downcast_mut().unwrap()
-            })
-        })
-    }
-
+impl<ID: Eq + Hash> Storage<ID, BoxTrait> {
     /// Removes the component of the given type from the entity of the given id.
     ///
     /// # Example
@@ -160,5 +213,68 @@ impl<ID: Eq + Hash> Storage<ID> {
         self.components
             .remove(&(id, TypeId::of::<U>()))
             .map(|component| component.1.downcast().unwrap())
+    }
+
+    /// Gets the mutable component of the given type from the entity of the
+    /// given id.
+    pub fn get_mut<U: Any>(
+        &self,
+        id: ID,
+    ) -> Option<impl DerefMut<Target = U> + '_>
+    where
+        ID: Clone + Hash + Eq,
+    {
+        self.components.get_mut(&(id, TypeId::of::<U>())).map(|component| {
+            dashmap::mapref::one::RefMut::map(component, |x| {
+                (*x).downcast_mut().unwrap()
+            })
+        })
+    }
+}
+
+/// An error returned when retrieving a mutable reference to a component fails.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    thiserror::Error,
+    displaydoc::Display,
+)]
+pub enum GetMutError {
+    /// The entity id or the component type was not found.
+    NotFound,
+
+    /// The component is shared and cannot be uniquely borrowed.
+    ArcNotUnique,
+}
+
+impl<ID: Eq + Hash> Storage<ID, ArcTrait> {
+    /// Tries to get a mutable reference to the component of the given type from
+    /// the entity of the given id.
+    ///
+    /// # Errors
+    ///
+    /// See [`GetMutError`] for the possible errors.
+    pub fn get_mut<U: Any>(
+        &self,
+        id: ID,
+    ) -> Result<impl DerefMut<Target = U> + '_, GetMutError>
+    where
+        ID: Clone + Hash + Eq,
+    {
+        let component = self
+            .components
+            .get_mut(&(id, TypeId::of::<U>()))
+            .ok_or(GetMutError::NotFound)?;
+
+        dashmap::mapref::one::RefMut::try_map(component, |x| {
+            Arc::get_mut(x).map(|x| x.downcast_mut::<U>().unwrap())
+        })
+        .map_err(|_| GetMutError::ArcNotUnique)
     }
 }

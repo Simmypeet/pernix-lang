@@ -11,6 +11,8 @@ serde = { workspace = true }
 erased-serde = { workspace = true }
 dashmap = { workspace = true }
 derive-new = { workspace = true }
+thiserror = { workspace = true }
+displaydoc = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
