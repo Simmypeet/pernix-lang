@@ -6,10 +6,8 @@ use bimap::BiHashMap;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use lazy_static::lazy_static;
-use pernixc_base::{
-    handler::Handler,
-    source_file::{self, ByteIndex, SourceElement, Span},
-};
+use pernixc_handler::Handler;
+use pernixc_source_file::{ByteIndex, SourceElement, Span};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
@@ -512,7 +510,7 @@ pub enum Error {
 impl Token {
     /// Increments the iterator until the predicate returns false.
     fn walk_iter(
-        iter: &mut source_file::Iterator,
+        iter: &mut pernixc_source_file::Iterator,
         predicate: impl Fn(char) -> bool,
     ) {
         while let Some((_, character)) = iter.peek() {
@@ -526,7 +524,10 @@ impl Token {
 
     /// Creates a span from the given start location to the current location of
     /// the iterator.
-    fn create_span(start: ByteIndex, iter: &mut source_file::Iterator) -> Span {
+    fn create_span(
+        start: ByteIndex,
+        iter: &mut pernixc_source_file::Iterator,
+    ) -> Span {
         iter.peek().map_or_else(
             || Span::to_end(iter.source_file().clone(), start).unwrap(),
             |(index, _)| {
@@ -554,7 +555,7 @@ impl Token {
     }
 
     fn handle_whitespace(
-        iter: &mut source_file::Iterator,
+        iter: &mut pernixc_source_file::Iterator,
         start: ByteIndex,
     ) -> Self {
         Self::walk_iter(iter, char::is_whitespace);
@@ -563,7 +564,7 @@ impl Token {
     }
 
     fn handle_identifier_and_keyword(
-        iter: &mut source_file::Iterator,
+        iter: &mut pernixc_source_file::Iterator,
         start: ByteIndex,
     ) -> Self {
         Self::walk_iter(iter, Self::is_identifier_character);
@@ -579,7 +580,7 @@ impl Token {
     }
 
     fn handle_comment(
-        iter: &mut source_file::Iterator,
+        iter: &mut pernixc_source_file::Iterator,
         start: ByteIndex,
         character: char,
         handler: &dyn Handler<error::Error>,
@@ -657,7 +658,7 @@ impl Token {
     }
 
     fn handle_numeric_literal(
-        iter: &mut source_file::Iterator,
+        iter: &mut pernixc_source_file::Iterator,
         start: ByteIndex,
     ) -> Self {
         // Tokenizes the whole number part
@@ -667,7 +668,7 @@ impl Token {
     }
 
     fn handle_string_literal(
-        iter: &mut source_file::Iterator,
+        iter: &mut pernixc_source_file::Iterator,
         start: ByteIndex,
         handler: &dyn Handler<error::Error>,
     ) -> Result<Self, Error> {
@@ -742,7 +743,7 @@ impl Token {
     }
 
     fn handle_single_quote(
-        iter: &mut source_file::Iterator,
+        iter: &mut pernixc_source_file::Iterator,
         start: ByteIndex,
         handler: &dyn Handler<error::Error>,
     ) -> Self {
@@ -838,7 +839,7 @@ impl Token {
     ///   at the end of the source code.
     /// - [`Error::FatalLexicalError`] - A fatal lexical error occurred.
     pub fn lex(
-        iter: &mut source_file::Iterator,
+        iter: &mut pernixc_source_file::Iterator,
         handler: &dyn Handler<error::Error>,
     ) -> Result<Self, Error> {
         // Gets the first character

@@ -4,7 +4,7 @@
 use std::{borrow, cmp::Ordering, fmt::Debug, vec::Drain};
 
 use paste::paste;
-use pernixc_base::handler::Handler;
+use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{KeywordKind, Punctuation},
     token_stream::{Delimiter, NodeKind, Tree},

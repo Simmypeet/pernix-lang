@@ -2,11 +2,12 @@
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation, String},
     token_stream::Delimiter,
 };
+use pernixc_source_file::{SourceElement, Span};
 
 use super::{
     expression::{Boolean, Numeric},
@@ -70,9 +71,7 @@ impl SyntaxTree for Pair {
 }
 
 impl SourceElement for Pair {
-    fn span(&self) -> pernixc_base::source_file::Span {
-        self.key.span().join(&self.value.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.key.span().join(&self.value.span()).unwrap() }
 }
 
 impl Pair {
@@ -144,7 +143,7 @@ impl SyntaxTree for Value {
 }
 
 impl SourceElement for Value {
-    fn span(&self) -> pernixc_base::source_file::Span {
+    fn span(&self) -> Span {
         match self {
             Self::Null(kw) => kw.span(),
             Self::Boolean(b) => b.span(),

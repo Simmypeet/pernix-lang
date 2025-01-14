@@ -4,7 +4,7 @@ use core::fmt;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::Key;
-use pernixc_base::source_file::Span;
+use pernixc_source_file::Span;
 use pernixc_table::{DisplayObject, GlobalID, Table};
 use serde::{Deserialize, Serialize};
 

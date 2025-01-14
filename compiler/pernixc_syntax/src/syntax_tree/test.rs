@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
-use pernixc_base::{
-    handler::{Panic, Storage},
-    source_file::SourceFile,
-};
+use pernixc_handler::Storage;
 use pernixc_lexical::{
     token::KeywordKind,
     token_stream::{Delimiter, TokenStream, Tree},
 };
+use pernixc_source_file::SourceFile;
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::{Arbitrary, TestCaseError},
@@ -75,7 +73,7 @@ fn empty_enclosed_connected_list() {
     let EnclosedConnectedList { open, connected_list, close } =
         KeywordKind::Continue
             .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
-            .parse(&mut state_machine, &Panic)
+            .parse(&mut state_machine, &pernixc_handler::Panic)
             .unwrap();
 
     assert_eq!(open.punctuation, '[');
@@ -93,7 +91,7 @@ fn single_trailing_separator_enclosed_connected_list() {
     let EnclosedConnectedList { open, connected_list, close } =
         KeywordKind::Continue
             .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
-            .parse(&mut state_machine, &Panic)
+            .parse(&mut state_machine, &pernixc_handler::Panic)
             .unwrap();
 
     let connected_list = connected_list.unwrap();
@@ -116,7 +114,7 @@ fn multiple_elements_enclosed_connected_list() {
     let EnclosedConnectedList { open, connected_list, close } =
         KeywordKind::Continue
             .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
-            .parse(&mut state_machine, &Panic)
+            .parse(&mut state_machine, &pernixc_handler::Panic)
             .unwrap();
 
     let connected_list = connected_list.unwrap();
@@ -130,7 +128,8 @@ fn multiple_elements_enclosed_connected_list() {
 
 fn create_token_stream(source: String) -> (TokenStream, Arc<SourceFile>) {
     let source_file = Arc::new(SourceFile::new(source, "test".into()));
-    let token_stream = TokenStream::tokenize(source_file.clone(), &Panic);
+    let token_stream =
+        TokenStream::tokenize(source_file.clone(), &pernixc_handler::Panic);
 
     (token_stream, source_file)
 }
@@ -146,7 +145,7 @@ fn multiple_elements_with_trailing_separator_enclosed_connected_list() {
     let EnclosedConnectedList { open, connected_list, close } =
         KeywordKind::Continue
             .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
-            .parse(&mut state_machine, &Panic)
+            .parse(&mut state_machine, &pernixc_handler::Panic)
             .unwrap();
 
     let connected_list = connected_list.unwrap();

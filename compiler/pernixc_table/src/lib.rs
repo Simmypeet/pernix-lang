@@ -13,7 +13,7 @@ use derive_new::new;
 use diagnostic::Diagnostic;
 use getset::Getters;
 use parking_lot::RwLock;
-use pernixc_base::handler::Handler;
+use pernixc_handler::Handler;
 use pernixc_storage::{serde::Reflector, Storage};
 use pernixc_syntax::syntax_tree::AccessModifier;
 use query::{Builder, Context};

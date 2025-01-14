@@ -9,7 +9,10 @@ rust-version.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pernixc_base = { path = "../pernixc_base" }
+pernixc_source_file = { path = "../pernixc_source_file" }
+pernixc_diagnostic = { path = "../pernixc_diagnostic" }
+pernixc_handler = { path = "../pernixc_handler" }
+pernixc_log = { path = "../pernixc_log" }
 getset = { workspace = true }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }

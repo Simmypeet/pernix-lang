@@ -1,6 +1,5 @@
 use std::{fmt::Debug, result::Result, sync::Arc};
 
-use pernixc_base::handler;
 use pernixc_table::{GlobalID, Table};
 use pernixc_term::{
     constant::Constant,
@@ -496,7 +495,7 @@ fn rewrite_term<T: Term + 'static>(
 fn property_based_testing<T: Term<Model = Default> + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult {
-    let mut table = Table::new(Arc::new(handler::Panic));
+    let mut table = Table::new(Arc::new(pernixc_handler::Panic));
     let mut premise = Premise::default();
     let config = GenericParameterUnifyConfig;
 

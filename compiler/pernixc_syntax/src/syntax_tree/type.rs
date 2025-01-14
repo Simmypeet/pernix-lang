@@ -4,14 +4,12 @@
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_base::{
-    handler::Handler,
-    source_file::{SourceElement, Span},
-};
+use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation},
     token_stream::Delimiter,
 };
+use pernixc_source_file::{SourceElement, Span};
 
 use super::{
     Constant, Elided, EnclosedConnectedList, Lifetime, Parse, ParseExt,

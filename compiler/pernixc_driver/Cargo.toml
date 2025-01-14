@@ -10,7 +10,9 @@ rust-version.workspace = true
 
 [dependencies]
 clap = { workspace = true }
-pernixc_base = { path = "../pernixc_base" }
+pernixc_source_file = { path = "../pernixc_source_file" }
+pernixc_diagnostic = { path = "../pernixc_diagnostic" }
+pernixc_handler = { path = "../pernixc_handler" }
 pernixc_lexical = { path = "../pernixc_lexical" }
 pernixc_syntax = { path = "../pernixc_syntax" }
 pernixc_semantic = { path = "../pernixc_semantic" }

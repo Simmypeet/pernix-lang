@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use pernixc_base::handler;
 use pernixc_syntax::utility::build_target;
 use ron::ser::PrettyConfig;
 use serde::de::DeserializeSeed;
@@ -27,7 +26,7 @@ private module second {
 #[test]
 fn submodule() {
     let target = build_target(SUBMODULE);
-    let mut table = Table::new(Arc::new(handler::Panic));
+    let mut table = Table::new(Arc::new(pernixc_handler::Panic));
 
     table
         .representation
@@ -35,7 +34,7 @@ fn submodule() {
             "test".to_string(),
             std::iter::empty(),
             target,
-            &handler::Panic,
+            &pernixc_handler::Panic,
         )
         .unwrap();
 
@@ -120,7 +119,8 @@ internal trait Test {
 #[allow(clippy::significant_drop_tightening)]
 fn trait_with_errors() {
     let target = build_target(TRAIT_WITH_ERRORS);
-    let storage = Arc::new(handler::Storage::<Box<dyn Diagnostic>>::new());
+    let storage =
+        Arc::new(pernixc_handler::Storage::<Box<dyn Diagnostic>>::new());
 
     let mut table = Table::new(storage.clone());
 
@@ -190,7 +190,7 @@ extern "C" {
 #[test]
 fn serialization() {
     let target = build_target(SERIALIZATION);
-    let storage = Arc::new(handler::Panic);
+    let storage = Arc::new(pernixc_handler::Panic);
 
     let mut table = Table::new(storage.clone());
 
@@ -277,7 +277,8 @@ public struct Existing {}
 #[allow(clippy::significant_drop_tightening)]
 fn usings() {
     let target = build_target(USINGS);
-    let storage = Arc::new(handler::Storage::<Box<dyn Diagnostic>>::new());
+    let storage =
+        Arc::new(pernixc_handler::Storage::<Box<dyn Diagnostic>>::new());
 
     let mut table = Table::new(storage.clone());
     table
@@ -353,7 +354,8 @@ final implements const Trait[int32] {
 fn trait_implementations() {
     let target = build_target(TRAIT_IMPLEMENTATIONS);
 
-    let storage = Arc::new(handler::Storage::<Box<dyn Diagnostic>>::new());
+    let storage =
+        Arc::new(pernixc_handler::Storage::<Box<dyn Diagnostic>>::new());
 
     let mut table = Table::new(storage.clone());
     table
@@ -406,7 +408,8 @@ implements Test {
 fn adt_implementation() {
     let target = build_target(ADT_IMPLEMENTATION);
 
-    let storage = Arc::new(handler::Storage::<Box<dyn Diagnostic>>::new());
+    let storage =
+        Arc::new(pernixc_handler::Storage::<Box<dyn Diagnostic>>::new());
 
     let mut table = Table::new(storage.clone());
     table

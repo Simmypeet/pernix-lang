@@ -4,8 +4,9 @@ use std::{
     time::SystemTime,
 };
 
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_handler::Handler;
 use pernixc_lexical::token::Identifier;
+use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{
     self,
     item::{ImplementationKind, ImplementationMember, UsingKind},
@@ -61,8 +62,8 @@ pub enum AddTargetError {
 }
 
 impl Representation {
-    /// Adds a target syntax tree to the compilation target. 
-    /// 
+    /// Adds a target syntax tree to the compilation target.
+    ///
     /// The function will analyse the syntax tree and create the symbols and
     /// their input components in the table.
     ///

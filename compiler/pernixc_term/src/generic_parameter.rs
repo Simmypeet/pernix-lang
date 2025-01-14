@@ -5,7 +5,7 @@ use std::collections::{hash_map::Entry, HashMap};
 use getset::Getters;
 use paste::paste;
 use pernixc_arena::{Arena, ID};
-use pernixc_base::source_file::Span;
+use pernixc_source_file::Span;
 use pernixc_table::{component::Derived, GlobalID, MemberID};
 use serde::{Deserialize, Serialize};
 

@@ -1,9 +1,7 @@
 //! Contains the definition of the [`Diagnostic`] struct and related types.
 
-use crate::{
-    log::{Message, Severity, SourceCodeDisplay},
-    source_file::Span,
-};
+use pernixc_log::{Message, Severity, SourceCodeDisplay};
+use pernixc_source_file::Span;
 
 /// Implement this trait for a type that can report a diagnostic.
 ///

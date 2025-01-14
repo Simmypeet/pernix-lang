@@ -5,7 +5,8 @@ use std::{collections::HashMap, ops::Index, sync::Arc};
 use derive_more::{Deref, From};
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_base::{handler::Handler, source_file::SourceFile};
+use pernixc_handler::Handler;
+use pernixc_source_file::SourceFile;
 
 use crate::{
     error::{self, UndelimitedDelimiter},

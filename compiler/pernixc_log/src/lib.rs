@@ -4,8 +4,7 @@ use std::fmt::Display;
 
 use derive_new::new;
 use formatting::{Color, Style};
-
-use crate::source_file::{Location, Span};
+use pernixc_source_file::{Location, Span};
 
 pub mod formatting;
 

@@ -1,6 +1,6 @@
 //! Contains the definition of [`WhereClause`] component.
 
-use pernixc_base::source_file::Span;
+use pernixc_source_file::Span;
 use pernixc_table::component::Derived;
 use serde::{Deserialize, Serialize};
 

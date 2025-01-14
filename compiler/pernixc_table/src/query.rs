@@ -11,7 +11,9 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use parking_lot::{Condvar, Mutex};
-use pernixc_base::{diagnostic::Report, handler::Handler, log::Severity};
+use pernixc_diagnostic::Report;
+use pernixc_handler::Handler;
+use pernixc_log::Severity;
 
 use super::{GlobalID, Table};
 use crate::{
@@ -38,12 +40,12 @@ impl Report<&Table> for CyclicDependency {
     fn report(
         &self,
         parameter: &Table,
-    ) -> Result<pernixc_base::diagnostic::Diagnostic, Self::Error> {
+    ) -> Result<pernixc_diagnostic::Diagnostic, Self::Error> {
         if self.records_stack.is_empty() {
             return Err(ReportError);
         }
 
-        Ok(pernixc_base::diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             span: parameter
                 .storage
                 .get::<LocationSpan>(self.records_stack[0].global_id)
@@ -76,7 +78,7 @@ impl Report<&Table> for CyclicDependency {
                 .iter()
                 .skip(1)
                 .map(|x| {
-                    Ok(pernixc_base::diagnostic::Related {
+                    Ok(pernixc_diagnostic::Related {
                         span: parameter
                             .storage
                             .get::<LocationSpan>(x.global_id)

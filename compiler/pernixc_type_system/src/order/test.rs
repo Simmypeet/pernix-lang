@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use pernixc_base::handler;
 use pernixc_table::{GlobalID, Table, TargetID};
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -38,7 +37,7 @@ fn ambiguous() {
         constants: Vec::new(),
     };
 
-    let table = Table::new(Arc::new(handler::Panic));
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let premise = Premise::default();
 
     let environment = Environment::new(&premise, &table, normalizer::NO_OP);
@@ -68,7 +67,7 @@ fn more_general() {
         constants: Vec::new(),
     };
 
-    let table = Table::new(Arc::new(handler::Panic));
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let premise = Premise::default();
 
     let environment = Environment::new(&premise, &table, normalizer::NO_OP);
@@ -98,7 +97,7 @@ fn incompatible() {
         constants: Vec::new(),
     };
 
-    let table = Table::new(Arc::new(handler::Panic));
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let premise = Premise::default();
 
     let environment = Environment::new(&premise, &table, normalizer::NO_OP);

@@ -1,6 +1,5 @@
 use std::{fmt::Debug, sync::Arc};
 
-use pernixc_base::handler;
 use pernixc_table::{component::SymbolKind, GlobalID, Table};
 use pernixc_term::{
     constant::Constant,
@@ -394,7 +393,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult {
     let mut premise = Premise::default();
-    let mut table = Table::new(Arc::new(handler::Panic));
+    let mut table = Table::new(Arc::new(pernixc_handler::Panic));
 
     let (term1, term2) = property
         .generate(&mut table, &mut premise)
@@ -437,7 +436,7 @@ proptest! {
         constant in Constant::arbitrary(),
         lifetime in Lifetime::arbitrary()
     ) {
-        let table = Table::new(Arc::new(handler::Panic));
+        let table = Table::new(Arc::new(pernixc_handler::Panic));
         let premise = Premise::default();
 
         let environment = Environment::new(&premise, &table, normalizer::NO_OP);

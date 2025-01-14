@@ -1,10 +1,8 @@
 //! Contains the diagnostic related to the symbol resolution process.
 
-use pernixc_base::{
-    diagnostic::{Diagnostic, Report},
-    log::Severity,
-    source_file::Span,
-};
+use pernixc_diagnostic::{Diagnostic, Report};
+use pernixc_log::Severity;
+use pernixc_source_file::Span;
 
 use crate::{diagnostic::ReportError, GlobalID, Table};
 

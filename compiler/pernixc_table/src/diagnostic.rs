@@ -2,11 +2,9 @@
 
 use std::{any::Any, collections::HashSet, fmt::Debug};
 
-use pernixc_base::{
-    diagnostic::{Diagnostic as DiagnosticReport, Related, Report},
-    log::Severity,
-    source_file::Span,
-};
+use pernixc_diagnostic::{Diagnostic as DiagnosticReport, Related, Report};
+use pernixc_log::Severity;
+use pernixc_source_file::Span;
 
 use super::{GlobalID, Representation, Table, TargetID};
 use crate::component::{Accessibility, LocationSpan, Name, SymbolKind};
@@ -79,7 +77,7 @@ impl Report<&Table> for ItemRedifinition {
     fn report(
         &self,
         table: &Table,
-    ) -> Result<pernixc_base::diagnostic::Diagnostic, Self::Error> {
+    ) -> Result<pernixc_diagnostic::Diagnostic, Self::Error> {
         let existing_symbol_span = table
             .storage
             .get::<LocationSpan>(self.existing_id)
@@ -144,7 +142,7 @@ impl Report<&Table> for SymbolIsMoreAccessibleThanParent {
     fn report(
         &self,
         table: &Table,
-    ) -> Result<pernixc_base::diagnostic::Diagnostic, Self::Error> {
+    ) -> Result<pernixc_diagnostic::Diagnostic, Self::Error> {
         let (Some(symbol_name), Some(parent_qualified_name)) = (
             table.storage.get::<Name>(self.symbol_id),
             table.get_qualified_name(self.parent_id),

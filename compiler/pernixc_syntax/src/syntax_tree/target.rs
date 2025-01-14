@@ -14,13 +14,11 @@ use drain_filter_polyfill::VecExt;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use parking_lot::RwLock;
-use pernixc_base::{
-    diagnostic::{Diagnostic, Related, Report},
-    handler::Handler,
-    log::Severity,
-    source_file::{self, SourceFile, Span},
-};
+use pernixc_diagnostic::{Diagnostic, Related, Report};
+use pernixc_handler::Handler;
 use pernixc_lexical::token_stream::{TokenStream, Tree};
+use pernixc_log::Severity;
+use pernixc_source_file::{SourceFile, Span};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use super::{
@@ -127,7 +125,7 @@ impl Report<()> for RootSubmoduleConflict {
 #[derive(Debug)]
 pub struct SourceFileLoadFail {
     /// The error that occurred while loading the source file.
-    pub source_error: source_file::Error,
+    pub source_error: pernixc_source_file::Error,
 
     /// The submodule that submodule stems from.
     pub submodule: Module,

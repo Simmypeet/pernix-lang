@@ -1,6 +1,5 @@
 use std::{collections::BTreeSet, fmt::Debug, sync::Arc};
 
-use pernixc_base::handler;
 use pernixc_table::{GlobalID, Table, TargetID, ID};
 use pernixc_term::{
     constant::Constant,
@@ -26,7 +25,7 @@ use crate::{
 
 #[test]
 fn reflexive() {
-    let table = Table::new(Arc::new(handler::Panic));
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let term = Type::<Default>::Primitive(Primitive::Bool);
     let premise = Premise::default();
 
@@ -55,7 +54,7 @@ fn symmetric() {
         rhs: equivalence.clone(),
     }));
 
-    let table = Table::new(Arc::new(handler::Panic));
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let environment = Environment::new(&premise, &table, normalizer::NO_OP);
 
     assert!(environment
@@ -93,7 +92,7 @@ fn not_equal() {
         rhs: equivalence,
     }));
 
-    let table = Table::new(Arc::new(handler::Panic));
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let environment = Environment::new(&premise, &table, normalizer::NO_OP);
 
     assert!(environment
@@ -141,7 +140,7 @@ fn transitivity() {
         }),
     ]);
 
-    let table = Table::new(Arc::new(handler::Panic));
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let environment = Environment::new(&premise, &table, normalizer::NO_OP);
 
     assert!(environment
@@ -194,7 +193,7 @@ fn congruence() {
         }),
     ]);
 
-    let table = Table::new(Arc::new(handler::Panic));
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let environment = Environment::new(&premise, &table, normalizer::NO_OP);
 
     let lhs = Type::Symbol(Symbol {
@@ -544,7 +543,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     decoy: Decoy,
 ) -> TestCaseResult {
     let mut premise = Premise::default();
-    let mut table = Table::new(Arc::new(handler::Panic));
+    let mut table = Table::new(Arc::new(pernixc_handler::Panic));
 
     let (term1, term2) =
         property.generate(&mut table, &mut premise).map_err(|error| {

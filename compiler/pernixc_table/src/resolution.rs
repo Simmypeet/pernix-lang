@@ -1,7 +1,7 @@
 //! Contains the resolution logic for the table.
 
 use diagnostic::{SymbolIsNotAccessible, SymbolNotFound};
-use pernixc_base::handler::Handler;
+use pernixc_handler::Handler;
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{SimplePath, SimplePathRoot};
 

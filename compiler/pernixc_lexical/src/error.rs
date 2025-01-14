@@ -6,11 +6,9 @@ use std::convert::Infallible;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_base::{
-    diagnostic::{Diagnostic, Report},
-    log::Severity,
-    source_file::Span,
-};
+use pernixc_diagnostic::{Diagnostic, Report};
+use pernixc_log::Severity;
+use pernixc_source_file::Span;
 
 use crate::token_stream::Delimiter;
 

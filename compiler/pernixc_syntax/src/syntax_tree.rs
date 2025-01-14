@@ -7,14 +7,12 @@ use std::fmt::Debug;
 use enum_as_inner::EnumAsInner;
 use expression::Expression;
 use getset::Getters;
-use pernixc_base::{
-    handler::Handler,
-    source_file::{SourceElement, Span},
-};
+use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation},
     token_stream::Delimiter,
 };
+use pernixc_source_file::{SourceElement, Span};
 use r#type::Type;
 
 use crate::{

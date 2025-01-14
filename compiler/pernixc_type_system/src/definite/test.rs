@@ -1,6 +1,5 @@
 use std::{fmt::Debug, sync::Arc};
 
-use pernixc_base::handler;
 use pernixc_table::{GlobalID, Table};
 use pernixc_term::{
     constant, constant::Constant, generic_arguments::GenericArguments, r#type,
@@ -184,7 +183,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult {
     let mut premise = Premise::default();
-    let mut table = Table::new(Arc::new(handler::Panic));
+    let mut table = Table::new(Arc::new(pernixc_handler::Panic));
 
     let term = property.generate(&mut table, &mut premise)?;
 

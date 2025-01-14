@@ -652,4 +652,4 @@ fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
 }
 
 #[cfg(test)]
-mod tests;
+mod test;

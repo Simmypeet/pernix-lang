@@ -19,7 +19,7 @@
 use std::collections::{HashMap, HashSet};
 
 use derive_more::{Deref, DerefMut};
-use pernixc_base::source_file::Span;
+use pernixc_source_file::Span;
 use serde::{Deserialize, Serialize};
 
 use crate::{GlobalID, ID};

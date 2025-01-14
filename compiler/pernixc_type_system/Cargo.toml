@@ -11,7 +11,7 @@ enum-as-inner = { workspace = true }
 pernixc_table = { path = "../pernixc_table" }
 pernixc_term = { path = "../pernixc_term" }
 pernixc_arena = { path = "../pernixc_arena" }
-pernixc_base = { path = "../pernixc_base" }
+pernixc_handler = { path = "../pernixc_handler" }
 serde = { workspace = true }
 getset = { workspace = true }
 thiserror = { workspace = true }

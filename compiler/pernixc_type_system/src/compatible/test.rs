@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use pernixc_base::handler;
 use pernixc_table::{component::SymbolKind, GlobalID, Table, TargetID};
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -25,7 +24,7 @@ proptest! {
     fn strict_equality_compatible(
         term in Type::<Default>::arbitrary()
     ) {
-        let table = Table::new(Arc::new(handler::Panic));
+        let table = Table::new(Arc::new(pernixc_handler::Panic));
         let premise = Premise::default();
 
         let environment = Environment::new( &premise, &table, normalizer::NO_OP);
@@ -82,7 +81,7 @@ fn basic_compatible() {
         pointee: Box::new(Type::Primitive(Primitive::Bool)),
     });
 
-    let table = Table::new(Arc::new(handler::Panic));
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let premise = Premise::default();
 
     let environment = Environment::new(&premise, &table, normalizer::NO_OP);
@@ -150,7 +149,7 @@ fn compatible_with_adt() {
     });
 
     let check = |variance: Variance| {
-        let table = Table::new(Arc::new(handler::Panic));
+        let table = Table::new(Arc::new(pernixc_handler::Panic));
 
         let mut generic_parameter = GenericParameters::default();
         let lifetime_id = generic_parameter
@@ -278,7 +277,7 @@ fn compatible_with_mutable_reference() {
     });
 
     let premise = Premise::default();
-    let table = Table::new(Arc::new(handler::Panic));
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
 
     let environment = Environment::new(&premise, &table, normalizer::NO_OP);
 

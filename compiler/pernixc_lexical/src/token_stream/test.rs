@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use pernixc_base::{handler::Storage, source_file::SourceFile};
+use pernixc_handler::Storage;
+use pernixc_source_file::SourceFile;
 use pernixc_tests::input::Input;
 use proptest::{prelude::Arbitrary, proptest};
 

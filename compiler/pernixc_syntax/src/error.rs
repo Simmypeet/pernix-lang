@@ -4,15 +4,13 @@ use std::{convert::Infallible, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_base::{
-    diagnostic::{Diagnostic, Report},
-    log::Severity,
-    source_file::{SourceFile, Span},
-};
+use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_lexical::{
     token::Token,
     token_stream::{Delimiter, Location, TokenKind, Tree},
 };
+use pernixc_log::Severity;
+use pernixc_source_file::{SourceFile, Span};
 
 use crate::{expect::Expected, state_machine::parse::Unexpected};
 

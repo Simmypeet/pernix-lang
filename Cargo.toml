@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "compiler/pernixc_base",
     "compiler/pernixc_lexical",
     "compiler/pernixc_syntax",
     "compiler/pernixc_tests",
@@ -11,6 +10,10 @@ members = [
     "compiler/pernixc_arena",
     "compiler/pernixc_term",
     "compiler/pernixc_type_system",
+    "compiler/pernixc_handler",
+    "compiler/pernixc_source_file",
+    "compiler/pernixc_diagnostic",
+    "compiler/pernixc_log",
     # "compiler/pernixc_term",
     # "compiler/pernixc_driver",
     # "compiler/pernixc",

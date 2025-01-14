@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
-use pernixc_base::{
-    handler::{Handler, Panic, Storage},
-    source_file::SourceFile,
-};
+use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation, Token},
     token_stream::{Delimiter, TokenStream, Tree},
 };
+use pernixc_source_file::SourceFile;
 
 use super::ExpectExt;
 use crate::{
@@ -20,7 +18,8 @@ use crate::{
 
 fn create_token_stream(source: String) -> (TokenStream, Arc<SourceFile>) {
     let source_file = Arc::new(SourceFile::new(source, "test".into()));
-    let token_stream = TokenStream::tokenize(source_file.clone(), &Panic);
+    let token_stream =
+        TokenStream::tokenize(source_file.clone(), &pernixc_handler::Panic);
 
     (token_stream, source_file)
 }
@@ -60,7 +59,8 @@ fn cons_list() {
 
     let tree = Tree::new(&token_stream);
 
-    let cons_list = cons_list_syntax.parse_syntax(&tree, &Panic).unwrap();
+    let cons_list =
+        cons_list_syntax.parse_syntax(&tree, &pernixc_handler::Panic).unwrap();
 
     assert_eq!(cons_list.count(), 3);
 }
@@ -95,7 +95,7 @@ fn keepe_take() {
     let tree = Tree::new(&token_stream);
 
     let (continues, _) = (KeywordKind::Continue.keep_take(), ';')
-        .parse_syntax(&tree, &Panic)
+        .parse_syntax(&tree, &pernixc_handler::Panic)
         .unwrap();
 
     assert_eq!(continues.len(), 3);
@@ -107,7 +107,11 @@ fn keep_take_no_skip() {
 
     let tree = Tree::new(&token_stream);
 
-    let pluses = '+'.no_skip().keep_take().parse_syntax(&tree, &Panic).unwrap();
+    let pluses = '+'
+        .no_skip()
+        .keep_take()
+        .parse_syntax(&tree, &pernixc_handler::Panic)
+        .unwrap();
 
     assert_eq!(pluses.len(), 3);
 }
@@ -122,7 +126,7 @@ fn step_into() {
     let (open, continues, close) = KeywordKind::Continue
         .keep_take()
         .step_into(Delimiter::Bracket)
-        .parse_syntax(&tree, &Panic)
+        .parse_syntax(&tree, &pernixc_handler::Panic)
         .unwrap();
 
     assert_eq!(open.punctuation, '[');
