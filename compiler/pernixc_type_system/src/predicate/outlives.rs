@@ -57,6 +57,7 @@ impl<M: Model> LifetimeConstraint<M> {
     }
 }
 
+// TODO: optimize this query to use transitive closure
 impl<T: Term> Query for Outlives<T> {
     type Model = T::Model;
     type Parameter = ();

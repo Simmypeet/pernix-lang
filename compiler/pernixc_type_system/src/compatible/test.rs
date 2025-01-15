@@ -10,7 +10,7 @@ use pernixc_term::{
     lifetime::Lifetime,
     predicate::Outlives,
     r#type::{Primitive, Qualifier, Reference, Type},
-    variance::{self, Variance},
+    variance::Variance,
     Default, Symbol,
 };
 use proptest::{arbitrary::Arbitrary, prop_assert, proptest};

@@ -1,22 +1,30 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_table::GlobalID;
+use pernixc_table::{component::SymbolKind, GlobalID};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
+    generic_parameter::GenericParameters,
     lifetime::Lifetime,
-    predicate::{NegativeMarker as Negative, PositiveMarker as Positive},
+    predicate::{
+        NegativeMarker as Negative, PositiveMarker as Positive, Predicate,
+    },
     r#type::Type,
-    visitor::{self, Element},
+    variance::Variance,
+    visitor::{self, Element, VisitNonApplicationTermError},
     Model,
 };
 
 use crate::{
     environment::{Call, DynArc, Environment, Query},
     normalizer::Normalizer,
-    resolution::Implementation,
-    AbruptError, Satisfied, Succeeded,
+    resolution::{self, Implementation},
+    term::Term,
+    AbruptError, ResultExt, Satisfied, Succeeded,
 };
 
 /// An enumeration of ways the marker can be satisfied.
@@ -29,7 +37,7 @@ pub enum PositiveSatisfied<M: Model> {
     Implementation(Implementation<M>),
 
     /// Satisfied by proving that all the fields/sub-terms are satisfied.
-    Congruence(BTreeMap<Positive<M>, Succeeded<PositiveSatisfied<M>, M>>),
+    Congruence(BTreeMap<Positive<M>, Arc<Succeeded<PositiveSatisfied<M>, M>>>),
 
     /// Satisfied by the fact that the query was made in the marker/its
     /// implementation.
@@ -141,47 +149,41 @@ impl<M: Model> Query for Positive<M> {
     type Result = Succeeded<PositiveSatisfied<M>, M>;
     type Error = AbruptError;
 
+    #[allow(clippy::too_many_lines)]
     fn query(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        parameter: Self::Parameter,
-        in_progress: Self::InProgress,
+        (): Self::Parameter,
+        (): Self::InProgress,
     ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        todo!()
-        /*
         // if this query was made in marker, then check if the marker is the
         // same as the query one.
-        if let Some(result) = is_in_marker(
-            self.id,
-            &self.generic_arguments,
-            environment,
-            context,
-        )? {
-            return Ok(Some(Succeeded::with_constraints(
-                PositiveSatisfied::ByEnvironment,
+        if let Some(result) =
+            is_in_marker(self.marker_id, &self.generic_arguments, environment)?
+        {
+            return Ok(Some(Arc::new(Succeeded::with_constraints(
+                PositiveSatisfied::Environment,
                 result.constraints,
-            )));
+            ))));
         }
 
         // look for the matching premise
         for premise in environment
-            .premise
+            .premise()
             .predicates
             .iter()
             .filter_map(Predicate::as_positive_marker)
         {
             // skip if id is different
-            if premise.id != self.id {
+            if premise.marker_id != self.marker_id {
                 continue;
             }
 
-            let Some(compatiblity) =
-                self.generic_arguments.compatible_with_context(
-                    &premise.generic_arguments,
-                    Variance::Invariant,
-                    environment,
-                    context,
-                )?
+            let Some(compatiblity) = environment.generic_arguments_compatible(
+                &self.generic_arguments,
+                &premise.generic_arguments,
+                Variance::Invariant,
+            )?
             else {
                 continue;
             };
@@ -190,51 +192,44 @@ impl<M: Model> Query for Positive<M> {
                 continue;
             }
 
-            return Ok(Some(Succeeded::with_constraints(
-                PositiveSatisfied::ByPremise,
+            return Ok(Some(Arc::new(Succeeded::with_constraints(
+                PositiveSatisfied::Premise,
                 compatiblity.constraints,
-            )));
+            ))));
         }
 
         // manually search for the trait implementation
-        match resolve_implementation_with_context(
-            self.id,
-            &self.generic_arguments,
-            environment,
-            context,
-        ) {
+        match environment
+            .resolve_implementation(self.marker_id, &self.generic_arguments)
+        {
             Ok(Succeeded {
                 result:
-                    Implementation {
-                        instantiation,
-                        id: MarkerImplementationID::Positive(id),
-                        is_not_general_enough,
-                    },
+                    Implementation { instantiation, id, is_not_general_enough },
                 constraints,
             }) => {
-                return Ok(Some(Succeeded::with_constraints(
-                    PositiveSatisfied::ByImplementation(Implementation {
-                        instantiation,
-                        id,
-                        is_not_general_enough,
-                    }),
-                    constraints,
-                )))
-            }
+                if environment
+                    .table()
+                    .get::<SymbolKind>(id)
+                    .map_or(false, |x| {
+                        *x == SymbolKind::PositiveMarkerImplementation
+                    })
+                {
+                    return Ok(Some(Arc::new(Succeeded::with_constraints(
+                        PositiveSatisfied::Implementation(Implementation {
+                            instantiation,
+                            id,
+                            is_not_general_enough,
+                        }),
+                        constraints,
+                    ))));
+                }
 
-            Ok(Succeeded {
-                result:
-                    Implementation {
-                        id: MarkerImplementationID::Negative(_), ..
-                    },
-                ..
-            }) => {
-                // no more continuing
+                // then it's a negative implementation
                 return Ok(None);
             }
 
-            Err(ResolutionError::Overflow(overflow_err)) => {
-                return Err(overflow_err)
+            Err(resolution::Error::Abrupt(abrupt_error)) => {
+                return Err(abrupt_error)
             }
 
             Err(_) => {}
@@ -247,7 +242,6 @@ impl<M: Model> Query for Positive<M> {
                 original: self,
                 state: VisitorState::Succeeded(BTreeMap::new()),
                 environment,
-                context,
             };
 
             let result = ty.accept_one_level(&mut visitor);
@@ -260,13 +254,13 @@ impl<M: Model> Query for Positive<M> {
                     Err(VisitNonApplicationTermError),
                 ) => {}
 
-                // overflow error
-                (VisitorState::Overflowed, _) => return Err(OverflowError),
+                // abrupt error
+                (VisitorState::AbruptError(error), _) => return Err(error),
 
                 (VisitorState::Succeeded(mut btree_map), Ok(_)) => {
                     // including fields as well
                     for field_ty in ty
-                        .get_adt_fields(environment.table)
+                        .get_adt_fields(environment.table())
                         .into_iter()
                         .flatten()
                     {
@@ -290,29 +284,22 @@ impl<M: Model> Query for Positive<M> {
                             },
                         };
 
-                        if let Some(Succeeded { result, constraints }) =
-                            new_query
-                                .query_with_context(environment, context)?
-                        {
-                            btree_map.insert(new_query, Succeeded {
-                                result,
-                                constraints,
-                            });
+                        if let Some(result) = environment.query(&new_query)? {
+                            btree_map.insert(new_query, result);
                         } else {
                             return Ok(None);
                         }
                     }
 
-                    return Ok(Some(Succeeded {
-                        result: PositiveSatisfied::ByCongruence(btree_map),
+                    return Ok(Some(Arc::new(Succeeded {
+                        result: PositiveSatisfied::Congruence(btree_map),
                         constraints: BTreeSet::new(),
-                    }));
+                    })));
                 }
             }
         }
 
         Ok(None)
-        */
     }
 
     fn on_cyclic(
@@ -352,64 +339,142 @@ impl<M: Model> Query for Negative<M> {
     fn query(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-        parameter: Self::Parameter,
-        in_progress: Self::InProgress,
+        (): Self::Parameter,
+        (): Self::InProgress,
     ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        todo!()
+        // manually search for the trait implementation
+        match environment
+            .resolve_implementation(self.marker_id, &self.generic_arguments)
+        {
+            Ok(Succeeded {
+                result:
+                    Implementation { instantiation, id, is_not_general_enough },
+                constraints,
+            }) => {
+                if environment
+                    .table()
+                    .get::<SymbolKind>(id)
+                    .map_or(false, |x| {
+                        *x == SymbolKind::NegativeMarkerImplementation
+                    })
+                {
+                    return Ok(Some(Arc::new(Succeeded::with_constraints(
+                        NegativeSatisfied::Implementation(Implementation {
+                            instantiation,
+                            id,
+                            is_not_general_enough,
+                        }),
+                        constraints,
+                    ))));
+                }
+            }
+
+            Err(resolution::Error::Abrupt(abrupt_error)) => {
+                return Err(abrupt_error);
+            }
+
+            Err(_) => {}
+        }
+
+        // look for the premise that matches
+        for marker_premise in environment
+            .premise()
+            .predicates
+            .iter()
+            .filter_map(Predicate::as_negative_marker)
+        {
+            // skip if the trait id is different
+            if marker_premise.marker_id != self.marker_id {
+                continue;
+            }
+
+            let Some(compatiblity) = environment.generic_arguments_compatible(
+                &self.generic_arguments,
+                &marker_premise.generic_arguments,
+                Variance::Invariant,
+            )?
+            else {
+                continue;
+            };
+
+            if !compatiblity.result.forall_lifetime_errors.is_empty() {
+                continue;
+            }
+
+            return Ok(Some(Arc::new(Succeeded::with_constraints(
+                NegativeSatisfied::Premise,
+                compatiblity.constraints,
+            ))));
+        }
+
+        // must be definite and failed to prove the positive trait
+        let Some(definition) =
+            environment.generic_arguments_definite(&self.generic_arguments)?
+        else {
+            return Ok(None);
+        };
+        Ok(environment
+            .query(&Positive::new(
+                self.marker_id,
+                self.generic_arguments.clone(),
+            ))?
+            .is_none()
+            .then(|| {
+                Arc::new(Succeeded::with_constraints(
+                    NegativeSatisfied::UnsatisfiedPositive,
+                    definition.constraints,
+                ))
+            }))
     }
 }
 
 fn is_in_marker<M: Model>(
     marker_id: GlobalID,
     generic_arguments: &GenericArguments<M>,
-    environment: &mut Environment<M, impl Normalizer<M>>,
+    environment: &Environment<M, impl Normalizer<M>>,
 ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
-    todo!()
-    /*
-    let Some(query_site) = environment.premise.query_site else {
+    let Some(query_site) = environment.premise().query_site else {
         return Ok(None);
     };
 
-    for item_id in
-        if let Some(iter) = environment.table.scope_walker(query_site) {
-            iter
-        } else {
-            return Ok(None);
-        }
-    {
-        let ItemID::Marker(env_marker_id) = item_id else {
+    for current_id in environment.table().scope_walker(query_site) {
+        let current_id = GlobalID::new(query_site.target_id, current_id);
+
+        let Some(SymbolKind::Trait) =
+            environment.table().get::<SymbolKind>(current_id).map(|x| *x)
+        else {
             continue;
         };
 
         // must be the same id
-        if env_marker_id != marker_id {
-            return Ok(None);
+        if current_id != marker_id {
+            continue;
         }
 
-        let marker_symbol = environment.table.get(marker_id).unwrap();
-
-        let trait_generic_arguments = marker_symbol
-            .generic_declaration()
-            .parameters
-            .create_identity_generic_arguments(env_marker_id.into());
-
-        let Some(compatiblity) = generic_arguments.compatible_with_context(
-            &trait_generic_arguments,
-            Variance::Invariant,
-            environment,
-            context,
-        )?
+        let Some(marker_generic_arguments) = environment
+            .table()
+            .query::<GenericParameters>(current_id)
+            .map(|x| x.create_identity_generic_arguments(current_id))
+            .extract_cyclic_dependency()?
         else {
-            return Ok(None);
+            continue;
         };
 
-        if compatiblity.result.forall_lifetime_errors.is_empty() {
+        let Some(compatibility) = environment.generic_arguments_compatible(
+            generic_arguments,
+            &marker_generic_arguments,
+            Variance::Invariant,
+        )?
+        else {
+            continue;
+        };
+
+        if compatibility.result.forall_lifetime_errors.is_empty() {
             return Ok(Some(Succeeded::satisfied_with(
-                compatiblity.constraints,
+                compatibility.constraints,
             )));
         }
     }
 
     Ok(None)
-    */
 }
