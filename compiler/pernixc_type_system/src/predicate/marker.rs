@@ -260,7 +260,7 @@ impl<M: Model> Query for Positive<M> {
                 (VisitorState::Succeeded(mut btree_map), Ok(_)) => {
                     // including fields as well
                     for field_ty in ty
-                        .get_adt_fields(environment.table())
+                        .get_adt_fields(environment.table())?
                         .into_iter()
                         .flatten()
                     {

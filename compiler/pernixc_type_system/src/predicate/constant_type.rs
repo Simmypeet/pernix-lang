@@ -165,7 +165,8 @@ impl<M: Model> Query for ConstantType<M> {
             if let Some(mut result) = visitor.constant_type? {
                 // look for the fields of the term as well (if it's an ADT)
                 let mut found_error = false;
-                if let Some(fields) = self.0.get_adt_fields(environment.table())
+                if let Some(fields) =
+                    self.0.get_adt_fields(environment.table())?
                 {
                     for field in fields {
                         let Some(new_result) = environment.query_with(

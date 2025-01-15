@@ -3,24 +3,31 @@
 use std::{cmp::Eq, fmt::Debug, hash::Hash};
 
 use pernixc_arena::ID;
-use pernixc_table::{MemberID, Table};
+use pernixc_component::{
+    fields::Fields, type_alias::TypeAlias, variant::Variant,
+};
+use pernixc_table::{
+    component::{Member, Name, Parent, SymbolKind},
+    GlobalID, MemberID, Table,
+};
 use pernixc_term::{
     constant::Constant,
     generic_parameter::{
-        ConstantParameter, GenericParameter, LifetimeParameter, TypeParameter,
+        ConstantParameter, GenericParameter, GenericParameters,
+        LifetimeParameter, TypeParameter,
     },
-    instantiation,
+    instantiation::{self, Instantiation},
     lifetime::Lifetime,
     matching,
     predicate::{self, Compatible, Outlives, Predicate},
     r#type::{TraitMember, Type},
-    sub_term, visitor, Model, ModelOf, Never,
+    sub_term, visitor, Model, ModelOf, Never, Symbol, Tuple, TupleElement,
 };
 
 use crate::{
     compatible, environment::Environment, equivalences, mapping,
-    normalizer::Normalizer, unification, AbruptError, Satisfiability,
-    Succeeded,
+    normalizer::Normalizer, resolution, unification, AbruptError, ResultExt,
+    Satisfiability, Succeeded,
 };
 
 /// A trait implemented by all three fundamental terms of the language:
@@ -108,7 +115,10 @@ pub trait Term:
     fn definite_satisfiability(&self) -> Satisfiability;
 
     #[doc(hidden)]
-    fn get_adt_fields(&self, table: &Table) -> Option<Vec<Self>>;
+    fn get_adt_fields(
+        &self,
+        table: &Table,
+    ) -> Result<Option<Vec<Self>>, AbruptError>;
 
     #[doc(hidden)]
     fn outlives_satisfiability(
@@ -167,7 +177,12 @@ impl<M: Model> Term for Lifetime<M> {
         Satisfiability::Satisfied
     }
 
-    fn get_adt_fields(&self, _: &Table) -> Option<Vec<Self>> { None }
+    fn get_adt_fields(
+        &self,
+        _: &Table,
+    ) -> Result<Option<Vec<Self>>, AbruptError> {
+        Ok(None)
+    }
 
     fn outlives_satisfiability(&self, other: &Self) -> Satisfiability {
         if self == other {
@@ -196,6 +211,129 @@ impl<M: Model> Term for Lifetime<M> {
     fn as_tuple(&self) -> Option<&pernixc_term::Tuple<Self>> { None }
 }
 
+fn normalize_trait_member<M: Model>(
+    trait_member: &TraitMember<M>,
+    environment: &Environment<M, impl Normalizer<M>>,
+) -> Result<Option<Succeeded<Type<M>, M>>, AbruptError> {
+    let Some(trait_id) =
+        environment.table().get::<Parent>(trait_member.id).map(|x| x.0)
+    else {
+        return Ok(None);
+    };
+
+    // resolve the trait implementation
+    let mut resolution = match environment.resolve_implementation(
+        GlobalID::new(trait_member.id.target_id, trait_id),
+        &trait_member.parent_generic_arguments,
+    ) {
+        Ok(resolution) => resolution,
+
+        Err(resolution::Error::Abrupt(error)) => {
+            return Err(error);
+        }
+
+        Err(_) => return Ok(None),
+    };
+
+    let trait_member_name =
+        environment.table().get::<Name>(trait_member.id).unwrap();
+
+    // not a trait implementation
+    if environment
+        .table()
+        .get::<SymbolKind>(resolution.result.id)
+        .map_or(true, |x| *x != SymbolKind::PositiveTraitImplementation)
+    {
+        return Ok(None);
+    }
+
+    let Some(implementation_member_id) =
+        environment.table().get::<Member>(resolution.result.id).and_then(|x| {
+            x.0.get(&trait_member_name.0)
+                .copied()
+                .map(|x| GlobalID::new(resolution.result.id.target_id, x))
+        })
+    else {
+        return Ok(None);
+    };
+
+    // check if is the type
+    if environment
+        .table()
+        .get::<SymbolKind>(implementation_member_id)
+        .map_or(true, |x| *x != SymbolKind::TraitImplementationType)
+    {
+        return Ok(None);
+    }
+
+    // should have no collision and no mismatched generic arguments
+    // count
+    {
+        let Some(generic_parameter) = environment
+            .table()
+            .query::<GenericParameters>(implementation_member_id)
+            .extract_cyclic_dependency()?
+        else {
+            return Ok(None);
+        };
+
+        if resolution
+            .result
+            .instantiation
+            .append_from_generic_arguments(
+                trait_member.member_generic_arguments.clone(),
+                implementation_member_id,
+                &generic_parameter,
+            )
+            .map_or(true, |x| !x.is_empty())
+        {
+            return Ok(None);
+        }
+    }
+
+    let Some(mut new_term) = environment
+        .table()
+        .query::<TypeAlias>(implementation_member_id)
+        .extract_cyclic_dependency()?
+        .map(|x| M::from_default_type(x.0.clone()))
+    else {
+        return Ok(None);
+    };
+
+    instantiation::instantiate(&mut new_term, &resolution.result.instantiation);
+
+    Ok(Some(Succeeded::with_constraints(new_term, resolution.constraints)))
+}
+
+fn unpack_tuple<T: Term + From<Tuple<T>> + TryInto<Tuple<T>, Error = T>>(
+    tuple: &pernixc_term::Tuple<T>,
+) -> Option<Succeeded<T, T::Model>> {
+    let contain_upacked = tuple.elements.iter().any(|x| x.is_unpacked);
+
+    if !contain_upacked {
+        return None;
+    }
+
+    let mut result = Vec::new();
+
+    for element in tuple.elements.iter().cloned() {
+        if element.is_unpacked {
+            match element.term.try_into() {
+                Ok(inner) => {
+                    result.extend(inner.elements);
+                }
+                Err(term) => {
+                    result.push(TupleElement { term, is_unpacked: true });
+                }
+            }
+        } else {
+            result.push(element);
+        }
+    }
+
+    Some(Succeeded::new(Tuple { elements: result }.into()))
+}
+
 impl<M: Model> Term for Type<M> {
     type GenericParameter = TypeParameter;
     type TraitMember = TraitMember<M>;
@@ -203,10 +341,34 @@ impl<M: Model> Term for Type<M> {
 
     fn normalize(
         &self,
-        _: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
     ) -> Result<Option<Succeeded<Self, Self::Model>>, AbruptError> {
-        // TODO: implements this
-        Ok(None)
+        let normalized = match self {
+            // transform the trait-member into trait-implementation-type
+            // equivalent
+            Self::TraitMember(trait_member) => {
+                normalize_trait_member(trait_member, environment)?
+            }
+
+            // unpack the tuple
+            Self::Tuple(tuple) => unpack_tuple(tuple),
+
+            _ => None,
+        };
+
+        if let Some(mut normalized) = normalized {
+            if let Some(x) =
+                Normalizer::normalize_type(&normalized.result, environment)?
+            {
+                normalized.result = x.result;
+                normalized.constraints.extend(x.constraints);
+            }
+
+            Ok(Some(normalized))
+        } else {
+            Normalizer::normalize_type(self, environment)?
+                .map_or_else(|| Ok(None), |x| Ok(Some(x)))
+        }
     }
 
     fn as_trait_member_compatible_predicate(
@@ -265,9 +427,93 @@ impl<M: Model> Term for Type<M> {
         }
     }
 
-    fn get_adt_fields(&self, _: &Table) -> Option<Vec<Self>> {
-        // TODO: Implement this
-        None
+    fn get_adt_fields(
+        &self,
+        table: &Table,
+    ) -> Result<Option<Vec<Self>>, AbruptError> {
+        let Self::Symbol(Symbol { id, generic_arguments }) = self else {
+            return Ok(None);
+        };
+        let id = *id;
+        let Some(symbol_kind) = table.get::<SymbolKind>(id).map(|x| *x) else {
+            return Ok(None);
+        };
+
+        match symbol_kind {
+            SymbolKind::Struct => {
+                let Some(Ok(inst)) = table
+                    .query::<GenericParameters>(id)
+                    .extract_cyclic_dependency()?
+                    .map(|x| {
+                        Instantiation::from_generic_arguments(
+                            generic_arguments.clone(),
+                            id,
+                            &x,
+                        )
+                    })
+                else {
+                    return Ok(None);
+                };
+
+                Ok(table.query::<Fields>(id).extract_cyclic_dependency()?.map(
+                    |x| {
+                        x.fields
+                            .iter()
+                            .map(|field| {
+                                let mut ty = M::from_default_type(
+                                    field.1.r#type.clone(),
+                                );
+                                instantiation::instantiate(&mut ty, &inst);
+                                ty
+                            })
+                            .collect()
+                    },
+                ))
+            }
+
+            SymbolKind::Enum => {
+                let Some(Ok(inst)) = table
+                    .query::<GenericParameters>(id)
+                    .extract_cyclic_dependency()?
+                    .map(|x| {
+                        Instantiation::from_generic_arguments(
+                            generic_arguments.clone(),
+                            id,
+                            &x,
+                        )
+                    })
+                else {
+                    return Ok(None);
+                };
+
+                let member = table.get::<Member>(id);
+                let Some(variants) = member.as_ref().map(|x| {
+                    x.values().map(|x| GlobalID::new(id.target_id, *x))
+                }) else {
+                    return Ok(None);
+                };
+
+                let mut variants_ty = Vec::new();
+                for variant in variants {
+                    variants_ty.extend(
+                        table
+                            .query::<Variant>(variant)
+                            .extract_cyclic_dependency()?
+                            .and_then(|x| {
+                                x.associated_type.clone().map(|x| {
+                                    let mut ty = M::from_default_type(x);
+                                    instantiation::instantiate(&mut ty, &inst);
+                                    ty
+                                })
+                            }),
+                    );
+                }
+
+                Ok(Some(variants_ty))
+            }
+
+            _ => Ok(None),
+        }
     }
 
     fn outlives_satisfiability(&self, _: &Lifetime<M>) -> Satisfiability {
@@ -317,10 +563,28 @@ impl<M: Model> Term for Constant<M> {
 
     fn normalize(
         &self,
-        _: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
     ) -> Result<Option<Succeeded<Self, Self::Model>>, AbruptError> {
-        // TODO: implements this
-        Ok(None)
+        let normalized = match self {
+            // unpack the tuple
+            Self::Tuple(tuple) => unpack_tuple(tuple),
+
+            _ => None,
+        };
+
+        if let Some(mut normalized) = normalized {
+            if let Some(x) =
+                Normalizer::normalize_constant(&normalized.result, environment)?
+            {
+                normalized.result = x.result;
+                normalized.constraints.extend(x.constraints);
+            }
+
+            Ok(Some(normalized))
+        } else {
+            Normalizer::normalize_constant(self, environment)?
+                .map_or_else(|| Ok(None), |x| Ok(Some(x)))
+        }
     }
 
     fn as_trait_member_compatible_predicate(
@@ -359,7 +623,12 @@ impl<M: Model> Term for Constant<M> {
         }
     }
 
-    fn get_adt_fields(&self, _: &Table) -> Option<Vec<Self>> { None }
+    fn get_adt_fields(
+        &self,
+        _: &Table,
+    ) -> Result<Option<Vec<Self>>, AbruptError> {
+        Ok(None)
+    }
 
     fn outlives_satisfiability(&self, _: &Lifetime<M>) -> Satisfiability {
         // constants value do not have lifetimes

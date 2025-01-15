@@ -11,7 +11,7 @@ pub trait Normalizer<M: Model>: Sized {
     ///
     /// # Errors
     ///
-    /// See [`OverflowError`] for more information.
+    /// See [`AbruptError`] for more information.
     fn normalize_type(
         ty: &Type<M>,
         environment: &Environment<M, Self>,
@@ -22,7 +22,7 @@ pub trait Normalizer<M: Model>: Sized {
     ///
     /// # Errors
     ///
-    /// See [`OverflowError`] for more information.
+    /// See [`AbruptError`] for more information.
     fn normalize_constant(
         constant: &Constant<M>,
         environment: &Environment<M, Self>,
