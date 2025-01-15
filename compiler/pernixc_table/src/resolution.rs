@@ -18,7 +18,7 @@ pub mod diagnostic;
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
-pub enum ResolveQualifiedIdentifierError {
+pub enum ResolvePathError {
     #[error("the given `referring_site` id does not exist in the table")]
     InvalidReferringSiteID,
 
@@ -36,7 +36,7 @@ pub enum ResolveSequenceError {
     EmptyIterator,
 
     #[error(transparent)]
-    ResolutionError(#[from] ResolveQualifiedIdentifierError),
+    ResolutionError(#[from] ResolvePathError),
 }
 impl Representation {
     /// Resolves a [`SimplePath`] as a [`GlobalID`].
@@ -50,10 +50,8 @@ impl Representation {
         referring_site: GlobalID,
         start_from_root: bool,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GlobalID, ResolveQualifiedIdentifierError> {
-        use ResolveQualifiedIdentifierError::{
-            InvalidReferringSiteID, SemanticError,
-        };
+    ) -> Result<GlobalID, ResolvePathError> {
+        use ResolvePathError::{InvalidReferringSiteID, SemanticError};
 
         let root: GlobalID = match simple_path.root() {
             SimplePathRoot::Target(_) => {
@@ -154,16 +152,12 @@ impl Representation {
                         resolution_span: identifier.span.clone(),
                     }));
 
-                    ResolutionError(
-                        ResolveQualifiedIdentifierError::SemanticError,
-                    )
+                    ResolutionError(ResolvePathError::SemanticError)
                 })?;
 
             // non-fatal error, no need to return early
             if !self.symbol_accessible(referring_site, new_id).ok_or(
-                ResolutionError(
-                    ResolveQualifiedIdentifierError::InvalidReferringSiteID,
-                ),
+                ResolutionError(ResolvePathError::InvalidReferringSiteID),
             )? {
                 handler.receive(Box::new(SymbolIsNotAccessible {
                     referring_site,
