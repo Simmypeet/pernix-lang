@@ -21,6 +21,7 @@ pub mod normalizer;
 pub mod order;
 pub mod predicate;
 pub mod resolution;
+pub mod simplify;
 pub mod term;
 pub mod unification;
 pub mod variance;
