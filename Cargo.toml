@@ -4,7 +4,6 @@ members = [
     "compiler/pernixc_lexical",
     "compiler/pernixc_syntax",
     "compiler/pernixc_test_input",
-    # "compiler/pernixc_semantic",
     "compiler/pernixc_storage",
     "compiler/pernixc_table",
     "compiler/pernixc_arena",
@@ -17,9 +16,8 @@ members = [
     "compiler/pernixc_component",
     "compiler/pernixc_resolution",
     "compiler/pernixc_builder",
-    # "compiler/pernixc_term",
-    # "compiler/pernixc_driver",
-    # "compiler/pernixc",
+    "compiler/pernixc_driver",
+    "compiler/pernixc",
     # "lsp/pernix_server",
 ]
 

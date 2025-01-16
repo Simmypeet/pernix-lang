@@ -204,7 +204,7 @@ fn serialization() {
         )
         .unwrap();
 
-    let reflector = Table::reflector();
+    let reflector = Table::input_reflector();
     let compilation_meta_data = CompilationMetaData { target_id };
 
     let ron = ron::ser::to_string_pretty(

@@ -13,14 +13,11 @@ clap = { workspace = true }
 pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
 pernixc_handler = { path = "../pernixc_handler" }
-pernixc_lexical = { path = "../pernixc_lexical" }
 pernixc_syntax = { path = "../pernixc_syntax" }
-pernixc_semantic = { path = "../pernixc_semantic" }
-rayon = { workspace = true }
-serde_json = { workspace = true }
+pernixc_table = { path = "../pernixc_table" }
+pernixc_builder = { path = "../pernixc_builder" }
+pernixc_log = { path = "../pernixc_log" }
 ron = { workspace = true }
-bincode = { workspace = true }
-serde_yaml = { workspace = true }
 serde = { workspace = true }
 
 [lints]

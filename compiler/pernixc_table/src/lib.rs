@@ -111,6 +111,11 @@ impl Target {
         self.generated_ids += 1;
         ID(id)
     }
+
+    /// Returns an iterator of all symbols in this target.
+    pub fn all_symbols(&self) -> impl Iterator<Item = ID> + '_ {
+        (0..self.generated_ids).map(ID)
+    }
 }
 
 /// Represents the semantic representation of the program.
@@ -877,6 +882,14 @@ impl Representation {
                 }
             }
         })
+    }
+}
+
+impl Representation {
+    /// Retrieves the [`Target`] with the given ID.
+    #[must_use]
+    pub fn get_target(&self, target_id: TargetID) -> Option<&Target> {
+        self.targets_by_id.get(&target_id)
     }
 }
 

@@ -7,17 +7,12 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use pernixc_base::{
-    diagnostic::Report,
-    handler::{Handler, Storage},
-    log::{Message, Severity},
-    source_file::{self, SourceFile},
-};
-use pernixc_semantic::{
-    symbol::table::{self, BuildTableError},
-    table::CompilationMetaData,
-};
+use pernixc_diagnostic::Report;
+use pernixc_handler::{Handler, Storage};
+use pernixc_log::{Message, Severity};
+use pernixc_source_file::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
+use pernixc_table::{CompilationMetaData, Table};
 use ron::ser::PrettyConfig;
 use serde::de::DeserializeSeed;
 
@@ -93,6 +88,7 @@ impl<E: Report<()>> Handler<E> for Printer {
 
 /// Runs the program with the given arguments.
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn run(argument: Arguments) -> ExitCode {
     let file = match File::open(&argument.file) {
         Ok(file) => file,
@@ -109,7 +105,7 @@ pub fn run(argument: Arguments) -> ExitCode {
 
     let source_file = match SourceFile::load(file, argument.file.clone()) {
         Ok(file) => Arc::new(file),
-        Err(source_file::Error::Io(error)) => {
+        Err(pernixc_source_file::Error::Io(error)) => {
             let msg = Message::new(
                 Severity::Error,
                 format!("{}: {error}", argument.file.display()),
@@ -118,7 +114,7 @@ pub fn run(argument: Arguments) -> ExitCode {
             eprintln!("{msg}");
             return ExitCode::FAILURE;
         }
-        Err(source_file::Error::Utf8(error)) => {
+        Err(pernixc_source_file::Error::Utf8(error)) => {
             let msg = Message::new(
                 Severity::Error,
                 format!("{}: {error}", argument.file.display()),
@@ -154,8 +150,6 @@ pub fn run(argument: Arguments) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    std::mem::drop(printer);
-
     // retrieve the output path
     let output_path = if let Some(output) = argument.output {
         output
@@ -182,53 +176,51 @@ pub fn run(argument: Arguments) -> ExitCode {
         output
     };
 
-    if argument.kind == TargetKind::Library {
-        let storage: Storage<
-            Box<dyn pernixc_semantic::diagnostic::Diagnostic>,
-        > = Storage::new();
+    let storage = Arc::new(Storage::<
+        Box<dyn pernixc_table::diagnostic::Diagnostic>,
+    >::new());
 
-        let reflector = pernixc_semantic::table::Table::reflector();
-        let mut table = pernixc_semantic::table::Table::default();
+    let reflector = pernixc_builder::reflector::get();
+    let mut table = Table::new(storage.clone());
 
-        let mut inplace_table_deserializer =
-            table.as_incremental_library_deserializer(&reflector);
-        let mut link_library_ids = Vec::new();
+    let mut inplace_table_deserializer =
+        table.as_incremental_library_deserializer(&reflector);
+    let mut link_library_ids = Vec::new();
 
-        for link_library in argument.library_paths {
-            let library_file = match std::fs::read(&link_library) {
-                Ok(file) => file,
+    for link_library in argument.library_paths {
+        let library_file = match std::fs::read(&link_library) {
+            Ok(file) => file,
+            Err(error) => {
+                let msg = Message::new(
+                    Severity::Error,
+                    format!("failed to open file: {error}"),
+                );
+
+                eprintln!("{msg}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        let mut deserializer =
+            match ron::de::Deserializer::from_bytes(&library_file) {
+                Ok(value) => value,
                 Err(error) => {
                     let msg = Message::new(
                         Severity::Error,
-                        format!("failed to open file: {error}"),
+                        format!(
+                            "failed to create deserializer for library: \
+                             {error}"
+                        ),
                     );
 
                     eprintln!("{msg}");
+
                     return ExitCode::FAILURE;
                 }
             };
 
-            let mut deserializer =
-                match ron::de::Deserializer::from_bytes(&library_file) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        let msg = Message::new(
-                            Severity::Error,
-                            format!(
-                                "failed to create deserializer for library: \
-                                 {error}"
-                            ),
-                        );
-
-                        eprintln!("{msg}");
-
-                        return ExitCode::FAILURE;
-                    }
-                };
-
-            let library_meta_data = match inplace_table_deserializer
-                .deserialize(&mut deserializer)
-            {
+        let library_meta_data =
+            match inplace_table_deserializer.deserialize(&mut deserializer) {
                 Ok(meta_data) => meta_data,
                 Err(error) => {
                     let msg = Message::new(
@@ -241,97 +233,61 @@ pub fn run(argument: Arguments) -> ExitCode {
                 }
             };
 
-            link_library_ids.push(library_meta_data.target_id);
-        }
+        link_library_ids.push(library_meta_data.target_id);
+    }
 
-        let target_id = table
-            .add_target(
-                target.name().clone(),
-                link_library_ids,
-                target,
-                &storage,
-            )
-            .unwrap();
+    let target_id = table
+        .add_compilation_target(
+            target.name().clone(),
+            link_library_ids,
+            target,
+            &*storage,
+        )
+        .unwrap();
+    pernixc_builder::build(&mut table, target_id);
 
-        let vec = storage.into_vec();
+    let vec = storage.as_vec();
 
-        if !vec.is_empty() {
-            for error in vec {
-                let Ok(diag) = error.report(&table) else {
-                    continue;
-                };
-
-                eprintln!("{diag}\n");
-            }
-
-            ExitCode::FAILURE
-        } else {
-            // save as `ron` format
-            let file = match File::create(&output_path) {
-                Ok(file) => file,
-                Err(error) => {
-                    let msg = Message::new(
-                        Severity::Error,
-                        format!("failed to create file: {error}"),
-                    );
-
-                    eprintln!("{msg}");
-                    return ExitCode::FAILURE;
-                }
+    if !vec.is_empty() {
+        for error in vec.iter() {
+            let Ok(diag) = error.report(&table) else {
+                continue;
             };
 
-            match ron::ser::to_writer_pretty(
-                file,
-                &table.as_library(&CompilationMetaData { target_id }),
-                PrettyConfig::default(),
-            ) {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(error) => {
-                    let msg = Message::new(
-                        Severity::Error,
-                        format!("failed to serialize table: {error}"),
-                    );
-
-                    eprintln!("{msg}");
-                    ExitCode::FAILURE
-                }
-            }
+            eprintln!("{diag}\n");
         }
-    } else {
-        let storage: Storage<Box<dyn pernixc_semantic::error::Error>> =
-            Storage::new();
 
-        let result = table::build(std::iter::once(target), &storage);
+        return ExitCode::FAILURE;
+    }
 
-        let table = match result {
-            Ok(table) => table,
-            Err(BuildTableError::Suboptimal(table)) => {
-                dbg!(&table);
+    // save as `ron` format
+    let file = match File::create(&output_path) {
+        Ok(file) => file,
+        Err(error) => {
+            let msg = Message::new(
+                Severity::Error,
+                format!("failed to create file: {error}"),
+            );
 
-                for error in storage.into_vec() {
-                    let Ok(diag) = error.report(&table) else {
-                        continue;
-                    };
+            eprintln!("{msg}");
+            return ExitCode::FAILURE;
+        }
+    };
 
-                    eprintln!("{diag}\n");
-                }
+    match ron::ser::to_writer_pretty(
+        file,
+        &table.as_library(&CompilationMetaData { target_id }, &reflector),
+        PrettyConfig::default(),
+    ) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            let msg = Message::new(
+                Severity::Error,
+                format!("failed to serialize table: {error}"),
+            );
 
-                return ExitCode::FAILURE;
-            }
-            Err(BuildTableError::DuplicateTargetName(target)) => {
-                let msg = Message::new(
-                    Severity::Error,
-                    format!("duplicate target name: {target}",),
-                );
-
-                eprintln!("{msg}");
-                return ExitCode::FAILURE;
-            }
-        };
-
-        dbg!(&table);
-
-        // semantic analysis
-        ExitCode::SUCCESS
+            eprintln!("{msg}");
+            ExitCode::FAILURE
+        }
     }
 }

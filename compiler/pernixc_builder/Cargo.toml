@@ -16,7 +16,9 @@ pernixc_handler = { path = "../pernixc_handler" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
 pernixc_log = { path = "../pernixc_log" }
 pernixc_arena = { path = "../pernixc_arena" }
+pernixc_storage = { path = "../pernixc_storage" }
 getset = { workspace = true }
+rayon = { workspace = true }
 
 [lints]
 workspace = true

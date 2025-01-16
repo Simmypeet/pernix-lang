@@ -216,16 +216,14 @@ impl Representation {
             where_clause,
         ) = implementation_signature.dissolve();
 
-        if let Some(generic_parameters_syn) = generic_parameters {
-            assert!(self
-                .storage
-                .add_component(new_symbol_id, generic_parameters_syn,));
-        }
-        if let Some(where_clause_syn) = where_clause {
-            assert!(self
-                .storage
-                .add_component(new_symbol_id, where_clause_syn,));
-        }
+        assert!(self.storage.add_component(
+            new_symbol_id,
+            syntax_tree_component::GenericParameters(generic_parameters)
+        ));
+        assert!(self.storage.add_component(
+            new_symbol_id,
+            syntax_tree_component::WhereClause(where_clause)
+        ));
 
         match symbol_kind {
             SymbolKind::PositiveTraitImplementation => {

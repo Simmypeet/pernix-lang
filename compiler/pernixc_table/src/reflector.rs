@@ -21,7 +21,7 @@ impl Table {
     /// added to the reflector instance as well.
     #[must_use]
     #[allow(clippy::too_many_lines)]
-    pub fn reflector() -> Reflector<GlobalID, ArcTrait, String, String> {
+    pub fn input_reflector() -> Reflector<GlobalID, ArcTrait, String, String> {
         // FIXME: probably use macros to generate this code
         let mut reflector = Reflector::new();
 
