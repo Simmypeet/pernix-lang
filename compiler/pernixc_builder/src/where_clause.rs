@@ -17,7 +17,7 @@ use pernixc_resolution::{
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use pernixc_table::{
-    component::{syntax_tree as syntax_tree_component, SymbolKind},
+    component::{syntax_tree as syntax_tree_component, Derived, SymbolKind},
     diagnostic::Diagnostic,
     query, GlobalID, Table,
 };
@@ -33,7 +33,7 @@ use pernixc_term::{
 
 pub mod diagnostic;
 
-use crate::{occurrences, Builder};
+use crate::{builder::Builder, occurrences};
 
 macro_rules! handle_term_resolution_result {
     ($expr:expr, $handler:expr, $diverge:expr) => {
@@ -546,9 +546,16 @@ impl query::Builder<WhereClause> for Builder {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<WhereClause> {
         let symbol_kind = *table.get::<SymbolKind>(global_id)?;
+
         if !symbol_kind.has_where_clause() {
             return None;
         }
+
+        let _scope = self.start_building(
+            table,
+            global_id,
+            WhereClause::component_name(),
+        );
 
         let where_clause_syntax_tree =
             table.get::<syntax_tree_component::WhereClause>(global_id).unwrap();

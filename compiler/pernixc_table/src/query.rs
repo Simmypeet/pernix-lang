@@ -9,7 +9,7 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
-use parking_lot::{Condvar, Mutex};
+use parking_lot::Condvar;
 use pernixc_diagnostic::Report;
 use pernixc_handler::Handler;
 use pernixc_log::Severity;
@@ -125,7 +125,7 @@ type BuilderFn = fn(
 #[derive(Clone, Default)]
 pub struct Context {
     record_stacks_by_thread_id: HashMap<ThreadId, Vec<Record>>,
-    condvars_by_record: HashMap<Record, Arc<(Condvar, Mutex<()>)>>,
+    condvars_by_record: HashMap<Record, Arc<Condvar>>,
     builder_fns_by_type_id: HashMap<TypeId, BuilderFn>,
     builders_by_type_id: HashMap<TypeId, Arc<dyn AnySendSync>>,
 
@@ -247,18 +247,15 @@ impl Table {
         global_id: GlobalID,
     ) -> Result<Arc<T>, Error> {
         // if the component is already computed, return it
+        let mut context = self.query_context.lock();
         if let Some(result) = self.storage.get_cloned::<T>(global_id) {
             return Ok(result);
         }
 
-        let (Some(builder), Some(build_fn)) = ({
-            let context = self.query_context.read();
-
-            (
-                context.builders_by_type_id.get(&TypeId::of::<T>()).cloned(),
-                context.builder_fns_by_type_id.get(&TypeId::of::<T>()).copied(),
-            )
-        }) else {
+        let (Some(builder), Some(build_fn)) = (
+            context.builders_by_type_id.get(&TypeId::of::<T>()).cloned(),
+            context.builder_fns_by_type_id.get(&TypeId::of::<T>()).copied(),
+        ) else {
             return Err(Error::NoBuilderFound);
         };
 
@@ -268,7 +265,6 @@ impl Table {
             name: T::component_name(),
         };
 
-        let mut context = self.query_context.write();
         let current_thread_id = std::thread::current().id();
 
         let called_from = context
@@ -314,28 +310,23 @@ impl Table {
 
         // there's an another thread that is computing the component
         if let Some(sync) = sync {
-            drop(context);
-
-            let (sync, lock) = &*sync;
-
-            let mut guard = lock.lock();
-
             // wait for the other thread to finish the job
-            sync.wait(&mut guard);
-
-            context = self.query_context.write();
+            sync.wait(&mut context);
         } else {
             // compute the component
-            let sync = Arc::new((Condvar::new(), Mutex::new(())));
+            let sync = Arc::new(Condvar::new());
             assert!(context
                 .condvars_by_record
-                .insert(target_record, sync.clone(),)
-                .is_none());
+                .insert(target_record, sync.clone())
+                .is_none(),);
 
             drop(context); // release the context lock
 
             let component =
                 build_fn(&*builder, global_id, self, &*self.handler);
+
+            // re-acquire the context lock
+            context = self.query_context.lock();
 
             if let Some(succeeded) = component {
                 assert!(self
@@ -343,16 +334,13 @@ impl Table {
                     .add_component_raw::<T>(global_id, succeeded));
             }
 
-            // notify the other threads that the component is computed
-            sync.0.notify_all();
-
-            // remove the record from the stack
-            context = self.query_context.write();
-
             assert!(context
                 .condvars_by_record
                 .remove(&target_record)
                 .is_some());
+
+            // notify the other threads that the component is computed
+            sync.notify_all();
         }
 
         // remove the dependency graph, record stack

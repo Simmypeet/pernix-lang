@@ -4,16 +4,21 @@ use std::{
     fs::File,
     path::PathBuf,
     process::ExitCode,
-    sync::{Arc, RwLock},
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use parking_lot::RwLock;
 use pernixc_diagnostic::Report;
 use pernixc_handler::{Handler, Storage};
-use pernixc_log::{Message, Severity};
+use pernixc_log::{
+    formatting::{Color, Style},
+    Message, Severity,
+};
 use pernixc_source_file::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
-use pernixc_table::{CompilationMetaData, Table};
-use ron::ser::PrettyConfig;
+use pernixc_table::{CompilationMetaData, GlobalID, Table};
 use serde::de::DeserializeSeed;
 
 /// The compilation format of the target.
@@ -71,7 +76,7 @@ impl Printer {
     /// Creates a new [`Printer`].
     const fn new() -> Self { Self { printed: RwLock::new(false) } }
 
-    fn has_printed(&self) -> bool { *self.printed.read().unwrap() }
+    fn has_printed(&self) -> bool { *self.printed.read() }
 }
 
 impl<E: Report<()>> Handler<E> for Printer {
@@ -82,8 +87,29 @@ impl<E: Report<()>> Handler<E> for Printer {
 
         eprintln!("{diagnostic}\n");
 
-        *self.printed.write().unwrap() = true;
+        *self.printed.write() = true;
     }
+}
+
+fn update_message(
+    table: &Table,
+    buildings: &[(GlobalID, &str)],
+    progress_bar: &ProgressBar,
+) {
+    let message = buildings
+        .iter()
+        .map(|(id, name)| {
+            let qualified_name = table.get_qualified_name(*id).unwrap();
+
+            format!(
+                "{} {name} of {}",
+                Style::Bold.with(Color::Cyan.with("Building")),
+                Style::Bold.with(qualified_name),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    progress_bar.set_message(message);
 }
 
 /// Runs the program with the given arguments.
@@ -201,23 +227,10 @@ pub fn run(argument: Arguments) -> ExitCode {
             }
         };
 
-        let mut deserializer =
-            match ron::de::Deserializer::from_bytes(&library_file) {
-                Ok(value) => value,
-                Err(error) => {
-                    let msg = Message::new(
-                        Severity::Error,
-                        format!(
-                            "failed to create deserializer for library: \
-                             {error}"
-                        ),
-                    );
-
-                    eprintln!("{msg}");
-
-                    return ExitCode::FAILURE;
-                }
-            };
+        let mut deserializer = bincode::Deserializer::from_slice(
+            &library_file,
+            bincode::options(),
+        );
 
         let library_meta_data =
             match inplace_table_deserializer.deserialize(&mut deserializer) {
@@ -244,7 +257,71 @@ pub fn run(argument: Arguments) -> ExitCode {
             &*storage,
         )
         .unwrap();
-    pernixc_builder::build(&mut table, target_id);
+
+    let symbol_count =
+        table.get_target(target_id).unwrap().all_symbols().count();
+
+    let all_progress_bar = MultiProgress::new();
+
+    let main_progress_bar = ProgressBar::new(symbol_count as u64);
+    main_progress_bar.set_style(
+        ProgressStyle::with_template(&format!(
+            "{{spinner:.green}} {} [{{bar:40.cyan/cyan}}] \
+             {{pos:>7}}/{{len:7}}\n{{msg}}",
+            Style::Bold.with(Color::Green.with("Analyzing"))
+        ))
+        .unwrap()
+        .progress_chars("=>-"),
+    );
+    main_progress_bar.enable_steady_tick(Duration::from_millis(100));
+
+    all_progress_bar.add(main_progress_bar.clone());
+
+    let buildings = Arc::new(RwLock::new(Vec::<(GlobalID, &str)>::new()));
+
+    let timer = Instant::now();
+    pernixc_builder::build(
+        &mut table,
+        target_id,
+        |_, _| {
+            main_progress_bar.inc(1);
+        },
+        {
+            let buildings = buildings.clone();
+            let progress_bar = main_progress_bar.clone();
+
+            move |table, global_id, name| {
+                let mut buildings = buildings.write();
+                buildings.push((global_id, name));
+
+                update_message(table, &buildings, &progress_bar);
+            }
+        },
+        {
+            let buildings = buildings.clone();
+            let progress_bar = main_progress_bar.clone();
+
+            move |table, global_id, name| {
+                let mut buildings = buildings.write();
+                let index = buildings
+                    .iter()
+                    .position(|(id, n)| *id == global_id && name == *n);
+
+                if let Some(index) = index {
+                    buildings.remove(index);
+                }
+
+                update_message(table, &buildings, &progress_bar);
+            }
+        },
+    );
+
+    main_progress_bar.finish_and_clear();
+    println!(
+        "{} finished in {:?}",
+        Style::Bold.with(Color::Green.with("Analyis")),
+        timer.elapsed()
+    );
 
     let vec = storage.as_vec();
 
@@ -256,12 +333,25 @@ pub fn run(argument: Arguments) -> ExitCode {
 
             eprintln!("{diag}\n");
         }
-
-        return ExitCode::FAILURE;
     }
 
     if argument.kind == TargetKind::Library {
         // save as `ron` format
+        let instant = Instant::now();
+
+        let progress = ProgressBar::new(0);
+        progress.set_style(
+            ProgressStyle::default_spinner()
+                .template(&format!(
+                    "{{spinner:.green}} {} to {}",
+                    Style::Bold.with(Color::Green.with("Writing")),
+                    output_path.display()
+                ))
+                .unwrap()
+                .progress_chars("=>-"),
+        );
+
+        progress.enable_steady_tick(Duration::from_millis(100));
         let file = match File::create(&output_path) {
             Ok(file) => file,
             Err(error) => {
@@ -275,11 +365,20 @@ pub fn run(argument: Arguments) -> ExitCode {
             }
         };
 
-        match ron::ser::to_writer_pretty(
+        let result = bincode::serialize_into(
             file,
             &table.as_library(&CompilationMetaData { target_id }, &reflector),
-            PrettyConfig::default(),
-        ) {
+        );
+
+        progress.finish_and_clear();
+        println!(
+            "{} to {} finished in {:?}",
+            Style::Bold.with(Color::Green.with("Written")),
+            output_path.display(),
+            instant.elapsed()
+        );
+
+        match result {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 let msg = Message::new(

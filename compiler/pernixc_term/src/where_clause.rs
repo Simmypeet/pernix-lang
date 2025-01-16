@@ -45,7 +45,7 @@ pub struct WhereClause {
 }
 
 impl Derived for WhereClause {
-    fn component_name() -> &'static str { "wherer clause" }
+    fn component_name() -> &'static str { "where clause" }
 }
 
 /// Unique ID for the forall lifetime.

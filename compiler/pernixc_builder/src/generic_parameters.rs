@@ -10,7 +10,7 @@ use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use pernixc_table::{
     component::{
-        syntax_tree as syntax_tree_component, Accessibility,
+        syntax_tree as syntax_tree_component, Accessibility, Derived,
         HierarchyRelationship, SymbolKind,
     },
     diagnostic::Diagnostic,
@@ -28,9 +28,9 @@ use pernixc_term::{
 };
 
 use crate::{
+    builder::Builder,
     diagnostic::PrivateEntityLeakedToPublicInterface,
     occurrences::{self, Occurrences},
-    Builder,
 };
 
 pub mod diagnostic;
@@ -47,6 +47,12 @@ impl query::Builder<GenericParameters> for Builder {
         if !symbol_kind.has_generic_parameters() {
             return None;
         }
+
+        let _scope = self.start_building(
+            table,
+            global_id,
+            GenericParameters::component_name(),
+        );
 
         let syntax_tree = table
             .get::<syntax_tree_component::GenericParameters>(global_id)
@@ -318,8 +324,6 @@ impl query::Builder<GenericParameters> for Builder {
                 }
             }
         }
-
-        // TODO: add default parameter
 
         Some(generic_parameters)
     }

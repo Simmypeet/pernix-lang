@@ -12,7 +12,7 @@ use derive_more::{Deref, DerefMut};
 use derive_new::new;
 use diagnostic::Diagnostic;
 use getset::Getters;
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use pernixc_handler::Handler;
 use pernixc_storage::{serde::Reflector, ArcTrait, GetMutError, Storage};
 use pernixc_syntax::syntax_tree::AccessModifier;
@@ -139,7 +139,7 @@ impl<'a, T: Serialize, E: std::fmt::Display + 'static> Serialize
         S: Serializer,
     {
         // for the of simplicity, we serialize as map
-        let mut map = serializer.serialize_map(None)?;
+        let mut map = serializer.serialize_map(Some(3))?;
 
         map.serialize_entry(
             "storage",
@@ -612,7 +612,7 @@ pub struct Table {
     #[deref_mut]
     representation: Representation,
 
-    query_context: RwLock<Context>,
+    query_context: Mutex<Context>,
 
     /// The handler that will be used to report diagnostics during the
     /// computation of components happened in the table.
@@ -626,7 +626,7 @@ impl Table {
     pub fn new(handler: Arc<dyn Handler<Box<dyn Diagnostic>>>) -> Self {
         Self {
             representation: Representation::default(),
-            query_context: RwLock::new(Context::default()),
+            query_context: Mutex::new(Context::default()),
             handler,
         }
     }
@@ -710,7 +710,7 @@ impl<T: Serialize, E: std::fmt::Display + 'static> Serialize
         S: Serializer,
     {
         // for the of simplicity, we serialize as map
-        let mut map = serializer.serialize_map(None)?;
+        let mut map = serializer.serialize_map(Some(2))?;
 
         map.serialize_entry("representation", &SerializableRepresentation {
             representation: self.representation,
