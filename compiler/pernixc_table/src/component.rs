@@ -289,6 +289,33 @@ impl SymbolKind {
             }
         }
     }
+
+    /// Checks if the symbol kind has generic parameters.
+    #[must_use]
+    pub const fn has_generic_parameters(&self) -> bool {
+        matches!(
+            self,
+            Self::Struct
+                | Self::Trait
+                | Self::Enum
+                | Self::Type
+                | Self::Constant
+                | Self::Function
+                | Self::TraitType
+                | Self::TraitFunction
+                | Self::TraitConstant
+                | Self::PositiveTraitImplementation
+                | Self::NegativeTraitImplementation
+                | Self::TraitImplementationFunction
+                | Self::TraitImplementationType
+                | Self::TraitImplementationConstant
+                | Self::AdtImplementation
+                | Self::AdtImplementationFunction
+                | Self::Marker
+                | Self::PositiveMarkerImplementation
+                | Self::NegativeMarkerImplementation
+        )
+    }
 }
 
 /// A **presistent-input** component representing the external linkage of a
