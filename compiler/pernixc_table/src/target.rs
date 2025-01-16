@@ -27,9 +27,9 @@ use super::{
 };
 use crate::{
     component::{
-        self, Accessibility, Extern, Implemented, Import, LocationSpan, Member,
-        Name, Parent, PositiveTraitImplementation, SymbolKind,
-        TraitImplementation, Using,
+        self, syntax_tree as syntax_tree_component, Accessibility, Extern,
+        Implemented, Import, LocationSpan, Member, Name, Parent,
+        PositiveTraitImplementation, SymbolKind, TraitImplementation, Using,
     },
     diagnostic::{
         ConflictingUsing, Diagnostic, ExpectModule,
@@ -1139,15 +1139,20 @@ impl Representation {
                 .add_component(new_symbol_id, Member::default()));
         }
 
-        if let Some(generic_parameters_syn) = generic_parameters_syn {
-            assert!(self
-                .storage
-                .add_component(new_symbol_id, generic_parameters_syn,));
+        if symbol_kind.has_generic_parameters() {
+            assert!(self.storage.add_component(
+                new_symbol_id,
+                syntax_tree_component::GenericParameters(
+                    generic_parameters_syn
+                )
+            ));
         }
-        if let Some(where_clause_syn) = where_clause_syn {
-            assert!(self
-                .storage
-                .add_component(new_symbol_id, where_clause_syn,));
+
+        if symbol_kind.has_where_clause() {
+            assert!(self.storage.add_component(
+                new_symbol_id,
+                syntax_tree_component::WhereClause(where_clause_syn)
+            ));
         }
 
         let mut parent = self.storage.get_mut::<Member>(parent_id).unwrap();

@@ -1,12 +1,13 @@
 //! Contains the definition of [`Constant`]
-use std::ops::Deref;
+
+use std::{fmt, ops::Deref};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_table::GlobalID;
+use pernixc_table::{DisplayObject, GlobalID, Table};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    generic_parameter::ConstantParameterID,
+    generic_parameter::{ConstantParameterID, GenericParameters},
     lifetime::Lifetime,
     matching::{self, Match},
     r#type::Type,
@@ -530,5 +531,94 @@ impl<M: Model> Match for Constant<M> {
         >,
     ) -> &mut Vec<matching::Matching<Self, Self::ThisSubTermLocation>> {
         &mut substructural.constants
+    }
+}
+
+impl<M: Model> pernixc_table::Display for Constant<M>
+where
+    M::ConstantInference: pernixc_table::Display,
+{
+    fn fmt(
+        &self,
+        table: &Table,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Phantom => write!(f, "phantom"),
+            Self::Primitive(val) => write!(f, "{val}"),
+            Self::Inference(inference) => {
+                write!(f, "{}", DisplayObject { display: inference, table })
+            }
+            Self::Struct(val) => {
+                let qualified_name =
+                    table.get_qualified_name(val.id).ok_or(fmt::Error)?;
+
+                write!(f, "{qualified_name} {{ ")?;
+
+                let mut fields = val.fields.iter().peekable();
+                while let Some(field) = fields.next() {
+                    let is_last = fields.peek().is_none();
+
+                    write!(f, "{}", DisplayObject { display: field, table })?;
+
+                    if !is_last {
+                        write!(f, ", ")?;
+                    }
+                }
+
+                write!(f, " }}")
+            }
+            Self::Enum(id) => {
+                let qualified_name = table
+                    .get_qualified_name(id.variant_id)
+                    .ok_or(fmt::Error)?;
+
+                write!(f, "{qualified_name}")?;
+
+                if let Some(associated_value) = &id.associated_value {
+                    write!(f, "({})", DisplayObject {
+                        display: &**associated_value,
+                        table
+                    })?;
+                }
+
+                Ok(())
+            }
+            Self::Array(array) => {
+                write!(f, "[")?;
+
+                let mut elements = array.elements.iter().peekable();
+                while let Some(element) = elements.next() {
+                    let is_last = elements.peek().is_none();
+
+                    write!(f, "{}", DisplayObject { display: element, table })?;
+
+                    if !is_last {
+                        write!(f, ", ")?;
+                    }
+                }
+
+                write!(f, "]")
+            }
+            Self::Parameter(parameter) => {
+                write!(
+                    f,
+                    "{}",
+                    table
+                        .query::<GenericParameters>(parameter.parent)
+                        .map_err(|_| fmt::Error)?
+                        .constants()
+                        .get(parameter.id)
+                        .ok_or(fmt::Error)?
+                        .name
+                        .as_deref()
+                        .unwrap_or("{unknown}")
+                )
+            }
+            Self::Tuple(tuple) => {
+                write!(f, "{}", DisplayObject { display: tuple, table })
+            }
+            Self::Error(_) => write!(f, "{{error}}"),
+        }
     }
 }

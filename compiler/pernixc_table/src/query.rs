@@ -106,12 +106,28 @@ pub struct Record {
     pub name: &'static str,
 }
 
+trait AnySendSync: Any + Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl<T: Any + Send + Sync> AnySendSync for T {
+    fn as_any(&self) -> &dyn Any { self }
+}
+
+type BuilderFn = fn(
+    builder: &dyn AnySendSync,
+    global_id: GlobalID,
+    table: &Table,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) -> Option<Arc<dyn Any + Send + Sync>>;
+
 /// A struct that manages/synchronizes the query.
 #[derive(Clone, Default)]
 pub struct Context {
     record_stacks_by_thread_id: HashMap<ThreadId, Vec<Record>>,
     condvars_by_record: HashMap<Record, Arc<(Condvar, Mutex<()>)>>,
-    builders_by_type_id: HashMap<TypeId, Arc<dyn Builder>>,
+    builder_fns_by_type_id: HashMap<TypeId, BuilderFn>,
+    builders_by_type_id: HashMap<TypeId, Arc<dyn AnySendSync>>,
 
     // key ---requires---> value
     dependencies_by_dependent: HashMap<Record, Record>,
@@ -124,16 +140,31 @@ impl Context {
     ///
     /// Returns `true` if there's no existing builder for the given type.
     /// Otherwise, returns `false` and the builder is not set.
-    pub fn set_builder<T: Derived + Any>(
+    pub fn set_builder<T: Derived, B: Builder<T>>(
         &mut self,
-        builder: Arc<dyn Builder>,
+        builder: B,
     ) -> bool {
-        match self.builders_by_type_id.entry(TypeId::of::<T>()) {
-            Entry::Occupied(_) => false,
-            Entry::Vacant(entry) => {
-                entry.insert(builder);
+        match (
+            self.builders_by_type_id.entry(TypeId::of::<T>()),
+            self.builder_fns_by_type_id.entry(TypeId::of::<T>()),
+        ) {
+            (Entry::Vacant(builder_entry), Entry::Vacant(fn_entry)) => {
+                fn_entry.insert(|builder, global_id, table, handler| {
+                    let builder = builder.as_any().downcast_ref::<B>().unwrap();
+
+                    builder
+                        .build(global_id, table, handler)
+                        .map(|x| Arc::new(x) as Arc<dyn Any + Send + Sync>)
+                });
+
+                builder_entry.insert(Arc::new(builder));
+
                 true
             }
+
+            (Entry::Occupied(_), Entry::Occupied(_)) => false,
+
+            _ => unreachable!(),
         }
     }
 }
@@ -188,7 +219,7 @@ impl Error {
 ///
 /// The implementation of this trait will be used to build the component for the
 /// symbol of particular type.
-pub trait Builder: Send + Sync {
+pub trait Builder<T>: Any + Send + Sync {
     /// Builds the component for the given `global_id`.
     ///
     /// Invoked when the component for a particular type is not found in the
@@ -198,7 +229,7 @@ pub trait Builder: Send + Sync {
         global_id: GlobalID,
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Arc<dyn Any + Send + Sync>>;
+    ) -> Option<T>;
 }
 
 impl Table {
@@ -220,13 +251,14 @@ impl Table {
             return Ok(result);
         }
 
-        let Some(builder) = self
-            .query_context
-            .read()
-            .builders_by_type_id
-            .get(&TypeId::of::<T>())
-            .cloned()
-        else {
+        let (Some(builder), Some(build_fn)) = ({
+            let context = self.query_context.read();
+
+            (
+                context.builders_by_type_id.get(&TypeId::of::<T>()).cloned(),
+                context.builder_fns_by_type_id.get(&TypeId::of::<T>()).copied(),
+            )
+        }) else {
             return Err(Error::NoBuilderFound);
         };
 
@@ -302,7 +334,8 @@ impl Table {
 
             drop(context); // release the context lock
 
-            let component = builder.build(global_id, self, &*self.handler);
+            let component =
+                build_fn(&*builder, global_id, self, &*self.handler);
 
             if let Some(succeeded) = component {
                 assert!(self

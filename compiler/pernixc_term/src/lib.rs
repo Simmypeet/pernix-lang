@@ -5,6 +5,7 @@ use std::{
     hash::Hash,
 };
 
+pub mod accessibility;
 pub mod constant;
 pub mod generic_arguments;
 pub mod generic_parameter;
@@ -44,6 +45,16 @@ use serde::{Deserialize, Serialize};
     Deserialize,
 )]
 pub enum Never {}
+
+impl pernixc_table::Display for Never {
+    fn fmt(
+        &self,
+        _: &Table,
+        _: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match *self {}
+    }
+}
 
 /// The model that the terms will be based on.
 ///

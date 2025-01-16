@@ -1,13 +1,16 @@
 //! Contains the definition of the [`Type`] term.
 
+use std::fmt;
+
 use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
+use pernixc_table::{DisplayObject, Table};
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 
 use crate::{
     constant::Constant,
-    generic_parameter::TypeParameterID,
+    generic_parameter::{GenericParameters, TypeParameterID},
     lifetime::Lifetime,
     matching::{self, Match, Matching},
     sub_term::{
@@ -941,5 +944,101 @@ impl<M: Model> Match for Type<M> {
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
         &mut substructural.types
+    }
+}
+
+impl<M: Model> pernixc_table::Display for Type<M>
+where
+    M::TypeInference: pernixc_table::Display,
+    Constant<M>: pernixc_table::Display,
+    Lifetime<M>: pernixc_table::Display,
+{
+    fn fmt(
+        &self,
+        table: &Table,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Primitive(primitve) => {
+                write!(f, "{primitve}")
+            }
+            Self::Parameter(type_parameter) => {
+                write!(
+                    f,
+                    "{}",
+                    table
+                        .query::<GenericParameters>(type_parameter.parent)
+                        .map_err(|_| fmt::Error)?
+                        .types()
+                        .get(type_parameter.id)
+                        .ok_or(fmt::Error)?
+                        .name
+                        .as_deref()
+                        .unwrap_or("{unknown}")
+                )
+            }
+            Self::Inference(inference) => {
+                write!(f, "{}", DisplayObject { table, display: inference })
+            }
+            Self::Symbol(symbol) => {
+                write!(f, "{}", DisplayObject { table, display: symbol })
+            }
+            Self::Pointer(pointer) => {
+                write!(f, "*")?;
+
+                if pointer.mutable {
+                    write!(f, "mutable ")?;
+                }
+
+                write!(f, "{}", DisplayObject {
+                    table,
+                    display: &*pointer.pointee
+                })
+            }
+            Self::Reference(reference) => {
+                write!(f, "&")?;
+
+                write!(f, "{} ", DisplayObject {
+                    table,
+                    display: &reference.lifetime
+                })?;
+
+                if Qualifier::Mutable == reference.qualifier {
+                    write!(f, "mutable ")?;
+                }
+
+                write!(f, "{}", DisplayObject {
+                    table,
+                    display: &*reference.pointee
+                })
+            }
+
+            Self::Array(array) => {
+                write!(
+                    f,
+                    "[{}: {}]",
+                    DisplayObject { table, display: &*array.r#type },
+                    DisplayObject { table, display: &array.length },
+                )
+            }
+            Self::Tuple(tuple) => {
+                write!(f, "{}", DisplayObject { table, display: tuple })
+            }
+            Self::TraitMember(ty) => {
+                write!(f, "{}", DisplayObject { table, display: &ty.0 })
+            }
+            Self::Phantom(phantom) => {
+                write!(f, "phantom {}", DisplayObject {
+                    table,
+                    display: &*phantom.0
+                })
+            }
+            Self::MemberSymbol(member_symbol) => {
+                write!(f, "{}", DisplayObject { table, display: member_symbol })
+            }
+            Self::Error(_) => {
+                write!(f, "{{error}}")
+            }
+        }
     }
 }

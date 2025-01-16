@@ -223,6 +223,13 @@ impl Representation {
         self.storage.get_mut::<T>(id)
     }
 
+    /// Checks whether the symbol with the given ID has the component of the
+    /// given type.
+    #[must_use]
+    pub fn has<T: Any>(&self, id: GlobalID) -> bool {
+        self.storage.get::<T>(id).is_some()
+    }
+
     /// Creates a [`Library`] representation for serialization.
     #[must_use]
     pub const fn as_library<'a, T, E>(
@@ -626,11 +633,11 @@ impl Table {
     /// Returns `true` if there's no existing builder for the given type.
     /// Otherwise, returns `false` and the builder is not set.
     #[must_use]
-    pub fn set_builder<T: Derived + Any>(
+    pub fn set_builder<T: Derived, B: Builder<T>>(
         &mut self,
-        builder: Arc<dyn Builder>,
+        builder: B,
     ) -> bool {
-        self.query_context.get_mut().set_builder::<T>(builder)
+        self.query_context.get_mut().set_builder::<T, B>(builder)
     }
 }
 
@@ -768,6 +775,109 @@ pub struct MemberID<ChildID> {
 
     /// Symbol ID of the child symbol.
     pub id: ChildID,
+}
+
+/// An error returned by the [`Representation::merge_accessibility_down`]
+/// function.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    thiserror::Error,
+    displaydoc::Display,
+)]
+#[allow(missing_docs)]
+pub enum MergeAccessibilityError {
+    /// The accessibility objects contain an invalid global id.
+    InvalidModuleID,
+
+    /// Two accessibility objects are scoped to different modules.
+    Unrelated,
+}
+
+/// Similar to regular [`Accessibility`] but with the global ID on
+/// [`GlobalAccessibility::Scoped`] variant.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
+pub enum GlobalAccessibility {
+    /// The symbol is accessible from anywhere.
+    #[default]
+    Public,
+
+    /// The symbol is accessible from the given module and its children.
+    Scoped(GlobalID),
+}
+
+impl Representation {
+    /// Merges two accessibilities down the hierarchy.
+    ///
+    /// The resulting accessibility is the least accessible of the two given
+    /// accessibilities.
+    ///
+    /// # Errors
+    ///
+    /// See [`MergeAccessibilityError`] for more information.
+    pub fn merge_accessibility_down(
+        &self,
+        first: GlobalAccessibility,
+        second: GlobalAccessibility,
+    ) -> Result<GlobalAccessibility, MergeAccessibilityError> {
+        Ok(match (first, second) {
+            (GlobalAccessibility::Public, GlobalAccessibility::Public) => {
+                GlobalAccessibility::Public
+            }
+            (
+                GlobalAccessibility::Public,
+                GlobalAccessibility::Scoped(scope),
+            )
+            | (
+                GlobalAccessibility::Scoped(scope),
+                GlobalAccessibility::Public,
+            ) => GlobalAccessibility::Scoped(scope),
+
+            (
+                GlobalAccessibility::Scoped(first),
+                GlobalAccessibility::Scoped(second),
+            ) => {
+                if first.target_id != second.target_id {
+                    return Err(MergeAccessibilityError::Unrelated);
+                }
+
+                match self.symbol_hierarchy_relationship(
+                    first.target_id,
+                    first.id,
+                    second.id,
+                ) {
+                    HierarchyRelationship::Parent => {
+                        GlobalAccessibility::Scoped(second)
+                    }
+                    HierarchyRelationship::Child
+                    | HierarchyRelationship::Equivalent => {
+                        GlobalAccessibility::Scoped(first)
+                    }
+                    HierarchyRelationship::Unrelated => {
+                        return Err(MergeAccessibilityError::Unrelated)
+                    }
+                }
+            }
+        })
+    }
 }
 
 #[cfg(test)]

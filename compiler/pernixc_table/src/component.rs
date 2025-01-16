@@ -16,7 +16,10 @@
 //! The **input** components are the starting components that are used to derive
 //! other components from them.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    any::Any,
+    collections::{HashMap, HashSet},
+};
 
 use derive_more::{Deref, DerefMut};
 use pernixc_source_file::Span;
@@ -24,9 +27,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{GlobalID, ID};
 
+pub mod syntax_tree;
+
 /// Represents a component that can be later added to the table by being built
 /// by the [`crate::query::Builder`] trait.
-pub trait Derived {
+pub trait Derived: Any + Send + Sync {
     /// Returns the name of the component; used for debugging and diagnostics.
     fn component_name() -> &'static str;
 }
@@ -293,6 +298,33 @@ impl SymbolKind {
     /// Checks if the symbol kind has generic parameters.
     #[must_use]
     pub const fn has_generic_parameters(&self) -> bool {
+        matches!(
+            self,
+            Self::Struct
+                | Self::Trait
+                | Self::Enum
+                | Self::Type
+                | Self::Constant
+                | Self::Function
+                | Self::TraitType
+                | Self::TraitFunction
+                | Self::TraitConstant
+                | Self::PositiveTraitImplementation
+                | Self::NegativeTraitImplementation
+                | Self::TraitImplementationFunction
+                | Self::TraitImplementationType
+                | Self::TraitImplementationConstant
+                | Self::AdtImplementation
+                | Self::AdtImplementationFunction
+                | Self::Marker
+                | Self::PositiveMarkerImplementation
+                | Self::NegativeMarkerImplementation
+        )
+    }
+
+    /// Checks if the symbol kind has a where clause.
+    #[must_use]
+    pub const fn has_where_clause(&self) -> bool {
         matches!(
             self,
             Self::Struct
