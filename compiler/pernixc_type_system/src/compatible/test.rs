@@ -72,13 +72,13 @@ fn basic_compatible() {
 
     let a_t = Type::<Default>::Reference(Reference {
         qualifier: Qualifier::Immutable,
-        lifetime: a_lt.clone(),
+        lifetime: a_lt,
         pointee: Box::new(Type::Primitive(Primitive::Bool)),
     });
 
     let static_t = Type::<Default>::Reference(Reference {
         qualifier: Qualifier::Immutable,
-        lifetime: static_lt.clone(),
+        lifetime: static_lt,
         pointee: Box::new(Type::Primitive(Primitive::Bool)),
     });
 
@@ -99,25 +99,23 @@ fn basic_compatible() {
         let expected_constraints = match variance {
             Variance::Covariant => {
                 vec![LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: a_lt.clone(),
-                    bound: static_lt.clone(),
+                    operand: a_lt,
+                    bound: static_lt,
                 })]
             }
             Variance::Contravariant => {
                 vec![LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: static_lt.clone(),
-                    bound: a_lt.clone(),
+                    operand: static_lt,
+                    bound: a_lt,
                 })]
             }
             Variance::Invariant => {
                 vec![
                     LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                        static_lt.clone(),
-                        a_lt.clone(),
+                        static_lt, a_lt,
                     )),
                     LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                        a_lt.clone(),
-                        static_lt.clone(),
+                        a_lt, static_lt,
                     )),
                 ]
             }
@@ -172,7 +170,7 @@ fn compatible_with_adt() {
         let a_t = Type::<Default>::Symbol(Symbol {
             id: adt_id,
             generic_arguments: GenericArguments {
-                lifetimes: vec![a_lt.clone()],
+                lifetimes: vec![a_lt],
                 types: Vec::new(),
                 constants: Vec::new(),
             },
@@ -182,7 +180,7 @@ fn compatible_with_adt() {
         let b_t = Type::<Default>::Symbol(Symbol {
             id: adt_id,
             generic_arguments: GenericArguments {
-                lifetimes: vec![b_lt.clone()],
+                lifetimes: vec![b_lt],
                 types: Vec::new(),
                 constants: Vec::new(),
             },
@@ -204,25 +202,19 @@ fn compatible_with_adt() {
         let expected_constraint = match variance {
             Variance::Covariant => {
                 vec![LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: a_lt.clone(),
-                    bound: b_lt.clone(),
+                    operand: a_lt,
+                    bound: b_lt,
                 })]
             }
             Variance::Contravariant => {
                 vec![LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: b_lt.clone(),
-                    bound: a_lt.clone(),
+                    operand: b_lt,
+                    bound: a_lt,
                 })]
             }
             Variance::Invariant => vec![
-                LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                    a_lt.clone(),
-                    b_lt.clone(),
-                )),
-                LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                    b_lt.clone(),
-                    a_lt.clone(),
-                )),
+                LifetimeConstraint::LifetimeOutlives(Outlives::new(a_lt, b_lt)),
+                LifetimeConstraint::LifetimeOutlives(Outlives::new(b_lt, a_lt)),
             ],
         };
 
@@ -260,19 +252,19 @@ fn compatible_with_mutable_reference() {
 
     let lhs = Type::<Default>::Reference(Reference {
         qualifier: Qualifier::Mutable,
-        lifetime: a_lt.clone(),
+        lifetime: a_lt,
         pointee: Box::new(Type::Reference(Reference {
             qualifier: Qualifier::Immutable,
-            lifetime: b_lt.clone(),
+            lifetime: b_lt,
             pointee: Box::new(Type::Primitive(Primitive::Bool)),
         })),
     });
     let rhs = Type::<Default>::Reference(Reference {
         qualifier: Qualifier::Mutable,
-        lifetime: c_lt.clone(),
+        lifetime: c_lt,
         pointee: Box::new(Type::Reference(Reference {
             qualifier: Qualifier::Immutable,
-            lifetime: d_lt.clone(),
+            lifetime: d_lt,
             pointee: Box::new(Type::Primitive(Primitive::Bool)),
         })),
     });
@@ -293,10 +285,8 @@ fn compatible_with_mutable_reference() {
         operand: a_lt,
         bound: c_lt,
     });
-    let b_and_d = LifetimeConstraint::LifetimeOutlives(Outlives::new(
-        b_lt.clone(),
-        d_lt.clone(),
-    ));
+    let b_and_d =
+        LifetimeConstraint::LifetimeOutlives(Outlives::new(b_lt, d_lt));
     let d_and_b =
         LifetimeConstraint::LifetimeOutlives(Outlives::new(d_lt, b_lt));
 

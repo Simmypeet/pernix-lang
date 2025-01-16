@@ -107,7 +107,7 @@ impl pernixc_resolution::Observer<Default> for Observer {
             return;
         };
 
-        occurrences.lifetimes.push((lifetime.clone(), syntax_tree.clone()));
+        occurrences.lifetimes.push((*lifetime, syntax_tree.clone()));
     }
 
     fn on_constant_arguments_resolved(

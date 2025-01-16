@@ -6,4 +6,3 @@ pub mod implementation;
 pub mod type_alias;
 pub mod variance_map;
 pub mod variant;
-pub mod where_clause;

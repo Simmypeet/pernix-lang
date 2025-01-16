@@ -3,6 +3,7 @@
 pub mod diagnostic;
 pub mod generic_parameters;
 pub mod reflector;
+pub mod where_clause;
 
 pub(crate) mod occurrences;
 

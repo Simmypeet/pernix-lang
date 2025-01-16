@@ -71,7 +71,7 @@ where
             self.property.generate(table, premise)?;
 
         let outlives =
-            Outlives::new(T::from(self.equality.clone()), inner_bound.clone());
+            Outlives::new(T::from(self.equality.clone()), inner_bound);
 
         let environment = Environment::new(premise, table, normalizer::NO_OP);
 
@@ -166,7 +166,7 @@ impl Property<Type<Default>> for LifetimeMatching {
         let environment = Environment::new(premise, table, normalizer::NO_OP);
 
         if environment
-            .query(&Outlives::new(ty_operand.clone(), self.bound.clone()))?
+            .query(&Outlives::new(ty_operand.clone(), self.bound))?
             .is_none()
         {
             premise.predicates.insert(Predicate::TypeOutlives(Outlives {
@@ -178,11 +178,11 @@ impl Property<Type<Default>> for LifetimeMatching {
                         constants: Vec::new(),
                     },
                 }),
-                bound: self.bound.clone(),
+                bound: self.bound,
             }));
         }
 
-        Ok((ty_operand, self.bound.clone()))
+        Ok((ty_operand, self.bound))
     }
 
     fn node_count(&self) -> usize {
@@ -277,19 +277,16 @@ where
         let environment = Environment::new(premise, table, normalizer::NO_OP);
 
         if environment
-            .query(&Outlives::new(self.term.clone(), self.bound.clone()))?
+            .query(&Outlives::new(self.term.clone(), self.bound))?
             .is_none()
         {
             premise.predicates.insert(
-                Outlives {
-                    operand: self.term.clone(),
-                    bound: self.bound.clone(),
-                }
-                .into(),
+                Outlives { operand: self.term.clone(), bound: self.bound }
+                    .into(),
             );
         }
 
-        Ok((self.term.clone(), self.bound.clone()))
+        Ok((self.term.clone(), self.bound))
     }
 
     fn node_count(&self) -> usize { 1 }
@@ -313,19 +310,16 @@ impl<T: Term<Model = Default>> Property<T> for Transitive<T> {
         let environment = Environment::new(premise, table, normalizer::NO_OP);
 
         if environment
-            .query(&Outlives::new(
-                inner_operand.clone(),
-                self.final_bound.clone(),
-            ))?
+            .query(&Outlives::new(inner_operand.clone(), self.final_bound))?
             .is_none()
         {
             premise.predicates.insert(Predicate::LifetimeOutlives(Outlives {
                 operand: inner_bound,
-                bound: self.final_bound.clone(),
+                bound: self.final_bound,
             }));
         }
 
-        Ok((inner_operand, self.final_bound.clone()))
+        Ok((inner_operand, self.final_bound))
     }
 
     fn node_count(&self) -> usize { 1 + self.inner_property.node_count() }

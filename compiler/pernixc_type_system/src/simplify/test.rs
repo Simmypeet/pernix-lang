@@ -146,7 +146,7 @@ fn with_lifetime_matching() {
         id: GlobalID::new(TargetID(1), pernixc_table::ID(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments {
-            lifetimes: vec![first_lifetime.clone()],
+            lifetimes: vec![first_lifetime],
             types: Vec::new(),
             constants: Vec::new(),
         },
@@ -156,7 +156,7 @@ fn with_lifetime_matching() {
         id: GlobalID::new(TargetID(1), pernixc_table::ID(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments {
-            lifetimes: vec![second_lifetime.clone()],
+            lifetimes: vec![second_lifetime],
             types: Vec::new(),
             constants: Vec::new(),
         },
@@ -182,8 +182,8 @@ fn with_lifetime_matching() {
 
     assert!(result.constraints.contains(
         &LifetimeConstraint::LifetimeOutlives(Outlives::new(
-            second_lifetime.clone(),
-            first_lifetime.clone()
+            second_lifetime,
+            first_lifetime
         ))
     ));
     assert!(result.constraints.contains(
@@ -272,8 +272,8 @@ fn transitive() {
     let c_lt = lt(2);
 
     let trait_a = trait_member(2, a_lt);
-    let trait_b_b = trait_member(3, b_lt.clone());
-    let trait_b_c = trait_member(3, c_lt.clone());
+    let trait_b_b = trait_member(3, b_lt);
+    let trait_b_c = trait_member(3, c_lt);
     let equivalent = Type::Primitive(Primitive::Bool);
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
@@ -304,10 +304,7 @@ fn transitive() {
     assert_eq!(result.constraints.len(), 2);
 
     assert!(result.constraints.contains(
-        &LifetimeConstraint::LifetimeOutlives(Outlives::new(
-            b_lt.clone(),
-            c_lt.clone()
-        ))
+        &LifetimeConstraint::LifetimeOutlives(Outlives::new(b_lt, c_lt))
     ));
     assert!(result.constraints.contains(
         &LifetimeConstraint::LifetimeOutlives(Outlives::new(c_lt, b_lt))

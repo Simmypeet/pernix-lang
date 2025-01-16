@@ -4,8 +4,7 @@ use core::fmt;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::Key;
-use pernixc_source_file::Span;
-use pernixc_table::{DisplayObject, GlobalID, Table};
+use pernixc_table::{DisplayObject, Table};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -14,60 +13,17 @@ use crate::{
     matching::{self, Match, Matching},
     r#type::Type,
     sub_term::{AssignSubTermError, Location, SubTerm, TermLocation},
+    where_clause::{ForallLifetimeID, WhereClause},
     Error, Model, ModelOf, Never,
 };
 
 mod arbitrary;
 
-/// Represents a for-all quantified lifetime, denoted by `for['a]` syntax, used
-/// in higher-ranked predicates.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Forall {
-    /// The global ID where the forall lifetime was declared.
-    pub global_id: GlobalID,
-
-    /// The unique ID of the forall lifetime within the global ID scope.
-    pub id: usize,
-
-    /// The span where the forall lifetime was declared.
-    ///
-    /// This field doesn't influence the equality, ordering, and hashing od the
-    /// this struct.
-    #[serde(skip)]
-    pub span: Option<Span>,
-}
-
-impl PartialEq for Forall {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.global_id == other.global_id
-    }
-}
-
-impl Eq for Forall {}
-
-impl PartialOrd for Forall {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Forall {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.id.cmp(&other.id).then(self.global_id.cmp(&other.global_id))
-    }
-}
-
-impl std::hash::Hash for Forall {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-        self.global_id.hash(state);
-    }
-}
-
 /// Represents a lifetime annotation term.
 #[derive(
     Debug,
     Clone,
+    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -85,7 +41,7 @@ pub enum Lifetime<M: Model> {
     Parameter(LifetimeParameterID),
     Inference(M::LifetimeInference),
     #[from]
-    Forall(Forall),
+    Forall(ForallLifetimeID),
     #[from]
     Error(Error),
 }
@@ -117,10 +73,19 @@ where
             Self::Inference(inference) => {
                 write!(f, "'{}", DisplayObject { display: inference, table })
             }
-            Self::Forall(forall_lifetime) => match &forall_lifetime.span {
-                Some(span) => write!(f, "'∀{}", span.str()),
-                None => write!(f, "'∀?"),
-            },
+            Self::Forall(forall_lifetime) => {
+                write!(
+                    f,
+                    "'∀{}",
+                    table
+                        .query::<WhereClause>(forall_lifetime.parent)
+                        .map_err(|_| fmt::Error)?
+                        .forall_lifetimes
+                        .get(forall_lifetime.id)
+                        .ok_or(fmt::Error)?
+                        .name
+                )
+            }
             Self::Error(_) => write!(f, "'{{error}}"),
         }
     }

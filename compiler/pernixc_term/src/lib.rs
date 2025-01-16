@@ -17,6 +17,7 @@ pub mod sub_term;
 pub mod r#type;
 pub mod variance;
 pub mod visitor;
+pub mod where_clause;
 
 mod arbitrary;
 

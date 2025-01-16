@@ -1,5 +1,7 @@
 use pernixc_table::{component::SymbolKind, query, GlobalID, Table, TargetID};
-use pernixc_term::generic_parameter::GenericParameters;
+use pernixc_term::{
+    generic_parameter::GenericParameters, where_clause::WhereClause,
+};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::Builder;
@@ -7,6 +9,7 @@ use crate::Builder;
 /// An entry point for building every symbol within the given target.
 pub fn build(table: &mut Table, target_id: TargetID) {
     assert!(table.set_builder::<GenericParameters, _>(Builder));
+    assert!(table.set_builder::<WhereClause, _>(Builder));
 
     let symbols_to_build = table
         .get_target(target_id)
@@ -20,6 +23,18 @@ pub fn build(table: &mut Table, target_id: TargetID) {
 
         if symbol_kind.has_generic_parameters() {
             match table.query::<GenericParameters>(x) {
+                Ok(_) => { /*do nothing */ }
+                Err(query::Error::CyclicDependency(error)) => {
+                    table.handler().receive(Box::new(error));
+                }
+                Err(error) => {
+                    panic!("unexpected error: {error:?}");
+                }
+            }
+        }
+
+        if symbol_kind.has_where_clause() {
+            match table.query::<WhereClause>(x) {
                 Ok(_) => { /*do nothing */ }
                 Err(query::Error::CyclicDependency(error)) => {
                     table.handler().receive(Box::new(error));

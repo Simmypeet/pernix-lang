@@ -6,9 +6,8 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use pernixc_component::{
-    implementation::Implementation, where_clause::WhereClause,
-};
+use pernixc_arena::Arena;
+use pernixc_component::implementation::Implementation;
 use pernixc_table::{
     component::{
         Implemented, Implements, PositiveTraitImplementation, SymbolKind,
@@ -27,6 +26,7 @@ use pernixc_term::{
     predicate::{PositiveTrait, Predicate},
     r#type::Type,
     visitor::RecursiveIterator,
+    where_clause::WhereClause,
     Default, Kind, Tuple,
 };
 use proptest::{
@@ -49,7 +49,7 @@ lazy_static! {
 fn definite_lifetime() -> impl Strategy<Value = Lifetime<Default>> {
     Lifetime::arbitrary().prop_filter("filter out non-definite terms", |term| {
         let environment = Environment::with_default(&TABLE);
-        matches!(environment.query(&Definite::new(term.clone())), Ok(Some(_)))
+        matches!(environment.query(&Definite::new(*term)), Ok(Some(_)))
             && !RecursiveIterator::new(term)
                 .any(|(x, _)| matches!(x, Kind::Type(Type::TraitMember(_))))
     })
@@ -284,15 +284,13 @@ impl SingleImplementation {
         let all_lifetimes = generic_arguments
             .lifetimes
             .iter()
-            .cloned()
+            .copied()
             .chain(
                 generic_arguments
                     .types
                     .iter()
                     .flat_map(RecursiveIterator::new)
-                    .filter_map(|(term, _)| {
-                        term.as_lifetime().map(|x| (*x).clone())
-                    }),
+                    .filter_map(|(term, _)| term.as_lifetime().map(|x| **x)),
             )
             .collect::<BTreeSet<_>>();
 
@@ -312,7 +310,7 @@ impl SingleImplementation {
                 Lifetime::Parameter(MemberID { parent: implementation_id, id }),
             );
             let instantiation = Instantiation {
-                lifetimes: std::iter::once(pair.clone()).collect(),
+                lifetimes: std::iter::once(pair).collect(),
                 types: BTreeMap::new(),
                 constants: BTreeMap::new(),
             };
@@ -704,15 +702,13 @@ impl SpecializedImplementation {
         let all_lifetimes = generic_arguments
             .lifetimes
             .iter()
-            .cloned()
+            .copied()
             .chain(
                 generic_arguments
                     .types
                     .iter()
                     .flat_map(RecursiveIterator::new)
-                    .filter_map(|(term, _)| {
-                        term.as_lifetime().map(|x| (*x).clone())
-                    }),
+                    .filter_map(|(term, _)| term.as_lifetime().map(|x| **x)),
             )
             .collect::<BTreeSet<_>>();
 
@@ -735,7 +731,7 @@ impl SpecializedImplementation {
                 }),
             );
             let instantiation = Instantiation {
-                lifetimes: std::iter::once(pair.clone()).collect(),
+                lifetimes: std::iter::once(pair).collect(),
                 types: BTreeMap::new(),
                 constants: BTreeMap::new(),
             };
@@ -923,7 +919,8 @@ impl FallbackToGeneralImplementation {
         assert!(table.add_component(
             self.0.specialized_implementation_id,
             WhereClause {
-                predicates: once(pernixc_component::where_clause::Predicate {
+                forall_lifetimes: Arena::default(),
+                predicates: once(pernixc_term::where_clause::Predicate {
                     predicate: Predicate::PositiveTrait(PositiveTrait {
                         trait_id: impossible_constraint_id,
                         is_const: false,

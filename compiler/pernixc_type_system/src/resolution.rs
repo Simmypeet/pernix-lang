@@ -2,10 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use pernixc_component::{
-    implementation::Implementation as ImplementationComponent,
-    where_clause::WhereClause,
-};
+use pernixc_component::implementation::Implementation as ImplementationComponent;
 use pernixc_table::{
     component::{Implemented, Implements, SymbolKind, TraitImplementation},
     query::CyclicDependency,
@@ -13,7 +10,8 @@ use pernixc_table::{
 };
 use pernixc_term::{
     generic_arguments::GenericArguments, instantiation::Instantiation,
-    predicate::Predicate, r#type::Type, variance::Variance, Default, Model,
+    predicate::Predicate, r#type::Type, variance::Variance,
+    where_clause::WhereClause, Default, Model,
 };
 use thiserror::Error;
 

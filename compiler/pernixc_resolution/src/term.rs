@@ -352,13 +352,15 @@ pub(super) fn resolve_lifetime<M: Model>(
 ) -> Result<Lifetime<M>, Error> {
     let lifetime = match lifetime_argument.identifier() {
         LifetimeIdentifier::Static(..) => Lifetime::Static,
-        LifetimeIdentifier::Identifier(ident) => resolve_lifetime_parameter(
-            table,
-            ident,
-            referring_site,
-            &config,
-            handler,
-        )?,
+        LifetimeIdentifier::Identifier(ident) => {
+            return resolve_lifetime_parameter(
+                table,
+                ident,
+                referring_site,
+                &config,
+                handler,
+            );
+        }
         LifetimeIdentifier::Elided(elided) => {
             config.elided_lifetime_provider.map_or_else(
                 || {
@@ -386,7 +388,7 @@ pub(super) fn resolve_lifetime<M: Model>(
     Ok(lifetime)
 }
 
-fn resolve_lifetime_parameter<M: Model>(
+pub(super) fn resolve_lifetime_parameter<M: Model>(
     table: &Table,
     identifier: &Identifier,
     referring_site: GlobalID,

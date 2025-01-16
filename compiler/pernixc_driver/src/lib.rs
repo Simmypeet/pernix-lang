@@ -260,34 +260,38 @@ pub fn run(argument: Arguments) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    // save as `ron` format
-    let file = match File::create(&output_path) {
-        Ok(file) => file,
-        Err(error) => {
-            let msg = Message::new(
-                Severity::Error,
-                format!("failed to create file: {error}"),
-            );
+    if argument.kind == TargetKind::Library {
+        // save as `ron` format
+        let file = match File::create(&output_path) {
+            Ok(file) => file,
+            Err(error) => {
+                let msg = Message::new(
+                    Severity::Error,
+                    format!("failed to create file: {error}"),
+                );
 
-            eprintln!("{msg}");
-            return ExitCode::FAILURE;
+                eprintln!("{msg}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        match ron::ser::to_writer_pretty(
+            file,
+            &table.as_library(&CompilationMetaData { target_id }, &reflector),
+            PrettyConfig::default(),
+        ) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                let msg = Message::new(
+                    Severity::Error,
+                    format!("failed to serialize table: {error}"),
+                );
+
+                eprintln!("{msg}");
+                ExitCode::FAILURE
+            }
         }
-    };
-
-    match ron::ser::to_writer_pretty(
-        file,
-        &table.as_library(&CompilationMetaData { target_id }, &reflector),
-        PrettyConfig::default(),
-    ) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            let msg = Message::new(
-                Severity::Error,
-                format!("failed to serialize table: {error}"),
-            );
-
-            eprintln!("{msg}");
-            ExitCode::FAILURE
-        }
+    } else {
+        ExitCode::SUCCESS
     }
 }

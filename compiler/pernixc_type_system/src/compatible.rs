@@ -5,12 +5,14 @@ use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
-    lifetime::{Forall, Lifetime},
+    lifetime::Lifetime,
     predicate::Outlives,
     r#type::Type,
     sub_term::{Location, SubLifetimeLocation, SubTypeLocation, TermLocation},
     variance::Variance,
-    visitor, Model, ModelOf,
+    visitor,
+    where_clause::ForallLifetimeID,
+    Model, ModelOf,
 };
 
 use crate::{
@@ -26,7 +28,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ForallLifetimeInstantiation<M: Model> {
     /// The instantiation of the forall lifetimes.
-    pub lifetimes_by_forall: BTreeMap<Forall, Lifetime<M>>,
+    pub lifetimes_by_forall: BTreeMap<ForallLifetimeID, Lifetime<M>>,
 }
 
 struct ForallLifetimeInstantiationVisitor<'a, M: Model> {
@@ -94,7 +96,7 @@ impl<M: Model> ForallLifetimeInstantiation<M> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NotGeneralEnoughLifetimeError<M: Model> {
     /// The forall lifetime found on the `self` side.
-    pub forall_lifetime: Forall,
+    pub forall_lifetime: ForallLifetimeID,
 
     /// The non-forall lifetime found on the `target` side.
     pub lifetime: Lifetime<M>,
@@ -105,7 +107,7 @@ pub struct NotGeneralEnoughLifetimeError<M: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ForallLifetimeMatchedMoreThanOnceError<M: Model> {
     /// The forall lifetime found on the `target` side.
-    pub forall_lifetime: Forall,
+    pub forall_lifetime: ForallLifetimeID,
 
     /// The lifetimes found on the `self` side that matched with the forall
     /// lifetime on the `target` side.
@@ -333,7 +335,7 @@ impl<M: Model> Compatible for Lifetime<M> {
                 assert!(compatibility
                     .forall_lifetime_instantiations
                     .lifetimes_by_forall
-                    .insert(forall_target.clone(), self_lifetime.clone())
+                    .insert(*forall_target, self_lifetime.clone())
                     .is_none());
 
                 return Ok(Some(Succeeded::new(compatibility)));
@@ -343,7 +345,7 @@ impl<M: Model> Compatible for Lifetime<M> {
             (Self::Forall(self_forall), target) => {
                 let error = ForallLifetimeError::NotGeneralEnoughLifetime(
                     NotGeneralEnoughLifetimeError {
-                        forall_lifetime: self_forall.clone(),
+                        forall_lifetime: *self_forall,
                         lifetime: target.clone(),
                     },
                 );
@@ -408,7 +410,7 @@ fn matching_to_compatiblity<M: Model>(
                     match compatibility
                         .forall_lifetime_instantiations
                         .lifetimes_by_forall
-                        .entry(target_forall.clone())
+                        .entry(target_forall)
                     {
                         Entry::Occupied(entry) => {
                             // check if this lifetime is already matched
