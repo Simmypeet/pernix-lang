@@ -13,10 +13,13 @@ use pernixc_table::{
     query, GlobalAccessibility, GlobalID, Table,
 };
 use pernixc_term::{accessibility::Ext as _, r#type::Type};
+use pernixc_type_system::environment::Environment;
 
 use crate::{
-    builder::Builder, diagnostic::PrivateEntityLeakedToPublicInterface,
+    builder::Builder,
+    diagnostic::PrivateEntityLeakedToPublicInterface,
     handle_term_resolution_result, occurrences,
+    type_system::{EnvironmentExt, TableExt},
 };
 
 impl query::Builder<TypeAlias> for Builder {
@@ -37,7 +40,7 @@ impl query::Builder<TypeAlias> for Builder {
         let syntax_tree =
             table.get::<syntax_tree_component::TypeAlias>(global_id).unwrap();
 
-        let ty = handle_term_resolution_result!(
+        let mut ty = handle_term_resolution_result!(
             table.resolve_type(
                 &syntax_tree.0,
                 global_id,
@@ -100,6 +103,15 @@ impl query::Builder<TypeAlias> for Builder {
                 entity_overall_accessibility: ty_accessibility,
             }));
         }
+
+        let premise = table.get_active_premise(global_id, handler);
+        let (env, _) = Environment::new(premise, table);
+
+        ty = env.simplify_and_check_lifetime_constraints(
+            &ty,
+            &syntax_tree.span(),
+            handler,
+        );
 
         Some(TypeAlias(ty))
     }

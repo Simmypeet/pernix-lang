@@ -139,7 +139,8 @@ impl SingleImplementation {
                 is_final: false
             }));
 
-        let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+        let environment =
+            Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
         let Succeeded { result, constraints } = environment
             .resolve_implementation(self.trait_id, &self.generic_arguments)?;
@@ -544,7 +545,8 @@ impl SpecializedImplementation {
             TraitImplementation { is_final: false }
         ));
 
-        let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+        let environment =
+            Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
         let Succeeded { result, constraints } = environment
             .resolve_implementation(self.trait_id, &self.generic_arguments)?;
@@ -989,7 +991,8 @@ impl FallbackToGeneralImplementation {
             TraitImplementation { is_final: false }
         ));
 
-        let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+        let environment =
+            Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
         let Succeeded { result, constraints } = environment
             .resolve_implementation(

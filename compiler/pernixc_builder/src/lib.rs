@@ -5,6 +5,7 @@ pub mod diagnostic;
 pub mod generic_parameters;
 pub mod implementation;
 pub mod reflector;
+pub mod type_system;
 pub mod type_alias;
 pub mod where_clause;
 

@@ -503,7 +503,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
 
     property.apply(&mut table, &mut premise)?;
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     if environment
         .query(&Equality::new(lhs.clone(), rhs.clone()))

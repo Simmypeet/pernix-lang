@@ -35,7 +35,8 @@ fn basic() {
         rhs: equivalent.clone(),
     }));
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     let result = environment
         .query(&Simplify(Type::TraitMember(trait_member)))
@@ -63,7 +64,8 @@ fn sub_term() {
         rhs: equivalent.clone(),
     }));
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     let result = environment
         .query(&Simplify(Type::Symbol(Symbol {
@@ -123,7 +125,8 @@ fn already_simplified() {
         rhs: equivalent.clone(),
     }));
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
     let result =
         environment.query(&Simplify(equivalent.clone())).unwrap().unwrap();
 
@@ -171,7 +174,8 @@ fn with_lifetime_matching() {
         rhs: equivalent.clone(),
     }));
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
     let result = environment
         .query(&Simplify(Type::TraitMember(to_be_simplified)))
         .unwrap()
@@ -221,7 +225,8 @@ fn multiple_equivalences() {
         }),
     ]);
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     let result1 = environment
         .query(&Simplify(Type::TraitMember(first_trait_member)))
@@ -294,7 +299,8 @@ fn transitive() {
         query_site: None,
     };
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
     let result = environment
         .query(&Simplify(Type::TraitMember(trait_a)))
         .unwrap()

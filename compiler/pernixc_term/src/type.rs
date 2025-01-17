@@ -155,6 +155,12 @@ pub struct Phantom<M: Model>(pub Box<Type<M>>);
 )]
 pub struct TraitMember<M: Model>(pub MemberSymbol<M>);
 
+impl<M: Model> pernixc_table::Display for TraitMember<M> {
+    fn fmt(&self, table: &Table, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", DisplayObject { display: self, table })
+    }
+}
+
 /// Represents a type term.
 #[derive(
     Debug,

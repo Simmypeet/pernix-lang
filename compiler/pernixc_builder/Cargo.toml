@@ -18,6 +18,8 @@ pernixc_log = { path = "../pernixc_log" }
 pernixc_arena = { path = "../pernixc_arena" }
 pernixc_storage = { path = "../pernixc_storage" }
 pernixc_component = { path = "../pernixc_component" }
+pernixc_type_system = { path = "../pernixc_type_system" }
+thiserror = { workspace = true }
 getset = { workspace = true }
 rayon = { workspace = true }
 derive-new = { workspace = true }

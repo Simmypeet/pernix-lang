@@ -29,7 +29,8 @@ fn reflexive() {
     let term = Type::<Default>::Primitive(Primitive::Bool);
     let premise = Premise::default();
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     let result =
         environment.query(&Equality::new(term.clone(), term)).unwrap().unwrap();
@@ -55,7 +56,8 @@ fn symmetric() {
     }));
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     assert!(environment
         .query(&Equality::new(
@@ -93,7 +95,8 @@ fn not_equal() {
     }));
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     assert!(environment
         .query(&Equality::new(
@@ -141,7 +144,8 @@ fn transitivity() {
     ]);
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     assert!(environment
         .query(&Equality::new(
@@ -194,7 +198,8 @@ fn congruence() {
     ]);
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     let lhs = Type::Symbol(Symbol {
         id: GlobalID::new(TargetID(1), ID(3)),
@@ -317,19 +322,27 @@ where
         let (inner_lhs, inner_rhs) = self.property.generate(table, premise)?;
 
         let should_map = if self.map_at_lhs {
-            Environment::new(premise, table, normalizer::NO_OP)
-                .query(&Equality::new(
-                    self.target_trait_member.clone().into(),
-                    inner_rhs.clone(),
-                ))?
-                .is_none()
+            Environment::new_unchecked(
+                premise.clone(),
+                table,
+                normalizer::NO_OP,
+            )
+            .query(&Equality::new(
+                self.target_trait_member.clone().into(),
+                inner_rhs.clone(),
+            ))?
+            .is_none()
         } else {
-            Environment::new(premise, table, normalizer::NO_OP)
-                .query(&Equality::new(
-                    inner_lhs.clone(),
-                    self.target_trait_member.clone().into(),
-                ))?
-                .is_none()
+            Environment::new_unchecked(
+                premise.clone(),
+                table,
+                normalizer::NO_OP,
+            )
+            .query(&Equality::new(
+                inner_lhs.clone(),
+                self.target_trait_member.clone().into(),
+            ))?
+            .is_none()
         };
 
         if should_map {
@@ -552,7 +565,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
             ))
         })?;
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise.clone(), &table, normalizer::NO_OP);
 
     let first_result = environment
         .query(&Equality::new(term1.clone(), term2.clone()))
@@ -589,8 +603,11 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
             query_site: premise.query_site,
         };
 
-        let modified_environment =
-            Environment::new(&modified_premise, &table, normalizer::NO_OP);
+        let modified_environment = Environment::new_unchecked(
+            modified_premise,
+            &table,
+            normalizer::NO_OP,
+        );
 
         let first_result = modified_environment
             .query(&Equality::new(term1.clone(), term2.clone()))
@@ -649,7 +666,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
         .predicates
         .extend(decoy.types.into_iter().map(Predicate::TraitTypeCompatible));
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     let first_result = environment
         .query(&Equality::new(term1.clone(), term2.clone()))

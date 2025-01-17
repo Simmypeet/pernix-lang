@@ -73,7 +73,11 @@ where
         let outlives =
             Outlives::new(T::from(self.equality.clone()), inner_bound);
 
-        let environment = Environment::new(premise, table, normalizer::NO_OP);
+        let environment = Environment::new_unchecked(
+            premise.clone(),
+            table,
+            normalizer::NO_OP,
+        );
 
         if environment.query(&outlives)?.is_none() {
             premise.predicates.insert(
@@ -163,7 +167,11 @@ impl Property<Type<Default>> for LifetimeMatching {
             },
         });
 
-        let environment = Environment::new(premise, table, normalizer::NO_OP);
+        let environment = Environment::new_unchecked(
+            premise.clone(),
+            table,
+            normalizer::NO_OP,
+        );
 
         if environment
             .query(&Outlives::new(ty_operand.clone(), self.bound))?
@@ -274,7 +282,11 @@ where
         table: &mut Table,
         premise: &mut Premise<Default>,
     ) -> Result<(T, Lifetime<Default>), GenerateError> {
-        let environment = Environment::new(premise, table, normalizer::NO_OP);
+        let environment = Environment::new_unchecked(
+            premise.clone(),
+            table,
+            normalizer::NO_OP,
+        );
 
         if environment
             .query(&Outlives::new(self.term.clone(), self.bound))?
@@ -307,7 +319,11 @@ impl<T: Term<Model = Default>> Property<T> for Transitive<T> {
         let (inner_operand, inner_bound) =
             self.inner_property.generate(table, premise)?;
 
-        let environment = Environment::new(premise, table, normalizer::NO_OP);
+        let environment = Environment::new_unchecked(
+            premise.clone(),
+            table,
+            normalizer::NO_OP,
+        );
 
         if environment
             .query(&Outlives::new(inner_operand.clone(), self.final_bound))?
@@ -394,7 +410,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
         .generate(&mut table, &mut premise)
         .map_err(|x| TestCaseError::reject(format!("{x}")))?;
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     let result = environment
         .query(&Outlives::new(term1, term2))
@@ -434,7 +451,7 @@ proptest! {
         let table = Table::new(Arc::new(pernixc_handler::Panic));
         let premise = Premise::default();
 
-        let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+        let environment = Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
         prop_assert!(
             environment.query(&Outlives::new(constant, lifetime))?.is_some()

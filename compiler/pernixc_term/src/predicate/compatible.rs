@@ -1,4 +1,5 @@
 use derive_new::new;
+use pernixc_table::DisplayObject;
 use serde::{Deserialize, Serialize};
 
 use crate::{Model, ModelOf};
@@ -20,6 +21,25 @@ use crate::{Model, ModelOf};
 pub struct Compatible<T, U = T> {
     pub lhs: T,
     pub rhs: U,
+}
+
+impl<T, U> pernixc_table::Display for Compatible<T, U>
+where
+    T: pernixc_table::Display,
+    U: pernixc_table::Display,
+{
+    fn fmt(
+        &self,
+        table: &pernixc_table::Table,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(
+            f,
+            "{} = {}",
+            DisplayObject { display: &self.lhs, table },
+            DisplayObject { display: &self.rhs, table }
+        )
+    }
 }
 
 impl<M: Model, T, U> ModelOf for Compatible<T, U>

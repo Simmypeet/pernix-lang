@@ -40,7 +40,8 @@ fn ambiguous() {
     let table = Table::new(Arc::new(pernixc_handler::Panic));
     let premise = Premise::default();
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     assert_eq!(environment.order(&lhs, &rhs).unwrap(), Order::Ambiguous);
 }
@@ -70,7 +71,8 @@ fn more_general() {
     let table = Table::new(Arc::new(pernixc_handler::Panic));
     let premise = Premise::default();
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     assert_eq!(environment.order(&lhs, &rhs).unwrap(), Order::MoreGeneral);
 }
@@ -100,7 +102,8 @@ fn incompatible() {
     let table = Table::new(Arc::new(pernixc_handler::Panic));
     let premise = Premise::default();
 
-    let environment = Environment::new(&premise, &table, normalizer::NO_OP);
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
     assert_eq!(environment.order(&lhs, &rhs).unwrap(), Order::Incompatible);
 }
