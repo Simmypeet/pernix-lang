@@ -16,7 +16,7 @@ use pernixc_log::Severity;
 
 use super::{GlobalID, Table};
 use crate::{
-    component::{Derived, LocationSpan, Name},
+    component::{Derived, LocationSpan},
     diagnostic::{Diagnostic, ReportError},
 };
 
@@ -59,10 +59,8 @@ impl Report<&Table> for CyclicDependency {
                         "{} for `{}`",
                         x.name,
                         parameter
-                            .storage
-                            .get::<Name>(x.global_id)
+                            .get_qualified_name(x.global_id)
                             .ok_or(ReportError)?
-                            .0
                     )))
                     .collect::<Result<Vec<_>, _>>()?
                     .join(" -> ")
@@ -241,7 +239,7 @@ impl Table {
     /// # Errors
     ///
     /// See [`Error`] for more information.
-    #[allow(clippy::significant_drop_tightening)]
+    #[allow(clippy::significant_drop_tightening, clippy::too_many_lines)]
     pub fn query<T: Derived + Any + Send + Sync>(
         &self,
         global_id: GlobalID,
@@ -259,7 +257,7 @@ impl Table {
             return Err(Error::NoBuilderFound);
         };
 
-        let target_record = Record {
+        let current_record = Record {
             global_id,
             type_id: std::any::TypeId::of::<T>(),
             name: T::component_name(),
@@ -275,10 +273,10 @@ impl Table {
         // check for cyclic dependencies
         if let Some(called_from) = called_from {
             // check if `target_record` can go to `called_from`
-            let mut stack = vec![called_from];
+            let mut stack = vec![current_record];
 
             loop {
-                if stack.last().unwrap() == &target_record {
+                if stack.last().unwrap() == &called_from {
                     return Err(Error::CyclicDependency(CyclicDependency {
                         records_stack: stack,
                     }));
@@ -294,9 +292,10 @@ impl Table {
                 }
             }
 
-            context
+            assert!(context
                 .dependencies_by_dependent
-                .insert(target_record, called_from);
+                .insert(called_from, current_record)
+                .is_none());
         }
 
         // add the record to the stack
@@ -304,9 +303,9 @@ impl Table {
             .record_stacks_by_thread_id
             .entry(current_thread_id)
             .or_default()
-            .push(target_record);
+            .push(current_record);
 
-        let sync = context.condvars_by_record.get(&target_record).cloned();
+        let sync = context.condvars_by_record.get(&current_record).cloned();
         // there's an another thread that is computing the component
         if let Some(sync) = sync {
             // wait for the other thread to finish the job
@@ -316,7 +315,7 @@ impl Table {
             let sync = Arc::new(Condvar::new());
             assert!(context
                 .condvars_by_record
-                .insert(target_record, sync.clone())
+                .insert(current_record, sync.clone())
                 .is_none(),);
 
             drop(context); // release the context lock
@@ -335,7 +334,7 @@ impl Table {
 
             assert!(context
                 .condvars_by_record
-                .remove(&target_record)
+                .remove(&current_record)
                 .is_some());
 
             // notify the other threads that the component is computed
@@ -350,15 +349,12 @@ impl Table {
                 .unwrap()
                 .pop()
                 .unwrap(),
-            target_record
+            current_record
         );
         if let Some(called_from) = called_from {
             assert_eq!(
-                context
-                    .dependencies_by_dependent
-                    .remove(&target_record)
-                    .unwrap(),
-                called_from
+                context.dependencies_by_dependent.remove(&called_from).unwrap(),
+                current_record
             );
         }
 
