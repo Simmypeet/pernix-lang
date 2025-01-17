@@ -11,8 +11,56 @@ use pernixc_term::{
     generic_parameter::GenericParameters, where_clause::WhereClause,
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use typed_builder::TypedBuilder;
 
 use crate::builder::Builder;
+
+/// A struct for starting the building of a target.
+#[derive(TypedBuilder)]
+pub struct Compilation<'a> {
+    /// The table where the local target is stored.
+    pub table: &'a mut Table,
+
+    /// The target to build.
+    pub target_id: TargetID,
+
+    /// The callback that is invoked when a symbol is started to be built.
+    #[builder(default, setter(strip_option))]
+    pub on_start: Option<Arc<SymbolCallback>>,
+
+    /// The callback that is invoked when a symbol is finished building.
+    #[builder(default, setter(strip_option))]
+    pub on_done: Option<Arc<SymbolCallback>>,
+
+    /// The callback that is invoked when a symbol's component is started to be
+    /// built.
+    #[builder(default, setter(strip_option))]
+    pub on_start_building_component: Option<Arc<ComponentCallback>>,
+
+    /// The callback that is invoked when a symbol's component is finished
+    /// building.
+    #[builder(default, setter(strip_option))]
+    pub on_finish_building_component: Option<Arc<ComponentCallback>>,
+}
+
+impl std::fmt::Debug for Compilation<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Compilation")
+            .field("table", &"Table")
+            .field("target_id", &self.target_id)
+            .field("on_start", &self.on_start.is_some())
+            .field("on_done", &self.on_done.is_some())
+            .field(
+                "on_start_building_component",
+                &self.on_start_building_component.is_some(),
+            )
+            .field(
+                "on_finish_building_component",
+                &self.on_finish_building_component.is_some(),
+            )
+            .finish()
+    }
+}
 
 /// Invokes the building of a component.
 fn build_component<T: Derived>(table: &Table, global_id: GlobalID) {
@@ -33,39 +81,62 @@ fn build_component<T: Derived>(table: &Table, global_id: GlobalID) {
     }
 }
 
+/// A callback that is invoked when a symbol is started/finished to be built.
+pub type SymbolCallback = dyn Fn(&Table, GlobalID) + Send + Sync;
+
+/// A callback that is invoked when a symbol's component is started/finished to
+/// be built.
+pub type ComponentCallback =
+    dyn Fn(&Table, GlobalID, &'static str) + Send + Sync;
+
+impl Compilation<'_> {
+    /// Builds every symbol within the target.
+    pub fn run(self) {
+        let Compilation {
+            table,
+            target_id,
+            on_start,
+            on_done,
+            on_start_building_component,
+            on_finish_building_component,
+        } = self;
+
+        build(
+            table,
+            target_id,
+            on_start,
+            on_done,
+            on_start_building_component,
+            on_finish_building_component,
+        );
+    }
+}
+
 /// An entry point for building every symbol within the given target.
 #[allow(clippy::needless_pass_by_value)]
 pub fn build(
     table: &mut Table,
     target_id: TargetID,
-    on_done: impl Fn(&Table, GlobalID) + Send + Sync,
-    on_start_building: impl Fn(&Table, GlobalID, &'static str)
-        + Send
-        + Sync
-        + 'static,
-    on_finish_building: impl Fn(&Table, GlobalID, &'static str)
-        + Send
-        + Sync
-        + 'static,
+    on_start: Option<Arc<SymbolCallback>>,
+    on_done: Option<Arc<SymbolCallback>>,
+    on_start_building_component: Option<Arc<ComponentCallback>>,
+    on_finish_building_component: Option<Arc<ComponentCallback>>,
 ) {
-    let on_start_building = Arc::new(on_start_building);
-    let on_finish_building = Arc::new(on_finish_building);
-
     assert!(table.set_builder::<GenericParameters, _>(Builder::new(
-        on_start_building.clone(),
-        on_finish_building.clone(),
+        on_start_building_component.clone(),
+        on_finish_building_component.clone(),
     )));
     assert!(table.set_builder::<WhereClause, _>(Builder::new(
-        on_start_building.clone(),
-        on_finish_building.clone(),
+        on_start_building_component.clone(),
+        on_finish_building_component.clone(),
     )));
     assert!(table.set_builder::<Implementation, _>(Builder::new(
-        on_start_building.clone(),
-        on_finish_building.clone(),
+        on_start_building_component.clone(),
+        on_finish_building_component.clone(),
     )));
     assert!(table.set_builder::<TypeAlias, _>(Builder::new(
-        on_start_building,
-        on_finish_building
+        on_start_building_component,
+        on_finish_building_component,
     )));
 
     let symbols_to_build = table
@@ -76,6 +147,10 @@ pub fn build(
         .collect::<Vec<_>>();
 
     symbols_to_build.into_par_iter().for_each(|x| {
+        if let Some(callback) = on_start.as_ref() {
+            (callback)(table, x);
+        }
+
         let symbol_kind = *table.get::<SymbolKind>(x).unwrap();
 
         if symbol_kind.has_generic_parameters() {
@@ -94,6 +169,8 @@ pub fn build(
             build_component::<TypeAlias>(table, x);
         }
 
-        on_done(table, x);
+        if let Some(callback) = on_done.as_ref() {
+            (callback)(table, x);
+        }
     });
 }

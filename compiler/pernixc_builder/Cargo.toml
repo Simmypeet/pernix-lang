@@ -23,6 +23,7 @@ thiserror = { workspace = true }
 getset = { workspace = true }
 rayon = { workspace = true }
 derive-new = { workspace = true }
+typed-builder = { workspace = true }
 
 [lints]
 workspace = true

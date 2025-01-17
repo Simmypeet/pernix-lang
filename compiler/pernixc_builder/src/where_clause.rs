@@ -3,6 +3,7 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
     ops::Deref,
+    sync::Arc,
 };
 
 use diagnostic::{
@@ -544,7 +545,7 @@ impl query::Builder<WhereClause> for Builder {
         global_id: GlobalID,
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<WhereClause> {
+    ) -> Option<Arc<WhereClause>> {
         let symbol_kind = *table.get::<SymbolKind>(global_id)?;
 
         if !symbol_kind.has_where_clause() {
@@ -563,7 +564,7 @@ impl query::Builder<WhereClause> for Builder {
         let Some(where_clause_syntax_tree) =
             where_clause_syntax_tree.deref().as_ref()
         else {
-            return Some(WhereClause::default());
+            return Some(Arc::new(WhereClause::default()));
         };
 
         let mut where_clause = WhereClause::default();
@@ -638,6 +639,6 @@ impl query::Builder<WhereClause> for Builder {
             }
         }
 
-        Some(where_clause)
+        Some(Arc::new(where_clause))
     }
 }

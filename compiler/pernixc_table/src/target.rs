@@ -409,16 +409,13 @@ impl Representation {
                     };
 
                     // add the parameters
-                    assert!(self
-                        .storage
-                        .add_component(function_id, parameters));
-
-                    // add the return type
-                    if let Some(return_type) = return_type {
-                        assert!(self
-                            .storage
-                            .add_component(function_id, return_type));
-                    }
+                    assert!(self.storage.add_component(
+                        function_id,
+                        syntax_tree_component::FunctionSignature {
+                            parameters,
+                            return_type
+                        }
+                    ));
 
                     // add the body
                     assert!(self.storage.add_component(function_id, body));
@@ -563,16 +560,13 @@ impl Representation {
                     );
 
                     // add the parameters
-                    assert!(self
-                        .storage
-                        .add_component(function_id, parameters));
-
-                    // add the return type
-                    if let Some(return_type) = return_type {
-                        assert!(self
-                            .storage
-                            .add_component(function_id, return_type));
-                    }
+                    assert!(self.storage.add_component(
+                        function_id,
+                        syntax_tree_component::FunctionSignature {
+                            parameters,
+                            return_type
+                        }
+                    ));
 
                     // add the body
                     assert!(self.storage.add_component(function_id, body));
@@ -1286,16 +1280,13 @@ impl Representation {
                     );
 
                     // add the parameters
-                    assert!(self
-                        .storage
-                        .add_component(trait_function_id, parameters));
-
-                    // add the return type
-                    if let Some(return_type) = return_type {
-                        assert!(self
-                            .storage
-                            .add_component(trait_function_id, return_type));
-                    }
+                    assert!(self.storage.add_component(
+                        trait_function_id,
+                        syntax_tree_component::FunctionSignature {
+                            parameters,
+                            return_type
+                        }
+                    ));
 
                     trait_function_id
                 }
@@ -1494,17 +1485,14 @@ impl Representation {
                         handler,
                     );
 
-                    // add the parameters
-                    assert!(self
-                        .storage
-                        .add_component(function_id, parameters));
-
-                    // add the return type
-                    if let Some(return_type) = return_type {
-                        assert!(self
-                            .storage
-                            .add_component(function_id, return_type));
-                    }
+                    // add the signature
+                    assert!(self.storage.add_component(
+                        function_id,
+                        syntax_tree_component::FunctionSignature {
+                            parameters,
+                            return_type
+                        }
+                    ));
 
                     // add the body
                     assert!(self.storage.add_component(function_id, body));
@@ -1675,16 +1663,13 @@ impl Representation {
                         );
 
                         // add the parameters
-                        assert!(self
-                            .storage
-                            .add_component(function_id, parameters));
-
-                        // add the return type
-                        if let Some(return_type) = return_type {
-                            assert!(self
-                                .storage
-                                .add_component(function_id, return_type));
-                        }
+                        assert!(self.storage.add_component(
+                            function_id,
+                            syntax_tree_component::FunctionSignature {
+                                parameters,
+                                return_type
+                            }
+                        ));
 
                         // add the extern calling convention
                         assert!(self

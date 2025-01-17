@@ -1,5 +1,7 @@
 //! Contains the builder for the type alias.
 
+use std::sync::Arc;
+
 use pernixc_component::type_alias::TypeAlias;
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext as _};
@@ -28,7 +30,7 @@ impl query::Builder<TypeAlias> for Builder {
         global_id: GlobalID,
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<TypeAlias> {
+    ) -> Option<Arc<TypeAlias>> {
         let symbol_kind = *table.get::<SymbolKind>(global_id).unwrap();
         if !symbol_kind.has_type_alias() {
             return None;
@@ -54,7 +56,7 @@ impl query::Builder<TypeAlias> for Builder {
                 handler
             ),
             handler,
-            return Some(TypeAlias(Type::Error(pernixc_term::Error)))
+            return Some(Arc::new(TypeAlias(Type::Error(pernixc_term::Error))))
         );
 
         let ty_accessibility =
@@ -113,6 +115,6 @@ impl query::Builder<TypeAlias> for Builder {
             handler,
         );
 
-        Some(TypeAlias(ty))
+        Some(Arc::new(TypeAlias(ty)))
     }
 }

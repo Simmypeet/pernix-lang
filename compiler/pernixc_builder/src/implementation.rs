@@ -1,5 +1,7 @@
 //! Contains the builder for the `implements` component.
 
+use std::sync::Arc;
+
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext};
@@ -24,7 +26,7 @@ impl query::Builder<Implementation> for Builder {
         global_id: GlobalID,
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Implementation> {
+    ) -> Option<Arc<Implementation>> {
         let symbol_kind = *table.get::<SymbolKind>(global_id)?;
         if !symbol_kind.is_implementation() {
             return None;
@@ -74,7 +76,7 @@ impl query::Builder<Implementation> for Builder {
                         Ok(param) => param,
                         Err(query::Error::CyclicDependency(error)) => {
                             handler.receive(Box::new(error));
-                            return Some(Implementation::default());
+                            return Some(Arc::new(Implementation::default()));
                         }
                         Err(
                             query::Error::NoBuilderFound
@@ -82,7 +84,7 @@ impl query::Builder<Implementation> for Builder {
                         ) => panic!("unexpected error"),
                     };
 
-                return Some(Implementation {
+                return Some(Arc::new(Implementation {
                     generic_arguments: GenericArguments {
                         lifetimes: implemented_generic_parameters
                             .lifetimes()
@@ -100,10 +102,10 @@ impl query::Builder<Implementation> for Builder {
                             .map(|_| Constant::Error(pernixc_term::Error))
                             .collect(),
                     },
-                });
+                }));
             }
         );
 
-        Some(Implementation { generic_arguments })
+        Some(Arc::new(Implementation { generic_arguments }))
     }
 }

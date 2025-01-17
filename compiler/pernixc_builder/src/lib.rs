@@ -2,18 +2,19 @@
 
 pub mod builder;
 pub mod diagnostic;
+pub mod function_signature;
 pub mod generic_parameters;
 pub mod implementation;
 pub mod reflector;
-pub mod type_system;
 pub mod type_alias;
+pub mod type_system;
 pub mod where_clause;
 
 pub(crate) mod occurrences;
 
 mod build;
 
-pub use build::build;
+pub use build::{build, Compilation, ComponentCallback, SymbolCallback};
 
 /// Macro for shortening the handling of errors in the term resolution. It
 /// will report the **cyclic dependency** error to the handler and panic

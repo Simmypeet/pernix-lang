@@ -10,6 +10,7 @@ use std::{
 
 use indicatif::{ProgressBar, ProgressStyle};
 use parking_lot::RwLock;
+use pernixc_builder::Compilation;
 use pernixc_diagnostic::Report;
 use pernixc_handler::{Handler, Storage};
 use pernixc_log::{
@@ -294,18 +295,22 @@ pub fn run(argument: Arguments) -> ExitCode {
     });
 
     let timer = Instant::now();
-    pernixc_builder::build(
-        &mut table,
-        target_id,
-        |_, _| {
-            if let Some((progress, _)) = &progress_indicator {
-                progress.inc(1);
-            }
-        },
-        {
+    Compilation::builder()
+        .table(&mut table)
+        .target_id(target_id)
+        .on_done(Arc::new({
             let progress_indicator = progress_indicator.clone();
 
-            move |table, global_id, name| {
+            move |_: &Table, _| {
+                if let Some((progress, _)) = &progress_indicator {
+                    progress.inc(1);
+                }
+            }
+        }))
+        .on_start_building_component(Arc::new({
+            let progress_indicator = progress_indicator.clone();
+
+            move |table: &Table, global_id, name| {
                 if let Some((progress_bar, buildings)) = &progress_indicator {
                     let mut buildings = buildings.write();
                     buildings.push((global_id, name));
@@ -313,11 +318,11 @@ pub fn run(argument: Arguments) -> ExitCode {
                     update_message(table, &buildings, progress_bar);
                 }
             }
-        },
-        {
+        }))
+        .on_finish_building_component(Arc::new({
             let progress_indicator = progress_indicator.clone();
 
-            move |table, global_id, name| {
+            move |table: &Table, global_id, name| {
                 if let Some((progress_bar, buildings)) = &progress_indicator {
                     let mut buildings = buildings.write();
                     let index = buildings
@@ -331,8 +336,9 @@ pub fn run(argument: Arguments) -> ExitCode {
                     update_message(table, &buildings, progress_bar);
                 }
             }
-        },
-    );
+        }))
+        .build()
+        .run();
 
     if let Some((progress_bar, _)) = progress_indicator {
         progress_bar.finish_with_message(format!(

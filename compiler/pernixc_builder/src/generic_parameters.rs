@@ -1,5 +1,7 @@
 //! Contains the builder for the generic parameters.
 
+use std::sync::Arc;
+
 use diagnostic::{
     DefaultGenericParameterMustBeTrailing, DuplicatedGenericParameter,
     MisOrderedGenericParameter,
@@ -42,7 +44,7 @@ impl query::Builder<GenericParameters> for Builder {
         global_id: GlobalID,
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<GenericParameters> {
+    ) -> Option<Arc<GenericParameters>> {
         let symbol_kind = *table.get::<SymbolKind>(global_id)?;
         if !symbol_kind.has_generic_parameters() {
             return None;
@@ -325,6 +327,6 @@ impl query::Builder<GenericParameters> for Builder {
             }
         }
 
-        Some(generic_parameters)
+        Some(Arc::new(generic_parameters))
     }
 }

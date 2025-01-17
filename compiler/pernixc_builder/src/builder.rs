@@ -10,9 +10,9 @@ use pernixc_table::{GlobalID, Table};
 #[allow(missing_debug_implementations, clippy::type_complexity)]
 pub struct Builder {
     on_start_building:
-        Arc<dyn Fn(&Table, GlobalID, &'static str) + Send + Sync>,
+        Option<Arc<dyn Fn(&Table, GlobalID, &'static str) + Send + Sync>>,
     on_finish_building:
-        Arc<dyn Fn(&Table, GlobalID, &'static str) + Send + Sync>,
+        Option<Arc<dyn Fn(&Table, GlobalID, &'static str) + Send + Sync>>,
 }
 
 /// A scope object for automatically calling the finish building callback.
@@ -22,12 +22,14 @@ pub struct Scope<'a> {
     id: GlobalID,
     name: &'static str,
     on_finish_building:
-        Arc<dyn Fn(&Table, GlobalID, &'static str) + Send + Sync>,
+        Option<Arc<dyn Fn(&Table, GlobalID, &'static str) + Send + Sync>>,
 }
 
 impl Drop for Scope<'_> {
     fn drop(&mut self) {
-        (self.on_finish_building)(self.table, self.id, self.name);
+        if let Some(callback) = self.on_finish_building.as_ref() {
+            (callback)(self.table, self.id, self.name);
+        }
     }
 }
 
@@ -39,7 +41,9 @@ impl Builder {
         id: GlobalID,
         name: &'static str,
     ) -> Scope<'t> {
-        (self.on_start_building)(table, id, name);
+        if let Some(callback) = self.on_start_building.as_ref() {
+            (callback)(table, id, name);
+        }
 
         Scope {
             table,

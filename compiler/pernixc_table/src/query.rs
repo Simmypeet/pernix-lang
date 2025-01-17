@@ -152,7 +152,7 @@ impl Context {
 
                     builder
                         .build(global_id, table, handler)
-                        .map(|x| Arc::new(x) as Arc<dyn Any + Send + Sync>)
+                        .map(|x| x as Arc<dyn Any + Send + Sync>)
                 });
 
                 builder_entry.insert(Arc::new(builder));
@@ -227,7 +227,7 @@ pub trait Builder<T>: Any + Send + Sync {
         global_id: GlobalID,
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<T>;
+    ) -> Option<Arc<T>>;
 }
 
 impl Table {

@@ -371,6 +371,18 @@ impl SymbolKind {
     pub const fn has_type_alias(&self) -> bool {
         matches!(self, Self::Type | Self::TraitImplementationType)
     }
+
+    /// Checks if the symbol has a function signature.
+    #[must_use]
+    pub const fn has_function_signature(&self) -> bool {
+        matches!(
+            self,
+            Self::Function
+                | Self::TraitFunction
+                | Self::TraitImplementationFunction
+                | Self::AdtImplementationFunction
+        )
+    }
 }
 
 /// A **presistent-input** component representing the external linkage of a
