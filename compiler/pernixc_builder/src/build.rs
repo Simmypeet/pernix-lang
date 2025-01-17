@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use pernixc_component::implementation::Implementation;
+use pernixc_component::{
+    implementation::Implementation, type_alias::TypeAlias,
+};
 use pernixc_table::{
     component::{Derived, SymbolKind},
     query, GlobalID, Table, TargetID,
@@ -58,8 +60,12 @@ pub fn build(
         on_finish_building.clone(),
     )));
     assert!(table.set_builder::<Implementation, _>(Builder::new(
+        on_start_building.clone(),
+        on_finish_building.clone(),
+    )));
+    assert!(table.set_builder::<TypeAlias, _>(Builder::new(
         on_start_building,
-        on_finish_building,
+        on_finish_building
     )));
 
     let symbols_to_build = table
@@ -82,6 +88,10 @@ pub fn build(
 
         if symbol_kind.is_implementation() {
             build_component::<Implementation>(table, x);
+        }
+
+        if symbol_kind.has_type_alias() {
+            build_component::<TypeAlias>(table, x);
         }
 
         on_done(table, x);

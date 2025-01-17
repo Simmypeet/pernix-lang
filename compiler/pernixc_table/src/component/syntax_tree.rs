@@ -33,3 +33,12 @@ pub struct ImplementationQualifiedIdentifier(
 );
 
 impl Input for ImplementationQualifiedIdentifier {}
+
+/// A **local-input** component used for creating a type alias definition for
+/// the `type T = ...` symbol.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut,
+)]
+pub struct TypeAlias(pub syntax_tree::r#type::Type);
+
+impl Input for TypeAlias {}

@@ -534,7 +534,10 @@ impl Representation {
                         handler,
                     );
 
-                    assert!(self.storage.add_component(ty_id, ty));
+                    assert!(self.storage.add_component(
+                        ty_id,
+                        syntax_tree_component::TypeAlias(ty)
+                    ));
 
                     ty_id
                 }
@@ -1528,7 +1531,10 @@ impl Representation {
                         handler,
                     );
 
-                    assert!(self.storage.add_component(ty_id, ty));
+                    assert!(self.storage.add_component(
+                        ty_id,
+                        syntax_tree_component::TypeAlias(ty)
+                    ));
                 }
                 syntax_tree::item::Item::Struct(syn) => {
                     let (access_modifier, signature, body) = syn.dissolve();

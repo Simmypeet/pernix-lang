@@ -296,7 +296,7 @@ impl Table {
 
             context
                 .dependencies_by_dependent
-                .insert(called_from, target_record);
+                .insert(target_record, called_from);
         }
 
         // add the record to the stack
@@ -307,7 +307,6 @@ impl Table {
             .push(target_record);
 
         let sync = context.condvars_by_record.get(&target_record).cloned();
-
         // there's an another thread that is computing the component
         if let Some(sync) = sync {
             // wait for the other thread to finish the job
@@ -355,8 +354,11 @@ impl Table {
         );
         if let Some(called_from) = called_from {
             assert_eq!(
-                context.dependencies_by_dependent.remove(&called_from).unwrap(),
-                target_record
+                context
+                    .dependencies_by_dependent
+                    .remove(&target_record)
+                    .unwrap(),
+                called_from
             );
         }
 

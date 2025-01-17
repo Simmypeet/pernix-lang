@@ -1,6 +1,8 @@
 //! Contains the function used for creating the [`Reflector`] instance.
 
-use pernixc_component::implementation::Implementation;
+use pernixc_component::{
+    implementation::Implementation, type_alias::TypeAlias,
+};
 use pernixc_storage::{
     serde::{MergerFn, Reflector},
     ArcTrait,
@@ -45,6 +47,16 @@ pub fn get() -> Reflector<GlobalID, ArcTrait, String, String> {
                 Err("Incompatible implementation".to_owned())
             }
         }) as MergerFn<Implementation, String>)
+    ));
+    assert!(reflector.register_type_with_merger::<TypeAlias>(
+        "TypeAlias".to_owned(),
+        &((|a, b| {
+            if *a == b {
+                Ok(())
+            } else {
+                Err("Incompatible type alias".to_owned())
+            }
+        }) as MergerFn<TypeAlias, String>)
     ));
 
     reflector

@@ -361,6 +361,16 @@ impl SymbolKind {
                 | Self::AdtImplementation
         )
     }
+
+    /// Checks if the symbol has a type alias definition such as `type T =
+    /// TYPE_ALIAS`.
+    ///
+    /// Trait type symbol is not included becuase it doesn't have the definition
+    /// of the type alias such as `trait T { type U; }`
+    #[must_use]
+    pub const fn has_type_alias(&self) -> bool {
+        matches!(self, Self::Type | Self::TraitImplementationType)
+    }
 }
 
 /// A **presistent-input** component representing the external linkage of a
