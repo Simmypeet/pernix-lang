@@ -28,7 +28,7 @@ use super::{
 use crate::{
     component::{
         self, syntax_tree as syntax_tree_component, Accessibility, Extern,
-        Implemented, Import, LocationSpan, Member, Name, Parent,
+        Implemented, Implements, Import, LocationSpan, Member, Name, Parent,
         PositiveTraitImplementation, SymbolKind, TraitImplementation, Using,
     },
     diagnostic::{
@@ -199,7 +199,7 @@ impl Representation {
                 .storage
                 .add_component(new_symbol_id, Member::default()));
         }
-
+        assert!(self.add_component(new_symbol_id, Implements(implemented_id)));
         assert!(self
             .storage
             .get_mut::<Implemented>(implemented_id)
@@ -287,9 +287,12 @@ impl Representation {
         }
 
         // insert qualified identifier
-        assert!(self
-            .storage
-            .add_component(new_symbol_id, qualified_identifier));
+        assert!(self.storage.add_component(
+            new_symbol_id,
+            syntax_tree_component::ImplementationQualifiedIdentifier(
+                qualified_identifier
+            )
+        ));
 
         new_symbol_id
     }

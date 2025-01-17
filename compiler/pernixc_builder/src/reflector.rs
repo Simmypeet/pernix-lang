@@ -1,5 +1,6 @@
 //! Contains the function used for creating the [`Reflector`] instance.
 
+use pernixc_component::implementation::Implementation;
 use pernixc_storage::{
     serde::{MergerFn, Reflector},
     ArcTrait,
@@ -34,6 +35,16 @@ pub fn get() -> Reflector<GlobalID, ArcTrait, String, String> {
                 Err("Incompatible where clause".to_owned())
             }
         }) as MergerFn<WhereClause, String>)
+    ));
+    assert!(reflector.register_type_with_merger::<Implementation>(
+        "Implementation".to_owned(),
+        &((|a, b| {
+            if *a == b {
+                Ok(())
+            } else {
+                Err("Incompatible implementation".to_owned())
+            }
+        }) as MergerFn<Implementation, String>)
     ));
 
     reflector

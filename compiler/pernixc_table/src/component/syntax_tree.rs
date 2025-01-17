@@ -20,3 +20,16 @@ impl Input for GenericParameters {}
 pub struct WhereClause(pub Option<syntax_tree::item::WhereClause>);
 
 impl Input for WhereClause {}
+
+/// A **local-input** component used for creating a generic arguments for the
+/// implementation symbols.
+///
+/// The syntax tree is `implements QUALIFIED_IDENTIFIER[ARGS]`.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut,
+)]
+pub struct ImplementationQualifiedIdentifier(
+    pub syntax_tree::QualifiedIdentifier,
+);
+
+impl Input for ImplementationQualifiedIdentifier {}

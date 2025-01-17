@@ -348,6 +348,19 @@ impl SymbolKind {
                 | Self::NegativeMarkerImplementation
         )
     }
+
+    /// Checks if the symbol is a kind of `implements SYMBOL`.
+    #[must_use]
+    pub const fn is_implementation(&self) -> bool {
+        matches!(
+            self,
+            Self::PositiveTraitImplementation
+                | Self::NegativeTraitImplementation
+                | Self::PositiveMarkerImplementation
+                | Self::NegativeMarkerImplementation
+                | Self::AdtImplementation
+        )
+    }
 }
 
 /// A **presistent-input** component representing the external linkage of a

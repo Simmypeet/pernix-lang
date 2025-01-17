@@ -6,7 +6,16 @@ use serde::{Deserialize, Serialize};
 
 /// A **presistent-derived** component representing the implementation signature
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
 )]
 pub struct Implementation {
     /// The generic arguments supplied to the symbol being implemented.

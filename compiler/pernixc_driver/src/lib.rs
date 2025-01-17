@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle};
 use parking_lot::RwLock;
 use pernixc_diagnostic::Report;
 use pernixc_handler::{Handler, Storage};
@@ -19,6 +19,7 @@ use pernixc_log::{
 use pernixc_source_file::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
 use pernixc_table::{CompilationMetaData, GlobalID, Table};
+use ron::ser::PrettyConfig;
 use serde::de::DeserializeSeed;
 
 /// The compilation format of the target.
@@ -227,10 +228,19 @@ pub fn run(argument: Arguments) -> ExitCode {
             }
         };
 
-        let mut deserializer = bincode::Deserializer::from_slice(
-            &library_file,
-            bincode::options(),
-        );
+        let mut deserializer =
+            match ron::de::Deserializer::from_bytes(&library_file) {
+                Ok(deserializer) => deserializer,
+                Err(error) => {
+                    let msg = Message::new(
+                        Severity::Error,
+                        format!("failed to deserialize library: {error}"),
+                    );
+
+                    eprintln!("{msg}");
+                    return ExitCode::FAILURE;
+                }
+            };
 
         let library_meta_data =
             match inplace_table_deserializer.deserialize(&mut deserializer) {
@@ -261,8 +271,6 @@ pub fn run(argument: Arguments) -> ExitCode {
     let symbol_count =
         table.get_target(target_id).unwrap().all_symbols().count();
 
-    let all_progress_bar = MultiProgress::new();
-
     let main_progress_bar = ProgressBar::new(symbol_count as u64);
     main_progress_bar.set_style(
         ProgressStyle::with_template(&format!(
@@ -274,8 +282,6 @@ pub fn run(argument: Arguments) -> ExitCode {
         .progress_chars("=>-"),
     );
     main_progress_bar.enable_steady_tick(Duration::from_millis(100));
-
-    all_progress_bar.add(main_progress_bar.clone());
 
     let buildings = Arc::new(RwLock::new(Vec::<(GlobalID, &str)>::new()));
 
@@ -316,12 +322,11 @@ pub fn run(argument: Arguments) -> ExitCode {
         },
     );
 
-    main_progress_bar.finish_and_clear();
-    println!(
+    main_progress_bar.finish_with_message(format!(
         "{} finished in {:?}",
         Style::Bold.with(Color::Green.with("Analyis")),
         timer.elapsed()
-    );
+    ));
 
     let vec = storage.as_vec();
 
@@ -342,16 +347,17 @@ pub fn run(argument: Arguments) -> ExitCode {
         let progress = ProgressBar::new(0);
         progress.set_style(
             ProgressStyle::default_spinner()
-                .template(&format!(
-                    "{{spinner:.green}} {} to {}",
-                    Style::Bold.with(Color::Green.with("Writing")),
-                    output_path.display()
-                ))
+                .template("{spinner:.green} {msg}")
                 .unwrap()
                 .progress_chars("=>-"),
         );
-
+        progress.set_message(format!(
+            "{} to {}",
+            Style::Bold.with(Color::Green.with("Writing")),
+            output_path.display()
+        ));
         progress.enable_steady_tick(Duration::from_millis(100));
+
         let file = match File::create(&output_path) {
             Ok(file) => file,
             Err(error) => {
@@ -365,18 +371,18 @@ pub fn run(argument: Arguments) -> ExitCode {
             }
         };
 
-        let result = bincode::serialize_into(
+        let result = ron::ser::to_writer_pretty(
             file,
             &table.as_library(&CompilationMetaData { target_id }, &reflector),
+            PrettyConfig::default(),
         );
 
-        progress.finish_and_clear();
-        println!(
+        progress.finish_with_message(format!(
             "{} to {} finished in {:?}",
             Style::Bold.with(Color::Green.with("Written")),
             output_path.display(),
             instant.elapsed()
-        );
+        ));
 
         match result {
             Ok(()) => ExitCode::SUCCESS,
