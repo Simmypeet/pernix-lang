@@ -1,6 +1,6 @@
 //! Contains the builder for the generic parameters.
 
-use std::sync::Arc;
+use std::{collections::hash_map::Entry, sync::Arc};
 
 use diagnostic::{
     DefaultGenericParameterMustBeTrailing, DuplicatedGenericParameter,
@@ -13,7 +13,7 @@ use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use pernixc_table::{
     component::{
         syntax_tree as syntax_tree_component, Accessibility, Derived,
-        HierarchyRelationship, SymbolKind,
+        HierarchyRelationship, Parent, SymbolKind,
     },
     diagnostic::Diagnostic,
     query, GlobalAccessibility, GlobalID, MemberID, Table,
@@ -22,23 +22,25 @@ use pernixc_term::{
     accessibility::Ext as _,
     constant::Constant,
     generic_parameter::{
-        ConstantParameter, GenericKind, GenericParameters, LifetimeParameter,
-        TypeParameter,
+        ConstantParameter, ConstantParameterID, GenericKind, GenericParameters,
+        LifetimeParameter, LifetimeParameterID, TypeParameter, TypeParameterID,
     },
     lifetime::Lifetime,
     r#type::Type,
+    Model,
 };
 
 use crate::{
     builder::Builder,
     diagnostic::PrivateEntityLeakedToPublicInterface,
+    handle_query_result,
     occurrences::{self, Occurrences},
 };
 
 pub mod diagnostic;
 
 impl query::Builder<GenericParameters> for Builder {
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     fn build(
         &self,
         global_id: GlobalID,
@@ -142,7 +144,13 @@ impl query::Builder<GenericParameters> for Builder {
         }
 
         let mut generic_parameters = GenericParameters::default();
-        let mut extra_name_space = ExtraNamespace::default();
+        let mut extra_name_space = table.get_generic_parameter_namepsace(
+            GlobalID::new(
+                global_id.target_id,
+                table.get::<Parent>(global_id).unwrap().0,
+            ),
+            handler,
+        );
 
         for lifetime_parameter_syn in lifetime_parameter_syns {
             match generic_parameters.add_lifetime_parameter(LifetimeParameter {
@@ -328,5 +336,81 @@ impl query::Builder<GenericParameters> for Builder {
         }
 
         Some(Arc::new(generic_parameters))
+    }
+}
+
+/// An extension for the [`Table`] to get the generic parameters namespace.
+pub trait Ext {
+    /// Creates the [`ExtraNamespace`] that includes the generic parameters.
+    ///
+    /// Includes this [`ExtraNamespace`] to the [`Config`] to enable the
+    /// resolution of generic parameters.
+    fn get_generic_parameter_namepsace<M: Model>(
+        &self,
+        global_id: GlobalID,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> ExtraNamespace<M>;
+}
+
+impl Ext for Table {
+    fn get_generic_parameter_namepsace<M: Model>(
+        &self,
+        global_id: GlobalID,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> ExtraNamespace<M> {
+        let mut extra_namespace = ExtraNamespace::default();
+
+        for scope in self.scope_walker(global_id) {
+            let scope = GlobalID::new(global_id.target_id, scope);
+            let symbol_kind = *self.get::<SymbolKind>(scope).unwrap();
+
+            if !symbol_kind.has_generic_parameters() {
+                continue;
+            }
+
+            let generic_parameter = handle_query_result!(
+                self.query::<GenericParameters>(scope),
+                handler,
+                continue,
+            );
+
+            for (name, lt) in generic_parameter.lifetime_parameter_ids_by_name()
+            {
+                if let Entry::Vacant(entry) =
+                    extra_namespace.lifetimes.entry(name.clone())
+                {
+                    entry.insert(Lifetime::Parameter(LifetimeParameterID {
+                        parent: scope,
+                        id: *lt,
+                    }));
+                }
+            }
+
+            for (name, ty) in generic_parameter.type_parameter_ids_by_name() {
+                if let Entry::Vacant(entry) =
+                    extra_namespace.types.entry(name.clone())
+                {
+                    entry.insert(Type::Parameter(TypeParameterID {
+                        parent: scope,
+                        id: *ty,
+                    }));
+                }
+            }
+
+            for (name, constant) in
+                generic_parameter.constant_parameter_ids_by_name()
+            {
+                if let Entry::Vacant(entry) =
+                    extra_namespace.constants.entry(name.clone())
+                {
+                    entry.insert(Constant::Parameter(ConstantParameterID {
+                        parent: scope,
+                        id: *constant,
+                    }));
+                }
+            }
+        }
+
+        extra_namespace
     }
 }

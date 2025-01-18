@@ -82,3 +82,33 @@ macro_rules! handle_qualified_identifer_resolve_result {
         }
     }};
 }
+
+/// Macro for shortening the handling of errors `Result<T,
+/// pernixc::table::query::Error>`.
+///
+/// # Parameters
+///
+/// - `$expr:expr`: The expression that yields the `Result<T, Error>`.
+/// - `$handler:expr`: The handler to report the error to.
+/// - `$diverge:expr`: The alternative value to return in case of an cyclic
+///   dependency error.
+#[macro_export]
+macro_rules! handle_query_result {
+    ($expr:expr, $handle:expr, $diverge:expr $(,)?) => {
+        match $expr {
+            Ok(value) => value,
+            Err(pernixc_table::query::Error::CyclicDependency(error)) => {
+                $handle.receive(Box::new(error));
+                $diverge
+            }
+
+            Err(
+                err @(
+                pernixc_table::query::Error::SymbolNotFoundOrInvalidComponent
+                | pernixc_table::query::Error::NoBuilderFound)
+            ) => {
+                panic!("unexpected error: {err}");
+            }
+        }
+    };
+}

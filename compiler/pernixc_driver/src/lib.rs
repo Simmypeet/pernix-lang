@@ -276,77 +276,76 @@ pub fn run(argument: Arguments) -> ExitCode {
     let symbol_count =
         table.get_target(target_id).unwrap().all_symbols().count();
 
-    let progress_indicator = argument.show_progress.then(|| {
-        let progress = ProgressBar::new(symbol_count as u64);
-        progress.set_style(
-            ProgressStyle::with_template(&format!(
-                "{{spinner:.green}} {} [{{bar:40.cyan/cyan}}] \
-                 {{pos:>7}}/{{len:7}}\n{{msg}}",
-                Style::Bold.with(Color::Green.with("Analyzing"))
-            ))
-            .unwrap()
-            .progress_chars("=>-"),
-        );
-        progress.enable_steady_tick(Duration::from_millis(100));
+    let progress = ProgressBar::new(symbol_count as u64);
+    progress.set_style(
+        ProgressStyle::with_template(&format!(
+            "{{spinner:.green}} {} [{{bar:40.cyan/cyan}}] \
+             {{pos:>7}}/{{len:7}}\n{{msg}}",
+            Style::Bold.with(Color::Green.with("Analyzing"))
+        ))
+        .unwrap()
+        .progress_chars("=>-"),
+    );
+    progress.enable_steady_tick(Duration::from_millis(100));
 
-        let buildings = Arc::new(RwLock::new(Vec::<(GlobalID, &str)>::new()));
-
-        (progress, buildings)
-    });
+    let building = argument
+        .show_progress
+        .then(|| Arc::new(RwLock::new(Vec::<(GlobalID, &str)>::new())));
 
     let timer = Instant::now();
     Compilation::builder()
         .table(&mut table)
         .target_id(target_id)
         .on_done(Arc::new({
-            let progress_indicator = progress_indicator.clone();
+            let progress = progress.clone();
 
             move |_: &Table, _| {
-                if let Some((progress, _)) = &progress_indicator {
-                    progress.inc(1);
-                }
+                progress.inc(1);
             }
         }))
         .on_start_building_component(Arc::new({
-            let progress_indicator = progress_indicator.clone();
+            let progress = progress.clone();
+            let building = building.clone();
 
             move |table: &Table, global_id, name| {
-                if let Some((progress_bar, buildings)) = &progress_indicator {
-                    let mut buildings = buildings.write();
-                    buildings.push((global_id, name));
+                if let Some(building) = &building {
+                    let mut building = building.write();
+                    building.push((global_id, name));
 
-                    update_message(table, &buildings, progress_bar);
+                    update_message(table, &building, &progress);
                 }
             }
         }))
         .on_finish_building_component(Arc::new({
-            let progress_indicator = progress_indicator.clone();
+            let progress = progress.clone();
+            let building = building.clone();
 
             move |table: &Table, global_id, name| {
-                if let Some((progress_bar, buildings)) = &progress_indicator {
-                    let mut buildings = buildings.write();
-                    let index = buildings
+                if let Some(building) = &building {
+                    let mut building = building.write();
+                    let index = building
                         .iter()
                         .position(|(id, n)| *id == global_id && name == *n);
 
                     if let Some(index) = index {
-                        buildings.remove(index);
+                        building.remove(index);
                     }
 
-                    update_message(table, &buildings, progress_bar);
+                    update_message(table, &building, &progress);
                 }
             }
         }))
         .build()
         .run();
 
-    if let Some((progress_bar, _)) = progress_indicator {
-        progress_bar.finish_with_message(format!(
-            "{} finished in {:?}",
-            Style::Bold.with(Color::Green.with("Analyis")),
-            timer.elapsed()
-        ));
-    }
+    progress.set_style(
+        ProgressStyle::with_template("{spinner:.green} {msg}").unwrap(),
+    );
+    progress.finish_with_message(format!(
+        "{} finished in {:?}",
+        Style::Bold.with(Color::Green.with("Analyis")),
+        timer.elapsed()
+    ));
 
     let vec = storage.as_vec();
 

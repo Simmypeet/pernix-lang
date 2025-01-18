@@ -11,12 +11,11 @@ use pernixc_syntax::syntax_tree::{
     self, ConnectedList, GenericIdentifier, LifetimeIdentifier,
 };
 use pernixc_table::{
-    component::SymbolKind, diagnostic::Diagnostic, query, GlobalID, MemberID,
-    Table,
+    component::SymbolKind, diagnostic::Diagnostic, query, GlobalID, Table,
 };
 use pernixc_term::{
     generic_arguments::GenericArguments,
-    generic_parameter::{GenericKind, GenericParameters, TypeParameterID},
+    generic_parameter::{GenericKind, GenericParameters},
     instantiation::{self, Instantiation},
     lifetime::Lifetime,
     r#type::{
@@ -141,7 +140,7 @@ pub(super) fn resolve_generic_arguments<M: Model>(
                     handler,
                 )
             })
-            .collect::<Result<_, _>>()?,
+            .collect(),
         types: type_argument_syns
             .into_iter()
             .map(|x| {
@@ -349,17 +348,11 @@ pub(super) fn resolve_lifetime<M: Model>(
     referring_site: GlobalID,
     config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Lifetime<M>, Error> {
+) -> Lifetime<M> {
     let lifetime = match lifetime_argument.identifier() {
         LifetimeIdentifier::Static(..) => Lifetime::Static,
         LifetimeIdentifier::Identifier(ident) => {
-            return resolve_lifetime_parameter(
-                table,
-                ident,
-                referring_site,
-                &config,
-                handler,
-            );
+            resolve_lifetime_parameter(ident, referring_site, &config, handler)
         }
         LifetimeIdentifier::Elided(elided) => {
             config.elided_lifetime_provider.map_or_else(
@@ -385,51 +378,30 @@ pub(super) fn resolve_lifetime<M: Model>(
         );
     }
 
-    Ok(lifetime)
+    lifetime
 }
 
 pub(super) fn resolve_lifetime_parameter<M: Model>(
-    table: &Table,
     identifier: &Identifier,
     referring_site: GlobalID,
     config: &Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Lifetime<M>, Error> {
+) -> Lifetime<M> {
     // reach to the extra namespace first
     if let Some(extra_lifeime) = config
         .extra_namespace
         .and_then(|x| x.lifetimes.get(identifier.span.str()).cloned())
     {
-        return Ok(extra_lifeime);
-    }
-
-    for scope in table.scope_walker(referring_site) {
-        let global_id = GlobalID::new(referring_site.target_id, scope);
-        let symbol_kind = *table.get::<SymbolKind>(global_id).unwrap();
-
-        if !symbol_kind.has_generic_parameters() {
-            continue;
-        }
-
-        if let Some(lifetime_id) = table
-            .query::<GenericParameters>(global_id)?
-            .lifetime_parameter_ids_by_name()
-            .get(identifier.span.str())
-            .copied()
-        {
-            return Ok(Lifetime::Parameter(MemberID {
-                parent: global_id,
-                id: lifetime_id,
-            }));
-        }
+        return extra_lifeime;
     }
 
     handler.receive(Box::new(LifetimeParameterNotFound {
         referred_span: identifier.span(),
         referring_site,
     }));
-    Ok(Lifetime::Error(pernixc_term::Error))
+    Lifetime::Error(pernixc_term::Error)
 }
+
 enum ResolutionToTypeError<M: Model> {
     InvalidKind(Resolution<M>),
     Query(pernixc_table::query::Error),
@@ -520,43 +492,14 @@ pub(super) fn resolve_qualified_identifier_type<M: Model>(
             .as_generic_identifier()
             .map_or(false, |x| x.generic_arguments().is_none());
 
-    // try to resolve the identifier as a type parameter
-    if is_simple_identifier {
-        if let Some(extra_type) = config
-            .extra_namespace
-            .and_then(|x| x.types.get(syntax_tree.root().span().str()).cloned())
-        {
-            return Ok(extra_type);
-        }
-
-        for id in table.scope_walker(referring_site) {
-            let global_id = GlobalID::new(referring_site.target_id, id);
-            let symbol_kind = *table.get::<SymbolKind>(global_id).unwrap();
-
-            if !symbol_kind.has_generic_parameters() {
-                continue;
-            }
-
-            if let Some(type_parameter_id) = table
-                .query::<GenericParameters>(global_id)?
-                .type_parameter_ids_by_name()
-                .get(
-                    syntax_tree
-                        .root()
-                        .as_generic_identifier()
-                        .unwrap()
-                        .identifier()
-                        .span
-                        .str(),
-                )
-                .copied()
-            {
-                return Ok(Type::Parameter(TypeParameterID {
-                    parent: global_id,
-                    id: type_parameter_id,
-                }));
-            }
-        }
+    // try to resolve the simple identifier in the extra namespace
+    if let (true, Some(extra_type)) = (
+        is_simple_identifier,
+        config.extra_namespace.and_then(|x| {
+            x.types.get(syntax_tree.root().span().str()).cloned()
+        }),
+    ) {
+        return Ok(extra_type);
     }
 
     let resolution = match table.resolve_qualified_identifier(
@@ -634,18 +577,14 @@ pub(super) fn resolve_type<M: Model>(
             handler,
         )?,
         syntax_tree::r#type::Type::Reference(reference) => {
-            let lifetime = reference
-                .lifetime()
-                .as_ref()
-                .map(|x| {
-                    table.resolve_lifetime(
-                        x,
-                        referring_site,
-                        config.reborrow(),
-                        handler,
-                    )
-                })
-                .transpose()?;
+            let lifetime = reference.lifetime().as_ref().map(|x| {
+                table.resolve_lifetime(
+                    x,
+                    referring_site,
+                    config.reborrow(),
+                    handler,
+                )
+            });
 
             let lifetime = if let Some(lifetime) = lifetime {
                 lifetime

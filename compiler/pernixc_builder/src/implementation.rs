@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
-use pernixc_resolution::{Config, Ext};
+use pernixc_resolution::{Config, Ext as _};
 use pernixc_table::{
     component::{
         syntax_tree::ImplementationQualifiedIdentifier as SyntaxTree, Derived,
@@ -18,7 +18,10 @@ use pernixc_term::{
     generic_parameter::GenericParameters, lifetime::Lifetime, r#type::Type,
 };
 
-use crate::{builder::Builder, handle_term_resolution_result, occurrences};
+use crate::{
+    builder::Builder, generic_parameters::Ext as _,
+    handle_term_resolution_result, occurrences,
+};
 
 impl query::Builder<Implementation> for Builder {
     fn build(
@@ -52,6 +55,8 @@ impl query::Builder<Implementation> for Builder {
             |x| &x.1,
         );
         let implemented_id = table.get::<Implements>(global_id).unwrap().0;
+        let extra_namespace =
+            table.get_generic_parameter_namepsace(global_id, handler);
 
         let generic_arguments = handle_term_resolution_result!(
             table.resolve_generic_arguments_for(
@@ -63,7 +68,7 @@ impl query::Builder<Implementation> for Builder {
                     elided_type_provider: None,
                     elided_constant_provider: None,
                     observer: Some(&mut occurrences::Observer),
-                    extra_namespace: None,
+                    extra_namespace: Some(&extra_namespace),
                 },
                 handler,
             ),

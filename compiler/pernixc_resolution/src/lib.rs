@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 
 use pernixc_handler::Handler;
-use pernixc_lexical::token::Identifier;
 use pernixc_source_file::Span;
 use pernixc_syntax::syntax_tree::{
     self, GenericIdentifier, QualifiedIdentifier, QualifiedIdentifierRoot,
@@ -248,7 +247,7 @@ pub trait Ext {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Lifetime<M>, term::Error>;
+    ) -> Lifetime<M>;
 
     /// Resolves for a [`Type`] based on the given [`syntax_tree::r#type::Type`]
     ///
@@ -262,20 +261,6 @@ pub trait Ext {
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Type<M>, term::Error>;
-
-    /// Resolves for a [`Lifetime`] based on the given
-    /// [`syntax_tree::LifetimeParameter`] syntax tree.
-    ///
-    /// # Errors
-    ///
-    /// See [`term::Error`] for more information.
-    fn resolve_lifetime_parameter<M: Model>(
-        &self,
-        lifetime_parameter: &Identifier,
-        referring_site: GlobalID,
-        config: &Config<M>,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Lifetime<M>, term::Error>;
 }
 
 impl Ext for Table {
@@ -369,7 +354,7 @@ impl Ext for Table {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Lifetime<M>, term::Error> {
+    ) -> Lifetime<M> {
         term::resolve_lifetime(
             self,
             lifetime_argument,
@@ -387,21 +372,5 @@ impl Ext for Table {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Type<M>, term::Error> {
         term::resolve_type(self, type_argument, referring_site, config, handler)
-    }
-
-    fn resolve_lifetime_parameter<M: Model>(
-        &self,
-        lifetime_parameter: &Identifier,
-        referring_site: GlobalID,
-        config: &Config<M>,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Lifetime<M>, term::Error> {
-        term::resolve_lifetime_parameter(
-            self,
-            lifetime_parameter,
-            referring_site,
-            config,
-            handler,
-        )
     }
 }

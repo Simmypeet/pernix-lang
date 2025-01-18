@@ -20,6 +20,7 @@ use pernixc_type_system::environment::Environment;
 use crate::{
     builder::Builder,
     diagnostic::PrivateEntityLeakedToPublicInterface,
+    generic_parameters::Ext,
     handle_term_resolution_result, occurrences,
     type_system::{EnvironmentExt, TableExt},
 };
@@ -42,6 +43,9 @@ impl query::Builder<TypeAlias> for Builder {
         let syntax_tree =
             table.get::<syntax_tree_component::TypeAlias>(global_id).unwrap();
 
+        let extra_namespace =
+            table.get_generic_parameter_namepsace(global_id, handler);
+
         let mut ty = handle_term_resolution_result!(
             table.resolve_type(
                 &syntax_tree.0,
@@ -51,7 +55,7 @@ impl query::Builder<TypeAlias> for Builder {
                     elided_type_provider: None,
                     elided_constant_provider: None,
                     observer: Some(&mut occurrences::Observer),
-                    extra_namespace: None,
+                    extra_namespace: Some(&extra_namespace),
                 },
                 handler
             ),
