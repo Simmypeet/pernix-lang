@@ -347,6 +347,18 @@ impl Ext for Table {
                 },
             ),
 
+            Lifetime::Elided(elided_lifetime_id) => Ok(
+                match self
+                    .get_accessibility(elided_lifetime_id.parent)
+                    .ok_or(GetTermAccessibilityError::InvalidID)?
+                {
+                    Accessibility::Public => GlobalAccessibility::Public,
+                    Accessibility::Scoped(id) => GlobalAccessibility::Scoped(
+                        GlobalID::new(elided_lifetime_id.parent.target_id, id),
+                    ),
+                },
+            ),
+
             Lifetime::Inference(never) => match *never {},
 
             Lifetime::Error(_) | Lifetime::Forall(_) | Lifetime::Static => {

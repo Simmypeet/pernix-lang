@@ -2,7 +2,7 @@
 
 pub mod builder;
 pub mod diagnostic;
-pub mod function_signature;
+pub mod function;
 pub mod generic_parameters;
 pub mod implementation;
 pub mod reflector;

@@ -15,7 +15,7 @@ pub mod serde;
 
 /// A trait for wrapping a value in a pointer type. This makes the [`Storage`]
 /// be generic over the smart pointer type it uses.
-pub trait Ptr {
+pub trait Ptr: 'static {
     /// Wraps a value in a pointer type.
     type Wrap<T: ?Sized>: Deref<Target = T>;
 

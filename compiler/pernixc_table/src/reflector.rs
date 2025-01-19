@@ -25,76 +25,14 @@ impl Table {
         // FIXME: probably use macros to generate this code
         let mut reflector = Reflector::new();
 
-        assert!(reflector.register_type_with_merger::<Accessibility>(
-            "Accessibility".to_owned(),
-            &((|a, b| {
-                if *a == b {
-                    Ok(())
-                } else {
-                    Err("Incompatible accessibility".to_owned())
-                }
-            }) as MergerFn<Accessibility, String>)
-        ));
-        assert!(reflector.register_type_with_merger::<Name>(
-            "Name".to_owned(),
-            &((|a, b| {
-                if *a == b {
-                    Ok(())
-                } else {
-                    Err(format!("Name mismatch: {} != {}", a.0, b.0))
-                }
-            }) as MergerFn<Name, String>)
-        ));
-        assert!(reflector.register_type_with_merger::<Member>(
-            "Member".to_owned(),
-            &((|a, b| {
-                if *a == b {
-                    Ok(())
-                } else {
-                    Err("Incompatible Member".to_owned())
-                }
-            }) as MergerFn<Member, String>)
-        ));
-        assert!(reflector.register_type_with_merger::<Parent>(
-            "Parent".to_owned(),
-            &((|a, b| {
-                if *a == b {
-                    Ok(())
-                } else {
-                    Err("Incompatible Parent".to_owned())
-                }
-            }) as MergerFn<Parent, String>)
-        ));
-        assert!(reflector.register_type_with_merger::<Implements>(
-            "Implements".to_owned(),
-            &((|a, b| {
-                if *a == b {
-                    Ok(())
-                } else {
-                    Err("Incompatible Implements".to_owned())
-                }
-            }) as MergerFn<Implements, String>)
-        ));
-        assert!(reflector.register_type_with_merger::<SymbolKind>(
-            "SymbolKind".to_owned(),
-            &((|a, b| {
-                if *a == b {
-                    Ok(())
-                } else {
-                    Err("Incompatible SymbolKind".to_owned())
-                }
-            }) as MergerFn<SymbolKind, String>)
-        ));
-        assert!(reflector.register_type_with_merger::<Extern>(
-            "Extern".to_owned(),
-            &((|a, b| {
-                if *a == b {
-                    Ok(())
-                } else {
-                    Err("Incompatible Extern".to_owned())
-                }
-            }) as MergerFn<Extern, String>)
-        ));
+        assert!(reflector
+            .register_type::<Accessibility>("Accessibility".to_owned()));
+        assert!(reflector.register_type::<Name>("Name".to_owned()));
+        assert!(reflector.register_type::<Member>("Member".to_owned()));
+        assert!(reflector.register_type::<Parent>("Parent".to_owned()));
+        assert!(reflector.register_type::<Implements>("Implements".to_owned()));
+        assert!(reflector.register_type::<SymbolKind>("SymbolKind".to_owned()));
+        assert!(reflector.register_type::<Extern>("Extern".to_owned()));
         assert!(reflector.register_type_with_merger::<Implemented>(
             "Implemented".to_owned(),
             &((|a, b| {
@@ -103,29 +41,12 @@ impl Table {
                 Ok(())
             }) as MergerFn<Implemented, String>)
         ));
-        assert!(reflector.register_type_with_merger::<TraitImplementation>(
-            "TraitImplementation".to_owned(),
-            &((|a, b| {
-                if *a == b {
-                    Ok(())
-                } else {
-                    Err("Incompatible TraitImplementation".to_owned())
-                }
-            }) as MergerFn<TraitImplementation, String>)
+        assert!(reflector.register_type::<TraitImplementation>(
+            "TraitImplementation".to_owned()
         ));
-        assert!(reflector
-            .register_type_with_merger::<PositiveTraitImplementation>(
-                "ConstTraitImplementation".to_owned(),
-                &((|a, b| {
-                    if *a == b {
-                        Ok(())
-                    } else {
-                        Err("Incompatible PositiveTraitImplementation"
-                            .to_owned())
-                    }
-                })
-                    as MergerFn<PositiveTraitImplementation, String>)
-            ));
+        assert!(reflector.register_type::<PositiveTraitImplementation>(
+            "PositiveTraitImplementation".to_owned()
+        ));
 
         reflector
     }

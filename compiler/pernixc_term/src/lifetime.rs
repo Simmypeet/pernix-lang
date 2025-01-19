@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     constant::Constant,
+    elided_lifetimes::ElidedLifetimeID,
     generic_parameter::{GenericParameters, LifetimeParameterID},
     matching::{self, Match, Matching},
     r#type::Type,
@@ -39,6 +40,8 @@ pub enum Lifetime<M: Model> {
     Static,
     #[from]
     Parameter(LifetimeParameterID),
+    #[from]
+    Elided(ElidedLifetimeID),
     Inference(M::LifetimeInference),
     #[from]
     Forall(ForallLifetimeID),
@@ -87,6 +90,9 @@ where
                 )
             }
             Self::Error(_) => write!(f, "'{{error}}"),
+            Self::Elided(member_id) => {
+                write!(f, "'{}", member_id.id.into_index())
+            }
         }
     }
 }
@@ -105,6 +111,7 @@ impl<M: Model> ModelOf for Lifetime<M> {
             Lifetime::Error(Error) => Self::Error(Error),
             Lifetime::Static => Self::Static,
             Lifetime::Parameter(parameter) => Self::Parameter(parameter),
+            Lifetime::Elided(elided) => Self::Elided(elided),
             Lifetime::Inference(inference) => {
                 Self::Inference(M::LifetimeInference::from(inference))
             }
@@ -124,6 +131,7 @@ impl<M: Model> ModelOf for Lifetime<M> {
             Lifetime::Error(Error) => Ok(Self::Error(Error)),
             Lifetime::Static => Ok(Self::Static),
             Lifetime::Parameter(parameter) => Ok(Self::Parameter(parameter)),
+            Lifetime::Elided(elided) => Ok(Self::Elided(elided)),
             Lifetime::Inference(inference) => {
                 Ok(Self::Inference(M::LifetimeInference::try_from(inference)?))
             }

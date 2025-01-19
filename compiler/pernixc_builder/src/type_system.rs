@@ -4,13 +4,19 @@
 use std::collections::BTreeSet;
 
 use diagnostic::{OverflowOperation, TypeSystemOverflow, UnsatisfiedPredicate};
+use pernixc_component::implied_predicates::{
+    ImpliedPredicate, ImpliedPredicates,
+};
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
 use pernixc_table::{
-    component::SymbolKind, diagnostic::Diagnostic, query, GlobalID, Table,
+    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
 use pernixc_term::{
-    predicate::Predicate, r#type::Type, where_clause::WhereClause, Model,
+    predicate::{Outlives, Predicate},
+    r#type::Type,
+    where_clause::WhereClause,
+    Model, ModelOf,
 };
 use pernixc_type_system::{
     environment::{Environment, Premise},
@@ -18,6 +24,8 @@ use pernixc_type_system::{
     simplify::Simplify,
     AbruptError, LifetimeConstraint,
 };
+
+use crate::handle_query_result;
 
 pub mod diagnostic;
 
@@ -159,29 +167,39 @@ impl TableExt for Table {
             let current_id = GlobalID::new(current_site.target_id, id);
             let kind = *self.get::<SymbolKind>(current_id).unwrap();
 
-            if !kind.has_where_clause() {
-                continue;
+            if kind.has_where_clause() {
+                let where_clause = handle_query_result!(
+                    self.query::<WhereClause>(current_id),
+                    handler,
+                    continue,
+                );
+                premise.predicates.extend(
+                    where_clause.predicates.iter().map(|x| {
+                        Predicate::from_other_model(x.predicate.clone())
+                    }),
+                );
             }
 
-            match self.query::<WhereClause>(current_id) {
-                Ok(where_clause) => {
-                    premise.predicates.extend(
-                        where_clause.predicates.iter().map(|x| {
-                            Predicate::from_other_model(x.predicate.clone())
-                        }),
-                    );
-                }
-
-                Err(query::Error::CyclicDependency(error)) => {
-                    handler.receive(Box::new(error));
-                }
-
-                err @ Err(
-                    query::Error::SymbolNotFoundOrInvalidComponent
-                    | query::Error::NoBuilderFound,
-                ) => {
-                    panic!("unexpected error {err:?}");
-                }
+            if kind.has_implied_predicates() {
+                let predicates = handle_query_result!(
+                    self.query::<ImpliedPredicates>(current_id),
+                    handler,
+                    continue,
+                );
+                premise.predicates.extend(
+                    predicates.implied_predicates.iter().map(|x| match x {
+                        ImpliedPredicate::LifetimeOutlives(outlives) => {
+                            Predicate::LifetimeOutlives(
+                                Outlives::from_other_model(outlives.clone()),
+                            )
+                        }
+                        ImpliedPredicate::TypeOutlives(outlives) => {
+                            Predicate::TypeOutlives(Outlives::from_other_model(
+                                outlives.clone(),
+                            ))
+                        }
+                    }),
+                );
             }
         }
 

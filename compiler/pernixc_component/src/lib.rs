@@ -4,6 +4,7 @@
 pub mod fields;
 pub mod function_signature;
 pub mod implementation;
+pub mod implied_predicates;
 pub mod type_alias;
 pub mod variance_map;
 pub mod variant;

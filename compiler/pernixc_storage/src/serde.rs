@@ -150,14 +150,7 @@ struct DeserializationMetaData<P: Ptr> {
         )
             -> Result<P::Wrap<dyn Any + Send + Sync>, erased_serde::Error>,
 
-    merger_fn: &'static dyn Any,
-
-    #[allow(clippy::type_complexity)]
-    final_merger_fn: fn(
-        &dyn Any,
-        &mut dyn Any,
-        &mut dyn erased_serde::Deserializer,
-    ) -> Result<(), erased_serde::Error>,
+    collision_handling: CollisionHandling,
 
     type_id: TypeId,
 }
@@ -185,6 +178,26 @@ impl<ID, P: Ptr, T, E> Default for Reflector<ID, P, T, E> {
 /// The function pointer type used to merge two components of the same type.
 pub type MergerFn<T, E> = fn(&mut T, T) -> Result<(), E>;
 
+#[derive(Debug)]
+enum CollisionHandling {
+    Compare(
+        fn(
+            &dyn Any,
+            &mut dyn erased_serde::Deserializer,
+        ) -> Result<bool, erased_serde::Error>,
+    ),
+    Merge {
+        merger_fn: &'static dyn Any,
+
+        #[allow(clippy::type_complexity)]
+        final_merger_fn: fn(
+            &dyn Any,
+            &mut dyn Any,
+            &mut dyn erased_serde::Deserializer,
+        ) -> Result<(), erased_serde::Error>,
+    },
+}
+
 impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
     /// Create a new instance of [`Reflector`].
     #[must_use]
@@ -210,7 +223,12 @@ impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
     /// the component with the tag is found, it will return an error.
     #[must_use]
     pub fn register_type<
-        C: Any + Send + Sync + serde::Serialize + for<'x> serde::Deserialize<'x>,
+        C: Eq
+            + Any
+            + Send
+            + Sync
+            + serde::Serialize
+            + for<'x> serde::Deserialize<'x>,
     >(
         &mut self,
         tag: T,
@@ -218,12 +236,17 @@ impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
     where
         T: Clone + Eq + Hash,
     {
-        #[allow(clippy::unnecessary_wraps)]
-        fn no_op_merger_fn<C, E>(_: &mut C, _: C) -> Result<(), E> { Ok(()) }
+        fn compare<C: Any + Eq + for<'x> serde::Deserialize<'x>>(
+            first: &dyn Any,
+            deserializer: &mut dyn erased_serde::Deserializer,
+        ) -> Result<bool, erased_serde::Error> {
+            let value = C::deserialize(deserializer)?;
+            Ok(first.downcast_ref::<C>().unwrap() == &value)
+        }
 
-        self.register_type_with_merger(
+        self.register_type_internal::<C>(
             tag,
-            &(no_op_merger_fn::<C, E> as MergerFn<_, _>),
+            CollisionHandling::Compare(compare::<C>),
         )
     }
 
@@ -245,6 +268,38 @@ impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
         &mut self,
         tag: T,
         merger: &'static MergerFn<C, E>,
+    ) -> bool
+    where
+        T: Clone + Eq + Hash,
+    {
+        fn final_inplace_merger_fn<
+            C: Any + serde::Serialize + for<'x> serde::Deserialize<'x>,
+            E: Display + 'static,
+        >(
+            merger_fn: &dyn Any,
+            source: &mut dyn Any,
+            deserializer: &mut dyn erased_serde::Deserializer,
+        ) -> Result<(), erased_serde::Error> {
+            let merger_fn = merger_fn.downcast_ref::<MergerFn<C, E>>().unwrap();
+            let source = source.downcast_mut::<C>().unwrap();
+            let value = C::deserialize(deserializer)?;
+
+            merger_fn(source, value).map_err(erased_serde::Error::custom)
+        }
+
+        self.register_type_internal::<C>(tag, CollisionHandling::Merge {
+            merger_fn: merger as _,
+            final_merger_fn: final_inplace_merger_fn::<C, E>,
+        })
+    }
+
+    #[must_use]
+    fn register_type_internal<
+        C: Any + Send + Sync + serde::Serialize + for<'x> serde::Deserialize<'x>,
+    >(
+        &mut self,
+        tag: T,
+        collision_handling: CollisionHandling,
     ) -> bool
     where
         T: Clone + Eq + Hash,
@@ -274,22 +329,6 @@ impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
             serializer(component);
         }
 
-        fn final_inplace_merger_fn<
-            C: Any + serde::Serialize + for<'x> serde::Deserialize<'x>,
-            E: Display + 'static,
-        >(
-            merger_fn: &dyn Any,
-            source: &mut dyn Any,
-            deserializer: &mut dyn erased_serde::Deserializer,
-        ) -> Result<(), erased_serde::Error> {
-            println!("merging: {}", std::any::type_name::<C>());
-            let merger_fn = merger_fn.downcast_ref::<MergerFn<C, E>>().unwrap();
-            let source = source.downcast_mut::<C>().unwrap();
-            let value = C::deserialize(deserializer)?;
-
-            merger_fn(source, value).map_err(erased_serde::Error::custom)
-        }
-
         let (Entry::Vacant(ser), Entry::Vacant(de)) = (
             self.serialization_meta_datas.entry(TypeId::of::<C>()),
             self.deserialization_meta_datas.entry(tag.clone()),
@@ -303,8 +342,7 @@ impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
         });
         de.insert(DeserializationMetaData {
             deserialize_fn: deserialize_fn::<P, C>,
-            merger_fn: merger,
-            final_merger_fn: final_inplace_merger_fn::<C, E>,
+            collision_handling,
             type_id: TypeId::of::<C>(),
         });
 
@@ -790,17 +828,32 @@ impl<
                 .entry((self.entity_id.clone(), deserialize_meta.type_id))
             {
                 dashmap::Entry::Occupied(mut occupied_entry) => {
-                    map.next_value_seed(InplaceComponentDeserializer {
-                        source: P::try_get_mut(occupied_entry.get_mut())
-                            .ok_or_else(|| {
-                                serde::de::Error::custom(
-                                    "failed to obtain mutable reference to \
-                                     merge the component",
+                    match deserialize_meta.collision_handling {
+                        CollisionHandling::Compare(compare_fn) => {
+                            map.next_value_seed(InplaceComponentComparer {
+                                source: &**occupied_entry.get(),
+                                compare_fn,
+                            })?;
+                        }
+                        CollisionHandling::Merge {
+                            merger_fn,
+                            final_merger_fn,
+                        } => {
+                            map.next_value_seed(InplaceComponentMerger {
+                                source: P::try_get_mut(
+                                    occupied_entry.get_mut(),
                                 )
-                            })?,
-                        merger_fn: deserialize_meta.merger_fn,
-                        final_merger_fn: deserialize_meta.final_merger_fn,
-                    })?;
+                                .ok_or_else(|| {
+                                    serde::de::Error::custom(
+                                        "failed to obtain mutable reference \
+                                         to merge the component",
+                                    )
+                                })?,
+                                merger_fn,
+                                final_merger_fn,
+                            })?;
+                        }
+                    }
                 }
                 dashmap::Entry::Vacant(vacant_entry) => {
                     let value =
@@ -817,7 +870,38 @@ impl<
     }
 }
 
-struct InplaceComponentDeserializer<'current> {
+struct InplaceComponentComparer<'current> {
+    source: &'current dyn Any,
+    compare_fn: fn(
+        &dyn Any,
+        &mut dyn erased_serde::Deserializer,
+    ) -> Result<bool, erased_serde::Error>,
+}
+
+impl<'de, 'current> serde::de::DeserializeSeed<'de>
+    for InplaceComponentComparer<'current>
+{
+    type Value = ();
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        let mut erased = <dyn erased_serde::Deserializer>::erase(deserializer);
+
+        if !(self.compare_fn)(self.source, &mut erased)
+            .map_err(D::Error::custom)?
+        {
+            return Err(D::Error::custom("found incompatible component"));
+        }
+
+        Ok(())
+    }
+}
+
+struct InplaceComponentMerger<'current> {
     source: &'current mut dyn Any,
     merger_fn: &'static dyn Any,
 
@@ -830,7 +914,7 @@ struct InplaceComponentDeserializer<'current> {
 }
 
 impl<'de, 'current> serde::de::DeserializeSeed<'de>
-    for InplaceComponentDeserializer<'current>
+    for InplaceComponentMerger<'current>
 {
     type Value = ();
 

@@ -1,19 +1,21 @@
 use std::sync::Arc;
 
 use pernixc_component::{
-    implementation::Implementation, type_alias::TypeAlias,
+    function_signature::FunctionSignature, implementation::Implementation,
+    implied_predicates::ImpliedPredicates, type_alias::TypeAlias,
 };
 use pernixc_table::{
     component::{Derived, SymbolKind},
     query, GlobalID, Table, TargetID,
 };
 use pernixc_term::{
-    generic_parameter::GenericParameters, where_clause::WhereClause,
+    elided_lifetimes::ElidedLifetimes, generic_parameter::GenericParameters,
+    where_clause::WhereClause,
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use typed_builder::TypedBuilder;
 
-use crate::builder::Builder;
+use crate::{builder::Builder, function};
 
 /// A struct for starting the building of a target.
 #[derive(TypedBuilder)]
@@ -135,6 +137,22 @@ pub fn build(
         on_finish_building_component.clone(),
     )));
     assert!(table.set_builder::<TypeAlias, _>(Builder::new(
+        on_start_building_component.clone(),
+        on_finish_building_component.clone(),
+    )));
+    assert!(table.set_builder::<function::Intermediate, _>(Builder::new(
+        on_start_building_component.clone(),
+        on_finish_building_component.clone(),
+    )));
+    assert!(table.set_builder::<FunctionSignature, _>(Builder::new(
+        on_start_building_component.clone(),
+        on_finish_building_component.clone(),
+    )));
+    assert!(table.set_builder::<ImpliedPredicates, _>(Builder::new(
+        on_start_building_component.clone(),
+        on_finish_building_component.clone(),
+    )));
+    assert!(table.set_builder::<ElidedLifetimes, _>(Builder::new(
         on_start_building_component,
         on_finish_building_component,
     )));
@@ -167,6 +185,12 @@ pub fn build(
 
         if symbol_kind.has_type_alias() {
             build_component::<TypeAlias>(table, x);
+        }
+
+        if symbol_kind.has_function_signature() {
+            build_component::<ElidedLifetimes>(table, x);
+            build_component::<ImpliedPredicates>(table, x);
+            build_component::<FunctionSignature>(table, x);
         }
 
         if let Some(callback) = on_done.as_ref() {

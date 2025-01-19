@@ -105,3 +105,52 @@ where
         })
     }
 }
+
+/// The satisfiability of the predicate can't be decided (most likely Overflow
+/// error).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UndecidablePredicate<M: Model> {
+    /// The undecidable predicate.
+    pub predicate: Predicate<M>,
+
+    /// The span where the where clause predicate was declared.
+    pub predicate_declaration_span: Option<Span>,
+
+    /// The span of the instantiation that causes the bound check.
+    pub instantiation_span: Span,
+
+    /// The overflow error that occurred.
+    pub overflow_error: OverflowError,
+}
+
+impl<M: Model> Report<&Table> for UndecidablePredicate<M>
+where
+    Predicate<M>: pernixc_table::Display,
+{
+    type Error = ReportError;
+
+    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
+        Ok(Diagnostic {
+            span: self.instantiation_span.clone(),
+            message: format!(
+                "the predicate `{}` is undecidable",
+                DisplayObject { display: &self.predicate, table }
+            ),
+            severity: Severity::Error,
+            help_message: Some(
+                "try reduce the complexity of the code; this error is the \
+                 limitation of the type-system/compiler"
+                    .to_string(),
+            ),
+            related: self
+                .predicate_declaration_span
+                .as_ref()
+                .map(|predicate_span| Related {
+                    span: predicate_span.clone(),
+                    message: "predicate declared here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        })
+    }
+}

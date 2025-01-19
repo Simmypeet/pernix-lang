@@ -383,6 +383,30 @@ impl SymbolKind {
                 | Self::AdtImplementationFunction
         )
     }
+
+    /// Checks if the symbol has implied predicates component.
+    #[must_use]
+    pub const fn has_implied_predicates(&self) -> bool {
+        matches!(
+            self,
+            Self::Function
+                | Self::TraitFunction
+                | Self::TraitImplementationFunction
+                | Self::AdtImplementationFunction
+        )
+    }
+
+    /// Checks if the symbol has elided lifetimes component.
+    #[must_use]
+    pub const fn has_elided_lifetimes(&self) -> bool {
+        matches!(
+            self,
+            Self::Function
+                | Self::TraitFunction
+                | Self::TraitImplementationFunction
+                | Self::AdtImplementationFunction
+        )
+    }
 }
 
 /// A **presistent-input** component representing the external linkage of a
