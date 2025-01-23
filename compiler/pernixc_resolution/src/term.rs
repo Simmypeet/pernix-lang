@@ -11,7 +11,8 @@ use pernixc_syntax::syntax_tree::{
     self, ConnectedList, GenericIdentifier, LifetimeIdentifier,
 };
 use pernixc_table::{
-    component::SymbolKind, diagnostic::Diagnostic, query, GlobalID, Table,
+    component::SymbolKind, diagnostic::Diagnostic, query::Handle, GlobalID,
+    Table,
 };
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -31,20 +32,9 @@ use crate::{
         MisorderedGenericArgument, MoreThanOneUnpackedInTupleType,
         UnexpectedInference,
     },
-    qualified_identifier::{self, Resolution},
+    qualified_identifier::Resolution,
     Config, ElidedTermProvider, Ext,
 };
-
-/// An error returned when resolving a term.
-#[derive(Debug, thiserror::Error)]
-#[allow(missing_docs)]
-pub enum Error {
-    #[error(transparent)]
-    Query(#[from] query::Error),
-
-    #[error("the given `referring_site` id does not exist in the table")]
-    InvalidReferringSiteID,
-}
 
 pub(super) fn resolve_generic_arguments_for<M: Model>(
     table: &Table,
@@ -53,19 +43,18 @@ pub(super) fn resolve_generic_arguments_for<M: Model>(
     referring_site: GlobalID,
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<GenericArguments<M>, Error> {
-    let generic_arguments = if let Some(generic_arguments) =
-        generic_identifier.generic_arguments().as_ref()
-    {
-        table.resolve_generic_arguments(
-            generic_arguments,
-            referring_site,
-            config.reborrow(),
-            handler,
-        )?
-    } else {
-        GenericArguments::default()
-    };
+) -> Option<GenericArguments<M>> {
+    let generic_arguments = generic_identifier
+        .generic_arguments()
+        .as_ref()
+        .map_or_else(GenericArguments::default, |generic_arguments| {
+            table.resolve_generic_arguments(
+                generic_arguments,
+                referring_site,
+                config.reborrow(),
+                handler,
+            )
+        });
 
     table.verify_generic_arguments_for(
         generic_arguments,
@@ -82,7 +71,7 @@ pub(super) fn resolve_generic_arguments<M: Model>(
     referring_site: GlobalID,
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<GenericArguments<M>, Error> {
+) -> GenericArguments<M> {
     let mut lifetime_argument_syns = Vec::new();
     let mut type_argument_syns = Vec::new();
     let mut constant_argument_syns = Vec::new();
@@ -129,7 +118,7 @@ pub(super) fn resolve_generic_arguments<M: Model>(
         }
     }
 
-    Ok(GenericArguments {
+    GenericArguments {
         lifetimes: lifetime_argument_syns
             .into_iter()
             .map(|x| {
@@ -151,12 +140,12 @@ pub(super) fn resolve_generic_arguments<M: Model>(
                     handler,
                 )
             })
-            .collect::<Result<_, _>>()?,
+            .collect(),
         constants: constant_argument_syns
             .into_iter()
             .map(|_| todo!())
             .collect(),
-    })
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -265,8 +254,9 @@ pub(super) fn verify_generic_arguments_for<M: Model>(
     generic_identifier_span: Span,
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<GenericArguments<M>, Error> {
-    let generic_parameters = table.query::<GenericParameters>(generic_id)?;
+) -> Option<GenericArguments<M>> {
+    let generic_parameters =
+        table.query::<GenericParameters>(generic_id).handle(handler)?;
 
     let (
         lifetime_parameter_orders,
@@ -296,7 +286,7 @@ pub(super) fn verify_generic_arguments_for<M: Model>(
         )
     };
 
-    Ok(GenericArguments {
+    Some(GenericArguments {
         lifetimes: resolve_generic_arguments_kinds(
             generic_arguments.lifetimes.into_iter(),
             lifetime_parameter_orders.iter(),
@@ -402,16 +392,12 @@ pub(super) fn resolve_lifetime_parameter<M: Model>(
     Lifetime::Error(pernixc_term::Error)
 }
 
-enum ResolutionToTypeError<M: Model> {
-    InvalidKind(Resolution<M>),
-    Query(pernixc_table::query::Error),
-}
-
 #[allow(clippy::result_large_err)]
 fn resolution_to_type<M: Model>(
     table: &Table,
     resolution: Resolution<M>,
-) -> Result<Type<M>, ResolutionToTypeError<M>> {
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) -> Result<Type<M>, Resolution<M>> {
     match resolution {
         Resolution::Generic(symbol) => {
             let symbol_kind = *table.get::<SymbolKind>(symbol.id).unwrap();
@@ -425,9 +411,12 @@ fn resolution_to_type<M: Model>(
                 }
 
                 SymbolKind::TraitImplementationType | SymbolKind::Type => {
-                    let generic_parameters = table
+                    let Some(generic_parameters) = table
                         .query::<GenericParameters>(symbol.id)
-                        .map_err(ResolutionToTypeError::Query)?;
+                        .handle(handler)
+                    else {
+                        return Ok(Type::Error(pernixc_term::Error));
+                    };
 
                     let instantiation = Instantiation::from_generic_arguments(
                         symbol.generic_arguments,
@@ -436,22 +425,20 @@ fn resolution_to_type<M: Model>(
                     )
                     .unwrap();
 
-                    let mut result_ty = M::from_default_type(
-                        table
-                            .query::<TypeAlias>(symbol.id)
-                            .map_err(ResolutionToTypeError::Query)?
-                            .0
-                            .clone(),
-                    );
+                    let Some(mut result_ty) = table
+                        .query::<TypeAlias>(symbol.id)
+                        .handle(handler)
+                        .map(|x| M::from_default_type(x.0.clone()))
+                    else {
+                        return Ok(Type::Error(pernixc_term::Error));
+                    };
 
                     instantiation::instantiate(&mut result_ty, &instantiation);
 
                     Ok(result_ty)
                 }
 
-                _ => Err(ResolutionToTypeError::InvalidKind(
-                    Resolution::Generic(symbol),
-                )),
+                _ => Err(Resolution::Generic(symbol)),
             }
         }
 
@@ -469,13 +456,11 @@ fn resolution_to_type<M: Model>(
                     })))
                 }
 
-                _ => Err(ResolutionToTypeError::InvalidKind(
-                    Resolution::MemberGeneric(symbol),
-                )),
+                _ => Err(Resolution::MemberGeneric(symbol)),
             }
         }
 
-        resolution => Err(ResolutionToTypeError::InvalidKind(resolution)),
+        resolution => Err(resolution),
     }
 }
 
@@ -485,7 +470,7 @@ pub(super) fn resolve_qualified_identifier_type<M: Model>(
     referring_site: GlobalID,
     config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Type<M>, Error> {
+) -> Type<M> {
     let is_simple_identifier = syntax_tree.rest().is_empty()
         && syntax_tree
             .root()
@@ -499,41 +484,28 @@ pub(super) fn resolve_qualified_identifier_type<M: Model>(
             x.types.get(syntax_tree.root().span().str()).cloned()
         }),
     ) {
-        return Ok(extra_type);
+        return extra_type;
     }
 
-    let resolution = match table.resolve_qualified_identifier(
+    let Some(resolution) = table.resolve_qualified_identifier(
         syntax_tree,
         referring_site,
         config,
         handler,
-    ) {
-        Ok(resolution) => resolution,
-
-        Err(qualified_identifier::Error::InvalidReferringSiteID) => {
-            return Err(Error::InvalidReferringSiteID);
-        }
-
-        Err(qualified_identifier::Error::Fatal) => {
-            return Ok(Type::Error(pernixc_term::Error));
-        }
-
-        Err(qualified_identifier::Error::Query(error)) => {
-            return Err(Error::Query(error));
-        }
+    ) else {
+        return Type::Error(pernixc_term::Error);
     };
 
-    match resolution_to_type(table, resolution) {
-        Ok(ty) => Ok(ty),
-        Err(ResolutionToTypeError::InvalidKind(resolution)) => {
+    match resolution_to_type(table, resolution, handler) {
+        Ok(ty) => ty,
+        Err(resolution) => {
             handler.receive(Box::new(ExpectType {
                 non_type_symbol_span: syntax_tree.span(),
                 resolved_global_id: resolution.global_id(),
             }));
 
-            Ok(Type::Error(pernixc_term::Error))
+            Type::Error(pernixc_term::Error)
         }
-        Err(ResolutionToTypeError::Query(error)) => Err(Error::Query(error)),
     }
 }
 
@@ -544,7 +516,7 @@ pub(super) fn resolve_type<M: Model>(
     referring_site: GlobalID,
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Type<M>, Error> {
+) -> Type<M> {
     let ty = match syntax_tree {
         syntax_tree::r#type::Type::Primitive(primitive) => {
             Type::Primitive(match primitive {
@@ -575,7 +547,7 @@ pub(super) fn resolve_type<M: Model>(
             referring_site,
             config.reborrow(),
             handler,
-        )?,
+        ),
         syntax_tree::r#type::Type::Reference(reference) => {
             let lifetime = reference.lifetime().as_ref().map(|x| {
                 table.resolve_lifetime(
@@ -611,7 +583,7 @@ pub(super) fn resolve_type<M: Model>(
                 referring_site,
                 config.reborrow(),
                 handler,
-            )?);
+            ));
 
             Type::Reference(Reference { qualifier, lifetime, pointee })
         }
@@ -621,7 +593,7 @@ pub(super) fn resolve_type<M: Model>(
                 referring_site,
                 config.reborrow(),
                 handler,
-            )?);
+            ));
 
             Type::Pointer(Pointer {
                 mutable: pointer_ty.mutable_keyword().is_some(),
@@ -641,7 +613,7 @@ pub(super) fn resolve_type<M: Model>(
                     referring_site,
                     config.reborrow(),
                     handler,
-                )?;
+                );
 
                 if element.ellipsis().is_some() {
                     match ty {
@@ -676,7 +648,7 @@ pub(super) fn resolve_type<M: Model>(
                 handler.receive(Box::new(MoreThanOneUnpackedInTupleType {
                     illegal_tuple_type_span: syntax_tree.span(),
                 }));
-                return Ok(Type::Error(pernixc_term::Error));
+                return Type::Error(pernixc_term::Error);
             }
 
             Type::Tuple(Tuple { elements })
@@ -690,7 +662,7 @@ pub(super) fn resolve_type<M: Model>(
                 referring_site,
                 config.reborrow(),
                 handler,
-            )?),
+            )),
         }),
 
         syntax_tree::r#type::Type::Phantom(phantom) => {
@@ -699,7 +671,7 @@ pub(super) fn resolve_type<M: Model>(
                 referring_site,
                 config.reborrow(),
                 handler,
-            )?;
+            );
 
             Type::Phantom(Phantom(Box::new(ty)))
         }
@@ -727,5 +699,5 @@ pub(super) fn resolve_type<M: Model>(
         );
     }
 
-    Ok(ty)
+    ty
 }

@@ -1213,11 +1213,12 @@ impl Representation {
                 handler,
             );
 
-            if let Some(association) = association {
-                assert!(self
-                    .storage
-                    .add_component(variant_id, association.dissolve().1));
-            }
+            assert!(self.storage.add_component(
+                variant_id,
+                syntax_tree_component::Variant {
+                    variant_association: association
+                }
+            ));
         }
 
         enum_id
@@ -1548,7 +1549,10 @@ impl Representation {
                     assert!(self
                         .storage
                         .add_component(struct_id, Implemented::default()));
-                    assert!(self.storage.add_component(struct_id, body));
+                    assert!(self.storage.add_component(
+                        struct_id,
+                        syntax_tree_component::Fields { fields: body }
+                    ));
                 }
                 syntax_tree::item::Item::Implementation(implementation) => {
                     implementations_by_module_id

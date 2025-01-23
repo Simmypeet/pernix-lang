@@ -1,8 +1,9 @@
 //! Contains the function used for creating the [`Reflector`] instance.
 
 use pernixc_component::{
-    function_signature::FunctionSignature, implementation::Implementation,
-    implied_predicates::ImpliedPredicates, type_alias::TypeAlias,
+    fields::Fields, function_signature::FunctionSignature,
+    implementation::Implementation, implied_predicates::ImpliedPredicates,
+    type_alias::TypeAlias, variant::Variant,
 };
 use pernixc_storage::{serde::Reflector, ArcTrait};
 use pernixc_table::{GlobalID, Table};
@@ -30,6 +31,8 @@ pub fn get() -> Reflector<GlobalID, ArcTrait, String, String> {
         .register_type::<ImpliedPredicates>("ImpliedPredicates".to_owned(),));
     assert!(reflector
         .register_type::<ElidedLifetimes>("ElidedLifetimes".to_owned(),));
+    assert!(reflector.register_type::<Fields>("Fields".to_owned(),));
+    assert!(reflector.register_type::<Variant>("Variant".to_owned(),));
 
     reflector
 }

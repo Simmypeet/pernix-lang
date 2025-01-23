@@ -8,7 +8,7 @@ use pernixc_syntax::syntax_tree::{
 };
 use pernixc_table::{
     component::{Implements, Import, Member, SymbolKind},
-    query,
+    query::Handle,
     resolution::diagnostic::{
         NoGenericArgumentsRequired, SymbolNotFound, ThisNotFound,
     },
@@ -19,7 +19,7 @@ use pernixc_term::{
     Model,
 };
 
-use crate::{term, Config, Diagnostic, Ext, Handler};
+use crate::{Config, Diagnostic, Ext, Handler};
 
 /// Repersents a resolution to a symbol that can be supplied with generic
 /// arguments such as `SYMBOl['a, T, U, V]`
@@ -124,32 +124,6 @@ impl<M: Model> Resolution<M> {
     }
 }
 
-/// An error returned when resolving a qualified identifier.
-#[derive(Debug, thiserror::Error)]
-#[allow(missing_docs)]
-pub enum Error {
-    #[error(
-        "encountered a fatal error, the error diagnostics are already \
-         reported to the handler"
-    )]
-    Fatal,
-
-    #[error(transparent)]
-    Query(#[from] query::Error),
-
-    #[error("the given `referring_site` is not found in the table")]
-    InvalidReferringSiteID,
-}
-
-impl From<term::Error> for Error {
-    fn from(error: term::Error) -> Self {
-        match error {
-            term::Error::InvalidReferringSiteID => Self::InvalidReferringSiteID,
-            term::Error::Query(error) => Self::Query(error),
-        }
-    }
-}
-
 fn to_resolution<M: Model>(
     resolved_id: GlobalID,
     symbol_kind: SymbolKind,
@@ -222,7 +196,7 @@ pub(super) fn resolve_root<M: Model>(
     referring_site: GlobalID,
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Resolution<M>, Error> {
+) -> Option<Resolution<M>> {
     let resolution = match root {
         QualifiedIdentifierRoot::Target(_) => {
             Resolution::Module(GlobalID::new(
@@ -252,14 +226,15 @@ pub(super) fn resolve_root<M: Model>(
                 handler.receive(Box::new(ThisNotFound {
                     span: this.span.clone(),
                 }));
-                return Err(Error::Fatal);
+                return None;
             };
 
             match kind {
                 SymbolKind::Trait => Resolution::Generic(Generic {
                     id: this_symbol,
                     generic_arguments: table
-                        .query::<GenericParameters>(this_symbol)?
+                        .query::<GenericParameters>(this_symbol)
+                        .handle(handler)?
                         .create_identity_generic_arguments(this_symbol),
                 }),
 
@@ -273,7 +248,8 @@ pub(super) fn resolve_root<M: Model>(
                     let implementation_generic_arguments =
                         GenericArguments::from_default_model(
                             table
-                                .query::<Implementation>(this_symbol)?
+                                .query::<Implementation>(this_symbol)
+                                .handle(handler)?
                                 .generic_arguments
                                 .clone(),
                         );
@@ -288,9 +264,8 @@ pub(super) fn resolve_root<M: Model>(
             }
         }
         QualifiedIdentifierRoot::GenericIdentifier(generic_identifier) => {
-            let current_module_id = table
-                .get_closet_module_id(referring_site)
-                .ok_or(Error::InvalidReferringSiteID)?;
+            let current_module_id =
+                table.get_closet_module_id(referring_site).unwrap();
 
             let current_module_id =
                 GlobalID::new(referring_site.target_id, current_module_id);
@@ -318,7 +293,7 @@ pub(super) fn resolve_root<M: Model>(
                         .clone(),
                 }));
 
-                return Err(Error::Fatal);
+                return None;
             };
 
             let symbol_kind = *table.get::<SymbolKind>(id).unwrap();
@@ -366,7 +341,7 @@ pub(super) fn resolve_root<M: Model>(
         );
     }
 
-    Ok(resolution)
+    Some(resolution)
 }
 
 pub(super) fn resolve<M: Model>(
@@ -375,7 +350,7 @@ pub(super) fn resolve<M: Model>(
     referring_site: GlobalID,
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Resolution<M>, Error> {
+) -> Option<Resolution<M>> {
     // create the current root
     let mut latest_resolution = table.resolve_qualified_identifier_root(
         qualified_identifier.root(),
@@ -401,7 +376,7 @@ pub(super) fn resolve<M: Model>(
                             .clone(),
                     }));
 
-                    return Err(Error::Fatal);
+                    return None;
                 }
             },
         };
@@ -449,5 +424,5 @@ pub(super) fn resolve<M: Model>(
         latest_resolution = next_resolution;
     }
 
-    Ok(latest_resolution)
+    Some(latest_resolution)
 }

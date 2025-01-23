@@ -11,17 +11,15 @@ use pernixc_table::{
         Implements, SymbolKind,
     },
     diagnostic::Diagnostic,
-    query, GlobalID, Table,
+    query::{self, Handle},
+    GlobalID, Table,
 };
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
     generic_parameter::GenericParameters, lifetime::Lifetime, r#type::Type,
 };
 
-use crate::{
-    builder::Builder, generic_parameters::Ext as _,
-    handle_term_resolution_result, occurrences,
-};
+use crate::{builder::Builder, generic_parameters::Ext as _, occurrences};
 
 impl query::Builder<Implementation> for Builder {
     fn build(
@@ -58,8 +56,8 @@ impl query::Builder<Implementation> for Builder {
         let extra_namespace =
             table.get_generic_parameter_namepsace(global_id, handler);
 
-        let generic_arguments = handle_term_resolution_result!(
-            table.resolve_generic_arguments_for(
+        let generic_arguments = table
+            .resolve_generic_arguments_for(
                 implemented_id,
                 generic_identifier,
                 global_id,
@@ -71,45 +69,35 @@ impl query::Builder<Implementation> for Builder {
                     extra_namespace: Some(&extra_namespace),
                 },
                 handler,
-            ),
-            handler,
-            {
+            )
+            .unwrap_or_else(|| {
                 // try to create generic arguments for the implemented symbol
                 // with every argument being an error
-                let implemented_generic_parameters =
-                    match table.query::<GenericParameters>(implemented_id) {
-                        Ok(param) => param,
-                        Err(query::Error::CyclicDependency(error)) => {
-                            handler.receive(Box::new(error));
-                            return Some(Arc::new(Implementation::default()));
-                        }
-                        Err(
-                            query::Error::NoBuilderFound
-                            | query::Error::SymbolNotFoundOrInvalidComponent,
-                        ) => panic!("unexpected error"),
-                    };
+                let Some(implemented_generic_parameters) = table
+                    .query::<GenericParameters>(implemented_id)
+                    .handle(handler)
+                else {
+                    return GenericArguments::default();
+                };
 
-                return Some(Arc::new(Implementation {
-                    generic_arguments: GenericArguments {
-                        lifetimes: implemented_generic_parameters
-                            .lifetimes()
-                            .iter()
-                            .map(|_| Lifetime::Error(pernixc_term::Error))
-                            .collect(),
-                        types: implemented_generic_parameters
-                            .types()
-                            .iter()
-                            .map(|_| Type::Error(pernixc_term::Error))
-                            .collect(),
-                        constants: implemented_generic_parameters
-                            .constants()
-                            .iter()
-                            .map(|_| Constant::Error(pernixc_term::Error))
-                            .collect(),
-                    },
-                }));
-            }
-        );
+                GenericArguments {
+                    lifetimes: implemented_generic_parameters
+                        .lifetimes()
+                        .iter()
+                        .map(|_| Lifetime::Error(pernixc_term::Error))
+                        .collect(),
+                    types: implemented_generic_parameters
+                        .types()
+                        .iter()
+                        .map(|_| Type::Error(pernixc_term::Error))
+                        .collect(),
+                    constants: implemented_generic_parameters
+                        .constants()
+                        .iter()
+                        .map(|_| Constant::Error(pernixc_term::Error))
+                        .collect(),
+                }
+            });
 
         Some(Arc::new(Implementation { generic_arguments }))
     }

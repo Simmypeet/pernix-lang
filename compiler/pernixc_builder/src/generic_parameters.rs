@@ -12,11 +12,11 @@ use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use pernixc_table::{
     component::{
-        syntax_tree as syntax_tree_component, Accessibility, Derived,
-        HierarchyRelationship, Parent, SymbolKind,
+        syntax_tree as syntax_tree_component, Derived, Parent, SymbolKind,
     },
     diagnostic::Diagnostic,
-    query, GlobalAccessibility, GlobalID, MemberID, Table,
+    query::{self, Handle},
+    GlobalID, MemberID, Table,
 };
 use pernixc_term::{
     accessibility::Ext as _,
@@ -31,9 +31,9 @@ use pernixc_term::{
 };
 
 use crate::{
+    accessibility,
     builder::Builder,
     diagnostic::PrivateEntityLeakedToPublicInterface,
-    handle_query_result,
     occurrences::{self, Occurrences},
 };
 
@@ -207,10 +207,15 @@ impl query::Builder<GenericParameters> for Builder {
             }
         }
 
+        let symbol_accessibility = table
+            .get_accessibility(global_id)
+            .unwrap()
+            .into_global(global_id.target_id);
+
         for constant_parameter_syn in constant_parameter_syns {
             let constant_parameter = {
                 // the type used for the constant parameter
-                let constant_type = match table.resolve_type(
+                let constant_type = table.resolve_type(
                     constant_parameter_syn.1,
                     global_id,
                     Config {
@@ -221,73 +226,23 @@ impl query::Builder<GenericParameters> for Builder {
                         extra_namespace: Some(&extra_name_space),
                     },
                     handler,
-                ) {
-                    Ok(ty) => ty,
-
-                    Err(
-                        pernixc_resolution::term::Error::InvalidReferringSiteID
-                        | pernixc_resolution::term::Error::Query(
-                            query::Error::NoBuilderFound
-                            | query::Error::SymbolNotFoundOrInvalidComponent,
-                        ),
-                    ) => unreachable!(),
-
-                    Err(pernixc_resolution::term::Error::Query(
-                        query::Error::CyclicDependency(error),
-                    )) => {
-                        handler.receive(Box::new(error));
-                        Type::Error(pernixc_term::Error)
-                    }
-                };
+                );
 
                 let ty_accessibility = table
                     .get_type_accessibility(&constant_type)
                     .expect("should be valid");
-                let symbol_accessibility = match table
-                    .get_accessibility(global_id)
-                    .unwrap()
-                {
-                    Accessibility::Public => GlobalAccessibility::Public,
-                    Accessibility::Scoped(id) => GlobalAccessibility::Scoped(
-                        GlobalID::new(global_id.target_id, id),
-                    ),
-                };
 
-                // no private type in public interface
-                let private_entity_leaked =
-                    match (ty_accessibility, symbol_accessibility) {
-                        (
-                            GlobalAccessibility::Public,
-                            GlobalAccessibility::Public
-                            | GlobalAccessibility::Scoped(_),
-                        ) => false,
-
-                        (
-                            GlobalAccessibility::Scoped(_),
-                            GlobalAccessibility::Public,
-                        ) => true,
-
-                        (
-                            GlobalAccessibility::Scoped(ty),
-                            GlobalAccessibility::Scoped(sym),
-                        ) => {
-                            assert_eq!(ty.target_id, sym.target_id);
-
-                            table.symbol_hierarchy_relationship(
-                                ty.target_id,
-                                ty.id,
-                                sym.id,
-                            ) == HierarchyRelationship::Child
-                        }
-                    };
-
-                if private_entity_leaked {
+                if accessibility::check_private_entity_leakage(
+                    table,
+                    ty_accessibility,
+                    symbol_accessibility,
+                ) {
                     handler.receive(Box::new(
                         PrivateEntityLeakedToPublicInterface {
                             entity: constant_type.clone(),
                             leaked_span: constant_parameter_syn.1.span(),
-                            public_interface_id: global_id,
                             entity_overall_accessibility: ty_accessibility,
+                            public_accessibility: symbol_accessibility,
                         },
                     ));
                 }
@@ -368,11 +323,11 @@ impl Ext for Table {
                 continue;
             }
 
-            let generic_parameter = handle_query_result!(
-                self.query::<GenericParameters>(scope),
-                handler,
-                continue,
-            );
+            let Some(generic_parameter) =
+                self.query::<GenericParameters>(scope).handle(handler)
+            else {
+                continue;
+            };
 
             for (name, lt) in generic_parameter.lifetime_parameter_ids_by_name()
             {

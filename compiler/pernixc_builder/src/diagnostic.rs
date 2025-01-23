@@ -4,8 +4,7 @@ use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
 use pernixc_table::{
-    component::Accessibility, diagnostic::ReportError, DisplayObject,
-    GlobalAccessibility, GlobalID, Table,
+    diagnostic::ReportError, DisplayObject, GlobalAccessibility, Table,
 };
 
 /// An entity was exposed to the public interface but it's accessability is less
@@ -21,8 +20,8 @@ pub struct PrivateEntityLeakedToPublicInterface<T> {
     /// The span where the entity was leaked.
     pub leaked_span: Span,
 
-    /// The ID of the public interface that contains the leaked entity.
-    pub public_interface_id: GlobalID,
+    /// The public interface where the entity was leaked.
+    pub public_accessibility: GlobalAccessibility,
 }
 
 fn accessibility_description(
@@ -49,30 +48,13 @@ impl<T: pernixc_table::Display> Report<&Table>
         Ok(Diagnostic {
             span: self.leaked_span.clone(),
             message: format!(
-                "`{}` is {} but it was declared in a `{}` interface, which is \
-                 {}",
+                "`{}` is {} but it was declared in an interface that is {}",
                 DisplayObject { display: &self.entity, table },
                 accessibility_description(
                     table,
                     self.entity_overall_accessibility
                 )?,
-                table
-                    .get_qualified_name(self.public_interface_id)
-                    .ok_or(ReportError)?,
-                accessibility_description(
-                    table,
-                    match table
-                        .get_accessibility(self.public_interface_id)
-                        .ok_or(ReportError)?
-                    {
-                        Accessibility::Public => GlobalAccessibility::Public,
-                        Accessibility::Scoped(id) =>
-                            GlobalAccessibility::Scoped(GlobalID::new(
-                                self.public_interface_id.target_id,
-                                id
-                            )),
-                    }
-                )?,
+                accessibility_description(table, self.public_accessibility)?,
             ),
             severity: Severity::Error,
             help_message: None,

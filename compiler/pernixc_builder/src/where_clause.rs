@@ -37,51 +37,6 @@ pub mod diagnostic;
 
 use crate::{builder::Builder, generic_parameters::Ext as _, occurrences};
 
-macro_rules! handle_term_resolution_result {
-    ($expr:expr, $handler:expr, $diverge:expr) => {
-        match $expr {
-            Ok(value) => value,
-            Err(pernixc_resolution::term::Error::Query(
-                query::Error::CyclicDependency(error),
-            )) => {
-                $handler.receive(Box::new(error));
-
-                $diverge
-            }
-
-            error @ Err(
-                pernixc_resolution::term::Error::InvalidReferringSiteID
-                | pernixc_resolution::term::Error::Query(_),
-            ) => {
-                panic!("unexpected error: {error:?}");
-            }
-        }
-    };
-}
-
-macro_rules! handle_qualified_identifer_resolve_result {
-    ($expr:expr, $handler:expr, $diverge:expr) => {{
-        use pernixc_resolution::qualified_identifier;
-
-        match $expr {
-            Ok(value) => value,
-            Err(qualified_identifier::Error::Fatal) => $diverge,
-            Err(qualified_identifier::Error::Query(
-                query::Error::CyclicDependency(error),
-            )) => {
-                $handler.receive(Box::new(error));
-                $diverge
-            }
-            Err(
-                qualified_identifier::Error::InvalidReferringSiteID
-                | qualified_identifier::Error::Query(_),
-            ) => {
-                panic!("unexpected error");
-            }
-        }
-    }};
-}
-
 fn create_forall_lifetimes(
     global_id: GlobalID,
     where_clause: &mut WhereClause,
@@ -143,21 +98,17 @@ fn create_tuple_predicates(
         let extra_namespace =
             with_forall_lifetime.as_ref().unwrap_or(extra_namespace);
 
-        let resolve_type = handle_term_resolution_result!(
-            table.resolve_type(
-                tuple.r#type(),
-                global_id,
-                Config {
-                    elided_lifetime_provider: None,
-                    elided_type_provider: None,
-                    elided_constant_provider: None,
-                    observer: Some(&mut occurrences::Observer),
-                    extra_namespace: Some(extra_namespace),
-                },
-                handler,
-            ),
+        let resolve_type = table.resolve_type(
+            tuple.r#type(),
+            global_id,
+            Config {
+                elided_lifetime_provider: None,
+                elided_type_provider: None,
+                elided_constant_provider: None,
+                observer: Some(&mut occurrences::Observer),
+                extra_namespace: Some(extra_namespace),
+            },
             handler,
-            return
         );
 
         where_clause.predicates.push(where_clause::Predicate {
@@ -203,16 +154,14 @@ fn create_trait_member_predicates(
         extra_namespace: Some(extra_namespace),
     };
 
-    let resolution = handle_qualified_identifer_resolve_result!(
-        table.resolve_qualified_identifier(
-            syntax_tree.qualified_identifier(),
-            global_id,
-            config.reborrow(),
-            handler,
-        ),
+    let Some(resolution) = table.resolve_qualified_identifier(
+        syntax_tree.qualified_identifier(),
+        global_id,
+        config.reborrow(),
         handler,
-        return
-    );
+    ) else {
+        return;
+    };
 
     match resolution {
         // trait type
@@ -223,15 +172,11 @@ fn create_trait_member_predicates(
         }) if *table.get::<SymbolKind>(id).unwrap()
             == SymbolKind::TraitType =>
         {
-            let resolve_ty = handle_term_resolution_result!(
-                table.resolve_type(
-                    syntax_tree.r#type(),
-                    global_id,
-                    config,
-                    handler,
-                ),
+            let resolve_ty = table.resolve_type(
+                syntax_tree.r#type(),
+                global_id,
+                config,
                 handler,
-                return
             );
 
             where_clause.predicates.push(where_clause::Predicate {
@@ -288,22 +233,20 @@ fn create_trait_predicates(
         let extra_namespace =
             with_forall_lifetime.as_ref().unwrap_or(extra_namespace);
 
-        let resolution = handle_qualified_identifer_resolve_result!(
-            table.resolve_qualified_identifier(
-                trait_predicate.qualified_identifier(),
-                global_id,
-                Config {
-                    elided_lifetime_provider: None,
-                    elided_type_provider: None,
-                    elided_constant_provider: None,
-                    observer: Some(&mut occurrences::Observer),
-                    extra_namespace: Some(extra_namespace),
-                },
-                handler
-            ),
+        let Some(resolution) = table.resolve_qualified_identifier(
+            trait_predicate.qualified_identifier(),
+            global_id,
+            Config {
+                elided_lifetime_provider: None,
+                elided_type_provider: None,
+                elided_constant_provider: None,
+                observer: Some(&mut occurrences::Observer),
+                extra_namespace: Some(extra_namespace),
+            },
             handler,
-            continue
-        );
+        ) else {
+            continue;
+        };
 
         match resolution {
             Resolution::Generic(Generic { id, generic_arguments })
@@ -405,11 +348,8 @@ fn create_outlives_predicates(
             }
         }
         syntax_tree::predicate::OutlivesOperand::Type(ty) => {
-            let ty = handle_term_resolution_result!(
-                table.resolve_type(ty, global_id, config.reborrow(), handler),
-                handler,
-                return
-            );
+            let ty =
+                table.resolve_type(ty, global_id, config.reborrow(), handler);
 
             for bound in bounds.iter().copied() {
                 where_clause.predicates.push(where_clause::Predicate {
@@ -449,21 +389,17 @@ fn create_constant_type_predicates(
         let extra_namespace =
             with_forall_lifetime.as_ref().unwrap_or(extra_namespace);
 
-        let ty = handle_term_resolution_result!(
-            table.resolve_type(
-                bound.r#type(),
-                global_id,
-                Config {
-                    elided_lifetime_provider: None,
-                    elided_type_provider: None,
-                    elided_constant_provider: None,
-                    observer: Some(&mut occurrences::Observer),
-                    extra_namespace: Some(extra_namespace),
-                },
-                handler,
-            ),
+        let ty = table.resolve_type(
+            bound.r#type(),
+            global_id,
+            Config {
+                elided_lifetime_provider: None,
+                elided_type_provider: None,
+                elided_constant_provider: None,
+                observer: Some(&mut occurrences::Observer),
+                extra_namespace: Some(extra_namespace),
+            },
             handler,
-            continue
         );
 
         where_clause.predicates.push(where_clause::Predicate {
@@ -499,22 +435,20 @@ fn create_marker_predicate(
         let extra_namespace =
             with_forall_lifetime.as_ref().unwrap_or(extra_namespace);
 
-        let resolution = handle_qualified_identifer_resolve_result!(
-            table.resolve_qualified_identifier(
-                marker_bound.qualified_identifier(),
-                global_id,
-                Config {
-                    elided_lifetime_provider: None,
-                    elided_type_provider: None,
-                    elided_constant_provider: None,
-                    observer: Some(&mut occurrences::Observer),
-                    extra_namespace: Some(extra_namespace),
-                },
-                handler,
-            ),
+        let Some(resolution) = table.resolve_qualified_identifier(
+            marker_bound.qualified_identifier(),
+            global_id,
+            Config {
+                elided_lifetime_provider: None,
+                elided_type_provider: None,
+                elided_constant_provider: None,
+                observer: Some(&mut occurrences::Observer),
+                extra_namespace: Some(extra_namespace),
+            },
             handler,
-            continue
-        );
+        ) else {
+            continue;
+        };
 
         match resolution {
             Resolution::Generic(Generic { id, generic_arguments })

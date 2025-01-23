@@ -177,7 +177,7 @@ pub trait Ext {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Resolution<M>, qualified_identifier::Error>;
+    ) -> Option<Resolution<M>>;
 
     /// Resolves for [`Resolution`] based on the given
     /// [`QualifiedIdentifierRoot`] syntax tree.
@@ -191,7 +191,7 @@ pub trait Ext {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Resolution<M>, qualified_identifier::Error>;
+    ) -> Option<Resolution<M>>;
 
     /// Resolves the generic arguments for the given symbol.
     ///
@@ -205,7 +205,7 @@ pub trait Ext {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GenericArguments<M>, term::Error>;
+    ) -> Option<GenericArguments<M>>;
 
     /// Resolves a [`GenericArguments`] from the given generic arguments syntax
     /// tree.
@@ -219,7 +219,7 @@ pub trait Ext {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GenericArguments<M>, term::Error>;
+    ) -> GenericArguments<M>;
 
     /// Verifies that the given `generic_arguments` have the right amount of
     /// arguments by supplying the default arguments if necessary.
@@ -234,7 +234,7 @@ pub trait Ext {
         generic_identifier_span: Span,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GenericArguments<M>, term::Error>;
+    ) -> Option<GenericArguments<M>>;
 
     /// Resolves for a [`Lifetime`] based on the given [`syntax_tree::Lifetime`]
     ///
@@ -260,7 +260,7 @@ pub trait Ext {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Type<M>, term::Error>;
+    ) -> Type<M>;
 }
 
 impl Ext for Table {
@@ -270,7 +270,7 @@ impl Ext for Table {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Resolution<M>, qualified_identifier::Error> {
+    ) -> Option<Resolution<M>> {
         qualified_identifier::resolve(
             self,
             qualified_identifier,
@@ -286,7 +286,7 @@ impl Ext for Table {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Resolution<M>, qualified_identifier::Error> {
+    ) -> Option<Resolution<M>> {
         qualified_identifier::resolve_root(
             self,
             root,
@@ -303,7 +303,7 @@ impl Ext for Table {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GenericArguments<M>, term::Error> {
+    ) -> Option<GenericArguments<M>> {
         term::resolve_generic_arguments_for(
             self,
             symbol_id,
@@ -320,7 +320,7 @@ impl Ext for Table {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GenericArguments<M>, term::Error> {
+    ) -> GenericArguments<M> {
         term::resolve_generic_arguments(
             self,
             generic_arguments,
@@ -337,7 +337,7 @@ impl Ext for Table {
         generic_identifier_span: Span,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GenericArguments<M>, term::Error> {
+    ) -> Option<GenericArguments<M>> {
         term::verify_generic_arguments_for(
             self,
             generic_arguments,
@@ -370,7 +370,7 @@ impl Ext for Table {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Type<M>, term::Error> {
+    ) -> Type<M> {
         term::resolve_type(self, type_argument, referring_site, config, handler)
     }
 }

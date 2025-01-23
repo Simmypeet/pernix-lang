@@ -8,7 +8,7 @@ use pernixc_component::{
     implied_predicates::{ImpliedPredicate, ImpliedPredicates},
 };
 use pernixc_handler::Handler;
-use pernixc_resolution::{Config, ElidedTermProvider, Ext};
+use pernixc_resolution::{Config, ElidedTermProvider, Ext as _};
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::ConnectedList;
 use pernixc_table::{
@@ -16,9 +16,11 @@ use pernixc_table::{
         syntax_tree as syntax_tree_component, Derived, Parent, SymbolKind,
     },
     diagnostic::Diagnostic,
-    query, GlobalID, Table,
+    query::{self, Handle},
+    GlobalID, Table,
 };
 use pernixc_term::{
+    accessibility::Ext as _,
     elided_lifetimes::{ElidedLifetime, ElidedLifetimeID, ElidedLifetimes},
     lifetime::Lifetime,
     predicate::{Outlives, Predicate},
@@ -30,9 +32,11 @@ use pernixc_term::{
 use pernixc_type_system::{environment::Environment, AbruptError};
 
 use crate::{
+    accessibility,
     builder::Builder,
+    diagnostic::PrivateEntityLeakedToPublicInterface,
     generic_parameters::Ext as _,
-    handle_query_result, handle_term_resolution_result, occurrences,
+    occurrences,
     type_system::{diagnostic::UndecidablePredicate, TableExt as _},
 };
 
@@ -102,38 +106,12 @@ impl query::Builder<Intermediate> for Builder {
             .flat_map(ConnectedList::elements)
             .map(|syn| {
                 (
-                    handle_term_resolution_result!(
-                        table.resolve_type(
-                            syn.r#type(),
-                            global_id,
-                            Config {
-                                elided_lifetime_provider: Some(
-                                    &mut elided_lifetimes_provider
-                                ),
-                                elided_type_provider: None,
-                                elided_constant_provider: None,
-                                observer: Some(&mut occurrences::Observer),
-                                extra_namespace: Some(&extra_namespace),
-                            },
-                            handler
-                        ),
-                        handler,
-                        Type::Error(pernixc_term::Error)
-                    ),
-                    syn.span(),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let return_type = syntax_tree.return_type.as_ref().map(|x| {
-            (
-                handle_term_resolution_result!(
                     table.resolve_type(
-                        x.r#type(),
+                        syn.r#type(),
                         global_id,
                         Config {
                             elided_lifetime_provider: Some(
-                                &mut elided_lifetimes_provider
+                                &mut elided_lifetimes_provider,
                             ),
                             elided_type_provider: None,
                             elided_constant_provider: None,
@@ -142,9 +120,74 @@ impl query::Builder<Intermediate> for Builder {
                         },
                         handler,
                     ),
-                    handler,
-                    Type::Error(pernixc_term::Error)
-                ),
+                    syn.span(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let symbol_accessibility = table
+            .get_accessibility(global_id)
+            .unwrap()
+            .into_global(global_id.target_id);
+
+        for (parameter, span) in &parameters {
+            let accessibility =
+                table.get_type_accessibility(parameter).unwrap();
+
+            if accessibility::check_private_entity_leakage(
+                table,
+                accessibility,
+                symbol_accessibility,
+            ) {
+                handler.receive(Box::new(
+                    PrivateEntityLeakedToPublicInterface {
+                        entity: parameter.clone(),
+                        leaked_span: span.clone(),
+                        entity_overall_accessibility: accessibility,
+                        public_accessibility: symbol_accessibility,
+                    },
+                ));
+            }
+        }
+
+        let return_type = syntax_tree.return_type.as_ref().map(|x| {
+            (
+                {
+                    let ty = table.resolve_type(
+                        x.r#type(),
+                        global_id,
+                        Config {
+                            elided_lifetime_provider: Some(
+                                &mut elided_lifetimes_provider,
+                            ),
+                            elided_type_provider: None,
+                            elided_constant_provider: None,
+                            observer: Some(&mut occurrences::Observer),
+                            extra_namespace: Some(&extra_namespace),
+                        },
+                        handler,
+                    );
+
+                    let ty_accessibility =
+                        table.get_type_accessibility(&ty).unwrap();
+
+                    if accessibility::check_private_entity_leakage(
+                        table,
+                        ty_accessibility,
+                        symbol_accessibility,
+                    ) {
+                        handler.receive(Box::new(
+                            PrivateEntityLeakedToPublicInterface {
+                                entity: ty.clone(),
+                                leaked_span: x.span(),
+                                entity_overall_accessibility: ty_accessibility,
+                                public_accessibility: symbol_accessibility,
+                            },
+                        ));
+                    }
+
+                    ty
+                },
                 x.span(),
             )
         });
@@ -159,11 +202,11 @@ impl query::Builder<Intermediate> for Builder {
         );
 
         'out: {
-            let where_clause = handle_query_result!(
-                table.query::<WhereClause>(global_id),
-                handler,
-                break 'out,
-            );
+            let Some(where_clause) =
+                table.query::<WhereClause>(global_id).handle(handler)
+            else {
+                break 'out;
+            };
 
             for predicate in &where_clause.predicates {
                 active_premise.predicates.insert(predicate.predicate.clone());
@@ -180,11 +223,11 @@ impl query::Builder<Intermediate> for Builder {
             })
             .flat_map(|(x, span)| match x {
                 Type::Symbol(symbol) => {
-                    let where_clause = handle_query_result!(
-                        table.query::<WhereClause>(symbol.id),
-                        handler,
-                        return Vec::new(),
-                    );
+                    let Some(where_clause) =
+                        table.query::<WhereClause>(symbol.id).handle(handler)
+                    else {
+                        return Vec::new();
+                    };
 
                     where_clause
                         .predicates
@@ -289,7 +332,7 @@ impl query::Builder<FunctionSignature> for Builder {
         &self,
         global_id: GlobalID,
         table: &Table,
-        _handler: &dyn Handler<Box<dyn Diagnostic>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<FunctionSignature>> {
         let symbol_kind = *table.get::<SymbolKind>(global_id)?;
         if !symbol_kind.has_function_signature() {
@@ -302,21 +345,18 @@ impl query::Builder<FunctionSignature> for Builder {
             FunctionSignature::component_name(),
         );
 
-        match table.query::<Intermediate>(global_id) {
-            Ok(result) => Some(result.function_signature.clone()),
-            Err(query::Error::CyclicDependency(error)) => {
-                table.handler().receive(Box::new(error));
-                Some(Arc::new(FunctionSignature {
-                    parameters: Arena::default(),
-                    parameter_order: Vec::new(),
-                    return_type: Type::Tuple(Tuple { elements: Vec::new() }),
-                }))
-            }
-            Err(
-                query::Error::NoBuilderFound
-                | query::Error::SymbolNotFoundOrInvalidComponent,
-            ) => None,
-        }
+        Some(
+            table.query::<Intermediate>(global_id).handle(handler).map_or_else(
+                || {
+                    Arc::new(FunctionSignature {
+                        parameters: Arena::default(),
+                        parameter_order: Vec::new(),
+                        return_type: Type::Error(pernixc_term::Error),
+                    })
+                },
+                |x| x.function_signature.clone(),
+            ),
+        )
     }
 }
 
@@ -325,7 +365,7 @@ impl query::Builder<ElidedLifetimes> for Builder {
         &self,
         global_id: GlobalID,
         table: &Table,
-        _handler: &dyn Handler<Box<dyn Diagnostic>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<ElidedLifetimes>> {
         let symbol_kind = *table.get::<SymbolKind>(global_id)?;
         if !symbol_kind.has_function_signature() {
@@ -338,19 +378,16 @@ impl query::Builder<ElidedLifetimes> for Builder {
             ElidedLifetimes::component_name(),
         );
 
-        match table.query::<Intermediate>(global_id) {
-            Ok(result) => Some(result.ellided_lifetimes.clone()),
-            Err(query::Error::CyclicDependency(error)) => {
-                table.handler().receive(Box::new(error));
-                Some(Arc::new(ElidedLifetimes {
-                    elided_lifetimes: Arena::default(),
-                }))
-            }
-            Err(
-                query::Error::NoBuilderFound
-                | query::Error::SymbolNotFoundOrInvalidComponent,
-            ) => None,
-        }
+        Some(
+            table.query::<Intermediate>(global_id).handle(handler).map_or_else(
+                || {
+                    Arc::new(ElidedLifetimes {
+                        elided_lifetimes: Arena::default(),
+                    })
+                },
+                |x| x.ellided_lifetimes.clone(),
+            ),
+        )
     }
 }
 
@@ -359,7 +396,7 @@ impl query::Builder<ImpliedPredicates> for Builder {
         &self,
         global_id: GlobalID,
         table: &Table,
-        _handler: &dyn Handler<Box<dyn Diagnostic>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<ImpliedPredicates>> {
         let symbol_kind = *table.get::<SymbolKind>(global_id)?;
         if !symbol_kind.has_function_signature() {
@@ -372,18 +409,15 @@ impl query::Builder<ImpliedPredicates> for Builder {
             ImpliedPredicates::component_name(),
         );
 
-        match table.query::<Intermediate>(global_id) {
-            Ok(result) => Some(result.implied_predicates.clone()),
-            Err(query::Error::CyclicDependency(error)) => {
-                table.handler().receive(Box::new(error));
-                Some(Arc::new(ImpliedPredicates {
-                    implied_predicates: HashSet::new(),
-                }))
-            }
-            Err(
-                query::Error::NoBuilderFound
-                | query::Error::SymbolNotFoundOrInvalidComponent,
-            ) => None,
-        }
+        Some(
+            table.query::<Intermediate>(global_id).handle(handler).map_or_else(
+                || {
+                    Arc::new(ImpliedPredicates {
+                        implied_predicates: HashSet::new(),
+                    })
+                },
+                |x| x.implied_predicates.clone(),
+            ),
+        )
     }
 }

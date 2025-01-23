@@ -180,6 +180,36 @@ impl std::fmt::Debug for Context {
     }
 }
 
+/// An error occurred by the invalid input or the state of the compiler.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[allow(missing_docs)]
+pub enum InternalCompilerError {
+    #[error(
+        "the symbol is not found or the component shouldn't be in given symbol"
+    )]
+    SymbolNotFoundOrInvalidComponent {
+        /// The global ID of the symbol.
+        global_id: GlobalID,
+
+        /// The name of the component.
+        component_name: &'static str,
+    },
+
+    #[error(
+        "the component of the symbol is not found and there is no builder for \
+         it"
+    )]
+    NoBuilderFound {
+        /// The global ID of the symbol.
+        global_id: GlobalID,
+
+        /// The name of the component.
+        component_name: &'static str,
+    },
+}
+
 /// An error that can occur during the query.
 #[derive(Debug, EnumAsInner, thiserror::Error)]
 #[allow(missing_docs)]
@@ -187,30 +217,8 @@ pub enum Error {
     #[error("cyclic dependency detected")]
     CyclicDependency(CyclicDependency),
 
-    #[error(
-        "the symbol is not found or the component shouldn't be in given symbol"
-    )]
-    SymbolNotFoundOrInvalidComponent,
-
-    #[error(
-        "the component of the symbol is not found and there is no builder for \
-         it"
-    )]
-    NoBuilderFound,
-}
-
-impl Error {
-    /// Unwraps the error as a [`CyclicDependency`].
-    #[must_use]
-    pub fn unwrap_cyclic_dependency(self) -> CyclicDependency {
-        match self {
-            Self::CyclicDependency(x) => x,
-
-            Self::NoBuilderFound | Self::SymbolNotFoundOrInvalidComponent => {
-                panic!("not a cyclic dependency")
-            }
-        }
-    }
+    #[error(transparent)]
+    Internal(#[from] InternalCompilerError),
 }
 
 /// A trait implemented by the **component builders**.
@@ -228,6 +236,37 @@ pub trait Builder<T>: Any + Send + Sync {
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<T>>;
+}
+
+/// An extension trait for shorten the error handling code.
+pub trait Handle {
+    /// The type of the successful result.
+    type Ok;
+
+    /// Handles the [`CyclicDependency`] error in case of the error, this will
+    /// transform the error type from [`Error`] to [`HandledError`].
+    #[allow(clippy::missing_errors_doc)]
+    fn handle(
+        self,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Option<Self::Ok>;
+}
+
+impl<T> Handle for Result<T, Error> {
+    type Ok = T;
+
+    fn handle(self, handler: &dyn Handler<Box<dyn Diagnostic>>) -> Option<T> {
+        match self {
+            Ok(x) => Some(x),
+            Err(Error::CyclicDependency(error)) => {
+                handler.receive(Box::new(error));
+                None
+            }
+            Err(Error::Internal(error)) => {
+                panic!("Internal compiler error: {error}");
+            }
+        }
+    }
 }
 
 impl Table {
@@ -254,7 +293,12 @@ impl Table {
             context.builders_by_type_id.get(&TypeId::of::<T>()).cloned(),
             context.builder_fns_by_type_id.get(&TypeId::of::<T>()).copied(),
         ) else {
-            return Err(Error::NoBuilderFound);
+            return Err(Error::Internal(
+                InternalCompilerError::NoBuilderFound {
+                    global_id,
+                    component_name: std::any::type_name::<T>(),
+                },
+            ));
         };
 
         let current_record = Record {
@@ -359,8 +403,11 @@ impl Table {
         }
 
         // return the component
-        self.storage
-            .get_cloned::<T>(global_id)
-            .ok_or(Error::SymbolNotFoundOrInvalidComponent)
+        self.storage.get_cloned::<T>(global_id).ok_or(Error::Internal(
+            InternalCompilerError::SymbolNotFoundOrInvalidComponent {
+                global_id,
+                component_name: std::any::type_name::<T>(),
+            },
+        ))
     }
 }

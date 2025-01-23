@@ -220,10 +220,7 @@ impl<T> ResultExt<T> for std::result::Result<T, pernixc_table::query::Error> {
         match self {
             Ok(t) => Ok(Some(t)),
             Err(pernixc_table::query::Error::CyclicDependency(err)) => Err(err),
-            Err(
-                pernixc_table::query::Error::NoBuilderFound
-                | pernixc_table::query::Error::SymbolNotFoundOrInvalidComponent,
-            ) => Ok(None),
+            Err(pernixc_table::query::Error::Internal(_)) => Ok(None),
         }
     }
 }

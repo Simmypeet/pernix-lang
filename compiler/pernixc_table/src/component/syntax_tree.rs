@@ -55,3 +55,23 @@ pub struct FunctionSignature {
 }
 
 impl Input for FunctionSignature {}
+
+/// A **local-input** component used for creating fields of a struct.
+/// The syntax tree is `struct NAME { FIELDS }`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Fields {
+    /// The syntax tree that represents the fields of the struct.
+    pub fields: syntax_tree::item::StructBody,
+}
+
+impl Input for Fields {}
+
+/// A **local-input** component used for creating a variant of an enum.
+/// The syntax tree is `VARIANT(ASSOCIATION)`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Variant {
+    /// The syntax tree that represents the variant association.
+    pub variant_association: Option<syntax_tree::item::VariantAssociation>,
+}
+
+impl Input for Variant {}

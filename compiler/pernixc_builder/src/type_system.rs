@@ -10,7 +10,8 @@ use pernixc_component::implied_predicates::{
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
 use pernixc_table::{
-    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
+    component::SymbolKind, diagnostic::Diagnostic, query::Handle, GlobalID,
+    Table,
 };
 use pernixc_term::{
     predicate::{Outlives, Predicate},
@@ -24,8 +25,6 @@ use pernixc_type_system::{
     simplify::Simplify,
     AbruptError, LifetimeConstraint,
 };
-
-use crate::handle_query_result;
 
 pub mod diagnostic;
 
@@ -168,38 +167,40 @@ impl TableExt for Table {
             let kind = *self.get::<SymbolKind>(current_id).unwrap();
 
             if kind.has_where_clause() {
-                let where_clause = handle_query_result!(
-                    self.query::<WhereClause>(current_id),
-                    handler,
-                    continue,
-                );
-                premise.predicates.extend(
-                    where_clause.predicates.iter().map(|x| {
-                        Predicate::from_other_model(x.predicate.clone())
-                    }),
-                );
+                if let Some(where_clause) =
+                    self.query::<WhereClause>(current_id).handle(handler)
+                {
+                    premise.predicates.extend(
+                        where_clause.predicates.iter().map(|x| {
+                            Predicate::from_other_model(x.predicate.clone())
+                        }),
+                    );
+                }
             }
 
             if kind.has_implied_predicates() {
-                let predicates = handle_query_result!(
-                    self.query::<ImpliedPredicates>(current_id),
-                    handler,
-                    continue,
-                );
-                premise.predicates.extend(
-                    predicates.implied_predicates.iter().map(|x| match x {
-                        ImpliedPredicate::LifetimeOutlives(outlives) => {
-                            Predicate::LifetimeOutlives(
-                                Outlives::from_other_model(outlives.clone()),
-                            )
-                        }
-                        ImpliedPredicate::TypeOutlives(outlives) => {
-                            Predicate::TypeOutlives(Outlives::from_other_model(
-                                outlives.clone(),
-                            ))
-                        }
-                    }),
-                );
+                if let Some(predicates) =
+                    self.query::<ImpliedPredicates>(current_id).handle(handler)
+                {
+                    premise.predicates.extend(
+                        predicates.implied_predicates.iter().map(|x| match x {
+                            ImpliedPredicate::LifetimeOutlives(outlives) => {
+                                Predicate::LifetimeOutlives(
+                                    Outlives::from_other_model(
+                                        outlives.clone(),
+                                    ),
+                                )
+                            }
+                            ImpliedPredicate::TypeOutlives(outlives) => {
+                                Predicate::TypeOutlives(
+                                    Outlives::from_other_model(
+                                        outlives.clone(),
+                                    ),
+                                )
+                            }
+                        }),
+                    );
+                }
             }
         }
 

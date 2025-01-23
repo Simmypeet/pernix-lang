@@ -1,8 +1,8 @@
-//! Contains the builder for the type alias.
+//! Contains the builder for the enum variant.
 
 use std::sync::Arc;
 
-use pernixc_component::type_alias::TypeAlias;
+use pernixc_component::variant::Variant;
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext as _};
 use pernixc_source_file::SourceElement;
@@ -11,41 +11,41 @@ use pernixc_table::{
     diagnostic::Diagnostic,
     query, GlobalID, Table,
 };
-use pernixc_term::accessibility::Ext as _;
-use pernixc_type_system::environment::Environment;
+use pernixc_term::accessibility::Ext;
 
 use crate::{
-    accessibility,
-    builder::Builder,
+    accessibility, builder::Builder,
     diagnostic::PrivateEntityLeakedToPublicInterface,
-    generic_parameters::Ext,
-    occurrences,
-    type_system::{EnvironmentExt, TableExt},
+    generic_parameters::Ext as _, occurrences,
 };
 
-impl query::Builder<TypeAlias> for Builder {
+impl query::Builder<Variant> for Builder {
     fn build(
         &self,
         global_id: GlobalID,
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Arc<TypeAlias>> {
+    ) -> Option<Arc<Variant>> {
         let symbol_kind = *table.get::<SymbolKind>(global_id).unwrap();
-        if !symbol_kind.has_type_alias() {
+        if symbol_kind != SymbolKind::Variant {
             return None;
         }
 
         let _scope =
-            self.start_building(table, global_id, TypeAlias::component_name());
+            self.start_building(table, global_id, Variant::component_name());
 
         let syntax_tree =
-            table.get::<syntax_tree_component::TypeAlias>(global_id).unwrap();
+            table.get::<syntax_tree_component::Variant>(global_id).unwrap();
+
+        let Some(syntax_tree) = syntax_tree.variant_association.as_ref() else {
+            return Some(Arc::new(Variant { associated_type: None }));
+        };
 
         let extra_namespace =
             table.get_generic_parameter_namepsace(global_id, handler);
 
-        let mut ty = table.resolve_type(
-            &syntax_tree.0,
+        let associated_type = table.resolve_type(
+            syntax_tree.tree(),
             global_id,
             Config {
                 elided_lifetime_provider: None,
@@ -62,7 +62,7 @@ impl query::Builder<TypeAlias> for Builder {
             .unwrap()
             .into_global(global_id.target_id);
         let ty_accessibility =
-            table.get_type_accessibility(&ty).expect("should be valid");
+            table.get_type_accessibility(&associated_type).unwrap();
 
         if accessibility::check_private_entity_leakage(
             table,
@@ -70,22 +70,13 @@ impl query::Builder<TypeAlias> for Builder {
             symbol_accessibility,
         ) {
             handler.receive(Box::new(PrivateEntityLeakedToPublicInterface {
-                entity: ty.clone(),
-                leaked_span: syntax_tree.0.span(),
+                entity: associated_type.clone(),
                 entity_overall_accessibility: ty_accessibility,
+                leaked_span: syntax_tree.tree().span(),
                 public_accessibility: symbol_accessibility,
             }));
         }
 
-        let premise = table.get_active_premise(global_id, handler);
-        let (env, _) = Environment::new(premise, table);
-
-        ty = env.simplify_and_check_lifetime_constraints(
-            &ty,
-            &syntax_tree.span(),
-            handler,
-        );
-
-        Some(Arc::new(TypeAlias(ty)))
+        Some(Arc::new(Variant { associated_type: Some(associated_type) }))
     }
 }

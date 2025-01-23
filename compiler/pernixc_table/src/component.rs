@@ -25,7 +25,7 @@ use derive_more::{Deref, DerefMut};
 use pernixc_source_file::Span;
 use serde::{Deserialize, Serialize};
 
-use crate::{GlobalID, ID};
+use crate::{GlobalAccessibility, GlobalID, TargetID, ID};
 
 pub mod syntax_tree;
 
@@ -80,6 +80,19 @@ pub enum Accessibility {
 
     /// The symbol is accessible from the given module and its children.
     Scoped(ID),
+}
+
+impl Accessibility {
+    /// Converts the accessibility into a [`GlobalAccessibility`].
+    #[must_use]
+    pub fn into_global(self, target_id: TargetID) -> GlobalAccessibility {
+        match self {
+            Self::Public => GlobalAccessibility::Public,
+            Self::Scoped(id) => {
+                GlobalAccessibility::Scoped(GlobalID::new(target_id, id))
+            }
+        }
+    }
 }
 
 impl Input for Accessibility {}
