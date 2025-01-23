@@ -19,7 +19,6 @@ use pernixc_table::{
     GlobalID, MemberID, Table,
 };
 use pernixc_term::{
-    accessibility::Ext as _,
     constant::Constant,
     generic_parameter::{
         ConstantParameter, ConstantParameterID, GenericKind, GenericParameters,
@@ -31,9 +30,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    accessibility,
     builder::Builder,
-    diagnostic::PrivateEntityLeakedToPublicInterface,
     occurrences::{self, Occurrences},
 };
 
@@ -207,11 +204,6 @@ impl query::Builder<GenericParameters> for Builder {
             }
         }
 
-        let symbol_accessibility = table
-            .get_accessibility(global_id)
-            .unwrap()
-            .into_global(global_id.target_id);
-
         for constant_parameter_syn in constant_parameter_syns {
             let constant_parameter = {
                 // the type used for the constant parameter
@@ -227,25 +219,6 @@ impl query::Builder<GenericParameters> for Builder {
                     },
                     handler,
                 );
-
-                let ty_accessibility = table
-                    .get_type_accessibility(&constant_type)
-                    .expect("should be valid");
-
-                if accessibility::check_private_entity_leakage(
-                    table,
-                    ty_accessibility,
-                    symbol_accessibility,
-                ) {
-                    handler.receive(Box::new(
-                        PrivateEntityLeakedToPublicInterface {
-                            entity: constant_type.clone(),
-                            leaked_span: constant_parameter_syn.1.span(),
-                            entity_overall_accessibility: ty_accessibility,
-                            public_accessibility: symbol_accessibility,
-                        },
-                    ));
-                }
 
                 // add the constant type to the occurrences
                 if !table.has::<Occurrences>(global_id) {

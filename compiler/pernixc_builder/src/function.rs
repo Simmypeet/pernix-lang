@@ -20,7 +20,6 @@ use pernixc_table::{
     GlobalID, Table,
 };
 use pernixc_term::{
-    accessibility::Ext as _,
     elided_lifetimes::{ElidedLifetime, ElidedLifetimeID, ElidedLifetimes},
     lifetime::Lifetime,
     predicate::{Outlives, Predicate},
@@ -32,9 +31,7 @@ use pernixc_term::{
 use pernixc_type_system::{environment::Environment, AbruptError};
 
 use crate::{
-    accessibility,
     builder::Builder,
-    diagnostic::PrivateEntityLeakedToPublicInterface,
     generic_parameters::Ext as _,
     occurrences,
     type_system::{diagnostic::UndecidablePredicate, TableExt as _},
@@ -125,69 +122,22 @@ impl query::Builder<Intermediate> for Builder {
             })
             .collect::<Vec<_>>();
 
-        let symbol_accessibility = table
-            .get_accessibility(global_id)
-            .unwrap()
-            .into_global(global_id.target_id);
-
-        for (parameter, span) in &parameters {
-            let accessibility =
-                table.get_type_accessibility(parameter).unwrap();
-
-            if accessibility::check_private_entity_leakage(
-                table,
-                accessibility,
-                symbol_accessibility,
-            ) {
-                handler.receive(Box::new(
-                    PrivateEntityLeakedToPublicInterface {
-                        entity: parameter.clone(),
-                        leaked_span: span.clone(),
-                        entity_overall_accessibility: accessibility,
-                        public_accessibility: symbol_accessibility,
-                    },
-                ));
-            }
-        }
-
         let return_type = syntax_tree.return_type.as_ref().map(|x| {
             (
-                {
-                    let ty = table.resolve_type(
-                        x.r#type(),
-                        global_id,
-                        Config {
-                            elided_lifetime_provider: Some(
-                                &mut elided_lifetimes_provider,
-                            ),
-                            elided_type_provider: None,
-                            elided_constant_provider: None,
-                            observer: Some(&mut occurrences::Observer),
-                            extra_namespace: Some(&extra_namespace),
-                        },
-                        handler,
-                    );
-
-                    let ty_accessibility =
-                        table.get_type_accessibility(&ty).unwrap();
-
-                    if accessibility::check_private_entity_leakage(
-                        table,
-                        ty_accessibility,
-                        symbol_accessibility,
-                    ) {
-                        handler.receive(Box::new(
-                            PrivateEntityLeakedToPublicInterface {
-                                entity: ty.clone(),
-                                leaked_span: x.span(),
-                                entity_overall_accessibility: ty_accessibility,
-                                public_accessibility: symbol_accessibility,
-                            },
-                        ));
-                    }
-
-                    ty
-                },
+                table.resolve_type(
+                    x.r#type(),
+                    global_id,
+                    Config {
+                        elided_lifetime_provider: Some(
+                            &mut elided_lifetimes_provider,
+                        ),
+                        elided_type_provider: None,
+                        elided_constant_provider: None,
+                        observer: Some(&mut occurrences::Observer),
+                        extra_namespace: Some(&extra_namespace),
+                    },
+                    handler,
+                ),
                 x.span(),
             )
         });

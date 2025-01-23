@@ -11,13 +11,10 @@ use pernixc_table::{
     diagnostic::Diagnostic,
     query, GlobalID, Table,
 };
-use pernixc_term::accessibility::Ext as _;
 use pernixc_type_system::environment::Environment;
 
 use crate::{
-    accessibility,
     builder::Builder,
-    diagnostic::PrivateEntityLeakedToPublicInterface,
     generic_parameters::Ext,
     occurrences,
     type_system::{EnvironmentExt, TableExt},
@@ -56,26 +53,6 @@ impl query::Builder<TypeAlias> for Builder {
             },
             handler,
         );
-
-        let symbol_accessibility = table
-            .get_accessibility(global_id)
-            .unwrap()
-            .into_global(global_id.target_id);
-        let ty_accessibility =
-            table.get_type_accessibility(&ty).expect("should be valid");
-
-        if accessibility::check_private_entity_leakage(
-            table,
-            ty_accessibility,
-            symbol_accessibility,
-        ) {
-            handler.receive(Box::new(PrivateEntityLeakedToPublicInterface {
-                entity: ty.clone(),
-                leaked_span: syntax_tree.0.span(),
-                entity_overall_accessibility: ty_accessibility,
-                public_accessibility: symbol_accessibility,
-            }));
-        }
 
         let premise = table.get_active_premise(global_id, handler);
         let (env, _) = Environment::new(premise, table);

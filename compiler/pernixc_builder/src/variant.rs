@@ -5,19 +5,13 @@ use std::sync::Arc;
 use pernixc_component::variant::Variant;
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext as _};
-use pernixc_source_file::SourceElement;
 use pernixc_table::{
     component::{syntax_tree as syntax_tree_component, Derived, SymbolKind},
     diagnostic::Diagnostic,
     query, GlobalID, Table,
 };
-use pernixc_term::accessibility::Ext;
 
-use crate::{
-    accessibility, builder::Builder,
-    diagnostic::PrivateEntityLeakedToPublicInterface,
-    generic_parameters::Ext as _, occurrences,
-};
+use crate::{builder::Builder, generic_parameters::Ext as _, occurrences};
 
 impl query::Builder<Variant> for Builder {
     fn build(
@@ -56,26 +50,6 @@ impl query::Builder<Variant> for Builder {
             },
             handler,
         );
-
-        let symbol_accessibility = table
-            .get_accessibility(global_id)
-            .unwrap()
-            .into_global(global_id.target_id);
-        let ty_accessibility =
-            table.get_type_accessibility(&associated_type).unwrap();
-
-        if accessibility::check_private_entity_leakage(
-            table,
-            ty_accessibility,
-            symbol_accessibility,
-        ) {
-            handler.receive(Box::new(PrivateEntityLeakedToPublicInterface {
-                entity: associated_type.clone(),
-                entity_overall_accessibility: ty_accessibility,
-                leaked_span: syntax_tree.tree().span(),
-                public_accessibility: symbol_accessibility,
-            }));
-        }
 
         Some(Arc::new(Variant { associated_type: Some(associated_type) }))
     }
