@@ -3,7 +3,7 @@ use std::sync::Arc;
 use pernixc_component::{
     fields::Fields, function_signature::FunctionSignature,
     implementation::Implementation, implied_predicates::ImpliedPredicates,
-    type_alias::TypeAlias, variant::Variant,
+    type_alias::TypeAlias, variance_map::VarianceMap, variant::Variant,
 };
 use pernixc_table::{
     component::{Derived, SymbolKind},
@@ -162,6 +162,10 @@ pub fn build(
         on_finish_building_component.clone(),
     )));
     assert!(table.set_builder::<Fields, _>(Builder::new(
+        on_start_building_component.clone(),
+        on_finish_building_component.clone(),
+    )));
+    assert!(table.set_builder::<VarianceMap, _>(Builder::new(
         on_start_building_component,
         on_finish_building_component,
     )));
@@ -207,6 +211,9 @@ pub fn build(
         }
         if symbol_kind == SymbolKind::Struct {
             build_component::<Fields>(table, x);
+        }
+        if symbol_kind.has_variance_map() {
+            build_component::<VarianceMap>(table, x);
         }
 
         if let Some(callback) = on_done.as_ref() {

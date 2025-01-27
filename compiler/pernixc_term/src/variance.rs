@@ -35,24 +35,37 @@ pub enum Variance {
     /// The term is invariant and cannot be changed.
     #[default]
     Invariant,
+
+    /// The term can be transformed to any lifetime.
+    Bivariant,
 }
 
 impl Variance {
     /// Combines the two variances in terms of the variance of the parent and
     /// the variance of the child.
     ///
-    /// The [`self`] is the variance of the parent and the [`child`] is the
-    /// variance of the inner type.
-    ///
-    /// For example, to find the variance of `T` in `&'a T`, the variance of
-    /// `&'a` is [`self`] and the variance of `T` is [`child`].
+    /// For example, to find the variance of `T` in `&'a mutable T`, the
+    /// variance of `&'a mutable`, which is [`Variance::Invariant`], is
+    /// [`other`] and the variance of `T` is [`self`].
     #[must_use]
-    pub const fn xfrom(self, child: Self) -> Self {
-        match (self, child) {
-            (Self::Invariant, _) | (_, Self::Invariant) => Self::Invariant,
-            (amb, Self::Covariant) => amb,
-            (Self::Covariant, Self::Contravariant) => Self::Contravariant,
-            (Self::Contravariant, Self::Contravariant) => Self::Covariant,
+    pub const fn xfrom(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Contravariant, Self::Contravariant)
+            | (Self::Covariant, Self::Covariant) => Self::Covariant,
+
+            (Self::Contravariant, Self::Covariant)
+            | (Self::Covariant, Self::Contravariant) => Self::Contravariant,
+
+            (Self::Invariant, _)
+            | (Self::Contravariant | Self::Covariant, Self::Invariant) => {
+                Self::Invariant
+            }
+
+            (Self::Contravariant | Self::Covariant, Self::Bivariant) => {
+                Self::Bivariant
+            }
+
+            (Self::Bivariant, _) => Self::Bivariant,
         }
     }
 
@@ -61,13 +74,16 @@ impl Variance {
     #[must_use]
     pub const fn combine(self, other: Self) -> Self {
         match (self, other) {
-            (Self::Invariant, _)
-            | (_, Self::Invariant)
-            | (Self::Covariant, Self::Contravariant)
-            | (Self::Contravariant, Self::Covariant) => Self::Invariant,
+            (Self::Covariant, Self::Contravariant)
+            | (Self::Contravariant, Self::Covariant)
+            | (Self::Invariant, _)
+            | (_, Self::Invariant) => Self::Invariant,
 
             (Self::Covariant, Self::Covariant) => Self::Covariant,
+
             (Self::Contravariant, Self::Contravariant) => Self::Contravariant,
+
+            (x, Self::Bivariant) | (Self::Bivariant, x) => x,
         }
     }
 }

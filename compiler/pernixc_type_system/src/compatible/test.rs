@@ -92,10 +92,11 @@ fn basic_compatible() {
         let result =
             environment.compatible(&a_t, &static_t, variance).unwrap().unwrap();
 
-        assert_eq!(
-            result.constraints.len(),
-            if Variance::Invariant == variance { 2 } else { 1 }
-        );
+        assert_eq!(result.constraints.len(), match variance {
+            Variance::Covariant | Variance::Contravariant => 1,
+            Variance::Invariant => 2,
+            Variance::Bivariant => 0,
+        });
 
         let expected_constraints = match variance {
             Variance::Covariant => {
@@ -120,6 +121,9 @@ fn basic_compatible() {
                     )),
                 ]
             }
+            Variance::Bivariant => {
+                vec![]
+            }
         };
 
         assert!(expected_constraints
@@ -130,6 +134,7 @@ fn basic_compatible() {
     check(Variance::Covariant);
     check(Variance::Contravariant);
     check(Variance::Invariant);
+    check(Variance::Bivariant);
 }
 
 #[test]
@@ -196,10 +201,11 @@ fn compatible_with_adt() {
             .unwrap()
             .unwrap();
 
-        assert_eq!(
-            result.constraints.len(),
-            if Variance::Invariant == variance { 2 } else { 1 }
-        );
+        assert_eq!(result.constraints.len(), match variance {
+            Variance::Covariant | Variance::Contravariant => 1,
+            Variance::Invariant => 2,
+            Variance::Bivariant => 0,
+        });
 
         let expected_constraint = match variance {
             Variance::Covariant => {
@@ -218,6 +224,7 @@ fn compatible_with_adt() {
                 LifetimeConstraint::LifetimeOutlives(Outlives::new(a_lt, b_lt)),
                 LifetimeConstraint::LifetimeOutlives(Outlives::new(b_lt, a_lt)),
             ],
+            Variance::Bivariant => vec![],
         };
 
         assert!(expected_constraint
@@ -228,6 +235,7 @@ fn compatible_with_adt() {
     check(Variance::Covariant);
     check(Variance::Contravariant);
     check(Variance::Invariant);
+    check(Variance::Bivariant);
 }
 
 #[test]

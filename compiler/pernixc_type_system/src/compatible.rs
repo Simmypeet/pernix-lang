@@ -373,6 +373,7 @@ impl<M: Model> Compatible for Lifetime<M> {
                 ))
                 .collect()
             }
+            Variance::Bivariant => BTreeSet::new(),
             Variance::Invariant => [
                 LifetimeConstraint::LifetimeOutlives(Outlives::new(
                     self.clone(),
@@ -507,6 +508,7 @@ fn matching_to_compatiblity<M: Model>(
                             }),
                         );
                     }
+                    Variance::Bivariant => {}
                     Variance::Invariant => {
                         constraints.insert(
                             LifetimeConstraint::LifetimeOutlives(

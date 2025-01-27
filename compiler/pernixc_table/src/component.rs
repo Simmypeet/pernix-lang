@@ -420,6 +420,12 @@ impl SymbolKind {
                 | Self::AdtImplementationFunction
         )
     }
+
+    /// Checks if the symbol has a variance map component.
+    #[must_use]
+    pub const fn has_variance_map(&self) -> bool {
+        matches!(self, Self::Struct | Self::Enum)
+    }
 }
 
 /// A **presistent-input** component representing the external linkage of a
