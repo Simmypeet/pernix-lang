@@ -10,14 +10,21 @@ use pernixc_arena::Arena;
 use pernixc_component::fields::{Field, Fields};
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext as _};
+use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::ConnectedList;
 use pernixc_table::{
     component::{syntax_tree as syntax_tree_component, Derived, SymbolKind},
     diagnostic::Diagnostic,
     query, GlobalID, Table,
 };
+use pernixc_type_system::environment::Environment;
 
-use crate::{builder::Builder, generic_parameters::Ext as _, occurrences};
+use crate::{
+    builder::Builder,
+    generic_parameters::Ext as _,
+    occurrences,
+    type_system::{EnvironmentExt, TableExt},
+};
 
 pub mod diagnostic;
 
@@ -48,6 +55,9 @@ impl query::Builder<Fields> for Builder {
             field_declaration_order: Vec::new(),
         };
 
+        let active_premise = table.get_active_premise(global_id, handler);
+        let (env, _) = Environment::new(active_premise, table);
+
         for field_syn in syntax_tree
             .fields
             .connected_list()
@@ -74,7 +84,11 @@ impl query::Builder<Fields> for Builder {
             let field = Field {
                 accessibility: field_accessibility,
                 name: field_syn.identifier().span.str().to_owned(),
-                r#type: ty,
+                r#type: env.simplify_and_check_lifetime_constraints(
+                    &ty,
+                    &field_syn.r#type().span(),
+                    handler,
+                ),
                 span: Some(field_syn.identifier().span.clone()),
             };
 

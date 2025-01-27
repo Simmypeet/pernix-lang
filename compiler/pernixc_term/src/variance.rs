@@ -72,7 +72,7 @@ impl Variance {
     /// Combines the two variances in terms of the variance from different
     /// locations to find the most general variance.
     #[must_use]
-    pub const fn combine(self, other: Self) -> Self {
+    pub const fn get_lower_bound(self, other: Self) -> Self {
         match (self, other) {
             (Self::Covariant, Self::Contravariant)
             | (Self::Contravariant, Self::Covariant)

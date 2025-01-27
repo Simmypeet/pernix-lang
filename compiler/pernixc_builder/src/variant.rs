@@ -5,13 +5,20 @@ use std::sync::Arc;
 use pernixc_component::variant::Variant;
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext as _};
+use pernixc_source_file::SourceElement;
 use pernixc_table::{
     component::{syntax_tree as syntax_tree_component, Derived, SymbolKind},
     diagnostic::Diagnostic,
     query, GlobalID, Table,
 };
+use pernixc_type_system::environment::Environment;
 
-use crate::{builder::Builder, generic_parameters::Ext as _, occurrences};
+use crate::{
+    builder::Builder,
+    generic_parameters::Ext as _,
+    occurrences,
+    type_system::{EnvironmentExt, TableExt as _},
+};
 
 impl query::Builder<Variant> for Builder {
     fn build(
@@ -38,6 +45,9 @@ impl query::Builder<Variant> for Builder {
         let extra_namespace =
             table.get_generic_parameter_namepsace(global_id, handler);
 
+        let active_premise = table.get_active_premise(global_id, handler);
+        let (env, _) = Environment::new(active_premise, table);
+
         let associated_type = table.resolve_type(
             syntax_tree.tree(),
             global_id,
@@ -51,6 +61,12 @@ impl query::Builder<Variant> for Builder {
             handler,
         );
 
-        Some(Arc::new(Variant { associated_type: Some(associated_type) }))
+        Some(Arc::new(Variant {
+            associated_type: Some(env.simplify_and_check_lifetime_constraints(
+                &associated_type,
+                &syntax_tree.tree().span(),
+                handler,
+            )),
+        }))
     }
 }

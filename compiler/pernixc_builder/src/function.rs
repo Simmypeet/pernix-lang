@@ -34,7 +34,9 @@ use crate::{
     builder::Builder,
     generic_parameters::Ext as _,
     occurrences,
-    type_system::{diagnostic::UndecidablePredicate, TableExt as _},
+    type_system::{
+        diagnostic::UndecidablePredicate, EnvironmentExt as _, TableExt as _,
+    },
 };
 
 /// The intermediate result of calculating the `function_signature` component.
@@ -250,16 +252,21 @@ impl query::Builder<Intermediate> for Builder {
             }
         }
 
+        let (environment, _) = Environment::new(active_premise, table);
+
         Some(Arc::new(Intermediate {
             function_signature: Arc::new({
                 let mut parameter_arena = Arena::default();
                 let mut parameter_orders = Vec::new();
 
                 for (r#type, span) in parameters {
-                    parameter_orders.push(
-                        parameter_arena
-                            .insert(Parameter { r#type, span: Some(span) }),
-                    );
+                    parameter_orders.push(parameter_arena.insert(Parameter {
+                        r#type:
+                            environment.simplify_and_check_lifetime_constraints(
+                                &r#type, &span, handler,
+                            ),
+                        span: Some(span),
+                    }));
                 }
 
                 FunctionSignature {
@@ -267,7 +274,11 @@ impl query::Builder<Intermediate> for Builder {
                     parameter_order: parameter_orders,
                     return_type: return_type.map_or_else(
                         || Type::Tuple(Tuple { elements: Vec::new() }),
-                        |x| x.0,
+                        |x| {
+                            environment.simplify_and_check_lifetime_constraints(
+                                &x.0, &x.1, handler,
+                            )
+                        },
                     ),
                 }
             }),

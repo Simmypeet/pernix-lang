@@ -24,6 +24,7 @@ getset = { workspace = true }
 rayon = { workspace = true }
 derive-new = { workspace = true }
 typed-builder = { workspace = true }
+parking_lot = { workspace = true }
 
 [lints]
 workspace = true

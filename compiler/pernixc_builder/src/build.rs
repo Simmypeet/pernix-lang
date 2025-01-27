@@ -16,7 +16,7 @@ use pernixc_term::{
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use typed_builder::TypedBuilder;
 
-use crate::{builder::Builder, function};
+use crate::{builder::Builder, function, variance_map};
 
 /// A struct for starting the building of a target.
 #[derive(TypedBuilder)]
@@ -165,9 +165,8 @@ pub fn build(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
     )));
-    assert!(table.set_builder::<VarianceMap, _>(Builder::new(
-        on_start_building_component,
-        on_finish_building_component,
+    assert!(table.set_builder::<VarianceMap, _>(variance_map::Builder::new(
+        Builder::new(on_start_building_component, on_finish_building_component)
     )));
 
     let symbols_to_build = table
