@@ -529,10 +529,8 @@ impl Token {
         iter: &mut pernixc_source_file::Iterator,
     ) -> Span {
         iter.peek().map_or_else(
-            || Span::to_end(iter.source_file().clone(), start).unwrap(),
-            |(index, _)| {
-                Span::new(iter.source_file().clone(), start, index).unwrap()
-            },
+            || Span::to_end(iter.source_file().clone(), start),
+            |(index, _)| Span::new(iter.source_file().clone(), start, index),
         )
     }
 
@@ -639,8 +637,7 @@ impl Token {
                             iter.source_file().clone(),
                             start,
                             start + 2,
-                        )
-                        .unwrap(),
+                        ),
                     }
                     .into(),
                 );
@@ -684,8 +681,7 @@ impl Token {
                             iter.source_file().clone(),
                             start,
                             start + 1,
-                        )
-                        .unwrap(),
+                        ),
                     },
                 ));
 
@@ -706,8 +702,7 @@ impl Token {
                                 iter.source_file().clone(),
                                 last_byte_index,
                                 byte_index,
-                            )
-                            .unwrap(),
+                            ),
                         },
                     ));
                 }
@@ -803,8 +798,7 @@ impl Token {
                                                 iter.source_file().clone(),
                                                 content_start,
                                                 content_end,
-                                            )
-                                            .unwrap(),
+                                            ),
                                         },
                                     ),
                                 );

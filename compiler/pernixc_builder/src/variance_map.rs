@@ -6,7 +6,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use parking_lot::{const_reentrant_mutex, RwLock};
+use parking_lot::RwLock;
 use pernixc_arena::ID;
 use pernixc_component::{
     fields::Fields, variance_map::VarianceMap, variant::Variant,

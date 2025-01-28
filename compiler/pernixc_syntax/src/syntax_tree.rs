@@ -145,9 +145,7 @@ impl<T> EnclosedTree<T> {
 }
 
 impl<T> SourceElement for EnclosedTree<T> {
-    fn span(&self) -> Span {
-        self.open.span().join(&self.close.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.open.span().join(&self.close.span()) }
 }
 
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated
@@ -190,7 +188,7 @@ impl<Element: SourceElement, Separator: SourceElement> SourceElement
             SourceElement::span,
         );
 
-        self.first.span().join(&end).unwrap()
+        self.first.span().join(&end)
     }
 }
 
@@ -319,9 +317,7 @@ pub struct EnclosedConnectedList<Element, Separator> {
 impl<Element, Separator> SourceElement
     for EnclosedConnectedList<Element, Separator>
 {
-    fn span(&self) -> Span {
-        self.open.span().join(&self.close.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.open.span().join(&self.close.span()) }
 }
 
 impl<Element, Separator> EnclosedConnectedList<Element, Separator> {
@@ -531,7 +527,7 @@ impl SyntaxTree for ScopeSeparator {
 }
 
 impl SourceElement for ScopeSeparator {
-    fn span(&self) -> Span { self.first.span.join(&self.second.span).unwrap() }
+    fn span(&self) -> Span { self.first.span.join(&self.second.span) }
 }
 
 /// Syntax Synopsis:
@@ -564,9 +560,7 @@ impl SyntaxTree for Elided {
 }
 
 impl SourceElement for Elided {
-    fn span(&self) -> Span {
-        self.first_dot.span.join(&self.second_dot.span).unwrap()
-    }
+    fn span(&self) -> Span { self.first_dot.span.join(&self.second_dot.span) }
 }
 
 /// Syntax Synopsis:
@@ -637,7 +631,7 @@ pub struct Lifetime {
 
 impl SourceElement for Lifetime {
     fn span(&self) -> Span {
-        self.apostrophe.span.join(&self.identifier.span()).unwrap()
+        self.apostrophe.span.join(&self.identifier.span())
     }
 }
 
@@ -814,7 +808,7 @@ impl SourceElement for GenericIdentifier {
         self.generic_arguments.as_ref().map_or_else(
             || self.identifier.span(),
             |generic_arguments| {
-                self.identifier.span.join(&generic_arguments.span()).unwrap()
+                self.identifier.span.join(&generic_arguments.span())
             },
         )
     }
@@ -849,9 +843,7 @@ impl SyntaxTree for LifetimeParameter {
 }
 
 impl SourceElement for LifetimeParameter {
-    fn span(&self) -> Span {
-        self.apostrophe.span.join(&self.identifier.span).unwrap()
-    }
+    fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span) }
 }
 
 /// Syntax Synopsis:
@@ -922,7 +914,7 @@ impl SourceElement for SimplePath {
     fn span(&self) -> Span {
         self.rest.last().map_or_else(
             || self.root.span(),
-            |last| self.root.span().join(&last.1.span).unwrap(),
+            |last| self.root.span().join(&last.1.span),
         )
     }
 }
@@ -1000,9 +992,7 @@ impl SourceElement for QualifiedIdentifier {
     fn span(&self) -> Span {
         self.rest.last().map_or_else(
             || self.root.span(),
-            |(_, identifier)| {
-                self.root.span().join(&identifier.span()).unwrap()
-            },
+            |(_, identifier)| self.root.span().join(&identifier.span()),
         )
     }
 }
@@ -1037,9 +1027,7 @@ impl SyntaxTree for Label {
 }
 
 impl SourceElement for Label {
-    fn span(&self) -> Span {
-        self.apostrophe.span.join(&self.identifier.span).unwrap()
-    }
+    fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span) }
 }
 
 /// Syntax Synopsis:
@@ -1076,7 +1064,7 @@ impl SourceElement for ReferenceOf {
     fn span(&self) -> Span {
         self.mutable_keyword.as_ref().map_or_else(
             || self.ampersand.span(),
-            |keyword| self.ampersand.span().join(&keyword.span()).unwrap(),
+            |keyword| self.ampersand.span().join(&keyword.span()),
         )
     }
 }
@@ -1110,7 +1098,7 @@ impl<T: SourceElement> SourceElement for UnionList<T> {
     fn span(&self) -> Span {
         let first = self.first.span();
         match self.rest.last() {
-            Some(last) => first.join(&last.1.span()).unwrap(),
+            Some(last) => first.join(&last.1.span()),
             None => first,
         }
     }

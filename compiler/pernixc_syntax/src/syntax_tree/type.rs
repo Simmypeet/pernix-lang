@@ -124,9 +124,7 @@ pub struct Reference {
 }
 
 impl SourceElement for Reference {
-    fn span(&self) -> Span {
-        self.ampersand.span().join(&self.operand.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.ampersand.span().join(&self.operand.span()) }
 }
 
 impl SyntaxTree for Reference {
@@ -197,7 +195,7 @@ impl SyntaxTree for Unpackable {
 impl SourceElement for Unpackable {
     fn span(&self) -> Span {
         match &self.ellipsis {
-            Some((left, ..)) => left.span.join(&self.r#type.span()).unwrap(),
+            Some((left, ..)) => left.span.join(&self.r#type.span()),
             None => self.r#type.span(),
         }
     }
@@ -262,7 +260,7 @@ impl SyntaxTree for Array {
 
 impl SourceElement for Array {
     fn span(&self) -> Span {
-        self.left_bracket.span.join(&self.right_bracket.span).unwrap()
+        self.left_bracket.span.join(&self.right_bracket.span)
     }
 }
 
@@ -302,9 +300,7 @@ impl SyntaxTree for Pointer {
 }
 
 impl SourceElement for Pointer {
-    fn span(&self) -> Span {
-        self.asterisk.span.join(&self.operand.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.asterisk.span.join(&self.operand.span()) }
 }
 
 /// Syntax Synopsis:
@@ -335,7 +331,7 @@ impl SyntaxTree for Phantom {
 
 impl SourceElement for Phantom {
     fn span(&self) -> Span {
-        self.phantom_keyword.span.join(&self.r#type.span()).unwrap()
+        self.phantom_keyword.span.join(&self.r#type.span())
     }
 }
 

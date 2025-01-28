@@ -58,7 +58,7 @@ impl SyntaxTree for HigherRankedLifetimes {
 
 impl SourceElement for HigherRankedLifetimes {
     fn span(&self) -> Span {
-        self.for_keyword.span.join(&self.lifetime_parameters.span()).unwrap()
+        self.for_keyword.span.join(&self.lifetime_parameters.span())
     }
 }
 /// Syntax Synopsis:
@@ -132,13 +132,8 @@ impl TraitTypeEquality {
 impl SourceElement for TraitTypeEquality {
     fn span(&self) -> Span {
         self.higher_ranked_lifetimes.as_ref().map_or_else(
-            || {
-                self.qualified_identifier
-                    .span()
-                    .join(&self.r#type.span())
-                    .unwrap()
-            },
-            |h| h.span().join(&self.r#type.span()).unwrap(),
+            || self.qualified_identifier.span().join(&self.r#type.span()),
+            |h| h.span().join(&self.r#type.span()),
         )
     }
 }
@@ -221,7 +216,7 @@ impl SourceElement for TraitBound {
             (_, _, _) => self.qualified_identifier.span(),
         };
 
-        first.join(&self.qualified_identifier.span()).unwrap()
+        first.join(&self.qualified_identifier.span())
     }
 }
 
@@ -259,9 +254,7 @@ impl Trait {
 }
 
 impl SourceElement for Trait {
-    fn span(&self) -> Span {
-        self.trait_keyword.span.join(&self.bounds.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.trait_keyword.span.join(&self.bounds.span()) }
 }
 
 /// ```txt
@@ -319,7 +312,7 @@ impl SourceElement for MarkerBound {
             SourceElement::span,
         );
 
-        begin.join(&self.qualified_identifier.span()).unwrap()
+        begin.join(&self.qualified_identifier.span())
     }
 }
 
@@ -349,7 +342,7 @@ impl SyntaxTree for Marker {
 
 impl SourceElement for Marker {
     fn span(&self) -> Span {
-        self.marker_keyword.span.join(&self.bounds.span()).unwrap()
+        self.marker_keyword.span.join(&self.bounds.span())
     }
 }
 
@@ -437,9 +430,7 @@ impl Outlives {
 }
 
 impl SourceElement for Outlives {
-    fn span(&self) -> Span {
-        self.operand.span().join(&self.bounds.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.operand.span().join(&self.bounds.span()) }
 }
 
 /// Syntax Synopsis:
@@ -474,7 +465,7 @@ impl SourceElement for ConstantTypeBound {
     fn span(&self) -> Span {
         self.higher_ranked_lifetimes.as_ref().map_or_else(
             || self.r#type.span(),
-            |h| h.span().join(&self.r#type.span()).unwrap(),
+            |h| h.span().join(&self.r#type.span()),
         )
     }
 }
@@ -513,9 +504,7 @@ impl ConstantType {
 }
 
 impl SourceElement for ConstantType {
-    fn span(&self) -> Span {
-        self.const_keyword.span.join(&self.bounds.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.const_keyword.span.join(&self.bounds.span()) }
 }
 
 /// Syntax Synopsis:
@@ -558,7 +547,7 @@ impl SourceElement for TupleOperand {
     fn span(&self) -> Span {
         self.higher_ranked_lifetimes.as_ref().map_or_else(
             || self.r#type.span(),
-            |h| h.span().join(&self.r#type.span()).unwrap(),
+            |h| h.span().join(&self.r#type.span()),
         )
     }
 }
@@ -598,7 +587,7 @@ impl Tuple {
 
 impl SourceElement for Tuple {
     fn span(&self) -> Span {
-        self.tuple_keyword.span.join(&self.operands.span()).unwrap()
+        self.tuple_keyword.span.join(&self.operands.span())
     }
 }
 

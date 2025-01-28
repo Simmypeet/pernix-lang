@@ -47,33 +47,6 @@ pub struct Error {
     expected: Vec<Expected>,
 }
 
-/// An error that occurs when trying to convert an unexpected error
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    thiserror::Error,
-    displaydoc::Display,
-)]
-#[allow(clippy::module_name_repetitions)]
-pub enum ConvertUnexpectedError {
-    /**
-    Either the token index or the node index is invalid for the state machine's
-    token tree
-     */
-    InvalidIndex,
-
-    /**
-    The expected iterator is empty
-     */
-    EmptyExpectedIterator,
-}
-
 fn find_prior_insignificant_token<'a>(
     tree: &Tree<'a>,
     node_index: usize,
@@ -114,10 +87,8 @@ impl Error {
         tree: &Tree,
         unexpected: Unexpected,
         expected: Vec<Expected>,
-    ) -> Result<Self, ConvertUnexpectedError> {
-        if expected.is_empty() {
-            return Err(ConvertUnexpectedError::EmptyExpectedIterator);
-        }
+    ) -> Self {
+        assert!(!expected.is_empty(), "expected cannot be empty");
 
         let (found, tok_index) = match unexpected.token_index {
             Some(token_index) => (
@@ -126,7 +97,7 @@ impl Error {
                         unexpected.node_index,
                         token_index,
                     ))
-                    .ok_or(ConvertUnexpectedError::InvalidIndex)?
+                    .expect("invalid token index")
                 {
                     TokenKind::Token(token) => Found::Token(token.clone()),
                     TokenKind::Delimited(delimited) => {
@@ -148,7 +119,7 @@ impl Error {
                     (
                         Found::Token(Token::Punctuation(
                             tree.get_node(unexpected.node_index)
-                                .ok_or(ConvertUnexpectedError::InvalidIndex)?
+                                .unwrap()
                                 .as_delimited()
                                 .unwrap()
                                 .0
@@ -156,7 +127,7 @@ impl Error {
                                 .clone(),
                         )),
                         tree.get_node(unexpected.node_index)
-                            .ok_or(ConvertUnexpectedError::InvalidIndex)?
+                            .unwrap()
                             .token_stream()
                             .len(),
                     )
@@ -176,7 +147,7 @@ impl Error {
             }
         });
 
-        Ok(Self {
+        Self {
             diagnostic_span: prior_insignificant.as_ref().map_or_else(
                 || match &found {
                     Found::Token(token) => token.span().clone(),
@@ -188,23 +159,21 @@ impl Error {
                             arc.content().len() - 1
                         },
                         arc.content().len(),
-                    )
-                    .unwrap(),
+                    ),
                 },
                 |prior_token| match &found {
                     Found::Token(token) => {
-                        prior_token.span().join(token.span()).unwrap()
+                        prior_token.span().join(token.span())
                     }
                     Found::EndOfFile(arc) => {
                         Span::to_end(arc.clone(), prior_token.span().end())
-                            .unwrap()
                     }
                 },
             ),
             found,
             prior_insignificant,
             expected,
-        })
+        }
     }
 }
 

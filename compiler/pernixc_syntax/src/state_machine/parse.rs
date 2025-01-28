@@ -136,9 +136,7 @@ pub trait Parse<'a> {
             Err(unexpected) => {
                 let expected = state_machine.take_expected();
 
-                handler.receive(
-                    error::Error::new(tree, unexpected, expected).unwrap(),
-                );
+                handler.receive(error::Error::new(tree, unexpected, expected));
                 None
             }
         }
@@ -225,14 +223,11 @@ pub trait Parse<'a> {
         match self.parse_and_drain(state_machine, handler) {
             Ok(result) => Some(result),
             Err((unexpected, expected)) => {
-                handler.receive(
-                    error::Error::new(
-                        tree,
-                        unexpected,
-                        expected.collect::<Vec<_>>(),
-                    )
-                    .unwrap(),
-                );
+                handler.receive(error::Error::new(
+                    tree,
+                    unexpected,
+                    expected.collect::<Vec<_>>(),
+                ));
                 None
             }
         }
@@ -502,24 +497,21 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
                         if let Some((_, index)) = state_machine.next() {
                             // this is a soft error, the tree is still valid
 
-                            handler.receive(
-                                error::Error::new(
-                                    state_machine.tree,
-                                    Unexpected {
-                                        token_index: Some(index),
-                                        node_index: state_machine
-                                            .current_node_index(),
-                                        commit_count: 1,
-                                    },
-                                    vec![match self.delimiter {
-                                        Delimiter::Parenthesis => ')',
-                                        Delimiter::Brace => '}',
-                                        Delimiter::Bracket => ']',
-                                    }
-                                    .into()],
-                                )
-                                .unwrap(),
-                            );
+                            handler.receive(error::Error::new(
+                                state_machine.tree,
+                                Unexpected {
+                                    token_index: Some(index),
+                                    node_index: state_machine
+                                        .current_node_index(),
+                                    commit_count: 1,
+                                },
+                                vec![match self.delimiter {
+                                    Delimiter::Parenthesis => ')',
+                                    Delimiter::Brace => '}',
+                                    Delimiter::Bracket => ']',
+                                }
+                                .into()],
+                            ));
                         }
 
                         let (open, close) = {
@@ -641,10 +633,11 @@ impl<'a, T: Parse<'a> + Clone> Parse<'a> for KeepTakeAll<T> {
                     if !recovering {
                         let this_expecteds = expected.collect::<Vec<_>>();
 
-                        handler.receive(
-                            error::Error::new(tree, unexpected, this_expecteds)
-                                .unwrap(),
-                        );
+                        handler.receive(error::Error::new(
+                            tree,
+                            unexpected,
+                            this_expecteds,
+                        ));
                     }
 
                     recovering = true;

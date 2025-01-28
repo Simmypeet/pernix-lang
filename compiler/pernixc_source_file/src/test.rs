@@ -28,7 +28,7 @@ fn replace_range_as_insert() {
     let mut source_file =
         SourceFile::new("ABCD\nEFGH\nIJKL".to_string(), "test".into());
 
-    source_file.replace_range(5..5, "1234").unwrap();
+    source_file.replace_range(5..5, "1234");
 
     assert_eq!(source_file.content(), "ABCD\n1234EFGH\nIJKL");
 
@@ -44,7 +44,7 @@ fn replace_range_in_same_line_one_line() {
     let mut source_file =
         SourceFile::new("ABCD\nEFGH\nIJKL".to_string(), "test".into());
 
-    source_file.replace_range(6..8, "1234").unwrap();
+    source_file.replace_range(6..8, "1234");
 
     assert_eq!(source_file.content(), "ABCD\nE1234H\nIJKL");
 
@@ -54,7 +54,7 @@ fn replace_range_in_same_line_one_line() {
     assert_eq!(source_file.get_line(1).unwrap(), "E1234H\n");
     assert_eq!(source_file.get_line(2).unwrap(), "IJKL");
 
-    source_file.replace_range(6..10, "FG").unwrap();
+    source_file.replace_range(6..10, "FG");
 
     assert_eq!(source_file.content(), "ABCD\nEFGH\nIJKL");
 
@@ -70,7 +70,7 @@ fn replace_range_multi_line_one_line() {
     let mut source_file =
         SourceFile::new("ABCD\nEFGH\nIJKL\nMNOP".to_string(), "test".into());
 
-    source_file.replace_range(5..11, "1234").unwrap();
+    source_file.replace_range(5..11, "1234");
 
     assert_eq!(source_file.content(), "ABCD\n1234JKL\nMNOP");
 
@@ -86,7 +86,7 @@ fn replace_range_multi_line() {
     let mut source_file =
         SourceFile::new("ABC\nDEF\nGHI\nJ".to_string(), "test".into());
 
-    source_file.replace_range(5..6, "12\n3\n4").unwrap();
+    source_file.replace_range(5..6, "12\n3\n4");
 
     assert_eq!(source_file.line_coount(), 6);
     assert_eq!(source_file.content, "ABC\nD12\n3\n4F\nGHI\nJ");
@@ -104,7 +104,7 @@ fn replace_trimming() {
     let mut source_file =
         SourceFile::new("ABC\nDEF\nGHI\nJ".to_string(), "test".into());
 
-    source_file.replace_range(1..10, "1\n2").unwrap();
+    source_file.replace_range(1..10, "1\n2");
 
     assert_eq!(source_file.content(), "A1\n2I\nJ");
 
@@ -120,7 +120,7 @@ fn replace_add_line() {
     let mut source_file =
         SourceFile::new("ABC\nDEF\nGHI\nJ".to_string(), "test".into());
 
-    source_file.replace_range(5..5, "\n").unwrap();
+    source_file.replace_range(5..5, "\n");
 
     assert_eq!(source_file.line_coount(), 5);
 
@@ -141,7 +141,7 @@ fn replace_range_as_append() {
     let byte_index =
         source_file.into_byte_index_include_ending(position).unwrap();
 
-    source_file.replace_range(byte_index..byte_index, "D").unwrap();
+    source_file.replace_range(byte_index..byte_index, "D");
 
     assert_eq!(source_file.content(), "ABCD");
 
@@ -161,7 +161,7 @@ fn reaplce_range_delete() {
     let end_byte_index =
         source_file.into_byte_index_include_ending(end).unwrap();
 
-    source_file.replace_range(start_byte_index..end_byte_index, "").unwrap();
+    source_file.replace_range(start_byte_index..end_byte_index, "");
 
     assert_eq!(source_file.content(), "AC");
 }

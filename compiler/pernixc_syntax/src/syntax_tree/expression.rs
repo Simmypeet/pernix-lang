@@ -139,7 +139,7 @@ impl SyntaxTree for LabelSpecifier {
 }
 
 impl SourceElement for LabelSpecifier {
-    fn span(&self) -> Span { self.label.span().join(&self.colon.span).unwrap() }
+    fn span(&self) -> Span { self.label.span().join(&self.colon.span) }
 }
 
 /// Syntax Synopsis:
@@ -175,7 +175,7 @@ impl SyntaxTree for MatchArm {
 
 impl SourceElement for MatchArm {
     fn span(&self) -> Span {
-        self.refutable_pattern.span().join(&self.expression.span()).unwrap()
+        self.refutable_pattern.span().join(&self.expression.span())
     }
 }
 
@@ -230,9 +230,7 @@ impl SyntaxTree for Match {
 }
 
 impl SourceElement for Match {
-    fn span(&self) -> Span {
-        self.match_keyword.span.join(&self.arms.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.match_keyword.span.join(&self.arms.span()) }
 }
 
 /// Syntax Synopsis:
@@ -282,7 +280,7 @@ impl SourceElement for Block {
             SourceElement::span,
         );
         let end = self.statements.span();
-        start.join(&end).unwrap()
+        start.join(&end)
     }
 }
 
@@ -348,7 +346,7 @@ impl SyntaxTree for Else {
 
 impl SourceElement for Else {
     fn span(&self) -> Span {
-        self.else_keyword.span().join(&self.expression.span()).unwrap()
+        self.else_keyword.span().join(&self.expression.span())
     }
 }
 
@@ -411,7 +409,7 @@ impl SourceElement for IfElse {
                 else_expression.span()
             });
 
-        start.join(&end).unwrap()
+        start.join(&end)
     }
 }
 
@@ -448,7 +446,7 @@ impl SyntaxTree for While {
 
 impl SourceElement for While {
     fn span(&self) -> Span {
-        self.while_keyword.span().join(&self.block.span()).unwrap()
+        self.while_keyword.span().join(&self.block.span())
     }
 }
 
@@ -487,9 +485,7 @@ impl SyntaxTree for Loop {
 }
 
 impl SourceElement for Loop {
-    fn span(&self) -> Span {
-        self.loop_keyword.span.join(&self.block.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.loop_keyword.span.join(&self.block.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -605,9 +601,7 @@ impl SourceElement for Return {
     fn span(&self) -> Span {
         self.binary.as_ref().map_or_else(
             || self.return_keyword.span(),
-            |expression| {
-                self.return_keyword.span().join(&expression.span()).unwrap()
-            },
+            |expression| self.return_keyword.span().join(&expression.span()),
         )
     }
 }
@@ -642,7 +636,7 @@ impl SourceElement for Continue {
     fn span(&self) -> Span {
         self.label.as_ref().map_or_else(
             || self.continue_keyword.span(),
-            |label| self.continue_keyword.span().join(&label.span()).unwrap(),
+            |label| self.continue_keyword.span().join(&label.span()),
         )
     }
 }
@@ -685,14 +679,10 @@ impl SourceElement for Express {
             || {
                 self.label.as_ref().map_or_else(
                     || self.express_keyword.span(),
-                    |label| {
-                        self.express_keyword.span().join(&label.span()).unwrap()
-                    },
+                    |label| self.express_keyword.span().join(&label.span()),
                 )
             },
-            |expression| {
-                self.express_keyword.span().join(&expression.span()).unwrap()
-            },
+            |expression| self.express_keyword.span().join(&expression.span()),
         )
     }
 }
@@ -735,14 +725,10 @@ impl SourceElement for Break {
             || {
                 self.label.as_ref().map_or_else(
                     || self.break_keyword.span(),
-                    |label| {
-                        self.break_keyword.span().join(&label.span()).unwrap()
-                    },
+                    |label| self.break_keyword.span().join(&label.span()),
                 )
             },
-            |expression| {
-                self.break_keyword.span().join(&expression.span()).unwrap()
-            },
+            |expression| self.break_keyword.span().join(&expression.span()),
         )
     }
 }
@@ -809,7 +795,7 @@ impl SyntaxTree for Decimal {
 }
 
 impl SourceElement for Decimal {
-    fn span(&self) -> Span { self.dot.span().join(&self.numeric.span).unwrap() }
+    fn span(&self) -> Span { self.dot.span().join(&self.numeric.span) }
 }
 
 /// Syntax Synopsis:
@@ -859,7 +845,7 @@ impl SourceElement for Numeric {
             SourceElement::span,
         );
 
-        self.numeric.span().join(&end).unwrap()
+        self.numeric.span().join(&end)
     }
 }
 
@@ -899,9 +885,7 @@ impl SyntaxTree for Unpackable {
 impl SourceElement for Unpackable {
     fn span(&self) -> Span {
         match &self.ellipsis {
-            Some((start, ..)) => {
-                start.span().join(&self.expression.span()).unwrap()
-            }
+            Some((start, ..)) => start.span().join(&self.expression.span()),
             None => self.expression.span(),
         }
     }
@@ -965,7 +949,7 @@ impl SyntaxTree for FieldInitializer {
 
 impl SourceElement for FieldInitializer {
     fn span(&self) -> Span {
-        self.identifier.span().join(&self.expression.span()).unwrap()
+        self.identifier.span().join(&self.expression.span())
     }
 }
 
@@ -1020,10 +1004,7 @@ impl SyntaxTree for Struct {
 
 impl SourceElement for Struct {
     fn span(&self) -> Span {
-        self.qualified_identifier
-            .span()
-            .join(&self.field_initializers().span())
-            .unwrap()
+        self.qualified_identifier.span().join(&self.field_initializers().span())
     }
 }
 
@@ -1239,9 +1220,7 @@ impl SyntaxTree for Cast {
 }
 
 impl SourceElement for Cast {
-    fn span(&self) -> Span {
-        self.as_keyword.span().join(&self.r#type.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.as_keyword.span().join(&self.r#type.span()) }
 }
 
 /// Syntax Synopsis:
@@ -1277,7 +1256,7 @@ impl SourceElement for AccessOperator {
     fn span(&self) -> Span {
         match self {
             Self::Dot(punctuation) => punctuation.span(),
-            Self::Arrow(start, end) => start.span().join(&end.span).unwrap(),
+            Self::Arrow(start, end) => start.span().join(&end.span),
         }
     }
 }
@@ -1339,7 +1318,7 @@ impl SourceElement for TupleIndex {
     fn span(&self) -> Span {
         self.minus.as_ref().map_or_else(
             || self.index.span(),
-            |minus| minus.span.join(&self.index.span).unwrap(),
+            |minus| minus.span.join(&self.index.span),
         )
     }
 }
@@ -1420,9 +1399,7 @@ impl SyntaxTree for Access {
 }
 
 impl SourceElement for Access {
-    fn span(&self) -> Span {
-        self.operator.span().join(&self.kind.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.operator.span().join(&self.kind.span()) }
 }
 
 /// Syntax Synopsis:
@@ -1483,7 +1460,7 @@ pub struct Postfix {
 
 impl SourceElement for Postfix {
     fn span(&self) -> Span {
-        self.postfixable.span().join(&self.operator.span()).unwrap()
+        self.postfixable.span().join(&self.operator.span())
     }
 }
 
@@ -1593,7 +1570,7 @@ pub struct Prefix {
 
 impl SourceElement for Prefix {
     fn span(&self) -> Span {
-        self.operator.span().join(&self.prefixable.span()).unwrap()
+        self.operator.span().join(&self.prefixable.span())
     }
 }
 
@@ -1925,7 +1902,7 @@ impl SourceElement for Binary {
     fn span(&self) -> Span {
         self.chain.last().map_or_else(
             || self.first.span(),
-            |(_, right)| self.first.span().join(&right.span()).unwrap(),
+            |(_, right)| self.first.span().join(&right.span()),
         )
     }
 }

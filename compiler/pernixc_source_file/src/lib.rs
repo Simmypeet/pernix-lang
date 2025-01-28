@@ -60,20 +60,6 @@ impl Debug for SourceFile {
     }
 }
 
-/// An error returned by the [`SourceFile::replace_range`] method.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, thiserror::Error)]
-#[allow(missing_docs)]
-pub enum ReplaceRangeError {
-    #[error("found an index that does not point to a character boundary")]
-    NonCharIndex(ByteIndex),
-
-    #[error("the start of the range is greater than the end")]
-    InvalidRange(Range<ByteIndex>),
-
-    #[error("found an out of bound index in the range")]
-    OutOfBoundInedx(ByteIndex),
-}
-
 impl SourceFile {
     /// Creates a new inline source file
     #[must_use]
@@ -126,30 +112,31 @@ impl SourceFile {
 
     /// Replaces the content of the source file in the given range with the
     /// given string.
-    ///
-    /// # Errors
-    ///
-    /// See [`ReplaceRangeError`] for more information.
     #[allow(
         clippy::cast_possible_wrap,
         clippy::cast_sign_loss,
         clippy::range_plus_one,
         clippy::missing_panics_doc
     )]
-    pub fn replace_range(
-        &mut self,
-        range: Range<ByteIndex>,
-        string: &str,
-    ) -> Result<(), ReplaceRangeError> {
-        if range.start > self.content.len() {
-            return Err(ReplaceRangeError::OutOfBoundInedx(range.start));
-        }
-        if range.end > self.content.len() {
-            return Err(ReplaceRangeError::OutOfBoundInedx(range.end));
-        }
-        if range.start > range.end {
-            return Err(ReplaceRangeError::InvalidRange(range));
-        }
+    pub fn replace_range(&mut self, range: Range<ByteIndex>, string: &str) {
+        assert!(
+            range.start <= self.content.len(),
+            "out of bound start index {}, content length {}",
+            range.start,
+            self.content.len()
+        );
+        assert!(
+            range.end <= self.content.len(),
+            "out of bound end index {}, content length {}",
+            range.end,
+            self.content.len()
+        );
+        assert!(
+            range.start <= range.end,
+            "start index {} is greater than end index {}",
+            range.start,
+            range.end
+        );
 
         // just append the string
         if range.start == range.end && range.start == self.content.len() {
@@ -173,15 +160,21 @@ impl SourceFile {
                 self.lines.extend(new_line_changes.into_iter().skip(1));
             }
 
-            return Ok(());
+            return;
         }
 
-        if !self.content.is_char_boundary(range.start) {
-            return Err(ReplaceRangeError::NonCharIndex(range.start));
-        }
-        if !self.content.is_char_boundary(range.end) {
-            return Err(ReplaceRangeError::NonCharIndex(range.end));
-        }
+        assert!(
+            self.content.is_char_boundary(range.start),
+            "start index {} is not a char boundary",
+            range.start
+        );
+
+        assert!(
+            self.content.is_char_boundary(range.end)
+                && range.end != self.content.len(),
+            "end index {} is not a char boundary",
+            range.end
+        );
 
         self.content.replace_range(range.clone(), string);
 
@@ -245,8 +238,6 @@ impl SourceFile {
                     as usize;
             }
         }
-
-        Ok(())
     }
 
     /// Determines in which line number the given byte index is located.
@@ -299,9 +290,9 @@ impl SourceFile {
     /// Loads the source file from the given file path.
     ///
     /// # Errors
-    /// - [`Error::IoError`]: Error occurred when mapping the file to memory.
-    /// - [`Error::Utf8Error`]: Error occurred when converting the mapped bytes
-    ///   to a string.
+    /// - [`Error::Io`]: Error occurred when mapping the file to memory.
+    /// - [`Error::Utf8`]: Error occurred when converting the mapped bytes to a
+    ///   string.
     pub fn load(mut file: File, path: PathBuf) -> Result<Self, Error> {
         let mut string = Vec::new();
         file.read_to_end(&mut string)?;
@@ -430,85 +421,36 @@ impl Location {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    thiserror::Error,
-    displaydoc::Display,
-)]
-/// An error that occurs when creating a new span.
-pub enum NewSpanError {
-    /// The `start` index is not a character boundary.
-    StartIndexNotCharBoundary,
-
-    /// The `end` index is not a character boundary.
-    EndIndexNotCharBoundary,
-
-    /// The `start` index is greater than the `end` index.
-    StartIndexGreaterThanEndIndex,
-
-    /// The `end` index is larger than the source file content's length + 1..
-    EndIndexOutOfBounds,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    thiserror::Error,
-    displaydoc::Display,
-)]
-/// An error that occurs when joining two spans.
-pub enum JoinSpanError {
-    /// Two spans are from different source files.
-    DifferentSourceFiles,
-
-    /// The start of the first span is greater than the end of the second span.
-    StartIndexGreaterThanEndIndex,
-}
-
 impl Span {
     /// Creates a span from the given start and end byte indices in the source
     /// file.
-    ///
-    /// # Errors
-    ///
-    /// See [`NewSpanError`] for more information.
+    #[must_use]
     pub fn new(
         source_file: Arc<SourceFile>,
         start: ByteIndex,
         end: ByteIndex,
-    ) -> Result<Self, NewSpanError> {
-        if source_file.content.len() < end {
-            return Err(NewSpanError::EndIndexOutOfBounds);
-        }
+    ) -> Self {
+        assert!(start <= end, "start index is greater than end index");
+        assert!(
+            start <= source_file.content.len(),
+            "start index `{start}` is out of bounds"
+        );
+        assert!(
+            end <= source_file.content.len() + 1,
+            "end index `{end}` is out of bounds"
+        );
 
-        if start > end {
-            return Err(NewSpanError::StartIndexGreaterThanEndIndex);
-        }
+        assert!(
+            source_file.content.is_char_boundary(start),
+            "start index `{start}` is not a char boundary"
+        );
+        assert!(
+            source_file.content.is_char_boundary(end)
+                || end == source_file.content.len() + 1,
+            "end index `{end}` is not a char boundary"
+        );
 
-        if !source_file.content.is_char_boundary(start) {
-            return Err(NewSpanError::StartIndexNotCharBoundary);
-        }
-
-        if !source_file.content.is_char_boundary(end)
-            && end != source_file.content.len() + 1
-        {
-            return Err(NewSpanError::EndIndexNotCharBoundary);
-        }
-
-        Ok(Self { start, end, source_file })
+        Self { start, end, source_file }
     }
 
     /// Creates a span from the given start byte index to the end of the source
@@ -518,14 +460,13 @@ impl Span {
     ///
     /// Returns [`None`] if the `start` index is not a character boundary.
     #[must_use]
-    pub fn to_end(
-        source_file: Arc<SourceFile>,
-        start: ByteIndex,
-    ) -> Option<Self> {
-        if !source_file.content.is_char_boundary(start) {
-            return None;
-        }
-        Some(Self { start, end: source_file.content.len(), source_file })
+    pub fn to_end(source_file: Arc<SourceFile>, start: ByteIndex) -> Self {
+        assert!(
+            source_file.content.is_char_boundary(start),
+            "start index `{start}` is out of bounds"
+        );
+
+        Self { start, end: source_file.content.len(), source_file }
     }
 
     /// Gets the string slice of the source code that the span represents.
@@ -554,24 +495,23 @@ impl Span {
 
     /// Joins the starting position of this span with the end position of the
     /// given span.
-    ///
-    /// # Errors
-    ///
-    /// See [`JoinSpanError`] for more information.
-    pub fn join(&self, end: &Self) -> Result<Self, JoinSpanError> {
-        if !Arc::ptr_eq(&self.source_file, &end.source_file) {
-            return Err(JoinSpanError::DifferentSourceFiles);
-        }
+    #[must_use]
+    pub fn join(&self, end: &Self) -> Self {
+        assert!(
+            Arc::ptr_eq(self.source_file(), end.source_file()),
+            "source files are not the same"
+        );
 
-        if self.start > end.end {
-            return Err(JoinSpanError::StartIndexGreaterThanEndIndex);
-        }
+        assert!(
+            self.start <= end.start,
+            "start index is greater than end index"
+        );
 
-        Ok(Self {
+        Self {
             start: self.start,
             end: end.end,
             source_file: self.source_file.clone(),
-        })
+        }
     }
 }
 

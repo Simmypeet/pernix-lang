@@ -116,9 +116,7 @@ impl SyntaxTree for TypeAnnotation {
 }
 
 impl SourceElement for TypeAnnotation {
-    fn span(&self) -> Span {
-        self.colon.span().join(&self.r#type.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.colon.span().join(&self.r#type.span()) }
 }
 
 /// Syntax Synopsis:
@@ -180,7 +178,7 @@ impl SyntaxTree for VariableDeclaration {
 
 impl SourceElement for VariableDeclaration {
     fn span(&self) -> Span {
-        self.let_keyword.span().join(&self.semicolon.span).unwrap()
+        self.let_keyword.span().join(&self.semicolon.span)
     }
 }
 
@@ -225,9 +223,7 @@ pub struct Semi {
 }
 
 impl SourceElement for Semi {
-    fn span(&self) -> Span {
-        self.expression.span().join(&self.semicolon.span).unwrap()
-    }
+    fn span(&self) -> Span { self.expression.span().join(&self.semicolon.span) }
 }
 
 /// Syntax Synopsis:

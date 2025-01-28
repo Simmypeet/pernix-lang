@@ -71,7 +71,7 @@ impl SyntaxTree for Pair {
 }
 
 impl SourceElement for Pair {
-    fn span(&self) -> Span { self.key.span().join(&self.value.span()).unwrap() }
+    fn span(&self) -> Span { self.key.span().join(&self.value.span()) }
 }
 
 impl Pair {

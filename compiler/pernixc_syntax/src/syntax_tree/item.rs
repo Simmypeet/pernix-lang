@@ -54,9 +54,7 @@ impl SyntaxTree for Alias {
 }
 
 impl SourceElement for Alias {
-    fn span(&self) -> Span {
-        self.as_keyword.span.join(&self.identifier.span).unwrap()
-    }
+    fn span(&self) -> Span { self.as_keyword.span.join(&self.identifier.span) }
 }
 
 impl Alias {
@@ -138,7 +136,7 @@ impl SyntaxTree for From {
 
 impl SourceElement for From {
     fn span(&self) -> Span {
-        self.from_keyword.span.join(&self.simple_path.span()).unwrap()
+        self.from_keyword.span.join(&self.simple_path.span())
     }
 }
 
@@ -221,9 +219,7 @@ impl SyntaxTree for UsingFrom {
 }
 
 impl SourceElement for UsingFrom {
-    fn span(&self) -> Span {
-        self.from.span().join(&self.imports.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.from.span().join(&self.imports.span()) }
 }
 
 impl UsingFrom {
@@ -310,7 +306,7 @@ impl Using {
 
 impl SourceElement for Using {
     fn span(&self) -> Span {
-        self.using_keyword.span.join(&self.semicolon.span).unwrap()
+        self.using_keyword.span.join(&self.semicolon.span)
     }
 }
 
@@ -344,7 +340,7 @@ impl SyntaxTree for ModuleSignature {
 
 impl SourceElement for ModuleSignature {
     fn span(&self) -> Span {
-        self.module_keyword.span.join(&self.identifier.span).unwrap()
+        self.module_keyword.span.join(&self.identifier.span)
     }
 }
 
@@ -389,7 +385,7 @@ impl Module {
 
 impl SourceElement for Module {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.kind.span()).unwrap()
+        self.access_modifier.span().join(&self.kind.span())
     }
 }
 
@@ -502,9 +498,7 @@ impl<Value: SyntaxTree + 'static> SyntaxTree
 }
 
 impl<Value: SourceElement> SourceElement for DefaultGenericParameter<Value> {
-    fn span(&self) -> Span {
-        self.equals.span.join(&self.value.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.equals.span.join(&self.value.span()) }
 }
 
 /// Syntax Synopsis:
@@ -558,13 +552,12 @@ impl TypeParameter {
 
 impl SourceElement for TypeParameter {
     fn span(&self) -> Span {
-        self.identifier
-            .span
-            .join(&self.default.as_ref().map_or_else(
+        self.identifier.span.join(
+            &self.default.as_ref().map_or_else(
                 || self.identifier.span.clone(),
                 SourceElement::span,
-            ))
-            .unwrap()
+            ),
+        )
     }
 }
 
@@ -635,15 +628,12 @@ impl ConstantParameter {
 
 impl SourceElement for ConstantParameter {
     fn span(&self) -> Span {
-        self.const_keyword
-            .span
-            .join(
-                &self
-                    .default
-                    .as_ref()
-                    .map_or_else(|| self.r#type.span(), SourceElement::span),
-            )
-            .unwrap()
+        self.const_keyword.span.join(
+            &self
+                .default
+                .as_ref()
+                .map_or_else(|| self.r#type.span(), SourceElement::span),
+        )
     }
 }
 
@@ -758,7 +748,7 @@ impl WhereClause {
 
 impl SourceElement for WhereClause {
     fn span(&self) -> Span {
-        self.where_keyword.span.join(&self.predicate_list.span()).unwrap()
+        self.where_keyword.span.join(&self.predicate_list.span())
     }
 }
 
@@ -833,13 +823,11 @@ impl SourceElement for TraitSignature {
         self.where_clause.as_ref().map_or_else(
             || {
                 self.generic_parameters.as_ref().map_or_else(
-                    || start.join(&self.identifier.span).unwrap(),
-                    |generic_parameters| {
-                        start.join(&generic_parameters.span()).unwrap()
-                    },
+                    || start.join(&self.identifier.span),
+                    |generic_parameters| start.join(&generic_parameters.span()),
                 )
             },
-            |where_clause| start.join(&where_clause.span()).unwrap(),
+            |where_clause| start.join(&where_clause.span()),
         )
     }
 }
@@ -935,13 +923,11 @@ impl SourceElement for MarkerSignature {
         self.where_clause.as_ref().map_or_else(
             || {
                 self.generic_parameters.as_ref().map_or_else(
-                    || start.join(&self.identifier.span).unwrap(),
-                    |generic_parameters| {
-                        start.join(&generic_parameters.span()).unwrap()
-                    },
+                    || start.join(&self.identifier.span),
+                    |generic_parameters| start.join(&generic_parameters.span()),
                 )
             },
-            |where_clause| start.join(&where_clause.span()).unwrap(),
+            |where_clause| start.join(&where_clause.span()),
         )
     }
 }
@@ -987,7 +973,7 @@ impl Marker {
 
 impl SourceElement for Marker {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.semicolon.span).unwrap()
+        self.access_modifier.span().join(&self.semicolon.span)
     }
 }
 
@@ -1032,7 +1018,7 @@ impl Trait {
 
 impl SourceElement for Trait {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.body.span()).unwrap()
+        self.access_modifier.span().join(&self.body.span())
     }
 }
 
@@ -1077,7 +1063,7 @@ impl TraitFunction {
 
 impl SourceElement for TraitFunction {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.semicolon.span).unwrap()
+        self.access_modifier.span().join(&self.semicolon.span)
     }
 }
 
@@ -1137,7 +1123,7 @@ impl TraitType {
 
 impl SourceElement for TraitType {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.semicolon.span).unwrap()
+        self.access_modifier.span().join(&self.semicolon.span)
     }
 }
 
@@ -1198,7 +1184,7 @@ impl TraitConstant {
 
 impl SourceElement for TraitConstant {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.semicolon.span).unwrap()
+        self.access_modifier.span().join(&self.semicolon.span)
     }
 }
 
@@ -1277,7 +1263,7 @@ impl SyntaxTree for Parameter {
 
 impl SourceElement for Parameter {
     fn span(&self) -> Span {
-        self.irrefutable_pattern.span().join(&self.r#type.span()).unwrap()
+        self.irrefutable_pattern.span().join(&self.r#type.span())
     }
 }
 
@@ -1328,9 +1314,7 @@ impl SyntaxTree for ReturnType {
 }
 
 impl SourceElement for ReturnType {
-    fn span(&self) -> Span {
-        self.colon.span.join(&self.r#type.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.colon.span.join(&self.r#type.span()) }
 }
 
 /// Syntax Synopsis:
@@ -1429,7 +1413,7 @@ impl SourceElement for FunctionSignature {
             SourceElement::span,
         );
 
-        being.join(&end).unwrap()
+        being.join(&end)
     }
 }
 
@@ -1486,7 +1470,7 @@ impl Function {
 
 impl SourceElement for Function {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.statements.span()).unwrap()
+        self.access_modifier.span().join(&self.statements.span())
     }
 }
 
@@ -1536,9 +1520,9 @@ impl TypeSignature {
 impl SourceElement for TypeSignature {
     fn span(&self) -> Span {
         self.generic_parameters.as_ref().map_or_else(
-            || self.type_keyword.span.join(&self.identifier.span()).unwrap(),
+            || self.type_keyword.span.join(&self.identifier.span()),
             |generic_parameters| {
-                self.type_keyword.span.join(&generic_parameters.span()).unwrap()
+                self.type_keyword.span.join(&generic_parameters.span())
             },
         )
     }
@@ -1585,15 +1569,12 @@ impl TypeDefinition {
 
 impl SourceElement for TypeDefinition {
     fn span(&self) -> Span {
-        self.equals
-            .span
-            .join(
-                &self
-                    .where_clause
-                    .as_ref()
-                    .map_or_else(|| self.r#type.span(), SourceElement::span),
-            )
-            .unwrap()
+        self.equals.span.join(
+            &self
+                .where_clause
+                .as_ref()
+                .map_or_else(|| self.r#type.span(), SourceElement::span),
+        )
     }
 }
 
@@ -1648,7 +1629,7 @@ impl Type {
 
 impl SourceElement for Type {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.semicolon.span).unwrap()
+        self.access_modifier.span().join(&self.semicolon.span)
     }
 }
 
@@ -1718,7 +1699,7 @@ impl StructSignature {
 
 impl SourceElement for StructSignature {
     fn span(&self) -> Span {
-        self.struct_keyword.span.join(&self.identifier.span).unwrap()
+        self.struct_keyword.span.join(&self.identifier.span)
     }
 }
 
@@ -1782,7 +1763,7 @@ impl Struct {
 
 impl SourceElement for Struct {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.body.span()).unwrap()
+        self.access_modifier.span().join(&self.body.span())
     }
 }
 
@@ -1827,7 +1808,7 @@ impl SyntaxTree for Field {
 
 impl SourceElement for Field {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.r#type.span()).unwrap()
+        self.access_modifier.span().join(&self.r#type.span())
     }
 }
 
@@ -1931,7 +1912,7 @@ impl SourceElement for ImplementationSignature {
             SourceElement::span,
         );
 
-        start.join(&end).unwrap()
+        start.join(&end)
     }
 }
 
@@ -2007,7 +1988,7 @@ impl SyntaxTree for NegativeImplementation {
 
 impl SourceElement for NegativeImplementation {
     fn span(&self) -> Span {
-        self.delete_keyword.span.join(&self.semicolon.span).unwrap()
+        self.delete_keyword.span.join(&self.semicolon.span)
     }
 }
 
@@ -2105,9 +2086,7 @@ impl Implementation {
 }
 
 impl SourceElement for Implementation {
-    fn span(&self) -> Span {
-        self.signature.span().join(&self.kind.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.signature.span().join(&self.kind.span()) }
 }
 
 /// Syntax Synopsis:
@@ -2174,7 +2153,7 @@ impl EnumSignature {
 
 impl SourceElement for EnumSignature {
     fn span(&self) -> Span {
-        self.enum_keyword.span.join(&self.identifier.span).unwrap()
+        self.enum_keyword.span.join(&self.identifier.span)
     }
 }
 
@@ -2237,7 +2216,7 @@ impl SourceElement for Variant {
             .as_ref()
             .map_or_else(|| self.identifier.span.clone(), SourceElement::span);
 
-        self.identifier.span.join(&end).unwrap()
+        self.identifier.span.join(&end)
     }
 }
 
@@ -2301,7 +2280,7 @@ impl Enum {
 
 impl SourceElement for Enum {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.body.span()).unwrap()
+        self.access_modifier.span().join(&self.body.span())
     }
 }
 
@@ -2381,9 +2360,7 @@ impl SyntaxTree for ConstantSignature {
 }
 
 impl SourceElement for ConstantSignature {
-    fn span(&self) -> Span {
-        self.const_keyword.span.join(&self.r#type.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.const_keyword.span.join(&self.r#type.span()) }
 }
 
 /// Syntax Synopsis:
@@ -2436,9 +2413,7 @@ impl SyntaxTree for ConstantDefinition {
 }
 
 impl SourceElement for ConstantDefinition {
-    fn span(&self) -> Span {
-        self.equals.span.join(&self.semicolon.span).unwrap()
-    }
+    fn span(&self) -> Span { self.equals.span.join(&self.semicolon.span) }
 }
 
 /// Syntax Synopsis:
@@ -2488,7 +2463,7 @@ impl Constant {
 
 impl SourceElement for Constant {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.definition.span()).unwrap()
+        self.access_modifier.span().join(&self.definition.span())
     }
 }
 
@@ -2533,7 +2508,7 @@ impl ExternFunction {
 
 impl SourceElement for ExternFunction {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.semicolon.span()).unwrap()
+        self.access_modifier.span().join(&self.semicolon.span())
     }
 }
 
@@ -2603,7 +2578,7 @@ impl Extern {
 
 impl SourceElement for Extern {
     fn span(&self) -> Span {
-        self.extern_keyword.span.join(&self.extern_body.span()).unwrap()
+        self.extern_keyword.span.join(&self.extern_body.span())
     }
 }
 

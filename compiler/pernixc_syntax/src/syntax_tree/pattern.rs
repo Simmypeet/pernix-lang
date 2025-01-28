@@ -62,7 +62,7 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for FieldAssociation<Pattern> {
 
 impl<Pattern: SourceElement> SourceElement for FieldAssociation<Pattern> {
     fn span(&self) -> Span {
-        self.identifier.span().join(&self.pattern().span()).unwrap()
+        self.identifier.span().join(&self.pattern().span())
     }
 }
 
@@ -145,9 +145,7 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for Structural<Pattern> {
 }
 
 impl<Pattern> SourceElement for Structural<Pattern> {
-    fn span(&self) -> Span {
-        self.left_brace.span.join(&self.right_brace.span).unwrap()
-    }
+    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span) }
 }
 
 /// Syntax Synopsis:
@@ -208,10 +206,8 @@ impl SyntaxTree for Enum {
 impl SourceElement for Enum {
     fn span(&self) -> Span {
         self.association.as_ref().map_or_else(
-            || self.case_keyword.span().join(&self.identifier.span()).unwrap(),
-            |association| {
-                self.case_keyword.span().join(&association.span()).unwrap()
-            },
+            || self.case_keyword.span().join(&self.identifier.span()),
+            |association| self.case_keyword.span().join(&association.span()),
         )
     }
 }
@@ -237,7 +233,7 @@ impl SyntaxTree for Wildcard {
 }
 
 impl SourceElement for Wildcard {
-    fn span(&self) -> Span { self.0.span.join(&self.1.span).unwrap() }
+    fn span(&self) -> Span { self.0.span.join(&self.1.span) }
 }
 
 /// Syntax Synopsis:
@@ -278,7 +274,7 @@ impl<Pattern: SourceElement> SourceElement for TupleElement<Pattern> {
     fn span(&self) -> Span {
         self.ellipsis.as_ref().map_or_else(
             || self.pattern.span(),
-            |(dots, _, _)| dots.span().join(&self.pattern.span()).unwrap(),
+            |(dots, _, _)| dots.span().join(&self.pattern.span()),
         )
     }
 }
@@ -354,13 +350,11 @@ impl SourceElement for Named {
             || {
                 self.reference_of.as_ref().map_or_else(
                     || self.identifier.span(),
-                    |qualifier| {
-                        qualifier.span().join(&self.identifier.span()).unwrap()
-                    },
+                    |qualifier| qualifier.span().join(&self.identifier.span()),
                 )
             },
             |mutable_keyword| {
-                mutable_keyword.span().join(&self.identifier.span()).unwrap()
+                mutable_keyword.span().join(&self.identifier.span())
             },
         )
     }
@@ -396,7 +390,7 @@ impl SourceElement for Integer {
     fn span(&self) -> Span {
         self.minus.as_ref().map_or_else(
             || self.numeric.span(),
-            |minus| minus.span().join(&self.numeric.span()).unwrap(),
+            |minus| minus.span().join(&self.numeric.span()),
         )
     }
 }
