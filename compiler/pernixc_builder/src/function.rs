@@ -52,18 +52,28 @@ impl Derived for Intermediate {
     fn component_name() -> &'static str { "function signature" }
 }
 
-struct ElidedLifetimesProvider<'a> {
+struct ParametersElidedLifetimeProvider<'a> {
     global_id: GlobalID,
     elided_lifetimes: &'a mut ElidedLifetimes,
 }
 
-impl ElidedTermProvider<Lifetime<Default>> for ElidedLifetimesProvider<'_> {
+impl ElidedTermProvider<Lifetime<Default>>
+    for ParametersElidedLifetimeProvider<'_>
+{
     fn create(&mut self) -> Lifetime<Default> {
         let id =
             self.elided_lifetimes.elided_lifetimes.insert(ElidedLifetime {});
 
         Lifetime::Elided(ElidedLifetimeID { parent: self.global_id, id })
     }
+}
+
+struct ReturnElidedLifetimeProvider {
+    lifetime: Lifetime<Default>,
+}
+
+impl ElidedTermProvider<Lifetime<Default>> for ReturnElidedLifetimeProvider {
+    fn create(&mut self) -> Lifetime<Default> { self.lifetime }
 }
 
 impl query::Builder<Intermediate> for Builder {
@@ -87,7 +97,7 @@ impl query::Builder<Intermediate> for Builder {
 
         let extra_namespace = table.get_generic_parameter_namepsace(global_id);
         let mut elided_lifetimes = ElidedLifetimes::default();
-        let mut elided_lifetimes_provider = ElidedLifetimesProvider {
+        let mut elided_lifetimes_provider = ParametersElidedLifetimeProvider {
             global_id,
             elided_lifetimes: &mut elided_lifetimes,
         };
@@ -121,15 +131,27 @@ impl query::Builder<Intermediate> for Builder {
             })
             .collect::<Vec<_>>();
 
+        let mut return_elided_lifetime_provider = (elided_lifetimes
+            .elided_lifetimes
+            .len()
+            == 1)
+            .then(|| ReturnElidedLifetimeProvider {
+                lifetime: Lifetime::Elided(ElidedLifetimeID {
+                    parent: global_id,
+                    id: elided_lifetimes.elided_lifetimes.ids().next().unwrap(),
+                }),
+            });
+
         let return_type = syntax_tree.return_type.as_ref().map(|x| {
             (
                 table.resolve_type(
                     x.r#type(),
                     global_id,
                     Config {
-                        elided_lifetime_provider: Some(
-                            &mut elided_lifetimes_provider,
-                        ),
+                        elided_lifetime_provider:
+                            return_elided_lifetime_provider
+                                .as_mut()
+                                .map(|x| x as _),
                         elided_type_provider: None,
                         elided_constant_provider: None,
                         observer: Some(&mut occurrences::Observer),
@@ -364,3 +386,6 @@ impl query::Builder<ImpliedPredicates> for Builder {
         ))
     }
 }
+
+#[cfg(test)]
+mod test;
