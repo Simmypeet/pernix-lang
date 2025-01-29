@@ -1,7 +1,6 @@
 //! Contains the main `run()` function for the compiler.
 
 use std::{
-    collections::HashMap,
     fs::File,
     path::PathBuf,
     process::ExitCode,
@@ -23,10 +22,7 @@ use pernixc_source_file::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
 use pernixc_table::{CompilationMetaData, GlobalID, Table};
 use ron::ser::PrettyConfig;
-use serde::{
-    de::DeserializeSeed, ser::SerializeTuple, Deserialize, Deserializer,
-    Serialize,
-};
+use serde::de::DeserializeSeed;
 
 /// The compilation format of the target.
 #[derive(
@@ -125,85 +121,10 @@ fn update_message(
     progress_bar.set_message(message);
 }
 
-struct Test {
-    a: i32,
-    b: i32,
-    c: i32,
-}
-
-impl Serialize for Test {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_tuple(3)?;
-
-        state.serialize_element(&self.a)?;
-        state.serialize_element(&self.b)?;
-        state.serialize_element(&self.c)?;
-
-        state.end()
-    }
-}
-
-struct Visitor;
-
-impl<'de> serde::de::Visitor<'de> for Visitor {
-    type Value = Test;
-
-    fn expecting(
-        &self,
-        formatter: &mut std::fmt::Formatter,
-    ) -> std::fmt::Result {
-        write!(formatter, "a struct of the fields `a`, `b` and `c`")
-    }
-
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::SeqAccess<'de>,
-    {
-        let a = seq.next_element::<i32>()?.ok_or_else(|| {
-            serde::de::Error::invalid_length(0, &"a sequence of length 3")
-        })?;
-
-        let b = seq.next_element::<i32>()?.ok_or_else(|| {
-            serde::de::Error::invalid_length(1, &"a sequence of length 3")
-        })?;
-
-        let c = seq.next_element::<i32>()?.ok_or_else(|| {
-            serde::de::Error::invalid_length(2, &"a sequence of length 3")
-        })?;
-
-        Ok(Test { a, b, c })
-    }
-}
-
-impl<'de> Deserialize<'de> for Test {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(Visitor)
-    }
-}
-
 /// Runs the program with the given arguments.
 #[must_use]
 #[allow(clippy::too_many_lines)]
 pub fn run(argument: Arguments) -> ExitCode {
-    let map = [
-        ("a".to_string(), "b".to_string()),
-        ("c".to_string(), "d".to_string()),
-    ]
-    .into_iter()
-    .collect::<HashMap<String, String>>();
-
-    let serialized = bincode::serialize(&map).unwrap();
-    let deserialized_map: HashMap<String, String> =
-        bincode::deserialize(&serialized).unwrap();
-
-    assert_eq!(map, deserialized_map);
-
     let file = match File::open(&argument.file) {
         Ok(file) => file,
         Err(error) => {
