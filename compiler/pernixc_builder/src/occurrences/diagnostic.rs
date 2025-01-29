@@ -1,0 +1,151 @@
+//! Diagnostic reports for the well-formedness of the occurrences.
+
+use pernixc_diagnostic::{Related, Report};
+use pernixc_log::Severity;
+use pernixc_source_file::Span;
+use pernixc_table::{
+    component::{Implements, LocationSpan},
+    DisplayObject, GlobalID, Table,
+};
+use pernixc_term::{generic_arguments::GenericArguments, Model};
+
+/// The implementation is not general enough to satisfy the required
+/// predicate's forall lifetimes.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ImplementationIsNotGeneralEnough<M: Model> {
+    /// The ID of the implementation where the predicate is not satisfied.
+    pub resolvable_implementation_id: GlobalID,
+
+    /// The generic arguments required by the trait predicate.
+    pub generic_arguments: GenericArguments<M>,
+
+    /// The span where the trait predicate was declared.
+    pub predicate_declaration_span: Option<Span>,
+
+    /// The span of the instantiation that cuases the error
+    pub instantiation_span: Span,
+}
+
+impl<M: Model> Report<&Table> for ImplementationIsNotGeneralEnough<M>
+where
+    GenericArguments<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
+        let span = table.get::<LocationSpan>(self.resolvable_implementation_id);
+
+        pernixc_diagnostic::Diagnostic {
+            span: self.instantiation_span.clone(),
+            message: format!(
+                "the implementation is not general enough to satisfy the \
+                 required forall lifetimes in the generic arguments: {}",
+                DisplayObject { table, display: &self.generic_arguments }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: self
+                .predicate_declaration_span
+                .as_ref()
+                .map(|span| Related {
+                    span: span.clone(),
+                    message: "the predicate is declared here".to_string(),
+                })
+                .into_iter()
+                .chain(span.span.as_ref().map(|span| Related {
+                    span: span.clone(),
+                    message: "the implementation is defined here".to_string(),
+                }))
+                .collect(),
+        }
+    }
+}
+
+/// The generic arguments are not compatible with the generic arguments defined
+/// in the implementation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedImplementationArguments<M: Model> {
+    /// The ID of the ADT implementation where the generic arguments are
+    /// mismatched.
+    pub adt_implementation_id: GlobalID,
+
+    /// The generic arguments found in the implementation.
+    pub found_generic_arguments: GenericArguments<M>,
+
+    /// The span of the instantiation that causes the mismatch.
+    pub instantiation_span: Span,
+}
+
+impl<M: Model> Report<&Table> for MismatchedImplementationArguments<M>
+where
+    GenericArguments<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
+        let span = table.get::<LocationSpan>(self.adt_implementation_id);
+
+        pernixc_diagnostic::Diagnostic {
+            span: self.instantiation_span.clone(),
+            message: "the generic arguments are not compatible with the \
+                      generic arguments defined in the implementation"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: span
+                .span
+                .as_ref()
+                .map(|span| Related {
+                    span: span.clone(),
+                    message: "the implementation is defined here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        }
+    }
+}
+
+/// The ADT implementation is not general enough to satisfy the required forall
+/// lifetimes in the generic arguments
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AdtImplementationIsNotGeneralEnough<M: Model> {
+    /// The ADT implementation ID where the generic arguments are not general
+    /// enough.
+    pub adt_implementation_id: GlobalID,
+
+    /// The generic arguments supplied to the ADT.
+    pub generic_arguments: GenericArguments<M>,
+
+    /// The span location of where the ADT is instantiated.
+    pub instantiation_span: Span,
+}
+
+impl<M: Model> Report<&Table> for AdtImplementationIsNotGeneralEnough<M>
+where
+    GenericArguments<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
+        let span = table.get::<LocationSpan>(self.adt_implementation_id);
+        let implemented_id =
+            table.get::<Implements>(self.adt_implementation_id).0;
+
+        let implemented_qualified_name =
+            table.get_qualified_name(implemented_id);
+
+        pernixc_diagnostic::Diagnostic {
+            span: self.instantiation_span.clone(),
+            message: format!(
+                "the implementation is not general enough for {}{}",
+                implemented_qualified_name,
+                DisplayObject { table, display: &self.generic_arguments }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: span
+                .span
+                .as_ref()
+                .map(|span| Related {
+                    span: span.clone(),
+                    message: "the implementation is defined here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        }
+    }
+}

@@ -16,7 +16,7 @@ use pernixc_term::{
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use typed_builder::TypedBuilder;
 
-use crate::{builder::Builder, function, variance_map};
+use crate::{builder::Builder, function, occurrences, variance_map};
 
 /// A struct for starting the building of a target.
 #[derive(TypedBuilder)]
@@ -170,6 +170,7 @@ pub fn build(
         }
 
         let symbol_kind = *table.get::<SymbolKind>(x);
+        assert!(table.add_component(x, occurrences::Occurrences::default()));
 
         if symbol_kind.has_generic_parameters() {
             build_component::<GenericParameters>(table, x);
@@ -202,6 +203,9 @@ pub fn build(
         if symbol_kind.has_variance_map() {
             build_component::<VarianceMap>(table, x);
         }
+
+        // check the well-formedness of all occurrences so far
+        occurrences::check_occurrences(table, x, &**table.handler());
 
         if let Some(callback) = on_done.as_ref() {
             (callback)(table, x);
