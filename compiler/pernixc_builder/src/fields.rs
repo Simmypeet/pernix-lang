@@ -35,7 +35,7 @@ impl query::Builder<Fields> for Builder {
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<Fields>> {
-        let symbol_kind = *table.get::<SymbolKind>(global_id).unwrap();
+        let symbol_kind = *table.get::<SymbolKind>(global_id);
         if symbol_kind != SymbolKind::Struct {
             return None;
         }
@@ -43,11 +43,9 @@ impl query::Builder<Fields> for Builder {
         let _scope =
             self.start_building(table, global_id, Fields::component_name());
 
-        let syntax_tree =
-            table.get::<syntax_tree_component::Fields>(global_id).unwrap();
+        let syntax_tree = table.get::<syntax_tree_component::Fields>(global_id);
 
-        let extra_namespace =
-            table.get_generic_parameter_namepsace(global_id, handler);
+        let extra_namespace = table.get_generic_parameter_namepsace(global_id);
 
         let mut fields = Fields {
             fields: Arena::default(),
@@ -55,7 +53,7 @@ impl query::Builder<Fields> for Builder {
             field_declaration_order: Vec::new(),
         };
 
-        let active_premise = table.get_active_premise(global_id, handler);
+        let active_premise = table.get_active_premise(global_id);
         let (env, _) = Environment::new(active_premise, table);
 
         for field_syn in syntax_tree

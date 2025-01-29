@@ -1,6 +1,9 @@
-use std::{fmt::Debug, result::Result, sync::Arc};
+use std::{collections::HashSet, fmt::Debug, result::Result, sync::Arc};
 
-use pernixc_table::{GlobalID, Table};
+use pernixc_table::{
+    component::{Implemented, Parent, SymbolKind},
+    GlobalID, Table,
+};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
@@ -11,7 +14,7 @@ use pernixc_term::{
     predicate::{Compatible, Predicate},
     r#type::{TraitMember, Type},
     sub_term::Location,
-    Default, Symbol, Tuple, TupleElement,
+    Default, MemberSymbol, Symbol, Tuple, TupleElement,
 };
 use proptest::{
     arbitrary::Arbitrary,
@@ -27,6 +30,7 @@ use crate::{
     equality::Equality,
     normalizer,
     term::Term,
+    test::{purge, purge_generic_arguments},
     AbruptError, Satisfied, Succeeded,
 };
 
@@ -70,13 +74,13 @@ impl super::Predicate<Constant<Default>> for GenericParameterUnifyConfig {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
-pub enum ApplyPropertyError {
-    #[error("{0}")]
+pub enum AbortError {
+    #[error(transparent)]
     Abrupt(#[from] AbruptError),
-    #[error("failed to apply the environment")]
-    TypeAliasIDCollision,
+    #[error("collision to the ID generated on the table")]
+    IDCollision,
 }
 
 pub trait Property<T>: 'static + Debug {
@@ -84,7 +88,7 @@ pub trait Property<T>: 'static + Debug {
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError>;
+    ) -> Result<(), AbortError>;
 
     fn generate(&self) -> (T, T);
 
@@ -106,7 +110,7 @@ impl<
         &self,
         _: &mut Table,
         _: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError> {
+    ) -> Result<(), AbortError> {
         Ok(())
     }
 
@@ -130,7 +134,7 @@ impl<
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (Param::arbitrary(), T::arbitrary())
+        (Param::arbitrary(), T::arbitrary().prop_map(purge))
             .prop_map(|(parameter, rhs)| Self { parameter, rhs })
             .boxed()
     }
@@ -206,7 +210,7 @@ where
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError> {
+    ) -> Result<(), AbortError> {
         for property in &self.terms {
             property.apply(table, premise)?;
         }
@@ -268,7 +272,7 @@ where
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError> {
+    ) -> Result<(), AbortError> {
         for property in &self.lifetime_properties {
             property.apply(table, premise)?;
         }
@@ -379,6 +383,7 @@ impl Arbitrary for SymbolCongruence {
 pub struct Mapping {
     pub property: Box<dyn Property<Type<Default>>>,
     pub trait_member: TraitMember<Default>,
+    pub trait_id: pernixc_table::ID,
 }
 
 impl Property<Type<Default>> for Mapping {
@@ -386,7 +391,22 @@ impl Property<Type<Default>> for Mapping {
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(), ApplyPropertyError> {
+    ) -> Result<(), AbortError> {
+        let add_parent = table.add_component(self.trait_member.id, Parent {
+            parent: Some(self.trait_id),
+        });
+        let add_kind = table.add_component(
+            GlobalID::new(self.trait_member.id.target_id, self.trait_id),
+            SymbolKind::Trait,
+        );
+        let add_implemented = table.add_component(
+            GlobalID::new(self.trait_member.id.target_id, self.trait_id),
+            Implemented(HashSet::new()),
+        );
+
+        if !add_parent || !add_kind || !add_implemented {
+            return Err(AbortError::IDCollision);
+        }
         let (from, to) = self.generate();
 
         if GenericParameterUnifyConfig
@@ -424,10 +444,19 @@ impl Arbitrary for Mapping {
         let strategy = strategy
             .unwrap_or_else(Box::<dyn Property<Type<Default>>>::arbitrary);
 
-        (strategy, TraitMember::arbitrary())
-            .prop_map(|(property, trait_member)| Self {
+        (strategy, TraitMember::arbitrary(), pernixc_table::ID::arbitrary())
+            .prop_map(|(property, trait_member, trait_id)| Self {
                 property,
-                trait_member,
+                trait_id,
+                trait_member: TraitMember(MemberSymbol {
+                    id: trait_member.0.id,
+                    member_generic_arguments: purge_generic_arguments(
+                        trait_member.0.member_generic_arguments,
+                    ),
+                    parent_generic_arguments: purge_generic_arguments(
+                        trait_member.0.parent_generic_arguments,
+                    ),
+                }),
             })
             .boxed()
     }

@@ -15,8 +15,7 @@ use pernixc_table::{
         syntax_tree as syntax_tree_component, Derived, Parent, SymbolKind,
     },
     diagnostic::Diagnostic,
-    query::{self, Handle},
-    GlobalID, MemberID, Table,
+    query, GlobalID, MemberID, Table,
 };
 use pernixc_term::{
     constant::Constant,
@@ -44,7 +43,7 @@ impl query::Builder<GenericParameters> for Builder {
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<GenericParameters>> {
-        let symbol_kind = *table.get::<SymbolKind>(global_id)?;
+        let symbol_kind = *table.get::<SymbolKind>(global_id);
         if !symbol_kind.has_generic_parameters() {
             return None;
         }
@@ -55,9 +54,8 @@ impl query::Builder<GenericParameters> for Builder {
             GenericParameters::component_name(),
         );
 
-        let syntax_tree = table
-            .get::<syntax_tree_component::GenericParameters>(global_id)
-            .unwrap();
+        let syntax_tree =
+            table.get::<syntax_tree_component::GenericParameters>(global_id);
 
         let mut lifetime_parameter_syns = Vec::new();
         let mut type_parameter_syns = Vec::new();
@@ -141,13 +139,11 @@ impl query::Builder<GenericParameters> for Builder {
         }
 
         let mut generic_parameters = GenericParameters::default();
-        let mut extra_name_space = table.get_generic_parameter_namepsace(
-            GlobalID::new(
+        let mut extra_name_space =
+            table.get_generic_parameter_namepsace(GlobalID::new(
                 global_id.target_id,
-                table.get::<Parent>(global_id).unwrap().0,
-            ),
-            handler,
-        );
+                table.get::<Parent>(global_id).parent.unwrap(),
+            ));
 
         for lifetime_parameter_syn in lifetime_parameter_syns {
             match generic_parameters.add_lifetime_parameter(LifetimeParameter {
@@ -276,7 +272,6 @@ pub trait Ext {
     fn get_generic_parameter_namepsace<M: Model>(
         &self,
         global_id: GlobalID,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> ExtraNamespace<M>;
 }
 
@@ -284,20 +279,19 @@ impl Ext for Table {
     fn get_generic_parameter_namepsace<M: Model>(
         &self,
         global_id: GlobalID,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> ExtraNamespace<M> {
         let mut extra_namespace = ExtraNamespace::default();
 
         for scope in self.scope_walker(global_id) {
             let scope = GlobalID::new(global_id.target_id, scope);
-            let symbol_kind = *self.get::<SymbolKind>(scope).unwrap();
+            let symbol_kind = *self.get::<SymbolKind>(scope);
 
             if !symbol_kind.has_generic_parameters() {
                 continue;
             }
 
             let Some(generic_parameter) =
-                self.query::<GenericParameters>(scope).handle(handler)
+                self.query::<GenericParameters>(scope)
             else {
                 continue;
             };

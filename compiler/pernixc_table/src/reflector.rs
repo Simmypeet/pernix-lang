@@ -7,8 +7,8 @@ use pernixc_storage::{
 
 use super::{GlobalID, Table};
 use crate::component::{
-    Accessibility, Extern, Implemented, Implements, Member, Name, Parent,
-    PositiveTraitImplementation, SymbolKind, TraitImplementation,
+    Accessibility, Extern, Implemented, Implements, LocationSpan, Member, Name,
+    Parent, PositiveTraitImplementation, SymbolKind, TraitImplementation,
 };
 
 impl Table {
@@ -33,6 +33,9 @@ impl Table {
         assert!(reflector.register_type::<Implements>("Implements".to_owned()));
         assert!(reflector.register_type::<SymbolKind>("SymbolKind".to_owned()));
         assert!(reflector.register_type::<Extern>("Extern".to_owned()));
+        assert!(
+            reflector.register_type::<LocationSpan>("LocationSpan".to_owned())
+        );
         assert!(reflector.register_type_with_merger::<Implemented>(
             "Implemented".to_owned(),
             &((|a, b| {

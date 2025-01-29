@@ -1,6 +1,13 @@
-use std::{collections::BTreeSet, fmt::Debug, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashSet},
+    fmt::Debug,
+    sync::Arc,
+};
 
-use pernixc_table::{GlobalID, Table, TargetID, ID};
+use pernixc_table::{
+    component::{Implemented, Parent, SymbolKind},
+    GlobalID, Table, TargetID, ID,
+};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
@@ -20,6 +27,7 @@ use crate::{
     equality::Equality,
     normalizer,
     term::Term,
+    test::purge,
     AbruptError,
 };
 
@@ -42,11 +50,23 @@ fn reflexive() {
 
 #[test]
 fn symmetric() {
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let trait_member = TraitMember::<Default>(MemberSymbol {
         id: GlobalID::new(TargetID(1), ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
+
+    assert!(table.add_component(GlobalID::new(TargetID(1), ID(1)), Parent {
+        parent: Some(ID(2)),
+    }));
+    assert!(table
+        .add_component(GlobalID::new(TargetID(1), ID(2)), SymbolKind::Trait));
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), ID(2)),
+        Implemented(HashSet::new())
+    ));
+
     let equivalence = Type::Primitive(Primitive::Bool);
 
     let mut premise = Premise::default();
@@ -55,7 +75,6 @@ fn symmetric() {
         rhs: equivalence.clone(),
     }));
 
-    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let environment =
         Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
@@ -88,13 +107,23 @@ fn not_equal() {
     });
     let equivalence = Type::Primitive(Primitive::Bool);
 
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
+    assert!(table.add_component(GlobalID::new(TargetID(1), ID(1)), Parent {
+        parent: Some(ID(2)),
+    }));
+    assert!(table
+        .add_component(GlobalID::new(TargetID(1), ID(2)), SymbolKind::Trait));
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), ID(2)),
+        Implemented(HashSet::new())
+    ));
+
     let mut premise = Premise::default();
     premise.predicates.insert(Predicate::TraitTypeCompatible(Compatible {
         lhs: trait_member.clone(),
         rhs: equivalence,
     }));
 
-    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let environment =
         Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
@@ -131,6 +160,20 @@ fn transitivity() {
     });
     let equivalence = Type::Primitive(Primitive::Bool);
 
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
+    assert!(table.add_component(GlobalID::new(TargetID(1), ID(1)), Parent {
+        parent: Some(ID(3)),
+    }));
+    assert!(table.add_component(GlobalID::new(TargetID(1), ID(2)), Parent {
+        parent: Some(ID(3)),
+    }));
+    assert!(table
+        .add_component(GlobalID::new(TargetID(1), ID(3)), SymbolKind::Trait));
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), ID(3)),
+        Implemented(HashSet::new())
+    ));
+
     let mut premise = Premise::default();
     premise.predicates.extend([
         Predicate::TraitTypeCompatible(Compatible {
@@ -143,7 +186,6 @@ fn transitivity() {
         }),
     ]);
 
-    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let environment =
         Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
@@ -185,6 +227,20 @@ fn congruence() {
     let first_equivalence = Type::Primitive(Primitive::Bool);
     let second_equivalence = Type::Primitive(Primitive::Int32);
 
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
+    assert!(table.add_component(GlobalID::new(TargetID(1), ID(1)), Parent {
+        parent: Some(ID(3)),
+    }));
+    assert!(table.add_component(GlobalID::new(TargetID(1), ID(2)), Parent {
+        parent: Some(ID(3)),
+    }));
+    assert!(table
+        .add_component(GlobalID::new(TargetID(1), ID(3)), SymbolKind::Trait));
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), ID(3)),
+        Implemented(HashSet::new())
+    ));
+
     let mut premise = Premise::default();
     premise.predicates.extend([
         Predicate::TraitTypeCompatible(Compatible {
@@ -197,7 +253,6 @@ fn congruence() {
         }),
     ]);
 
-    let table = Table::new(Arc::new(pernixc_handler::Panic));
     let environment =
         Environment::new_unchecked(premise, &table, normalizer::NO_OP);
 
@@ -238,6 +293,43 @@ fn congruence() {
     environment.assert_call_stack_empty();
 }
 
+#[test]
+fn symbol() {
+    let symbol = Type::Symbol::<Default>(Symbol {
+        id: GlobalID::new(TargetID(1), ID(1)),
+        generic_arguments: GenericArguments {
+            lifetimes: Vec::new(),
+            types: vec![Type::Primitive(Primitive::Bool)],
+            constants: Vec::new(),
+        },
+    });
+
+    let premise = Premise::default();
+    let table = Table::new(Arc::new(pernixc_handler::Panic));
+    let environment =
+        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
+
+    assert!(environment
+        .query(&Equality::new(symbol.clone(), symbol))
+        .unwrap()
+        .unwrap()
+        .constraints
+        .is_empty());
+
+    environment.assert_call_stack_empty();
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+pub enum AbortError {
+    #[error(transparent)]
+    Abrupt(#[from] AbruptError),
+
+    #[error("collision to the ID generated on the table")]
+    IDCollision,
+}
+
 /// A trait for generating term for checking equality.
 pub trait Property<T>: 'static + Debug {
     /// Applies this property to the environment.
@@ -245,7 +337,7 @@ pub trait Property<T>: 'static + Debug {
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(T, T), AbruptError>;
+    ) -> Result<(T, T), AbortError>;
 
     /// Returns the number of nodes in the property.
     fn node_count(&self) -> usize;
@@ -256,7 +348,7 @@ pub struct Identity<T> {
     pub term: T,
 }
 
-impl<T: Arbitrary> Arbitrary for Identity<T>
+impl<T: Arbitrary + Term> Arbitrary for Identity<T>
 where
     T::Strategy: 'static,
 {
@@ -264,7 +356,7 @@ where
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        T::arbitrary().prop_map(|term| Self { term }).boxed()
+        T::arbitrary().prop_map(|term| Self { term: purge(term) }).boxed()
     }
 }
 
@@ -273,7 +365,7 @@ impl<T: Clone + Debug + 'static> Property<T> for Identity<T> {
         &self,
         _: &mut Table,
         _: &mut Premise<Default>,
-    ) -> Result<(T, T), AbruptError> {
+    ) -> Result<(T, T), AbortError> {
         Ok((self.term.clone(), self.term.clone()))
     }
 
@@ -281,44 +373,110 @@ impl<T: Clone + Debug + 'static> Property<T> for Identity<T> {
 }
 
 #[derive(Debug)]
-pub struct Mapping<T: Term> {
-    pub property: Box<dyn Property<T>>,
-    pub target_trait_member: T::TraitMember,
+pub struct Mapping {
+    pub property: Box<dyn Property<Type<Default>>>,
+    pub target_trait_member: TraitMember<Default>,
+    pub trait_id: pernixc_table::ID,
     pub map_at_lhs: bool,
 }
 
-impl<T: 'static + Debug + Term + Arbitrary<Strategy = BoxedStrategy<T>>>
-    Arbitrary for Mapping<T>
-where
-    Box<dyn Property<T>>:
-        Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
-    T::TraitMember: Arbitrary<Strategy = BoxedStrategy<T::TraitMember>>,
-{
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
+impl Arbitrary for Mapping {
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let strategy = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
+        let strategy =
+            args.unwrap_or_else(Box::<dyn Property<Type<Default>>>::arbitrary);
 
-        (strategy, T::TraitMember::arbitrary(), proptest::bool::ANY)
-            .prop_map(|(property, target_trait_member, target_at_lhs)| Self {
-                property,
-                target_trait_member,
-                map_at_lhs: target_at_lhs,
-            })
+        (
+            strategy,
+            TraitMember::arbitrary(),
+            ID::arbitrary(),
+            proptest::bool::ANY,
+        )
+            .prop_map(
+                |(property, target_trait_member, trait_id, map_at_lhs)| Self {
+                    property,
+                    target_trait_member: TraitMember(MemberSymbol {
+                        id: target_trait_member.id,
+                        member_generic_arguments: GenericArguments {
+                            lifetimes: target_trait_member
+                                .0
+                                .member_generic_arguments
+                                .lifetimes
+                                .into_iter()
+                                .map(purge)
+                                .collect(),
+                            types: target_trait_member
+                                .0
+                                .member_generic_arguments
+                                .types
+                                .into_iter()
+                                .map(purge)
+                                .collect(),
+                            constants: target_trait_member
+                                .0
+                                .member_generic_arguments
+                                .constants
+                                .into_iter()
+                                .map(purge)
+                                .collect(),
+                        },
+                        parent_generic_arguments: GenericArguments {
+                            lifetimes: target_trait_member
+                                .0
+                                .parent_generic_arguments
+                                .lifetimes
+                                .into_iter()
+                                .map(purge)
+                                .collect(),
+                            types: target_trait_member
+                                .0
+                                .parent_generic_arguments
+                                .types
+                                .into_iter()
+                                .map(purge)
+                                .collect(),
+                            constants: target_trait_member
+                                .0
+                                .parent_generic_arguments
+                                .constants
+                                .into_iter()
+                                .map(purge)
+                                .collect(),
+                        },
+                    }),
+                    trait_id,
+                    map_at_lhs,
+                },
+            )
             .boxed()
     }
 }
 
-impl<T: Term<Model = Default> + Debug + 'static> Property<T> for Mapping<T>
-where
-    Compatible<T::TraitMember, T>: Into<Predicate<Default>>,
-{
+impl Property<Type<Default>> for Mapping {
     fn generate(
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(T, T), AbruptError> {
+    ) -> Result<(Type<Default>, Type<Default>), AbortError> {
+        let add_parent = table
+            .add_component(self.target_trait_member.id, Parent {
+                parent: Some(self.trait_id),
+            });
+        let add_kind = table.add_component(
+            GlobalID::new(self.target_trait_member.id.target_id, self.trait_id),
+            SymbolKind::Trait,
+        );
+        let add_implemented = table.add_component(
+            GlobalID::new(self.target_trait_member.id.target_id, self.trait_id),
+            Implemented(HashSet::new()),
+        );
+
+        if !add_parent || !add_kind || !add_implemented {
+            return Err(AbortError::IDCollision);
+        }
+
         let (inner_lhs, inner_rhs) = self.property.generate(table, premise)?;
 
         let should_map = if self.map_at_lhs {
@@ -430,7 +588,7 @@ impl<T: Term<Model = Default> + From<Symbol<Default>> + 'static> Property<T>
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(T, T), AbruptError> {
+    ) -> Result<(T, T), AbortError> {
         let mut lhs_generic_arguments = GenericArguments::default();
         let mut rhs_generic_arguments = GenericArguments::default();
 
@@ -662,9 +820,33 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     }
     */
 
-    premise
-        .predicates
-        .extend(decoy.types.into_iter().map(Predicate::TraitTypeCompatible));
+    for (trait_member, trait_id) in &decoy.types {
+        let add_parent = table.add_component(trait_member.lhs.id, Parent {
+            parent: Some(*trait_id),
+        });
+
+        let add_kind = table.add_component(
+            GlobalID::new(trait_member.lhs.id.target_id, *trait_id),
+            SymbolKind::Trait,
+        );
+
+        let add_implemented = table.add_component(
+            GlobalID::new(trait_member.lhs.id.target_id, *trait_id),
+            Implemented(HashSet::new()),
+        );
+
+        if !add_parent || !add_kind || !add_implemented {
+            return Err(TestCaseError::reject("ID collision"));
+        }
+    }
+
+    premise.predicates.extend(
+        decoy
+            .types
+            .into_iter()
+            .map(|x| x.0)
+            .map(Predicate::TraitTypeCompatible),
+    );
 
     let environment =
         Environment::new_unchecked(premise, &table, normalizer::NO_OP);
@@ -687,21 +869,78 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     prop_assert!(first_result.constraints.is_empty());
     prop_assert!(second_result.constraints.is_empty());
 
-    println!("success with {} nodes", property.node_count());
     Ok(())
 }
 
 #[derive(Debug, Default)]
 pub struct Decoy {
-    types: Vec<Compatible<TraitMember<Default>, Type<Default>>>,
+    #[allow(clippy::type_complexity)]
+    types: Vec<(
+        Compatible<TraitMember<Default>, Type<Default>>,
+        pernixc_table::ID,
+    )>,
 }
 
 impl Arbitrary for Decoy {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        let equality = (MemberSymbol::arbitrary(), Type::arbitrary())
-            .prop_map(|(lhs, rhs)| Compatible::new(TraitMember(lhs), rhs));
+        let equality = (
+            MemberSymbol::arbitrary(),
+            Type::arbitrary().prop_map(purge),
+            pernixc_table::ID::arbitrary(),
+        )
+            .prop_map(|(lhs, rhs, id)| {
+                (
+                    Compatible::new(
+                        TraitMember(MemberSymbol {
+                            id: lhs.id,
+                            member_generic_arguments: GenericArguments {
+                                lifetimes: lhs
+                                    .member_generic_arguments
+                                    .lifetimes
+                                    .into_iter()
+                                    .map(purge)
+                                    .collect(),
+                                types: lhs
+                                    .member_generic_arguments
+                                    .types
+                                    .into_iter()
+                                    .map(purge)
+                                    .collect(),
+                                constants: lhs
+                                    .member_generic_arguments
+                                    .constants
+                                    .into_iter()
+                                    .map(purge)
+                                    .collect(),
+                            },
+                            parent_generic_arguments: GenericArguments {
+                                lifetimes: lhs
+                                    .parent_generic_arguments
+                                    .lifetimes
+                                    .into_iter()
+                                    .map(purge)
+                                    .collect(),
+                                types: lhs
+                                    .parent_generic_arguments
+                                    .types
+                                    .into_iter()
+                                    .map(purge)
+                                    .collect(),
+                                constants: lhs
+                                    .parent_generic_arguments
+                                    .constants
+                                    .into_iter()
+                                    .map(purge)
+                                    .collect(),
+                            },
+                        }),
+                        rhs,
+                    ),
+                    id,
+                )
+            });
 
         proptest::collection::vec(equality, 0..=4)
             .prop_map(|types| Self { types })
@@ -718,7 +957,7 @@ proptest! {
     })]
 
     #[test]
-    fn property_based_testing_type(
+   fn property_based_testing_type(
         property in Box::<dyn Property<Type<Default>>>::arbitrary(),
         decoy in Decoy::arbitrary()
     ) {

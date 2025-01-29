@@ -165,17 +165,35 @@ impl Input for Member {}
     Serialize,
     Deserialize,
 )]
-pub struct Parent(pub ID);
+pub struct Parent {
+    /// The ID of the parent symbol. This only be `None` if the symbol is a
+    /// root module symbol.
+    pub parent: Option<ID>,
+}
 
 impl Input for Parent {}
 
-/// A **local-input** component for storing the span of the symbol.
+/// A **presistent-input** component for storing the span of the symbol.
 ///
 /// This is mainly used for diagnostics reporting.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Deref,
+    DerefMut,
 )]
-pub struct LocationSpan(pub Span);
+pub struct LocationSpan {
+    /// The span of the symbol.
+    #[serde(skip)]
+    pub span: Option<Span>,
+}
 
 impl Input for LocationSpan {}
 
@@ -473,7 +491,7 @@ pub struct Using {
     derive_more::Deref,
     derive_more::DerefMut,
 )]
-pub struct Import(HashMap<String, Using>);
+pub struct Import(pub HashMap<String, Using>);
 
 impl Input for Import {}
 

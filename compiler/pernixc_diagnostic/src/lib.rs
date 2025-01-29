@@ -7,15 +7,8 @@ use pernixc_source_file::Span;
 ///
 /// This trait is typically implemented by error and warning types.
 pub trait Report<Param> {
-    /// The error type that can be returned when creating a diagnostic.
-    type Error;
-
     /// Creates a diagnostic.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the diagnostic cannot be created.
-    fn report(&self, parameter: Param) -> Result<Diagnostic, Self::Error>;
+    fn report(&self, parameter: Param) -> Diagnostic;
 }
 
 /// A struct containing all the information required to display the diagnostic

@@ -3,9 +3,7 @@
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
-use pernixc_table::{
-    component::SymbolKind, diagnostic::ReportError, GlobalID, Table,
-};
+use pernixc_table::{component::SymbolKind, GlobalID, Table};
 use pernixc_term::generic_parameter::GenericKind;
 
 /// The lifetime parameter was not found in the given scope.
@@ -19,13 +17,11 @@ pub struct LifetimeParameterNotFound {
 }
 
 impl Report<&Table> for LifetimeParameterNotFound {
-    type Error = ReportError;
-
-    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, table: &Table) -> Diagnostic {
         let referring_site_qualified_name =
-            table.get_qualified_name(self.referring_site).ok_or(ReportError)?;
+            table.get_qualified_name(self.referring_site);
 
-        Ok(Diagnostic {
+        Diagnostic {
             span: self.referred_span.clone(),
             message: format!(
                 "the lifetime parameter `{}` was not found in \
@@ -35,7 +31,7 @@ impl Report<&Table> for LifetimeParameterNotFound {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -50,10 +46,8 @@ pub struct UnexpectedInference {
 }
 
 impl Report<&Table> for UnexpectedInference {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
             span: self.unexpected_span.clone(),
             message: format!("{} inference is not allowed here", match self
                 .generic_kind
@@ -65,7 +59,7 @@ impl Report<&Table> for UnexpectedInference {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -77,17 +71,15 @@ pub struct MoreThanOneUnpackedInTupleType {
 }
 
 impl Report<&Table> for MoreThanOneUnpackedInTupleType {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
             span: self.illegal_tuple_type_span.clone(),
             message: "the tuple type contains more than one unpacked type"
                 .to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -102,18 +94,11 @@ pub struct ExpectType {
 }
 
 impl Report<&Table> for ExpectType {
-    type Error = ReportError;
+    fn report(&self, table: &Table) -> Diagnostic {
+        let qualified_name = table.get_qualified_name(self.resolved_global_id);
+        let kind = *table.get::<SymbolKind>(self.resolved_global_id);
 
-    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
-        let qualified_name = table
-            .get_qualified_name(self.resolved_global_id)
-            .ok_or(ReportError)?;
-
-        let kind = *table
-            .get::<SymbolKind>(self.resolved_global_id)
-            .ok_or(ReportError)?;
-
-        Ok(Diagnostic {
+        Diagnostic {
             span: self.non_type_symbol_span.clone(),
             message: format!(
                 "the type was expected but found {} `{qualified_name}`",
@@ -122,7 +107,7 @@ impl Report<&Table> for ExpectType {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -143,10 +128,8 @@ pub struct MismatchedGenericArgumentCount {
 }
 
 impl Report<&Table> for MismatchedGenericArgumentCount {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
             span: self.generic_identifier_span.clone(),
             message: format!(
                 "expected {} {} arguments, but {} were supplied",
@@ -161,7 +144,7 @@ impl Report<&Table> for MismatchedGenericArgumentCount {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -176,10 +159,8 @@ pub struct MisorderedGenericArgument {
 }
 
 impl Report<&Table> for MisorderedGenericArgument {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
             span: self.generic_argument.clone(),
             message: "the generic argument was supplied in the wrong order"
                 .to_string(),
@@ -195,6 +176,6 @@ impl Report<&Table> for MisorderedGenericArgument {
                 GenericKind::Constant => None,
             },
             related: Vec::new(),
-        })
+        }
     }
 }

@@ -11,8 +11,7 @@ use pernixc_syntax::syntax_tree::{
     self, ConnectedList, GenericIdentifier, LifetimeIdentifier,
 };
 use pernixc_table::{
-    component::SymbolKind, diagnostic::Diagnostic, query::Handle, GlobalID,
-    Table,
+    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -255,8 +254,7 @@ pub(super) fn verify_generic_arguments_for<M: Model>(
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) -> Option<GenericArguments<M>> {
-    let generic_parameters =
-        table.query::<GenericParameters>(generic_id).handle(handler)?;
+    let generic_parameters = table.query::<GenericParameters>(generic_id)?;
 
     let (
         lifetime_parameter_orders,
@@ -396,11 +394,10 @@ pub(super) fn resolve_lifetime_parameter<M: Model>(
 fn resolution_to_type<M: Model>(
     table: &Table,
     resolution: Resolution<M>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) -> Result<Type<M>, Resolution<M>> {
     match resolution {
         Resolution::Generic(symbol) => {
-            let symbol_kind = *table.get::<SymbolKind>(symbol.id).unwrap();
+            let symbol_kind = *table.get::<SymbolKind>(symbol.id);
 
             match symbol_kind {
                 SymbolKind::Struct | SymbolKind::Enum => {
@@ -411,9 +408,8 @@ fn resolution_to_type<M: Model>(
                 }
 
                 SymbolKind::TraitImplementationType | SymbolKind::Type => {
-                    let Some(generic_parameters) = table
-                        .query::<GenericParameters>(symbol.id)
-                        .handle(handler)
+                    let Some(generic_parameters) =
+                        table.query::<GenericParameters>(symbol.id)
                     else {
                         return Ok(Type::Error(pernixc_term::Error));
                     };
@@ -427,7 +423,6 @@ fn resolution_to_type<M: Model>(
 
                     let Some(mut result_ty) = table
                         .query::<TypeAlias>(symbol.id)
-                        .handle(handler)
                         .map(|x| M::from_default_type(x.0.clone()))
                     else {
                         return Ok(Type::Error(pernixc_term::Error));
@@ -443,7 +438,7 @@ fn resolution_to_type<M: Model>(
         }
 
         Resolution::MemberGeneric(symbol) => {
-            let symbol_kind = *table.get::<SymbolKind>(symbol.id).unwrap();
+            let symbol_kind = *table.get::<SymbolKind>(symbol.id);
 
             match symbol_kind {
                 SymbolKind::TraitType => {
@@ -496,7 +491,7 @@ pub(super) fn resolve_qualified_identifier_type<M: Model>(
         return Type::Error(pernixc_term::Error);
     };
 
-    match resolution_to_type(table, resolution, handler) {
+    match resolution_to_type(table, resolution) {
         Ok(ty) => ty,
         Err(resolution) => {
             handler.receive(Box::new(ExpectType {

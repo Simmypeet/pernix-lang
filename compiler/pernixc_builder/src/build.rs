@@ -7,7 +7,7 @@ use pernixc_component::{
 };
 use pernixc_table::{
     component::{Derived, SymbolKind},
-    query, GlobalID, Table, TargetID,
+    GlobalID, Table, TargetID,
 };
 use pernixc_term::{
     elided_lifetimes::ElidedLifetimes, generic_parameter::GenericParameters,
@@ -69,19 +69,7 @@ impl std::fmt::Debug for Compilation<'_> {
 fn build_component<T: Derived>(table: &Table, global_id: GlobalID) {
     // query the component, if it haven't been built, this will invoke the
     // builder for the component
-    match table.query::<T>(global_id) {
-        Ok(_) => { /*do nothing */ }
-        Err(query::Error::CyclicDependency(error)) => {
-            table.handler().receive(Box::new(error));
-        }
-        Err(error) => {
-            panic!(
-                "unexpected error: {error:?} when building {} for {:?}",
-                std::any::type_name::<T>(),
-                table.get_qualified_name(global_id)
-            );
-        }
-    }
+    table.query::<T>(global_id);
 }
 
 /// A callback that is invoked when a symbol is started/finished to be built.
@@ -181,7 +169,7 @@ pub fn build(
             (callback)(table, x);
         }
 
-        let symbol_kind = *table.get::<SymbolKind>(x).unwrap();
+        let symbol_kind = *table.get::<SymbolKind>(x);
 
         if symbol_kind.has_generic_parameters() {
             build_component::<GenericParameters>(table, x);

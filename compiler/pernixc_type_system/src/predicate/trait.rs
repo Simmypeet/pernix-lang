@@ -16,7 +16,7 @@ use crate::{
     environment::{Call, Environment, Query},
     normalizer::Normalizer,
     resolution::{self, Implementation},
-    AbruptError, ResultExt, Satisfied, Succeeded,
+    AbruptError, Satisfied, Succeeded,
 };
 
 /// An enumeration of ways a positive trait predicate can be satisfied.
@@ -87,12 +87,8 @@ impl<M: Model> Query for Positive<M> {
                     Implementation { instantiation, id, is_not_general_enough },
                 constraints,
             }) => {
-                if environment
-                    .table()
-                    .get::<SymbolKind>(id)
-                    .map_or(false, |x| {
-                        *x == SymbolKind::PositiveTraitImplementation
-                    })
+                if *environment.table().get::<SymbolKind>(id)
+                    == SymbolKind::PositiveTraitImplementation
                 {
                     return Ok(Some(Arc::new(Succeeded::with_constraints(
                         PositiveSatisfied::Implementation(Implementation {
@@ -181,12 +177,8 @@ impl<M: Model> Query for Negative<M> {
                     Implementation { instantiation, id, is_not_general_enough },
                 constraints,
             }) => {
-                if environment
-                    .table()
-                    .get::<SymbolKind>(id)
-                    .map_or(false, |x| {
-                        *x == SymbolKind::NegativeTraitImplementation
-                    })
+                if *environment.table().get::<SymbolKind>(id)
+                    == SymbolKind::NegativeTraitImplementation
                 {
                     return Ok(Some(Arc::new(Succeeded::with_constraints(
                         NegativeSatisfied::Implementation(Implementation {
@@ -272,8 +264,8 @@ fn is_in_trait<M: Model>(
     for current_id in environment.table().scope_walker(query_site) {
         let current_id = GlobalID::new(query_site.target_id, current_id);
 
-        let Some(SymbolKind::Trait) =
-            environment.table().get::<SymbolKind>(current_id).map(|x| *x)
+        let SymbolKind::Trait =
+            *environment.table().get::<SymbolKind>(current_id)
         else {
             continue;
         };
@@ -283,14 +275,11 @@ fn is_in_trait<M: Model>(
             continue;
         }
 
-        let Some(trait_generic_arguments) = environment
+        let trait_generic_arguments = environment
             .table()
             .query::<GenericParameters>(current_id)
-            .map(|x| x.create_identity_generic_arguments(current_id))
-            .extract_cyclic_dependency()?
-        else {
-            continue;
-        };
+            .ok_or(AbruptError::CyclicDependency)?
+            .create_identity_generic_arguments(current_id);
 
         let Some(compatibility) = environment.generic_arguments_compatible(
             generic_arguments,

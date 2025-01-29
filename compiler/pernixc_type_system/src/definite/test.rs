@@ -21,7 +21,7 @@ use crate::{
 };
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 pub enum ApplyPropertyError {
     #[error("{0}")]

@@ -1,6 +1,6 @@
 //! Contains the definition of [`Error`]
 
-use std::{convert::Infallible, sync::Arc};
+use std::sync::Arc;
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -83,6 +83,7 @@ impl Error {
     /// # Errors
     ///
     /// See [`ConvertUnexpectedError`] for possible errors
+    #[must_use]
     pub fn new(
         tree: &Tree,
         unexpected: Unexpected,
@@ -90,24 +91,8 @@ impl Error {
     ) -> Self {
         assert!(!expected.is_empty(), "expected cannot be empty");
 
-        let (found, tok_index) = match unexpected.token_index {
-            Some(token_index) => (
-                match tree
-                    .get_token(&Location::new(
-                        unexpected.node_index,
-                        token_index,
-                    ))
-                    .expect("invalid token index")
-                {
-                    TokenKind::Token(token) => Found::Token(token.clone()),
-                    TokenKind::Delimited(delimited) => {
-                        Found::Token(Token::Punctuation(delimited.open.clone()))
-                    }
-                },
-                token_index,
-            ),
-
-            None => {
+        let (found, tok_index) = unexpected.token_index.map_or_else(
+            || {
                 if unexpected.node_index == 0 {
                     (
                         Found::EndOfFile(
@@ -132,8 +117,25 @@ impl Error {
                             .len(),
                     )
                 }
-            }
-        };
+            },
+            |token_index| {
+                (
+                    match tree
+                        .get_token(&Location::new(
+                            unexpected.node_index,
+                            token_index,
+                        ))
+                        .expect("invalid token index")
+                    {
+                        TokenKind::Token(token) => Found::Token(token.clone()),
+                        TokenKind::Delimited(delimited) => Found::Token(
+                            Token::Punctuation(delimited.open.clone()),
+                        ),
+                    },
+                    token_index,
+                )
+            },
+        );
 
         let prior_insignificant = find_prior_insignificant_token(
             tree,
@@ -178,9 +180,7 @@ impl Error {
 }
 
 impl Report<()> for Error {
-    type Error = Infallible;
-
-    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Diagnostic {
         let expected_string = self
             .expected
             .iter()
@@ -228,12 +228,12 @@ impl Report<()> for Error {
              {found_string}",
         );
 
-        Ok(Diagnostic {
+        Diagnostic {
             span: self.diagnostic_span.clone(),
             message,
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }

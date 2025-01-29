@@ -1,8 +1,6 @@
 //! Contains all kinds of lexical errors that can occur while tokenizing the
 //! source code.
 
-use std::convert::Infallible;
-
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -20,17 +18,15 @@ pub struct UnterminatedDelimitedComment {
 }
 
 impl Report<()> for UnterminatedDelimitedComment {
-    type Error = Infallible;
-
     /// Gets the diagnostic information for the error.
-    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, (): ()) -> Diagnostic {
+        Diagnostic {
             span: self.span.clone(),
             message: "found an unclosed `/*` comment".to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -45,10 +41,8 @@ pub struct UndelimitedDelimiter {
 }
 
 impl Report<()> for UndelimitedDelimiter {
-    type Error = Infallible;
-
-    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, (): ()) -> Diagnostic {
+        Diagnostic {
             span: self.opening_span.clone(),
             message: "found an undelimited delimiter".to_string(),
             severity: Severity::Error,
@@ -58,7 +52,7 @@ impl Report<()> for UndelimitedDelimiter {
                     .to_string(),
             ),
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -70,16 +64,14 @@ pub struct UnterminatedStringLiteral {
 }
 
 impl Report<()> for UnterminatedStringLiteral {
-    type Error = Infallible;
-
-    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, (): ()) -> Diagnostic {
+        Diagnostic {
             span: self.span.clone(),
             message: "found an unterminated string literal".to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -91,16 +83,14 @@ pub struct InvalidEscapeSequence {
 }
 
 impl Report<()> for InvalidEscapeSequence {
-    type Error = Infallible;
-
-    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, (): ()) -> Diagnostic {
+        Diagnostic {
             span: self.span.clone(),
             message: "found an invalid escape sequence".to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -131,9 +121,7 @@ impl Error {
 }
 
 impl Report<()> for Error {
-    type Error = Infallible;
-
-    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Diagnostic {
         match self {
             Self::UnterminatedDelimitedComment(err) => err.report(()),
             Self::UndelimitedDelimiter(err) => err.report(()),

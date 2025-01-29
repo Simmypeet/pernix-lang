@@ -39,7 +39,9 @@ use proptest::{
 use crate::{
     definite::Definite,
     environment::{Environment, Premise},
-    normalizer, Succeeded,
+    normalizer,
+    test::purge,
+    Succeeded,
 };
 
 lazy_static! {
@@ -56,12 +58,17 @@ fn definite_lifetime() -> impl Strategy<Value = Lifetime<Default>> {
 }
 
 fn definite_type() -> impl Strategy<Value = Type<Default>> {
-    Type::arbitrary().prop_filter("filter out non-definite terms", |term| {
-        let environment = Environment::with_default(&TABLE);
-        matches!(environment.query(&Definite::new(term.clone())), Ok(Some(_)))
-            && !RecursiveIterator::new(term)
+    Type::arbitrary().prop_map(purge).prop_filter(
+        "filter out non-definite terms",
+        |term| {
+            let environment = Environment::with_default(&TABLE);
+            matches!(
+                environment.query(&Definite::new(term.clone())),
+                Ok(Some(_))
+            ) && !RecursiveIterator::new(term)
                 .any(|(x, _)| matches!(x, Kind::Type(Type::TraitMember(_))))
-    })
+        },
+    )
 }
 
 fn definite_constant() -> impl Strategy<Value = Constant<Default>> {

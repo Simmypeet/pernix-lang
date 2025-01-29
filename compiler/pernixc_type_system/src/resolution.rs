@@ -5,7 +5,6 @@ use std::collections::BTreeSet;
 use pernixc_component::implementation::Implementation as ImplementationComponent;
 use pernixc_table::{
     component::{Implemented, Implements, SymbolKind, TraitImplementation},
-    query::CyclicDependency,
     GlobalID,
 };
 use pernixc_term::{
@@ -20,7 +19,7 @@ use crate::{
     environment::Environment,
     normalizer::Normalizer,
     order::Order,
-    AbruptError, LifetimeConstraint, ResultExt, Succeeded,
+    AbruptError, LifetimeConstraint, Succeeded,
 };
 
 /// A result of a implementation resolution query.
@@ -38,11 +37,9 @@ pub struct Implementation<M: Model> {
     pub is_not_general_enough: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
 #[allow(missing_docs)]
 pub enum Error {
-    #[error("the `implemented_id` is invalid to the table")]
-    InvalidID,
     #[error(
         "the generic arguments contained a term that can be rewritten in \
          multiple ways and caused an ambiguity in resolution"
@@ -52,14 +49,6 @@ pub enum Error {
     NotFound,
     #[error(transparent)]
     Abrupt(#[from] AbruptError),
-    #[error("the given `implemented_id` is not a trait or marker")]
-    NotTraitOrMarker,
-}
-
-impl From<CyclicDependency> for Error {
-    fn from(value: CyclicDependency) -> Self {
-        Self::Abrupt(AbruptError::CyclicDependency(value))
-    }
 }
 
 impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
@@ -75,15 +64,10 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
         implemented_id: GlobalID,
         generic_arguments: &GenericArguments<M>,
     ) -> Result<Succeeded<Implementation<M>, M>, Error> {
-        let symbol_kind = *self
-            .table()
-            .get::<SymbolKind>(implemented_id)
-            .ok_or(Error::InvalidID)?;
+        let symbol_kind = *self.table().get::<SymbolKind>(implemented_id);
 
         // check that it must be trait or marker
-        if !matches!(symbol_kind, SymbolKind::Trait | SymbolKind::Marker) {
-            return Err(Error::NotTraitOrMarker);
-        }
+        assert!(matches!(symbol_kind, SymbolKind::Trait | SymbolKind::Marker));
 
         // we might be in the implementation site already
         if let Some(result) = is_in_active_implementation(
@@ -112,24 +96,19 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
         let implementations = self
             .table()
             .get::<Implemented>(implemented_id)
-            .ok_or(Error::InvalidID)?
             .iter()
             .copied()
             .collect::<Vec<_>>();
 
         for current_impl_id in implementations {
-            let Some(implementation_generic_arguments) = self
-                .table()
-                .query::<ImplementationComponent>(current_impl_id)
-                .extract_cyclic_dependency()?
-                .map(|x| {
-                    GenericArguments::from_default_model(
-                        x.generic_arguments.clone(),
-                    )
-                })
-            else {
-                continue;
-            };
+            let implementation_generic_arguments =
+                GenericArguments::from_default_model(
+                    self.table()
+                        .query::<ImplementationComponent>(current_impl_id)
+                        .ok_or(Error::Abrupt(AbruptError::CyclicDependency))?
+                        .generic_arguments
+                        .clone(),
+                );
 
             // build the unification
             let Succeeded {
@@ -151,15 +130,9 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
             };
             let is_final = match symbol_kind {
                 SymbolKind::Trait => {
-                    let Some(is_final) = self
-                        .table()
+                    self.table()
                         .get::<TraitImplementation>(current_impl_id)
-                        .map(|x| x.is_final)
-                    else {
-                        continue;
-                    };
-
-                    is_final
+                        .is_final
                 }
 
                 // every marker's implementaions are final
@@ -176,13 +149,10 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
                 }
 
                 // all predicates must satisfy to continue
-                let Some(where_clause) = self
+                let where_clause = self
                     .table()
                     .query::<WhereClause>(current_impl_id)
-                    .extract_cyclic_dependency()?
-                else {
-                    continue;
-                };
+                    .ok_or(Error::Abrupt(AbruptError::CyclicDependency))?;
 
                 if !predicate_satisfies(
                     where_clause.predicates.iter().map(|x| &x.predicate),
@@ -269,11 +239,7 @@ fn is_in_active_implementation<M: Model>(
 
     for current_id in environment.table().scope_walker(query_site) {
         let current_id = GlobalID::new(query_site.target_id, current_id);
-        let Some(current_kind) =
-            environment.table().get::<SymbolKind>(current_id).map(|x| *x)
-        else {
-            continue;
-        };
+        let current_kind = *environment.table().get::<SymbolKind>(current_id);
 
         // must be the implementation kind
         match implemented_kind {
@@ -301,26 +267,19 @@ fn is_in_active_implementation<M: Model>(
         }
 
         // must be an implementation
-        if environment
-            .table()
-            .get::<Implements>(current_id)
-            .map_or(true, |x| x.0 != implemented_id)
+        if environment.table().get::<Implements>(current_id).0 != implemented_id
         {
             continue;
         }
 
-        let Some(implementation_arguments) = environment
-            .table()
-            .query::<ImplementationComponent>(current_id)
-            .extract_cyclic_dependency()?
-            .map(|x| {
-                GenericArguments::from_default_model(
-                    x.generic_arguments.clone(),
-                )
-            })
-        else {
-            continue;
-        };
+        let implementation_arguments = GenericArguments::from_default_model(
+            environment
+                .table()
+                .query::<ImplementationComponent>(current_id)
+                .ok_or(Error::Abrupt(AbruptError::CyclicDependency))?
+                .generic_arguments
+                .clone(),
+        );
 
         let Some(_) = environment.generic_arguments_compatible(
             generic_arguments,

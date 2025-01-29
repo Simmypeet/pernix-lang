@@ -1,5 +1,3 @@
-use core::fmt;
-
 use derive_new::new;
 use pernixc_table::{DisplayObject, GlobalID, Table};
 use serde::{Deserialize, Serialize};
@@ -105,7 +103,7 @@ where
         write!(
             f,
             "{}{}",
-            table.get_qualified_name(self.trait_id).ok_or(fmt::Error)?,
+            table.get_qualified_name(self.trait_id),
             DisplayObject { display: &self.generic_arguments, table }
         )
     }
@@ -192,12 +190,12 @@ where
         table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        write!(f, "!trait ")?;
+        write!(f, "trait !")?;
 
         write!(
             f,
             "{}{}",
-            table.get_qualified_name(self.trait_id).ok_or(fmt::Error)?,
+            table.get_qualified_name(self.trait_id),
             DisplayObject { display: &self.generic_arguments, table }
         )
     }

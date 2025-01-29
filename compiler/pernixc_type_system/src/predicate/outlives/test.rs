@@ -1,16 +1,19 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{collections::HashSet, fmt::Debug, sync::Arc};
 
 use pernixc_component::variance_map::VarianceMap;
-use pernixc_table::{component::SymbolKind, GlobalID, Table};
+use pernixc_table::{
+    component::{Implemented, Parent, SymbolKind},
+    GlobalID, Table,
+};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
     generic_parameter::{GenericParameters, LifetimeParameter},
     lifetime::Lifetime,
     predicate::{Compatible, Outlives, Predicate},
-    r#type::Type,
+    r#type::{TraitMember, Type},
     variance::Variance,
-    Default, Symbol,
+    Default, MemberSymbol, Symbol,
 };
 use proptest::{
     arbitrary::Arbitrary,
@@ -23,21 +26,19 @@ use crate::{
     environment::{Environment, Premise},
     equality, normalizer,
     term::Term,
+    test::purge,
     AbruptError,
 };
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
-pub enum GenerateError {
+pub enum AbortError {
     #[error(transparent)]
     Abrupt(#[from] AbruptError),
 
-    #[error(
-        "duplicated struct name found, it most likely comes from \
-         `LifetimeMatching` property"
-    )]
-    DuplicatedGlobalID,
+    #[error("collision to the ID generated on the table")]
+    IDCollision,
 }
 
 /// A trait for generating term for checking predicate
@@ -47,31 +48,47 @@ pub trait Property<T>: 'static + Debug {
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(T, Lifetime<Default>), GenerateError>;
+    ) -> Result<(T, Lifetime<Default>), AbortError>;
 
     fn node_count(&self) -> usize;
 }
 
 #[derive(Debug)]
-pub struct ByEquality<T: Term> {
-    pub equality: T::TraitMember,
-    pub property: Box<dyn Property<T>>,
+pub struct ByEquality {
+    pub equality: TraitMember<Default>,
+    pub trait_id: pernixc_table::ID,
+    pub property: Box<dyn Property<Type<Default>>>,
 }
 
-impl<T: Term<Model = Default>> Property<T> for ByEquality<T>
-where
-    Compatible<T::TraitMember, T>: Into<Predicate<Default>>,
-{
+impl Property<Type<Default>> for ByEquality {
     fn generate(
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(T, Lifetime<Default>), GenerateError> {
+    ) -> Result<(Type<Default>, Lifetime<Default>), AbortError> {
+        let add_parent = table.add_component(self.equality.id, Parent {
+            parent: Some(self.trait_id),
+        });
+        let add_kind = table.add_component(
+            GlobalID::new(self.equality.id.target_id, self.trait_id),
+            SymbolKind::Trait,
+        );
+        let add_implemented = table.add_component(
+            GlobalID::new(self.equality.id.target_id, self.trait_id),
+            Implemented(HashSet::new()),
+        );
+
+        if !add_parent || !add_kind || !add_implemented {
+            return Err(AbortError::IDCollision);
+        }
+
         let (inner_operand, inner_bound) =
             self.property.generate(table, premise)?;
 
-        let outlives =
-            Outlives::new(T::from(self.equality.clone()), inner_bound);
+        let outlives = Outlives::new(
+            Type::TraitMember(self.equality.clone()),
+            inner_bound,
+        );
 
         let environment = Environment::new_unchecked(
             premise.clone(),
@@ -86,26 +103,74 @@ where
             );
         }
 
-        Ok((T::from(self.equality.clone()), inner_bound))
+        Ok((Type::TraitMember(self.equality.clone()), inner_bound))
     }
 
     fn node_count(&self) -> usize { self.property.node_count() + 1 }
 }
 
-impl<T: Term> Arbitrary for ByEquality<T>
-where
-    Box<dyn Property<T>>:
-        Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
-    T::TraitMember: Arbitrary<Strategy = BoxedStrategy<T::TraitMember>>,
-{
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
+impl Arbitrary for ByEquality {
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let args = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
+        let args =
+            args.unwrap_or_else(Box::<dyn Property<Type<Default>>>::arbitrary);
 
-        (T::TraitMember::arbitrary(), args)
-            .prop_map(|(equality, property)| Self { equality, property })
+        (TraitMember::arbitrary(), pernixc_table::ID::arbitrary(), args)
+            .prop_map(|(equality, trait_id, property)| Self {
+                equality: TraitMember(MemberSymbol {
+                    id: equality.0.id,
+                    member_generic_arguments: GenericArguments {
+                        lifetimes: equality
+                            .0
+                            .member_generic_arguments
+                            .lifetimes
+                            .into_iter()
+                            .map(purge)
+                            .collect(),
+                        types: equality
+                            .0
+                            .member_generic_arguments
+                            .types
+                            .into_iter()
+                            .map(purge)
+                            .collect(),
+                        constants: equality
+                            .0
+                            .member_generic_arguments
+                            .constants
+                            .into_iter()
+                            .map(purge)
+                            .collect(),
+                    },
+                    parent_generic_arguments: GenericArguments {
+                        lifetimes: equality
+                            .0
+                            .parent_generic_arguments
+                            .lifetimes
+                            .into_iter()
+                            .map(purge)
+                            .collect(),
+                        types: equality
+                            .0
+                            .parent_generic_arguments
+                            .types
+                            .into_iter()
+                            .map(purge)
+                            .collect(),
+                        constants: equality
+                            .0
+                            .parent_generic_arguments
+                            .constants
+                            .into_iter()
+                            .map(purge)
+                            .collect(),
+                    },
+                }),
+                trait_id,
+                property,
+            })
             .boxed()
     }
 }
@@ -122,7 +187,7 @@ impl Property<Type<Default>> for LifetimeMatching {
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(Type<Default>, Lifetime<Default>), GenerateError> {
+    ) -> Result<(Type<Default>, Lifetime<Default>), AbortError> {
         let mut operand_lifetimes = Vec::new();
         let mut bound_lifetimes = Vec::new();
 
@@ -152,7 +217,7 @@ impl Property<Type<Default>> for LifetimeMatching {
         }
 
         if !table.add_component(self.struct_id, SymbolKind::Struct) {
-            return Err(GenerateError::DuplicatedGlobalID);
+            return Err(AbortError::IDCollision);
         }
 
         assert!(table.add_component(self.struct_id, generic_parameter));
@@ -234,8 +299,16 @@ impl Property<Lifetime<Default>> for Reflexive {
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(Lifetime<Default>, Lifetime<Default>), GenerateError> {
-        let (term, bound) = self.term.generate(table, premise)?;
+    ) -> Result<(Lifetime<Default>, Lifetime<Default>), AbortError> {
+        let (term, bound) =
+            self.term.generate(table, premise).map_err(|x| match x {
+                equality::test::AbortError::Abrupt(abrupt_error) => {
+                    AbortError::Abrupt(abrupt_error)
+                }
+                equality::test::AbortError::IDCollision => {
+                    AbortError::IDCollision
+                }
+            })?;
 
         Ok((term, bound))
     }
@@ -260,14 +333,14 @@ pub struct ByPremise<T> {
     pub bound: Lifetime<Default>,
 }
 
-impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + 'static> Arbitrary
+impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + Term + 'static> Arbitrary
     for ByPremise<T>
 {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (T::arbitrary(), Lifetime::arbitrary())
+        (T::arbitrary().prop_map(purge), Lifetime::arbitrary())
             .prop_map(|(term, bound)| Self { term, bound })
             .boxed()
     }
@@ -281,7 +354,7 @@ where
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(T, Lifetime<Default>), GenerateError> {
+    ) -> Result<(T, Lifetime<Default>), AbortError> {
         let environment = Environment::new_unchecked(
             premise.clone(),
             table,
@@ -315,7 +388,7 @@ impl<T: Term<Model = Default>> Property<T> for Transitive<T> {
         &self,
         table: &mut Table,
         premise: &mut Premise<Default>,
-    ) -> Result<(T, Lifetime<Default>), GenerateError> {
+    ) -> Result<(T, Lifetime<Default>), AbortError> {
         let (inner_operand, inner_bound) =
             self.inner_property.generate(table, premise)?;
 

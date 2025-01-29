@@ -106,10 +106,8 @@ pub struct RootSubmoduleConflict {
 }
 
 impl Report<()> for RootSubmoduleConflict {
-    type Error = ();
-
-    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, (): ()) -> Diagnostic {
+        Diagnostic {
             severity: Severity::Error,
             message: "the submodule of the root source file ends up pointing \
                       to the root source file itself"
@@ -117,7 +115,7 @@ impl Report<()> for RootSubmoduleConflict {
             span: self.submodule_span.clone(),
             help_message: None,
             related: vec![],
-        })
+        }
     }
 }
 
@@ -135,10 +133,8 @@ pub struct SourceFileLoadFail {
 }
 
 impl Report<()> for SourceFileLoadFail {
-    type Error = ();
-
-    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, (): ()) -> Diagnostic {
+        Diagnostic {
             severity: Severity::Error,
             message: "failed to load a source file for the submodule"
                 .to_string(),
@@ -149,7 +145,7 @@ impl Report<()> for SourceFileLoadFail {
                 self.source_error
             )),
             related: vec![],
-        })
+        }
     }
 }
 
@@ -164,10 +160,8 @@ pub struct ModuleRedefinition {
 }
 
 impl Report<()> for ModuleRedefinition {
-    type Error = ();
-
-    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, (): ()) -> Diagnostic {
+        Diagnostic {
             severity: Severity::Error,
             message: "a module with the given name already exists".to_string(),
             span: self.redefinition_submodule_span.clone(),
@@ -176,7 +170,7 @@ impl Report<()> for ModuleRedefinition {
                 span: self.existing_module_span.clone(),
                 message: "existing module".to_string(),
             }],
-        })
+        }
     }
 }
 
@@ -190,9 +184,7 @@ pub enum Error {
 }
 
 impl Report<()> for Error {
-    type Error = ();
-
-    fn report(&self, (): ()) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, (): ()) -> Diagnostic {
         match self {
             Self::ModuleRedefinition(err) => err.report(()),
             Self::RootSubmoduleConflict(err) => err.report(()),

@@ -11,7 +11,7 @@ use pernixc_table::{
         Implements, SymbolKind,
     },
     diagnostic::Diagnostic,
-    query::{self, Handle},
+    query::{self},
     GlobalID, Table,
 };
 use pernixc_term::{
@@ -28,7 +28,7 @@ impl query::Builder<Implementation> for Builder {
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<Implementation>> {
-        let symbol_kind = *table.get::<SymbolKind>(global_id)?;
+        let symbol_kind = *table.get::<SymbolKind>(global_id);
         if !symbol_kind.is_implementation() {
             return None;
         }
@@ -41,7 +41,7 @@ impl query::Builder<Implementation> for Builder {
 
         // get qualified identifier syntax tree of `implements
         // QUALIFIED_IDENTIFIER`
-        let syntax_tree = table.get::<SyntaxTree>(global_id).unwrap();
+        let syntax_tree = table.get::<SyntaxTree>(global_id);
 
         let generic_identifier = syntax_tree.rest().last().map_or_else(
             || {
@@ -52,9 +52,8 @@ impl query::Builder<Implementation> for Builder {
             },
             |x| &x.1,
         );
-        let implemented_id = table.get::<Implements>(global_id).unwrap().0;
-        let extra_namespace =
-            table.get_generic_parameter_namepsace(global_id, handler);
+        let implemented_id = table.get::<Implements>(global_id).0;
+        let extra_namespace = table.get_generic_parameter_namepsace(global_id);
 
         let generic_arguments = table
             .resolve_generic_arguments_for(
@@ -73,9 +72,8 @@ impl query::Builder<Implementation> for Builder {
             .unwrap_or_else(|| {
                 // try to create generic arguments for the implemented symbol
                 // with every argument being an error
-                let Some(implemented_generic_parameters) = table
-                    .query::<GenericParameters>(implemented_id)
-                    .handle(handler)
+                let Some(implemented_generic_parameters) =
+                    table.query::<GenericParameters>(implemented_id)
                 else {
                     return GenericArguments::default();
                 };

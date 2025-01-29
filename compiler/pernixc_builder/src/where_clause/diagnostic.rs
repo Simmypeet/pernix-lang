@@ -3,9 +3,7 @@
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
-use pernixc_table::{
-    component::SymbolKind, diagnostic::ReportError, GlobalID, Table,
-};
+use pernixc_table::{component::SymbolKind, GlobalID, Table};
 
 /// The higher-ranked lifetime with the same name already exists in the given
 /// scope.
@@ -16,10 +14,8 @@ pub struct HigherRankedLifetimeRedefinition {
 }
 
 impl Report<&Table> for HigherRankedLifetimeRedefinition {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
             span: self.redefinition_span.clone(),
             message: "the higher-ranked lifetime with the same name already \
                       exists in the given scope"
@@ -27,7 +23,7 @@ impl Report<&Table> for HigherRankedLifetimeRedefinition {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -54,15 +50,12 @@ pub struct UnexpectedSymbolInPredicate {
 }
 
 impl Report<&Table> for UnexpectedSymbolInPredicate {
-    type Error = ReportError;
-
-    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, table: &Table) -> Diagnostic {
         let found_symbol_qualified_name =
-            table.get_qualified_name(self.found_id).ok_or(ReportError)?;
-        let symbol_kind =
-            *table.get::<SymbolKind>(self.found_id).ok_or(ReportError)?;
+            table.get_qualified_name(self.found_id);
+        let symbol_kind = *table.get::<SymbolKind>(self.found_id);
 
-        Ok(Diagnostic {
+        Diagnostic {
             span: self.qualified_identifier_span.clone(),
             message: format!(
                 "unexpected symbol in the {} predicate: `{} {}`",
@@ -77,6 +70,6 @@ impl Report<&Table> for UnexpectedSymbolInPredicate {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }

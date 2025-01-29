@@ -9,21 +9,9 @@ use pernixc_source_file::Span;
 use super::{GlobalID, Representation, Table, TargetID};
 use crate::component::{Accessibility, LocationSpan, Name, SymbolKind};
 
-/// An error type used for [`Report::Error`] associated type.
-///
-/// This typically caused by giving an invalid table (not the same table where
-/// the error originated from) to the parameter [`Report::report`]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ReportError;
-
 /// Implemented by all diagnostic objects.
 pub trait Diagnostic:
-    for<'a> Report<&'a Table, Error = ReportError>
-    + Debug
-    + Any
-    + Send
-    + Sync
-    + 'static
+    for<'a> Report<&'a Table> + Debug + Any + Send + Sync + 'static
 {
     #[allow(missing_docs)]
     fn as_any(&self) -> &dyn Any;
@@ -32,28 +20,16 @@ pub trait Diagnostic:
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-impl<
-        U: for<'a> Report<&'a Table, Error = ReportError>
-            + Debug
-            + Any
-            + Send
-            + Sync
-            + 'static,
-    > Diagnostic for U
+impl<U: for<'a> Report<&'a Table> + Debug + Any + Send + Sync + 'static>
+    Diagnostic for U
 {
     fn as_any(&self) -> &dyn Any { self }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
-impl<
-        U: for<'a> Report<&'a Table, Error = ReportError>
-            + Debug
-            + Any
-            + Send
-            + Sync
-            + 'static,
-    > From<U> for Box<dyn Diagnostic>
+impl<U: for<'a> Report<&'a Table> + Debug + Any + Send + Sync + 'static> From<U>
+    for Box<dyn Diagnostic>
 {
     fn from(value: U) -> Self { Box::new(value) }
 }
@@ -72,27 +48,14 @@ pub struct ItemRedifinition {
 }
 
 impl Report<&Table> for ItemRedifinition {
-    type Error = ReportError;
+    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
+        let existing_symbol_span = table.get::<LocationSpan>(self.existing_id);
+        let new_symbol_span = table.get::<LocationSpan>(self.new_id);
+        let existing_symbol_name = table.get::<Name>(self.existing_id);
+        let in_name = table.get_qualified_name(self.in_id);
 
-    fn report(
-        &self,
-        table: &Table,
-    ) -> Result<pernixc_diagnostic::Diagnostic, Self::Error> {
-        let existing_symbol_span = table
-            .storage
-            .get::<LocationSpan>(self.existing_id)
-            .ok_or(ReportError)?;
-        let new_symbol_span = table
-            .storage
-            .get::<LocationSpan>(self.new_id)
-            .ok_or(ReportError)?;
-        let existing_symbol_name =
-            table.storage.get::<Name>(self.existing_id).ok_or(ReportError)?;
-        let in_name =
-            table.get_qualified_name(self.in_id).ok_or(ReportError)?;
-
-        Ok(DiagnosticReport {
-            span: new_symbol_span.0.clone(),
+        DiagnosticReport {
+            span: new_symbol_span.span.clone().unwrap(),
             message: format!(
                 "the symbol `{}` is already defined in `{in_name}`",
                 existing_symbol_name.as_str(),
@@ -100,10 +63,10 @@ impl Report<&Table> for ItemRedifinition {
             severity: Severity::Error,
             help_message: None,
             related: vec![Related {
-                span: existing_symbol_span.0.clone(),
+                span: existing_symbol_span.span.clone().unwrap(),
                 message: "previously defined here".to_string(),
             }],
-        })
+        }
     }
 }
 
@@ -122,62 +85,42 @@ impl Representation {
         &self,
         target_id: TargetID,
         accessibility: Accessibility,
-    ) -> Result<String, ReportError> {
+    ) -> String {
         match accessibility {
-            Accessibility::Public => Ok("publicly accessible".to_owned()),
+            Accessibility::Public => "publicly accessible".to_owned(),
             Accessibility::Scoped(module_id) => {
                 let module_qualified_name = self
-                    .get_qualified_name(GlobalID::new(target_id, module_id))
-                    .ok_or(ReportError)?;
+                    .get_qualified_name(GlobalID::new(target_id, module_id));
 
-                Ok(format!("accessible in `{module_qualified_name}`"))
+                format!("accessible in `{module_qualified_name}`")
             }
         }
     }
 }
 
 impl Report<&Table> for SymbolIsMoreAccessibleThanParent {
-    type Error = ReportError;
+    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
+        let symbol_name = table.get::<Name>(self.symbol_id);
+        let parent_qualified_name = table.get_qualified_name(self.parent_id);
 
-    fn report(
-        &self,
-        table: &Table,
-    ) -> Result<pernixc_diagnostic::Diagnostic, Self::Error> {
-        let (Some(symbol_name), Some(parent_qualified_name)) = (
-            table.storage.get::<Name>(self.symbol_id),
-            table.get_qualified_name(self.parent_id),
-        ) else {
-            return Err(ReportError);
-        };
+        let symbol_accessibility = table.get_accessibility(self.symbol_id);
+        let parent_accessibility = table.get_accessibility(self.parent_id);
 
-        let (Some(symbol_accessibility), Some(parent_accessibility)) = (
-            table.get_accessibility(self.symbol_id),
-            table.get_accessibility(self.parent_id),
-        ) else {
-            return Err(ReportError);
-        };
+        let symbol_span = table.get::<LocationSpan>(self.symbol_id);
+        let parent_span = table.get::<LocationSpan>(self.parent_id);
 
-        let (Some(symbol_span), Some(parent_span)) = (
-            table.storage.get::<LocationSpan>(self.symbol_id),
-            table.storage.get::<LocationSpan>(self.parent_id),
-        ) else {
-            return Err(ReportError);
-        };
+        let symbol_accessibility_description = table.accessibility_description(
+            self.symbol_id.target_id,
+            symbol_accessibility,
+        );
 
-        let symbol_accessibility_description = table
-            .accessibility_description(
-                self.symbol_id.target_id,
-                symbol_accessibility,
-            )?;
+        let parent_accessibility_description = table.accessibility_description(
+            self.parent_id.target_id,
+            parent_accessibility,
+        );
 
-        let parent_accessibility_description = table
-            .accessibility_description(
-                self.parent_id.target_id,
-                parent_accessibility,
-            )?;
-
-        Ok(DiagnosticReport {
-            span: symbol_span.0.clone(),
+        DiagnosticReport {
+            span: symbol_span.span.clone().unwrap(),
             message: format!(
                 "the symbol `{}` in `{parent_qualified_name}` is more \
                  accessible than the parent symbol",
@@ -189,12 +132,12 @@ impl Report<&Table> for SymbolIsMoreAccessibleThanParent {
                 symbol_name.as_str()
             )),
             related: vec![Related {
-                span: parent_span.0.clone(),
+                span: parent_span.span.clone().unwrap(),
                 message: format!(
                     "the parent symbol is {parent_accessibility_description}",
                 ),
             }],
-        })
+        }
     }
 }
 
@@ -206,10 +149,8 @@ pub struct UnknownExternCallingConvention {
 }
 
 impl Report<&Table> for UnknownExternCallingConvention {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<DiagnosticReport, Self::Error> {
-        Ok(DiagnosticReport {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
             span: self.span.clone(),
             message: format!(
                 "unknown calling convention `{}` in `extern`",
@@ -218,7 +159,7 @@ impl Report<&Table> for UnknownExternCallingConvention {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -233,14 +174,12 @@ pub struct ExpectModule {
 }
 
 impl Report<&Table> for ExpectModule {
-    type Error = ReportError;
-
-    fn report(&self, table: &Table) -> Result<DiagnosticReport, Self::Error> {
+    fn report(&self, table: &Table) -> DiagnosticReport {
         let found_symbol_qualified_name =
-            table.get_qualified_name(self.found_id).ok_or(ReportError)?;
-        let kind = table.storage.get::<SymbolKind>(self.found_id).unwrap();
+            table.get_qualified_name(self.found_id);
+        let kind = table.get::<SymbolKind>(self.found_id);
 
-        Ok(DiagnosticReport {
+        DiagnosticReport {
             span: self.module_path.clone(),
             message: format!(
                 "expected a module in the module path, but found `{} {}`",
@@ -250,7 +189,7 @@ impl Report<&Table> for ExpectModule {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -274,13 +213,10 @@ pub struct ConflictingUsing {
 }
 
 impl Report<&Table> for ConflictingUsing {
-    type Error = ReportError;
+    fn report(&self, table: &Table) -> DiagnosticReport {
+        let module_qualified_name = table.get_qualified_name(self.module_id);
 
-    fn report(&self, table: &Table) -> Result<DiagnosticReport, Self::Error> {
-        let module_qualified_name =
-            table.get_qualified_name(self.module_id).ok_or(ReportError)?;
-
-        Ok(DiagnosticReport {
+        DiagnosticReport {
             span: self.using_span.clone(),
             message: format!(
                 "the using `{name}` conflicts with the existing name in the \
@@ -299,7 +235,7 @@ impl Report<&Table> for ConflictingUsing {
                     }]
                 })
                 .unwrap_or_default(),
-        })
+        }
     }
 }
 
@@ -314,14 +250,10 @@ pub struct InvalidSymbolInImplementation {
 }
 
 impl Report<&Table> for InvalidSymbolInImplementation {
-    type Error = ReportError;
+    fn report(&self, table: &Table) -> DiagnosticReport {
+        let qualified_name = table.get_qualified_name(self.invalid_item_id);
 
-    fn report(&self, table: &Table) -> Result<DiagnosticReport, Self::Error> {
-        let qualified_name = table
-            .get_qualified_name(self.invalid_item_id)
-            .ok_or(ReportError)?;
-
-        Ok(DiagnosticReport {
+        DiagnosticReport {
             span: self.qualified_identifier_span.clone(),
             message: format!(
                 "the symbol `{qualified_name}` is not a trait, marker, \
@@ -330,7 +262,7 @@ impl Report<&Table> for InvalidSymbolInImplementation {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -342,10 +274,8 @@ pub struct FoundEmptyImplementationOnTrait {
 }
 
 impl Report<&Table> for FoundEmptyImplementationOnTrait {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<DiagnosticReport, Self::Error> {
-        Ok(DiagnosticReport {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
             span: self.empty_implementation_signature_span.clone(),
             message: "empty implementation found on a trait; expected an \
                       implementation with body or `delete` keyword"
@@ -353,7 +283,7 @@ impl Report<&Table> for FoundEmptyImplementationOnTrait {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -365,17 +295,15 @@ pub struct InvalidConstImplementation {
 }
 
 impl Report<&Table> for InvalidConstImplementation {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<DiagnosticReport, Self::Error> {
-        Ok(DiagnosticReport {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
             span: self.span.clone(),
             message: "invalid `const` implementation in this context"
                 .to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -387,17 +315,15 @@ pub struct InvalidFinalImplementation {
 }
 
 impl Report<&Table> for InvalidFinalImplementation {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<DiagnosticReport, Self::Error> {
-        Ok(DiagnosticReport {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
             span: self.span.clone(),
             message: "invalid `final` implementation in this context"
                 .to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -409,10 +335,8 @@ pub struct NonFinalMarkerImplementation {
 }
 
 impl Report<&Table> for NonFinalMarkerImplementation {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<DiagnosticReport, Self::Error> {
-        Ok(DiagnosticReport {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
             span: self.span.clone(),
             message: "implementation on marker must always be `final`"
                 .to_string(),
@@ -422,7 +346,7 @@ impl Report<&Table> for NonFinalMarkerImplementation {
                     .to_string(),
             ),
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -437,17 +361,11 @@ pub struct UnknownTraitImplementationMember {
 }
 
 impl Report<&Table> for UnknownTraitImplementationMember {
-    type Error = ReportError;
+    fn report(&self, table: &Table) -> DiagnosticReport {
+        let trait_qualified_name = table.get_qualified_name(self.trait_id);
+        let trait_span = table.get::<LocationSpan>(self.trait_id).span.clone();
 
-    fn report(&self, table: &Table) -> Result<DiagnosticReport, Self::Error> {
-        let trait_qualified_name =
-            table.get_qualified_name(self.trait_id).ok_or(ReportError)?;
-        let trait_span = table
-            .storage
-            .get::<LocationSpan>(self.trait_id)
-            .map(|x| x.0.clone());
-
-        Ok(DiagnosticReport {
+        DiagnosticReport {
             span: self.identifier_span.clone(),
             message: format!(
                 "the symbol named `{}` is not a member of the trait \
@@ -463,7 +381,7 @@ impl Report<&Table> for UnknownTraitImplementationMember {
                 })
                 .into_iter()
                 .collect(),
-        })
+        }
     }
 }
 
@@ -503,29 +421,25 @@ pub struct MismatchedTraitMemberAndImplementationMember {
 }
 
 impl Report<&Table> for MismatchedTraitMemberAndImplementationMember {
-    type Error = ReportError;
-
-    fn report(&self, table: &Table) -> Result<DiagnosticReport, Self::Error> {
-        let trait_member_qualified_identifier = table
-            .get_qualified_name(self.trait_member_id)
-            .ok_or(ReportError)?;
-        let trait_member_sym_kind = *table
-            .storage
-            .get::<SymbolKind>(self.trait_member_id)
-            .ok_or(ReportError)?;
-        let trait_member_span = table
-            .storage
-            .get::<LocationSpan>(self.trait_member_id)
-            .map(|x| x.0.clone());
+    fn report(&self, table: &Table) -> DiagnosticReport {
+        let trait_member_qualified_identifier =
+            table.get_qualified_name(self.trait_member_id);
+        let trait_member_sym_kind =
+            *table.get::<SymbolKind>(self.trait_member_id);
+        let trait_member_span =
+            table.get::<LocationSpan>(self.trait_member_id).span.clone();
 
         let trait_member_kind = match trait_member_sym_kind {
             SymbolKind::TraitType => TraitMemberKind::Type,
             SymbolKind::TraitFunction => TraitMemberKind::Function,
             SymbolKind::TraitConstant => TraitMemberKind::Constant,
-            _ => return Err(ReportError),
+            _ => panic!(
+                "must be some kind of trait member, but found \
+                 {trait_member_sym_kind:?}",
+            ),
         };
 
-        Ok(DiagnosticReport {
+        DiagnosticReport {
             span: self.implementation_member_identifer_span.clone(),
             message: format!(
                 "the trait member `{trait_member_qualified_identifier}` is of \
@@ -542,7 +456,7 @@ impl Report<&Table> for MismatchedTraitMemberAndImplementationMember {
                 })
                 .into_iter()
                 .collect(),
-        })
+        }
     }
 }
 
@@ -557,24 +471,20 @@ pub struct UnimplementedTraitMembers {
 }
 
 impl Report<&Table> for UnimplementedTraitMembers {
-    type Error = ReportError;
-
-    fn report(&self, table: &Table) -> Result<DiagnosticReport, Self::Error> {
+    fn report(&self, table: &Table) -> DiagnosticReport {
         let trait_member_qualified_names = self
             .unimplemented_trait_member_ids
             .iter()
-            .map(|&trait_member_id| {
-                table.get_qualified_name(trait_member_id).ok_or(ReportError)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|&trait_member_id| table.get_qualified_name(trait_member_id))
+            .collect::<Vec<_>>();
 
         let implementation_span = table
-            .storage
             .get::<LocationSpan>(self.implementation_id)
-            .map(|x| x.0.clone())
-            .ok_or(ReportError)?;
+            .span
+            .clone()
+            .unwrap();
 
-        Ok(DiagnosticReport {
+        DiagnosticReport {
             span: implementation_span,
             message: format!(
                 "not all trait member(s) are implemented in the \
@@ -584,7 +494,7 @@ impl Report<&Table> for UnimplementedTraitMembers {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -596,10 +506,8 @@ pub struct FoundImplementationWithBodyOnMarker {
 }
 
 impl Report<&Table> for FoundImplementationWithBodyOnMarker {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<DiagnosticReport, Self::Error> {
-        Ok(DiagnosticReport {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
             span: self.implementation_span.clone(),
             message: "implementation with body found on a marker; expected an \
                       implementation with `delete` keyword or empty \
@@ -608,7 +516,7 @@ impl Report<&Table> for FoundImplementationWithBodyOnMarker {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -620,10 +528,8 @@ pub struct ExpectedImplementationWithBodyForAdt {
 }
 
 impl Report<&Table> for ExpectedImplementationWithBodyForAdt {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<DiagnosticReport, Self::Error> {
-        Ok(DiagnosticReport {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
             span: self.invalid_implementation_span.clone(),
             message: "implementation on struct or enum expects an \
                       implementation with a body"
@@ -631,7 +537,7 @@ impl Report<&Table> for ExpectedImplementationWithBodyForAdt {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -643,10 +549,8 @@ pub struct UnexpectedAdtImplementationMember {
 }
 
 impl Report<&Table> for UnexpectedAdtImplementationMember {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<DiagnosticReport, Self::Error> {
-        Ok(DiagnosticReport {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
             span: self.unexpected_member_span.clone(),
             message: "adt (struct and enum) implementation can only contain \
                       functions"
@@ -654,6 +558,6 @@ impl Report<&Table> for UnexpectedAdtImplementationMember {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }

@@ -27,7 +27,7 @@ impl query::Builder<TypeAlias> for Builder {
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<TypeAlias>> {
-        let symbol_kind = *table.get::<SymbolKind>(global_id).unwrap();
+        let symbol_kind = *table.get::<SymbolKind>(global_id);
         if !symbol_kind.has_type_alias() {
             return None;
         }
@@ -36,10 +36,9 @@ impl query::Builder<TypeAlias> for Builder {
             self.start_building(table, global_id, TypeAlias::component_name());
 
         let syntax_tree =
-            table.get::<syntax_tree_component::TypeAlias>(global_id).unwrap();
+            table.get::<syntax_tree_component::TypeAlias>(global_id);
 
-        let extra_namespace =
-            table.get_generic_parameter_namepsace(global_id, handler);
+        let extra_namespace = table.get_generic_parameter_namepsace(global_id);
 
         let mut ty = table.resolve_type(
             &syntax_tree.0,
@@ -54,7 +53,7 @@ impl query::Builder<TypeAlias> for Builder {
             handler,
         );
 
-        let premise = table.get_active_premise(global_id, handler);
+        let premise = table.get_active_premise(global_id);
         let (env, _) = Environment::new(premise, table);
 
         ty = env.simplify_and_check_lifetime_constraints(

@@ -8,7 +8,6 @@ use std::{
     thread::ThreadId,
 };
 
-use enum_as_inner::EnumAsInner;
 use parking_lot::Condvar;
 use pernixc_diagnostic::Report;
 use pernixc_handler::Handler;
@@ -17,7 +16,7 @@ use pernixc_log::Severity;
 use super::{GlobalID, Table};
 use crate::{
     component::{Derived, LocationSpan},
-    diagnostic::{Diagnostic, ReportError},
+    diagnostic::Diagnostic,
 };
 
 /// A cyclic dependency between symbols detected during the query.
@@ -34,35 +33,23 @@ pub struct CyclicDependency {
 }
 
 impl Report<&Table> for CyclicDependency {
-    type Error = ReportError;
-
-    fn report(
-        &self,
-        parameter: &Table,
-    ) -> Result<pernixc_diagnostic::Diagnostic, Self::Error> {
-        if self.records_stack.is_empty() {
-            return Err(ReportError);
-        }
-
-        Ok(pernixc_diagnostic::Diagnostic {
+    fn report(&self, parameter: &Table) -> pernixc_diagnostic::Diagnostic {
+        pernixc_diagnostic::Diagnostic {
             span: parameter
-                .storage
                 .get::<LocationSpan>(self.records_stack[0].global_id)
-                .ok_or(ReportError)?
-                .0
-                .clone(),
+                .span
+                .clone()
+                .unwrap(),
             message: format!(
                 "cyclic dependency while building {}.",
                 self.records_stack
                     .iter()
-                    .map(|x| Ok(format!(
+                    .map(|x| format!(
                         "{} for `{}`",
                         x.name,
-                        parameter
-                            .get_qualified_name(x.global_id)
-                            .ok_or(ReportError)?
-                    )))
-                    .collect::<Result<Vec<_>, _>>()?
+                        parameter.get_qualified_name(x.global_id)
+                    ))
+                    .collect::<Vec<_>>()
                     .join(" -> ")
             ),
             severity: Severity::Error,
@@ -74,19 +61,16 @@ impl Report<&Table> for CyclicDependency {
                 .records_stack
                 .iter()
                 .skip(1)
-                .map(|x| {
-                    Ok(pernixc_diagnostic::Related {
-                        span: parameter
-                            .storage
-                            .get::<LocationSpan>(x.global_id)
-                            .ok_or(ReportError)?
-                            .0
-                            .clone(),
-                        message: format!("required by `{}`", x.name),
-                    })
+                .map(|x| pernixc_diagnostic::Related {
+                    span: parameter
+                        .get::<LocationSpan>(x.global_id)
+                        .span
+                        .clone()
+                        .unwrap(),
+                    message: format!("required by `{}`", x.name),
                 })
-                .collect::<Result<Vec<_>, _>>()?,
-        })
+                .collect::<Vec<_>>(),
+        }
     }
 }
 
@@ -210,17 +194,6 @@ pub enum InternalCompilerError {
     },
 }
 
-/// An error that can occur during the query.
-#[derive(Debug, EnumAsInner, thiserror::Error)]
-#[allow(missing_docs)]
-pub enum Error {
-    #[error("cyclic dependency detected")]
-    CyclicDependency(CyclicDependency),
-
-    #[error(transparent)]
-    Internal(#[from] InternalCompilerError),
-}
-
 /// A trait implemented by the **component builders**.
 ///
 /// The implementation of this trait will be used to build the component for the
@@ -252,23 +225,6 @@ pub trait Handle {
     ) -> Option<Self::Ok>;
 }
 
-impl<T> Handle for Result<T, Error> {
-    type Ok = T;
-
-    fn handle(self, handler: &dyn Handler<Box<dyn Diagnostic>>) -> Option<T> {
-        match self {
-            Ok(x) => Some(x),
-            Err(Error::CyclicDependency(error)) => {
-                handler.receive(Box::new(error));
-                None
-            }
-            Err(Error::Internal(error)) => {
-                panic!("Internal compiler error: {error}");
-            }
-        }
-    }
-}
-
 impl Table {
     /// Queries for the component of type `T` for the given `global_id`.
     ///
@@ -282,23 +238,21 @@ impl Table {
     pub fn query<T: Derived + Any + Send + Sync>(
         &self,
         global_id: GlobalID,
-    ) -> Result<Arc<T>, Error> {
+    ) -> Option<Arc<T>> {
         // if the component is already computed, return it
         let mut context = self.query_context.lock();
         if let Some(result) = self.storage.get_cloned::<T>(global_id) {
-            return Ok(result);
+            return Some(result);
         }
 
         let (Some(builder), Some(build_fn)) = (
             context.builders_by_type_id.get(&TypeId::of::<T>()).cloned(),
             context.builder_fns_by_type_id.get(&TypeId::of::<T>()).copied(),
         ) else {
-            return Err(Error::Internal(
-                InternalCompilerError::NoBuilderFound {
-                    global_id,
-                    component_name: std::any::type_name::<T>(),
-                },
-            ));
+            panic!(
+                "no builder found for the component of type `{}`",
+                std::any::type_name::<T>()
+            );
         };
 
         let current_record = Record {
@@ -321,9 +275,11 @@ impl Table {
 
             loop {
                 if stack.last().unwrap() == &called_from {
-                    return Err(Error::CyclicDependency(CyclicDependency {
+                    self.handler.receive(Box::new(CyclicDependency {
                         records_stack: stack,
                     }));
+
+                    return None;
                 }
 
                 // follow the dependency chain
@@ -403,11 +359,12 @@ impl Table {
         }
 
         // return the component
-        self.storage.get_cloned::<T>(global_id).ok_or(Error::Internal(
-            InternalCompilerError::SymbolNotFoundOrInvalidComponent {
-                global_id,
-                component_name: std::any::type_name::<T>(),
-            },
-        ))
+        Some(self.storage.get_cloned::<T>(global_id).unwrap_or_else(|| {
+            panic!(
+                "the component `{}` doesn't belong to the symbol \
+                 `{global_id:?}`",
+                T::component_name(),
+            )
+        }))
     }
 }

@@ -974,7 +974,7 @@ where
                     "{}",
                     table
                         .query::<GenericParameters>(type_parameter.parent)
-                        .map_err(|_| fmt::Error)?
+                        .ok_or(fmt::Error)?
                         .types()
                         .get(type_parameter.id)
                         .ok_or(fmt::Error)?

@@ -4,7 +4,7 @@ use derive_new::new;
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
-use pernixc_table::{diagnostic::ReportError, DisplayObject, Table};
+use pernixc_table::{DisplayObject, Table};
 use pernixc_term::{predicate::Predicate, Model};
 use pernixc_type_system::OverflowError;
 
@@ -38,10 +38,8 @@ pub struct TypeSystemOverflow {
 }
 
 impl Report<&Table> for TypeSystemOverflow {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
             span: self.overflow_span.clone(),
             message: match &self.operation {
                 OverflowOperation::TypeOf => format!(
@@ -61,7 +59,7 @@ impl Report<&Table> for TypeSystemOverflow {
                     .to_string(),
             ),
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -82,10 +80,8 @@ impl<M: Model> Report<&Table> for UnsatisfiedPredicate<M>
 where
     Predicate<M>: pernixc_table::Display,
 {
-    type Error = ReportError;
-
-    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, table: &Table) -> Diagnostic {
+        Diagnostic {
             span: self.instantiation_span.clone(),
             message: format!(
                 "the predicate `{}` is not satisfied",
@@ -102,7 +98,7 @@ where
                 })
                 .into_iter()
                 .collect(),
-        })
+        }
     }
 }
 
@@ -127,10 +123,8 @@ impl<M: Model> Report<&Table> for UndecidablePredicate<M>
 where
     Predicate<M>: pernixc_table::Display,
 {
-    type Error = ReportError;
-
-    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, table: &Table) -> Diagnostic {
+        Diagnostic {
             span: self.instantiation_span.clone(),
             message: format!(
                 "the predicate `{}` is undecidable",
@@ -151,6 +145,6 @@ where
                 })
                 .into_iter()
                 .collect(),
-        })
+        }
     }
 }

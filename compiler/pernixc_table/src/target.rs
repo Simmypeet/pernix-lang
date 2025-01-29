@@ -179,19 +179,16 @@ impl Representation {
                 .generate_id(),
         );
 
-        assert!(self.storage.add_component(
-            new_symbol_id,
-            LocationSpan(
-                implementation_signature.qualified_identifier().span()
-            )
-        ));
+        assert!(self.storage.add_component(new_symbol_id, LocationSpan {
+            span: Some(implementation_signature.qualified_identifier().span())
+        }));
 
         let name = self.storage.get::<Name>(implemented_id).unwrap().0.clone();
 
         assert!(self.storage.add_component(new_symbol_id, Name(name)));
-        assert!(self
-            .storage
-            .add_component(new_symbol_id, Parent(defined_in_module_id.id)));
+        assert!(self.storage.add_component(new_symbol_id, Parent {
+            parent: Some(defined_in_module_id.id)
+        },));
         assert!(self.storage.add_component(new_symbol_id, symbol_kind));
 
         if symbol_kind.has_member() {
@@ -356,13 +353,11 @@ impl Representation {
                         where_clause,
                     ) = signature.dissolve();
 
-                    let function_id = if let Ok(existing_id) =
+                    let function_id = if let Some(existing_id) =
                         self.get_member_of(adt_id, ident.span.str())
                     {
                         let in_implementation = self
-                            .storage
                             .get::<Member>(adt_implementation_id)
-                            .unwrap()
                             .contains_key(ident.span.str());
 
                         let new_id = self.insert_member(
@@ -614,11 +609,10 @@ impl Representation {
             else {
                 handler.receive(Box::new(UnknownTraitImplementationMember {
                     identifier_span: self
-                        .storage
                         .get::<LocationSpan>(trait_implementation_member_id)
-                        .unwrap()
-                        .0
-                        .clone(),
+                        .span
+                        .clone()
+                        .unwrap(),
                     trait_id,
                 }));
                 continue;
@@ -627,12 +621,9 @@ impl Representation {
             let trait_member_id =
                 GlobalID::new(trait_id.target_id, trait_member_id);
 
-            let trait_member_kind =
-                *self.storage.get::<SymbolKind>(trait_member_id).unwrap();
-            let trait_implementation_member_kind = *self
-                .storage
-                .get::<SymbolKind>(trait_implementation_member_id)
-                .unwrap();
+            let trait_member_kind = *self.get::<SymbolKind>(trait_member_id);
+            let trait_implementation_member_kind =
+                *self.get::<SymbolKind>(trait_implementation_member_id);
 
             match (trait_member_kind, trait_implementation_member_kind) {
                 (
@@ -665,11 +656,10 @@ impl Representation {
                         },
 
                         implementation_member_identifer_span: self
-                            .storage
                             .get::<LocationSpan>(trait_implementation_member_id)
-                            .unwrap()
-                            .0
-                            .clone(),
+                            .span
+                            .clone()
+                            .unwrap(),
                     },
                 )),
             }
@@ -725,7 +715,6 @@ impl Representation {
                         defined_in_module_id,
                         generic_identifier.identifier().span.str(),
                     )
-                    .ok()
                     .or_else(|| {
                         self.storage
                             .get::<Import>(defined_in_module_id)
@@ -785,7 +774,7 @@ impl Representation {
             .iter()
             .enumerate()
         {
-            let Ok(next_id) = self.get_member_of(
+            let Some(next_id) = self.get_member_of(
                 current_id,
                 generic_identifier.identifier().span.str(),
             ) else {
@@ -800,7 +789,7 @@ impl Representation {
             };
 
             // non-fatal error, no need to return early
-            if !self.symbol_accessible(defined_in_module_id, next_id).unwrap() {
+            if !self.symbol_accessible(defined_in_module_id, next_id) {
                 handler.receive(Box::new(SymbolIsNotAccessible {
                     referring_site: defined_in_module_id,
                     referred: next_id,
@@ -898,7 +887,7 @@ impl Representation {
 
         match using.kind() {
             UsingKind::From(from) => {
-                let Ok(from_id) = self.resolve_simple_path(
+                let Some(from_id) = self.resolve_simple_path(
                     from.from().simple_path(),
                     defined_in_module_id,
                     true,
@@ -943,13 +932,10 @@ impl Representation {
                         GlobalID::new(from_id.target_id, imported_id);
 
                     // check if the symbol is accessible
-                    if !self
-                        .symbol_accessible(
-                            defined_in_module_id,
-                            imported_global_id,
-                        )
-                        .unwrap()
-                    {
+                    if !self.symbol_accessible(
+                        defined_in_module_id,
+                        imported_global_id,
+                    ) {
                         handler.receive(Box::new(SymbolIsNotAccessible {
                             referring_site: defined_in_module_id,
                             referred: imported_global_id,
@@ -975,12 +961,12 @@ impl Representation {
                         .unwrap()
                         .get(&name)
                         .map(|x| {
-                            self.storage
-                                .get::<LocationSpan>(GlobalID::new(
-                                    defined_in_module_id.target_id,
-                                    *x,
-                                ))
-                                .map(|x| x.0.clone())
+                            self.get::<LocationSpan>(GlobalID::new(
+                                defined_in_module_id.target_id,
+                                *x,
+                            ))
+                            .span
+                            .clone()
                         })
                         .or_else(|| {
                             self.storage
@@ -1019,7 +1005,7 @@ impl Representation {
             }
 
             UsingKind::One(one) => {
-                let Ok(using_module_id) = self.resolve_simple_path(
+                let Some(using_module_id) = self.resolve_simple_path(
                     one.simple_path(),
                     defined_in_module_id,
                     true,
@@ -1056,17 +1042,15 @@ impl Representation {
                     .unwrap()
                     .get(&name)
                     .map(|x| {
-                        self.storage
-                            .get::<LocationSpan>(GlobalID::new(
-                                defined_in_module_id.target_id,
-                                *x,
-                            ))
-                            .map(|x| x.0.clone())
+                        self.get::<LocationSpan>(GlobalID::new(
+                            defined_in_module_id.target_id,
+                            *x,
+                        ))
+                        .span
+                        .clone()
                     })
                     .or_else(|| {
-                        self.storage
-                            .get::<Import>(defined_in_module_id)
-                            .unwrap()
+                        self.get::<Import>(defined_in_module_id)
                             .get(&name)
                             .map(|x| Some(x.span.clone()))
                     });
@@ -1116,15 +1100,15 @@ impl Representation {
                 .generate_id(),
         );
 
-        assert!(self
-            .storage
-            .add_component(new_symbol_id, LocationSpan(name.span.clone())));
+        assert!(self.storage.add_component(new_symbol_id, LocationSpan {
+            span: Some(name.span.clone())
+        }));
         assert!(self
             .storage
             .add_component(new_symbol_id, Name(name.span.str().to_owned())));
-        assert!(self
-            .storage
-            .add_component(new_symbol_id, Parent(parent_id.id)));
+        assert!(self.storage.add_component(new_symbol_id, Parent {
+            parent: Some(parent_id.id)
+        }));
         assert!(self.storage.add_component(new_symbol_id, symbol_kind));
 
         if let Some(accessibility) = accessibility {
@@ -1395,10 +1379,12 @@ impl Representation {
         );
 
         // has the parent module id
+
+        assert!(self.storage.add_component(module_id, Parent {
+            parent: parent_module_id.map(|x| x.id)
+        }));
+
         if let Some(parent_module_id) = parent_module_id {
-            assert!(self
-                .storage
-                .add_component(module_id, Parent(parent_module_id.id)));
             assert!(self.storage.add_component(
                 module_id,
                 syntax_tree.signature().as_ref().map_or(
@@ -1430,12 +1416,9 @@ impl Representation {
         assert!(self.storage.add_component(module_id, Name(name)));
 
         let (signature, content, submodule_by_name) = syntax_tree.dissolve();
-        if let Some(signature) = signature {
-            assert!(self.storage.add_component(
-                module_id,
-                LocationSpan(signature.signature.identifier().span.clone())
-            ));
-        }
+        assert!(self.storage.add_component(module_id, LocationSpan {
+            span: signature.map(|x| x.signature.identifier().span.clone()),
+        }));
         let (usings, items) = content.dissolve();
 
         usings_by_module_id.entry(module_id).or_default().extend(usings);

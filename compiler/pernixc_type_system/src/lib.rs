@@ -3,7 +3,6 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_table::query::CyclicDependency;
 use pernixc_term::{
     constant::Constant, lifetime::Lifetime, predicate::Outlives, r#type::Type,
     Model,
@@ -88,6 +87,7 @@ pub struct OverflowError;
 #[derive(
     Debug,
     Clone,
+    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -101,8 +101,10 @@ pub enum AbruptError {
     #[error(transparent)]
     Overflow(#[from] OverflowError),
 
-    #[error(transparent)]
-    CyclicDependency(#[from] CyclicDependency),
+    #[error(
+        "cyclic dependency occurred when querying a component to the table"
+    )]
+    CyclicDependency,
 }
 
 /// A tag type signaling that the predicate/query is satisfied.
@@ -199,32 +201,6 @@ pub type Result<T, M, E = AbruptError> =
 pub type ResultArc<T, M, E = AbruptError> =
     std::result::Result<Option<Arc<Succeeded<T, M>>>, E>;
 
-/// A trait implemented for [`std::result::Result<T,
-/// pernixc::table::query::Error>`] that will only accept [`CyclicDependency`]
-/// error variant.
-pub trait ResultExt<T> {
-    /// Only allows [`CyclicDependency`] error variant to be returned.
-    ///
-    /// If the error variant is not [`CyclicDependency`], it will be converted
-    /// to `Ok(None)`.
-    #[allow(clippy::missing_errors_doc)]
-    fn extract_cyclic_dependency(
-        self,
-    ) -> std::result::Result<Option<T>, CyclicDependency>;
-}
-
-impl<T> ResultExt<T> for std::result::Result<T, pernixc_table::query::Error> {
-    fn extract_cyclic_dependency(
-        self,
-    ) -> std::result::Result<Option<T>, CyclicDependency> {
-        match self {
-            Ok(t) => Ok(Some(t)),
-            Err(pernixc_table::query::Error::CyclicDependency(err)) => Err(err),
-            Err(pernixc_table::query::Error::Internal(_)) => Ok(None),
-        }
-    }
-}
-
 /// Describes a satisfiability of a certain predicate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Satisfiability {
@@ -238,3 +214,6 @@ pub enum Satisfiability {
     /// predicate is satisfiable.
     Congruent,
 }
+
+#[cfg(test)]
+mod test;

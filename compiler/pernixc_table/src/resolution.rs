@@ -13,46 +13,15 @@ use crate::{
 
 pub mod diagnostic;
 
-/// An error returned by various `resolve_*` methods.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[allow(missing_docs)]
-pub enum ResolvePathError {
-    #[error("the given `referring_site` id does not exist in the table")]
-    InvalidReferringSiteID,
-
-    #[error("encountered a fatal semantic error that aborts the process")]
-    SemanticError,
-}
-
-/// An error returned by [`Representation::resolve_sequence`].
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[allow(missing_docs)]
-pub enum ResolveSequenceError {
-    #[error("the given 'simple_path' iterator was empty")]
-    EmptyIterator,
-
-    #[error(transparent)]
-    ResolutionError(#[from] ResolvePathError),
-}
 impl Representation {
     /// Resolves a [`SimplePath`] as a [`GlobalID`].
-    ///
-    /// # Errors
-    ///
-    /// See [`ResolveQualifiedIdentifierError`] for more information.
     pub fn resolve_simple_path(
         &self,
         simple_path: &SimplePath,
         referring_site: GlobalID,
         start_from_root: bool,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GlobalID, ResolvePathError> {
-        use ResolvePathError::{InvalidReferringSiteID, SemanticError};
-
+    ) -> Option<GlobalID> {
         let root: GlobalID = match simple_path.root() {
             SimplePathRoot::Target(_) => {
                 GlobalID::new(referring_site.target_id, ID::ROOT_MODULE)
@@ -75,14 +44,13 @@ impl Representation {
                             resolution_span: ident.span.clone(),
                         }));
 
-                        return Err(SemanticError);
+                        return None;
                     };
 
                     GlobalID::new(id, ID::ROOT_MODULE)
                 } else {
-                    let closet_module_id = self
-                        .get_closet_module_id(referring_site)
-                        .ok_or(InvalidReferringSiteID)?;
+                    let closet_module_id =
+                        self.get_closet_module_id(referring_site);
 
                     let global_closest_module_id = GlobalID::new(
                         referring_site.target_id,
@@ -108,7 +76,7 @@ impl Representation {
                             resolution_span: ident.span.clone(),
                         }));
 
-                        return Err(SemanticError);
+                        return None;
                     };
 
                     id
@@ -116,49 +84,37 @@ impl Representation {
             }
         };
 
-        match self.resolve_sequence(
+        self.resolve_sequence(
             simple_path.rest().iter().map(|x| &x.1),
             referring_site,
             root,
             handler,
-        ) {
-            Ok(id) => Ok(id),
-            Err(ResolveSequenceError::EmptyIterator) => Ok(root),
-            Err(ResolveSequenceError::ResolutionError(e)) => Err(e),
-        }
+        )
     }
 
     /// Resolves a sequence of identifier starting of from the given `root`.
-    ///
-    /// # Errors
-    ///
-    /// See [`ResolveSequenceError`] for more information.
     pub fn resolve_sequence<'a>(
         &self,
         simple_path: impl Iterator<Item = &'a Identifier>,
         referring_site: GlobalID,
         root: GlobalID,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GlobalID, ResolveSequenceError> {
-        use ResolveSequenceError::ResolutionError;
-
+    ) -> Option<GlobalID> {
         let mut lastest_resolution = root;
         for identifier in simple_path {
-            let new_id = self
-                .get_member_of(lastest_resolution, identifier.span.str())
-                .map_err(|_| {
-                    handler.receive(Box::new(SymbolNotFound {
-                        searched_item_id: Some(lastest_resolution),
-                        resolution_span: identifier.span.clone(),
-                    }));
+            let Some(new_id) =
+                self.get_member_of(lastest_resolution, identifier.span.str())
+            else {
+                handler.receive(Box::new(SymbolNotFound {
+                    searched_item_id: Some(lastest_resolution),
+                    resolution_span: identifier.span.clone(),
+                }));
 
-                    ResolutionError(ResolvePathError::SemanticError)
-                })?;
+                return None;
+            };
 
             // non-fatal error, no need to return early
-            if !self.symbol_accessible(referring_site, new_id).ok_or(
-                ResolutionError(ResolvePathError::InvalidReferringSiteID),
-            )? {
+            if !self.symbol_accessible(referring_site, new_id) {
                 handler.receive(Box::new(SymbolIsNotAccessible {
                     referring_site,
                     referred: new_id,
@@ -169,6 +125,6 @@ impl Representation {
             lastest_resolution = new_id;
         }
 
-        Ok(lastest_resolution)
+        Some(lastest_resolution)
     }
 }

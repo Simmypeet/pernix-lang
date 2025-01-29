@@ -15,8 +15,7 @@ use pernixc_handler::Handler;
 use pernixc_table::{
     component::{Derived, Member, SymbolKind},
     diagnostic::Diagnostic,
-    query::{self, Handle},
-    GlobalID, Table, TargetID,
+    query, GlobalID, Table, TargetID,
 };
 use pernixc_term::{
     generic_parameter::{GenericParameters, LifetimeParameter, TypeParameter},
@@ -96,15 +95,10 @@ impl Context {
         }
     }
 
-    fn collect_constraints(
-        &mut self,
-        target_id: TargetID,
-        table: &Table,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) {
+    fn collect_constraints(&mut self, target_id: TargetID, table: &Table) {
         for local_id in table.get_target(target_id).unwrap().all_symbols() {
             let global_id = GlobalID::new(target_id, local_id);
-            let symbol_kind = *table.get::<SymbolKind>(global_id).unwrap();
+            let symbol_kind = *table.get::<SymbolKind>(global_id);
 
             // skip if the symbol is not an adt.
             if !symbol_kind.is_adt() {
@@ -112,7 +106,7 @@ impl Context {
             }
 
             let Some(generic_parameters) =
-                table.query::<GenericParameters>(global_id).handle(handler)
+                table.query::<GenericParameters>(global_id)
             else {
                 continue;
             };
@@ -127,9 +121,7 @@ impl Context {
 
             match symbol_kind {
                 SymbolKind::Struct => {
-                    let Some(fields) =
-                        table.query::<Fields>(global_id).handle(handler)
-                    else {
+                    let Some(fields) = table.query::<Fields>(global_id) else {
                         continue;
                     };
 
@@ -139,20 +131,18 @@ impl Context {
                             &field.r#type,
                             VarianceVariable::Constant(Variance::Covariant),
                             table,
-                            handler,
                         );
                     }
                 }
                 SymbolKind::Enum => {
-                    let members = table.get::<Member>(global_id).unwrap();
+                    let members = table.get::<Member>(global_id);
                     for variant_id in members
                         .0
                         .values()
                         .copied()
                         .map(|x| GlobalID::new(target_id, x))
                     {
-                        let Some(variant) =
-                            table.query::<Variant>(variant_id).handle(handler)
+                        let Some(variant) = table.query::<Variant>(variant_id)
                         else {
                             continue;
                         };
@@ -164,7 +154,6 @@ impl Context {
                                 associated_type,
                                 VarianceVariable::Constant(Variance::Covariant),
                                 table,
-                                handler,
                             );
                         }
                     }
@@ -214,7 +203,6 @@ impl Context {
         ty: &Type<Default>,
         current_variance: VarianceVariable,
         table: &Table,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
         match ty {
             Type::Error(_) | Type::Primitive(_) => {}
@@ -233,7 +221,7 @@ impl Context {
             Type::Inference(infer) => match *infer {},
 
             Type::Symbol(symbol) => {
-                let symbol_kind = *table.get::<SymbolKind>(symbol.id).unwrap();
+                let symbol_kind = *table.get::<SymbolKind>(symbol.id);
                 assert!(symbol_kind.is_adt(), "symbol must be an adt");
 
                 // if the symbol is in the other linked target, then
@@ -245,13 +233,12 @@ impl Context {
                     Some(
                         table
                             .query::<VarianceMap>(symbol.id)
-                            .handle(handler)
                             .expect("should've been calculated"),
                     )
                 };
 
                 let Some(generic_parameters) =
-                    table.query::<GenericParameters>(symbol.id).handle(handler)
+                    table.query::<GenericParameters>(symbol.id)
                 else {
                     return;
                 };
@@ -308,7 +295,6 @@ impl Context {
                         ty,
                         new_variance,
                         table,
-                        handler,
                     );
                 }
             }
@@ -326,7 +312,6 @@ impl Context {
                     &pointer.pointee,
                     new_variance,
                     table,
-                    handler,
                 );
             }
 
@@ -350,7 +335,6 @@ impl Context {
                     &reference.pointee,
                     new_variance,
                     table,
-                    handler,
                 );
             }
 
@@ -360,7 +344,6 @@ impl Context {
                     &array.r#type,
                     current_variance,
                     table,
-                    handler,
                 );
             }
 
@@ -371,7 +354,6 @@ impl Context {
                         &ty.term,
                         current_variance.clone(),
                         table,
-                        handler,
                     );
                 }
             }
@@ -382,7 +364,6 @@ impl Context {
                     &phantom.0,
                     current_variance,
                     table,
-                    handler,
                 );
             }
 
@@ -429,7 +410,6 @@ impl Context {
                         ty,
                         new_variance,
                         table,
-                        handler,
                     );
                 }
             }
@@ -453,9 +433,9 @@ impl query::Builder<VarianceMap> for Builder {
         &self,
         global_id: GlobalID,
         table: &Table,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
+        _: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<VarianceMap>> {
-        let symbol_kind = *table.get::<SymbolKind>(global_id).unwrap();
+        let symbol_kind = *table.get::<SymbolKind>(global_id);
         if !symbol_kind.has_variance_map() {
             return None;
         }
@@ -473,7 +453,7 @@ impl query::Builder<VarianceMap> for Builder {
         let context = context.get_or_insert_with(|| {
             let mut context = Context::default();
 
-            context.collect_constraints(target_id, table, handler);
+            context.collect_constraints(target_id, table);
 
             // keep iterating until there's no change in the context
             let mut changed = true;
@@ -541,7 +521,7 @@ impl query::Builder<VarianceMap> for Builder {
         let map =
             context.variance_maps.remove(&global_id.id).unwrap_or_else(|| {
                 let Some(generic_parameters) =
-                    table.query::<GenericParameters>(global_id).handle(handler)
+                    table.query::<GenericParameters>(global_id)
                 else {
                     return VarianceMap::default();
                 };

@@ -8,11 +8,10 @@ use pernixc_syntax::syntax_tree::{
 };
 use pernixc_table::{
     component::{Implements, Import, Member, SymbolKind},
-    query::Handle,
     resolution::diagnostic::{
         NoGenericArgumentsRequired, SymbolNotFound, ThisNotFound,
     },
-    GetMemberError, GlobalID, Table,
+    GlobalID, Table,
 };
 use pernixc_term::{
     generic_arguments::GenericArguments, generic_parameter::GenericParameters,
@@ -206,13 +205,10 @@ pub(super) fn resolve_root<M: Model>(
         }
         QualifiedIdentifierRoot::This(this) => {
             let found_this = table.scope_walker(referring_site).find_map(|x| {
-                match *table
-                    .get::<SymbolKind>(GlobalID::new(
-                        referring_site.target_id,
-                        x,
-                    ))
-                    .unwrap()
-                {
+                match *table.get::<SymbolKind>(GlobalID::new(
+                    referring_site.target_id,
+                    x,
+                )) {
                     kind @ (SymbolKind::Trait
                     | SymbolKind::PositiveTraitImplementation
                     | SymbolKind::AdtImplementation) => {
@@ -233,8 +229,7 @@ pub(super) fn resolve_root<M: Model>(
                 SymbolKind::Trait => Resolution::Generic(Generic {
                     id: this_symbol,
                     generic_arguments: table
-                        .query::<GenericParameters>(this_symbol)
-                        .handle(handler)?
+                        .query::<GenericParameters>(this_symbol)?
                         .create_identity_generic_arguments(this_symbol),
                 }),
 
@@ -244,12 +239,11 @@ pub(super) fn resolve_root<M: Model>(
 
                 SymbolKind::AdtImplementation => {
                     let implemented_id = // should be enum or struct
-                        table.get::<Implements>(this_symbol).unwrap().0;
+                        table.get::<Implements>(this_symbol).0;
                     let implementation_generic_arguments =
                         GenericArguments::from_default_model(
                             table
-                                .query::<Implementation>(this_symbol)
-                                .handle(handler)?
+                                .query::<Implementation>(this_symbol)?
                                 .generic_arguments
                                 .clone(),
                         );
@@ -264,22 +258,19 @@ pub(super) fn resolve_root<M: Model>(
             }
         }
         QualifiedIdentifierRoot::GenericIdentifier(generic_identifier) => {
-            let current_module_id =
-                table.get_closet_module_id(referring_site).unwrap();
+            let current_module_id = table.get_closet_module_id(referring_site);
 
             let current_module_id =
                 GlobalID::new(referring_site.target_id, current_module_id);
 
             let id = table
                 .get::<Member>(current_module_id)
-                .unwrap()
                 .get(generic_identifier.identifier().span.str())
                 .copied()
                 .map(|x| GlobalID::new(current_module_id.target_id, x))
                 .or_else(|| {
                     table
                         .get::<Import>(current_module_id)
-                        .unwrap()
                         .get(generic_identifier.identifier().span.str())
                         .map(|x| x.id)
                 });
@@ -296,7 +287,7 @@ pub(super) fn resolve_root<M: Model>(
                 return None;
             };
 
-            let symbol_kind = *table.get::<SymbolKind>(id).unwrap();
+            let symbol_kind = *table.get::<SymbolKind>(id);
 
             let generic_arguments = if symbol_kind.has_generic_parameters() {
                 Some(table.resolve_generic_arguments_for(
@@ -360,28 +351,19 @@ pub(super) fn resolve<M: Model>(
     )?;
 
     for (_, generic_identifier) in qualified_identifier.rest() {
-        let resolved_id = match table.get_member_of(
+        let Some(resolved_id) = table.get_member_of(
             latest_resolution.global_id(),
             generic_identifier.identifier().span.str(),
-        ) {
-            Ok(id) => id,
-            Err(error) => match error {
-                GetMemberError::InvalidID => unreachable!(),
-                GetMemberError::MemberNotFound => {
-                    handler.receive(Box::new(SymbolNotFound {
-                        searched_item_id: Some(latest_resolution.global_id()),
-                        resolution_span: generic_identifier
-                            .identifier()
-                            .span
-                            .clone(),
-                    }));
+        ) else {
+            handler.receive(Box::new(SymbolNotFound {
+                searched_item_id: Some(latest_resolution.global_id()),
+                resolution_span: generic_identifier.identifier().span.clone(),
+            }));
 
-                    return None;
-                }
-            },
+            return None;
         };
 
-        let symbol_kind = *table.get::<SymbolKind>(resolved_id).unwrap();
+        let symbol_kind = *table.get::<SymbolKind>(resolved_id);
 
         let generic_arguments = if symbol_kind.has_generic_parameters() {
             Some(table.resolve_generic_arguments_for(

@@ -5,7 +5,7 @@ use pernixc_arena::ID;
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
-use pernixc_table::{diagnostic::ReportError, MemberID, Table};
+use pernixc_table::{MemberID, Table};
 use pernixc_term::generic_parameter::{
     GenericKind, GenericParameter, GenericParameters,
 };
@@ -21,10 +21,8 @@ pub struct MisOrderedGenericParameter {
 }
 
 impl Report<&Table> for MisOrderedGenericParameter {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
             span: self.generic_parameter_span.clone(),
             message: "the generic parameter was declared in the wrong order"
                 .to_string(),
@@ -40,7 +38,7 @@ impl Report<&Table> for MisOrderedGenericParameter {
                 GenericKind::Constant => None,
             },
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -52,17 +50,15 @@ pub struct DefaultGenericParameterMustBeTrailing {
 }
 
 impl Report<&Table> for DefaultGenericParameterMustBeTrailing {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
             span: self.invalid_generic_default_parameter_span.clone(),
             message: "the default generic parameter must be trailing"
                 .to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -77,23 +73,18 @@ pub struct DuplicatedGenericParameter<T> {
 }
 
 impl<T: GenericParameter> Report<&Table> for DuplicatedGenericParameter<T> {
-    type Error = ReportError;
-
-    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, table: &Table) -> Diagnostic {
         let generic_parameters = table
             .query::<GenericParameters>(
                 self.existing_generic_parameter_id.parent,
             )
-            .map_err(|_| ReportError)?;
-
-        let Some(generic_parameter) =
+            .unwrap();
+        let generic_parameter =
             T::get_generic_parameters_arena(&generic_parameters)
                 .get(self.existing_generic_parameter_id.id)
-        else {
-            return Err(ReportError);
-        };
+                .unwrap();
 
-        Ok(Diagnostic {
+        Diagnostic {
             span: self.duplicating_generic_parameter_span.clone(),
             message: format!(
                 "the generic parameter named `{}` is already defined",
@@ -109,6 +100,6 @@ impl<T: GenericParameter> Report<&Table> for DuplicatedGenericParameter<T> {
                 })
                 .into_iter()
                 .collect(),
-        })
+        }
     }
 }

@@ -4,7 +4,7 @@ use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
 
-use crate::{diagnostic::ReportError, GlobalID, Table};
+use crate::{GlobalID, Table};
 
 /// The symbol was not found in the given scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -18,27 +18,9 @@ pub struct SymbolNotFound {
 }
 
 impl Report<&Table> for SymbolNotFound {
-    type Error = ReportError;
-
-    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
-        if let Some(searched_in_module_id) = self.searched_item_id {
-            let qualified_name = table
-                .get_qualified_name(searched_in_module_id)
-                .ok_or(ReportError)?;
-
-            Ok(Diagnostic {
-                span: self.resolution_span.clone(),
-                message: format!(
-                    "the symbol named `{}` does not exist in `{}`",
-                    self.resolution_span.str(),
-                    qualified_name
-                ),
-                severity: Severity::Error,
-                help_message: None,
-                related: Vec::new(),
-            })
-        } else {
-            Ok(Diagnostic {
+    fn report(&self, table: &Table) -> Diagnostic {
+        self.searched_item_id.map_or_else(
+            || Diagnostic {
                 span: self.resolution_span.clone(),
                 message: format!(
                     "the symbol named `{}` does not exist",
@@ -47,8 +29,24 @@ impl Report<&Table> for SymbolNotFound {
                 severity: Severity::Error,
                 help_message: None,
                 related: Vec::new(),
-            })
-        }
+            },
+            |searched_in_module_id| {
+                let qualified_name =
+                    table.get_qualified_name(searched_in_module_id);
+
+                Diagnostic {
+                    span: self.resolution_span.clone(),
+                    message: format!(
+                        "the symbol named `{}` does not exist in `{}`",
+                        self.resolution_span.str(),
+                        qualified_name
+                    ),
+                    severity: Severity::Error,
+                    help_message: None,
+                    related: Vec::new(),
+                }
+            },
+        )
     }
 }
 
@@ -66,16 +64,12 @@ pub struct SymbolIsNotAccessible {
 }
 
 impl Report<&Table> for SymbolIsNotAccessible {
-    type Error = ReportError;
-
-    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
+    fn report(&self, table: &Table) -> Diagnostic {
         let referring_site_qualified_name =
-            table.get_qualified_name(self.referring_site).ok_or(ReportError)?;
+            table.get_qualified_name(self.referring_site);
+        let referred_qualified_name = table.get_qualified_name(self.referred);
 
-        let referred_qualified_name =
-            table.get_qualified_name(self.referred).ok_or(ReportError)?;
-
-        Ok(Diagnostic {
+        Diagnostic {
             span: self.referred_span.clone(),
             message: format!(
                 "the symbol `{referred_qualified_name}` is not accessible \
@@ -84,7 +78,7 @@ impl Report<&Table> for SymbolIsNotAccessible {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -96,10 +90,8 @@ pub struct ThisNotFound {
 }
 
 impl Report<&Table> for ThisNotFound {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
             span: self.span.clone(),
             message: "`this` keyword cannot be used here".to_string(),
             severity: Severity::Error,
@@ -109,7 +101,7 @@ impl Report<&Table> for ThisNotFound {
                     .to_string(),
             ),
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -124,13 +116,10 @@ pub struct NoGenericArgumentsRequired {
 }
 
 impl Report<&Table> for NoGenericArgumentsRequired {
-    type Error = ReportError;
+    fn report(&self, table: &Table) -> Diagnostic {
+        let qualified_name = table.get_qualified_name(self.global_id);
 
-    fn report(&self, table: &Table) -> Result<Diagnostic, Self::Error> {
-        let qualified_name =
-            table.get_qualified_name(self.global_id).ok_or(ReportError)?;
-
-        Ok(Diagnostic {
+        Diagnostic {
             span: self.generic_argument_span.clone(),
             message: format!(
                 "the symbol `{qualified_name}` doesn't require any generic \
@@ -139,6 +128,6 @@ impl Report<&Table> for NoGenericArgumentsRequired {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }

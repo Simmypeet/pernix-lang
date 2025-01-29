@@ -1,5 +1,3 @@
-use core::fmt;
-
 use derive_new::new;
 use pernixc_table::{DisplayObject, GlobalID, Table};
 use serde::{Deserialize, Serialize};
@@ -92,7 +90,7 @@ where
         write!(
             f,
             "marker {}{}",
-            table.get_qualified_name(self.marker_id).ok_or(fmt::Error)?,
+            table.get_qualified_name(self.marker_id),
             DisplayObject { display: &self.generic_arguments, table }
         )
     }
@@ -179,7 +177,7 @@ where
         write!(
             f,
             "marker !{}{}",
-            table.get_qualified_name(self.marker_id).ok_or(fmt::Error)?,
+            table.get_qualified_name(self.marker_id),
             DisplayObject { display: &self.generic_arguments, table }
         )
     }

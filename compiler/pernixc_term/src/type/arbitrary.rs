@@ -112,6 +112,7 @@ impl Arbitrary for Type<Default> {
         let leaf = prop_oneof![
             Primitive::arbitrary().prop_map(Self::Primitive),
             TypeParameterID::arbitrary().prop_map(Self::Parameter),
+            Just(Self::Error(crate::Error)),
         ];
 
         leaf.prop_recursive(8, 48, 6, move |inner| {

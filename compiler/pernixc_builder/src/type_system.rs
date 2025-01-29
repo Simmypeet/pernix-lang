@@ -10,8 +10,7 @@ use pernixc_component::implied_predicates::{
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
 use pernixc_table::{
-    component::SymbolKind, diagnostic::Diagnostic, query::Handle, GlobalID,
-    Table,
+    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
 use pernixc_term::{
     predicate::{Outlives, Predicate},
@@ -79,12 +78,7 @@ where
                 result.result.clone()
             }
 
-            Ok(None) => ty.clone(),
-
-            Err(AbruptError::CyclicDependency(error)) => {
-                handler.receive(Box::new(error));
-                ty.clone()
-            }
+            Err(AbruptError::CyclicDependency) | Ok(None) => ty.clone(),
 
             Err(AbruptError::Overflow(error)) => {
                 handler.receive(Box::new(TypeSystemOverflow::new(
@@ -109,7 +103,8 @@ where
             match constraint {
                 LifetimeConstraint::LifetimeOutlives(outlives) => {
                     match self.query(outlives) {
-                        Ok(Some(_)) => { /* do nothing */ }
+                        Err(AbruptError::CyclicDependency) | Ok(Some(_)) => {}
+
                         Ok(None) => {
                             handler.receive(Box::new(UnsatisfiedPredicate {
                                 predicate: Predicate::LifetimeOutlives(
@@ -118,9 +113,6 @@ where
                                 instantiation_span: span.clone(),
                                 predicate_declaration_span: None,
                             }));
-                        }
-                        Err(AbruptError::CyclicDependency(error)) => {
-                            handler.receive(Box::new(error));
                         }
                         Err(AbruptError::Overflow(error)) => {
                             handler.receive(Box::new(TypeSystemOverflow::new(
@@ -147,7 +139,6 @@ pub trait TableExt {
     fn get_active_premise<M: Model>(
         &self,
         current_site: GlobalID,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Premise<M>;
 }
 
@@ -155,7 +146,6 @@ impl TableExt for Table {
     fn get_active_premise<M: Model>(
         &self,
         current_site: GlobalID,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Premise<M> {
         let mut premise = Premise {
             predicates: BTreeSet::new(),
@@ -164,11 +154,11 @@ impl TableExt for Table {
 
         for id in self.scope_walker(current_site) {
             let current_id = GlobalID::new(current_site.target_id, id);
-            let kind = *self.get::<SymbolKind>(current_id).unwrap();
+            let kind = *self.get::<SymbolKind>(current_id);
 
             if kind.has_where_clause() {
                 if let Some(where_clause) =
-                    self.query::<WhereClause>(current_id).handle(handler)
+                    self.query::<WhereClause>(current_id)
                 {
                     premise.predicates.extend(
                         where_clause.predicates.iter().map(|x| {
@@ -180,7 +170,7 @@ impl TableExt for Table {
 
             if kind.has_implied_predicates() {
                 if let Some(predicates) =
-                    self.query::<ImpliedPredicates>(current_id).handle(handler)
+                    self.query::<ImpliedPredicates>(current_id)
                 {
                     premise.predicates.extend(
                         predicates.implied_predicates.iter().map(|x| match x {

@@ -550,8 +550,7 @@ where
                 write!(f, "{}", DisplayObject { display: inference, table })
             }
             Self::Struct(val) => {
-                let qualified_name =
-                    table.get_qualified_name(val.id).ok_or(fmt::Error)?;
+                let qualified_name = table.get_qualified_name(val.id);
 
                 write!(f, "{qualified_name} {{ ")?;
 
@@ -569,9 +568,7 @@ where
                 write!(f, " }}")
             }
             Self::Enum(id) => {
-                let qualified_name = table
-                    .get_qualified_name(id.variant_id)
-                    .ok_or(fmt::Error)?;
+                let qualified_name = table.get_qualified_name(id.variant_id);
 
                 write!(f, "{qualified_name}")?;
 
@@ -606,7 +603,7 @@ where
                     "{}",
                     table
                         .query::<GenericParameters>(parameter.parent)
-                        .map_err(|_| fmt::Error)?
+                        .ok_or(fmt::Error)?
                         .constants()
                         .get(parameter.id)
                         .ok_or(fmt::Error)?

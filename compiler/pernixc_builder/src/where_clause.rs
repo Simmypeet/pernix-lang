@@ -2,7 +2,6 @@
 
 use std::{
     collections::{hash_map::Entry, HashMap},
-    ops::Deref,
     sync::Arc,
 };
 
@@ -169,9 +168,7 @@ fn create_trait_member_predicates(
             id,
             parent_generic_arguments,
             member_generic_arguments,
-        }) if *table.get::<SymbolKind>(id).unwrap()
-            == SymbolKind::TraitType =>
-        {
+        }) if *table.get::<SymbolKind>(id) == SymbolKind::TraitType => {
             let resolve_ty = table.resolve_type(
                 syntax_tree.r#type(),
                 global_id,
@@ -250,8 +247,7 @@ fn create_trait_predicates(
 
         match resolution {
             Resolution::Generic(Generic { id, generic_arguments })
-                if *table.get::<SymbolKind>(id).unwrap()
-                    == SymbolKind::Trait =>
+                if *table.get::<SymbolKind>(id) == SymbolKind::Trait =>
             {
                 let predicate = if trait_predicate.negation().is_none() {
                     predicate::Predicate::PositiveTrait(
@@ -452,8 +448,7 @@ fn create_marker_predicate(
 
         match resolution {
             Resolution::Generic(Generic { id, generic_arguments })
-                if *table.get::<SymbolKind>(id).unwrap()
-                    == SymbolKind::Marker =>
+                if *table.get::<SymbolKind>(id) == SymbolKind::Marker =>
             {
                 let predicate = if marker_bound.negation().is_none() {
                     predicate::Predicate::PositiveMarker(PositiveMarker {
@@ -493,7 +488,7 @@ impl query::Builder<WhereClause> for Builder {
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<WhereClause>> {
-        let symbol_kind = *table.get::<SymbolKind>(global_id)?;
+        let symbol_kind = *table.get::<SymbolKind>(global_id);
 
         if !symbol_kind.has_where_clause() {
             return None;
@@ -506,17 +501,16 @@ impl query::Builder<WhereClause> for Builder {
         );
 
         let where_clause_syntax_tree =
-            table.get::<syntax_tree_component::WhereClause>(global_id).unwrap();
+            table.get::<syntax_tree_component::WhereClause>(global_id);
 
         let Some(where_clause_syntax_tree) =
-            where_clause_syntax_tree.deref().as_ref()
+            where_clause_syntax_tree.0.as_ref()
         else {
             return Some(Arc::new(WhereClause::default()));
         };
 
         let mut where_clause = WhereClause::default();
-        let extra_namespace =
-            table.get_generic_parameter_namepsace(global_id, handler);
+        let extra_namespace = table.get_generic_parameter_namepsace(global_id);
 
         for predicate in where_clause_syntax_tree.predicate_list().elements() {
             match predicate {

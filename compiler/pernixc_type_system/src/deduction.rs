@@ -204,7 +204,7 @@ pub struct MismatchedGenericArgumentCountError {
 pub struct UnificationFailureError;
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[allow(missing_docs)]
 pub enum Error {

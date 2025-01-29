@@ -87,9 +87,7 @@ impl Printer {
 
 impl<E: Report<()>> Handler<E> for Printer {
     fn receive(&self, error: E) {
-        let Ok(diagnostic) = error.report(()) else {
-            return;
-        };
+        let diagnostic = error.report(());
 
         eprintln!("{diagnostic}\n");
 
@@ -105,7 +103,7 @@ fn update_message(
     let message = buildings
         .iter()
         .map(|(id, name)| {
-            let qualified_name = table.get_qualified_name(*id).unwrap();
+            let qualified_name = table.get_qualified_name(*id);
 
             format!(
                 "{} {name} of {}",
@@ -351,9 +349,7 @@ pub fn run(argument: Arguments) -> ExitCode {
 
     if !vec.is_empty() {
         for error in vec.iter() {
-            let Ok(diag) = error.report(&table) else {
-                continue;
-            };
+            let diag = error.report(&table);
 
             eprintln!("{diag}\n");
         }

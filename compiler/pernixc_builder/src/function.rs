@@ -16,8 +16,7 @@ use pernixc_table::{
         syntax_tree as syntax_tree_component, Derived, Parent, SymbolKind,
     },
     diagnostic::Diagnostic,
-    query::{self, Handle},
-    GlobalID, Table,
+    query, GlobalID, Table,
 };
 use pernixc_term::{
     elided_lifetimes::{ElidedLifetime, ElidedLifetimeID, ElidedLifetimes},
@@ -75,7 +74,7 @@ impl query::Builder<Intermediate> for Builder {
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<Intermediate>> {
-        let symbol_kind = *table.get::<SymbolKind>(global_id)?;
+        let symbol_kind = *table.get::<SymbolKind>(global_id);
         if !symbol_kind.has_function_signature() {
             return None;
         }
@@ -86,17 +85,15 @@ impl query::Builder<Intermediate> for Builder {
             FunctionSignature::component_name(),
         );
 
-        let extra_namespace =
-            table.get_generic_parameter_namepsace(global_id, handler);
+        let extra_namespace = table.get_generic_parameter_namepsace(global_id);
         let mut elided_lifetimes = ElidedLifetimes::default();
         let mut elided_lifetimes_provider = ElidedLifetimesProvider {
             global_id,
             elided_lifetimes: &mut elided_lifetimes,
         };
 
-        let syntax_tree = table
-            .get::<syntax_tree_component::FunctionSignature>(global_id)
-            .unwrap();
+        let syntax_tree =
+            table.get::<syntax_tree_component::FunctionSignature>(global_id);
 
         let parameters = syntax_tree
             .parameters
@@ -145,17 +142,14 @@ impl query::Builder<Intermediate> for Builder {
         });
 
         let mut implied_predicates = ImpliedPredicates::default();
-        let mut active_premise = table.get_active_premise::<Default>(
-            GlobalID::new(
+        let mut active_premise =
+            table.get_active_premise::<Default>(GlobalID::new(
                 global_id.target_id,
-                table.get::<Parent>(global_id).unwrap().0,
-            ),
-            handler,
-        );
+                table.get::<Parent>(global_id).parent.unwrap(),
+            ));
 
         'out: {
-            let Some(where_clause) =
-                table.query::<WhereClause>(global_id).handle(handler)
+            let Some(where_clause) = table.query::<WhereClause>(global_id)
             else {
                 break 'out;
             };
@@ -176,7 +170,7 @@ impl query::Builder<Intermediate> for Builder {
             .flat_map(|(x, span)| match x {
                 Type::Symbol(symbol) => {
                     let Some(where_clause) =
-                        table.query::<WhereClause>(symbol.id).handle(handler)
+                        table.query::<WhereClause>(symbol.id)
                     else {
                         return Vec::new();
                     };
@@ -229,7 +223,6 @@ impl query::Builder<Intermediate> for Builder {
             };
 
             match result {
-                Ok(Some(_)) => {}
                 Ok(None) => {
                     active_premise
                         .predicates
@@ -237,9 +230,6 @@ impl query::Builder<Intermediate> for Builder {
                     implied_predicates
                         .implied_predicates
                         .insert(implied_predicate);
-                }
-                Err(AbruptError::CyclicDependency(error)) => {
-                    handler.receive(Box::new(error));
                 }
                 Err(AbruptError::Overflow(overflow_error)) => {
                     handler.receive(Box::new(UndecidablePredicate {
@@ -249,6 +239,8 @@ impl query::Builder<Intermediate> for Builder {
                         overflow_error,
                     }));
                 }
+
+                Err(AbruptError::CyclicDependency) | Ok(Some(_)) => {}
             }
         }
 
@@ -293,9 +285,9 @@ impl query::Builder<FunctionSignature> for Builder {
         &self,
         global_id: GlobalID,
         table: &Table,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
+        _: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<FunctionSignature>> {
-        let symbol_kind = *table.get::<SymbolKind>(global_id)?;
+        let symbol_kind = *table.get::<SymbolKind>(global_id);
         if !symbol_kind.has_function_signature() {
             return None;
         }
@@ -306,18 +298,16 @@ impl query::Builder<FunctionSignature> for Builder {
             FunctionSignature::component_name(),
         );
 
-        Some(
-            table.query::<Intermediate>(global_id).handle(handler).map_or_else(
-                || {
-                    Arc::new(FunctionSignature {
-                        parameters: Arena::default(),
-                        parameter_order: Vec::new(),
-                        return_type: Type::Error(pernixc_term::Error),
-                    })
-                },
-                |x| x.function_signature.clone(),
-            ),
-        )
+        Some(table.query::<Intermediate>(global_id).map_or_else(
+            || {
+                Arc::new(FunctionSignature {
+                    parameters: Arena::default(),
+                    parameter_order: Vec::new(),
+                    return_type: Type::Error(pernixc_term::Error),
+                })
+            },
+            |x| x.function_signature.clone(),
+        ))
     }
 }
 
@@ -326,9 +316,9 @@ impl query::Builder<ElidedLifetimes> for Builder {
         &self,
         global_id: GlobalID,
         table: &Table,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
+        _: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<ElidedLifetimes>> {
-        let symbol_kind = *table.get::<SymbolKind>(global_id)?;
+        let symbol_kind = *table.get::<SymbolKind>(global_id);
         if !symbol_kind.has_function_signature() {
             return None;
         }
@@ -339,16 +329,10 @@ impl query::Builder<ElidedLifetimes> for Builder {
             ElidedLifetimes::component_name(),
         );
 
-        Some(
-            table.query::<Intermediate>(global_id).handle(handler).map_or_else(
-                || {
-                    Arc::new(ElidedLifetimes {
-                        elided_lifetimes: Arena::default(),
-                    })
-                },
-                |x| x.ellided_lifetimes.clone(),
-            ),
-        )
+        Some(table.query::<Intermediate>(global_id).map_or_else(
+            || Arc::new(ElidedLifetimes { elided_lifetimes: Arena::default() }),
+            |x| x.ellided_lifetimes.clone(),
+        ))
     }
 }
 
@@ -357,9 +341,9 @@ impl query::Builder<ImpliedPredicates> for Builder {
         &self,
         global_id: GlobalID,
         table: &Table,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
+        _: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<ImpliedPredicates>> {
-        let symbol_kind = *table.get::<SymbolKind>(global_id)?;
+        let symbol_kind = *table.get::<SymbolKind>(global_id);
         if !symbol_kind.has_function_signature() {
             return None;
         }
@@ -370,15 +354,13 @@ impl query::Builder<ImpliedPredicates> for Builder {
             ImpliedPredicates::component_name(),
         );
 
-        Some(
-            table.query::<Intermediate>(global_id).handle(handler).map_or_else(
-                || {
-                    Arc::new(ImpliedPredicates {
-                        implied_predicates: HashSet::new(),
-                    })
-                },
-                |x| x.implied_predicates.clone(),
-            ),
-        )
+        Some(table.query::<Intermediate>(global_id).map_or_else(
+            || {
+                Arc::new(ImpliedPredicates {
+                    implied_predicates: HashSet::new(),
+                })
+            },
+            |x| x.implied_predicates.clone(),
+        ))
     }
 }

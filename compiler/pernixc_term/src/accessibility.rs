@@ -91,7 +91,6 @@ impl Ext for Table {
             Type::MemberSymbol(member_symbol) => {
                 let symbol_accessibility = match self
                     .get_accessibility(member_symbol.id)
-                    .ok_or(GetTermAccessibilityError::InvalidID)?
                 {
                     Accessibility::Public => GlobalAccessibility::Public,
                     Accessibility::Scoped(id) => GlobalAccessibility::Scoped(
@@ -124,7 +123,6 @@ impl Ext for Table {
             Type::Symbol(symbol) => {
                 let symbol_accessibility = match self
                     .get_accessibility(symbol.id)
-                    .ok_or(GetTermAccessibilityError::InvalidID)?
                 {
                     Accessibility::Public => GlobalAccessibility::Public,
                     Accessibility::Scoped(id) => GlobalAccessibility::Scoped(
@@ -172,7 +170,6 @@ impl Ext for Table {
 
             Type::Parameter(parameter) => match self
                 .get_accessibility(parameter.parent)
-                .ok_or(GetTermAccessibilityError::InvalidID)?
             {
                 Accessibility::Public => Ok(GlobalAccessibility::Public),
                 Accessibility::Scoped(id) => Ok(GlobalAccessibility::Scoped(
@@ -200,7 +197,6 @@ impl Ext for Table {
             Type::TraitMember(member_symbol) => {
                 let symbol_accessibility = match self
                     .get_accessibility(member_symbol.id)
-                    .ok_or(GetTermAccessibilityError::InvalidID)?
                 {
                     Accessibility::Public => GlobalAccessibility::Public,
                     Accessibility::Scoped(id) => GlobalAccessibility::Scoped(
@@ -242,9 +238,7 @@ impl Ext for Table {
             Constant::Inference(never) => match *never {},
 
             Constant::Struct(constant) => {
-                let mut current_min = match self
-                    .get_accessibility(constant.id)
-                    .ok_or(GetTermAccessibilityError::InvalidID)?
+                let mut current_min = match self.get_accessibility(constant.id)
                 {
                     Accessibility::Public => GlobalAccessibility::Public,
                     Accessibility::Scoped(id) => GlobalAccessibility::Scoped(
@@ -275,17 +269,14 @@ impl Ext for Table {
                 Ok(current_min)
             }
 
-            Constant::Parameter(param) => Ok(
-                match self
-                    .get_accessibility(param.parent)
-                    .ok_or(GetTermAccessibilityError::InvalidID)?
-                {
+            Constant::Parameter(param) => {
+                Ok(match self.get_accessibility(param.parent) {
                     Accessibility::Public => GlobalAccessibility::Public,
                     Accessibility::Scoped(id) => GlobalAccessibility::Scoped(
                         GlobalID::new(param.parent.target_id, id),
                     ),
-                },
-            ),
+                })
+            }
 
             Constant::Error(_) | Constant::Phantom | Constant::Primitive(_) => {
                 Ok(GlobalAccessibility::Public)
@@ -294,7 +285,6 @@ impl Ext for Table {
             Constant::Enum(constant) => {
                 let mut current_min = match self
                     .get_accessibility(constant.variant_id)
-                    .ok_or(GetTermAccessibilityError::InvalidID)?
                 {
                     Accessibility::Public => GlobalAccessibility::Public,
                     Accessibility::Scoped(id) => GlobalAccessibility::Scoped(
@@ -332,11 +322,8 @@ impl Ext for Table {
         lifetime: &Lifetime<Default>,
     ) -> Result<GlobalAccessibility, GetTermAccessibilityError> {
         match lifetime {
-            Lifetime::Parameter(lifetime_parameter_id) => Ok(
-                match self
-                    .get_accessibility(lifetime_parameter_id.parent)
-                    .ok_or(GetTermAccessibilityError::InvalidID)?
-                {
+            Lifetime::Parameter(lifetime_parameter_id) => {
+                Ok(match self.get_accessibility(lifetime_parameter_id.parent) {
                     Accessibility::Public => GlobalAccessibility::Public,
                     Accessibility::Scoped(id) => {
                         GlobalAccessibility::Scoped(GlobalID::new(
@@ -344,20 +331,17 @@ impl Ext for Table {
                             id,
                         ))
                     }
-                },
-            ),
+                })
+            }
 
-            Lifetime::Elided(elided_lifetime_id) => Ok(
-                match self
-                    .get_accessibility(elided_lifetime_id.parent)
-                    .ok_or(GetTermAccessibilityError::InvalidID)?
-                {
+            Lifetime::Elided(elided_lifetime_id) => {
+                Ok(match self.get_accessibility(elided_lifetime_id.parent) {
                     Accessibility::Public => GlobalAccessibility::Public,
                     Accessibility::Scoped(id) => GlobalAccessibility::Scoped(
                         GlobalID::new(elided_lifetime_id.parent.target_id, id),
                     ),
-                },
-            ),
+                })
+            }
 
             Lifetime::Inference(never) => match *never {},
 

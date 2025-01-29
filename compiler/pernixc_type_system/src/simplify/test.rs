@@ -1,6 +1,9 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
-use pernixc_table::{GlobalID, Table, TargetID};
+use pernixc_table::{
+    component::{Implemented, Parent, SymbolKind},
+    GlobalID, Table, TargetID,
+};
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameter::LifetimeParameterID,
@@ -168,6 +171,19 @@ fn with_lifetime_matching() {
     let equivalent = Type::Primitive(Primitive::Bool);
     let table = Table::new(Arc::new(pernixc_handler::Panic));
 
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), pernixc_table::ID(2)),
+        Parent { parent: Some(pernixc_table::ID(3)) }
+    ));
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), pernixc_table::ID(3)),
+        SymbolKind::Trait
+    ));
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), pernixc_table::ID(3)),
+        Implemented(HashSet::new())
+    ));
+
     let mut premise = Premise::default();
     premise.predicates.insert(Predicate::TraitTypeCompatible(Compatible {
         lhs: trait_member,
@@ -213,6 +229,22 @@ fn multiple_equivalences() {
     let equivalent = Type::Primitive(Primitive::Bool);
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), pernixc_table::ID(1)),
+        Parent { parent: Some(pernixc_table::ID(3)) }
+    ));
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), pernixc_table::ID(2)),
+        Parent { parent: Some(pernixc_table::ID(3)) }
+    ));
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), pernixc_table::ID(3)),
+        SymbolKind::Trait
+    ));
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), pernixc_table::ID(3)),
+        Implemented(HashSet::new())
+    ));
     let mut premise = Premise::default();
     premise.predicates.extend([
         Predicate::TraitTypeCompatible(Compatible {
@@ -282,6 +314,24 @@ fn transitive() {
     let equivalent = Type::Primitive(Primitive::Bool);
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
+
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), pernixc_table::ID(2)),
+        Parent { parent: Some(pernixc_table::ID(4)) }
+    ));
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), pernixc_table::ID(3)),
+        Parent { parent: Some(pernixc_table::ID(4)) }
+    ));
+
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), pernixc_table::ID(4)),
+        SymbolKind::Trait,
+    ));
+    assert!(table.add_component(
+        GlobalID::new(TargetID(1), pernixc_table::ID(4)),
+        Implemented(HashSet::new()),
+    ));
 
     let premise = Premise {
         predicates: [

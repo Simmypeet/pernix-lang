@@ -27,7 +27,7 @@ impl query::Builder<Variant> for Builder {
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Arc<Variant>> {
-        let symbol_kind = *table.get::<SymbolKind>(global_id).unwrap();
+        let symbol_kind = *table.get::<SymbolKind>(global_id);
         if symbol_kind != SymbolKind::Variant {
             return None;
         }
@@ -36,16 +36,15 @@ impl query::Builder<Variant> for Builder {
             self.start_building(table, global_id, Variant::component_name());
 
         let syntax_tree =
-            table.get::<syntax_tree_component::Variant>(global_id).unwrap();
+            table.get::<syntax_tree_component::Variant>(global_id);
 
         let Some(syntax_tree) = syntax_tree.variant_association.as_ref() else {
             return Some(Arc::new(Variant { associated_type: None }));
         };
 
-        let extra_namespace =
-            table.get_generic_parameter_namepsace(global_id, handler);
+        let extra_namespace = table.get_generic_parameter_namepsace(global_id);
 
-        let active_premise = table.get_active_premise(global_id, handler);
+        let active_premise = table.get_active_premise(global_id);
         let (env, _) = Environment::new(active_premise, table);
 
         let associated_type = table.resolve_type(

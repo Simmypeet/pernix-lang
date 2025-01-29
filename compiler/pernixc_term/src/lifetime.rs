@@ -63,7 +63,7 @@ where
             Self::Parameter(parameter) => {
                 match &table
                     .query::<GenericParameters>(parameter.parent)
-                    .map_err(|_| fmt::Error)?
+                    .ok_or(fmt::Error)?
                     .lifetimes()
                     .get(parameter.id)
                     .ok_or(fmt::Error)?
@@ -82,7 +82,7 @@ where
                     "'∀{}",
                     table
                         .query::<WhereClause>(forall_lifetime.parent)
-                        .map_err(|_| fmt::Error)?
+                        .ok_or(fmt::Error)?
                         .forall_lifetimes
                         .get(forall_lifetime.id)
                         .ok_or(fmt::Error)?

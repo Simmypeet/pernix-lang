@@ -1,9 +1,6 @@
 //! Contains the definition of basic terms for the type system.
 
-use std::{
-    fmt::{self, Debug},
-    hash::Hash,
-};
+use std::{fmt::Debug, hash::Hash};
 
 pub mod accessibility;
 pub mod constant;
@@ -260,22 +257,19 @@ where
         table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        let parent_id = table.get::<Parent>(self.id).ok_or(fmt::Error)?.0;
+        let parent_id = table.get::<Parent>(self.id).parent.unwrap();
         let parent_qualified_identifier = table
-            .get_qualified_name(GlobalID::new(self.id.target_id, parent_id))
-            .ok_or(fmt::Error)?;
+            .get_qualified_name(GlobalID::new(self.id.target_id, parent_id));
 
         write!(f, "{parent_qualified_identifier}{}", DisplayObject {
             table,
             display: &self.parent_generic_arguments
         })?;
 
-        write!(
-            f,
-            "::{}{}",
-            table.get::<Name>(self.id).ok_or(fmt::Error)?.0,
-            DisplayObject { table, display: &self.member_generic_arguments }
-        )
+        write!(f, "::{}{}", table.get::<Name>(self.id).0, DisplayObject {
+            table,
+            display: &self.member_generic_arguments
+        })
     }
 }
 
@@ -334,8 +328,7 @@ where
         table: &Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        let qualified_name =
-            table.get_qualified_name(self.id).ok_or(fmt::Error)?;
+        let qualified_name = table.get_qualified_name(self.id);
 
         write!(f, "{qualified_name}{}", DisplayObject {
             table,

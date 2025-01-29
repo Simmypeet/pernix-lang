@@ -218,14 +218,13 @@ impl<M: Model> unification::Predicate<Constant<M>>
     }
 }
 
-#[must_use]
 fn append_matchings_from_unification<M: Model>(
     mut current_from: Type<M>,
     unifier: &unification::Unifier<Type<M>>,
     parent_variance: Variance,
     environment: &Environment<M, impl Normalizer<M>>,
     matching: &mut BTreeMap<Lifetime<M>, Vec<(Lifetime<M>, Variance)>>,
-) -> bool {
+) -> Result<bool, AbruptError> {
     if let Some(rewritten_from) = &unifier.rewritten_from {
         current_from = rewritten_from.clone();
     }
@@ -238,42 +237,37 @@ fn append_matchings_from_unification<M: Model>(
         Matching::Substructural(substructural) => {
             // look for matched lifetimes
             for (location, unification) in &substructural.lifetimes {
-                match environment.get_variance_of(
-                    &current_from,
-                    parent_variance,
-                    std::iter::once(TermLocation::Lifetime(
-                        SubLifetimeLocation::FromType(*location),
-                    )),
-                ) {
-                    Ok(variance) => {
-                        if let Matching::Unifiable(self_lt, target_lt) =
-                            &unification.matching
-                        {
-                            matching
-                                .entry(target_lt.clone())
-                                .or_default()
-                                .push((self_lt.clone(), variance));
-                        }
-                    }
+                let variance = environment
+                    .get_variance_of(
+                        &current_from,
+                        parent_variance,
+                        std::iter::once(TermLocation::Lifetime(
+                            SubLifetimeLocation::FromType(*location),
+                        )),
+                    )
+                    .ok_or(AbruptError::CyclicDependency)?;
 
-                    Err(_) => {
-                        // the variance cannot be determined, flawed term input
-                        return false;
-                    }
+                if let Matching::Unifiable(self_lt, target_lt) =
+                    &unification.matching
+                {
+                    matching
+                        .entry(target_lt.clone())
+                        .or_default()
+                        .push((self_lt.clone(), variance));
                 }
             }
 
             // look for matched types
             for (location, unification) in &substructural.types {
-                let Ok(current_variance) = environment.get_variance_of(
-                    &current_from,
-                    parent_variance,
-                    std::iter::once(TermLocation::Type(
-                        SubTypeLocation::FromType(*location),
-                    )),
-                ) else {
-                    return false;
-                };
+                let current_variance = environment
+                    .get_variance_of(
+                        &current_from,
+                        parent_variance,
+                        std::iter::once(TermLocation::Type(
+                            SubTypeLocation::FromType(*location),
+                        )),
+                    )
+                    .ok_or(AbruptError::CyclicDependency)?;
 
                 let new_from = location.get_sub_term(&current_from).unwrap();
 
@@ -283,15 +277,15 @@ fn append_matchings_from_unification<M: Model>(
                     current_variance,
                     environment,
                     matching,
-                ) {
-                    return false;
+                )? {
+                    return Ok(false);
                 }
             }
         }
         Matching::Equality => {}
     }
 
-    true
+    Ok(true)
 }
 
 /// A trait for determining the equality of two terms while considering the
@@ -561,7 +555,7 @@ impl<M: Model> Compatible for Type<M> {
             variance,
             environment,
             &mut matching,
-        ) {
+        )? {
             return Ok(None);
         }
 
@@ -656,7 +650,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
                 variance,
                 self,
                 &mut matching,
-            ) {
+            )? {
                 return Ok(None);
             }
         }

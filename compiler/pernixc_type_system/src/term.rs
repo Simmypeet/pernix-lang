@@ -26,7 +26,7 @@ use pernixc_term::{
 
 use crate::{
     compatible, environment::Environment, equivalences, mapping,
-    normalizer::Normalizer, resolution, unification, AbruptError, ResultExt,
+    normalizer::Normalizer, resolution, unification, AbruptError,
     Satisfiability, Succeeded,
 };
 
@@ -215,11 +215,8 @@ fn normalize_trait_member<M: Model>(
     trait_member: &TraitMember<M>,
     environment: &Environment<M, impl Normalizer<M>>,
 ) -> Result<Option<Succeeded<Type<M>, M>>, AbruptError> {
-    let Some(trait_id) =
-        environment.table().get::<Parent>(trait_member.id).map(|x| x.0)
-    else {
-        return Ok(None);
-    };
+    let trait_id =
+        environment.table().get::<Parent>(trait_member.id).parent.unwrap();
 
     // resolve the trait implementation
     let mut resolution = match environment.resolve_implementation(
@@ -236,32 +233,29 @@ fn normalize_trait_member<M: Model>(
     };
 
     let trait_member_name =
-        environment.table().get::<Name>(trait_member.id).unwrap();
+        environment.table().get::<Name>(trait_member.id).0.clone();
 
     // not a trait implementation
-    if environment
-        .table()
-        .get::<SymbolKind>(resolution.result.id)
-        .map_or(true, |x| *x != SymbolKind::PositiveTraitImplementation)
+    if *environment.table().get::<SymbolKind>(resolution.result.id)
+        != SymbolKind::PositiveTraitImplementation
     {
         return Ok(None);
     }
 
-    let Some(implementation_member_id) =
-        environment.table().get::<Member>(resolution.result.id).and_then(|x| {
-            x.0.get(&trait_member_name.0)
-                .copied()
-                .map(|x| GlobalID::new(resolution.result.id.target_id, x))
-        })
+    let Some(implementation_member_id) = environment
+        .table()
+        .get::<Member>(resolution.result.id)
+        .0
+        .get(&trait_member_name)
+        .copied()
+        .map(|x| GlobalID::new(resolution.result.id.target_id, x))
     else {
         return Ok(None);
     };
 
     // check if is the type
-    if environment
-        .table()
-        .get::<SymbolKind>(implementation_member_id)
-        .map_or(true, |x| *x != SymbolKind::TraitImplementationType)
+    if *environment.table().get::<SymbolKind>(implementation_member_id)
+        != SymbolKind::TraitImplementationType
     {
         return Ok(None);
     }
@@ -269,13 +263,10 @@ fn normalize_trait_member<M: Model>(
     // should have no collision and no mismatched generic arguments
     // count
     {
-        let Some(generic_parameter) = environment
+        let generic_parameter = environment
             .table()
             .query::<GenericParameters>(implementation_member_id)
-            .extract_cyclic_dependency()?
-        else {
-            return Ok(None);
-        };
+            .ok_or(AbruptError::CyclicDependency)?;
 
         if resolution
             .result
@@ -291,14 +282,14 @@ fn normalize_trait_member<M: Model>(
         }
     }
 
-    let Some(mut new_term) = environment
-        .table()
-        .query::<TypeAlias>(implementation_member_id)
-        .extract_cyclic_dependency()?
-        .map(|x| M::from_default_type(x.0.clone()))
-    else {
-        return Ok(None);
-    };
+    let mut new_term = M::from_default_type(
+        environment
+            .table()
+            .query::<TypeAlias>(implementation_member_id)
+            .ok_or(AbruptError::CyclicDependency)?
+            .0
+            .clone(),
+    );
 
     instantiation::instantiate(&mut new_term, &resolution.result.instantiation);
 
@@ -435,78 +426,67 @@ impl<M: Model> Term for Type<M> {
             return Ok(None);
         };
         let id = *id;
-        let Some(symbol_kind) = table.get::<SymbolKind>(id).map(|x| *x) else {
-            return Ok(None);
-        };
+        let symbol_kind = *table.get::<SymbolKind>(id);
 
         match symbol_kind {
             SymbolKind::Struct => {
-                let Some(Ok(inst)) = table
-                    .query::<GenericParameters>(id)
-                    .extract_cyclic_dependency()?
-                    .map(|x| {
-                        Instantiation::from_generic_arguments(
-                            generic_arguments.clone(),
-                            id,
-                            &x,
-                        )
-                    })
-                else {
+                let Ok(inst) = Instantiation::from_generic_arguments(
+                    generic_arguments.clone(),
+                    id,
+                    &*table
+                        .query::<GenericParameters>(id)
+                        .ok_or(AbruptError::CyclicDependency)?,
+                ) else {
                     return Ok(None);
                 };
 
-                Ok(table.query::<Fields>(id).extract_cyclic_dependency()?.map(
-                    |x| {
-                        x.fields
-                            .iter()
-                            .map(|field| {
-                                let mut ty = M::from_default_type(
-                                    field.1.r#type.clone(),
-                                );
-                                instantiation::instantiate(&mut ty, &inst);
-                                ty
-                            })
-                            .collect()
-                    },
+                Ok(Some(
+                    table
+                        .query::<Fields>(id)
+                        .ok_or(AbruptError::CyclicDependency)?
+                        .fields
+                        .iter()
+                        .map(|field| {
+                            let mut ty =
+                                M::from_default_type(field.1.r#type.clone());
+                            instantiation::instantiate(&mut ty, &inst);
+                            ty
+                        })
+                        .collect(),
                 ))
             }
 
             SymbolKind::Enum => {
-                let Some(Ok(inst)) = table
-                    .query::<GenericParameters>(id)
-                    .extract_cyclic_dependency()?
-                    .map(|x| {
-                        Instantiation::from_generic_arguments(
-                            generic_arguments.clone(),
-                            id,
-                            &x,
-                        )
-                    })
-                else {
+                let Ok(inst) = Instantiation::from_generic_arguments(
+                    generic_arguments.clone(),
+                    id,
+                    &*table
+                        .query::<GenericParameters>(id)
+                        .ok_or(AbruptError::CyclicDependency)?,
+                ) else {
                     return Ok(None);
                 };
 
                 let member = table.get::<Member>(id);
-                let Some(variants) = member.as_ref().map(|x| {
-                    x.values().map(|x| GlobalID::new(id.target_id, *x))
-                }) else {
-                    return Ok(None);
-                };
 
                 let mut variants_ty = Vec::new();
-                for variant in variants {
-                    variants_ty.extend(
-                        table
-                            .query::<Variant>(variant)
-                            .extract_cyclic_dependency()?
-                            .and_then(|x| {
-                                x.associated_type.clone().map(|x| {
-                                    let mut ty = M::from_default_type(x);
-                                    instantiation::instantiate(&mut ty, &inst);
-                                    ty
-                                })
-                            }),
-                    );
+                for variant in member
+                    .0
+                    .values()
+                    .copied()
+                    .map(|x| GlobalID::new(id.target_id, x))
+                {
+                    let variant = table
+                        .query::<Variant>(variant)
+                        .ok_or(AbruptError::CyclicDependency)?;
+
+                    variants_ty.extend(variant.associated_type.clone().map(
+                        |x| {
+                            let mut ty = M::from_default_type(x);
+                            instantiation::instantiate(&mut ty, &inst);
+                            ty
+                        },
+                    ));
                 }
 
                 Ok(Some(variants_ty))

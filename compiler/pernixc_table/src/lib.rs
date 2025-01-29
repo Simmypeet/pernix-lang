@@ -178,9 +178,8 @@ impl Iterator for ScopeWalker<'_> {
             Some(current_id) => {
                 let next = self
                     .representation
-                    .storage
                     .get::<Parent>(GlobalID::new(self.target_id, current_id))
-                    .map(|x| **x);
+                    .parent;
 
                 self.current_id = next;
                 Some(current_id)
@@ -190,27 +189,18 @@ impl Iterator for ScopeWalker<'_> {
     }
 }
 
-/// The error type returned by [`Representation::get_member_of()`].
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[allow(missing_docs)]
-pub enum GetMemberError {
-    #[error("the given item ID is not valid")]
-    InvalidID,
-    #[error("the member with the given name is not found")]
-    MemberNotFound,
-}
-
 impl Representation {
     /// Gets the **input** component of the given type from the symbol with the
     /// given ID.
     #[must_use]
-    pub fn get<T: Input + Any + Send + Sync>(
-        &self,
-        id: GlobalID,
-    ) -> Option<Arc<T>> {
-        self.storage.get_cloned::<T>(id)
+    pub fn get<T: Input + Any + Send + Sync>(&self, id: GlobalID) -> Arc<T> {
+        self.storage.get_cloned::<T>(id).unwrap_or_else(|| {
+            panic!(
+                "the symbol with the ID {id:?} is not found or it doesn't \
+                 have a component of type name {}",
+                std::any::type_name::<T>()
+            )
+        })
     }
 
     /// Gets the mutable **input** component of the given type from the symbol
@@ -261,11 +251,11 @@ impl Representation {
     ///
     /// Returns `None` if the `id` is not found.
     #[must_use]
-    pub fn get_qualified_name(&self, mut id: GlobalID) -> Option<String> {
+    pub fn get_qualified_name(&self, mut id: GlobalID) -> String {
         let mut qualified_name = String::new();
 
         loop {
-            let current_name = self.storage.get::<Name>(id)?;
+            let current_name = self.get::<Name>(id);
 
             if qualified_name.is_empty() {
                 qualified_name.push_str(&current_name);
@@ -274,14 +264,14 @@ impl Representation {
                 qualified_name.insert_str(0, &current_name);
             }
 
-            if let Some(parent_id) = self.storage.get::<Parent>(id) {
-                id = GlobalID::new(id.target_id, **parent_id);
+            if let Some(parent_id) = self.get::<Parent>(id).parent {
+                id = GlobalID::new(id.target_id, parent_id);
             } else {
                 break;
             }
         }
 
-        Some(qualified_name)
+        qualified_name
     }
 
     /// Returns the [`ID`] that is the module and closest to the given
@@ -291,13 +281,18 @@ impl Representation {
     ///
     /// Returns `None` if the `id` is not found.
     #[must_use]
-    pub fn get_closet_module_id(&self, mut id: GlobalID) -> Option<ID> {
+    pub fn get_closet_module_id(&self, mut id: GlobalID) -> ID {
         loop {
-            if *self.storage.get::<SymbolKind>(id)? == SymbolKind::Module {
-                return Some(id.id);
+            if *self.get::<SymbolKind>(id) == SymbolKind::Module {
+                return id.id;
             }
 
-            id = GlobalID::new(id.target_id, **self.storage.get::<Parent>(id)?);
+            id = GlobalID::new(
+                id.target_id,
+                self.get::<Parent>(id)
+                    .parent
+                    .expect("should always have a parent "),
+            );
         }
     }
 
@@ -316,7 +311,7 @@ impl Representation {
         match access_modifier {
             AccessModifier::Public(_) => Some(Accessibility::Public),
             AccessModifier::Private(_) => {
-                let parent_module_id = self.get_closet_module_id(parent_id)?;
+                let parent_module_id = self.get_closet_module_id(parent_id);
                 Some(Accessibility::Scoped(parent_module_id))
             }
             AccessModifier::Internal(_) => {
@@ -407,13 +402,9 @@ impl Representation {
     }
 
     /// Gets the [`Accessibility`] of the given symbol.
-    ///
-    /// # Returns
-    ///
-    /// Returns `None` if the `id` is not found.
     #[must_use]
-    pub fn get_accessibility(&self, id: GlobalID) -> Option<Accessibility> {
-        match *self.storage.get::<SymbolKind>(id)? {
+    pub fn get_accessibility(&self, id: GlobalID) -> Accessibility {
+        match *self.get::<SymbolKind>(id) {
             SymbolKind::Module
             | SymbolKind::Struct
             | SymbolKind::Trait
@@ -425,9 +416,7 @@ impl Representation {
             | SymbolKind::TraitConstant
             | SymbolKind::Marker
             | SymbolKind::AdtImplementationFunction
-            | SymbolKind::Function => {
-                self.storage.get::<Accessibility>(id).as_deref().copied()
-            }
+            | SymbolKind::Function => *self.get::<Accessibility>(id),
 
             // based on the parent's accessibility
             SymbolKind::TraitImplementationFunction
@@ -435,16 +424,16 @@ impl Representation {
             | SymbolKind::TraitImplementationConstant
             | SymbolKind::Variant => self.get_accessibility(GlobalID::new(
                 id.target_id,
-                **self.storage.get::<Parent>(id).unwrap(),
+                self.get::<Parent>(id).parent.unwrap(),
             )),
 
             SymbolKind::PositiveTraitImplementation
             | SymbolKind::NegativeTraitImplementation
             | SymbolKind::PositiveMarkerImplementation
             | SymbolKind::NegativeMarkerImplementation
-            | SymbolKind::AdtImplementation => self.get_accessibility(
-                **self.storage.get::<Implements>(id).unwrap(),
-            ),
+            | SymbolKind::AdtImplementation => {
+                self.get_accessibility(**self.get::<Implements>(id))
+            }
         }
     }
 
@@ -485,93 +474,66 @@ impl Representation {
     }
 
     /// Searches for a member with the given name in the given item ID.
-    ///
-    /// # Errors
-    ///
-    /// See [`GetMemberError`] for more information
+    #[must_use]
     pub fn get_member_of(
         &self,
         id: GlobalID,
         member_name: &str,
-    ) -> Result<GlobalID, GetMemberError> {
-        if let Some(via_member) = self
-            .storage
-            .get::<Member>(id)
-            .and_then(|x| x.get(member_name).copied())
+    ) -> Option<GlobalID> {
+        let symbol_kind = *self.get::<SymbolKind>(id);
+        if let Some(Some(test)) = symbol_kind
+            .has_member()
+            .then(|| self.get::<Member>(id).0.get(member_name).copied())
         {
-            return Ok(GlobalID::new(id.target_id, via_member));
+            return Some(GlobalID::new(id.target_id, test));
         }
 
-        let symbol_kind = self
-            .storage
-            .get::<SymbolKind>(id)
-            .ok_or(GetMemberError::InvalidID)?;
-
-        match (*symbol_kind == SymbolKind::Module, symbol_kind.is_adt()) {
+        match (symbol_kind == SymbolKind::Module, symbol_kind.is_adt()) {
             (true, false) => {
-                let imports = self
-                    .storage
-                    .get::<Import>(id)
-                    .ok_or(GetMemberError::InvalidID)?;
-
-                imports
-                    .get(member_name)
-                    .map(|x| x.id)
-                    .ok_or(GetMemberError::MemberNotFound)
+                self.get::<Import>(id).0.get(member_name).map(|x| x.id)
             }
 
             // serach for the member of implementations
             (false, true) => {
-                let implements = self
-                    .storage
-                    .get::<Implemented>(id)
-                    .ok_or(GetMemberError::InvalidID)?;
+                let implements = self.get::<Implemented>(id);
 
                 for implementation_id in implements.iter().copied() {
-                    let Some(member) =
-                        self.storage.get::<Member>(implementation_id)
-                    else {
-                        continue;
-                    };
-
-                    if let Some(id) = member.get(member_name) {
-                        return Ok(GlobalID::new(
+                    if let Some(id) =
+                        self.get::<Member>(implementation_id).get(member_name)
+                    {
+                        return Some(GlobalID::new(
                             implementation_id.target_id,
                             *id,
                         ));
                     }
                 }
 
-                Err(GetMemberError::MemberNotFound)
+                None
             }
 
-            _ => Err(GetMemberError::MemberNotFound),
+            _ => None,
         }
     }
 
     /// Determines whether the given `referred` is accessible from the
     /// `referring_site` as if the `referred` has the given
     /// `referred_accessibility`.
-    ///
-    /// # Returns
-    ///
-    /// Returns `None` if `referred` or `referring_site` is not a valid ID.
     #[must_use]
     pub fn is_accessible_from(
         &self,
         referring_site: ID,
         referred_target_id: TargetID,
         referred_accessibility: Accessibility,
-    ) -> Option<bool> {
+    ) -> bool {
         match referred_accessibility {
-            Accessibility::Public => Some(true),
+            Accessibility::Public => true,
 
             Accessibility::Scoped(module_id) => {
                 let referring_site_module_id = self.get_closet_module_id(
                     GlobalID::new(referred_target_id, referring_site),
-                )?;
+                );
 
-                Some(matches!(
+                matches!(
                     self.symbol_hierarchy_relationship(
                         referred_target_id,
                         module_id,
@@ -579,7 +541,7 @@ impl Representation {
                     ),
                     HierarchyRelationship::Parent
                         | HierarchyRelationship::Equivalent
-                ))
+                )
             }
         }
     }
@@ -594,8 +556,8 @@ impl Representation {
         &self,
         referring_site: GlobalID,
         referred: GlobalID,
-    ) -> Option<bool> {
-        let referred_accessibility = self.get_accessibility(referred)?;
+    ) -> bool {
+        let referred_accessibility = self.get_accessibility(referred);
 
         self.is_accessible_from(
             referring_site.id,
