@@ -61,17 +61,17 @@ where
         match self {
             Self::Static => write!(f, "'static"),
             Self::Parameter(parameter) => {
-                match &table
-                    .query::<GenericParameters>(parameter.parent)
-                    .ok_or(fmt::Error)?
-                    .lifetimes()
-                    .get(parameter.id)
-                    .ok_or(fmt::Error)?
-                    .name
-                {
-                    Some(name) => write!(f, "'{name}"),
-                    None => write!(f, "'{}", parameter.id.into_index()),
-                }
+                write!(
+                    f,
+                    "'{}",
+                    &table
+                        .query::<GenericParameters>(parameter.parent)
+                        .ok_or(fmt::Error)?
+                        .lifetimes()
+                        .get(parameter.id)
+                        .ok_or(fmt::Error)?
+                        .name
+                )
             }
             Self::Inference(inference) => {
                 write!(f, "'{}", DisplayObject { display: inference, table })

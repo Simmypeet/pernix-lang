@@ -159,7 +159,7 @@ fn compatible_with_adt() {
         let mut generic_parameter = GenericParameters::default();
         let lifetime_id = generic_parameter
             .add_lifetime_parameter(LifetimeParameter {
-                name: None,
+                name: "a".to_string(),
                 span: None,
             })
             .unwrap();

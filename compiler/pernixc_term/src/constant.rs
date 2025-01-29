@@ -608,8 +608,6 @@ where
                         .get(parameter.id)
                         .ok_or(fmt::Error)?
                         .name
-                        .as_deref()
-                        .unwrap_or("{unknown}")
                 )
             }
             Self::Tuple(tuple) => {

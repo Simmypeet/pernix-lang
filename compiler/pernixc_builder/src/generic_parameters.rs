@@ -128,7 +128,7 @@ impl query::Builder<GenericParameters> for Builder {
             for span in default_constant_syns
                 .iter()
                 .map(|x| x.span())
-                .chain(default_constant_syns.iter().map(|x| x.span()))
+                .chain(default_type_syns.iter().map(|x| x.span()))
             {
                 handler.receive(Box::new(
                     DefaultGenericParameterMustBeTrailing {
@@ -147,9 +147,7 @@ impl query::Builder<GenericParameters> for Builder {
 
         for lifetime_parameter_syn in lifetime_parameter_syns {
             match generic_parameters.add_lifetime_parameter(LifetimeParameter {
-                name: Some(
-                    lifetime_parameter_syn.identifier().span.str().to_owned(),
-                ),
+                name: lifetime_parameter_syn.identifier().span.str().to_owned(),
                 span: Some(lifetime_parameter_syn.identifier().span.clone()),
             }) {
                 Ok(id) => {
@@ -177,7 +175,7 @@ impl query::Builder<GenericParameters> for Builder {
 
         for type_parameter_syn in type_parameter_syns {
             match generic_parameters.add_type_parameter(TypeParameter {
-                name: Some(type_parameter_syn.span.str().to_owned()),
+                name: type_parameter_syn.span.str().to_owned(),
                 span: Some(type_parameter_syn.span.clone()),
             }) {
                 Ok(id) => {
@@ -232,7 +230,7 @@ impl query::Builder<GenericParameters> for Builder {
                     ));
 
                 ConstantParameter {
-                    name: Some(constant_parameter_syn.0.span.str().to_string()),
+                    name: constant_parameter_syn.0.span.str().to_string(),
                     r#type: constant_type,
                     span: Some(constant_parameter_syn.0.span.clone()),
                 }
@@ -336,3 +334,6 @@ impl Ext for Table {
         extra_namespace
     }
 }
+
+#[cfg(test)]
+mod test;

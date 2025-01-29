@@ -74,7 +74,7 @@ pub trait GenericParameter: Sized + 'static {
     ///
     /// If the generic parameter is anonymous, (i.e. elided lifetime parameter),
     /// then this method returns `None`.
-    fn name(&self) -> Option<&str>;
+    fn name(&self) -> &str;
 
     /// Gets the span where the generic parameter is declared.
     fn span(&self) -> Option<&Span>;
@@ -118,7 +118,7 @@ pub trait GenericParameter: Sized + 'static {
 pub struct LifetimeParameter {
     /// The name of the lifetime parameter (if none, then it is anonymous
     /// lifetime parameter )
-    pub name: Option<String>,
+    pub name: String,
 
     /// Location of where the lifetime parameter is declared.
     #[serde(skip)]
@@ -126,7 +126,7 @@ pub struct LifetimeParameter {
 }
 
 impl GenericParameter for LifetimeParameter {
-    fn name(&self) -> Option<&str> { self.name.as_ref().map(AsRef::as_ref) }
+    fn name(&self) -> &str { &self.name }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 
@@ -164,7 +164,7 @@ impl GenericParameter for LifetimeParameter {
 )]
 pub struct TypeParameter {
     /// The name of the type parameter.
-    pub name: Option<String>,
+    pub name: String,
 
     /// The kind of the type parameter.
     #[serde(skip)]
@@ -172,7 +172,7 @@ pub struct TypeParameter {
 }
 
 impl GenericParameter for TypeParameter {
-    fn name(&self) -> Option<&str> { self.name.as_ref().map(AsRef::as_ref) }
+    fn name(&self) -> &str { &self.name }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 
@@ -210,7 +210,7 @@ impl GenericParameter for TypeParameter {
 )]
 pub struct ConstantParameter {
     /// The name of the constant parameter.
-    pub name: Option<String>,
+    pub name: String,
 
     /// The type of the constant parameter.
     pub r#type: Type<Default>,
@@ -221,7 +221,7 @@ pub struct ConstantParameter {
 }
 
 impl GenericParameter for ConstantParameter {
-    fn name(&self) -> Option<&str> { self.name.as_ref().map(AsRef::as_ref) }
+    fn name(&self) -> &str { &self.name }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 
@@ -281,18 +281,15 @@ macro_rules! implements_add_parameter {
                 &mut $self,
                 parameter: [< $kind Parameter >]
             ) -> Result<ID<[< $kind Parameter >]>, ID<[< $kind Parameter >]>> {
-                let entry = if let Some(name) = parameter.name() {
+                let entry =
                     match $self
                         .[< $kind:snake _parameter_ids_by_name >]
-                        .entry(name.to_owned()) {
+                        .entry(parameter.name().to_owned()) {
                         Entry::Vacant(entry) => Some(entry),
                         Entry::Occupied(entry) => {
                             return Err(*entry.get());
                         }
-                    }
-                } else {
-                    None
-                };
+                    };
 
                 let id = $self.[< $kind:snake s>].insert(parameter);
                 $self.[< $kind:snake _order >].push(id);

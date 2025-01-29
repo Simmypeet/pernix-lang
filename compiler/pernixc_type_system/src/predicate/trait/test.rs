@@ -167,25 +167,28 @@ impl SingleImplementation {
 
         let mut generic_parameters = GenericParameters::default();
 
-        for _ in 0..generic_arguments.lifetimes.len() {
+        for i in 0..generic_arguments.lifetimes.len() {
             generic_parameters
                 .add_lifetime_parameter(LifetimeParameter {
-                    name: None,
+                    name: format!("_{i}"),
                     span: None,
                 })
                 .unwrap();
         }
 
-        for _ in 0..generic_arguments.types.len() {
+        for i in 0..generic_arguments.types.len() {
             generic_parameters
-                .add_type_parameter(TypeParameter { name: None, span: None })
+                .add_type_parameter(TypeParameter {
+                    name: format!("_{i}"),
+                    span: None,
+                })
                 .unwrap();
         }
 
-        for _ in 0..generic_arguments.constants.len() {
+        for i in 0..generic_arguments.constants.len() {
             generic_parameters
                 .add_constant_parameter(ConstantParameter {
-                    name: None,
+                    name: format!("_{i}"),
                     r#type: Type::Tuple(Tuple { elements: Vec::new() }),
                     span: None,
                 })
@@ -213,7 +216,7 @@ impl SingleImplementation {
         let mut expected_instantiation = Instantiation::default();
 
         // replace the choosen types with the type parameter
-        for ty in to_be_substituted_type {
+        for (idx, ty) in to_be_substituted_type.into_iter().enumerate() {
             let mut all_types = generic_arguments
                 .types
                 .iter()
@@ -226,7 +229,10 @@ impl SingleImplementation {
             }
 
             let id = generic_parameters
-                .add_type_parameter(TypeParameter { name: None, span: None })
+                .add_type_parameter(TypeParameter {
+                    name: format!("_{idx}"),
+                    span: None,
+                })
                 .unwrap();
 
             let pair = (
@@ -246,7 +252,9 @@ impl SingleImplementation {
         }
 
         // replace the choosen constants with the constant parameter
-        for constant in to_be_substituted_constant {
+        for (idx, constant) in
+            to_be_substituted_constant.into_iter().enumerate()
+        {
             let mut all_constants = generic_arguments
                 .constants
                 .iter()
@@ -266,7 +274,7 @@ impl SingleImplementation {
 
             let id = generic_parameters
                 .add_constant_parameter(ConstantParameter {
-                    name: None,
+                    name: format!("_{idx}"),
                     r#type: Type::Tuple(Tuple { elements: Vec::new() }),
                     span: None,
                 })
@@ -302,13 +310,13 @@ impl SingleImplementation {
             )
             .collect::<BTreeSet<_>>();
 
-        for lt in all_lifetimes {
+        for (idx, lt) in all_lifetimes.into_iter().enumerate() {
             // no need to check for existence because it is guaranteed to not
             // be overwritten
 
             let id = generic_parameters
                 .add_lifetime_parameter(LifetimeParameter {
-                    name: None,
+                    name: format!("_{idx}"),
                     span: None,
                 })
                 .unwrap();
@@ -615,7 +623,10 @@ impl SpecializedImplementation {
             .cloned()
             .collect::<BTreeSet<_>>();
 
-        for ty in to_be_substituted_type.into_iter().chain(all_type_parameters)
+        for (idx, ty) in to_be_substituted_type
+            .into_iter()
+            .chain(all_type_parameters)
+            .enumerate()
         {
             let mut all_types = generic_arguments
                 .types
@@ -629,7 +640,10 @@ impl SpecializedImplementation {
             }
 
             let id = generic_parameters
-                .add_type_parameter(TypeParameter { name: None, span: None })
+                .add_type_parameter(TypeParameter {
+                    name: format!("_{idx}"),
+                    span: None,
+                })
                 .unwrap();
 
             let mut pair = (
@@ -655,9 +669,10 @@ impl SpecializedImplementation {
             });
         }
 
-        for constant in to_be_substituted_constant
+        for (idx, constant) in to_be_substituted_constant
             .into_iter()
             .chain(all_constant_parameters)
+            .enumerate()
         {
             let mut all_constants = generic_arguments
                 .constants
@@ -678,7 +693,7 @@ impl SpecializedImplementation {
 
             let id = generic_parameters
                 .add_constant_parameter(ConstantParameter {
-                    name: None,
+                    name: format!("_{idx}"),
                     r#type: Type::Tuple(Tuple { elements: Vec::new() }),
                     span: None,
                 })
@@ -721,13 +736,13 @@ impl SpecializedImplementation {
             )
             .collect::<BTreeSet<_>>();
 
-        for lt in all_lifetimes {
+        for (idx, lt) in all_lifetimes.into_iter().enumerate() {
             // no need to check for existence because it is guaranteed to not
             // be overwritten
 
             let id = generic_parameters
                 .add_lifetime_parameter(LifetimeParameter {
-                    name: None,
+                    name: format!("_{idx}"),
                     span: None,
                 })
                 .unwrap();

@@ -88,7 +88,7 @@ impl<T: GenericParameter> Report<&Table> for DuplicatedGenericParameter<T> {
             span: self.duplicating_generic_parameter_span.clone(),
             message: format!(
                 "the generic parameter named `{}` is already defined",
-                generic_parameter.name().unwrap_or("?")
+                generic_parameter.name()
             ),
             severity: Severity::Error,
             help_message: None,

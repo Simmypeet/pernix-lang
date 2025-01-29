@@ -202,10 +202,10 @@ impl Property<Type<Default>> for LifetimeMatching {
         let mut generic_parameter = GenericParameters::default();
         let mut variance_map = VarianceMap::default();
         {
-            for _ in 0..self.lifetime_properties.len() {
+            for i in 0..self.lifetime_properties.len() {
                 let lifetime_param = generic_parameter
                     .add_lifetime_parameter(LifetimeParameter {
-                        name: None,
+                        name: format!("_{i}"),
                         span: None,
                     })
                     .unwrap();
