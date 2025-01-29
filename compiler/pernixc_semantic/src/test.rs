@@ -14,10 +14,10 @@ pub fn parse<T: SyntaxTree>(source: impl Display) -> T {
     let source_file =
         Arc::new(SourceFile::new(source.to_string(), "test".into()));
 
-    let token_stream = TokenStream::tokenize(source_file, &handler::Panic);
+    let token_stream = TokenStream::tokenize(source_file, &pernixc_handler::Panic);
     let tree = Tree::new(&token_stream);
 
-    let pattern = T::parse.parse_syntax(&tree, &handler::Panic).unwrap();
+    let pattern = T::parse.parse_syntax(&tree, &pernixc_handler::Panic).unwrap();
 
     pattern
 }
@@ -28,5 +28,5 @@ pub fn build_target(source: impl Display) -> Target {
         Arc::new(SourceFile::new(source.to_string(), "test".into()));
 
     // we'll panic on syntax errors
-    Target::parse(&source_file, "test".to_string(), &handler::Panic)
+    Target::parse(&source_file, "test".to_string(), &pernixc_handler::Panic)
 }

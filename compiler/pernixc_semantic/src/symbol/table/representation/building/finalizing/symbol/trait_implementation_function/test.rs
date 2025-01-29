@@ -97,7 +97,7 @@ fn mismatched_type() {
             &parse("&'static int32"),
             trait_implementation_id.into(),
             Config::default(),
-            &handler::Panic,
+            &pernixc_handler::Panic,
         )
         .unwrap();
     let expected_type = table
@@ -105,7 +105,7 @@ fn mismatched_type() {
             &parse("&'static T"),
             trait_implementation_id.into(),
             Config::default(),
-            &handler::Panic,
+            &pernixc_handler::Panic,
         )
         .unwrap();
 
@@ -128,7 +128,7 @@ fn mismatched_type() {
             &parse("&'a int32"),
             trait_implementation_id.into(),
             Config::default(),
-            &handler::Panic,
+            &pernixc_handler::Panic,
         )
         .unwrap();
     let expected_type = table
@@ -136,7 +136,7 @@ fn mismatched_type() {
             &parse("&'a T"),
             trait_implementation_id.into(),
             Config::default(),
-            &handler::Panic,
+            &pernixc_handler::Panic,
         )
         .unwrap();
 

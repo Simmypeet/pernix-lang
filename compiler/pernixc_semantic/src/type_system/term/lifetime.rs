@@ -271,7 +271,7 @@ where
 
     fn normalize(
         &self,
-        _: & Environment<M, impl Normalizer<M>>,
+        _: &Environment<M, impl Normalizer<M>>,
     ) -> Result<Option<Succeeded<Self, M>>, type_system::AbruptError> {
         Ok(None)
     }

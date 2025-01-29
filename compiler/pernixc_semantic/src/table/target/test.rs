@@ -35,7 +35,7 @@ fn submodule() {
             "test".to_string(),
             std::iter::empty(),
             target,
-            &handler::Panic,
+            &pernixc_handler::Panic,
         )
         .unwrap();
 
@@ -192,7 +192,7 @@ fn serialization() {
             "test".to_string(),
             std::iter::empty(),
             target,
-            &handler::Panic,
+            &pernixc_handler::Panic,
         )
         .unwrap();
 

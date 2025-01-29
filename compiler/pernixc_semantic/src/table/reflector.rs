@@ -1,6 +1,6 @@
 //! Contains the function used for creating the [`Reflector`] instance.
 
-use pernixc_component::serde::{MergerFn, Reflector};
+use pernixc_storage::serde::{MergerFn, Reflector};
 
 use super::{GlobalID, Table};
 use crate::component::{

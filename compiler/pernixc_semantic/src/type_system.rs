@@ -111,6 +111,7 @@ pub struct OverflowError;
     thiserror::Error,
     EnumAsInner,
 )]
+#[allow(missing_docs)]
 pub enum AbruptError {
     #[error(transparent)]
     Overflow(#[from] OverflowError),
@@ -228,6 +229,10 @@ pub type ResultArc<T, M, E = AbruptError> =
 /// pernixc::table::query::Error>`] that will only accept [`CyclicDependency`]
 /// error variant.
 pub trait ResultExt<T> {
+    /// Only allows [`CyclicDependency`] error variant to be returned.
+    ///
+    /// If the error variant is not [`CyclicDependency`], it will be converted
+    /// to `Ok(None)`.
     fn extract_cyclic_dependency(
         self,
     ) -> std::result::Result<Option<T>, CyclicDependency>;

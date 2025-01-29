@@ -45,7 +45,7 @@ use crate::{
             resolution, Building, Table,
         },
         ConstantParameter, ConstantParameterID, GenericID, GenericParameter,
-        GenericParameters, GenericTemplate, ItemID, ImplementationTemplate,
+        GenericParameters, GenericTemplate, ImplementationTemplate, ItemID,
         LifetimeParameter, LifetimeParameterID, ResolvableImplementationID,
         TraitImplementationMemberID, TraitMemberID, TypeParameter,
         TypeParameterID,

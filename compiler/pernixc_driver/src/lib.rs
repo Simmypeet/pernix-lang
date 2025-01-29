@@ -1,6 +1,7 @@
 //! Contains the main `run()` function for the compiler.
 
 use std::{
+    collections::HashMap,
     fs::File,
     path::PathBuf,
     process::ExitCode,
@@ -8,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bincode::{DefaultOptions, Options};
 use indicatif::{ProgressBar, ProgressStyle};
 use parking_lot::RwLock;
 use pernixc_builder::Compilation;
@@ -21,7 +23,10 @@ use pernixc_source_file::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
 use pernixc_table::{CompilationMetaData, GlobalID, Table};
 use ron::ser::PrettyConfig;
-use serde::de::DeserializeSeed;
+use serde::{
+    de::DeserializeSeed, ser::SerializeTuple, Deserialize, Deserializer,
+    Serialize,
+};
 
 /// The compilation format of the target.
 #[derive(
@@ -68,8 +73,12 @@ pub struct Arguments {
     pub output: Option<PathBuf>,
 
     /// Whether to show the progress of the compilation.
-    #[clap(short = 's', long = "show-progress")]
+    #[clap(long)]
     pub show_progress: bool,
+
+    /// Whether to dump the table in the `ron` format.
+    #[clap(long)]
+    pub dump_ron: bool,
 }
 
 /// A struct that implements [`Handler`] but prints all the message to the
@@ -116,10 +125,85 @@ fn update_message(
     progress_bar.set_message(message);
 }
 
+struct Test {
+    a: i32,
+    b: i32,
+    c: i32,
+}
+
+impl Serialize for Test {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_tuple(3)?;
+
+        state.serialize_element(&self.a)?;
+        state.serialize_element(&self.b)?;
+        state.serialize_element(&self.c)?;
+
+        state.end()
+    }
+}
+
+struct Visitor;
+
+impl<'de> serde::de::Visitor<'de> for Visitor {
+    type Value = Test;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "a struct of the fields `a`, `b` and `c`")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let a = seq.next_element::<i32>()?.ok_or_else(|| {
+            serde::de::Error::invalid_length(0, &"a sequence of length 3")
+        })?;
+
+        let b = seq.next_element::<i32>()?.ok_or_else(|| {
+            serde::de::Error::invalid_length(1, &"a sequence of length 3")
+        })?;
+
+        let c = seq.next_element::<i32>()?.ok_or_else(|| {
+            serde::de::Error::invalid_length(2, &"a sequence of length 3")
+        })?;
+
+        Ok(Test { a, b, c })
+    }
+}
+
+impl<'de> Deserialize<'de> for Test {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(Visitor)
+    }
+}
+
 /// Runs the program with the given arguments.
 #[must_use]
 #[allow(clippy::too_many_lines)]
 pub fn run(argument: Arguments) -> ExitCode {
+    let map = [
+        ("a".to_string(), "b".to_string()),
+        ("c".to_string(), "d".to_string()),
+    ]
+    .into_iter()
+    .collect::<HashMap<String, String>>();
+
+    let serialized = bincode::serialize(&map).unwrap();
+    let deserialized_map: HashMap<String, String> =
+        bincode::deserialize(&serialized).unwrap();
+
+    assert_eq!(map, deserialized_map);
+
     let file = match File::open(&argument.file) {
         Ok(file) => file,
         Err(error) => {
@@ -231,19 +315,10 @@ pub fn run(argument: Arguments) -> ExitCode {
             }
         };
 
-        let mut deserializer =
-            match ron::de::Deserializer::from_bytes(&library_file) {
-                Ok(deserializer) => deserializer,
-                Err(error) => {
-                    let msg = Message::new(
-                        Severity::Error,
-                        format!("failed to deserialize library: {error}"),
-                    );
-
-                    eprintln!("{msg}");
-                    return ExitCode::FAILURE;
-                }
-            };
+        let mut deserializer = bincode::de::Deserializer::from_slice(
+            &library_file,
+            bincode::DefaultOptions::new(),
+        );
 
         let library_meta_data =
             match inplace_table_deserializer.deserialize(&mut deserializer) {
@@ -347,6 +422,40 @@ pub fn run(argument: Arguments) -> ExitCode {
 
     let vec = storage.as_vec();
 
+    if argument.dump_ron {
+        let file = match File::create(format!("{}.ron", output_path.display()))
+        {
+            Ok(file) => file,
+            Err(error) => {
+                let msg = Message::new(
+                    Severity::Error,
+                    format!("failed to create file: {error}"),
+                );
+
+                eprintln!("{msg}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        match ron::ser::to_writer_pretty(
+            file,
+            &table.as_library(&CompilationMetaData { target_id }, &reflector),
+            PrettyConfig::default(),
+        ) {
+            Ok(()) => {}
+
+            Err(error) => {
+                let msg = Message::new(
+                    Severity::Error,
+                    format!("failed to serialize table: {error}"),
+                );
+
+                eprintln!("{msg}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
     if !vec.is_empty() {
         for error in vec.iter() {
             let diag = error.report(&table);
@@ -356,7 +465,7 @@ pub fn run(argument: Arguments) -> ExitCode {
     }
 
     if argument.kind == TargetKind::Library {
-        // save as `ron` format
+        // save `bincode` format
         let instant = Instant::now();
 
         let progress = ProgressBar::new(0);
@@ -386,10 +495,9 @@ pub fn run(argument: Arguments) -> ExitCode {
             }
         };
 
-        let result = ron::ser::to_writer_pretty(
+        let result = DefaultOptions::new().serialize_into(
             file,
             &table.as_library(&CompilationMetaData { target_id }, &reflector),
-            PrettyConfig::default(),
         );
 
         progress.finish_with_message(format!(
@@ -400,7 +508,8 @@ pub fn run(argument: Arguments) -> ExitCode {
         ));
 
         match result {
-            Ok(()) => ExitCode::SUCCESS,
+            Ok(()) => {}
+
             Err(error) => {
                 let msg = Message::new(
                     Severity::Error,
@@ -408,10 +517,10 @@ pub fn run(argument: Arguments) -> ExitCode {
                 );
 
                 eprintln!("{msg}");
-                ExitCode::FAILURE
+                return ExitCode::FAILURE;
             }
         }
-    } else {
-        ExitCode::SUCCESS
-    }
+    };
+
+    ExitCode::SUCCESS
 }

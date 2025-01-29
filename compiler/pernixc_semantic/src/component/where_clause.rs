@@ -1,3 +1,5 @@
+//! Contains the definition of [`WhereClause`].
+
 use pernixc_base::source_file::Span;
 use serde::{Deserialize, Serialize};
 

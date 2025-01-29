@@ -17,7 +17,7 @@ use pernixc_handler::Handler;
 use pernixc_storage::{serde::Reflector, ArcTrait, GetMutError, Storage};
 use pernixc_syntax::syntax_tree::AccessModifier;
 use query::{Builder, Context};
-use serde::{ser::SerializeMap, Deserialize, Serialize, Serializer};
+use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 pub use target::AddTargetError;
 
 use crate::component::{
@@ -139,22 +139,22 @@ impl<'a, T: Serialize, E: std::fmt::Display + 'static> Serialize
         S: Serializer,
     {
         // for the of simplicity, we serialize as map
-        let mut map = serializer.serialize_map(Some(3))?;
+        let mut state = serializer.serialize_struct("Representation", 3)?;
 
-        map.serialize_entry(
+        state.serialize_field(
             "storage",
             &self.representation.storage.as_serializable(self.reflector),
         )?;
-        map.serialize_entry(
+        state.serialize_field(
             "targets_by_id",
             &self.representation.targets_by_id,
         )?;
-        map.serialize_entry(
+        state.serialize_field(
             "targets_by_name",
             &self.representation.targets_by_name,
         )?;
 
-        map.end()
+        state.end()
     }
 }
 
@@ -671,19 +671,21 @@ impl<T: Serialize, E: std::fmt::Display + 'static> Serialize
     where
         S: Serializer,
     {
-        // for the of simplicity, we serialize as map
-        let mut map = serializer.serialize_map(Some(2))?;
+        let mut state = serializer.serialize_struct("Library", 2)?;
 
-        map.serialize_entry("representation", &SerializableRepresentation {
-            representation: self.representation,
-            reflector: self.reflector,
-        })?;
-        map.serialize_entry(
+        state.serialize_field(
+            "representation",
+            &SerializableRepresentation {
+                representation: self.representation,
+                reflector: self.reflector,
+            },
+        )?;
+        state.serialize_field(
             "compilation_meta_data",
             &self.compilation_meta_data,
         )?;
 
-        map.end()
+        state.end()
     }
 }
 

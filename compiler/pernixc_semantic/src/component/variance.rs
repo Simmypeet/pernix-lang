@@ -1,3 +1,5 @@
+//! Contains the definition of [`GenericParameterVariances`].
+
 use std::collections::HashMap;
 
 use pernixc_arena::ID;

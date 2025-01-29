@@ -41,6 +41,69 @@ impl Table {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum LibraryField {
+    Representation,
+    CompilationMetaData,
+    Ignored,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+struct LibraryFieldVisitor;
+
+impl<'de> Visitor<'de> for LibraryFieldVisitor {
+    type Value = LibraryField;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "field identifier")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        match value {
+            "representation" => Ok(LibraryField::Representation),
+            "compilation_meta_data" => Ok(LibraryField::CompilationMetaData),
+            _ => Ok(LibraryField::Ignored),
+        }
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        match value {
+            0 => Ok(LibraryField::Representation),
+            1 => Ok(LibraryField::CompilationMetaData),
+            _ => Ok(LibraryField::Ignored),
+        }
+    }
+
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        match v {
+            b"representation" => Ok(LibraryField::Representation),
+            b"compilation_meta_data" => Ok(LibraryField::CompilationMetaData),
+            _ => Ok(LibraryField::Ignored),
+        }
+    }
+}
+
+impl<'x> Deserialize<'x> for LibraryField {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'x>,
+    {
+        deserializer.deserialize_identifier(LibraryFieldVisitor)
+    }
+}
+
 impl<
         'de,
         'current,
@@ -57,7 +120,11 @@ impl<
     where
         D: serde::Deserializer<'de>,
     {
-        deserializer.deserialize_map(self)
+        deserializer.deserialize_struct(
+            "Library",
+            &["representation", "compilation_meta_data"],
+            self,
+        )
     }
 }
 
@@ -77,61 +144,140 @@ impl<
         &self,
         formatter: &mut std::fmt::Formatter,
     ) -> std::fmt::Result {
-        write!(
-            formatter,
-            "a map with the fields `representation` and \
-             `compilation_meta_data`"
-        )
+        write!(formatter, "struct Library")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        seq.next_element_seed(IncrementalRepresentationDeserializer(self))?
+            .ok_or_else(|| {
+                serde::de::Error::invalid_length(
+                    0,
+                    &"struct Library with 2 elements",
+                )
+            })?;
+
+        let metadata =
+            seq.next_element::<CompilationMetaData>()?.ok_or_else(|| {
+                serde::de::Error::invalid_length(
+                    1,
+                    &"struct Library with 2 elements",
+                )
+            })?;
+
+        Ok(metadata)
     }
 
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
     where
         A: serde::de::MapAccess<'de>,
     {
-        let mut representation_found = false;
-        let mut compoilation_meta_data = None;
+        let mut visited_representation = false;
+        let mut compilation_meta_data = None;
 
-        while let Some(key) = map.next_key::<String>()? {
-            match key.as_str() {
-                "representation" => {
-                    if representation_found {
-                        return Err(serde::de::Error::custom(
-                            "The field `representation` has already been \
-                             deserialized",
+        while let Some(key) = map.next_key()? {
+            match key {
+                LibraryField::Representation => {
+                    if visited_representation {
+                        return Err(serde::de::Error::duplicate_field(
+                            "representation",
                         ));
                     }
-
-                    representation_found = true;
+                    visited_representation = true;
                     map.next_value_seed(
                         IncrementalRepresentationDeserializer(self),
                     )?;
                 }
-                "compilation_meta_data" => {
-                    if compoilation_meta_data.is_some() {
-                        return Err(serde::de::Error::custom(
-                            "The field `compilation_meta_data` has already \
-                             been deserialized",
+                LibraryField::CompilationMetaData => {
+                    if compilation_meta_data.is_some() {
+                        return Err(serde::de::Error::duplicate_field(
+                            "compilation_meta_data",
                         ));
                     }
-
-                    compoilation_meta_data = Some(map.next_value()?);
+                    compilation_meta_data = Some(map.next_value()?);
                 }
-                _ => {
-                    return Err(serde::de::Error::unknown_field(&key, &[
-                        "representation",
-                        "compilation_meta_data",
-                    ]));
+                LibraryField::Ignored => {
+                    map.next_value::<serde::de::IgnoredAny>()?;
                 }
             }
         }
 
-        if !representation_found {
+        if !visited_representation {
             return Err(serde::de::Error::missing_field("representation"));
         }
 
-        compoilation_meta_data.ok_or_else(|| {
+        compilation_meta_data.ok_or_else(|| {
             serde::de::Error::missing_field("compilation_meta_data")
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum RepresentationField {
+    Storage,
+    TargetsByID,
+    TargetsByName,
+    Ignored,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+struct RepresentationFieldVisitor;
+
+impl<'de> Visitor<'de> for RepresentationFieldVisitor {
+    type Value = RepresentationField;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "field identifier")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        match value {
+            "storage" => Ok(RepresentationField::Storage),
+            "targets_by_id" => Ok(RepresentationField::TargetsByID),
+            "targets_by_name" => Ok(RepresentationField::TargetsByName),
+            _ => Ok(RepresentationField::Ignored),
+        }
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        match value {
+            0 => Ok(RepresentationField::Storage),
+            1 => Ok(RepresentationField::TargetsByID),
+            2 => Ok(RepresentationField::TargetsByName),
+            _ => Ok(RepresentationField::Ignored),
+        }
+    }
+
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        match v {
+            b"storage" => Ok(RepresentationField::Storage),
+            b"targets_by_id" => Ok(RepresentationField::TargetsByID),
+            b"targets_by_name" => Ok(RepresentationField::TargetsByName),
+            _ => Ok(RepresentationField::Ignored),
+        }
+    }
+}
+
+impl<'x> Deserialize<'x> for RepresentationField {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'x>,
+    {
+        deserializer.deserialize_identifier(RepresentationFieldVisitor)
     }
 }
 
@@ -156,7 +302,11 @@ impl<
     where
         D: serde::Deserializer<'de>,
     {
-        deserializer.deserialize_map(self)
+        deserializer.deserialize_struct(
+            "Representation",
+            &["storage", "targets_by_id", "targets_by_name"],
+            self,
+        )
     }
 }
 
@@ -172,33 +322,105 @@ impl<
         &self,
         formatter: &mut std::fmt::Formatter,
     ) -> std::fmt::Result {
-        write!(
-            formatter,
-            "a map with the fields `storage`, `targets_by_id`, and \
-             `targets_by_name`"
-        )
+        write!(formatter, "struct Representation")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let inplace_deserializer =
+            self.0.table.storage.as_inplace_deserializer(self.0.reflector);
+
+        seq.next_element_seed(&inplace_deserializer)?.ok_or_else(|| {
+            serde::de::Error::invalid_length(
+                0,
+                &"struct Representation with 3 elements",
+            )
+        })?;
+
+        let new_targets_by_id: HashMap<TargetID, Target> =
+            seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::invalid_length(
+                    1,
+                    &"struct Representation with 3 elements",
+                )
+            })?;
+
+        for (id, target) in new_targets_by_id {
+            match self.0.table.targets_by_id.entry(id) {
+                Entry::Occupied(entry) => {
+                    if entry.get() != &target {
+                        return Err(serde::de::Error::custom(format!(
+                            "Target ID {id:?} already exists in the table",
+                        )));
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(target);
+                }
+            }
+        }
+
+        let new_targets_by_name: HashMap<String, TargetID> =
+            seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::invalid_length(
+                    2,
+                    &"struct Representation with 3 elements",
+                )
+            })?;
+
+        for (name, id) in new_targets_by_name {
+            match self.0.table.targets_by_name.entry(name.clone()) {
+                Entry::Occupied(entry) => {
+                    if entry.get() != &id {
+                        return Err(serde::de::Error::custom(format!(
+                            "Target name {name:?} already exists in the table",
+                        )));
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(id);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
     where
         A: serde::de::MapAccess<'de>,
     {
-        while let Some(key) = map.next_key::<String>()? {
-            match key.as_str() {
-                "storage" => {
+        let mut visited_storage = false;
+        let mut visited_targets_by_id = false;
+        let mut visited_targets_by_name = false;
+
+        while let Some(key) = map.next_key()? {
+            match key {
+                RepresentationField::Storage => {
+                    if visited_storage {
+                        return Err(serde::de::Error::duplicate_field(
+                            "storage",
+                        ));
+                    }
+                    visited_storage = true;
                     let inplace_deserializer = self
                         .0
                         .table
                         .storage
                         .as_inplace_deserializer(self.0.reflector);
-
                     map.next_value_seed(&inplace_deserializer)?;
                 }
-
-                "targets_by_id" => {
+                RepresentationField::TargetsByID => {
+                    if visited_targets_by_id {
+                        return Err(serde::de::Error::duplicate_field(
+                            "targets_by_id",
+                        ));
+                    }
+                    visited_targets_by_id = true;
                     let new_targets_by_id: HashMap<TargetID, Target> =
                         map.next_value()?;
-
                     for (id, target) in new_targets_by_id {
                         match self.0.table.targets_by_id.entry(id) {
                             Entry::Occupied(entry) => {
@@ -217,10 +439,15 @@ impl<
                         }
                     }
                 }
-                "targets_by_name" => {
+                RepresentationField::TargetsByName => {
+                    if visited_targets_by_name {
+                        return Err(serde::de::Error::duplicate_field(
+                            "targets_by_name",
+                        ));
+                    }
+                    visited_targets_by_name = true;
                     let new_targets_by_name: HashMap<String, TargetID> =
                         map.next_value()?;
-
                     for (name, id) in new_targets_by_name {
                         match self.0.table.targets_by_name.entry(name.clone()) {
                             Entry::Occupied(entry) => {
@@ -239,14 +466,22 @@ impl<
                         }
                     }
                 }
-                _ => {
-                    return Err(serde::de::Error::unknown_field(&key, &[
-                        "storage",
-                        "targets_by_id",
-                        "targets_by_name",
-                    ]));
+                RepresentationField::Ignored => {
+                    map.next_value::<serde::de::IgnoredAny>()?;
                 }
             }
+        }
+
+        if !visited_storage {
+            return Err(serde::de::Error::missing_field("storage"));
+        }
+
+        if !visited_targets_by_id {
+            return Err(serde::de::Error::missing_field("targets_by_id"));
+        }
+
+        if !visited_targets_by_name {
+            return Err(serde::de::Error::missing_field("targets_by_name"));
         }
 
         Ok(())

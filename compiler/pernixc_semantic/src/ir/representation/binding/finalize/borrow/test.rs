@@ -1,4 +1,4 @@
-use pernixc_base::handler::Panic;
+use pernixc_base::pernixc_handler::Panic;
 
 use crate::{
     error::{

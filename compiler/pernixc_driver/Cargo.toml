@@ -19,6 +19,7 @@ pernixc_builder = { path = "../pernixc_builder" }
 pernixc_log = { path = "../pernixc_log" }
 ron = { workspace = true }
 serde = { workspace = true }
+bincode = { workspace = true }
 indicatif = { workspace = true }
 parking_lot = { workspace = true }
 

@@ -1,3 +1,4 @@
+//! Implements the query system used for the type system.
 use std::{
     any::Any,
     cmp::Ordering,
@@ -17,6 +18,7 @@ use super::{
 pub type DynArc = Arc<dyn Any + Send + Sync>;
 
 /// A trait for identifying type's equality dynamically.
+#[allow(missing_docs)]
 pub trait DynIdent: Any + Send + Sync + 'static {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -122,6 +124,7 @@ pub struct Call<Q, I> {
     pub in_progress: I,
 }
 
+/// The context used to manage the queries.
 #[derive(Clone)]
 pub struct Context {
     #[allow(clippy::type_complexity)]
@@ -131,6 +134,15 @@ pub struct Context {
 
     limit: usize,
     current_count: usize,
+}
+
+impl std::fmt::Debug for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Context")
+            .field("limit", &self.limit)
+            .field("current_count", &self.current_count)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for Context {

@@ -167,6 +167,83 @@ impl Finalize for Struct {
                                     .clone(),
                             }));
                         }
+                    }                    let ty = table
+                        .resolve_type(
+                            field_syn.r#type(),
+                            symbol_id.into(),
+                            resolution::Config {
+                                elided_lifetime_provider: None,
+                                elided_type_provider: None,
+                                elided_constant_provider: None,
+                                observer: Some(
+                                    &mut builder::Resolution::basic()
+                                        .chain(definition_occurrences),
+                                ),
+                                higher_ranked_lifetimes: None,
+                            },
+                            handler,
+                        )
+                        .unwrap_or_default();
+
+                    let field_accessibility = table
+                        .create_accessibility(
+                            symbol_id.into(),
+                            field_syn.access_modifier(),
+                        )
+                        .unwrap();
+
+                    if let Ok(ty_accessibility) =
+                        table.get_type_accessibility(&ty)
+                    {
+                        if table.accessibility_hierarchy_relationship(
+                            ty_accessibility,
+                            field_accessibility,
+                        ) == Some(HierarchyRelationship::Child)
+                        {
+                            handler.receive(Box::new(
+                                PrivateEntityLeakedToPublicInterface {
+                                    entity: ty.clone(),
+                                    entity_overall_accessibility:
+                                        ty_accessibility,
+                                    leaked_span: field_syn.r#type().span(),
+                                    public_interface_id: symbol_id.into(),
+                                },
+                            ));
+                        }
+                    }
+
+                    let field = Field {
+                        accessibility: field_accessibility,
+                        name: field_syn.identifier().span.str().to_owned(),
+                        r#type: ty,
+                        span: Some(field_syn.identifier().span.clone()),
+                    };
+
+                    #[allow(clippy::significant_drop_in_scrutinee)]
+                    match table
+                        .representation
+                        .structs
+                        .get(symbol_id)
+                        .unwrap()
+                        .write()
+                        .insert_field(field)
+                    {
+                        Ok(id) => {
+                            assert!(field_syntax_trees_by_id
+                                .insert(id, field_syn)
+                                .is_none());
+                        }
+
+                        Err((existing, _)) => {
+                            handler.receive(Box::new(FieldDuplication {
+                                struct_id: symbol_id,
+                                field_id: existing,
+                                redeclaration_span: field_syn
+                                    .identifier()
+                                    .span
+                                    .clone(),
+                            }));
+                        }
                     }
                 }
 

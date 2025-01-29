@@ -1,4 +1,4 @@
-//! Contains the definition of [`Type`].
+//! Contains the definition of the [`Type`] term.
 
 use core::fmt;
 use std::{
@@ -1699,7 +1699,3 @@ impl<M: Model> Type<M> {
         Some(occurrences)
     }
 }
-
-// TODO: bring test back
-// #[cfg(test)]
-// mod tests;

@@ -1,3 +1,5 @@
+//! Contains the definition of [`TypeAlias`].
+
 use derive_more::{Deref, DerefMut};
 use pernixc_base::handler::Handler;
 use pernixc_table::{
@@ -27,10 +29,7 @@ impl Derived for TypeAlias {
         global_id: GlobalID,
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
+    ) -> Option<Self> {
         todo!()
     }
 
