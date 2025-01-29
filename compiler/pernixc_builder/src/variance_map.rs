@@ -543,3 +543,6 @@ impl query::Builder<VarianceMap> for Builder {
         Some(Arc::new(map))
     }
 }
+
+#[cfg(test)]
+mod test;
