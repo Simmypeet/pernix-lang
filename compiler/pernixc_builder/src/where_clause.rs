@@ -591,3 +591,6 @@ impl query::Builder<WhereClause> for Builder {
         Some(Arc::new(where_clause))
     }
 }
+
+#[cfg(test)]
+mod test;
