@@ -114,3 +114,6 @@ impl query::Builder<Fields> for Builder {
         Some(Arc::new(fields))
     }
 }
+
+#[cfg(test)]
+mod test;
