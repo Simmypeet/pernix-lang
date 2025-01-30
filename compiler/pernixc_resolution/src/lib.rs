@@ -167,10 +167,6 @@ impl<'lp, 'tp, 'cp, 'ob, 'ex, M: Model> Config<'lp, 'tp, 'cp, 'ob, 'ex, M> {
 pub trait Ext {
     /// Resolves for [`Resolution`] based on the given [`QualifiedIdentifier`]
     /// syntax tree.
-    ///
-    /// # Errors
-    ///
-    /// See [`qualified_identifier::Error`] for more information.
     fn resolve_qualified_identifier<M: Model>(
         &self,
         qualified_identifier: &QualifiedIdentifier,
@@ -181,10 +177,6 @@ pub trait Ext {
 
     /// Resolves for [`Resolution`] based on the given
     /// [`QualifiedIdentifierRoot`] syntax tree.
-    ///
-    /// # Errors
-    ///
-    /// See [`qualified_identifier::Error`] for more information.
     fn resolve_qualified_identifier_root<M: Model>(
         &self,
         root: &QualifiedIdentifierRoot,
@@ -194,10 +186,6 @@ pub trait Ext {
     ) -> Option<Resolution<M>>;
 
     /// Resolves the generic arguments for the given symbol.
-    ///
-    /// # Errors
-    ///
-    /// See [`term::Error`] for more information.
     fn resolve_generic_arguments_for<M: Model>(
         &self,
         symbol_id: GlobalID,
@@ -209,10 +197,6 @@ pub trait Ext {
 
     /// Resolves a [`GenericArguments`] from the given generic arguments syntax
     /// tree.
-    ///
-    /// # Errors
-    ///
-    /// See [`term::Error`] for more information.
     fn resolve_generic_arguments<M: Model>(
         &self,
         generic_arguments: &syntax_tree::GenericArguments,
@@ -223,10 +207,6 @@ pub trait Ext {
 
     /// Verifies that the given `generic_arguments` have the right amount of
     /// arguments by supplying the default arguments if necessary.
-    ///
-    /// # Errors
-    ///
-    /// See [`term::Error`] for more information.
     fn verify_generic_arguments_for<M: Model>(
         &self,
         generic_arguments: GenericArguments<M>,
@@ -237,10 +217,6 @@ pub trait Ext {
     ) -> Option<GenericArguments<M>>;
 
     /// Resolves for a [`Lifetime`] based on the given [`syntax_tree::Lifetime`]
-    ///
-    /// # Errors
-    ///
-    /// See [`term::Error`] for more information.
     fn resolve_lifetime<M: Model>(
         &self,
         lifetime_argument: &syntax_tree::Lifetime,
@@ -250,10 +226,6 @@ pub trait Ext {
     ) -> Lifetime<M>;
 
     /// Resolves for a [`Type`] based on the given [`syntax_tree::r#type::Type`]
-    ///
-    /// # Errors
-    ///
-    /// See [`term::Error`] for more information.
     fn resolve_type<M: Model>(
         &self,
         type_argument: &syntax_tree::r#type::Type,
