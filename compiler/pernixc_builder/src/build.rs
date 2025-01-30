@@ -164,13 +164,16 @@ pub fn build(
         .map(|x| GlobalID::new(target_id, x))
         .collect::<Vec<_>>();
 
-    symbols_to_build.into_par_iter().for_each(|x| {
+    for x in symbols_to_build.iter().copied() {
+        assert!(table.add_component(x, occurrences::Occurrences::default()));
+    }
+
+    symbols_to_build.into_par_iter().panic_fuse().for_each(|x| {
         if let Some(callback) = on_start.as_ref() {
             (callback)(table, x);
         }
 
         let symbol_kind = *table.get::<SymbolKind>(x);
-        assert!(table.add_component(x, occurrences::Occurrences::default()));
 
         if symbol_kind.has_generic_parameters() {
             build_component::<GenericParameters>(table, x);

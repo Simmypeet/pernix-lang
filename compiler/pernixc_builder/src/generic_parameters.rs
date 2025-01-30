@@ -215,14 +215,9 @@ impl query::Builder<GenericParameters> for Builder {
                 );
 
                 // add the constant type to the occurrences
-                if !table.has::<Occurrences>(global_id) {
-                    let _ =
-                        table.add_component(global_id, Occurrences::default());
-                }
-
                 table
-                    .get_mut::<Occurrences>(global_id)
-                    .unwrap()
+                    .get::<Occurrences>(global_id)
+                    .write()
                     .constant_types
                     .push((
                         constant_type.clone(),

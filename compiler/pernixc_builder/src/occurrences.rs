@@ -1,18 +1,19 @@
 //! Contains the definition of [`Occurrences`].
 
-use std::{collections::BTreeSet, ops::Deref};
+use std::collections::BTreeSet;
 
 use diagnostic::{
     AdtImplementationIsNotGeneralEnough, ImplementationIsNotGeneralEnough,
     MismatchedImplementationArguments,
 };
+use parking_lot::RwLock;
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
 use pernixc_table::{
-    component::{Input, InputMut, Parent, SymbolKind},
+    component::{Input, Parent, SymbolKind},
     diagnostic::Diagnostic,
     GlobalID, Table,
 };
@@ -51,14 +52,9 @@ use crate::type_system::{
 
 pub mod diagnostic;
 
-/// A structure containing the list of all resolution resolved so far in the
-/// finalizing process.
-///
-/// This is primarily used for well-formedness checking of all instantiations
-/// made in the program.
 #[derive(Debug, Default)]
 #[allow(missing_docs)]
-pub(crate) struct Occurrences {
+pub(crate) struct Repr {
     pub types: Vec<(Type<Default>, syntax_tree::r#type::Type)>,
     pub lifetimes: Vec<(Lifetime<Default>, syntax_tree::Lifetime)>,
     pub constants: Vec<(Constant<Default>, syntax_tree::Constant)>,
@@ -72,8 +68,15 @@ pub(crate) struct Occurrences {
     pub constant_types: Vec<(Type<Default>, syntax_tree::r#type::Type)>,
 }
 
+/// A structure containing the list of all resolution resolved so far in the
+/// finalizing process.
+///
+/// This is primarily used for well-formedness checking of all instantiations
+/// made in the program.
+#[derive(Debug, Default, derive_more::Deref, derive_more::DerefMut)]
+pub(crate) struct Occurrences(RwLock<Repr>);
+
 impl Input for Occurrences {}
-impl InputMut for Occurrences {}
 
 /// An observer object for the [`pernixc_resolution::Observer`] that will
 /// add the resolution to the [`Occurrences`] component to the referring site
@@ -90,13 +93,11 @@ impl pernixc_resolution::Observer<Default> for Observer {
         span: &Span,
         _: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
-        let Some(mut occurrences) =
-            table.get_mut::<Occurrences>(referring_site).ok()
-        else {
-            return;
-        };
-
-        occurrences.resolutions.push((resolution.clone(), span.clone()));
+        table
+            .get::<Occurrences>(referring_site)
+            .write()
+            .resolutions
+            .push((resolution.clone(), span.clone()));
     }
 
     fn on_type_resolved(
@@ -107,13 +108,11 @@ impl pernixc_resolution::Observer<Default> for Observer {
         syntax_tree: &syntax_tree::r#type::Type,
         _: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
-        let Some(mut occurrences) =
-            table.get_mut::<Occurrences>(referring_site).ok()
-        else {
-            return;
-        };
-
-        occurrences.types.push((ty.clone(), syntax_tree.clone()));
+        table
+            .get::<Occurrences>(referring_site)
+            .write()
+            .types
+            .push((ty.clone(), syntax_tree.clone()));
     }
 
     fn on_lifetime_resolved(
@@ -124,13 +123,11 @@ impl pernixc_resolution::Observer<Default> for Observer {
         syntax_tree: &syntax_tree::Lifetime,
         _: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
-        let Some(mut occurrences) =
-            table.get_mut::<Occurrences>(referring_site).ok()
-        else {
-            return;
-        };
-
-        occurrences.lifetimes.push((*lifetime, syntax_tree.clone()));
+        table
+            .get::<Occurrences>(referring_site)
+            .write()
+            .lifetimes
+            .push((*lifetime, syntax_tree.clone()));
     }
 
     fn on_constant_arguments_resolved(
@@ -141,13 +138,11 @@ impl pernixc_resolution::Observer<Default> for Observer {
         syntax_tree: &syntax_tree::Constant,
         _: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
-        let Some(mut occurrences) =
-            table.get_mut::<Occurrences>(referring_site).ok()
-        else {
-            return;
-        };
-
-        occurrences.constants.push((constant.clone(), syntax_tree.clone()));
+        table
+            .get::<Occurrences>(referring_site)
+            .write()
+            .constants
+            .push((constant.clone(), syntax_tree.clone()));
     }
 
     fn on_unpacked_type_resolved(
@@ -158,13 +153,11 @@ impl pernixc_resolution::Observer<Default> for Observer {
         syntax_tree: &syntax_tree::r#type::Type,
         _: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
-        let Some(mut occurrences) =
-            table.get_mut::<Occurrences>(referring_site).ok()
-        else {
-            return;
-        };
-
-        occurrences.unpacked_types.push((ty.clone(), syntax_tree.clone()));
+        table
+            .get::<Occurrences>(referring_site)
+            .write()
+            .unpacked_types
+            .push((ty.clone(), syntax_tree.clone()));
     }
 
     fn on_unpacked_constant_resolved(
@@ -175,13 +168,9 @@ impl pernixc_resolution::Observer<Default> for Observer {
         syntax_tree: &syntax_tree::expression::Expression,
         _: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
-        let Some(mut occurrences) =
-            table.get_mut::<Occurrences>(referring_site).ok()
-        else {
-            return;
-        };
-
-        occurrences
+        table
+            .get::<Occurrences>(referring_site)
+            .write()
             .unpacked_constants
             .push((constant.clone(), syntax_tree.clone()));
     }
@@ -978,10 +967,7 @@ impl Checker<'_> {
                             self.handler.receive(Box::new(
                                 UnsatisfiedPredicate {
                                     predicate: Predicate::TypeOutlives(
-                                        Outlives::new(
-                                            reference.pointee.deref().clone(),
-                                            reference.lifetime,
-                                        ),
+                                        outlives,
                                     ),
                                     instantiation_span: instantiation_span
                                         .clone(),
@@ -1064,6 +1050,7 @@ pub(super) fn check_occurrences(
     let (environment, _) =
         Environment::new_with(active_premise, table, normalizer::NO_OP);
     let occurrences = table.get::<Occurrences>(global_id);
+    let occurrences = occurrences.read();
 
     let checker = Checker {
         environment: &environment,
@@ -1767,3 +1754,6 @@ impl Table<Building<RwLockContainer, Finalizer>> {
     }
 }
 */
+
+#[cfg(test)]
+mod test;

@@ -26,6 +26,7 @@ derive-new = { workspace = true }
 typed-builder = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
+derive_more = { workspace = true }
 
 [lints]
 workspace = true
