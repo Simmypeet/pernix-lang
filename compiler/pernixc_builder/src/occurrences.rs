@@ -26,6 +26,7 @@ use pernixc_term::{
     predicate::{self, Outlives, PositiveTrait, Predicate},
     r#type::Type,
     variance::Variance,
+    visitor::RecursiveIterator,
     where_clause::WhereClause,
     Default,
 };
@@ -561,21 +562,9 @@ impl Checker<'_> {
         instantiation: &Instantiation<Default>,
         generic_arguments: &GenericArguments<Default>,
         predicate_declaration_span: Option<Span>,
-        is_not_general_enough: bool,
+        mut is_not_general_enough: bool,
     ) -> Vec<PredicateError> {
         let mut errors = Vec::new();
-
-        if is_not_general_enough {
-            errors.push(PredicateError::ImplementationIsNotGeneralEnough {
-                resolved_implementation: resolution::Implementation {
-                    instantiation: instantiation.clone(),
-                    id: implementation_id,
-                    is_not_general_enough,
-                },
-                generic_arguments: generic_arguments.clone(),
-                predicate_declaration_span,
-            });
-        }
 
         let Some(where_clause) =
             self.environment.table().query::<WhereClause>(implementation_id)
@@ -590,10 +579,65 @@ impl Checker<'_> {
 
             predicate_instantiated.instantiate(instantiation);
 
+            // if found an outlives predicate where the bound (rhs) is a forall
+            // lifetime, then replace it with the static lifetime; since static
+            // lifetime outlives all lifetimes. However, if found on the operand
+            // (lhs), then report it as `non-general-enough`.
+
+            // check for all lifetime on the operand
+            match &predicate_instantiated {
+                Predicate::LifetimeOutlives(outlives) => {
+                    if outlives.operand.is_forall() {
+                        is_not_general_enough = true;
+                        continue;
+                    }
+                }
+
+                Predicate::TypeOutlives(outlives) => {
+                    if RecursiveIterator::new(&outlives.operand).any(|x| {
+                        x.0.as_lifetime().map_or(false, |x| x.is_forall())
+                    }) {
+                        is_not_general_enough = true;
+                        continue;
+                    }
+                }
+
+                _ => {}
+            }
+
+            // check for all lifetime on the bound and replace it with static
+            match &mut predicate_instantiated {
+                Predicate::LifetimeOutlives(outlives)
+                    if outlives.bound.is_forall() =>
+                {
+                    outlives.bound = Lifetime::Static;
+                }
+
+                Predicate::TypeOutlives(outlives)
+                    if outlives.bound.is_forall() =>
+                {
+                    outlives.bound = Lifetime::Static;
+                }
+
+                _ => {}
+            }
+
             errors.extend(self.predicate_satisfied(
                 predicate_instantiated,
                 predicate.span.clone(),
             ));
+        }
+
+        if is_not_general_enough {
+            errors.push(PredicateError::ImplementationIsNotGeneralEnough {
+                resolved_implementation: resolution::Implementation {
+                    instantiation: instantiation.clone(),
+                    id: implementation_id,
+                    is_not_general_enough,
+                },
+                generic_arguments: generic_arguments.clone(),
+                predicate_declaration_span,
+            });
         }
 
         errors

@@ -411,3 +411,136 @@ fn check_unpacked_occurrence() {
         error.predicate == expected_predicate
     }));
 }
+
+const TRAIT_IMPLEMENTATION_IS_NOT_GENERAL_ENOUGH_BY_CONSTRAINTS: &str = r"
+public trait Fizz['a, T] {
+    public type Buzz;
+}
+
+final implements['a, 'b, T] Fizz['a, &'b T] 
+where
+    T: 'b
+{
+}
+
+final implements['a, 'b, T] Fizz['a, &'b mutable T] 
+where
+    T: 'b,
+    'a: 'b // this constraint makes lifetime 'a be specific to 'b
+{
+}
+
+public type WithRequirement[T] = T
+where
+    trait for['x] Fizz['x, T];
+
+// this instantiation is valid
+public type First['a, T] = WithRequirement[&'a T]
+where
+    T: 'a;
+
+// this instantiation is invalid (not general enough)
+public type Second['a, T] = WithRequirement[&'a mutable T]
+where
+    T: 'a;
+";
+
+#[test]
+fn trait_implementation_is_not_general_enough_by_constraints() {
+    let (table, errors) =
+        build_table(TRAIT_IMPLEMENTATION_IS_NOT_GENERAL_ENOUGH_BY_CONSTRAINTS);
+
+    assert_eq!(errors.len(), 1);
+
+    let error = errors[0]
+        .as_any()
+        .downcast_ref::<ImplementationIsNotGeneralEnough<Default>>()
+        .unwrap();
+
+    let second_id = table.get_by_qualified_name(["test", "Second"]).unwrap();
+    let second_generic_params =
+        table.query::<GenericParameters>(second_id).unwrap();
+
+    let second_a_lt = Lifetime::Parameter(LifetimeParameterID {
+        parent: second_id,
+        id: second_generic_params.lifetime_parameter_ids_by_name()["a"],
+    });
+    let second_t_ty = Type::Parameter(TypeParameterID {
+        parent: second_id,
+        id: second_generic_params.type_parameter_ids_by_name()["T"],
+    });
+
+    assert_eq!(error.generic_arguments.lifetimes.len(), 1);
+    assert!(error.generic_arguments.lifetimes[0].is_forall());
+
+    assert_eq!(error.generic_arguments.types.len(), 1);
+    assert_eq!(
+        error.generic_arguments.types[0],
+        Type::Reference(Reference {
+            qualifier: Qualifier::Mutable,
+            lifetime: second_a_lt,
+            pointee: Box::new(second_t_ty),
+        })
+    );
+}
+
+const FOR_ALL_LIFETIME_AS_AN_OPERAND_IN_OUTLIVES: &str = r"
+public trait Fizz['a, T] 
+{
+}
+
+final implements['a, 'b, T] Fizz['a, &'b T] 
+where
+    T: 'b
+{
+}
+
+final implements['a, 'b, T] Fizz['a, &'b mutable T] 
+where
+    T: 'b,
+    'b: 'a
+{
+}
+
+public type WithRequirement[T] = T
+where
+    trait for['x] Fizz['x, T];
+
+// this instantiation is valid
+public type First['a, T] = WithRequirement[&'a T]
+where
+    T: 'a;
+
+// this instantiation is invalid ('a: 'static is not satisfied) 
+public type Second['a, T] = WithRequirement[&'a mutable T]
+where
+    T: 'a;
+";
+
+#[test]
+fn for_all_lifetime_as_an_operand_in_outlives() {
+    let (table, errors) =
+        build_table(FOR_ALL_LIFETIME_AS_AN_OPERAND_IN_OUTLIVES);
+
+    assert_eq!(errors.len(), 1);
+
+    let error = errors[0]
+        .as_any()
+        .downcast_ref::<UnsatisfiedPredicate<Default>>()
+        .unwrap();
+
+    let found = error.predicate.as_lifetime_outlives().unwrap();
+
+    let second_id = table.get_by_qualified_name(["test", "Second"]).unwrap();
+
+    let second_generic_params =
+        table.query::<GenericParameters>(second_id).unwrap();
+
+    let second_a_lt = Lifetime::Parameter(LifetimeParameterID {
+        parent: second_id,
+        id: second_generic_params.lifetime_parameter_ids_by_name()["a"],
+    });
+
+    assert_eq!(found.bound, Lifetime::Static);
+    assert_eq!(found.operand, second_a_lt);
+}
