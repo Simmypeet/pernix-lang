@@ -7,7 +7,10 @@ use pernixc_table::{
     component::{Implements, LocationSpan},
     DisplayObject, GlobalID, Table,
 };
-use pernixc_term::{generic_arguments::GenericArguments, Model};
+use pernixc_term::{
+    constant::Constant, generic_arguments::GenericArguments, r#type::Type,
+    Model,
+};
 
 /// The implementation is not general enough to satisfy the required
 /// predicate's forall lifetimes.
@@ -146,6 +149,40 @@ where
                 })
                 .into_iter()
                 .collect(),
+        }
+    }
+}
+
+/// The constant argument has a mismatched type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConstantArgumentTypeMismatched<M: Model> {
+    /// The span of the constant argument.
+    pub span: Span,
+
+    /// The expected type of the constant argument.
+    pub expected_type: Type<M>,
+
+    /// The constant argument that has a mismatched type.
+    pub constant_argument: Constant<M>,
+}
+
+impl<M: Model> Report<&Table> for ConstantArgumentTypeMismatched<M>
+where
+    Type<M>: pernixc_table::Display,
+    Constant<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
+        pernixc_diagnostic::Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the constant argument `{}` has a mismatched type: expected \
+                 `{}`",
+                DisplayObject { display: &self.constant_argument, table },
+                DisplayObject { display: &self.expected_type, table }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
         }
     }
 }

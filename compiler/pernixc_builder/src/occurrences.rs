@@ -3,8 +3,8 @@
 use std::collections::BTreeSet;
 
 use diagnostic::{
-    AdtImplementationIsNotGeneralEnough, ImplementationIsNotGeneralEnough,
-    MismatchedImplementationArguments,
+    AdtImplementationIsNotGeneralEnough, ConstantArgumentTypeMismatched,
+    ImplementationIsNotGeneralEnough, MismatchedImplementationArguments,
 };
 use parking_lot::RwLock;
 use pernixc_component::implementation::Implementation;
@@ -24,7 +24,7 @@ use pernixc_term::{
     instantiation::Instantiation,
     lifetime::Lifetime,
     predicate::{self, Outlives, PositiveTrait, Predicate},
-    r#type::Type,
+    r#type::{Primitive, Type},
     variance::Variance,
     visitor::RecursiveIterator,
     where_clause::WhereClause,
@@ -39,8 +39,9 @@ use pernixc_type_system::{
         NegativeMarkerSatisfied, NegativeTraitSatisfied,
         PositiveMarkerSatisfied, PositiveTraitSatisfied,
     },
-    resolution, AbruptError, LifetimeConstraint, OverflowError, Satisfied,
-    Succeeded,
+    resolution,
+    type_check::TypeCheck,
+    AbruptError, LifetimeConstraint, OverflowError, Satisfied, Succeeded,
 };
 
 use crate::type_system::{
@@ -256,8 +257,6 @@ impl PredicateError {
 
 struct Checker<'a> {
     environment: &'a Environment<'a, Default, normalizer::NoOp>,
-    do_outlives_check: bool,
-    _checking_site: GlobalID,
     handler: &'a dyn Handler<Box<dyn Diagnostic>>,
 }
 
@@ -729,10 +728,6 @@ impl Checker<'_> {
             ),
 
             Predicate::LifetimeOutlives(pred) => {
-                if !self.do_outlives_check {
-                    return Vec::new();
-                }
-
                 return match self.environment.query(pred) {
                     Ok(Some(_)) => vec![],
 
@@ -756,10 +751,6 @@ impl Checker<'_> {
             }
 
             Predicate::TypeOutlives(pred) => {
-                if !self.do_outlives_check {
-                    return Vec::new();
-                }
-
                 return match self.environment.query(pred) {
                     Ok(Some(_)) => vec![],
 
@@ -911,9 +902,6 @@ impl Checker<'_> {
         match result {
             Ok(Some(Succeeded { result: Satisfied, constraints })) => {
                 // if do_outlives_check is false, then we don't need to check
-                if !self.do_outlives_check {
-                    return Vec::new();
-                }
 
                 for constraint in constraints {
                     match constraint {
@@ -998,56 +986,81 @@ impl Checker<'_> {
             | Type::Inference(_) => { /* no additional check */ }
 
             Type::Reference(reference) => {
-                if self.do_outlives_check {
-                    let outlives = Outlives::new(
-                        (*reference.pointee).clone(),
-                        reference.lifetime,
-                    );
+                let outlives = Outlives::new(
+                    (*reference.pointee).clone(),
+                    reference.lifetime,
+                );
 
-                    match self.environment.query(&outlives) {
-                        Err(AbruptError::CyclicDependency) | Ok(Some(_)) => {}
+                match self.environment.query(&outlives) {
+                    Err(AbruptError::CyclicDependency) | Ok(Some(_)) => {}
 
-                        Ok(None) => {
-                            self.handler.receive(Box::new(
-                                UnsatisfiedPredicate {
-                                    predicate: Predicate::TypeOutlives(
-                                        outlives,
-                                    ),
-                                    instantiation_span: instantiation_span
-                                        .clone(),
-                                    predicate_declaration_span: None,
-                                },
-                            ));
-                        }
+                    Ok(None) => {
+                        self.handler.receive(Box::new(UnsatisfiedPredicate {
+                            predicate: Predicate::TypeOutlives(outlives),
+                            instantiation_span: instantiation_span.clone(),
+                            predicate_declaration_span: None,
+                        }));
+                    }
 
-                        Err(AbruptError::Overflow(overflow_error)) => {
-                            self.handler.receive(Box::new(
-                                UndecidablePredicate {
-                                    predicate: Predicate::TypeOutlives(
-                                        outlives,
-                                    ),
-                                    predicate_declaration_span: None,
-                                    instantiation_span: instantiation_span
-                                        .clone(),
-                                    overflow_error,
-                                },
-                            ));
-                        }
+                    Err(AbruptError::Overflow(overflow_error)) => {
+                        self.handler.receive(Box::new(UndecidablePredicate {
+                            predicate: Predicate::TypeOutlives(outlives),
+                            predicate_declaration_span: None,
+                            instantiation_span: instantiation_span.clone(),
+                            overflow_error,
+                        }));
                     }
                 }
             }
 
             Type::Array(array) => {
-                /* *
                 let expected_type = Type::Primitive(Primitive::Usize);
                 let type_check =
                     TypeCheck::new(array.length.clone(), expected_type.clone());
 
-                match type_check.query(self) {
-                    Ok(Some(Succeeded { result: Satisfied, .. })) => {}
+                match self.environment.query(&type_check) {
+                    Ok(Some(result)) => {
+                        for LifetimeConstraint::LifetimeOutlives(outlives) in
+                            &result.constraints
+                        {
+                            match self.environment.query(outlives) {
+                                Ok(None) => {
+                                    self.handler.receive(Box::new(
+                                        UnsatisfiedPredicate {
+                                            predicate:
+                                                Predicate::LifetimeOutlives(
+                                                    outlives.clone(),
+                                                ),
+                                            predicate_declaration_span: None,
+                                            instantiation_span:
+                                                instantiation_span.clone(),
+                                        },
+                                    ));
+                                }
+
+                                Err(AbruptError::CyclicDependency)
+                                | Ok(Some(_)) => {}
+
+                                Err(AbruptError::Overflow(overflow_error)) => {
+                                    self.handler.receive(Box::new(
+                                        UndecidablePredicate {
+                                            predicate:
+                                                Predicate::LifetimeOutlives(
+                                                    outlives.clone(),
+                                                ),
+                                            predicate_declaration_span: None,
+                                            instantiation_span:
+                                                instantiation_span.clone(),
+                                            overflow_error,
+                                        },
+                                    ));
+                                }
+                            }
+                        }
+                    }
 
                     Ok(None) => {
-                        handler.receive(Box::new(
+                        self.handler.receive(Box::new(
                             ConstantArgumentTypeMismatched {
                                 span: instantiation_span.clone(),
                                 expected_type,
@@ -1056,15 +1069,16 @@ impl Checker<'_> {
                         ));
                     }
 
-                    Err(_) => {
-                        handler.receive(Box::new(
-                            OverflowCalculatingRequirementForInstantiation {
-                                instantiation_span: instantiation_span.clone(),
-                            },
-                        ));
+                    Err(AbruptError::CyclicDependency) => {}
+
+                    Err(AbruptError::Overflow(overflow_error)) => {
+                        self.handler.receive(Box::new(TypeSystemOverflow {
+                            operation: OverflowOperation::TypeCheck,
+                            overflow_span: instantiation_span.clone(),
+                            overflow_error,
+                        }));
                     }
                 }
-                */
             }
         }
     }
@@ -1096,12 +1110,7 @@ pub(super) fn check_occurrences(
     let occurrences = table.get::<Occurrences>(global_id);
     let occurrences = occurrences.read();
 
-    let checker = Checker {
-        environment: &environment,
-        do_outlives_check: true,
-        _checking_site: global_id,
-        handler,
-    };
+    let checker = Checker { environment: &environment, handler };
 
     // check resolution occurrences
     for (resolution, span) in &occurrences.resolutions {
