@@ -413,9 +413,7 @@ fn check_unpacked_occurrence() {
 }
 
 const TRAIT_IMPLEMENTATION_IS_NOT_GENERAL_ENOUGH_BY_CONSTRAINTS: &str = r"
-public trait Fizz['a, T] {
-    public type Buzz;
-}
+public trait Fizz['a, T] {}
 
 final implements['a, 'b, T] Fizz['a, &'b T] 
 where
