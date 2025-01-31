@@ -284,8 +284,6 @@ fn usings() {
     let inaccessible_symbol =
         table.get_by_qualified_name(["test", "inner", "Inaccessible"]).unwrap();
 
-    dbg!(&errors);
-
     assert!(errors.iter().any(|x| {
         x.as_any().downcast_ref::<SymbolIsNotAccessible>().map_or(
             false,

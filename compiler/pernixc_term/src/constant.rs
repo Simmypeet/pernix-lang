@@ -37,7 +37,25 @@ mod arbitrary;
 #[allow(missing_docs)]
 pub enum Primitive {
     #[display(fmt = "{_0}")]
-    Integer(i128),
+    Int8(i8),
+    #[display(fmt = "{_0}")]
+    Int16(i16),
+    #[display(fmt = "{_0}")]
+    Int32(i32),
+    #[display(fmt = "{_0}")]
+    Int64(i64),
+    #[display(fmt = "{_0}")]
+    Isize(i128),
+    #[display(fmt = "{_0}")]
+    Uint8(u8),
+    #[display(fmt = "{_0}")]
+    Uint16(u16),
+    #[display(fmt = "{_0}")]
+    Uint32(u32),
+    #[display(fmt = "{_0}")]
+    Uint64(u64),
+    #[display(fmt = "{_0}")]
+    Usize(u128),
     #[display(fmt = "{_0}")]
     Bool(bool),
 }
