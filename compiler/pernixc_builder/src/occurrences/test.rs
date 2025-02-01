@@ -7,10 +7,11 @@ use pernixc_term::{
     },
     lifetime::Lifetime,
     predicate::{
-        Compatible, ConstantType, Outlives, PositiveTrait, Predicate, Tuple,
+        Compatible, ConstantType, Outlives, PositiveMarker, PositiveTrait,
+        Predicate, Tuple,
     },
     r#type::{Primitive, Qualifier, Reference, TraitMember, Type},
-    Default, MemberSymbol,
+    Default, MemberSymbol, Symbol,
 };
 
 use crate::{
@@ -541,4 +542,137 @@ fn for_all_lifetime_as_an_operand_in_outlives() {
 
     assert_eq!(found.bound, Lifetime::Static);
     assert_eq!(found.operand, second_a_lt);
+}
+
+const MARKER_SATISFIED: &str = r"
+public marker Marker[T];
+
+final implements Marker[int32];
+final implements Marker[bool];
+
+public struct MyStruct {
+    public a: int32,
+    public b: bool,
+}
+
+public struct EmptyStruct {}
+
+public enum MyEnum {
+    A(int32),
+    B(bool),
+}
+
+public enum EmptyEnum {}
+
+public type WithRequirement[T] = T
+where
+    marker Marker[T];
+
+public type InstMyStruct    = WithRequirement[MyStruct];
+public type InstEmptyStruct = WithRequirement[EmptyStruct];
+public type InstMyEnum      = WithRequirement[MyEnum];
+public type InstEmptyEnum   = WithRequirement[EmptyEnum];
+";
+
+#[test]
+pub fn marker_satisfied() {
+    let (_, errors) = build_table(MARKER_SATISFIED);
+
+    assert!(errors.is_empty());
+}
+
+const MARKER_NOT_SATISFIED: &str = r"
+public marker Marker[T];
+
+final implements Marker[int32];
+
+public struct MyStruct {
+    public a: int32,
+    public b: bool,
+}
+
+public type WithRequirement[T] = T
+where
+    marker Marker[T];
+
+public type InstMyStruct = WithRequirement[MyStruct];
+";
+
+#[test]
+pub fn marker_not_satisfied() {
+    let (table, errors) = build_table(MARKER_NOT_SATISFIED);
+
+    assert_eq!(errors.len(), 1);
+
+    let error = errors[0]
+        .as_any()
+        .downcast_ref::<UnsatisfiedPredicate<Default>>()
+        .unwrap();
+
+    let marker_id = table.get_by_qualified_name(["test", "Marker"]).unwrap();
+    let my_struct_id =
+        table.get_by_qualified_name(["test", "MyStruct"]).unwrap();
+
+    let expected_predicate =
+        Predicate::PositiveMarker::<Default>(PositiveMarker {
+            marker_id,
+            generic_arguments: GenericArguments {
+                lifetimes: Vec::new(),
+                types: vec![Type::Symbol(Symbol {
+                    id: my_struct_id,
+                    generic_arguments: GenericArguments::default(),
+                })],
+                constants: Vec::new(),
+            },
+        });
+
+    assert_eq!(error.predicate, expected_predicate);
+}
+
+const MARKER_WITH_CONSTRAINTS: &str = r"
+public marker Fizz[T];
+public marker Buzz[T];
+
+final implements Fizz[int32];
+
+final implements[T] Buzz[(T,)]
+where
+    marker Fizz[T];
+
+public struct MyStruct {
+    public a: (int32,),
+    public b: (bool,),
+}
+
+public type WithRequirement[T] = T
+where
+    marker Buzz[T];
+
+public type InstMyStruct = WithRequirement[MyStruct];
+";
+
+#[test]
+fn marker_with_constraints() {
+    let (table, errors) = build_table(MARKER_WITH_CONSTRAINTS);
+
+    assert_eq!(errors.len(), 1);
+
+    let error = errors[0]
+        .as_any()
+        .downcast_ref::<UnsatisfiedPredicate<Default>>()
+        .unwrap();
+
+    let marker_id = table.get_by_qualified_name(["test", "Fizz"]).unwrap();
+
+    let expected_predicate =
+        Predicate::PositiveMarker::<Default>(PositiveMarker {
+            marker_id,
+            generic_arguments: GenericArguments {
+                lifetimes: Vec::new(),
+                types: vec![Type::Primitive(Primitive::Bool)],
+                constants: Vec::new(),
+            },
+        });
+
+    assert_eq!(error.predicate, expected_predicate);
 }
