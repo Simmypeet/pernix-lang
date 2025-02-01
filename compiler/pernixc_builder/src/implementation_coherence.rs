@@ -5,7 +5,11 @@ use std::collections::HashSet;
 
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
-use pernixc_table::{diagnostic::Diagnostic, GlobalID, Table};
+use pernixc_table::{
+    component::{Implements, LocationSpan},
+    diagnostic::Diagnostic,
+    GlobalID, Table,
+};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
@@ -17,6 +21,9 @@ use pernixc_term::{
     r#type::Type,
     Default,
 };
+use pernixc_type_system::{environment::Environment, normalizer};
+
+use crate::{occurrences::Checker, type_system::TableExt};
 
 pub mod diagnostic;
 
@@ -195,6 +202,33 @@ pub(super) fn check_unused_generic_parameters(
             },
         ));
     }
+}
+
+/// Check the where clause predicate requirements of the implemented symbol.
+pub(super) fn check_implemented_instantiation(
+    table: &Table,
+    implementation_id: GlobalID,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) {
+    let Some(implementation) = table.query::<Implementation>(implementation_id)
+    else {
+        return;
+    };
+
+    let implements = table.get::<Implements>(implementation_id);
+    let location_span = table.get::<LocationSpan>(implementation_id);
+
+    let premise = table.get_active_premise(implementation_id);
+    let (environment, _) =
+        Environment::new_with(premise, table, normalizer::NO_OP);
+
+    let checker = Checker::new(&environment, handler);
+
+    checker.check_instantiation_predicates_by_generic_arguments(
+        implements.0,
+        implementation.generic_arguments.clone(),
+        &location_span.span.clone().unwrap(),
+    );
 }
 
 #[cfg(test)]

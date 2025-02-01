@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 
+use derive_new::new;
 use diagnostic::{
     AdtImplementationIsNotGeneralEnough, ConstantArgumentTypeMismatched,
     ImplementationIsNotGeneralEnough, MismatchedImplementationArguments,
@@ -255,7 +256,9 @@ impl PredicateError {
     }
 }
 
-struct Checker<'a> {
+/// Checker for the well-formedness of the instantiations.
+#[derive(new)]
+pub(super) struct Checker<'a> {
     environment: &'a Environment<'a, Default, normalizer::NoOp>,
     handler: &'a dyn Handler<Box<dyn Diagnostic>>,
 }

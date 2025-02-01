@@ -219,6 +219,12 @@ pub fn build(
                 x,
                 &**table.handler(),
             );
+
+            implementation_coherence::check_implemented_instantiation(
+                table,
+                x,
+                &**table.handler(),
+            );
         }
 
         if let Some(callback) = on_done.as_ref() {
