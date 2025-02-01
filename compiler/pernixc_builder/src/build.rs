@@ -16,7 +16,10 @@ use pernixc_term::{
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use typed_builder::TypedBuilder;
 
-use crate::{builder::Builder, function, occurrences, variance_map};
+use crate::{
+    builder::Builder, function, implementation_coherence, occurrences,
+    variance_map,
+};
 
 /// A struct for starting the building of a target.
 #[derive(TypedBuilder)]
@@ -209,6 +212,14 @@ pub fn build(
 
         // check the well-formedness of all occurrences so far
         occurrences::check_occurrences(table, x, &**table.handler());
+
+        if symbol_kind.is_implementation() {
+            implementation_coherence::check_unused_generic_parameters(
+                table,
+                x,
+                &**table.handler(),
+            );
+        }
 
         if let Some(callback) = on_done.as_ref() {
             (callback)(table, x);

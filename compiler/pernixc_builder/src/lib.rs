@@ -7,6 +7,7 @@ pub mod generic_parameters;
 pub mod implementation;
 pub mod occurrences;
 pub mod reflector;
+pub mod implementation_coherence;
 pub mod type_alias;
 pub mod type_system;
 pub mod variance_map;
