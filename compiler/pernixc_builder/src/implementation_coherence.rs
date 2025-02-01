@@ -413,6 +413,24 @@ pub(super) fn check_overlapping(
                 final_implementation_id: id,
                 overriden_implementation_id: implementation_id,
             }));
+        } else if order == Order::Ambiguous {
+            if id.target_id == implementation_id.target_id {
+                if implementation_id > id {
+                    handler.receive(Box::new(
+                        diagnostic::AmbiguousImplementation {
+                            second_implementation_id: implementation_id,
+                            first_implementation_id: id,
+                        },
+                    ));
+                }
+            } else {
+                handler.receive(Box::new(
+                    diagnostic::AmbiguousImplementation {
+                        first_implementation_id: implementation_id,
+                        second_implementation_id: id,
+                    },
+                ));
+            }
         }
     }
 }

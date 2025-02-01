@@ -175,3 +175,45 @@ impl Report<&Table> for FinalImplementationCannotBeOverriden {
         }
     }
 }
+
+/// Two implementations have the same specialty order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AmbiguousImplementation {
+    /// The ID of the first implementation.
+    pub first_implementation_id: GlobalID,
+
+    /// The ID of the second implementation.
+    pub second_implementation_id: GlobalID,
+}
+
+impl Report<&Table> for AmbiguousImplementation {
+    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
+        let name = table.get_qualified_name(self.first_implementation_id);
+        let first_span = table
+            .get::<LocationSpan>(self.first_implementation_id)
+            .span
+            .clone()
+            .unwrap();
+        let second_span =
+            table.get::<LocationSpan>(self.second_implementation_id);
+
+        pernixc_diagnostic::Diagnostic {
+            span: first_span,
+            message: format!(
+                "the implementations of the `{name}` are ambiguous",
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: second_span
+                .span
+                .as_ref()
+                .map(|x| Related {
+                    span: x.clone(),
+                    message: "the other implementation is defined here"
+                        .to_string(),
+                })
+                .into_iter()
+                .collect(),
+        }
+    }
+}

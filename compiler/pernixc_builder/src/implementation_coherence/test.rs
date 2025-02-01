@@ -19,8 +19,9 @@ use pernixc_term::{
 
 use crate::{
     implementation_coherence::diagnostic::{
-        FinalImplementationCannotBeOverriden, ImplementedForeignAdt,
-        OrphanRuleViolation, UnusedGenericParameterInImplementation,
+        AmbiguousImplementation, FinalImplementationCannotBeOverriden,
+        ImplementedForeignAdt, OrphanRuleViolation,
+        UnusedGenericParameterInImplementation,
     },
     test::{add_target, build_table},
     type_system::diagnostic::UnsatisfiedPredicate,
@@ -262,4 +263,29 @@ fn final_implementation_override() {
 
     assert!(implementations.contains(&error.final_implementation_id));
     assert!(implementations.contains(&error.overriden_implementation_id));
+}
+
+const AMBIGUOUS_IMPLEMENTATION: &str = r"
+public trait Trait[T, U] {}
+
+implements[T] Trait[T, int32] {}
+implements[T] Trait[int32, T] {}
+";
+
+#[test]
+fn ambiguous_implementation() {
+    let (table, errors) = build_table(AMBIGUOUS_IMPLEMENTATION);
+
+    assert_eq!(errors.len(), 1);
+
+    let trait_id = table.get_by_qualified_name(["test", "Trait"]).unwrap();
+    let implementations = table.get::<Implemented>(trait_id);
+
+    let error =
+        errors[0].as_any().downcast_ref::<AmbiguousImplementation>().unwrap();
+
+    assert_eq!(implementations.len(), 2);
+
+    assert!(implementations.contains(&error.first_implementation_id));
+    assert!(implementations.contains(&error.second_implementation_id));
 }
