@@ -5,13 +5,14 @@ use std::collections::HashSet;
 
 use diagnostic::{
     FinalImplementationCannotBeOverriden, ImplementedForeignAdt,
-    OrphanRuleViolation,
+    MismatchedGenericParameterCountInImplementation, OrphanRuleViolation,
 };
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_table::{
     component::{
-        Implemented, Implements, LocationSpan, SymbolKind, TraitImplementation,
+        Implemented, Implements, LocationSpan, Member, Name, Parent,
+        SymbolKind, TraitImplementation,
     },
     diagnostic::Diagnostic,
     GlobalID, Table,
@@ -20,8 +21,8 @@ use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
     generic_parameter::{
-        ConstantParameterID, GenericParameters, LifetimeParameterID,
-        TypeParameterID,
+        ConstantParameterID, GenericKind, GenericParameters,
+        LifetimeParameterID, TypeParameterID,
     },
     lifetime::Lifetime,
     r#type::Type,
@@ -432,6 +433,75 @@ pub(super) fn check_overlapping(
                 ));
             }
         }
+    }
+}
+
+pub(super) fn check_implementation_member_generic_parameter(
+    table: &Table,
+    implementation_member_id: GlobalID,
+    check_lifetimes: bool,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) {
+    let this_name = table.get::<Name>(implementation_member_id);
+    let parent_impl = GlobalID::new(
+        implementation_member_id.target_id,
+        table.get::<Parent>(implementation_member_id).parent.unwrap(),
+    );
+
+    let trait_id = table.get::<Implements>(parent_impl).0;
+    let trait_member_id = GlobalID::new(
+        trait_id.target_id,
+        table.get::<Member>(trait_id)[&this_name.0],
+    );
+
+    let (Some(impl_generic_parameters), Some(trait_generic_parameters)) = (
+        table.query::<GenericParameters>(implementation_member_id),
+        table.query::<GenericParameters>(trait_member_id),
+    ) else {
+        return;
+    };
+
+    if check_lifetimes
+        && impl_generic_parameters.lifetimes().len()
+            != trait_generic_parameters.lifetimes().len()
+    {
+        handler.receive(Box::new(
+            MismatchedGenericParameterCountInImplementation {
+                implementation_member_id,
+                trait_member_id,
+                expected_count: trait_generic_parameters.lifetimes().len(),
+                declared_count: impl_generic_parameters.lifetimes().len(),
+                generic_kind: GenericKind::Lifetime,
+            },
+        ));
+    }
+
+    if impl_generic_parameters.types().len()
+        != trait_generic_parameters.types().len()
+    {
+        handler.receive(Box::new(
+            MismatchedGenericParameterCountInImplementation {
+                implementation_member_id,
+                trait_member_id,
+                expected_count: trait_generic_parameters.types().len(),
+                declared_count: impl_generic_parameters.types().len(),
+                generic_kind: GenericKind::Type,
+            },
+        ));
+    }
+
+    if impl_generic_parameters.constants().len()
+        != trait_generic_parameters.constants().len()
+    {
+        handler.receive(Box::new(
+            MismatchedGenericParameterCountInImplementation {
+                implementation_member_id,
+                trait_member_id,
+                expected_count: trait_generic_parameters.constants().len(),
+                declared_count: impl_generic_parameters.constants().len(),
+                generic_kind: GenericKind::Constant,
+            },
+        ));
     }
 }
 

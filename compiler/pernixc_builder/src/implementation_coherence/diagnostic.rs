@@ -217,3 +217,58 @@ impl Report<&Table> for AmbiguousImplementation {
         }
     }
 }
+
+/// The trait member and the implementation member have different number of
+/// generic parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedGenericParameterCountInImplementation {
+    /// The ID of the implementation member
+    pub implementation_member_id: GlobalID,
+
+    /// The ID of the trait member
+    pub trait_member_id: GlobalID,
+
+    /// Expected count of generic parameters
+    pub expected_count: usize,
+
+    /// Number of generic parameters declared in the implementation
+    pub declared_count: usize,
+
+    /// The kind of the generic parameter that has mismatched count
+    pub generic_kind: GenericKind,
+}
+
+impl Report<&Table> for MismatchedGenericParameterCountInImplementation {
+    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
+        let generic_kind = match self.generic_kind {
+            GenericKind::Type => "type",
+            GenericKind::Lifetime => "lifetime",
+            GenericKind::Constant => "constant",
+        };
+
+        pernixc_diagnostic::Diagnostic {
+            span: table
+                .get::<LocationSpan>(self.implementation_member_id)
+                .span
+                .clone()
+                .unwrap(),
+            message: format!(
+                "the implementation member has {} {generic_kind} parameters, \
+                 but the trait member has {}",
+                self.declared_count, self.expected_count
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: table
+                .get::<LocationSpan>(self.trait_member_id)
+                .span
+                .as_ref()
+                .map(|x| Related {
+                    span: x.clone(),
+                    message: "the trait member is defined here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        }
+    }
+}

@@ -17,7 +17,14 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use typed_builder::TypedBuilder;
 
 use crate::{
-    builder::Builder, function, implementation_coherence, occurrences,
+    builder::Builder,
+    function,
+    implementation_coherence::{
+        check_implementation_member_generic_parameter,
+        check_implemented_instantiation, check_orphan_rule, check_overlapping,
+        check_unused_generic_parameters,
+    },
+    occurrences::{self, check_occurrences},
     variance_map,
 };
 
@@ -211,26 +218,12 @@ pub fn build(
         }
 
         // check the well-formedness of all occurrences so far
-        occurrences::check_occurrences(table, x, &**table.handler());
+        check_occurrences(table, x, &**table.handler());
 
         if symbol_kind.is_implementation() {
-            implementation_coherence::check_unused_generic_parameters(
-                table,
-                x,
-                &**table.handler(),
-            );
-
-            implementation_coherence::check_implemented_instantiation(
-                table,
-                x,
-                &**table.handler(),
-            );
-
-            implementation_coherence::check_orphan_rule(
-                table,
-                x,
-                &**table.handler(),
-            );
+            check_unused_generic_parameters(table, x, &**table.handler());
+            check_implemented_instantiation(table, x, &**table.handler());
+            check_orphan_rule(table, x, &**table.handler());
         }
 
         // check if the implementation is ambiguous or overrides another
@@ -241,9 +234,19 @@ pub fn build(
                 | SymbolKind::PositiveTraitImplementation
                 | SymbolKind::NegativeTraitImplementation
         ) {
-            implementation_coherence::check_overlapping(
+            check_overlapping(table, x, &**table.handler());
+        }
+
+        if matches!(
+            symbol_kind,
+            SymbolKind::TraitImplementationFunction
+                | SymbolKind::TraitImplementationConstant
+                | SymbolKind::TraitImplementationType
+        ) {
+            check_implementation_member_generic_parameter(
                 table,
                 x,
+                symbol_kind != SymbolKind::TraitImplementationFunction,
                 &**table.handler(),
             );
         }

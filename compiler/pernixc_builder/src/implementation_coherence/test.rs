@@ -8,7 +8,7 @@ use pernixc_table::{
 };
 use pernixc_term::{
     generic_parameter::{
-        GenericParameters, LifetimeParameter, LifetimeParameterID,
+        GenericKind, GenericParameters, LifetimeParameter, LifetimeParameterID,
         TypeParameter, TypeParameterID,
     },
     lifetime::Lifetime,
@@ -20,8 +20,8 @@ use pernixc_term::{
 use crate::{
     implementation_coherence::diagnostic::{
         AmbiguousImplementation, FinalImplementationCannotBeOverriden,
-        ImplementedForeignAdt, OrphanRuleViolation,
-        UnusedGenericParameterInImplementation,
+        ImplementedForeignAdt, MismatchedGenericParameterCountInImplementation,
+        OrphanRuleViolation, UnusedGenericParameterInImplementation,
     },
     test::{add_target, build_table},
     type_system::diagnostic::UnsatisfiedPredicate,
@@ -288,4 +288,58 @@ fn ambiguous_implementation() {
 
     assert!(implementations.contains(&error.first_implementation_id));
     assert!(implementations.contains(&error.second_implementation_id));
+}
+
+const GENERIC_PARAMETER_COUNT_MISMATCHED: &str = r"
+public trait Trait[V] {
+    public type Output['a, 'b, T, U, const X: T];
+
+    public function foo['a, 'b, T, U, const X: T]();
+}
+
+implements Trait[int32] {
+    public type Output['a, T] = int32;
+
+    public function foo['a, T, U, const X: T]() {}
+}
+";
+
+#[test]
+fn generic_parameter_count_mismatched() {
+    let (table, errors) = build_table(GENERIC_PARAMETER_COUNT_MISMATCHED);
+
+    assert_eq!(errors.len(), 3);
+
+    let output_id =
+        table.get_by_qualified_name(["test", "Trait", "Output"]).unwrap();
+
+    assert!(errors.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<MismatchedGenericParameterCountInImplementation>()
+        .map_or(false, |x| {
+            x.expected_count == 2
+                && x.declared_count == 1
+                && x.generic_kind == GenericKind::Lifetime
+                && x.trait_member_id == output_id
+        })));
+
+    assert!(errors.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<MismatchedGenericParameterCountInImplementation>()
+        .map_or(false, |x| {
+            x.expected_count == 2
+                && x.declared_count == 1
+                && x.generic_kind == GenericKind::Type
+                && x.trait_member_id == output_id
+        })));
+
+    assert!(errors.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<MismatchedGenericParameterCountInImplementation>()
+        .map_or(false, |x| {
+            x.expected_count == 1
+                && x.declared_count == 0
+                && x.generic_kind == GenericKind::Constant
+                && x.trait_member_id == output_id
+        })));
 }
