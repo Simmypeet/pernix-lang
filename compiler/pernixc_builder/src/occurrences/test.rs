@@ -7,8 +7,8 @@ use pernixc_term::{
     },
     lifetime::Lifetime,
     predicate::{
-        Compatible, ConstantType, Outlives, PositiveMarker, PositiveTrait,
-        Predicate, Tuple,
+        Compatible, ConstantType, NegativeMarker, Outlives, PositiveMarker,
+        PositiveTrait, Predicate, Tuple,
     },
     r#type::{Primitive, Qualifier, Reference, TraitMember, Type},
     Default, MemberSymbol, Symbol,
@@ -675,4 +675,142 @@ fn marker_with_constraints() {
         });
 
     assert_eq!(error.predicate, expected_predicate);
+}
+
+const NEGATIVE_MARKER_SATISFIED: &str = r"
+public marker Marker[T];
+
+final implements Marker[int32];
+
+public struct MyStruct {
+    public a: int32,
+    public b: bool,
+}
+
+public type WithRequirement[T] = T
+where
+    marker !Marker[T];
+
+public type InstMyStruct = WithRequirement[MyStruct];
+";
+
+#[test]
+fn negative_marker_satisfied() {
+    let (_, errors) = build_table(NEGATIVE_MARKER_SATISFIED);
+
+    assert!(errors.is_empty());
+}
+
+const NEGATIVE_MARKER_NOT_SATISFIED: &str = r"
+public marker Marker[T];
+
+final implements Marker[int32];
+final implements Marker[bool];
+
+public struct MyStruct {
+    public a: int32,
+    public b: bool,
+}
+
+public type WithRequirement[T] = T
+where
+    marker !Marker[T];
+
+public type InstMyStruct = WithRequirement[MyStruct];
+";
+
+#[test]
+fn negative_marker_not_satisfied() {
+    let (table, errors) = build_table(NEGATIVE_MARKER_NOT_SATISFIED);
+
+    assert_eq!(errors.len(), 1);
+
+    let error = errors[0]
+        .as_any()
+        .downcast_ref::<UnsatisfiedPredicate<Default>>()
+        .unwrap();
+
+    let marker_id = table.get_by_qualified_name(["test", "Marker"]).unwrap();
+    let my_struct_id =
+        table.get_by_qualified_name(["test", "MyStruct"]).unwrap();
+
+    let expected_predicate =
+        Predicate::NegativeMarker::<Default>(NegativeMarker {
+            marker_id,
+            generic_arguments: GenericArguments {
+                lifetimes: Vec::new(),
+                types: vec![Type::Symbol(Symbol {
+                    id: my_struct_id,
+                    generic_arguments: GenericArguments::default(),
+                })],
+                constants: Vec::new(),
+            },
+        });
+
+    assert_eq!(error.predicate, expected_predicate);
+}
+
+const EMPTY_STRUCT_NEGATIVE_MARKER_NOT_SATISFIED: &str = r"
+public marker Marker[T];
+
+final implements Marker[int32];
+
+public struct EmptyStruct {}
+public enum EmptyEnum {}
+
+public type WithRequirement[T] = T
+where
+    marker !Marker[T];
+
+public type InstEmptyStruct = WithRequirement[EmptyStruct];
+public type InstEmptyEnum   = WithRequirement[EmptyEnum];
+";
+
+#[test]
+fn empty_struct_negative_marker_not_satisfied() {
+    let (table, errors) =
+        build_table(EMPTY_STRUCT_NEGATIVE_MARKER_NOT_SATISFIED);
+
+    assert_eq!(errors.len(), 2);
+
+    let marker_id = table.get_by_qualified_name(["test", "Marker"]).unwrap();
+    let struct_id =
+        table.get_by_qualified_name(["test", "EmptyStruct"]).unwrap();
+    let enum_id = table.get_by_qualified_name(["test", "EmptyEnum"]).unwrap();
+
+    assert!(errors.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<UnsatisfiedPredicate<Default>>()
+        .map_or(false, |x| {
+            x.predicate
+                == Predicate::NegativeMarker(NegativeMarker {
+                    marker_id,
+                    generic_arguments: GenericArguments {
+                        lifetimes: Vec::new(),
+                        types: vec![Type::Symbol(Symbol {
+                            id: struct_id,
+                            generic_arguments: GenericArguments::default(),
+                        })],
+                        constants: Vec::new(),
+                    },
+                })
+        })));
+
+    assert!(errors.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<UnsatisfiedPredicate<Default>>()
+        .map_or(false, |x| {
+            x.predicate
+                == Predicate::NegativeMarker(NegativeMarker {
+                    marker_id,
+                    generic_arguments: GenericArguments {
+                        lifetimes: Vec::new(),
+                        types: vec![Type::Symbol(Symbol {
+                            id: enum_id,
+                            generic_arguments: GenericArguments::default(),
+                        })],
+                        constants: Vec::new(),
+                    },
+                })
+        })));
 }
