@@ -3,10 +3,11 @@
 
 use std::collections::HashSet;
 
+use diagnostic::ImplementedForeignAdt;
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_table::{
-    component::{Implements, LocationSpan},
+    component::{Implements, LocationSpan, SymbolKind},
     diagnostic::Diagnostic,
     GlobalID, Table,
 };
@@ -229,6 +230,29 @@ pub(super) fn check_implemented_instantiation(
         implementation.generic_arguments.clone(),
         &location_span.span.clone().unwrap(),
     );
+}
+
+/// Performs orphan rule check on the implementation.
+pub(super) fn check_orphan_rule(
+    table: &Table,
+    implementation_id: GlobalID,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) {
+    let implemented_id = table.get::<Implements>(implementation_id).0;
+
+    // If the implementation is in the same module as the implemented symbol,
+    // then no need to check the orphan rule.
+    if implemented_id.target_id == implementation_id.target_id {
+        return;
+    }
+
+    let symbol_kind = *table.get::<SymbolKind>(implementation_id);
+
+    if symbol_kind == SymbolKind::AdtImplementation {
+        handler.receive(Box::new(ImplementedForeignAdt {
+            adt_implementation_id: implementation_id,
+        }));
+    }
 }
 
 #[cfg(test)]

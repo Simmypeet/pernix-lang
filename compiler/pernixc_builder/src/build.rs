@@ -107,7 +107,7 @@ impl Compilation<'_> {
 }
 
 /// An entry point for building every symbol within the given target.
-#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
 pub fn build(
     table: &mut Table,
     target_id: TargetID,
@@ -116,49 +116,49 @@ pub fn build(
     on_start_building_component: Option<Arc<ComponentCallback>>,
     on_finish_building_component: Option<Arc<ComponentCallback>>,
 ) {
-    assert!(table.set_builder::<GenericParameters, _>(Builder::new(
+    table.set_builder_overwrite::<GenericParameters, _>(Builder::new(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
-    )));
-    assert!(table.set_builder::<WhereClause, _>(Builder::new(
+    ));
+    table.set_builder_overwrite::<WhereClause, _>(Builder::new(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
-    )));
-    assert!(table.set_builder::<Implementation, _>(Builder::new(
+    ));
+    table.set_builder_overwrite::<Implementation, _>(Builder::new(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
-    )));
-    assert!(table.set_builder::<TypeAlias, _>(Builder::new(
+    ));
+    table.set_builder_overwrite::<TypeAlias, _>(Builder::new(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
-    )));
-    assert!(table.set_builder::<function::Intermediate, _>(Builder::new(
+    ));
+    table.set_builder_overwrite::<function::Intermediate, _>(Builder::new(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
-    )));
-    assert!(table.set_builder::<FunctionSignature, _>(Builder::new(
+    ));
+    table.set_builder_overwrite::<FunctionSignature, _>(Builder::new(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
-    )));
-    assert!(table.set_builder::<ImpliedPredicates, _>(Builder::new(
+    ));
+    table.set_builder_overwrite::<ImpliedPredicates, _>(Builder::new(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
-    )));
-    assert!(table.set_builder::<ElidedLifetimes, _>(Builder::new(
+    ));
+    table.set_builder_overwrite::<ElidedLifetimes, _>(Builder::new(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
-    )));
-    assert!(table.set_builder::<Variant, _>(Builder::new(
+    ));
+    table.set_builder_overwrite::<Variant, _>(Builder::new(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
-    )));
-    assert!(table.set_builder::<Fields, _>(Builder::new(
+    ));
+    table.set_builder_overwrite::<Fields, _>(Builder::new(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
-    )));
-    assert!(table.set_builder::<VarianceMap, _>(variance_map::Builder::new(
-        Builder::new(on_start_building_component, on_finish_building_component)
-    )));
+    ));
+    table.set_builder_overwrite::<VarianceMap, _>(variance_map::Builder::new(
+        Builder::new(on_start_building_component, on_finish_building_component),
+    ));
 
     let symbols_to_build = table
         .get_target(target_id)
@@ -221,6 +221,12 @@ pub fn build(
             );
 
             implementation_coherence::check_implemented_instantiation(
+                table,
+                x,
+                &**table.handler(),
+            );
+
+            implementation_coherence::check_orphan_rule(
                 table,
                 x,
                 &**table.handler(),

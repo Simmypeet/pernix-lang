@@ -1,5 +1,11 @@
+use std::sync::Arc;
+
+use pernixc_handler::Panic;
 use pernixc_source_file::Span;
-use pernixc_table::component::Implemented;
+use pernixc_table::{
+    component::{Implemented, Implements},
+    Table,
+};
 use pernixc_term::{
     generic_parameter::{
         GenericParameters, LifetimeParameter, LifetimeParameterID,
@@ -12,8 +18,11 @@ use pernixc_term::{
 };
 
 use crate::{
-    implementation_coherence::diagnostic::UnusedGenericParameterInImplementation,
-    test::build_table, type_system::diagnostic::UnsatisfiedPredicate,
+    implementation_coherence::diagnostic::{
+        ImplementedForeignAdt, UnusedGenericParameterInImplementation,
+    },
+    test::{add_target, build_table},
+    type_system::diagnostic::UnsatisfiedPredicate,
 };
 
 const UNUSED_GENERIC_PARAMETERS: &str = r"
@@ -114,4 +123,50 @@ fn check_instantiation_requirements_of_implemented() {
         error.predicate_declaration_span.as_ref().map(Span::str),
         Some("T: 'a")
     );
+}
+
+const FOREIGN_ADT: &str = r"
+public struct Foreign {}
+";
+
+const IMPLEMENTED_FOREIGN_ADT: &str = r"
+using {Foreign} from foreign;
+
+implements Foreign {}
+";
+
+#[test]
+fn implemented_foreign_adt() {
+    let mut table = Table::new(Arc::new(Panic));
+
+    let (foreign_id, _) = add_target(
+        &mut table,
+        std::iter::empty(),
+        "foreign".to_string(),
+        FOREIGN_ADT,
+    );
+
+    let (_, errors) = add_target(
+        &mut table,
+        std::iter::once(foreign_id),
+        "test".to_string(),
+        IMPLEMENTED_FOREIGN_ADT,
+    );
+
+    assert_eq!(errors.len(), 1);
+
+    let foreign_struct_id =
+        table.get_by_qualified_name(["foreign", "Foreign"]).unwrap();
+
+    let error =
+        errors[0].as_any().downcast_ref::<ImplementedForeignAdt>().unwrap();
+
+    let implemented_id = table.get::<Implements>(error.adt_implementation_id).0;
+
+    assert_eq!(implemented_id, foreign_struct_id);
+
+    let implemented = table.get::<Implemented>(foreign_struct_id);
+
+    assert_eq!(implemented.len(), 1);
+    assert!(implemented.contains(&error.adt_implementation_id));
 }

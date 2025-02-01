@@ -16,7 +16,7 @@ use parking_lot::Mutex;
 use pernixc_handler::Handler;
 use pernixc_storage::{serde::Reflector, ArcTrait, GetMutError, Storage};
 use pernixc_syntax::syntax_tree::AccessModifier;
-use query::{Builder, Context};
+use query::{AnySendSync, Builder, Context};
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 pub use target::AddTargetError;
 
@@ -605,6 +605,25 @@ impl Table {
         builder: B,
     ) -> bool {
         self.query_context.get_mut().set_builder::<T, B>(builder)
+    }
+
+    /// Sets the builder for the given derived component type.
+    ///
+    /// This will overwrite the existing builder for the given type and returns
+    /// the previous builder if there's any.
+    pub fn set_builder_overwrite<T: Derived, B: Builder<T>>(
+        &mut self,
+        builder: B,
+    ) -> Option<Arc<dyn AnySendSync>> {
+        self.query_context.get_mut().set_builder_overwrite::<T, B>(builder)
+    }
+
+    /// Sets the handler and returns the previous handler.
+    pub fn set_handler(
+        &mut self,
+        handler: Arc<dyn Handler<Box<dyn Diagnostic>>>,
+    ) -> Arc<dyn Handler<Box<dyn Diagnostic>>> {
+        std::mem::replace(&mut self.handler, handler)
     }
 }
 

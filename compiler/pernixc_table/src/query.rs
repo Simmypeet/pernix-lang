@@ -88,7 +88,9 @@ pub struct Record {
     pub name: &'static str,
 }
 
-trait AnySendSync: Any + Send + Sync {
+/// Shorthand for `And + Send + Sync`.
+pub trait AnySendSync: Any + Send + Sync {
+    /// Returns the reference to the [`Any`] trait object.
     fn as_any(&self) -> &dyn Any;
 }
 
@@ -148,6 +150,31 @@ impl Context {
 
             _ => unreachable!(),
         }
+    }
+
+    /// Sets the builder for the given derived component type.
+    ///
+    /// This will overwrite the existing builder for the given type and returns
+    /// the previous builder if there's any.
+    pub fn set_builder_overwrite<T: Derived, B: Builder<T>>(
+        &mut self,
+        builder: B,
+    ) -> Option<Arc<dyn AnySendSync>> {
+        let existing = self
+            .builders_by_type_id
+            .insert(TypeId::of::<T>(), Arc::new(builder));
+        self.builder_fns_by_type_id.insert(
+            TypeId::of::<T>(),
+            |builder, global_id, table, handler| {
+                let builder = builder.as_any().downcast_ref::<B>().unwrap();
+
+                builder
+                    .build(global_id, table, handler)
+                    .map(|x| x as Arc<dyn Any + Send + Sync>)
+            },
+        );
+
+        existing
     }
 }
 

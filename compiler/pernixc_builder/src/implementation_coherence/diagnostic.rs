@@ -2,7 +2,10 @@
 
 use pernixc_arena::ID;
 use pernixc_diagnostic::Report;
-use pernixc_table::{MemberID, Table};
+use pernixc_table::{
+    component::{Implements, LocationSpan, SymbolKind},
+    GlobalID, MemberID, Table,
+};
 use pernixc_term::generic_parameter::{
     GenericKind, GenericParameter, GenericParameters,
 };
@@ -40,6 +43,37 @@ impl<T: GenericParameter> Report<&Table>
             severity: pernixc_log::Severity::Error,
             help_message: None,
             related: vec![],
+        }
+    }
+}
+
+/// Attempted to implement a foreign struct or enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ImplementedForeignAdt {
+    /// The ID of the implementation.
+    pub adt_implementation_id: GlobalID,
+}
+
+impl Report<&Table> for ImplementedForeignAdt {
+    fn report(&self, parameter: &Table) -> pernixc_diagnostic::Diagnostic {
+        let implementation_span =
+            parameter.get::<LocationSpan>(self.adt_implementation_id);
+        let implemented_id =
+            parameter.get::<Implements>(self.adt_implementation_id).0;
+
+        let symbol_kind = parameter.get::<SymbolKind>(implemented_id);
+        let kind_str = symbol_kind.kind_str();
+        let qualified_name = parameter.get_qualified_name(implemented_id);
+
+        pernixc_diagnostic::Diagnostic {
+            span: implementation_span.span.clone().unwrap(),
+            message: format!(
+                "{kind_str} `{qualified_name}` is defined in another target; \
+                 `implements` to foreign {kind_str} is not allowed",
+            ),
+            severity: pernixc_log::Severity::Error,
+            help_message: None,
+            related: Vec::new(),
         }
     }
 }
