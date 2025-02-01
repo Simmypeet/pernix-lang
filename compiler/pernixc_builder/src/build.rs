@@ -233,6 +233,21 @@ pub fn build(
             );
         }
 
+        // check if the implementation is ambiguous or overrides another
+        if matches!(
+            symbol_kind,
+            SymbolKind::PositiveMarkerImplementation
+                | SymbolKind::NegativeMarkerImplementation
+                | SymbolKind::PositiveTraitImplementation
+                | SymbolKind::NegativeTraitImplementation
+        ) {
+            implementation_coherence::check_overlapping(
+                table,
+                x,
+                &**table.handler(),
+            );
+        }
+
         if let Some(callback) = on_done.as_ref() {
             (callback)(table, x);
         }

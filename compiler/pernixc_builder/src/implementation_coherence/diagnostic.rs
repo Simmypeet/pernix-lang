@@ -1,10 +1,12 @@
 //! Diagnostics for the implementation coherence check.
 
 use pernixc_arena::ID;
-use pernixc_diagnostic::Report;
+use pernixc_component::implementation::Implementation;
+use pernixc_diagnostic::{Related, Report};
+use pernixc_log::Severity;
 use pernixc_table::{
     component::{Implements, LocationSpan, SymbolKind},
-    GlobalID, MemberID, Table,
+    DisplayObject, GlobalID, MemberID, Table,
 };
 use pernixc_term::generic_parameter::{
     GenericKind, GenericParameter, GenericParameters,
@@ -108,6 +110,68 @@ impl Report<&Table> for OrphanRuleViolation {
             severity: pernixc_log::Severity::Error,
             help_message: None,
             related: Vec::new(),
+        }
+    }
+}
+
+/// The implementation is final but it is overriden by another
+/// implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FinalImplementationCannotBeOverriden {
+    /// The ID of the final implementation that is overriden.
+    pub final_implementation_id: GlobalID,
+
+    /// The ID of the implementation that overrides the final implementation.
+    pub overriden_implementation_id: GlobalID,
+}
+
+impl Report<&Table> for FinalImplementationCannotBeOverriden {
+    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
+        let location_span = table
+            .get::<LocationSpan>(self.overriden_implementation_id)
+            .span
+            .clone()
+            .unwrap();
+
+        let override_impl = table
+            .query::<Implementation>(self.overriden_implementation_id)
+            .unwrap();
+        let final_impl = table
+            .query::<Implementation>(self.final_implementation_id)
+            .unwrap();
+        let final_qualified_name =
+            table.get_qualified_name(self.final_implementation_id);
+        let override_qualified_name =
+            table.get_qualified_name(self.overriden_implementation_id);
+
+        let final_impl_location =
+            table.get::<LocationSpan>(self.final_implementation_id);
+
+        pernixc_diagnostic::Diagnostic {
+            span: location_span,
+            message: format!(
+                "the implementation `{}{}` overrides the implementation \
+                 `{}{}`, which is final",
+                override_qualified_name,
+                DisplayObject {
+                    table,
+                    display: &override_impl.generic_arguments
+                },
+                final_qualified_name,
+                DisplayObject { table, display: &final_impl.generic_arguments },
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: final_impl_location
+                .span
+                .as_ref()
+                .map(|span| Related {
+                    span: span.clone(),
+                    message: "the final implementation is defined here"
+                        .to_string(),
+                })
+                .into_iter()
+                .collect::<Vec<_>>(),
         }
     }
 }

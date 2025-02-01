@@ -3,11 +3,16 @@
 
 use std::collections::HashSet;
 
-use diagnostic::{ImplementedForeignAdt, OrphanRuleViolation};
+use diagnostic::{
+    FinalImplementationCannotBeOverriden, ImplementedForeignAdt,
+    OrphanRuleViolation,
+};
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_table::{
-    component::{Implements, LocationSpan, SymbolKind},
+    component::{
+        Implemented, Implements, LocationSpan, SymbolKind, TraitImplementation,
+    },
     diagnostic::Diagnostic,
     GlobalID, Table,
 };
@@ -26,9 +31,20 @@ use pernixc_term::{
     visitor::RecursiveIterator,
     Default, Kind,
 };
-use pernixc_type_system::{environment::Environment, normalizer};
+use pernixc_type_system::{
+    environment::{Environment, Premise},
+    normalizer,
+    order::Order,
+    AbruptError,
+};
 
-use crate::{occurrences::Checker, type_system::TableExt};
+use crate::{
+    occurrences::Checker,
+    type_system::{
+        diagnostic::{OverflowOperation, TypeSystemOverflow},
+        TableExt,
+    },
+};
 
 pub mod diagnostic;
 
@@ -321,6 +337,82 @@ pub(super) fn check_orphan_rule(
         {
             handler
                 .receive(Box::new(OrphanRuleViolation { implementation_id }));
+        }
+    }
+}
+
+/// Performs orphan rule check on the implementation.
+pub(super) fn check_overlapping(
+    table: &Table,
+    implementation_id: GlobalID,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) {
+    let implemented_id = table.get::<Implements>(implementation_id).0;
+    let implementations = table.get::<Implemented>(implemented_id);
+
+    let Some(this_implementation) =
+        table.query::<Implementation>(implementation_id)
+    else {
+        return;
+    };
+
+    let (environment, _) = Environment::new_with(
+        Premise::<Default>::default(),
+        table,
+        normalizer::NO_OP,
+    );
+
+    for id in implementations.iter().copied() {
+        if id == implementation_id {
+            continue;
+        }
+
+        let other_symbol_kind = *table.get::<SymbolKind>(id);
+        let Some(other_implementation) = table.query::<Implementation>(id)
+        else {
+            continue;
+        };
+
+        // determine the order of the two implementations
+        let order = match environment.order(
+            &this_implementation.generic_arguments,
+            &other_implementation.generic_arguments,
+        ) {
+            Ok(order) => order,
+
+            Err(AbruptError::CyclicDependency) => continue,
+            Err(AbruptError::Overflow(overflow_error)) => {
+                handler.receive(Box::new(TypeSystemOverflow {
+                    operation: OverflowOperation::TypeCheck,
+                    overflow_span: table
+                        .get::<LocationSpan>(implementation_id)
+                        .span
+                        .clone()
+                        .unwrap(),
+                    overflow_error,
+                }));
+                continue;
+            }
+        };
+
+        let other_is_final = match other_symbol_kind {
+            SymbolKind::PositiveMarkerImplementation
+            | SymbolKind::NegativeMarkerImplementation => true,
+
+            SymbolKind::PositiveTraitImplementation
+            | SymbolKind::NegativeTraitImplementation => {
+                let other_trait_impl = table.get::<TraitImplementation>(id);
+                other_trait_impl.is_final
+            }
+
+            _ => unreachable!(),
+        };
+
+        if other_is_final && order == Order::MoreSpecific {
+            handler.receive(Box::new(FinalImplementationCannotBeOverriden {
+                final_implementation_id: id,
+                overriden_implementation_id: implementation_id,
+            }));
         }
     }
 }

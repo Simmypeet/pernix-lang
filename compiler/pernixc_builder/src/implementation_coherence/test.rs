@@ -19,8 +19,8 @@ use pernixc_term::{
 
 use crate::{
     implementation_coherence::diagnostic::{
-        ImplementedForeignAdt, OrphanRuleViolation,
-        UnusedGenericParameterInImplementation,
+        FinalImplementationCannotBeOverriden, ImplementedForeignAdt,
+        OrphanRuleViolation, UnusedGenericParameterInImplementation,
     },
     test::{add_target, build_table},
     type_system::diagnostic::UnsatisfiedPredicate,
@@ -234,4 +234,32 @@ fn implemented_foreign_trait() {
 
     assert_eq!(implemented.len(), 2);
     assert!(implemented.contains(&error.implementation_id));
+}
+
+const FINAL_IMPLEMENTATION_OVERRIDE: &str = r"
+public trait Trait[T, U] {}
+
+final implements[T, U] Trait[T, U] {}
+
+implements[T] Trait[T, T] {}
+";
+
+#[test]
+fn final_implementation_override() {
+    let (table, errors) = build_table(FINAL_IMPLEMENTATION_OVERRIDE);
+
+    assert_eq!(errors.len(), 1);
+
+    let trait_id = table.get_by_qualified_name(["test", "Trait"]).unwrap();
+    let implementations = table.get::<Implemented>(trait_id);
+
+    assert_eq!(implementations.len(), 2);
+
+    let error = errors[0]
+        .as_any()
+        .downcast_ref::<FinalImplementationCannotBeOverriden>()
+        .unwrap();
+
+    assert!(implementations.contains(&error.final_implementation_id));
+    assert!(implementations.contains(&error.overriden_implementation_id));
 }
