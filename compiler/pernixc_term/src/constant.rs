@@ -246,7 +246,16 @@ impl<M: Model> TryFrom<Constant<M>> for Tuple<M> {
 
 /// The location pointing to a sub-constant term in a constant.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
 )]
 pub enum SubConstantLocation {
     /// The index of the element in a [`Tuple`] constant.

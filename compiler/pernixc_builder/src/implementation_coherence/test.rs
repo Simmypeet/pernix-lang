@@ -19,7 +19,8 @@ use pernixc_term::{
 
 use crate::{
     implementation_coherence::diagnostic::{
-        ImplementedForeignAdt, UnusedGenericParameterInImplementation,
+        ImplementedForeignAdt, OrphanRuleViolation,
+        UnusedGenericParameterInImplementation,
     },
     test::{add_target, build_table},
     type_system::diagnostic::UnsatisfiedPredicate,
@@ -169,4 +170,68 @@ fn implemented_foreign_adt() {
 
     assert_eq!(implemented.len(), 1);
     assert!(implemented.contains(&error.adt_implementation_id));
+}
+
+const FOREGIN_TRAIT: &str = r"
+public trait ForeignTrait[T, U, V] {}
+
+public struct ForeignStruct {}
+";
+
+const IMPLEMENTED_FOREIGN_TRAIT: &str = r"
+using {ForeignTrait, ForeignStruct} from foreign;
+
+public trait CurrentTrait[T, U] {
+    public type Output;
+}
+
+public struct CurrentStruct {}
+
+implements[T] ForeignTrait[
+    T, 
+    ForeignStruct, 
+    CurrentTrait[T, CurrentStruct]::Output
+] 
+where
+    trait CurrentTrait[T, CurrentStruct]
+{}
+
+// this is fine
+implements[T] ForeignTrait[T, ForeignStruct, CurrentStruct] {}
+";
+
+#[test]
+fn implemented_foreign_trait() {
+    let mut table = Table::new(Arc::new(Panic));
+
+    let (foreign_id, _) = add_target(
+        &mut table,
+        std::iter::empty(),
+        "foreign".to_string(),
+        FOREGIN_TRAIT,
+    );
+
+    let (_, errors) = add_target(
+        &mut table,
+        std::iter::once(foreign_id),
+        "test".to_string(),
+        IMPLEMENTED_FOREIGN_TRAIT,
+    );
+
+    assert_eq!(errors.len(), 1);
+
+    let foreign_trait_id =
+        table.get_by_qualified_name(["foreign", "ForeignTrait"]).unwrap();
+
+    let error =
+        errors[0].as_any().downcast_ref::<OrphanRuleViolation>().unwrap();
+
+    let implemented_id = table.get::<Implements>(error.implementation_id).0;
+
+    assert_eq!(implemented_id, foreign_trait_id);
+
+    let implemented = table.get::<Implemented>(foreign_trait_id);
+
+    assert_eq!(implemented.len(), 2);
+    assert!(implemented.contains(&error.implementation_id));
 }

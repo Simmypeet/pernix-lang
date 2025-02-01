@@ -313,7 +313,16 @@ impl<M: Model> ModelOf for Type<M> {
 
 /// The location pointing to a sub-lifetime term in a type.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
 )]
 pub enum SubLifetimeLocation {
     /// The index of lifetime argument in a [`Type::Symbol`] type.
@@ -446,7 +455,16 @@ impl<M: Model> Location<Type<M>, Lifetime<M>> for SubLifetimeLocation {
 
 /// The location pointing to a sub-type term in a type.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
 )]
 pub enum SubTypeLocation {
     /// The index of the type argument in a [`Type::Symbol`] type.
@@ -650,7 +668,16 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
 
 /// The location pointing to a sub-constant term in a type.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
 )]
 pub enum SubConstantLocation {
     /// The index of the constant argument in a [`Type::Symbol`] type.

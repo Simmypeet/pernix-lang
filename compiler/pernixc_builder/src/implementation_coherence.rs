@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use diagnostic::ImplementedForeignAdt;
+use diagnostic::{ImplementedForeignAdt, OrphanRuleViolation};
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_table::{
@@ -20,7 +20,11 @@ use pernixc_term::{
     },
     lifetime::Lifetime,
     r#type::Type,
-    Default,
+    sub_term::{
+        SubConstantLocation, SubLifetimeLocation, SubTypeLocation, TermLocation,
+    },
+    visitor::RecursiveIterator,
+    Default, Kind,
 };
 use pernixc_type_system::{environment::Environment, normalizer};
 
@@ -247,11 +251,77 @@ pub(super) fn check_orphan_rule(
     }
 
     let symbol_kind = *table.get::<SymbolKind>(implementation_id);
+    let Some(implementation) = table.query::<Implementation>(implementation_id)
+    else {
+        return;
+    };
 
     if symbol_kind == SymbolKind::AdtImplementation {
         handler.receive(Box::new(ImplementedForeignAdt {
             adt_implementation_id: implementation_id,
         }));
+    } else {
+        // must contains at least one symbol that's from this compiling target
+        let check = |(kind, locations): (Kind<Default>, Vec<TermLocation>)| {
+            let into_trait_member = locations.iter().any(|x| match x {
+                TermLocation::Lifetime(SubLifetimeLocation::FromType(
+                    location,
+                )) => location.is_trait_member(),
+                TermLocation::Type(SubTypeLocation::FromType(location)) => {
+                    location.is_trait_member()
+                }
+                TermLocation::Constant(SubConstantLocation::FromConstant(
+                    _,
+                )) => false,
+                TermLocation::Constant(SubConstantLocation::FromType(
+                    location,
+                )) => location.is_trait_member(),
+            });
+
+            if into_trait_member {
+                return false;
+            }
+
+            match kind {
+                Kind::Type(Type::Symbol(symbol)) => {
+                    let symbol_kind = *table.get::<SymbolKind>(symbol.id);
+
+                    if !symbol_kind.is_adt() {
+                        return false;
+                    }
+
+                    symbol.id.target_id == implementation_id.target_id
+                }
+
+                Kind::Constant(Constant::Struct(val)) => {
+                    val.id.target_id == implementation_id.target_id
+                }
+
+                Kind::Constant(Constant::Enum(val)) => {
+                    val.variant_id.target_id == implementation_id.target_id
+                }
+
+                _ => false,
+            }
+        };
+
+        if !implementation
+            .generic_arguments
+            .types
+            .iter()
+            .flat_map(RecursiveIterator::new)
+            .chain(
+                implementation
+                    .generic_arguments
+                    .constants
+                    .iter()
+                    .flat_map(RecursiveIterator::new),
+            )
+            .any(check)
+        {
+            handler
+                .receive(Box::new(OrphanRuleViolation { implementation_id }));
+        }
     }
 }
 

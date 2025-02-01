@@ -77,3 +77,37 @@ impl Report<&Table> for ImplementedForeignAdt {
         }
     }
 }
+
+/// Implementing a foreign trait/marker but doesn't contain any struct or enum
+/// defined in the current target in the implementation arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct OrphanRuleViolation {
+    /// The ID of the trait/marker implementation.
+    pub implementation_id: GlobalID,
+}
+
+impl Report<&Table> for OrphanRuleViolation {
+    fn report(&self, parameter: &Table) -> pernixc_diagnostic::Diagnostic {
+        let implementation_span =
+            parameter.get::<LocationSpan>(self.implementation_id);
+
+        let implemented_id =
+            parameter.get::<Implements>(self.implementation_id).0;
+
+        let symbol_kind = parameter.get::<SymbolKind>(implemented_id);
+        let kind_str = symbol_kind.kind_str();
+        let qualified_name = parameter.get_qualified_name(implemented_id);
+
+        pernixc_diagnostic::Diagnostic {
+            span: implementation_span.span.clone().unwrap(),
+            message: format!(
+                "can't implement a foreign {kind_str} `{qualified_name}` \
+                 without any struct or enum defined in the current target in \
+                 the implementation arguments"
+            ),
+            severity: pernixc_log::Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
