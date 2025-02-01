@@ -383,6 +383,16 @@ pub fn run(argument: Arguments) -> ExitCode {
 
             eprintln!("{diag}\n");
         }
+
+        eprintln!(
+            "{}",
+            Message::new(
+                Severity::Error,
+                format!("compilation terminated due to {} error(s)", vec.len())
+            )
+        );
+
+        return ExitCode::FAILURE;
     }
 
     if argument.kind == TargetKind::Library {
