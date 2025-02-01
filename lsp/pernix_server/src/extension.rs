@@ -9,7 +9,7 @@ pub trait SpanExt {
     fn to_range(&self) -> tower_lsp::lsp_types::Range;
 }
 
-impl SpanExt for pernixc_base::source_file::Span {
+impl SpanExt for pernixc_source_file::Span {
     #[allow(clippy::cast_possible_truncation)]
     fn to_range(&self) -> tower_lsp::lsp_types::Range {
         let start = self.start_location().map_or_else(
@@ -50,19 +50,19 @@ pub trait DaignosticExt {
     fn into_diagnostic(self) -> tower_lsp::lsp_types::Diagnostic;
 }
 
-impl DaignosticExt for pernixc_base::diagnostic::Diagnostic {
+impl DaignosticExt for pernixc_diagnostic::Diagnostic {
     fn into_diagnostic(self) -> tower_lsp::lsp_types::Diagnostic {
         let related = &self.related;
         tower_lsp::lsp_types::Diagnostic {
             range: self.span.to_range(),
             severity: Some(match self.severity {
-                pernixc_base::log::Severity::Error => {
+                pernixc_log::Severity::Error => {
                     tower_lsp::lsp_types::DiagnosticSeverity::ERROR
                 }
-                pernixc_base::log::Severity::Info => {
+                pernixc_log::Severity::Info => {
                     tower_lsp::lsp_types::DiagnosticSeverity::INFORMATION
                 }
-                pernixc_base::log::Severity::Warning => {
+                pernixc_log::Severity::Warning => {
                     tower_lsp::lsp_types::DiagnosticSeverity::WARNING
                 }
             }),

@@ -7,15 +7,13 @@ use std::{
 
 use getset::Getters;
 use parking_lot::RwLock;
-use pernixc_base::{
-    diagnostic::Report,
-    handler::Handler,
-    source_file::{SourceElement, SourceFile, Span},
-};
+use pernixc_diagnostic::Report;
+use pernixc_handler::Handler;
 use pernixc_lexical::{
     token,
     token_stream::{TokenStream, Tree},
 };
+use pernixc_source_file::{SourceElement, SourceFile, Span};
 use pernixc_syntax::{
     state_machine::parse::Parse,
     syntax_tree::{json, ConnectedList, SyntaxTree},
@@ -163,14 +161,14 @@ impl JsonConfigurationError {
                     return None;
                 }
 
-                error.report(()).unwrap().into_diagnostic()
+                error.report(()).into_diagnostic()
             }
             Self::Syntax(error) => {
                 if skip_parising_errors {
                     return None;
                 }
 
-                error.report(()).unwrap().into_diagnostic()
+                error.report(()).into_diagnostic()
             }
             Self::ExpectMap(e) => create_error_diagnostic(
                 &e.span(),
@@ -305,11 +303,11 @@ pub enum NewWorkspaceError {
     JsonConfiguration(PathBuf, Vec<JsonConfigurationError>),
 }
 
-impl From<pernixc_base::source_file::Error> for NewWorkspaceError {
-    fn from(error: pernixc_base::source_file::Error) -> Self {
+impl From<pernixc_source_file::Error> for NewWorkspaceError {
+    fn from(error: pernixc_source_file::Error) -> Self {
         match error {
-            pernixc_base::source_file::Error::Io(err) => Self::Io(err),
-            pernixc_base::source_file::Error::Utf8(err) => Self::Utf8(err),
+            pernixc_source_file::Error::Io(err) => Self::Io(err),
+            pernixc_source_file::Error::Utf8(err) => Self::Utf8(err),
         }
     }
 }

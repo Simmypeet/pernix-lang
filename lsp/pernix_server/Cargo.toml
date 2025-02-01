@@ -21,10 +21,14 @@ thiserror = { workspace = true }
 rayon = { workspace = true }
 by_address = { workspace = true }
 
-pernixc_base = { path = "../../compiler/pernixc_base" }
+pernixc_source_file = { path = "../../compiler/pernixc_source_file" }
+pernixc_diagnostic = { path = "../../compiler/pernixc_diagnostic" }
+pernixc_handler = { path = "../../compiler/pernixc_handler" }
 pernixc_lexical = { path = "../../compiler/pernixc_lexical" }
 pernixc_syntax = { path = "../../compiler/pernixc_syntax" }
-pernixc_semantic = { path = "../../compiler/pernixc_semantic" }
+pernixc_log = { path = "../../compiler/pernixc_log" }
+pernixc_table = { path = "../../compiler/pernixc_table" }
+pernixc_builder = { path = "../../compiler/pernixc_builder" }
 
 [lints]
 workspace = true

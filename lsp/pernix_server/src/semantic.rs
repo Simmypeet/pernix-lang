@@ -9,14 +9,13 @@ use by_address::ByAddress;
 use getset::Getters;
 use log::{error, info};
 use parking_lot::RwLock;
-use pernixc_base::{
-    diagnostic::Report,
-    handler::{Handler, Storage},
-    source_file::SourceFile,
-};
+use pernixc_builder::Compilation;
+use pernixc_diagnostic::Report;
+use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::token::Identifier;
-use pernixc_semantic::symbol::table::{self, BuildTableError};
+use pernixc_source_file::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
+use pernixc_table::Table;
 use tower_lsp::lsp_types::Url;
 
 use crate::{extension::DaignosticExt, workspace};
@@ -41,16 +40,10 @@ pub enum OperatingMode<'a> {
 }
 
 #[derive(Debug)]
-struct DiagnosticCollector(RwLock<Vec<pernixc_base::diagnostic::Diagnostic>>);
+struct DiagnosticCollector(RwLock<Vec<pernixc_diagnostic::Diagnostic>>);
 
 impl<E: Report<()>> Handler<E> for DiagnosticCollector {
-    fn receive(&self, error: E) {
-        let Ok(diagnostic) = error.report(()) else {
-            return;
-        };
-
-        self.0.write().push(diagnostic);
-    }
+    fn receive(&self, error: E) { self.0.write().push(error.report(())); }
 }
 
 impl Semantic {
@@ -59,6 +52,7 @@ impl Semantic {
     /// The semantic diagnostics are stored in the
     /// [`Semantic::latest_semantic_errors_by_uri`] field. The previous stored
     /// diagnostics are cleared before the new diagnostics are stored.
+    #[allow(clippy::too_many_lines)]
     pub fn analyze(
         &mut self,
         mode: OperatingMode,
@@ -116,15 +110,31 @@ impl Semantic {
             }
         };
 
-        let semantic_error_storage =
-            Storage::<Box<dyn pernixc_semantic::error::Error>>::new();
+        let semantic_error_storage = Arc::new(Storage::<
+            Box<dyn pernixc_table::diagnostic::Diagnostic>,
+        >::new());
+
         let collector = DiagnosticCollector(RwLock::new(Vec::new()));
 
-        let target = Target::parse(&root, target_name, &collector);
-        let table =
-            table::build(std::iter::once(target), &semantic_error_storage);
+        let target = Target::parse(&root, target_name.clone(), &collector);
 
-        info!("{:#?}", table);
+        let mut table = Table::new(semantic_error_storage.clone());
+
+        let target_id = table
+            .add_compilation_target(
+                target_name,
+                std::iter::empty(),
+                target,
+                &*semantic_error_storage,
+            )
+            .unwrap();
+
+        Compilation::builder()
+            .table(&mut table)
+            .target_id(target_id)
+            .build()
+            .run();
+
         info!("{:#?}", semantic_error_storage.as_vec());
 
         // group the diagnostics by source file
@@ -140,11 +150,11 @@ impl Semantic {
         // clear the latest diagnostics
         self.latest_semantic_errors_by_uri.clear();
 
-        if let Err(BuildTableError::Suboptimal(table)) = &table {
-            for error in semantic_error_storage.into_vec() {
-                let Ok(diagnostic) = error.report(table) else {
-                    continue;
-                };
+        if !semantic_error_storage.as_vec().is_empty() {
+            for error in
+                std::mem::take(&mut *semantic_error_storage.as_vec_mut())
+            {
+                let diagnostic = error.report(&table);
 
                 let Some(uri) = std::fs::canonicalize(
                     diagnostic.span.source_file().full_path(),

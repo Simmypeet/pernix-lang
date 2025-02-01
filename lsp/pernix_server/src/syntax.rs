@@ -7,12 +7,10 @@ use std::{
 
 use getset::Getters;
 use parking_lot::RwLock;
-use pernixc_base::{
-    diagnostic::Report,
-    handler::Handler,
-    source_file::{Location, ReplaceRangeError, SourceFile},
-};
+use pernixc_diagnostic::Report;
+use pernixc_handler::Handler;
 use pernixc_lexical::token_stream::{TokenStream, Tree};
+use pernixc_source_file::{Location, SourceFile};
 use pernixc_syntax::{
     state_machine::parse::Parse,
     syntax_tree::{item::ModuleContent, SyntaxTree},
@@ -40,11 +38,7 @@ impl Collector {
 
 impl<E: Report<()>> Handler<E> for Collector {
     fn receive(&self, error: E) {
-        let Ok(diagnostic) = error.report(()) else {
-            return;
-        };
-
-        self.diagnostics.write().push(diagnostic.into_diagnostic());
+        self.diagnostics.write().push(error.report(()).into_diagnostic());
     }
 }
 
@@ -56,7 +50,7 @@ pub struct Syntax {
 }
 
 /// An error that can occur when updating a source file.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum UpdateSourceFileError {
     #[error(
@@ -70,9 +64,6 @@ pub enum UpdateSourceFileError {
         .0.start.line, .0.start.character, .0.end.line, .0.end.character,
     )]
     InvalidRange(lsp_types::Range),
-
-    #[error(transparent)]
-    ReplaceRange(#[from] ReplaceRangeError),
 }
 
 impl Syntax {
@@ -119,7 +110,7 @@ impl Syntax {
             range.end.character as usize,
         );
 
-        let mut source_file = self
+        let source_file = self
             .source_files_by_url
             .get_mut(url)
             .ok_or(UpdateSourceFileError::UnknownUrl)?;
@@ -131,9 +122,11 @@ impl Syntax {
             .into_byte_index_include_ending(pernix_location_end)
             .ok_or(UpdateSourceFileError::InvalidRange(range))?;
 
-        Ok(Arc::get_mut(&mut source_file)
+        Arc::get_mut(source_file)
             .expect("should be unique")
-            .replace_range(start..end, text)?)
+            .replace_range(start..end, text);
+
+        Ok(())
     }
 
     /// Diagnoses the syntax of the source file with the given URL.

@@ -170,8 +170,7 @@ impl SourceFile {
         );
 
         assert!(
-            self.content.is_char_boundary(range.end)
-                && range.end != self.content.len(),
+            self.content.is_char_boundary(range.end),
             "end index {} is not a char boundary",
             range.end
         );
