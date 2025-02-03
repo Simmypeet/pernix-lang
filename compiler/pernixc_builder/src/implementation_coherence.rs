@@ -5,7 +5,8 @@ use std::collections::HashSet;
 
 use diagnostic::{
     FinalImplementationCannotBeOverriden, ImplementedForeignAdt,
-    MismatchedGenericParameterCountInImplementation, OrphanRuleViolation,
+    MismatchedGenericParameterCountInImplementation,
+    MismatchedImplementationConstantTypeParameter, OrphanRuleViolation,
 };
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
@@ -24,11 +25,13 @@ use pernixc_term::{
         ConstantParameterID, GenericKind, GenericParameters,
         LifetimeParameterID, TypeParameterID,
     },
+    instantiation::{self, Instantiation},
     lifetime::Lifetime,
     r#type::Type,
     sub_term::{
         SubConstantLocation, SubLifetimeLocation, SubTypeLocation, TermLocation,
     },
+    variance::Variance,
     visitor::RecursiveIterator,
     Default, Kind,
 };
@@ -436,12 +439,96 @@ pub(super) fn check_overlapping(
     }
 }
 
-pub(super) fn check_implementation_member_generic_parameter(
+pub(super) fn create_impl_member_to_trait_member_inst(
+    impl_args: GenericArguments<Default>,
+    trait_id: GlobalID,
+    trait_generic_params: &GenericParameters,
+    trait_member_generic_params: &GenericParameters,
+    impl_member_generic_params: &GenericParameters,
+    trait_member_id: GlobalID,
+    implementation_member_id: GlobalID,
+) -> Instantiation<Default> {
+    let mut trait_to_impl_inst = Instantiation::from_generic_arguments(
+        impl_args,
+        trait_id,
+        trait_generic_params,
+    )
+    .unwrap();
+
+    trait_to_impl_inst.lifetimes.extend(
+        trait_member_generic_params
+            .lifetime_order()
+            .iter()
+            .copied()
+            .map(|x| {
+                Lifetime::Parameter(LifetimeParameterID::new(
+                    trait_member_id,
+                    x,
+                ))
+            })
+            .zip(
+                impl_member_generic_params
+                    .lifetime_order()
+                    .iter()
+                    .copied()
+                    .map(|x| {
+                        Lifetime::Parameter(LifetimeParameterID::new(
+                            implementation_member_id,
+                            x,
+                        ))
+                    }),
+            ),
+    );
+    trait_to_impl_inst.types.extend(
+        trait_member_generic_params
+            .type_order()
+            .iter()
+            .copied()
+            .map(|x| Type::Parameter(TypeParameterID::new(trait_member_id, x)))
+            .zip(impl_member_generic_params.type_order().iter().copied().map(
+                |x| {
+                    Type::Parameter(TypeParameterID::new(
+                        implementation_member_id,
+                        x,
+                    ))
+                },
+            )),
+    );
+    trait_to_impl_inst.constants.extend(
+        trait_member_generic_params
+            .constant_order()
+            .iter()
+            .copied()
+            .map(|x| {
+                Constant::Parameter(ConstantParameterID::new(
+                    trait_member_id,
+                    x,
+                ))
+            })
+            .zip(
+                impl_member_generic_params
+                    .constant_order()
+                    .iter()
+                    .copied()
+                    .map(|x| {
+                        Constant::Parameter(ConstantParameterID::new(
+                            implementation_member_id,
+                            x,
+                        ))
+                    }),
+            ),
+    );
+
+    trait_to_impl_inst
+}
+
+#[allow(clippy::too_many_lines)]
+pub(super) fn check_implementation_member(
     table: &Table,
     implementation_member_id: GlobalID,
-    check_lifetimes: bool,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) {
+    let this_symbol_kind = *table.get::<SymbolKind>(implementation_member_id);
     let this_name = table.get::<Name>(implementation_member_id);
     let parent_impl = GlobalID::new(
         implementation_member_id.target_id,
@@ -454,55 +541,151 @@ pub(super) fn check_implementation_member_generic_parameter(
         table.get::<Member>(trait_id)[&this_name.0],
     );
 
-    let (Some(impl_generic_parameters), Some(trait_generic_parameters)) = (
+    let (
+        Some(impl_member_generic_params),
+        Some(trait_member_generic_params),
+        Some(impl_args),
+        Some(trait_params),
+    ) = (
         table.query::<GenericParameters>(implementation_member_id),
         table.query::<GenericParameters>(trait_member_id),
-    ) else {
+        table.query::<Implementation>(parent_impl),
+        table.query::<GenericParameters>(trait_id),
+    )
+    else {
         return;
     };
 
-    if check_lifetimes
-        && impl_generic_parameters.lifetimes().len()
-            != trait_generic_parameters.lifetimes().len()
+    if this_symbol_kind != SymbolKind::TraitImplementationFunction
+        && impl_member_generic_params.lifetimes().len()
+            != trait_member_generic_params.lifetimes().len()
     {
         handler.receive(Box::new(
             MismatchedGenericParameterCountInImplementation {
                 implementation_member_id,
                 trait_member_id,
-                expected_count: trait_generic_parameters.lifetimes().len(),
-                declared_count: impl_generic_parameters.lifetimes().len(),
+                expected_count: trait_member_generic_params.lifetimes().len(),
+                declared_count: impl_member_generic_params.lifetimes().len(),
                 generic_kind: GenericKind::Lifetime,
             },
         ));
     }
 
-    if impl_generic_parameters.types().len()
-        != trait_generic_parameters.types().len()
+    if impl_member_generic_params.types().len()
+        != trait_member_generic_params.types().len()
     {
         handler.receive(Box::new(
             MismatchedGenericParameterCountInImplementation {
                 implementation_member_id,
                 trait_member_id,
-                expected_count: trait_generic_parameters.types().len(),
-                declared_count: impl_generic_parameters.types().len(),
+                expected_count: trait_member_generic_params.types().len(),
+                declared_count: impl_member_generic_params.types().len(),
                 generic_kind: GenericKind::Type,
             },
         ));
     }
 
-    if impl_generic_parameters.constants().len()
-        != trait_generic_parameters.constants().len()
+    if impl_member_generic_params.constants().len()
+        != trait_member_generic_params.constants().len()
     {
         handler.receive(Box::new(
             MismatchedGenericParameterCountInImplementation {
                 implementation_member_id,
                 trait_member_id,
-                expected_count: trait_generic_parameters.constants().len(),
-                declared_count: impl_generic_parameters.constants().len(),
+                expected_count: trait_member_generic_params.constants().len(),
+                declared_count: impl_member_generic_params.constants().len(),
                 generic_kind: GenericKind::Constant,
             },
         ));
     }
+
+    if matches!(
+        this_symbol_kind,
+        SymbolKind::TraitImplementationType
+            | SymbolKind::TraitImplementationConstant
+    ) {
+        let trait_to_impl_inst = create_impl_member_to_trait_member_inst(
+            impl_args.generic_arguments.clone(),
+            trait_id,
+            &trait_params,
+            &trait_member_generic_params,
+            &impl_member_generic_params,
+            trait_member_id,
+            implementation_member_id,
+        );
+
+        let (impl_member_env, _) = Environment::new_with(
+            table.get_active_premise::<Default>(implementation_member_id),
+            table,
+            normalizer::NO_OP,
+        );
+
+        implemented_constant_type_check(
+            implementation_member_id,
+            trait_member_id,
+            &trait_to_impl_inst,
+            &impl_member_generic_params,
+            &trait_member_generic_params,
+            &impl_member_env,
+            handler,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn implemented_constant_type_check(
+    implementation_member_id: GlobalID,
+    trait_member_id: GlobalID,
+    trait_to_impl_inst: &Instantiation<Default>,
+    impl_member_generic_params: &GenericParameters,
+    trait_member_generic_params: &GenericParameters,
+    environment: &Environment<Default, normalizer::NoOp>,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) {
+    for ((tr_const_id, tr_const_param), (im_const_id, im_const_param)) in
+        trait_member_generic_params
+            .constant_parameters_as_order()
+            .zip(impl_member_generic_params.constant_parameters_as_order())
+    {
+        let mut tr_const_ty = tr_const_param.r#type.clone();
+        instantiation::instantiate(&mut tr_const_ty, trait_to_impl_inst);
+
+        match environment.compatible(
+            &im_const_param.r#type,
+            &tr_const_ty,
+            Variance::Covariant,
+        ) {
+            Ok(Some(_)) => {
+                // no need to check lifetimes related to the constant
+            }
+
+            Err(_) | Ok(None) => {
+                handler.receive(Box::new(
+                    MismatchedImplementationConstantTypeParameter {
+                        implementation_member_constant_parameter_id:
+                            ConstantParameterID {
+                                parent: implementation_member_id,
+                                id: im_const_id,
+                            },
+                        trait_member_constant_parameter_id:
+                            ConstantParameterID {
+                                parent: trait_member_id,
+                                id: tr_const_id,
+                            },
+                    },
+                ));
+            }
+        }
+    }
+}
+
+fn _implemented_predicate_check(
+    _table: &Table,
+    _implementation_member_id: GlobalID,
+    _trait_member_id: GlobalID,
+    _trait_to_impl_inst: &Instantiation<Default>,
+    _handler: &dyn Handler<Box<dyn Diagnostic>>,
+) {
 }
 
 #[cfg(test)]

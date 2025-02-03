@@ -20,9 +20,8 @@ use crate::{
     builder::Builder,
     function,
     implementation_coherence::{
-        check_implementation_member_generic_parameter,
-        check_implemented_instantiation, check_orphan_rule, check_overlapping,
-        check_unused_generic_parameters,
+        check_implementation_member, check_implemented_instantiation,
+        check_orphan_rule, check_overlapping, check_unused_generic_parameters,
     },
     occurrences::{self, check_occurrences},
     variance_map,
@@ -243,12 +242,7 @@ pub fn build(
                 | SymbolKind::TraitImplementationConstant
                 | SymbolKind::TraitImplementationType
         ) {
-            check_implementation_member_generic_parameter(
-                table,
-                x,
-                symbol_kind != SymbolKind::TraitImplementationFunction,
-                &**table.handler(),
-            );
+            check_implementation_member(table, x, &**table.handler());
         }
 
         if let Some(callback) = on_done.as_ref() {

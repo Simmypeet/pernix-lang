@@ -9,7 +9,7 @@ use pernixc_table::{
     DisplayObject, GlobalID, MemberID, Table,
 };
 use pernixc_term::generic_parameter::{
-    GenericKind, GenericParameter, GenericParameters,
+    ConstantParameterID, GenericKind, GenericParameter, GenericParameters,
 };
 
 /// Generic parameter is unused in the implementation.
@@ -266,6 +266,59 @@ impl Report<&Table> for MismatchedGenericParameterCountInImplementation {
                 .map(|x| Related {
                     span: x.clone(),
                     message: "the trait member is defined here".to_string(),
+                })
+                .into_iter()
+                .collect(),
+        }
+    }
+}
+
+/// The type of the constant parameter in the implementation doesn't match the
+/// type of the constant parameter in the trait.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedImplementationConstantTypeParameter {
+    /// The constant parameter ID of the implementation member
+    pub implementation_member_constant_parameter_id: ConstantParameterID,
+
+    /// The constant parameter ID of the trait member
+    pub trait_member_constant_parameter_id: ConstantParameterID,
+}
+
+impl Report<&Table> for MismatchedImplementationConstantTypeParameter {
+    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
+        let impl_member_span = table
+            .query::<GenericParameters>(
+                self.implementation_member_constant_parameter_id.parent,
+            )
+            .unwrap()
+            .constants()[self.implementation_member_constant_parameter_id.id]
+            .span
+            .clone()
+            .unwrap();
+
+        let trait_member_span = table
+            .query::<GenericParameters>(
+                self.trait_member_constant_parameter_id.parent,
+            )
+            .unwrap()
+            .constants()[self.trait_member_constant_parameter_id.id]
+            .span
+            .clone();
+
+        pernixc_diagnostic::Diagnostic {
+            span: impl_member_span,
+            message: "the type of the constant parameter in the \
+                      implementation doesn't match the type of the constant \
+                      parameter in the trait"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: trait_member_span
+                .map(|x| Related {
+                    span: x,
+                    message: "the constant parameter in the trait is declared \
+                              here"
+                        .to_string(),
                 })
                 .into_iter()
                 .collect(),

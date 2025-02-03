@@ -3,13 +3,13 @@ use std::sync::Arc;
 use pernixc_handler::Panic;
 use pernixc_source_file::Span;
 use pernixc_table::{
-    component::{Implemented, Implements},
-    Table,
+    component::{Implemented, Implements, Member, Parent},
+    GlobalID, Table,
 };
 use pernixc_term::{
     generic_parameter::{
-        GenericKind, GenericParameters, LifetimeParameter, LifetimeParameterID,
-        TypeParameter, TypeParameterID,
+        ConstantParameterID, GenericKind, GenericParameters, LifetimeParameter,
+        LifetimeParameterID, TypeParameter, TypeParameterID,
     },
     lifetime::Lifetime,
     predicate::{Outlives, Predicate},
@@ -21,7 +21,8 @@ use crate::{
     implementation_coherence::diagnostic::{
         AmbiguousImplementation, FinalImplementationCannotBeOverriden,
         ImplementedForeignAdt, MismatchedGenericParameterCountInImplementation,
-        OrphanRuleViolation, UnusedGenericParameterInImplementation,
+        MismatchedImplementationConstantTypeParameter, OrphanRuleViolation,
+        UnusedGenericParameterInImplementation,
     },
     test::{add_target, build_table},
     type_system::diagnostic::UnsatisfiedPredicate,
@@ -341,5 +342,93 @@ fn generic_parameter_count_mismatched() {
                 && x.declared_count == 0
                 && x.generic_kind == GenericKind::Constant
                 && x.trait_member_id == output_id
+        })));
+}
+
+const CONSTANT_PARAMETER_TYPE_MISMATCHED: &str = r"
+public trait Test[A, B] {
+    public type Output[
+        T, 
+        U, 
+        const V: A, 
+        const W: B, 
+        const X: T, 
+        const Y: U
+    ];
+}
+
+implements Test[int32, bool] {
+    public type Output[
+        T, 
+        U, 
+        const V: int32,
+        const W: (), // mismatched
+        const X: T,
+        const Y: T  // mismatched
+    ] = ();
+}
+";
+
+#[test]
+#[allow(clippy::similar_names)]
+fn constant_parameter_type_mismatched() {
+    let (table, errors) = build_table(CONSTANT_PARAMETER_TYPE_MISMATCHED);
+
+    assert_eq!(errors.len(), 2);
+
+    let trait_output_id =
+        table.get_by_qualified_name(["test", "Test", "Output"]).unwrap();
+    let trait_output_generic_params =
+        table.query::<GenericParameters>(trait_output_id).unwrap();
+    let trait_id = GlobalID::new(
+        trait_output_id.target_id,
+        table.get::<Parent>(trait_output_id).parent.unwrap(),
+    );
+    let trait_w_const_id = ConstantParameterID::new(
+        trait_output_id,
+        trait_output_generic_params.constant_parameter_ids_by_name()["W"],
+    );
+    let trait_y_const_id = ConstantParameterID::new(
+        trait_output_id,
+        trait_output_generic_params.constant_parameter_ids_by_name()["Y"],
+    );
+
+    let impl_id =
+        table.get::<Implemented>(trait_id).iter().copied().next().unwrap();
+    let impl_output_id = GlobalID::new(
+        impl_id.target_id,
+        table.get::<Member>(impl_id)["Output"],
+    );
+    let impl_output_generic_params =
+        table.query::<GenericParameters>(impl_output_id).unwrap();
+    let impl_w_const_id = ConstantParameterID::new(
+        impl_output_id,
+        impl_output_generic_params.constant_parameter_ids_by_name()["W"],
+    );
+    let impl_y_const_id = ConstantParameterID::new(
+        impl_output_id,
+        impl_output_generic_params.constant_parameter_ids_by_name()["Y"],
+    );
+
+    dbg!(&errors, trait_w_const_id, impl_w_const_id);
+
+    assert!(errors.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<MismatchedImplementationConstantTypeParameter>()
+        .map_or(false, |_| true)));
+
+    assert!(errors.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<MismatchedImplementationConstantTypeParameter>()
+        .map_or(false, |x| {
+            x.implementation_member_constant_parameter_id == impl_y_const_id
+                && x.trait_member_constant_parameter_id == trait_y_const_id
+        })));
+    assert!(errors.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<MismatchedImplementationConstantTypeParameter>()
+        .map_or(false, |x| {
+            x.implementation_member_constant_parameter_id == impl_w_const_id
+                && x.trait_member_constant_parameter_id == trait_w_const_id
         })));
 }
