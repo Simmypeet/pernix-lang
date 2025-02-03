@@ -33,6 +33,7 @@ use pernixc_term::{
     },
     variance::Variance,
     visitor::RecursiveIterator,
+    where_clause::WhereClause,
     Default, Kind,
 };
 use pernixc_type_system::{
@@ -629,6 +630,15 @@ pub(super) fn check_implementation_member(
             &impl_member_env,
             handler,
         );
+
+        implemented_predicate_check(
+            table,
+            implementation_member_id,
+            trait_member_id,
+            &trait_to_impl_inst,
+            &impl_member_env,
+            handler,
+        );
     }
 }
 
@@ -679,13 +689,39 @@ fn implemented_constant_type_check(
     }
 }
 
-fn _implemented_predicate_check(
-    _table: &Table,
-    _implementation_member_id: GlobalID,
-    _trait_member_id: GlobalID,
-    _trait_to_impl_inst: &Instantiation<Default>,
-    _handler: &dyn Handler<Box<dyn Diagnostic>>,
+fn implemented_predicate_check(
+    table: &Table,
+    implementation_member_id: GlobalID,
+    trait_member_id: GlobalID,
+    trait_to_impl_inst: &Instantiation<Default>,
+    environment: &Environment<Default, normalizer::NoOp>,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) {
+    let Some(trait_member_where_clause) =
+        table.query::<WhereClause>(trait_member_id)
+    else {
+        return;
+    };
+    let member_span = table
+        .get::<LocationSpan>(implementation_member_id)
+        .span
+        .clone()
+        .unwrap();
+
+    for (predicate, span) in
+        trait_member_where_clause.predicates.iter().map(|x| {
+            let mut pred = x.predicate.clone();
+            pred.instantiate(trait_to_impl_inst);
+
+            (pred, x.span.clone())
+        })
+    {
+        let checker = Checker::new(environment, handler);
+        checker
+            .predicate_satisfied(predicate, span)
+            .into_iter()
+            .for_each(|x| x.report(member_span.clone(), handler));
+    }
 }
 
 #[cfg(test)]

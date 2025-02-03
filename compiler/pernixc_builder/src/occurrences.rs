@@ -181,7 +181,7 @@ impl pernixc_resolution::Observer<Default> for Observer {
 
 /// An enumeration of ways the predicate can be erroneous.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum PredicateError {
+pub(super) enum PredicateError {
     /// The predicate isn't satisfied.
     Unsatisfied {
         predicate: Predicate<Default>,
@@ -205,7 +205,7 @@ enum PredicateError {
 }
 
 impl PredicateError {
-    fn report(
+    pub(super) fn report(
         self,
         instantiation_span: Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
@@ -691,7 +691,7 @@ impl Checker<'_> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn predicate_satisfied(
+    pub(super) fn predicate_satisfied(
         &self,
         predicate: Predicate<Default>,
         predicate_declaration_span: Option<Span>,
