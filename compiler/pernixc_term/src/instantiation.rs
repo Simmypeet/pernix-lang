@@ -255,6 +255,65 @@ impl<M: Model> Instantiation<M> {
         Ok(collisions)
     }
 
+    /// Creates a mapping from one generic parameter to another.
+    ///
+    /// # Example
+    ///
+    /// Suppose `A[B, C, D]` and `T[U, V, W]`. To map the generic parameters
+    /// of `A` to `T`, this function will create {B -> U, C -> V, D -> W}.
+    pub fn append_from_generic_parameters_mapping(
+        &mut self,
+        from_id: GlobalID,
+        from_parameters: &GenericParameters,
+        to_id: GlobalID,
+        to_parameters: &GenericParameters,
+    ) -> Vec<Collision<M>> {
+        let mut collisions = Vec::new();
+
+        self.append_from_arguments(
+            from_parameters.lifetime_order().iter().copied().map(|x| {
+                Lifetime::Parameter(LifetimeParameterID::new(from_id, x))
+            }),
+            to_parameters.lifetime_order().iter().copied(),
+            to_id,
+            |id, term| Collision::LifetimeParameterCollision {
+                lifetime_parameter_id: id,
+                new_lifetime: term,
+            },
+            &mut collisions,
+        );
+
+        self.append_from_arguments(
+            from_parameters
+                .type_order()
+                .iter()
+                .copied()
+                .map(|x| Type::Parameter(TypeParameterID::new(from_id, x))),
+            to_parameters.type_order().iter().copied(),
+            to_id,
+            |id, term| Collision::TypeParameterCollision {
+                type_parameter_id: id,
+                new_type: term,
+            },
+            &mut collisions,
+        );
+
+        self.append_from_arguments(
+            from_parameters.constant_order().iter().copied().map(|x| {
+                Constant::Parameter(ConstantParameterID::new(from_id, x))
+            }),
+            to_parameters.constant_order().iter().copied(),
+            to_id,
+            |id, term| Collision::ConstantParameterCollision {
+                constant_parameter_id: id,
+                new_constant: term,
+            },
+            &mut collisions,
+        );
+
+        collisions
+    }
+
     /// Converts the instantiation into a [`GenericArguments`].
     ///
     /// The function will search for the corresponding instantiation for each

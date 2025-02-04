@@ -456,69 +456,14 @@ pub(super) fn create_impl_member_to_trait_member_inst(
     )
     .unwrap();
 
-    trait_to_impl_inst.lifetimes.extend(
-        trait_member_generic_params
-            .lifetime_order()
-            .iter()
-            .copied()
-            .map(|x| {
-                Lifetime::Parameter(LifetimeParameterID::new(
-                    trait_member_id,
-                    x,
-                ))
-            })
-            .zip(
-                impl_member_generic_params
-                    .lifetime_order()
-                    .iter()
-                    .copied()
-                    .map(|x| {
-                        Lifetime::Parameter(LifetimeParameterID::new(
-                            implementation_member_id,
-                            x,
-                        ))
-                    }),
-            ),
-    );
-    trait_to_impl_inst.types.extend(
-        trait_member_generic_params
-            .type_order()
-            .iter()
-            .copied()
-            .map(|x| Type::Parameter(TypeParameterID::new(trait_member_id, x)))
-            .zip(impl_member_generic_params.type_order().iter().copied().map(
-                |x| {
-                    Type::Parameter(TypeParameterID::new(
-                        implementation_member_id,
-                        x,
-                    ))
-                },
-            )),
-    );
-    trait_to_impl_inst.constants.extend(
-        trait_member_generic_params
-            .constant_order()
-            .iter()
-            .copied()
-            .map(|x| {
-                Constant::Parameter(ConstantParameterID::new(
-                    trait_member_id,
-                    x,
-                ))
-            })
-            .zip(
-                impl_member_generic_params
-                    .constant_order()
-                    .iter()
-                    .copied()
-                    .map(|x| {
-                        Constant::Parameter(ConstantParameterID::new(
-                            implementation_member_id,
-                            x,
-                        ))
-                    }),
-            ),
-    );
+    assert!(trait_to_impl_inst
+        .append_from_generic_parameters_mapping(
+            implementation_member_id,
+            impl_member_generic_params,
+            trait_member_id,
+            trait_member_generic_params,
+        )
+        .is_empty());
 
     trait_to_impl_inst
 }
@@ -617,6 +562,11 @@ pub(super) fn check_implementation_member(
 
         let (impl_member_env, _) = Environment::new_with(
             table.get_active_premise::<Default>(implementation_member_id),
+            table,
+            normalizer::NO_OP,
+        );
+        let (_trait_member_env, _) = Environment::new_with(
+            table.get_active_premise::<Default>(trait_member_id),
             table,
             normalizer::NO_OP,
         );
