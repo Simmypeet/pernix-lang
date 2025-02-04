@@ -2,10 +2,11 @@
 
 use std::{collections::HashSet, sync::Arc};
 
-use pernixc_arena::Arena;
+use pernixc_arena::{Arena, ID};
 use pernixc_component::{
     function_signature::{FunctionSignature, Parameter},
     implied_predicates::{ImpliedPredicate, ImpliedPredicates},
+    late_bound::LateBound,
 };
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, ElidedTermProvider, Ext as _};
@@ -20,6 +21,8 @@ use pernixc_table::{
 };
 use pernixc_term::{
     elided_lifetimes::{ElidedLifetime, ElidedLifetimeID, ElidedLifetimes},
+    generic_arguments::GenericArguments,
+    generic_parameter::{GenericParameters, LifetimeParameter},
     lifetime::Lifetime,
     predicate::{Outlives, Predicate},
     r#type::Type,
@@ -46,6 +49,7 @@ pub(super) struct Intermediate {
     function_signature: Arc<FunctionSignature>,
     implied_predicates: Arc<ImpliedPredicates>,
     ellided_lifetimes: Arc<ElidedLifetimes>,
+    late_bound: Arc<LateBound>,
 }
 
 impl Derived for Intermediate {
@@ -74,6 +78,117 @@ struct ReturnElidedLifetimeProvider {
 
 impl ElidedTermProvider<Lifetime<Default>> for ReturnElidedLifetimeProvider {
     fn create(&mut self) -> Lifetime<Default> { self.lifetime }
+}
+
+struct AllLifetimeParameters {
+    // list of lifetimes that will be checked if they are late bound
+    lifetimes: HashSet<ID<LifetimeParameter>>,
+    current_function_id: GlobalID,
+}
+
+impl AllLifetimeParameters {
+    // if the lifetime appears in the where clause, it is not late bound
+    fn exclude_late_bound(&mut self, predicate: &Predicate<Default>) {
+        match predicate {
+            Predicate::TraitTypeCompatible(compatible) => {
+                self.exclude_late_bound_in_generic_arguments(
+                    &compatible.lhs.member_generic_arguments,
+                );
+                self.exclude_late_bound_in_generic_arguments(
+                    &compatible.lhs.parent_generic_arguments,
+                );
+
+                self.exclude_late_bound_in_type(&compatible.rhs);
+            }
+            Predicate::ConstantType(constant_type) => {
+                self.exclude_late_bound_in_type(&constant_type.0);
+            }
+            Predicate::LifetimeOutlives(outlives) => {
+                self.exclude_late_bound_in_lifetime(&outlives.bound);
+                self.exclude_late_bound_in_lifetime(&outlives.operand);
+            }
+            Predicate::TypeOutlives(outlives) => {
+                self.exclude_late_bound_in_lifetime(&outlives.bound);
+                self.exclude_late_bound_in_type(&outlives.operand);
+            }
+            Predicate::TupleType(tuple) => {
+                self.exclude_late_bound_in_type(&tuple.0);
+            }
+            Predicate::PositiveTrait(positive) => {
+                self.exclude_late_bound_in_generic_arguments(
+                    &positive.generic_arguments,
+                );
+            }
+            Predicate::NegativeTrait(negative) => {
+                self.exclude_late_bound_in_generic_arguments(
+                    &negative.generic_arguments,
+                );
+            }
+            Predicate::PositiveMarker(positive) => {
+                self.exclude_late_bound_in_generic_arguments(
+                    &positive.generic_arguments,
+                );
+            }
+            Predicate::NegativeMarker(negative) => {
+                self.exclude_late_bound_in_generic_arguments(
+                    &negative.generic_arguments,
+                );
+            }
+        }
+    }
+
+    fn exclude_late_bound_in_lifetime(&mut self, lifetime: &Lifetime<Default>) {
+        if let Lifetime::Parameter(lifetime) = lifetime {
+            if lifetime.parent == self.current_function_id {
+                self.lifetimes.remove(&lifetime.id);
+            }
+        }
+    }
+
+    fn exclude_late_bound_in_type(&mut self, ty: &Type<Default>) {
+        for lt in RecursiveIterator::new(ty)
+            .filter_map(|x| x.0.into_lifetime().ok())
+            .filter_map(|x| x.as_parameter())
+            .filter_map(|x| {
+                (x.parent == self.current_function_id).then_some(x.id)
+            })
+        {
+            self.lifetimes.remove(&lt);
+        }
+    }
+
+    fn exclude_late_bound_in_generic_arguments(
+        &mut self,
+        generic_arguments: &GenericArguments<Default>,
+    ) {
+        for lt in generic_arguments
+            .lifetimes
+            .iter()
+            .filter_map(|x| x.as_parameter())
+            .filter_map(|x| {
+                (x.parent == self.current_function_id).then_some(x.id)
+            })
+        {
+            self.lifetimes.remove(&lt);
+        }
+
+        for lt in generic_arguments
+            .types
+            .iter()
+            .flat_map(|x| {
+                RecursiveIterator::new(x)
+                    .filter_map(|x| x.0.into_lifetime().ok())
+            })
+            .filter_map(|x| x.as_parameter())
+            .filter_map(|x| {
+                (x.parent == self.current_function_id).then_some(x.id)
+            })
+        {
+            self.lifetimes.remove(&lt);
+        }
+
+        // Constant should not have lifetime parameters (at most 'static).
+    }
 }
 
 impl query::Builder<Intermediate> for Builder {
@@ -266,38 +381,62 @@ impl query::Builder<Intermediate> for Builder {
             }
         }
 
-        let (environment, _) = Environment::new(active_premise, table);
+        let function_signature = {
+            let (environment, _) = Environment::new(active_premise, table);
+
+            let mut parameter_arena = Arena::default();
+            let mut parameter_orders = Vec::new();
+
+            for (r#type, span) in parameters {
+                parameter_orders.push(parameter_arena.insert(Parameter {
+                    r#type:
+                        environment.simplify_and_check_lifetime_constraints(
+                            &r#type, &span, handler,
+                        ),
+                    span: Some(span),
+                }));
+            }
+
+            FunctionSignature {
+                parameters: parameter_arena,
+                parameter_order: parameter_orders,
+                return_type: return_type.map_or_else(
+                    || Type::Tuple(Tuple { elements: Vec::new() }),
+                    |x| {
+                        environment.simplify_and_check_lifetime_constraints(
+                            &x.0, &x.1, handler,
+                        )
+                    },
+                ),
+            }
+        };
+
+        let late_bound = 'out: {
+            let (Some(generic_params), Some(where_clause)) = (
+                table.query::<GenericParameters>(global_id),
+                table.query::<WhereClause>(global_id),
+            ) else {
+                break 'out LateBound::default();
+            };
+
+            let mut all_lifetime_parameters = AllLifetimeParameters {
+                lifetimes: generic_params.lifetimes().ids().collect(),
+                current_function_id: global_id,
+            };
+
+            for predicate in &where_clause.predicates {
+                all_lifetime_parameters
+                    .exclude_late_bound(&predicate.predicate);
+            }
+
+            LateBound(all_lifetime_parameters.lifetimes)
+        };
 
         Some(Arc::new(Intermediate {
-            function_signature: Arc::new({
-                let mut parameter_arena = Arena::default();
-                let mut parameter_orders = Vec::new();
-
-                for (r#type, span) in parameters {
-                    parameter_orders.push(parameter_arena.insert(Parameter {
-                        r#type:
-                            environment.simplify_and_check_lifetime_constraints(
-                                &r#type, &span, handler,
-                            ),
-                        span: Some(span),
-                    }));
-                }
-
-                FunctionSignature {
-                    parameters: parameter_arena,
-                    parameter_order: parameter_orders,
-                    return_type: return_type.map_or_else(
-                        || Type::Tuple(Tuple { elements: Vec::new() }),
-                        |x| {
-                            environment.simplify_and_check_lifetime_constraints(
-                                &x.0, &x.1, handler,
-                            )
-                        },
-                    ),
-                }
-            }),
+            function_signature: Arc::new(function_signature),
             implied_predicates: Arc::new(implied_predicates),
             ellided_lifetimes: Arc::new(elided_lifetimes),
+            late_bound: Arc::new(late_bound),
         }))
     }
 }
@@ -383,6 +522,28 @@ impl query::Builder<ImpliedPredicates> for Builder {
                 })
             },
             |x| x.implied_predicates.clone(),
+        ))
+    }
+}
+
+impl query::Builder<LateBound> for Builder {
+    fn build(
+        &self,
+        global_id: GlobalID,
+        table: &Table,
+        _: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Option<Arc<LateBound>> {
+        let symbol_kind = *table.get::<SymbolKind>(global_id);
+        if !symbol_kind.has_function_signature() {
+            return None;
+        }
+
+        let _scope =
+            self.start_building(table, global_id, LateBound::component_name());
+
+        Some(table.query::<Intermediate>(global_id).map_or_else(
+            || Arc::new(LateBound::default()),
+            |x| x.late_bound.clone(),
         ))
     }
 }

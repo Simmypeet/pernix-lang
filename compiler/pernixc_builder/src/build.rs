@@ -3,7 +3,8 @@ use std::sync::Arc;
 use pernixc_component::{
     fields::Fields, function_signature::FunctionSignature,
     implementation::Implementation, implied_predicates::ImpliedPredicates,
-    type_alias::TypeAlias, variance_map::VarianceMap, variant::Variant,
+    late_bound::LateBound, type_alias::TypeAlias, variance_map::VarianceMap,
+    variant::Variant,
 };
 use pernixc_table::{
     component::{Derived, SymbolKind},
@@ -154,6 +155,10 @@ pub fn build(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
     ));
+    table.set_builder_overwrite::<LateBound, _>(Builder::new(
+        on_start_building_component.clone(),
+        on_finish_building_component.clone(),
+    ));
     table.set_builder_overwrite::<Variant, _>(Builder::new(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
@@ -205,6 +210,7 @@ pub fn build(
             build_component::<ElidedLifetimes>(table, x);
             build_component::<ImpliedPredicates>(table, x);
             build_component::<FunctionSignature>(table, x);
+            build_component::<LateBound>(table, x);
         }
 
         if symbol_kind == SymbolKind::Variant {

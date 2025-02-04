@@ -1,6 +1,7 @@
 use pernixc_component::{
     function_signature::FunctionSignature,
     implied_predicates::{ImpliedPredicate, ImpliedPredicates},
+    late_bound::LateBound,
 };
 use pernixc_resolution::diagnostic::UnexpectedInference;
 use pernixc_term::{
@@ -94,4 +95,36 @@ fn elided_lifetime_not_allowed_in_return_type() {
 
     assert_eq!(error.generic_kind, GenericKind::Lifetime);
     assert_eq!(error.unexpected_span.str(), "&");
+}
+
+const LATE_BOUND_LIFETIMES: &str = r"
+public trait Trait['a, T] {}
+
+public function test['a, 'b, 'c, T](x: &'a int32, y: &'b T, z: &'a T): &'c int32 
+where
+    trait Trait['b, T],
+    'c: 'c 
+{
+    panic;
+}
+";
+
+#[test]
+fn late_bound_lifetimes() {
+    let (table, errors) = build_table(LATE_BOUND_LIFETIMES);
+
+    assert_eq!(errors.len(), 0);
+
+    let test_function_id =
+        table.get_by_qualified_name(["test", "test"]).unwrap();
+
+    let generic_parameters =
+        table.query::<GenericParameters>(test_function_id).unwrap();
+
+    let a = generic_parameters.lifetime_parameter_ids_by_name()["a"];
+
+    let late_bound = table.query::<LateBound>(test_function_id).unwrap();
+
+    assert!(late_bound.contains(&a));
+    assert_eq!(late_bound.len(), 1);
 }

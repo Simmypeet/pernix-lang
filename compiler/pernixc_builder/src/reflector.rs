@@ -3,7 +3,8 @@
 use pernixc_component::{
     fields::Fields, function_signature::FunctionSignature,
     implementation::Implementation, implied_predicates::ImpliedPredicates,
-    type_alias::TypeAlias, variance_map::VarianceMap, variant::Variant,
+    late_bound::LateBound, type_alias::TypeAlias, variance_map::VarianceMap,
+    variant::Variant,
 };
 use pernixc_storage::{
     serde::{MergerFn, Reflector},
@@ -61,6 +62,7 @@ pub enum ComponentTag {
     Variant,
     VarianceMap,
     ForallLifetimeMap,
+    LateBound,
 }
 
 /// Gets the reflector instance that can be used to serialize all the derived
@@ -113,6 +115,7 @@ pub fn get() -> Reflector<GlobalID, ArcTrait, ComponentTag, String> {
     assert!(reflector.register_type::<forall_lifetime::Map>(
         ComponentTag::ForallLifetimeMap
     ));
+    assert!(reflector.register_type::<LateBound>(ComponentTag::LateBound));
 
     reflector
 }
