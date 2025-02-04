@@ -18,6 +18,8 @@ members = [
     "compiler/pernixc_builder",
     "compiler/pernixc_driver",
     "compiler/pernixc",
+    "compiler/pernixc_ir",
+    "compiler/pernixc_transitive_closure",
     "lsp/pernix_server",
 ]
 

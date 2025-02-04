@@ -413,5 +413,19 @@ impl<T: Term> Query for Simplify<T> {
     }
 }
 
+impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
+    /// Shorthand for querying the [`Simplify`].
+    ///
+    /// # Errors
+    ///
+    /// See [`AbruptError`] for more information.
+    pub fn simplify<T: Term<Model = M>>(
+        &self,
+        term: T,
+    ) -> Result<Arc<Succeeded<T, M>>, AbruptError> {
+        Ok(self.query(&Simplify(term))?.unwrap())
+    }
+}
+
 #[cfg(test)]
 mod test;

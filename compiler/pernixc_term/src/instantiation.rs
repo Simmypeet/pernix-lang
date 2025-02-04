@@ -7,6 +7,7 @@ use std::{
 
 use pernixc_arena::ID;
 use pernixc_table::{GlobalID, MemberID};
+use serde::{Deserialize, Serialize};
 
 use super::{
     sub_term::TermLocation,
@@ -25,7 +26,18 @@ use crate::{
 };
 
 /// Represents an instantiation of generic parameters.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
 #[allow(missing_docs)]
 pub struct Instantiation<M: Model> {
     pub lifetimes: BTreeMap<Lifetime<M>, Lifetime<M>>,
