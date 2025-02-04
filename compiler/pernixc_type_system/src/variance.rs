@@ -223,6 +223,30 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
                     }
 
                     (
+                        location
+                        @ r#type::SubTypeLocation::FunctionSignature(_),
+                        tuple @ Type::FunctionSignature(_),
+                    ) => {
+                        use r#type::SubFunctionSignatureLocation::{
+                            Parameter, ReturnType,
+                        };
+
+                        let current_variance =
+                            match location.as_function_signature().unwrap() {
+                                Parameter(_) => Variance::Contravariant,
+                                ReturnType => Variance::Covariant,
+                            };
+
+                        let sub_term = location.get_sub_term(tuple).unwrap();
+
+                        self.get_variance_of(
+                            &sub_term,
+                            parent_variance.xfrom(current_variance),
+                            locations,
+                        )
+                    }
+
+                    (
                         location @ r#type::SubTypeLocation::Tuple(_),
                         tuple @ Type::Tuple(_),
                     ) => {

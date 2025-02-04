@@ -194,6 +194,26 @@ impl Ext for Table {
                 Ok(current_min)
             }
 
+            Type::FunctionSignature(function_signature) => {
+                let mut current_min = GlobalAccessibility::Public;
+
+                for parameter in &function_signature.parameters {
+                    current_min = self.merge_accessibility_down(
+                        current_min,
+                        self.get_type_accessibility(parameter)?,
+                    )?;
+                }
+
+                current_min = self.merge_accessibility_down(
+                    current_min,
+                    self.get_type_accessibility(
+                        &function_signature.return_type,
+                    )?,
+                )?;
+
+                Ok(current_min)
+            }
+
             Type::TraitMember(member_symbol) => {
                 let symbol_accessibility = match self
                     .get_accessibility(member_symbol.id)

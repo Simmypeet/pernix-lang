@@ -12,7 +12,7 @@ use crate::{
     constant::{self, Constant},
     generic_arguments::GenericArguments,
     lifetime::Lifetime,
-    r#type::{self, Type},
+    r#type::{self, SubFunctionSignatureLocation, Type},
     sub_term::{
         SubMemberSymbolLocation, SubSymbolLocation, SubTraitMemberLocation,
         SubTupleLocation,
@@ -543,6 +543,32 @@ macro_rules! implements_type {
                             })
                         ),
             ),
+
+            Self::FunctionSignature(term) => {
+                for (idx, parameter) in (& $($ref)? term.parameters).into_iter().enumerate() {
+                    if !$visitor.$visit_type(
+                        parameter,
+                        SubTypeLocation::FromType(
+                            r#type::SubTypeLocation::FunctionSignature(
+                                SubFunctionSignatureLocation::Parameter(idx)
+                            )
+                        )
+                    ) {
+                        return Ok(false);
+                    }
+                }
+
+                Ok(
+                    $visitor.$visit_type(
+                        &$($ref)?*term.return_type,
+                        SubTypeLocation::FromType(
+                            r#type::SubTypeLocation::FunctionSignature(
+                                SubFunctionSignatureLocation::ReturnType
+                            )
+                        )
+                    )
+                )
+            },
         }
     };
 }

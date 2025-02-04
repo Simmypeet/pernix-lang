@@ -408,6 +408,7 @@ impl<M: Model> Term for Type<M> {
             Self::Primitive(_) => Satisfiability::Satisfied,
 
             Self::MemberSymbol(_)
+            | Self::FunctionSignature(_)
             | Self::Pointer(_)
             | Self::Symbol(_)
             | Self::Reference(_)
@@ -505,6 +506,7 @@ impl<M: Model> Term for Type<M> {
             }
 
             Self::MemberSymbol(_)
+            | Self::FunctionSignature(_)
             | Self::Symbol(_)
             | Self::Pointer(_)
             | Self::Reference(_)

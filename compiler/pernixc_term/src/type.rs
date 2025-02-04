@@ -10,6 +10,7 @@ use strum_macros::EnumIter;
 
 use crate::{
     constant::Constant,
+    generic_arguments::GenericArguments,
     generic_parameter::{GenericParameters, TypeParameterID},
     lifetime::Lifetime,
     matching::{self, Match, Matching},
@@ -155,10 +156,70 @@ pub struct Phantom<M: Model>(pub Box<Type<M>>);
 )]
 pub struct TraitMember<M: Model>(pub MemberSymbol<M>);
 
-impl<M: Model> pernixc_table::Display for TraitMember<M> {
+impl<M: Model> pernixc_table::Display for TraitMember<M>
+where
+    GenericArguments<M>: pernixc_table::Display,
+{
     fn fmt(&self, table: &Table, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", DisplayObject { display: self, table })
+        write!(f, "{}", DisplayObject { display: &self.0, table })
     }
+}
+
+/// Represents a function signature object. Can be used to represent a function
+/// pointer.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+pub struct FunctionSignature<M: Model> {
+    /// The list of function parameters
+    pub parameters: Vec<Type<M>>,
+
+    /// The return type of the function
+    pub return_type: Box<Type<M>>,
+}
+
+impl<M: Model> pernixc_table::Display for FunctionSignature<M>
+where
+    M::TypeInference: pernixc_table::Display,
+    Constant<M>: pernixc_table::Display,
+    Lifetime<M>: pernixc_table::Display,
+{
+    fn fmt(&self, table: &Table, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "function(")?;
+
+        for (i, parameter) in self.parameters.iter().enumerate() {
+            write!(f, "{}", DisplayObject { table, display: parameter })?;
+            if i != self.parameters.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+
+        write!(f, "): {}", DisplayObject {
+            table,
+            display: self.return_type.as_ref()
+        })
+    }
+}
+
+/// A location pointing to either a parameter or the return type of a function
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubFunctionSignatureLocation {
+    /// Points to a parameter at the given index in the function signature
+    Parameter(usize),
+
+    /// Points to the return type of the function signature
+    ReturnType,
 }
 
 /// Represents a type term.
@@ -198,6 +259,8 @@ pub enum Type<M: Model> {
     MemberSymbol(MemberSymbol<M>),
     #[from]
     TraitMember(TraitMember<M>),
+    #[from]
+    FunctionSignature(FunctionSignature<M>),
     #[from]
     Error(Error),
 }
@@ -256,6 +319,19 @@ impl<M: Model> ModelOf for Type<M> {
             Type::TraitMember(trait_member) => Self::TraitMember(TraitMember(
                 MemberSymbol::from_other_model(trait_member.0),
             )),
+            Type::FunctionSignature(function_signature) => {
+                Self::FunctionSignature(FunctionSignature {
+                    parameters: function_signature
+                        .parameters
+                        .into_iter()
+                        .map(Self::from_other_model)
+                        .collect(),
+
+                    return_type: Box::new(Self::from_other_model(
+                        *function_signature.return_type,
+                    )),
+                })
+            }
             Type::Error(Error) => Self::Error(Error),
         }
     }
@@ -306,6 +382,19 @@ impl<M: Model> ModelOf for Type<M> {
             Type::TraitMember(trait_member) => Self::TraitMember(TraitMember(
                 MemberSymbol::try_from_other_model(trait_member.0)?,
             )),
+            Type::FunctionSignature(function_signature) => {
+                Self::FunctionSignature(FunctionSignature {
+                    parameters: function_signature
+                        .parameters
+                        .into_iter()
+                        .map(Self::try_from_other_model)
+                        .collect::<Result<_, _>>()?,
+
+                    return_type: Box::new(Self::try_from_other_model(
+                        *function_signature.return_type,
+                    )?),
+                })
+            }
             Type::Error(Error) => Self::Error(Error),
         })
     }
@@ -494,6 +583,10 @@ pub enum SubTypeLocation {
     /// The type argument in a [`Type::TraitMember`] type.
     #[from]
     TraitMember(SubTraitMemberLocation),
+
+    /// The return type or a parameter of a function signature.
+    #[from]
+    FunctionSignature(SubFunctionSignatureLocation),
 }
 
 impl From<SubTypeLocation> for TermLocation {
@@ -541,6 +634,19 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
                     .ok_or(AssignSubTermError::InvalidLocation)?
             }
 
+            (
+                Self::FunctionSignature(location),
+                Type::FunctionSignature(function_signature),
+            ) => match location {
+                SubFunctionSignatureLocation::Parameter(idx) => {
+                    function_signature.parameters.get_mut(idx)
+                }
+                SubFunctionSignatureLocation::ReturnType => {
+                    Some(&mut *function_signature.return_type)
+                }
+            }
+            .ok_or(AssignSubTermError::InvalidLocation)?,
+
             _ => return Err(AssignSubTermError::InvalidLocation),
         };
 
@@ -587,6 +693,18 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
                 trait_member.0.get_term(location.0).cloned()
             }
 
+            (
+                Self::FunctionSignature(location),
+                Type::FunctionSignature(signature),
+            ) => match location {
+                SubFunctionSignatureLocation::Parameter(idx) => {
+                    signature.parameters.get(idx).cloned()
+                }
+                SubFunctionSignatureLocation::ReturnType => {
+                    Some((*signature.return_type).clone())
+                }
+            },
+
             _ => None,
         }
     }
@@ -622,6 +740,18 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
             (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
                 trait_member.0.get_term(location.0)
             }
+
+            (
+                Self::FunctionSignature(location),
+                Type::FunctionSignature(signature),
+            ) => match location {
+                SubFunctionSignatureLocation::Parameter(idx) => {
+                    signature.parameters.get(idx)
+                }
+                SubFunctionSignatureLocation::ReturnType => {
+                    Some(&*signature.return_type)
+                }
+            },
 
             _ => None,
         }
@@ -660,6 +790,18 @@ impl<M: Model> Location<Type<M>, Type<M>> for SubTypeLocation {
             }
 
             (Self::Phantom, Type::Phantom(phantom)) => Some(&mut *phantom.0),
+
+            (
+                Self::FunctionSignature(location),
+                Type::FunctionSignature(signature),
+            ) => match location {
+                SubFunctionSignatureLocation::Parameter(idx) => {
+                    signature.parameters.get_mut(idx)
+                }
+                SubFunctionSignatureLocation::ReturnType => {
+                    Some(&mut *signature.return_type)
+                }
+            },
 
             _ => None,
         }
@@ -953,6 +1095,42 @@ impl<M: Model> Match for Type<M> {
                 })
             }
 
+            (Self::FunctionSignature(lhs), Self::FunctionSignature(rhs)) => {
+                if lhs.parameters.len() != rhs.parameters.len() {
+                    return None;
+                }
+
+                let mut substructural = matching::Substructural::default();
+
+                for (i, (lhs, rhs)) in
+                    lhs.parameters.iter().zip(rhs.parameters.iter()).enumerate()
+                {
+                    substructural.types.push(Matching {
+                        lhs: lhs.clone(),
+                        rhs: rhs.clone(),
+                        lhs_location: SubTypeLocation::FunctionSignature(
+                            SubFunctionSignatureLocation::Parameter(i),
+                        ),
+                        rhs_location: SubTypeLocation::FunctionSignature(
+                            SubFunctionSignatureLocation::Parameter(i),
+                        ),
+                    });
+                }
+
+                substructural.types.push(Matching {
+                    lhs: (*lhs.return_type).clone(),
+                    rhs: (*rhs.return_type).clone(),
+                    lhs_location: SubTypeLocation::FunctionSignature(
+                        SubFunctionSignatureLocation::ReturnType,
+                    ),
+                    rhs_location: SubTypeLocation::FunctionSignature(
+                        SubFunctionSignatureLocation::ReturnType,
+                    ),
+                });
+
+                Some(substructural)
+            }
+
             _ => None,
         }
     }
@@ -1066,6 +1244,12 @@ where
             }
             Self::MemberSymbol(member_symbol) => {
                 write!(f, "{}", DisplayObject { table, display: member_symbol })
+            }
+            Self::FunctionSignature(function_signature) => {
+                write!(f, "{}", DisplayObject {
+                    table,
+                    display: function_signature
+                })
             }
             Self::Error(_) => {
                 write!(f, "{{error}}")

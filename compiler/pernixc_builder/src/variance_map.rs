@@ -218,6 +218,31 @@ impl Context {
                 }
             }
 
+            Type::FunctionSignature(function_signature) => {
+                for parameter in &function_signature.parameters {
+                    let new_variance = current_variance.clone().xform(
+                        VarianceVariable::Constant(Variance::Contravariant),
+                    );
+
+                    self.collect_constraints_from_type(
+                        target_id,
+                        parameter,
+                        new_variance,
+                        table,
+                    );
+                }
+
+                let new_variance = current_variance
+                    .xform(VarianceVariable::Constant(Variance::Covariant));
+
+                self.collect_constraints_from_type(
+                    target_id,
+                    &function_signature.return_type,
+                    new_variance,
+                    table,
+                );
+            }
+
             Type::Inference(infer) => match *infer {},
 
             Type::Symbol(symbol) => {

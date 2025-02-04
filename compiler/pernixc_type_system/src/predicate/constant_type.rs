@@ -109,6 +109,7 @@ impl<M: Model> Query for ConstantType<M> {
     type Result = Succeeded<Satisfied, M>;
     type Error = AbruptError;
 
+    #[allow(clippy::too_many_lines)]
     fn query(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
@@ -135,6 +136,7 @@ impl<M: Model> Query for ConstantType<M> {
             },
 
             Type::Error(_)
+            | Type::FunctionSignature(_)
             | Type::TraitMember(_)
             | Type::Parameter(_)
             | Type::Inference(_) => Satisfiability::Unsatisfied,

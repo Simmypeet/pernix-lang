@@ -4,7 +4,9 @@ use proptest::{
     strategy::{BoxedStrategy, Just, Strategy},
 };
 
-use super::{Array, Pointer, Primitive, Qualifier, Reference, Type};
+use super::{
+    Array, FunctionSignature, Pointer, Primitive, Qualifier, Reference, Type,
+};
 use crate::{
     constant::Constant,
     generic_parameter::TypeParameterID,
@@ -138,9 +140,29 @@ impl Arbitrary for Type<Default> {
                 1 => Pointer::arbitrary_with(Some(inner.clone())).prop_map(Self::Pointer),
                 2 => Reference::arbitrary_with((Some(lt_strat), Some(inner.clone()))).prop_map(Self::Reference),
                 2 => Tuple::arbitrary_with(Some(inner.clone())).prop_map(Self::Tuple),
-                2 => Array::arbitrary_with((Some(inner), Some(const_strat))).prop_map(Self::Array),
+                2 => Array::arbitrary_with((Some(inner.clone()), Some(const_strat))).prop_map(Self::Array),
+                2 => FunctionSignature::arbitrary_with((Some(inner),)).prop_map(Self::FunctionSignature),
             ]
         })
+            .boxed()
+    }
+}
+
+impl Arbitrary for FunctionSignature<Default> {
+    type Strategy = BoxedStrategy<Self>;
+    type Parameters = (Option<BoxedStrategy<Type<Default>>>,);
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let ty = args.0.unwrap_or_else(Type::arbitrary);
+
+        (
+            proptest::collection::vec(ty, 0..=4),
+            Type::arbitrary().prop_map(Box::new),
+        )
+            .prop_map(|(parameters, return_type)| Self {
+                parameters,
+                return_type,
+            })
             .boxed()
     }
 }

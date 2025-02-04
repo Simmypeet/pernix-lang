@@ -987,6 +987,7 @@ impl Checker<'_> {
             | Type::Symbol(_)
             | Type::TraitMember(_)
             | Type::MemberSymbol(_)
+            | Type::FunctionSignature(_)
             | Type::Inference(_) => { /* no additional check */ }
 
             Type::Reference(reference) => {

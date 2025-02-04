@@ -113,6 +113,13 @@ impl UnusedGenericParameters {
             Type::Phantom(phantom) => {
                 self.check_in_type(&phantom.0);
             }
+            Type::FunctionSignature(signature) => {
+                for ty in &signature.parameters {
+                    self.check_in_type(ty);
+                }
+
+                self.check_in_type(&signature.return_type);
+            }
 
             Type::TraitMember(_)
             | Type::Inference(_)
