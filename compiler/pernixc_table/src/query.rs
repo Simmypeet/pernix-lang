@@ -3,78 +3,20 @@
 use std::{
     any::{Any, TypeId},
     collections::{hash_map::Entry, HashMap},
-    fmt::Debug,
+    fmt::{self, Debug},
     sync::Arc,
     thread::ThreadId,
 };
 
 use parking_lot::Condvar;
-use pernixc_diagnostic::Report;
 use pernixc_handler::Handler;
-use pernixc_log::Severity;
 
 use super::{GlobalID, Table};
-use crate::{
-    component::{Derived, LocationSpan},
-    diagnostic::Diagnostic,
-};
+use crate::{component::Derived, diagnostic::Diagnostic};
 
-/// A cyclic dependency between symbols detected during the query.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[error(
-    "a cylic dependency detected while building a component for the \
-     particular symbol"
-)]
-pub struct CyclicDependency {
-    /// The stack of records that caused the cyclic dependency.
-    pub records_stack: Vec<Record>,
-}
+pub mod diagnostic;
 
-impl Report<&Table> for CyclicDependency {
-    fn report(&self, parameter: &Table) -> pernixc_diagnostic::Diagnostic {
-        pernixc_diagnostic::Diagnostic {
-            span: parameter
-                .get::<LocationSpan>(self.records_stack[0].global_id)
-                .span
-                .clone()
-                .unwrap(),
-            message: format!(
-                "cyclic dependency while building {}.",
-                self.records_stack
-                    .iter()
-                    .map(|x| format!(
-                        "{} for `{}`",
-                        x.name,
-                        parameter.get_qualified_name(x.global_id)
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(" -> ")
-            ),
-            severity: Severity::Error,
-            help_message: Some(format!(
-                "required by `{}`",
-                self.records_stack.first().unwrap().name
-            )),
-            related: self
-                .records_stack
-                .iter()
-                .skip(1)
-                .map(|x| pernixc_diagnostic::Related {
-                    span: parameter
-                        .get::<LocationSpan>(x.global_id)
-                        .span
-                        .clone()
-                        .unwrap(),
-                    message: format!("required by `{}`", x.name),
-                })
-                .collect::<Vec<_>>(),
-        }
-    }
-}
-
-/// A record to the [`Derived::compute`] call. This is primarily used to
+/// A record to the [`Table::query`] call. This is primarily used to
 /// detect cyclic dependencies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Record {
@@ -252,6 +194,28 @@ pub trait Handle {
     ) -> Option<Self::Ok>;
 }
 
+/**
+A cyclic dependency detected while building a component for the particular
+symbol. The error diagnostic for the user has been reported to the handler.
+ */
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    thiserror::Error,
+    displaydoc::Display,
+)]
+pub struct CyclicDependencyError;
+
+impl From<CyclicDependencyError> for fmt::Error {
+    fn from(CyclicDependencyError: CyclicDependencyError) -> Self { Self }
+}
+
 impl Table {
     /// Queries for the component of type `T` for the given `global_id`.
     ///
@@ -265,11 +229,11 @@ impl Table {
     pub fn query<T: Derived + Any + Send + Sync>(
         &self,
         global_id: GlobalID,
-    ) -> Option<Arc<T>> {
+    ) -> Result<Arc<T>, CyclicDependencyError> {
         // if the component is already computed, return it
         let mut context = self.query_context.lock();
         if let Some(result) = self.storage.get_cloned::<T>(global_id) {
-            return Some(result);
+            return Ok(result);
         }
 
         let (Some(builder), Some(build_fn)) = (
@@ -302,11 +266,11 @@ impl Table {
 
             loop {
                 if stack.last().unwrap() == &called_from {
-                    self.handler.receive(Box::new(CyclicDependency {
-                        records_stack: stack,
-                    }));
+                    self.handler.receive(Box::new(
+                        diagnostic::CyclicDependency { records_stack: stack },
+                    ));
 
-                    return None;
+                    return Err(CyclicDependencyError);
                 }
 
                 // follow the dependency chain
@@ -386,7 +350,7 @@ impl Table {
         }
 
         // return the component
-        Some(self.storage.get_cloned::<T>(global_id).unwrap_or_else(|| {
+        Ok(self.storage.get_cloned::<T>(global_id).unwrap_or_else(|| {
             panic!(
                 "the component `{}` doesn't belong to the symbol \
                  `{global_id:?}`",

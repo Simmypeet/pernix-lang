@@ -159,7 +159,7 @@ fn create_trait_member_predicates(
         extra_namespace: Some(extra_namespace),
     };
 
-    let Some(resolution) = table.resolve_qualified_identifier(
+    let Ok(resolution) = table.resolve_qualified_identifier(
         syntax_tree.qualified_identifier(),
         global_id,
         config.reborrow(),
@@ -236,7 +236,7 @@ fn create_trait_predicates(
         let extra_namespace =
             with_forall_lifetime.as_ref().unwrap_or(extra_namespace);
 
-        let Some(resolution) = table.resolve_qualified_identifier(
+        let Ok(resolution) = table.resolve_qualified_identifier(
             trait_predicate.qualified_identifier(),
             global_id,
             Config {
@@ -437,7 +437,7 @@ fn create_marker_predicate(
         let extra_namespace =
             with_forall_lifetime.as_ref().unwrap_or(extra_namespace);
 
-        let Some(resolution) = table.resolve_qualified_identifier(
+        let Ok(resolution) = table.resolve_qualified_identifier(
             marker_bound.qualified_identifier(),
             global_id,
             Config {

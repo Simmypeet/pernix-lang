@@ -1,7 +1,7 @@
 //! Contains the function [`Environment::get_variance_of()`]
 
 use pernixc_component::variance_map::VarianceMap;
-use pernixc_table::component::SymbolKind;
+use pernixc_table::{component::SymbolKind, query::CyclicDependencyError};
 use pernixc_term::{
     generic_parameter::GenericParameters,
     r#type::{self, Type},
@@ -22,20 +22,25 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
     ///
     /// [`None`] if encounters a cyclic dependency when querying the variance
     /// map from the table.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CyclicDependencyError`] if encounters a cyclic dependency when
+    /// querying the variance map from the table.
     #[allow(clippy::too_many_lines)]
     pub fn get_variance_of(
         &self,
         ty: &Type<M>,
         parent_variance: Variance,
         mut locations: impl Iterator<Item = TermLocation>,
-    ) -> Option<Variance> {
+    ) -> Result<Variance, CyclicDependencyError> {
         let Some(location) = locations.next() else {
-            return Some(parent_variance);
+            return Ok(parent_variance);
         };
 
         // early return if the parent variance is invariant
         if parent_variance == Variance::Invariant {
-            return Some(Variance::Invariant);
+            return Ok(Variance::Invariant);
         }
 
         match location {
@@ -61,22 +66,16 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
                                 .get(location.0)
                                 .unwrap();
 
-                            Some(
-                                parent_variance.xfrom(
-                                    self.table()
-                                        .query::<VarianceMap>(symbol.id)?
-                                        .variances_by_lifetime_ids
-                                        .get(&id)
-                                        .copied()
-                                        .unwrap(),
-                                ),
-                            )
-                        } else if kind == SymbolKind::Function {
-                            Some(parent_variance.xfrom(Variance::Invariant))
+                            Ok(parent_variance.xfrom(
+                                self.table()
+                                    .query::<VarianceMap>(symbol.id)?
+                                    .variances_by_lifetime_ids
+                                    .get(&id)
+                                    .copied()
+                                    .unwrap(),
+                            ))
                         } else {
-                            panic!(
-                                "expected adt or function but found {kind:?}",
-                            );
+                            Ok(parent_variance.xfrom(Variance::Invariant))
                         }
                     }
 
@@ -92,7 +91,7 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
                         // there's no sub-term in the lifetime
                         assert!(locations.next().is_none());
 
-                        Some(parent_variance.xfrom(Variance::Invariant))
+                        Ok(parent_variance.xfrom(Variance::Invariant))
                     }
 
                     // lifetime in the reference
@@ -103,7 +102,7 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
                         // there's no sub-term in the lifetime
                         assert!(locations.next().is_none());
 
-                        Some(parent_variance.xfrom(Variance::Covariant))
+                        Ok(parent_variance.xfrom(Variance::Covariant))
                     }
 
                     _ => panic!("invalid location; found {location:?} {ty:?}"),
@@ -149,7 +148,7 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
                                 locations,
                             )
                         } else if kind == SymbolKind::Function {
-                            Some(parent_variance.xfrom(Variance::Invariant))
+                            Ok(parent_variance.xfrom(Variance::Invariant))
                         } else {
                             panic!(
                                 "expected adt or function but found {kind:?}",

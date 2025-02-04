@@ -11,7 +11,7 @@ use pernixc_table::{
         Implements, SymbolKind,
     },
     diagnostic::Diagnostic,
-    query::{self},
+    query::{self, CyclicDependencyError},
     GlobalID, Table,
 };
 use pernixc_term::{
@@ -69,10 +69,10 @@ impl query::Builder<Implementation> for Builder {
                 },
                 handler,
             )
-            .unwrap_or_else(|| {
+            .unwrap_or_else(|CyclicDependencyError| {
                 // try to create generic arguments for the implemented symbol
                 // with every argument being an error
-                let Some(implemented_generic_parameters) =
+                let Ok(implemented_generic_parameters) =
                     table.query::<GenericParameters>(implemented_id)
                 else {
                     return GenericArguments::default();

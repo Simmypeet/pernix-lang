@@ -59,11 +59,10 @@ pub use value::Value;
 mod representation {
     use getset::Getters;
     use pernixc_arena::{Arena, Key, ID};
-    use pernixc_table::Table;
+    use pernixc_table::{query::CyclicDependencyError, Table};
     use pernixc_term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, Model,
     };
-    use pernixc_type_system::AbruptError;
     use serde::{Deserialize, Serialize};
 
     use crate::{
@@ -103,7 +102,7 @@ mod representation {
         #[allow(clippy::missing_errors_doc)]
         pub fn transform_model<
             U: Model,
-            E: From<AbruptError>,
+            E: From<CyclicDependencyError>,
             T: Transform<Lifetime<M>, Target = U, Error = E>
                 + Transform<Type<M>, Target = U, Error = E>
                 + Transform<Constant<M>, Target = U, Error = E>,

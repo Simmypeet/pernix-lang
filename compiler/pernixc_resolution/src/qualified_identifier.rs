@@ -8,6 +8,7 @@ use pernixc_syntax::syntax_tree::{
 };
 use pernixc_table::{
     component::{Implements, Import, Member, SymbolKind},
+    query::CyclicDependencyError,
     resolution::diagnostic::{
         NoGenericArgumentsRequired, SymbolNotFound, ThisNotFound,
     },
@@ -109,6 +110,23 @@ pub enum Resolution<M: Model> {
     PositiveTraitImplementation(GlobalID),
 }
 
+/// An error returns by functions related to resolving a qualified identifier.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[allow(missing_docs)]
+pub enum Error {
+    #[error(
+        "encountered a fatal semantic error while resolving the qualified \
+         identifier; the user error diagnostics have been reported to the \
+         handler"
+    )]
+    FatalSemantic,
+
+    #[error(transparent)]
+    CyclicDependency(#[from] CyclicDependencyError),
+}
+
 impl<M: Model> Resolution<M> {
     /// Returns the ID of the resolved symbol.
     #[must_use]
@@ -195,7 +213,7 @@ pub(super) fn resolve_root<M: Model>(
     referring_site: GlobalID,
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Option<Resolution<M>> {
+) -> Result<Resolution<M>, Error> {
     let resolution = match root {
         QualifiedIdentifierRoot::Target(_) => {
             Resolution::Module(GlobalID::new(
@@ -222,7 +240,7 @@ pub(super) fn resolve_root<M: Model>(
                 handler.receive(Box::new(ThisNotFound {
                     span: this.span.clone(),
                 }));
-                return None;
+                return Err(Error::FatalSemantic);
             };
 
             match kind {
@@ -284,7 +302,7 @@ pub(super) fn resolve_root<M: Model>(
                         .clone(),
                 }));
 
-                return None;
+                return Err(Error::FatalSemantic);
             };
 
             let symbol_kind = *table.get::<SymbolKind>(id);
@@ -332,7 +350,7 @@ pub(super) fn resolve_root<M: Model>(
         );
     }
 
-    Some(resolution)
+    Ok(resolution)
 }
 
 pub(super) fn resolve<M: Model>(
@@ -341,7 +359,7 @@ pub(super) fn resolve<M: Model>(
     referring_site: GlobalID,
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Option<Resolution<M>> {
+) -> Result<Resolution<M>, Error> {
     // create the current root
     let mut latest_resolution = table.resolve_qualified_identifier_root(
         qualified_identifier.root(),
@@ -360,7 +378,7 @@ pub(super) fn resolve<M: Model>(
                 resolution_span: generic_identifier.identifier().span.clone(),
             }));
 
-            return None;
+            return Err(Error::FatalSemantic);
         };
 
         let symbol_kind = *table.get::<SymbolKind>(resolved_id);
@@ -406,5 +424,5 @@ pub(super) fn resolve<M: Model>(
         latest_resolution = next_resolution;
     }
 
-    Some(latest_resolution)
+    Ok(latest_resolution)
 }

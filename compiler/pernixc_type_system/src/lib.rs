@@ -3,6 +3,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
+use pernixc_table::query::CyclicDependencyError;
 use pernixc_term::{
     constant::Constant, lifetime::Lifetime, predicate::Outlives, r#type::Type,
     Model,
@@ -80,8 +81,10 @@ impl<M: Model> unification::Predicate<Constant<M>>
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
-#[error("exceeded the limit of the number of queries")]
-#[allow(missing_docs)]
+#[error(
+    "exceeded the limit of the number of queries; the error hasn't been \
+     reported to the user yet as it requires more context"
+)]
 pub struct OverflowError;
 
 /// A common abrupt error that aborts the query and returns the error.
@@ -102,10 +105,8 @@ pub enum AbruptError {
     #[error(transparent)]
     Overflow(#[from] OverflowError),
 
-    #[error(
-        "cyclic dependency occurred when querying a component to the table"
-    )]
-    CyclicDependency,
+    #[error(transparent)]
+    CyclicDependency(#[from] CyclicDependencyError),
 }
 
 /// A tag type signaling that the predicate/query is satisfied.

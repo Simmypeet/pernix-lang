@@ -1178,8 +1178,7 @@ where
                     f,
                     "{}",
                     table
-                        .query::<GenericParameters>(type_parameter.parent)
-                        .ok_or(fmt::Error)?
+                        .query::<GenericParameters>(type_parameter.parent)?
                         .types()
                         .get(type_parameter.id)
                         .ok_or(fmt::Error)?

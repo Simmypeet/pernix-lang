@@ -17,6 +17,7 @@ use pernixc_component::{
 use pernixc_source_file::Span;
 use pernixc_table::{
     component::{Parent, SymbolKind},
+    query::CyclicDependencyError,
     GlobalID, Table,
 };
 use pernixc_term::{
@@ -327,9 +328,8 @@ fn type_of_function_call_assignment<M: pernixc_term::Model>(
     function_call: &FunctionCall<M>,
     table: &Table,
 ) -> Result<Type<M>, AbruptError> {
-    let callable = table
-        .query::<FunctionSignature>(function_call.callable_id)
-        .ok_or(AbruptError::CyclicDependency)?;
+    let callable =
+        table.query::<FunctionSignature>(function_call.callable_id)?;
 
     let mut return_type = M::from_default_type(callable.return_type.clone());
 
@@ -789,7 +789,7 @@ impl<M: pernixc_term::Model> Register<M> {
     /// transformer.
     #[allow(clippy::too_many_lines, clippy::missing_errors_doc)]
     pub fn transform_model<
-        E: From<AbruptError>,
+        E: From<CyclicDependencyError>,
         U: pernixc_term::Model,
         T: Transform<Lifetime<M>, Target = U, Error = E>
             + Transform<Type<M>, Target = U, Error = E>
@@ -894,8 +894,7 @@ impl<M: pernixc_term::Model> Register<M> {
                             let generic_parameters = table
                                 .query::<GenericParameters>(
                                     function_call.callable_id,
-                                )
-                                .ok_or(AbruptError::CyclicDependency)?;
+                                )?;
 
                             let generic_arguments = function_call
                                 .instantiation
@@ -931,15 +930,14 @@ impl<M: pernixc_term::Model> Register<M> {
                                     .unwrap(),
                             );
 
-                            let trait_generic_params = table
-                                .query::<GenericParameters>(parent_trait)
-                                .ok_or(AbruptError::CyclicDependency)?;
+                            let trait_generic_params =
+                                table
+                                    .query::<GenericParameters>(parent_trait)?;
 
-                            let trait_function_generic_params = table
-                                .query::<GenericParameters>(
+                            let trait_function_generic_params =
+                                table.query::<GenericParameters>(
                                     function_call.callable_id,
-                                )
-                                .ok_or(AbruptError::CyclicDependency)?;
+                                )?;
 
                             let parent_generic_arguments = function_call
                                 .instantiation
@@ -983,8 +981,7 @@ impl<M: pernixc_term::Model> Register<M> {
                             let implementation = table
                                 .query::<Implementation>(
                                     parent_implementation_id,
-                                )
-                                .ok_or(AbruptError::CyclicDependency)?;
+                                )?;
 
                             let mut parent_generic_arguments =
                                 GenericArguments::from_other_model(
@@ -996,9 +993,8 @@ impl<M: pernixc_term::Model> Register<M> {
 
                             let function_generic_params = table
                                 .query::<GenericParameters>(
-                                    function_call.callable_id,
-                                )
-                                .ok_or(AbruptError::CyclicDependency)?;
+                                function_call.callable_id,
+                            )?;
 
                             let member_generic_arguments = function_call
                                 .instantiation

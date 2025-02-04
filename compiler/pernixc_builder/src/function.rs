@@ -17,7 +17,8 @@ use pernixc_table::{
         syntax_tree as syntax_tree_component, Derived, Parent, SymbolKind,
     },
     diagnostic::Diagnostic,
-    query, GlobalID, Table,
+    query::{self, CyclicDependencyError},
+    GlobalID, Table,
 };
 use pernixc_term::{
     elided_lifetimes::{ElidedLifetime, ElidedLifetimeID, ElidedLifetimes},
@@ -286,8 +287,7 @@ impl query::Builder<Intermediate> for Builder {
             ));
 
         'out: {
-            let Some(where_clause) = table.query::<WhereClause>(global_id)
-            else {
+            let Ok(where_clause) = table.query::<WhereClause>(global_id) else {
                 break 'out;
             };
 
@@ -306,7 +306,7 @@ impl query::Builder<Intermediate> for Builder {
             })
             .flat_map(|(x, span)| match x {
                 Type::Symbol(symbol) => {
-                    let Some(where_clause) =
+                    let Ok(where_clause) =
                         table.query::<WhereClause>(symbol.id)
                     else {
                         return Vec::new();
@@ -377,7 +377,8 @@ impl query::Builder<Intermediate> for Builder {
                     }));
                 }
 
-                Err(AbruptError::CyclicDependency) | Ok(Some(_)) => {}
+                Err(AbruptError::CyclicDependency(CyclicDependencyError))
+                | Ok(Some(_)) => {}
             }
         }
 
@@ -412,7 +413,7 @@ impl query::Builder<Intermediate> for Builder {
         };
 
         let late_bound = 'out: {
-            let (Some(generic_params), Some(where_clause)) = (
+            let (Ok(generic_params), Ok(where_clause)) = (
                 table.query::<GenericParameters>(global_id),
                 table.query::<WhereClause>(global_id),
             ) else {
@@ -460,7 +461,7 @@ impl query::Builder<FunctionSignature> for Builder {
         );
 
         Some(table.query::<Intermediate>(global_id).map_or_else(
-            || {
+            |CyclicDependencyError| {
                 Arc::new(FunctionSignature {
                     parameters: Arena::default(),
                     parameter_order: Vec::new(),
@@ -491,7 +492,9 @@ impl query::Builder<ElidedLifetimes> for Builder {
         );
 
         Some(table.query::<Intermediate>(global_id).map_or_else(
-            || Arc::new(ElidedLifetimes { elided_lifetimes: Arena::default() }),
+            |CyclicDependencyError| {
+                Arc::new(ElidedLifetimes { elided_lifetimes: Arena::default() })
+            },
             |x| x.ellided_lifetimes.clone(),
         ))
     }
@@ -516,7 +519,7 @@ impl query::Builder<ImpliedPredicates> for Builder {
         );
 
         Some(table.query::<Intermediate>(global_id).map_or_else(
-            || {
+            |CyclicDependencyError| {
                 Arc::new(ImpliedPredicates {
                     implied_predicates: HashSet::new(),
                 })
@@ -542,7 +545,7 @@ impl query::Builder<LateBound> for Builder {
             self.start_building(table, global_id, LateBound::component_name());
 
         Some(table.query::<Intermediate>(global_id).map_or_else(
-            || Arc::new(LateBound::default()),
+            |CyclicDependencyError| Arc::new(LateBound::default()),
             |x| x.late_bound.clone(),
         ))
     }

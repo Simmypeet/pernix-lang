@@ -7,7 +7,9 @@ use pernixc_source_file::Span;
 use pernixc_syntax::syntax_tree::{
     self, GenericIdentifier, QualifiedIdentifier, QualifiedIdentifierRoot,
 };
-use pernixc_table::{diagnostic::Diagnostic, GlobalID, Table};
+use pernixc_table::{
+    diagnostic::Diagnostic, query::CyclicDependencyError, GlobalID, Table,
+};
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
     lifetime::Lifetime, r#type::Type, Model,
@@ -167,25 +169,37 @@ impl<'lp, 'tp, 'cp, 'ob, 'ex, M: Model> Config<'lp, 'tp, 'cp, 'ob, 'ex, M> {
 pub trait Ext {
     /// Resolves for [`Resolution`] based on the given [`QualifiedIdentifier`]
     /// syntax tree.
+    /// 
+    /// # Errors
+    ///
+    /// See [`qualified_identifier::Error`] for more information.
     fn resolve_qualified_identifier<M: Model>(
         &self,
         qualified_identifier: &QualifiedIdentifier,
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Resolution<M>>;
+    ) -> Result<Resolution<M>, qualified_identifier::Error>;
 
     /// Resolves for [`Resolution`] based on the given
     /// [`QualifiedIdentifierRoot`] syntax tree.
+    ///
+    /// # Errors
+    ///
+    /// See [`qualified_identifier::Error`] for more information.
     fn resolve_qualified_identifier_root<M: Model>(
         &self,
         root: &QualifiedIdentifierRoot,
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Resolution<M>>;
+    ) -> Result<Resolution<M>, qualified_identifier::Error>;
 
     /// Resolves the generic arguments for the given symbol.
+    ///
+    /// # Errors
+    ///
+    /// See [`CyclicDependencyError`] for more information.
     fn resolve_generic_arguments_for<M: Model>(
         &self,
         symbol_id: GlobalID,
@@ -193,7 +207,7 @@ pub trait Ext {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<GenericArguments<M>>;
+    ) -> Result<GenericArguments<M>, CyclicDependencyError>;
 
     /// Resolves a [`GenericArguments`] from the given generic arguments syntax
     /// tree.
@@ -207,6 +221,10 @@ pub trait Ext {
 
     /// Verifies that the given `generic_arguments` have the right amount of
     /// arguments by supplying the default arguments if necessary.
+    ///
+    /// # Errors
+    ///
+    /// See [`CyclicDependencyError`] for more information.
     fn verify_generic_arguments_for<M: Model>(
         &self,
         generic_arguments: GenericArguments<M>,
@@ -214,7 +232,7 @@ pub trait Ext {
         generic_identifier_span: Span,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<GenericArguments<M>>;
+    ) -> Result<GenericArguments<M>, CyclicDependencyError>;
 
     /// Resolves for a [`Lifetime`] based on the given [`syntax_tree::Lifetime`]
     fn resolve_lifetime<M: Model>(
@@ -242,7 +260,7 @@ impl Ext for Table {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Resolution<M>> {
+    ) -> Result<Resolution<M>, qualified_identifier::Error> {
         qualified_identifier::resolve(
             self,
             qualified_identifier,
@@ -258,7 +276,7 @@ impl Ext for Table {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Resolution<M>> {
+    ) -> Result<Resolution<M>, qualified_identifier::Error> {
         qualified_identifier::resolve_root(
             self,
             root,
@@ -275,7 +293,7 @@ impl Ext for Table {
         referring_site: GlobalID,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<GenericArguments<M>> {
+    ) -> Result<GenericArguments<M>, CyclicDependencyError> {
         term::resolve_generic_arguments_for(
             self,
             symbol_id,
@@ -309,7 +327,7 @@ impl Ext for Table {
         generic_identifier_span: Span,
         config: Config<M>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<GenericArguments<M>> {
+    ) -> Result<GenericArguments<M>, CyclicDependencyError> {
         term::verify_generic_arguments_for(
             self,
             generic_arguments,

@@ -629,8 +629,7 @@ where
                     f,
                     "{}",
                     table
-                        .query::<GenericParameters>(parameter.parent)
-                        .ok_or(fmt::Error)?
+                        .query::<GenericParameters>(parameter.parent)?
                         .constants()
                         .get(parameter.id)
                         .ok_or(fmt::Error)?

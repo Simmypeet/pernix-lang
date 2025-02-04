@@ -10,7 +10,8 @@ use pernixc_component::implied_predicates::{
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
 use pernixc_table::{
-    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
+    component::SymbolKind, diagnostic::Diagnostic,
+    query::CyclicDependencyError, GlobalID, Table,
 };
 use pernixc_term::{
     predicate::{Outlives, Predicate},
@@ -78,7 +79,8 @@ where
                 result.result.clone()
             }
 
-            Err(AbruptError::CyclicDependency) | Ok(None) => ty.clone(),
+            Err(AbruptError::CyclicDependency(CyclicDependencyError))
+            | Ok(None) => ty.clone(),
 
             Err(AbruptError::Overflow(error)) => {
                 handler.receive(Box::new(TypeSystemOverflow::new(
@@ -103,7 +105,10 @@ where
             match constraint {
                 LifetimeConstraint::LifetimeOutlives(outlives) => {
                     match self.query(outlives) {
-                        Err(AbruptError::CyclicDependency) | Ok(Some(_)) => {}
+                        Err(AbruptError::CyclicDependency(
+                            CyclicDependencyError,
+                        ))
+                        | Ok(Some(_)) => {}
 
                         Ok(None) => {
                             handler.receive(Box::new(UnsatisfiedPredicate {
@@ -157,8 +162,7 @@ impl TableExt for Table {
             let kind = *self.get::<SymbolKind>(current_id);
 
             if kind.has_where_clause() {
-                if let Some(where_clause) =
-                    self.query::<WhereClause>(current_id)
+                if let Ok(where_clause) = self.query::<WhereClause>(current_id)
                 {
                     premise.predicates.extend(
                         where_clause.predicates.iter().map(|x| {
@@ -169,7 +173,7 @@ impl TableExt for Table {
             }
 
             if kind.has_implied_predicates() {
-                if let Some(predicates) =
+                if let Ok(predicates) =
                     self.query::<ImpliedPredicates>(current_id)
                 {
                     premise.predicates.extend(

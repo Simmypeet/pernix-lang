@@ -79,7 +79,7 @@ impl std::fmt::Debug for Compilation<'_> {
 fn build_component<T: Derived>(table: &Table, global_id: GlobalID) {
     // query the component, if it haven't been built, this will invoke the
     // builder for the component
-    table.query::<T>(global_id);
+    let _ = table.query::<T>(global_id);
 }
 
 /// A callback that is invoked when a symbol is started/finished to be built.

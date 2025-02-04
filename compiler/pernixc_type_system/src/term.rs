@@ -265,8 +265,7 @@ fn normalize_trait_member<M: Model>(
     {
         let generic_parameter = environment
             .table()
-            .query::<GenericParameters>(implementation_member_id)
-            .ok_or(AbruptError::CyclicDependency)?;
+            .query::<GenericParameters>(implementation_member_id)?;
 
         if resolution
             .result
@@ -285,8 +284,7 @@ fn normalize_trait_member<M: Model>(
     let mut new_term = M::from_default_type(
         environment
             .table()
-            .query::<TypeAlias>(implementation_member_id)
-            .ok_or(AbruptError::CyclicDependency)?
+            .query::<TypeAlias>(implementation_member_id)?
             .0
             .clone(),
     );
@@ -434,17 +432,14 @@ impl<M: Model> Term for Type<M> {
                 let Ok(inst) = Instantiation::from_generic_arguments(
                     generic_arguments.clone(),
                     id,
-                    &*table
-                        .query::<GenericParameters>(id)
-                        .ok_or(AbruptError::CyclicDependency)?,
+                    &*table.query::<GenericParameters>(id)?,
                 ) else {
                     return Ok(None);
                 };
 
                 Ok(Some(
                     table
-                        .query::<Fields>(id)
-                        .ok_or(AbruptError::CyclicDependency)?
+                        .query::<Fields>(id)?
                         .fields
                         .iter()
                         .map(|field| {
@@ -461,9 +456,7 @@ impl<M: Model> Term for Type<M> {
                 let Ok(inst) = Instantiation::from_generic_arguments(
                     generic_arguments.clone(),
                     id,
-                    &*table
-                        .query::<GenericParameters>(id)
-                        .ok_or(AbruptError::CyclicDependency)?,
+                    &*table.query::<GenericParameters>(id)?,
                 ) else {
                     return Ok(None);
                 };
@@ -477,9 +470,7 @@ impl<M: Model> Term for Type<M> {
                     .copied()
                     .map(|x| GlobalID::new(id.target_id, x))
                 {
-                    let variant = table
-                        .query::<Variant>(variant)
-                        .ok_or(AbruptError::CyclicDependency)?;
+                    let variant = table.query::<Variant>(variant)?;
 
                     variants_ty.extend(variant.associated_type.clone().map(
                         |x| {

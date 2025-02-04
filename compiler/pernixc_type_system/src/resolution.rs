@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use pernixc_component::implementation::Implementation as ImplementationComponent;
 use pernixc_table::{
     component::{Implemented, Implements, SymbolKind, TraitImplementation},
+    query::CyclicDependencyError,
     GlobalID,
 };
 use pernixc_term::{
@@ -49,6 +50,12 @@ pub enum Error {
     NotFound,
     #[error(transparent)]
     Abrupt(#[from] AbruptError),
+}
+
+impl From<CyclicDependencyError> for Error {
+    fn from(error: CyclicDependencyError) -> Self {
+        Self::Abrupt(AbruptError::CyclicDependency(error))
+    }
 }
 
 impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
@@ -104,8 +111,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
             let implementation_generic_arguments =
                 GenericArguments::from_default_model(
                     self.table()
-                        .query::<ImplementationComponent>(current_impl_id)
-                        .ok_or(Error::Abrupt(AbruptError::CyclicDependency))?
+                        .query::<ImplementationComponent>(current_impl_id)?
                         .generic_arguments
                         .clone(),
                 );
@@ -149,10 +155,8 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
                 }
 
                 // all predicates must satisfy to continue
-                let where_clause = self
-                    .table()
-                    .query::<WhereClause>(current_impl_id)
-                    .ok_or(Error::Abrupt(AbruptError::CyclicDependency))?;
+                let where_clause =
+                    self.table().query::<WhereClause>(current_impl_id)?;
 
                 if !predicate_satisfies(
                     where_clause.predicates.iter().map(|x| &x.predicate),
@@ -275,8 +279,7 @@ fn is_in_active_implementation<M: Model>(
         let implementation_arguments = GenericArguments::from_default_model(
             environment
                 .table()
-                .query::<ImplementationComponent>(current_id)
-                .ok_or(Error::Abrupt(AbruptError::CyclicDependency))?
+                .query::<ImplementationComponent>(current_id)?
                 .generic_arguments
                 .clone(),
         );

@@ -17,6 +17,7 @@ use pernixc_syntax::syntax_tree;
 use pernixc_table::{
     component::{Input, Parent, SymbolKind},
     diagnostic::Diagnostic,
+    query::CyclicDependencyError,
     GlobalID, Table,
 };
 use pernixc_term::{
@@ -275,7 +276,8 @@ impl Checker<'_> {
         let arguments = self
             .environment
             .table()
-            .query::<Implementation>(adt_implementation_id)?
+            .query::<Implementation>(adt_implementation_id)
+            .ok()?
             .generic_arguments
             .clone();
 
@@ -302,7 +304,9 @@ impl Checker<'_> {
                 return None; // can't continue
             }
 
-            Err(deduction::Error::Abrupt(AbruptError::CyclicDependency)) => {
+            Err(deduction::Error::Abrupt(AbruptError::CyclicDependency(
+                CyclicDependencyError,
+            ))) => {
                 return None;
             }
 
@@ -457,10 +461,10 @@ impl Checker<'_> {
                                 .unwrap(),
                         );
 
-                        let Some(generic_parameters) = self
-                            .environment
-                            .table()
-                            .query::<GenericParameters>(parent_id)
+                        let Ok(generic_parameters) =
+                            self.environment
+                                .table()
+                                .query::<GenericParameters>(parent_id)
                         else {
                             return;
                         };
@@ -473,7 +477,7 @@ impl Checker<'_> {
                         .expect("should have no mismatched")
                     };
 
-                let Some(generic_parameters) =
+                let Ok(generic_parameters) =
                     self.environment
                         .table()
                         .query::<GenericParameters>(member_generic.id)
@@ -508,7 +512,7 @@ impl Checker<'_> {
     ) {
         // convert the generic arguments to an instantiation and delegate the
         // check to the `check_instantiation_predicates` method
-        let Some(generic_parameters) =
+        let Ok(generic_parameters) =
             self.environment.table().query::<GenericParameters>(instantiated)
         else {
             return;
@@ -536,7 +540,7 @@ impl Checker<'_> {
         instantiation: &Instantiation<Default>,
         instantiation_span: &Span,
     ) {
-        let Some(where_clause) =
+        let Ok(where_clause) =
             self.environment.table().query::<WhereClause>(instantiated)
         else {
             return;
@@ -569,7 +573,7 @@ impl Checker<'_> {
     ) -> Vec<PredicateError> {
         let mut errors = Vec::new();
 
-        let Some(where_clause) =
+        let Ok(where_clause) =
             self.environment.table().query::<WhereClause>(implementation_id)
         else {
             return errors;
@@ -742,7 +746,9 @@ impl Checker<'_> {
                         }]
                     }
 
-                    Err(AbruptError::CyclicDependency) => Vec::new(),
+                    Err(AbruptError::CyclicDependency(
+                        CyclicDependencyError,
+                    )) => Vec::new(),
 
                     Err(AbruptError::Overflow(overflow_error)) => {
                         vec![PredicateError::Undecidable {
@@ -765,7 +771,9 @@ impl Checker<'_> {
                         }]
                     }
 
-                    Err(AbruptError::CyclicDependency) => Vec::new(),
+                    Err(AbruptError::CyclicDependency(
+                        CyclicDependencyError,
+                    )) => Vec::new(),
 
                     Err(AbruptError::Overflow(overflow_error)) => {
                         vec![PredicateError::Undecidable {
@@ -937,7 +945,9 @@ impl Checker<'_> {
                                     );
                                 }
 
-                                Err(AbruptError::CyclicDependency)
+                                Err(AbruptError::CyclicDependency(
+                                    CyclicDependencyError,
+                                ))
                                 | Ok(Some(_)) => {}
                             }
                         }
@@ -956,7 +966,9 @@ impl Checker<'_> {
                 extra_predicate_error
             }
 
-            Err(AbruptError::CyclicDependency) => extra_predicate_error,
+            Err(AbruptError::CyclicDependency(CyclicDependencyError)) => {
+                extra_predicate_error
+            }
 
             Err(AbruptError::Overflow(overflow_error)) => {
                 extra_predicate_error.push(PredicateError::Undecidable {
@@ -971,7 +983,7 @@ impl Checker<'_> {
     }
 
     /// Do predicates check for the given type occurrences.
-    #[allow(unused)]
+    #[allow(clippy::too_many_lines)]
     pub(super) fn check_type_ocurrence(
         &self,
         ty: &Type<Default>,
@@ -997,7 +1009,10 @@ impl Checker<'_> {
                 );
 
                 match self.environment.query(&outlives) {
-                    Err(AbruptError::CyclicDependency) | Ok(Some(_)) => {}
+                    Err(AbruptError::CyclicDependency(
+                        CyclicDependencyError,
+                    ))
+                    | Ok(Some(_)) => {}
 
                     Ok(None) => {
                         self.handler.receive(Box::new(UnsatisfiedPredicate {
@@ -1043,7 +1058,9 @@ impl Checker<'_> {
                                     ));
                                 }
 
-                                Err(AbruptError::CyclicDependency)
+                                Err(AbruptError::CyclicDependency(
+                                    CyclicDependencyError,
+                                ))
                                 | Ok(Some(_)) => {}
 
                                 Err(AbruptError::Overflow(overflow_error)) => {
@@ -1074,7 +1091,9 @@ impl Checker<'_> {
                         ));
                     }
 
-                    Err(AbruptError::CyclicDependency) => {}
+                    Err(AbruptError::CyclicDependency(
+                        CyclicDependencyError,
+                    )) => {}
 
                     Err(AbruptError::Overflow(overflow_error)) => {
                         self.handler.receive(Box::new(TypeSystemOverflow {

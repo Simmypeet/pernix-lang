@@ -242,14 +242,12 @@ impl<M: Model> Query for TypeCheck<M> {
                         return Ok(None);
                     }
 
-                    let generic_parameters = environment
-                        .table()
-                        .query::<GenericParameters>(*struct_id)
-                        .ok_or(AbruptError::CyclicDependency)?;
-                    let struct_fields = environment
-                        .table()
-                        .query::<Fields>(*struct_id)
-                        .ok_or(AbruptError::CyclicDependency)?;
+                    let generic_parameters =
+                        environment
+                            .table()
+                            .query::<GenericParameters>(*struct_id)?;
+                    let struct_fields =
+                        environment.table().query::<Fields>(*struct_id)?;
 
                     // mismatched field count
                     assert_eq!(struct_fields.fields.len(), value.fields.len());
@@ -318,10 +316,10 @@ impl<M: Model> Query for TypeCheck<M> {
                         return Ok(None);
                     }
 
-                    let enum_generic_params = environment
-                        .table()
-                        .query::<GenericParameters>(*enum_id)
-                        .ok_or(AbruptError::CyclicDependency)?;
+                    let enum_generic_params =
+                        environment
+                            .table()
+                            .query::<GenericParameters>(*enum_id)?;
 
                     let instantiation = Instantiation::from_generic_arguments(
                         generic_arguments.clone(),
@@ -332,8 +330,7 @@ impl<M: Model> Query for TypeCheck<M> {
 
                     let variant = environment
                         .table()
-                        .query::<Variant>(enum_value.variant_id)
-                        .ok_or(AbruptError::CyclicDependency)?;
+                        .query::<Variant>(enum_value.variant_id)?;
 
                     // mismatched associated value
                     match (
@@ -399,10 +396,10 @@ impl<M: Model> Query for TypeCheck<M> {
                 }
 
                 (ty, Constant::Parameter(constant_parameter)) => {
-                    let generic_sym = environment
-                        .table()
-                        .query::<GenericParameters>(constant_parameter.parent)
-                        .ok_or(AbruptError::CyclicDependency)?;
+                    let generic_sym =
+                        environment.table().query::<GenericParameters>(
+                            constant_parameter.parent,
+                        )?;
 
                     let constant_parameter_ty = M::from_default_type(
                         generic_sym.constants()[constant_parameter.id]

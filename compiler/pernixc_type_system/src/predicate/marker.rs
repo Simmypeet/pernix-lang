@@ -445,8 +445,7 @@ fn is_in_marker<M: Model>(
 
         let marker_generic_arguments = environment
             .table()
-            .query::<GenericParameters>(current_id)
-            .ok_or(AbruptError::CyclicDependency)?
+            .query::<GenericParameters>(current_id)?
             .create_identity_generic_arguments(current_id);
 
         let Some(compatibility) = environment.generic_arguments_compatible(

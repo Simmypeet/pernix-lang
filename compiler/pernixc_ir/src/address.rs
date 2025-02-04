@@ -362,10 +362,10 @@ impl<M: pernixc_term::Model> Values<M> {
     ) -> Result<Succeeded<Type<M>, M>, AbruptError> {
         match address {
             Address::Memory(Memory::Parameter(parameter)) => {
-                let function_signature = environment
-                    .table()
-                    .query::<FunctionSignature>(current_site)
-                    .ok_or(AbruptError::CyclicDependency)?;
+                let function_signature =
+                    environment
+                        .table()
+                        .query::<FunctionSignature>(current_site)?;
 
                 let ty = M::from_default_type(
                     function_signature.parameters[*parameter].r#type.clone(),
@@ -394,14 +394,11 @@ impl<M: pernixc_term::Model> Values<M> {
                     panic!("expected struct type");
                 };
 
-                let generic_parameters = environment
-                    .table()
-                    .query::<GenericParameters>(struct_id)
-                    .ok_or(AbruptError::CyclicDependency)?;
-                let fields = environment
-                    .table()
-                    .query::<Fields>(struct_id)
-                    .ok_or(AbruptError::CyclicDependency)?;
+                let generic_parameters =
+                    environment
+                        .table()
+                        .query::<GenericParameters>(struct_id)?;
+                let fields = environment.table().query::<Fields>(struct_id)?;
 
                 let instantiation = Instantiation::from_generic_arguments(
                     generic_arguments,
@@ -500,10 +497,8 @@ impl<M: pernixc_term::Model> Values<M> {
                     panic!("expected enum type");
                 };
 
-                let enum_generic_params = environment
-                    .table()
-                    .query::<GenericParameters>(enum_id)
-                    .ok_or(AbruptError::CyclicDependency)?;
+                let enum_generic_params =
+                    environment.table().query::<GenericParameters>(enum_id)?;
 
                 let instantiation = Instantiation::from_generic_arguments(
                     generic_arguments,
@@ -514,8 +509,9 @@ impl<M: pernixc_term::Model> Values<M> {
 
                 let variant = environment
                     .table()
-                    .query::<pernixc_component::variant::Variant>(variant.id)
-                    .ok_or(AbruptError::CyclicDependency)?;
+                    .query::<pernixc_component::variant::Variant>(
+                    variant.id,
+                )?;
 
                 let mut variant_ty = M::from_default_type(
                     variant.associated_type.clone().unwrap(),

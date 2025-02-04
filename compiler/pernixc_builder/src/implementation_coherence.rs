@@ -17,6 +17,7 @@ use pernixc_table::{
         SymbolKind, TraitImplementation,
     },
     diagnostic::Diagnostic,
+    query::CyclicDependencyError,
     GlobalID, Table,
 };
 use pernixc_term::{
@@ -187,7 +188,7 @@ pub(super) fn check_unused_generic_parameters(
     implementation_id: GlobalID,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) {
-    let (Some(generic_parameters), Some(implementation)) = (
+    let (Ok(generic_parameters), Ok(implementation)) = (
         table.query::<GenericParameters>(implementation_id),
         table.query::<Implementation>(implementation_id),
     ) else {
@@ -246,7 +247,7 @@ pub(super) fn check_implemented_instantiation(
     implementation_id: GlobalID,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) {
-    let Some(implementation) = table.query::<Implementation>(implementation_id)
+    let Ok(implementation) = table.query::<Implementation>(implementation_id)
     else {
         return;
     };
@@ -282,7 +283,7 @@ pub(super) fn check_orphan_rule(
     }
 
     let symbol_kind = *table.get::<SymbolKind>(implementation_id);
-    let Some(implementation) = table.query::<Implementation>(implementation_id)
+    let Ok(implementation) = table.query::<Implementation>(implementation_id)
     else {
         return;
     };
@@ -365,7 +366,7 @@ pub(super) fn check_overlapping(
     let implemented_id = table.get::<Implements>(implementation_id).0;
     let implementations = table.get::<Implemented>(implemented_id);
 
-    let Some(this_implementation) =
+    let Ok(this_implementation) =
         table.query::<Implementation>(implementation_id)
     else {
         return;
@@ -383,8 +384,7 @@ pub(super) fn check_overlapping(
         }
 
         let other_symbol_kind = *table.get::<SymbolKind>(id);
-        let Some(other_implementation) = table.query::<Implementation>(id)
-        else {
+        let Ok(other_implementation) = table.query::<Implementation>(id) else {
             continue;
         };
 
@@ -395,7 +395,9 @@ pub(super) fn check_overlapping(
         ) {
             Ok(order) => order,
 
-            Err(AbruptError::CyclicDependency) => continue,
+            Err(AbruptError::CyclicDependency(CyclicDependencyError)) => {
+                continue
+            }
             Err(AbruptError::Overflow(overflow_error)) => {
                 handler.receive(Box::new(TypeSystemOverflow {
                     operation: OverflowOperation::TypeCheck,
@@ -498,10 +500,10 @@ pub(super) fn check_implementation_member(
     );
 
     let (
-        Some(impl_member_generic_params),
-        Some(trait_member_generic_params),
-        Some(impl_args),
-        Some(trait_params),
+        Ok(impl_member_generic_params),
+        Ok(trait_member_generic_params),
+        Ok(impl_args),
+        Ok(trait_params),
     ) = (
         table.query::<GenericParameters>(implementation_member_id),
         table.query::<GenericParameters>(trait_member_id),
@@ -681,7 +683,7 @@ fn implemented_predicate_check(
     environment: &Environment<Default, normalizer::NoOp>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) {
-    let Some(trait_member_where_clause) =
+    let Ok(trait_member_where_clause) =
         table.query::<WhereClause>(trait_member_id)
     else {
         return;
@@ -718,7 +720,7 @@ fn extraneous_predicate_check(
     // based on the environment from the trait member side, check if there's any
     // predicate on the implementation member side that's not satisfiable.
 
-    let Some(impl_member_where_clause) =
+    let Ok(impl_member_where_clause) =
         table.query::<WhereClause>(implementation_member_id)
     else {
         return;

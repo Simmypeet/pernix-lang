@@ -236,15 +236,13 @@ fn append_matchings_from_unification<M: Model>(
         Matching::Substructural(substructural) => {
             // look for matched lifetimes
             for (location, unification) in &substructural.lifetimes {
-                let variance = environment
-                    .get_variance_of(
-                        &current_from,
-                        parent_variance,
-                        std::iter::once(TermLocation::Lifetime(
-                            SubLifetimeLocation::FromType(*location),
-                        )),
-                    )
-                    .ok_or(AbruptError::CyclicDependency)?;
+                let variance = environment.get_variance_of(
+                    &current_from,
+                    parent_variance,
+                    std::iter::once(TermLocation::Lifetime(
+                        SubLifetimeLocation::FromType(*location),
+                    )),
+                )?;
 
                 if let Matching::Unifiable(self_lt, target_lt) =
                     &unification.matching
@@ -258,15 +256,13 @@ fn append_matchings_from_unification<M: Model>(
 
             // look for matched types
             for (location, unification) in &substructural.types {
-                let current_variance = environment
-                    .get_variance_of(
-                        &current_from,
-                        parent_variance,
-                        std::iter::once(TermLocation::Type(
-                            SubTypeLocation::FromType(*location),
-                        )),
-                    )
-                    .ok_or(AbruptError::CyclicDependency)?;
+                let current_variance = environment.get_variance_of(
+                    &current_from,
+                    parent_variance,
+                    std::iter::once(TermLocation::Type(
+                        SubTypeLocation::FromType(*location),
+                    )),
+                )?;
 
                 let new_from = location.get_sub_term(&current_from).unwrap();
 

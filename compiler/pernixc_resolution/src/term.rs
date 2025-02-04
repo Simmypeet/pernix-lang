@@ -11,7 +11,8 @@ use pernixc_syntax::syntax_tree::{
     self, ConnectedList, GenericIdentifier, LifetimeIdentifier,
 };
 use pernixc_table::{
-    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
+    component::SymbolKind, diagnostic::Diagnostic,
+    query::CyclicDependencyError, GlobalID, Table,
 };
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -42,7 +43,7 @@ pub(super) fn resolve_generic_arguments_for<M: Model>(
     referring_site: GlobalID,
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Option<GenericArguments<M>> {
+) -> Result<GenericArguments<M>, CyclicDependencyError> {
     let generic_arguments = generic_identifier
         .generic_arguments()
         .as_ref()
@@ -253,7 +254,7 @@ pub(super) fn verify_generic_arguments_for<M: Model>(
     generic_identifier_span: Span,
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Option<GenericArguments<M>> {
+) -> Result<GenericArguments<M>, CyclicDependencyError> {
     let generic_parameters = table.query::<GenericParameters>(generic_id)?;
 
     let (
@@ -284,7 +285,7 @@ pub(super) fn verify_generic_arguments_for<M: Model>(
         )
     };
 
-    Some(GenericArguments {
+    Ok(GenericArguments {
         lifetimes: resolve_generic_arguments_kinds(
             generic_arguments.lifetimes.into_iter(),
             lifetime_parameter_orders.iter(),
@@ -408,7 +409,7 @@ fn resolution_to_type<M: Model>(
                 }
 
                 SymbolKind::TraitImplementationType | SymbolKind::Type => {
-                    let Some(generic_parameters) =
+                    let Ok(generic_parameters) =
                         table.query::<GenericParameters>(symbol.id)
                     else {
                         return Ok(Type::Error(pernixc_term::Error));
@@ -421,7 +422,7 @@ fn resolution_to_type<M: Model>(
                     )
                     .unwrap();
 
-                    let Some(mut result_ty) = table
+                    let Ok(mut result_ty) = table
                         .query::<TypeAlias>(symbol.id)
                         .map(|x| M::from_default_type(x.0.clone()))
                     else {
@@ -482,7 +483,7 @@ pub(super) fn resolve_qualified_identifier_type<M: Model>(
         return extra_type;
     }
 
-    let Some(resolution) = table.resolve_qualified_identifier(
+    let Ok(resolution) = table.resolve_qualified_identifier(
         syntax_tree,
         referring_site,
         config,

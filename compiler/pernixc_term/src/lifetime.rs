@@ -65,8 +65,7 @@ where
                     f,
                     "'{}",
                     &table
-                        .query::<GenericParameters>(parameter.parent)
-                        .ok_or(fmt::Error)?
+                        .query::<GenericParameters>(parameter.parent)?
                         .lifetimes()
                         .get(parameter.id)
                         .ok_or(fmt::Error)?
@@ -81,8 +80,7 @@ where
                     f,
                     "'∀{}",
                     table
-                        .query::<forall_lifetime::Map>(forall_lifetime.parent)
-                        .ok_or(fmt::Error)?
+                        .query::<forall_lifetime::Map>(forall_lifetime.parent)?
                         .get(forall_lifetime.id)
                         .ok_or(fmt::Error)?
                         .as_named()

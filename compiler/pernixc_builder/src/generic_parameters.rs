@@ -283,8 +283,7 @@ impl Ext for Table {
                 continue;
             }
 
-            let Some(generic_parameter) =
-                self.query::<GenericParameters>(scope)
+            let Ok(generic_parameter) = self.query::<GenericParameters>(scope)
             else {
                 continue;
             };

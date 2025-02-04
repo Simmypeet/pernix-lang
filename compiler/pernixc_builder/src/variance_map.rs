@@ -105,7 +105,7 @@ impl Context {
                 continue;
             }
 
-            let Some(generic_parameters) =
+            let Ok(generic_parameters) =
                 table.query::<GenericParameters>(global_id)
             else {
                 continue;
@@ -121,7 +121,7 @@ impl Context {
 
             match symbol_kind {
                 SymbolKind::Struct => {
-                    let Some(fields) = table.query::<Fields>(global_id) else {
+                    let Ok(fields) = table.query::<Fields>(global_id) else {
                         continue;
                     };
 
@@ -142,7 +142,7 @@ impl Context {
                         .copied()
                         .map(|x| GlobalID::new(target_id, x))
                     {
-                        let Some(variant) = table.query::<Variant>(variant_id)
+                        let Ok(variant) = table.query::<Variant>(variant_id)
                         else {
                             continue;
                         };
@@ -262,7 +262,7 @@ impl Context {
                     )
                 };
 
-                let Some(generic_parameters) =
+                let Ok(generic_parameters) =
                     table.query::<GenericParameters>(symbol.id)
                 else {
                     return;
@@ -545,7 +545,7 @@ impl query::Builder<VarianceMap> for Builder {
 
         let map =
             context.variance_maps.remove(&global_id.id).unwrap_or_else(|| {
-                let Some(generic_parameters) =
+                let Ok(generic_parameters) =
                     table.query::<GenericParameters>(global_id)
                 else {
                     return VarianceMap::default();
