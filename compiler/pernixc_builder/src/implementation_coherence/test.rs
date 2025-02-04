@@ -20,8 +20,9 @@ use pernixc_term::{
 
 use crate::{
     implementation_coherence::diagnostic::{
-        AmbiguousImplementation, FinalImplementationCannotBeOverriden,
-        ImplementedForeignAdt, MismatchedGenericParameterCountInImplementation,
+        AmbiguousImplementation, ExtraneousImplementationMemberPredicate,
+        FinalImplementationCannotBeOverriden, ImplementedForeignAdt,
+        MismatchedGenericParameterCountInImplementation,
         MismatchedImplementationConstantTypeParameter, OrphanRuleViolation,
         UnusedGenericParameterInImplementation,
     },
@@ -523,5 +524,93 @@ fn implemented_predicate_check() {
             x.predicate_declaration_span.as_ref().map(Span::str)
                 == Some("Y: 'd")
                 && x.predicate == expected_outlives
+        })));
+}
+
+const EXTRANEOUS_PREDICATE_CHECK: &str = r"
+public trait Require[T] {}
+
+public trait Test['a, 'b, T, U] {
+    public type Output['c, 'd, X, Y]
+    where
+        T: 'a,
+        X: 'c;
+}
+
+implements['a, 'b, T] Test['a, 'b, T, int32] 
+{
+    /*
+    extraneous:
+        - Y: 'd
+        - trait Require[Y]
+    */
+    public type Output['c, 'd, X, Y] = ()
+    where
+        T: 'a,
+        X: 'c,
+        Y: 'd,
+        trait Require[Y];
+}
+";
+
+#[test]
+fn extraneous_predicate_check() {
+    let (table, errors) = build_table(EXTRANEOUS_PREDICATE_CHECK);
+
+    assert_eq!(errors.len(), 2);
+
+    let test_trait_id = table.get_by_qualified_name(["test", "Test"]).unwrap();
+    let test_impl_id =
+        table.get::<Implemented>(test_trait_id).iter().copied().next().unwrap();
+
+    let output_impl_id = GlobalID::new(
+        test_impl_id.target_id,
+        table.get::<Member>(test_impl_id)["Output"],
+    );
+    let output_impl_generic_params =
+        table.query::<GenericParameters>(output_impl_id).unwrap();
+
+    let output_impl_y_ty = Type::Parameter(TypeParameterID::new(
+        output_impl_id,
+        output_impl_generic_params.type_parameter_ids_by_name()["Y"],
+    ));
+    let output_impl_d_lt = Lifetime::Parameter(LifetimeParameterID::new(
+        output_impl_id,
+        output_impl_generic_params.lifetime_parameter_ids_by_name()["d"],
+    ));
+
+    let require_trait_id =
+        table.get_by_qualified_name(["test", "Require"]).unwrap();
+
+    let expected_trait = Predicate::PositiveTrait(PositiveTrait {
+        trait_id: require_trait_id,
+        is_const: false,
+        generic_arguments: GenericArguments {
+            lifetimes: Vec::new(),
+            types: vec![output_impl_y_ty.clone()],
+            constants: Vec::new(),
+        },
+    });
+    let expected_outlives = Predicate::TypeOutlives(Outlives::new(
+        output_impl_y_ty,
+        output_impl_d_lt,
+    ));
+
+    assert!(errors.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<ExtraneousImplementationMemberPredicate>()
+        .map_or(false, |x| {
+            x.trait_implementation_member_id == output_impl_id
+                && x.predicate == expected_trait
+                && x.predicate_span.str() == "Require[Y]"
+        })));
+
+    assert!(errors.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<ExtraneousImplementationMemberPredicate>()
+        .map_or(false, |x| {
+            x.trait_implementation_member_id == output_impl_id
+                && x.predicate == expected_outlives
+                && x.predicate_span.str() == "Y: 'd"
         })));
 }

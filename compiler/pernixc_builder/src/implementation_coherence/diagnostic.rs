@@ -4,12 +4,17 @@ use pernixc_arena::ID;
 use pernixc_component::implementation::Implementation;
 use pernixc_diagnostic::{Related, Report};
 use pernixc_log::Severity;
+use pernixc_source_file::Span;
 use pernixc_table::{
     component::{Implements, LocationSpan, SymbolKind},
     DisplayObject, GlobalID, MemberID, Table,
 };
-use pernixc_term::generic_parameter::{
-    ConstantParameterID, GenericKind, GenericParameter, GenericParameters,
+use pernixc_term::{
+    generic_parameter::{
+        ConstantParameterID, GenericKind, GenericParameter, GenericParameters,
+    },
+    predicate::Predicate,
+    Default,
 };
 
 /// Generic parameter is unused in the implementation.
@@ -322,6 +327,52 @@ impl Report<&Table> for MismatchedImplementationConstantTypeParameter {
                 })
                 .into_iter()
                 .collect(),
+        }
+    }
+}
+
+/// The trait implementation member contains extraneous predicate--a predicate
+/// that is not defined in the trait member.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExtraneousImplementationMemberPredicate {
+    /// The ID of the trait implementation member containing the extraneous
+    /// predicate.
+    pub trait_implementation_member_id: GlobalID,
+
+    /// The extraneous predicate.
+    pub predicate: Predicate<Default>,
+
+    /// The declaration span of the extraneous predicate.
+    pub predicate_span: Span,
+}
+
+impl Report<&Table> for ExtraneousImplementationMemberPredicate {
+    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
+        let trait_implementation_symbol_span = table
+            .get::<LocationSpan>(self.trait_implementation_member_id)
+            .span
+            .clone()
+            .unwrap();
+
+        let qualified_name =
+            table.get_qualified_name(self.trait_implementation_member_id);
+
+        pernixc_diagnostic::Diagnostic {
+            span: trait_implementation_symbol_span,
+            message: format!(
+                "the trait implementation member `{}` contains an extraneous \
+                 predicate `{}` -- a predicate that is not defined in the \
+                 trait member",
+                qualified_name,
+                DisplayObject { display: &self.predicate, table }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: vec![Related {
+                span: self.predicate_span.clone(),
+                message: "the extraneous predicate is declared here"
+                    .to_string(),
+            }],
         }
     }
 }

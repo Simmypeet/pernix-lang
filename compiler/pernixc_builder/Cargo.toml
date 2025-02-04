@@ -27,6 +27,7 @@ typed-builder = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
 derive_more = { workspace = true }
+enum-as-inner = { workspace = true }
 
 [lints]
 workspace = true

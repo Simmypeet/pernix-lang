@@ -4,6 +4,7 @@
 use std::collections::HashSet;
 
 use diagnostic::{
+    ExtraneousImplementationMemberPredicate,
     FinalImplementationCannotBeOverriden, ImplementedForeignAdt,
     MismatchedGenericParameterCountInImplementation,
     MismatchedImplementationConstantTypeParameter, OrphanRuleViolation,
@@ -46,7 +47,9 @@ use pernixc_type_system::{
 use crate::{
     occurrences::Checker,
     type_system::{
-        diagnostic::{OverflowOperation, TypeSystemOverflow},
+        diagnostic::{
+            OverflowOperation, TypeSystemOverflow, UndecidablePredicate,
+        },
         TableExt,
     },
 };
@@ -565,8 +568,24 @@ pub(super) fn check_implementation_member(
             table,
             normalizer::NO_OP,
         );
-        let (_trait_member_env, _) = Environment::new_with(
-            table.get_active_premise::<Default>(trait_member_id),
+        let trait_member_premise = {
+            let stub = table.get_active_premise(trait_member_id);
+
+            Premise {
+                query_site: impl_member_env.premise().query_site,
+                predicates: stub
+                    .predicates
+                    .into_iter()
+                    .map(|mut x| {
+                        x.instantiate(&trait_to_impl_inst);
+                        x
+                    })
+                    .collect(),
+            }
+        };
+
+        let (trait_member_env, _) = Environment::new_with(
+            trait_member_premise,
             table,
             normalizer::NO_OP,
         );
@@ -587,6 +606,14 @@ pub(super) fn check_implementation_member(
             trait_member_id,
             &trait_to_impl_inst,
             &impl_member_env,
+            handler,
+        );
+
+        extraneous_predicate_check(
+            table,
+            implementation_member_id,
+            &trait_to_impl_inst,
+            &trait_member_env,
             handler,
         );
     }
@@ -671,6 +698,61 @@ fn implemented_predicate_check(
             .predicate_satisfied(predicate, span)
             .into_iter()
             .for_each(|x| x.report(member_span.clone(), handler));
+    }
+}
+
+fn extraneous_predicate_check(
+    table: &Table,
+    implementation_member_id: GlobalID,
+    trait_to_impl_inst: &Instantiation<Default>,
+    environment: &Environment<Default, normalizer::NoOp>,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) {
+    // based on the environment from the trait member side, check if there's any
+    // predicate on the implementation member side that's not satisfiable.
+
+    let Some(impl_member_where_clause) =
+        table.query::<WhereClause>(implementation_member_id)
+    else {
+        return;
+    };
+
+    for (predicate, span) in
+        impl_member_where_clause.predicates.iter().map(|x| {
+            let mut pred = x.predicate.clone();
+            pred.instantiate(trait_to_impl_inst);
+
+            (pred, x.span.clone().unwrap()) // span should be present
+        })
+    {
+        let checker = Checker::new(environment, handler);
+        let errors =
+            checker.predicate_satisfied(predicate.clone(), Some(span.clone()));
+
+        let contains_error = errors.iter().any(|x| {
+            x.is_unsatisfied() || x.is_implementation_is_not_general_enough()
+        });
+
+        if contains_error {
+            handler.receive(Box::new(
+                ExtraneousImplementationMemberPredicate {
+                    trait_implementation_member_id: implementation_member_id,
+                    predicate,
+                    predicate_span: span.clone(),
+                },
+            ));
+        }
+
+        for (pred, decl_span, overflow) in
+            errors.into_iter().filter_map(|x| x.into_undecidable().ok())
+        {
+            handler.receive(Box::new(UndecidablePredicate {
+                predicate: pred,
+                predicate_declaration_span: decl_span,
+                instantiation_span: span.clone(),
+                overflow_error: overflow,
+            }));
+        }
     }
 }
 

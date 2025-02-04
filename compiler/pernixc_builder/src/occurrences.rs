@@ -7,6 +7,7 @@ use diagnostic::{
     AdtImplementationIsNotGeneralEnough, ConstantArgumentTypeMismatched,
     ImplementationIsNotGeneralEnough, MismatchedImplementationArguments,
 };
+use enum_as_inner::EnumAsInner;
 use parking_lot::RwLock;
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
@@ -180,7 +181,7 @@ impl pernixc_resolution::Observer<Default> for Observer {
 }
 
 /// An enumeration of ways the predicate can be erroneous.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub(super) enum PredicateError {
     /// The predicate isn't satisfied.
     Unsatisfied {
