@@ -36,7 +36,7 @@ tempfile = "3.5.0"
 by_address = "1.1.0"
 quickcheck = "1.0.3"
 itertools = "0.13.0"
-parking_lot = "0.12.1"
+parking_lot = { version = "0.12.1", features = ["serde"] }
 derive-new = "0.7.0"
 memmap2 = "0.9.3"
 ouroboros = "0.18.0"

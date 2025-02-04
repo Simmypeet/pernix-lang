@@ -10,8 +10,8 @@ use pernixc_table::{
     GlobalID, Table, TargetID,
 };
 use pernixc_term::{
-    elided_lifetimes::ElidedLifetimes, generic_parameter::GenericParameters,
-    where_clause::WhereClause,
+    elided_lifetimes::ElidedLifetimes, forall_lifetime,
+    generic_parameter::GenericParameters, where_clause::WhereClause,
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use typed_builder::TypedBuilder;
@@ -175,6 +175,7 @@ pub fn build(
 
     for x in symbols_to_build.iter().copied() {
         assert!(table.add_component(x, occurrences::Occurrences::default()));
+        assert!(table.add_component(x, forall_lifetime::Map::default()));
     }
 
     symbols_to_build.into_par_iter().panic_fuse().for_each(|x| {

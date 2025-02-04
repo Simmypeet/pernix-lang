@@ -21,6 +21,7 @@ displaydoc = { workspace = true }
 derive-new = { workspace = true }
 proptest = { workspace = true }
 strum = { workspace = true }
+parking_lot = { workspace = true }
 
 [lints]
 workspace = true

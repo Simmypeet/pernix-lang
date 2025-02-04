@@ -6,7 +6,6 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use pernixc_arena::Arena;
 use pernixc_component::implementation::Implementation;
 use pernixc_table::{
     component::{
@@ -943,7 +942,6 @@ impl FallbackToGeneralImplementation {
         assert!(table.add_component(
             self.0.specialized_implementation_id,
             WhereClause {
-                forall_lifetimes: Arena::default(),
                 predicates: once(pernixc_term::where_clause::Predicate {
                     predicate: Predicate::PositiveTrait(PositiveTrait {
                         trait_id: impossible_constraint_id,

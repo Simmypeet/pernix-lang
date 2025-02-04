@@ -5,6 +5,7 @@ use std::{fmt::Debug, hash::Hash};
 pub mod accessibility;
 pub mod constant;
 pub mod elided_lifetimes;
+pub mod forall_lifetime;
 pub mod generic_arguments;
 pub mod generic_parameter;
 pub mod instantiation;

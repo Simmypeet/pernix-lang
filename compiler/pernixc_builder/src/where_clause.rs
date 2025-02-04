@@ -23,12 +23,13 @@ use pernixc_table::{
     query, GlobalID, Table,
 };
 use pernixc_term::{
+    forall_lifetime::{self, ForallLifetimeID},
     lifetime::Lifetime,
     predicate::{
         self, Compatible, ConstantType, NegativeMarker, PositiveMarker,
     },
     r#type::TraitMember,
-    where_clause::{self, ForallLifetime, ForallLifetimeID, WhereClause},
+    where_clause::{self, WhereClause},
     Default, MemberSymbol,
 };
 
@@ -37,8 +38,8 @@ pub mod diagnostic;
 use crate::{builder::Builder, generic_parameters::Ext as _, occurrences};
 
 fn create_forall_lifetimes(
+    table: &Table,
     global_id: GlobalID,
-    where_clause: &mut WhereClause,
     namespace: &mut HashMap<String, Lifetime<Default>>,
     syntax_tree: &syntax_tree::predicate::HigherRankedLifetimes,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
@@ -51,11 +52,16 @@ fn create_forall_lifetimes(
     {
         match namespace.entry(syn.identifier().span.str().to_owned()) {
             Entry::Vacant(entry) => {
-                let forall =
-                    where_clause.forall_lifetimes.insert(ForallLifetime {
-                        name: syn.identifier().span.str().to_owned(),
-                        span: Some(syn.identifier().span.clone()),
-                    });
+                let forall = table
+                    .query::<forall_lifetime::Map>(global_id)
+                    .unwrap()
+                    .insert(forall_lifetime::ForallLifetime::Named(
+                        forall_lifetime::Named {
+                            name: syn.identifier().span.str().to_owned(),
+                            span: Some(syn.identifier().span.clone()),
+                        },
+                    ));
+
                 entry.insert(Lifetime::Forall(ForallLifetimeID {
                     parent: global_id,
                     id: forall,
@@ -84,8 +90,8 @@ fn create_tuple_predicates(
             tuple.higher_ranked_lifetimes().as_ref().map(|x| {
                 let mut extra_namespace = extra_namespace.clone();
                 create_forall_lifetimes(
+                    table,
                     global_id,
-                    where_clause,
                     &mut extra_namespace.lifetimes,
                     x,
                     handler,
@@ -131,8 +137,8 @@ fn create_trait_member_predicates(
         syntax_tree.higher_ranked_lifetimes().as_ref().map(|x| {
             let mut extra_namespace = extra_namespace.clone();
             create_forall_lifetimes(
+                table,
                 global_id,
-                where_clause,
                 &mut extra_namespace.lifetimes,
                 x,
                 handler,
@@ -217,8 +223,8 @@ fn create_trait_predicates(
             trait_predicate.higher_ranked_lifetimes().as_ref().map(|x| {
                 let mut extra_namespace = extra_namespace.clone();
                 create_forall_lifetimes(
+                    table,
                     global_id,
-                    where_clause,
                     &mut extra_namespace.lifetimes,
                     x,
                     handler,
@@ -372,8 +378,8 @@ fn create_constant_type_predicates(
             bound.higher_ranked_lifetimes().as_ref().map(|x| {
                 let mut extra_namespace = extra_namespace.clone();
                 create_forall_lifetimes(
+                    table,
                     global_id,
-                    where_clause,
                     &mut extra_namespace.lifetimes,
                     x,
                     handler,
@@ -418,8 +424,8 @@ fn create_marker_predicate(
             marker_bound.higher_ranked_lifetimes().as_ref().map(|x| {
                 let mut extra_namespace = extra_namespace.clone();
                 create_forall_lifetimes(
+                    table,
                     global_id,
-                    where_clause,
                     &mut extra_namespace.lifetimes,
                     x,
                     handler,

@@ -4,15 +4,14 @@ use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 use pernixc_term::{
     constant::Constant,
+    forall_lifetime::ForallLifetimeID,
     generic_arguments::GenericArguments,
     lifetime::Lifetime,
     predicate::Outlives,
     r#type::Type,
     sub_term::{Location, SubLifetimeLocation, SubTypeLocation, TermLocation},
     variance::Variance,
-    visitor,
-    where_clause::ForallLifetimeID,
-    Model, ModelOf,
+    visitor, Model, ModelOf,
 };
 
 use crate::{

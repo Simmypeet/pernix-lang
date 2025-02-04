@@ -10,11 +10,11 @@ use serde::{Deserialize, Serialize};
 use crate::{
     constant::Constant,
     elided_lifetimes::ElidedLifetimeID,
+    forall_lifetime::{self, ForallLifetimeID},
     generic_parameter::{GenericParameters, LifetimeParameterID},
     matching::{self, Match, Matching},
     r#type::Type,
     sub_term::{AssignSubTermError, Location, SubTerm, TermLocation},
-    where_clause::{ForallLifetimeID, WhereClause},
     Error, Model, ModelOf, Never,
 };
 
@@ -81,12 +81,12 @@ where
                     f,
                     "'∀{}",
                     table
-                        .query::<WhereClause>(forall_lifetime.parent)
+                        .query::<forall_lifetime::Map>(forall_lifetime.parent)
                         .ok_or(fmt::Error)?
-                        .forall_lifetimes
                         .get(forall_lifetime.id)
                         .ok_or(fmt::Error)?
-                        .name
+                        .as_named()
+                        .map_or("_", |x| &x.name)
                 )
             }
             Self::Error(_) => write!(f, "'{{error}}"),

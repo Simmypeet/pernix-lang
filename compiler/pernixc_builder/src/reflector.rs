@@ -18,8 +18,8 @@ use pernixc_table::{
     GlobalID,
 };
 use pernixc_term::{
-    elided_lifetimes::ElidedLifetimes, generic_parameter::GenericParameters,
-    where_clause::WhereClause,
+    elided_lifetimes::ElidedLifetimes, forall_lifetime,
+    generic_parameter::GenericParameters, where_clause::WhereClause,
 };
 use serde::{Deserialize, Serialize};
 
@@ -60,6 +60,7 @@ pub enum ComponentTag {
     Fields,
     Variant,
     VarianceMap,
+    ForallLifetimeMap,
 }
 
 /// Gets the reflector instance that can be used to serialize all the derived
@@ -109,6 +110,9 @@ pub fn get() -> Reflector<GlobalID, ArcTrait, ComponentTag, String> {
     assert!(reflector.register_type::<Fields>(ComponentTag::Fields));
     assert!(reflector.register_type::<Variant>(ComponentTag::Variant));
     assert!(reflector.register_type::<VarianceMap>(ComponentTag::VarianceMap));
+    assert!(reflector.register_type::<forall_lifetime::Map>(
+        ComponentTag::ForallLifetimeMap
+    ));
 
     reflector
 }
