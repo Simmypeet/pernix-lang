@@ -1,6 +1,6 @@
 //! Contains the builder for the `function_signature` component.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
 use pernixc_arena::{Arena, ID};
 use pernixc_component::{
@@ -31,7 +31,7 @@ use pernixc_term::{
     where_clause::WhereClause,
     Default, Tuple,
 };
-use pernixc_type_system::{environment::Environment, AbruptError};
+use pernixc_type_system::{environment::Environment, normalizer, AbruptError};
 
 use crate::{
     builder::Builder,
@@ -347,8 +347,11 @@ impl query::Builder<Intermediate> for Builder {
                 _ => Vec::new(),
             })
         {
-            let (environment, _) =
-                Environment::new(active_premise.clone(), table);
+            let environment = Environment::new(
+                Cow::Borrowed(&active_premise),
+                table,
+                normalizer::NO_OP,
+            );
 
             let result = match &implied_predicate {
                 ImpliedPredicate::LifetimeOutlives(outlives) => {
@@ -383,7 +386,11 @@ impl query::Builder<Intermediate> for Builder {
         }
 
         let function_signature = {
-            let (environment, _) = Environment::new(active_premise, table);
+            let environment = Environment::new(
+                Cow::Borrowed(&active_premise),
+                table,
+                normalizer::NO_OP,
+            );
 
             let mut parameter_arena = Arena::default();
             let mut parameter_orders = Vec::new();

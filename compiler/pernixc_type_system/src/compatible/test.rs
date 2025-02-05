@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use pernixc_component::variance_map::VarianceMap;
 use pernixc_table::{component::SymbolKind, GlobalID, Table, TargetID};
@@ -28,7 +28,11 @@ proptest! {
         let table = Table::new(Arc::new(pernixc_handler::Panic));
         let premise = Premise::default();
 
-        let environment = Environment::new_unchecked(premise, &table, normalizer::NO_OP);
+        let environment = Environment::new(
+            Cow::Borrowed(&premise),
+            &table,
+            normalizer::NO_OP
+        );
 
         prop_assert!(
             environment
@@ -86,7 +90,7 @@ fn basic_compatible() {
     let premise = Premise::default();
 
     let environment =
-        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
+        Environment::new(Cow::Borrowed(&premise), &table, normalizer::NO_OP);
 
     let check = |variance: Variance| {
         let result =
@@ -193,8 +197,11 @@ fn compatible_with_adt() {
         });
 
         let premise = Premise::default();
-        let environment =
-            Environment::new_unchecked(premise, &table, normalizer::NO_OP);
+        let environment = Environment::new(
+            Cow::Borrowed(&premise),
+            &table,
+            normalizer::NO_OP,
+        );
 
         let result = environment
             .compatible(&a_t, &b_t, Variance::Covariant)
@@ -283,7 +290,7 @@ fn compatible_with_mutable_reference() {
     let table = Table::new(Arc::new(pernixc_handler::Panic));
 
     let environment =
-        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
+        Environment::new(Cow::Borrowed(&premise), &table, normalizer::NO_OP);
 
     let result = environment
         .compatible(&lhs, &rhs, Variance::Covariant)

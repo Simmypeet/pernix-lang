@@ -1,6 +1,6 @@
 //! Contains the definition of [`Occurrences`].
 
-use std::collections::BTreeSet;
+use std::{borrow::Cow, collections::BTreeSet};
 
 use derive_new::new;
 use diagnostic::{
@@ -1129,8 +1129,11 @@ pub(super) fn check_occurrences(
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) {
     let active_premise = table.get_active_premise(global_id);
-    let (environment, _) =
-        Environment::new_with(active_premise, table, normalizer::NO_OP);
+    let environment = Environment::new(
+        Cow::Borrowed(&active_premise),
+        table,
+        normalizer::NO_OP,
+    );
     let occurrences = table.get::<Occurrences>(global_id);
     let occurrences = occurrences.read();
 

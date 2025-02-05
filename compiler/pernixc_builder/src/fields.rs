@@ -1,6 +1,7 @@
 //! Contains the builder for the struct's fields.
 
 use std::{
+    borrow::Cow,
     collections::{hash_map::Entry, HashMap},
     sync::Arc,
 };
@@ -17,7 +18,7 @@ use pernixc_table::{
     diagnostic::Diagnostic,
     query, GlobalID, Table,
 };
-use pernixc_type_system::environment::Environment;
+use pernixc_type_system::{environment::Environment, normalizer};
 
 use crate::{
     builder::Builder,
@@ -54,7 +55,11 @@ impl query::Builder<Fields> for Builder {
         };
 
         let active_premise = table.get_active_premise(global_id);
-        let (env, _) = Environment::new(active_premise, table);
+        let env = Environment::new(
+            Cow::Borrowed(&active_premise),
+            table,
+            normalizer::NO_OP,
+        );
 
         for field_syn in syntax_tree
             .fields

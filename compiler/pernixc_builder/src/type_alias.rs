@@ -1,6 +1,6 @@
 //! Contains the builder for the type alias.
 
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use pernixc_component::type_alias::TypeAlias;
 use pernixc_handler::Handler;
@@ -11,13 +11,13 @@ use pernixc_table::{
     diagnostic::Diagnostic,
     query, GlobalID, Table,
 };
-use pernixc_type_system::environment::Environment;
+use pernixc_type_system::{environment::Environment, normalizer};
 
 use crate::{
     builder::Builder,
     generic_parameters::Ext,
     occurrences,
-    type_system::{EnvironmentExt, TableExt},
+    type_system::{EnvironmentExt as _, TableExt},
 };
 
 impl query::Builder<TypeAlias> for Builder {
@@ -54,7 +54,8 @@ impl query::Builder<TypeAlias> for Builder {
         );
 
         let premise = table.get_active_premise(global_id);
-        let (env, _) = Environment::new(premise, table);
+        let env =
+            Environment::new(Cow::Borrowed(&premise), table, normalizer::NO_OP);
 
         ty = env.simplify_and_check_lifetime_constraints(
             &ty,

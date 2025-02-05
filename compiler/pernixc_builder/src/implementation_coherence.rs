@@ -1,7 +1,7 @@
 //! Contains logic related for checking the coherence between the traits and
 //! their implementations.
 
-use std::collections::HashSet;
+use std::{borrow::Cow, collections::HashSet};
 
 use diagnostic::{
     ExtraneousImplementationMemberPredicate,
@@ -256,8 +256,8 @@ pub(super) fn check_implemented_instantiation(
     let location_span = table.get::<LocationSpan>(implementation_id);
 
     let premise = table.get_active_premise(implementation_id);
-    let (environment, _) =
-        Environment::new_with(premise, table, normalizer::NO_OP);
+    let environment =
+        Environment::new(Cow::Borrowed(&premise), table, normalizer::NO_OP);
 
     let checker = Checker::new(&environment, handler);
 
@@ -372,8 +372,9 @@ pub(super) fn check_overlapping(
         return;
     };
 
-    let (environment, _) = Environment::new_with(
-        Premise::<Default>::default(),
+    let default_premise = Premise::<Default>::default();
+    let environment = Environment::new(
+        Cow::Borrowed(&default_premise),
         table,
         normalizer::NO_OP,
     );
@@ -572,11 +573,15 @@ pub(super) fn check_implementation_member(
             implementation_member_id,
         );
 
-        let (impl_member_env, _) = Environment::new_with(
-            table.get_active_premise::<Default>(implementation_member_id),
+        let active_premise =
+            table.get_active_premise::<Default>(implementation_member_id);
+
+        let impl_member_env = Environment::new(
+            Cow::Borrowed(&active_premise),
             table,
             normalizer::NO_OP,
         );
+
         let trait_member_premise = {
             let stub = table.get_active_premise(trait_member_id);
 
@@ -593,8 +598,8 @@ pub(super) fn check_implementation_member(
             }
         };
 
-        let (trait_member_env, _) = Environment::new_with(
-            trait_member_premise,
+        let trait_member_env = Environment::new(
+            Cow::Borrowed(&trait_member_premise),
             table,
             normalizer::NO_OP,
         );

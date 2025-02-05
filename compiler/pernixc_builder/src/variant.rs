@@ -11,7 +11,7 @@ use pernixc_table::{
     diagnostic::Diagnostic,
     query, GlobalID, Table,
 };
-use pernixc_type_system::environment::Environment;
+use pernixc_type_system::{environment::Environment, normalizer};
 
 use crate::{
     builder::Builder,
@@ -45,7 +45,11 @@ impl query::Builder<Variant> for Builder {
         let extra_namespace = table.get_generic_parameter_namepsace(global_id);
 
         let active_premise = table.get_active_premise(global_id);
-        let (env, _) = Environment::new(active_premise, table);
+        let env = Environment::new(
+            std::borrow::Cow::Borrowed(&active_premise),
+            table,
+            normalizer::NO_OP,
+        );
 
         let associated_type = table.resolve_type(
             syntax_tree.tree(),

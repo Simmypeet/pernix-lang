@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use pernixc_table::{GlobalID, Table, TargetID};
 use pernixc_term::{
@@ -41,7 +41,7 @@ fn ambiguous() {
     let premise = Premise::default();
 
     let environment =
-        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
+        Environment::new(Cow::Borrowed(&premise), &table, normalizer::NO_OP);
 
     assert_eq!(environment.order(&lhs, &rhs).unwrap(), Order::Ambiguous);
 }
@@ -72,7 +72,7 @@ fn more_general() {
     let premise = Premise::default();
 
     let environment =
-        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
+        Environment::new(Cow::Borrowed(&premise), &table, normalizer::NO_OP);
 
     assert_eq!(environment.order(&lhs, &rhs).unwrap(), Order::MoreGeneral);
 }
@@ -103,7 +103,7 @@ fn incompatible() {
     let premise = Premise::default();
 
     let environment =
-        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
+        Environment::new(Cow::Borrowed(&premise), &table, normalizer::NO_OP);
 
     assert_eq!(environment.order(&lhs, &rhs).unwrap(), Order::Incompatible);
 }

@@ -1,4 +1,4 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{borrow::Cow, fmt::Debug, sync::Arc};
 
 use pernixc_table::{GlobalID, Table};
 use pernixc_term::{
@@ -188,7 +188,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     let term = property.generate(&mut table, &mut premise)?;
 
     let environment =
-        Environment::new_unchecked(premise, &table, normalizer::NO_OP);
+        Environment::new(Cow::Borrowed(&premise), &table, normalizer::NO_OP);
 
     let result = environment
         .query(&Definite(term))

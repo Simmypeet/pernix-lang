@@ -2,6 +2,7 @@
 
 use std::{
     any::Any,
+    borrow::Cow,
     cell::RefCell,
     cmp::Ordering,
     collections::{hash_map::Entry, BTreeSet, HashMap},
@@ -47,7 +48,7 @@ pub struct Premise<M: Model> {
 pub struct Environment<'a, M: Model, N> {
     /// The premise of the semantic logic.
     #[get = "pub"]
-    premise: Premise<M>,
+    premise: Cow<'a, Premise<M>>,
 
     /// The table that contains the information of symbols.
     #[get_copy = "pub"]
@@ -65,7 +66,7 @@ impl<'a, M: Model> Environment<'a, M, normalizer::NoOp> {
     /// default normalizer.
     pub fn with_default(table: &'a Table) -> Self {
         Self {
-            premise: Premise::default(),
+            premise: Cow::Owned(Premise::default()),
             table,
             normalizer: normalizer::NO_OP,
             context: RefCell::new(Context::default()),
@@ -74,21 +75,6 @@ impl<'a, M: Model> Environment<'a, M, normalizer::NoOp> {
 }
 
 impl<'a, M: Model, N> Environment<'a, M, N> {
-    #[cfg(test)]
-    #[must_use]
-    pub fn new_unchecked(
-        premise: Premise<M>,
-        table: &'a Table,
-        normalizer: &'a N,
-    ) -> Self {
-        Self {
-            premise,
-            table,
-            normalizer,
-            context: RefCell::new(Context::default()),
-        }
-    }
-
     #[cfg(test)]
     pub fn assert_call_stack_empty(&self) {
         let context = self.context.borrow();
@@ -513,6 +499,7 @@ fn check_definite_predicate<
         if remove_on_check {
             assert!(environment
                 .premise
+                .to_mut()
                 .predicates
                 .remove(&predicate_i.clone().into()));
         }
@@ -525,6 +512,7 @@ fn check_definite_predicate<
                 if remove_on_check {
                     assert!(environment
                         .premise
+                        .to_mut()
                         .predicates
                         .insert(predicate_i.clone().into()));
                 }
@@ -543,6 +531,7 @@ fn check_definite_predicate<
                 if remove_on_check {
                     assert!(environment
                         .premise
+                        .to_mut()
                         .predicates
                         .insert(predicate_i.clone().into()));
                 }
@@ -554,6 +543,7 @@ fn check_definite_predicate<
         if remove_on_check {
             assert!(environment
                 .premise
+                .to_mut()
                 .predicates
                 .insert(predicate_i.clone().into()));
         }
@@ -582,6 +572,7 @@ fn check_ambiguous_predicates<
         if remove_on_check {
             assert!(environment
                 .premise
+                .to_mut()
                 .predicates
                 .remove(&predicate_i.clone().into()));
         }
@@ -599,6 +590,7 @@ fn check_ambiguous_predicates<
                     if remove_on_check {
                         assert!(environment
                             .premise
+                            .to_mut()
                             .predicates
                             .insert(predicate_i.clone().into()));
                     }
@@ -618,6 +610,7 @@ fn check_ambiguous_predicates<
                     if remove_on_check {
                         assert!(environment
                             .premise
+                            .to_mut()
                             .predicates
                             .insert(predicate_i.clone().into()));
                     }
@@ -632,6 +625,7 @@ fn check_ambiguous_predicates<
             if remove_on_check {
                 assert!(environment
                     .premise
+                    .to_mut()
                     .predicates
                     .remove(&predicate_j.clone().into()));
             }
@@ -644,10 +638,12 @@ fn check_ambiguous_predicates<
                     if remove_on_check {
                         assert!(environment
                             .premise
+                            .to_mut()
                             .predicates
                             .insert(predicate_j.clone().into()));
                         assert!(environment
                             .premise
+                            .to_mut()
                             .predicates
                             .insert(predicate_i.clone().into()));
                     }
@@ -667,10 +663,12 @@ fn check_ambiguous_predicates<
                     if remove_on_check {
                         assert!(environment
                             .premise
+                            .to_mut()
                             .predicates
                             .insert(predicate_j.clone().into()));
                         assert!(environment
                             .premise
+                            .to_mut()
                             .predicates
                             .insert(predicate_i.clone().into()));
                     }
@@ -682,6 +680,7 @@ fn check_ambiguous_predicates<
             if remove_on_check {
                 assert!(environment
                     .premise
+                    .to_mut()
                     .predicates
                     .insert(predicate_j.clone().into()));
             }
@@ -690,6 +689,7 @@ fn check_ambiguous_predicates<
         if remove_on_check {
             assert!(environment
                 .premise
+                .to_mut()
                 .predicates
                 .insert(predicate_i.clone().into()));
         }
@@ -736,13 +736,11 @@ fn check_ambiguous_generic_arguments<M: Model>(
 }
 
 impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
-    /// Creates a new [`Environment`].
-    ///
-    /// The ambiguous predicates will be removed from the environment and is
-    /// extracted out to the vector of [`Error`].
+    /// Creates a new [`Environment`] and check for potential invalid predicates
+    /// in the premise.
     #[allow(clippy::too_many_lines)]
-    pub fn new_with(
-        premise: Premise<M>,
+    pub fn diagnose(
+        premise: Cow<'a, Premise<M>>,
         table: &'a Table,
         normalizer: &'a N,
     ) -> (Self, Vec<Error<M>>) {
@@ -1025,7 +1023,7 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
             .map(Predicate::TraitTypeCompatible)
         {
             // temporarily remove the equality
-            assert!(environment.premise.predicates.remove(&equality));
+            assert!(environment.premise.to_mut().predicates.remove(&equality));
 
             // recursively check the equality
             for (kind, _) in RecursiveIterator::new(
@@ -1081,7 +1079,7 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
             }
 
             // add the equality back
-            assert!(environment.premise.predicates.insert(equality));
+            assert!(environment.premise.to_mut().predicates.insert(equality));
         }
 
         overflow_predicates.sort();
@@ -1149,7 +1147,11 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
             )
             .chain(definite_predicate.iter().cloned())
         {
-            environment.premise.predicates.remove(&predicate_to_remove);
+            environment
+                .premise
+                .to_mut()
+                .predicates
+                .remove(&predicate_to_remove);
         }
 
         let ambiguous_predicates_vecs = ambiguous_positive_trait_predicates_set
@@ -1187,12 +1189,21 @@ impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
     }
 }
 
-impl<'a, M: Model> Environment<'a, M, normalizer::NoOp> {
+impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
     /// Creates a new [`Environment`].
     ///
     /// The ambiguous predicates will be removed from the environment and is
     /// extracted out to the vector of [`Error`].
-    pub fn new(premise: Premise<M>, table: &'a Table) -> (Self, Vec<Error<M>>) {
-        Self::new_with(premise, table, normalizer::NO_OP)
+    pub fn new(
+        premise: Cow<'a, Premise<M>>,
+        table: &'a Table,
+        normalizer: &'a N,
+    ) -> Self {
+        Self {
+            premise,
+            table,
+            normalizer,
+            context: RefCell::new(Context::default()),
+        }
     }
 }
