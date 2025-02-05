@@ -1,4 +1,4 @@
-use pernixc_handler::Storage;
+use pernixc_handler::{Panic, Storage};
 use pernixc_syntax::{syntax_tree, utility::parse};
 use pernixc_table::diagnostic::Diagnostic;
 use pernixc_term::{
@@ -8,17 +8,18 @@ use pernixc_term::{
 use pernixc_type_system::equality::Equality;
 
 use crate::{
-    address::{self, Address},
+    address::{self, Address, Offset},
     binding::{
         diagnostic::{
             CannotIndexPastUnpackedTuple, ExpectedStructType, ExpectedTuple,
             ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
-            InvalidCastType, MismatchedArgumentCount, TooLargeTupleIndex,
-            TupleIndexOutOfBOunds, UnexpectedGenericArgumentsInField,
+            InvalidCastType, MismatchedArgumentCount, MismatchedType,
+            TooLargeTupleIndex, TupleIndexOutOfBOunds,
+            UnexpectedGenericArgumentsInField,
         },
         test::{build_table, BindExt, CreateBinderAtExt, Template},
     },
-    model,
+    model::{self, Constraint},
 };
 
 #[test]
@@ -641,3 +642,69 @@ fn tuple_index_on_non_tuple() {
         .is_some());
 }
 
+#[test]
+fn array_access() {
+    let template = Template::new();
+    let mut binder = template.create_binder();
+
+    let storage = Storage::<Box<dyn Diagnostic>>::new();
+    let (address, _) = binder
+        .bind_variable_declaration(
+            &parse("let mutable array = [32, 64, 128];"),
+            &storage,
+        )
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    // from start 0
+    {
+        let lvalue = binder.bind_as_lvalue_success(&parse::<
+            syntax_tree::expression::Postfixable,
+        >("array.[0]"));
+
+        assert_eq!(lvalue.qualifier, Qualifier::Mutable);
+
+        let index = lvalue.address.as_index().unwrap();
+
+        assert_eq!(*index.array_address, address);
+        assert_eq!(
+            index
+                .indexing_value
+                .as_literal()
+                .unwrap()
+                .as_numeric()
+                .unwrap()
+                .integer_string,
+            "0"
+        );
+        assert!(index
+            .indexing_value
+            .as_literal()
+            .unwrap()
+            .as_numeric()
+            .unwrap()
+            .decimal_stirng
+            .is_none());
+    }
+
+    // usize expected
+    {
+        let error = binder.bind_as_rvalue_error(&parse::<
+            syntax_tree::expression::Postfixable,
+        >("array.[1.0]"));
+
+        assert_eq!(error.1.len(), 1);
+
+        let error = error
+            .1
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<MismatchedType<model::Constrained>>()
+            .unwrap();
+
+        assert_eq!(error.expected_type, Type::Primitive(Primitive::Usize));
+        assert_eq!(error.found_type, Type::Inference(Constraint::Floating));
+    }
+}
