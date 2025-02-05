@@ -110,6 +110,7 @@ mod binary;
 mod boolean;
 mod character;
 mod numeric;
+mod panic;
 mod parenthesized;
 mod phantom;
 mod qualified_identifier;
@@ -124,7 +125,6 @@ mod express;
 mod if_else;
 mod r#loop;
 mod r#match;
-mod panic;
 mod postfix;
 mod prefix;
 mod r#return;
@@ -333,8 +333,8 @@ impl Bind<&syntax_tree::expression::Unit> for Binder<'_> {
             syntax_tree::expression::Unit::Character(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Panic(_) => {
-                todo!()
+            syntax_tree::expression::Unit::Panic(syn) => {
+                self.bind(syn, config, handler)
             }
         }
     }
