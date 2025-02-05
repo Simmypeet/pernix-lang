@@ -112,6 +112,7 @@ mod numeric;
 mod parenthesized;
 mod phantom;
 mod qualified_identifier;
+mod string;
 mod r#struct;
 
 /*
@@ -127,7 +128,6 @@ mod panic;
 mod postfix;
 mod prefix;
 mod r#return;
-mod string;
 mod r#while;
 */
 
@@ -327,8 +327,8 @@ impl Bind<&syntax_tree::expression::Unit> for Binder<'_> {
             syntax_tree::expression::Unit::Phantom(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::String(_) => {
-                todo!()
+            syntax_tree::expression::Unit::String(syn) => {
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Unit::Character(_) => {
                 todo!()
