@@ -11,14 +11,14 @@ use crate::{
     address::{self, Address},
     binding::{
         diagnostic::{
-            ExpectedStructType, ExpressionIsNotCallable, FieldIsNotAccessible,
-            FieldNotFound, InvalidCastType, MismatchedArgumentCount,
-            UnexpectedGenericArgumentsInField,
+            CannotIndexPastUnpackedTuple, ExpectedStructType, ExpectedTuple,
+            ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
+            InvalidCastType, MismatchedArgumentCount, TooLargeTupleIndex,
+            TupleIndexOutOfBOunds, UnexpectedGenericArgumentsInField,
         },
         test::{build_table, BindExt, CreateBinderAtExt, Template},
     },
     model,
-    value::register,
 };
 
 #[test]
@@ -444,3 +444,200 @@ fn struct_field_access_on_non_struct() {
 
     assert_eq!(error.r#type, Type::Primitive(Primitive::Bool));
 }
+
+const TUPLE_FUNCTION_DECLARATION: &str = r"
+public function test[T](t: T) where tuple T {}
+";
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn tuple_access() {
+    let table = build_table(TUPLE_FUNCTION_DECLARATION);
+    let mut binder = table.create_binder_at(["test", "test"]);
+
+    let address = {
+        let storage = Storage::<Box<dyn Diagnostic>>::new();
+        let (address, _) = binder
+            .bind_variable_declaration(
+                &parse(
+                    "let mutable myTuple = (32i64, true, ...t, false, 64i32);",
+                ),
+                &storage,
+            )
+            .unwrap();
+
+        assert!(storage.as_vec().is_empty());
+
+        address
+    };
+
+    // from start 0
+    {
+        let lvalue = binder.bind_as_lvalue_success(&parse::<
+            syntax_tree::expression::Postfixable,
+        >("myTuple.0"));
+
+        assert_eq!(lvalue.qualifier, Qualifier::Mutable);
+        assert_eq!(
+            lvalue.address,
+            Address::Tuple(address::Tuple {
+                tuple_address: Box::new(address.clone()),
+                offset: address::Offset::FromStart(0)
+            })
+        );
+    }
+
+    // from end 0
+    {
+        let lvalue = binder.bind_as_lvalue_success(&parse::<
+            syntax_tree::expression::Postfixable,
+        >("myTuple.-0"));
+
+        let tuple_address = Address::Tuple(address::Tuple {
+            tuple_address: Box::new(address),
+            offset: address::Offset::FromEnd(0),
+        });
+
+        assert_eq!(lvalue.qualifier, Qualifier::Mutable);
+        assert_eq!(lvalue.address, tuple_address);
+
+        assert_eq!(
+            binder.type_of_address(&tuple_address).unwrap(),
+            Type::Primitive(Primitive::Int32)
+        );
+    }
+
+    // index past unpacked from start
+    {
+        let errors = binder.bind_as_rvalue_error_fatal(&parse::<
+            syntax_tree::expression::Postfixable,
+        >("myTuple.3"));
+
+        assert_eq!(errors.len(), 1);
+
+        assert!(errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<CannotIndexPastUnpackedTuple<model::Constrained>>()
+            .is_some());
+    }
+
+    // index past unpacked from end
+    {
+        let errors = binder.bind_as_rvalue_error_fatal(&parse::<
+            syntax_tree::expression::Postfixable,
+        >("myTuple.-3"));
+
+        assert_eq!(errors.len(), 1);
+
+        assert!(errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<CannotIndexPastUnpackedTuple<model::Constrained>>()
+            .is_some());
+    }
+
+    // index past unpacked from start
+    {
+        let errors = binder.bind_as_rvalue_error_fatal(&parse::<
+            syntax_tree::expression::Postfixable,
+        >("myTuple.3"));
+
+        assert_eq!(errors.len(), 1);
+
+        assert!(errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<CannotIndexPastUnpackedTuple<model::Constrained>>()
+            .is_some());
+    }
+
+    // index too large
+    {
+        let errors = binder.bind_as_rvalue_error_fatal(&parse::<
+            syntax_tree::expression::Postfixable,
+        >(
+            "myTuple.10000000000000000000000000000000000000000",
+        ));
+
+        assert_eq!(errors.len(), 1);
+
+        assert!(errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<TooLargeTupleIndex>()
+            .is_some());
+    }
+
+    // index to unpack
+    {
+        let errors = binder.bind_as_rvalue_error_fatal(&parse::<
+            syntax_tree::expression::Postfixable,
+        >("myTuple.2"));
+
+        assert_eq!(errors.len(), 1);
+
+        assert!(errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<CannotIndexPastUnpackedTuple<model::Constrained>>()
+            .is_some());
+    }
+}
+
+#[test]
+fn tuple_index_out_of_bounds() {
+    let table = build_table(TUPLE_FUNCTION_DECLARATION);
+    let mut binder = table.create_binder_at(["test", "test"]);
+
+    let storage = Storage::<Box<dyn Diagnostic>>::new();
+    let _ = binder
+        .bind_variable_declaration(
+            &parse("let mutable myTuple = (32i64, true, false, 64i32);"),
+            &storage,
+        )
+        .unwrap();
+
+    assert!(storage.as_vec().is_empty());
+
+    // index out of bounds
+    {
+        let errors = binder.bind_as_rvalue_error_fatal(&parse::<
+            syntax_tree::expression::Postfixable,
+        >("myTuple.5"));
+
+        assert_eq!(errors.len(), 1);
+
+        assert!(errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<TupleIndexOutOfBOunds<model::Constrained>>()
+            .is_some());
+    }
+}
+
+#[test]
+fn tuple_index_on_non_tuple() {
+    let template = Template::new();
+    let mut binder = template.create_binder();
+
+    let errors = binder.bind_as_rvalue_error_fatal(&parse::<
+        syntax_tree::expression::Postfixable,
+    >("true.0"));
+
+    assert_eq!(errors.len(), 1);
+
+    assert!(errors
+        .first()
+        .unwrap()
+        .as_any()
+        .downcast_ref::<ExpectedTuple<model::Constrained>>()
+        .is_some());
+}
+
