@@ -131,3 +131,4 @@ impl Report<&Table> for NoGenericArgumentsRequired {
         }
     }
 }
+

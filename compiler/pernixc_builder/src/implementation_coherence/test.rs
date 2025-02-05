@@ -26,8 +26,8 @@ use crate::{
         MismatchedImplementationConstantTypeParameter, OrphanRuleViolation,
         UnusedGenericParameterInImplementation,
     },
-    utility::{add_target, build_table},
     type_system::diagnostic::UnsatisfiedPredicate,
+    utility::{add_target, build_table},
 };
 
 const UNUSED_GENERIC_PARAMETERS: &str = r"

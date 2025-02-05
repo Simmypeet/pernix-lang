@@ -9,7 +9,7 @@ use pernixc_log::Severity;
 use pernixc_source_file::Span;
 use pernixc_table::{component::Name, DisplayObject, GlobalID, Table};
 use pernixc_term::{
-    r#type::{Qualifier, Type},
+    r#type::{self, Qualifier, Type},
     Model,
 };
 
@@ -878,6 +878,397 @@ impl Report<&Table> for UninitializedFields {
                     .collect::<Vec<_>>()
                     .join(", ")
             )),
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The given type cannot be used in cast expression.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InvalidCastType<M: Model> {
+    /// The span of the type reference.
+    pub span: Span,
+
+    /// The type that cannot be used in cast expression.
+    pub r#type: Type<M>,
+}
+
+impl<M: Model> Report<&Table> for InvalidCastType<M>
+where
+    Type<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "cannot castt an expression to type type `{}`",
+                DisplayObject { display: &self.r#type, table }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The trait method call resolves into multiple candidates.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AmbiguousMethodCall {
+    /// The span where the method call was made.
+    pub method_call_span: Span,
+
+    /// The candidates that were found.
+    pub callable_candidates: Vec<GlobalID>,
+}
+
+impl Report<&Table> for AmbiguousMethodCall {
+    fn report(&self, table: &Table) -> Diagnostic {
+        let candidates = self
+            .callable_candidates
+            .iter()
+            .copied()
+            .map(|x| table.get_qualified_name(x))
+            .collect::<Vec<_>>();
+
+        Diagnostic {
+            span: self.method_call_span.clone(),
+            message: format!(
+                "the method call resulted into multiple candidates: {}",
+                candidates.join(", ")
+            ),
+            severity: Severity::Error,
+            help_message: Some(
+                "try using fully qualified name to solve the amguity"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        }
+    }
+}
+
+/// No method found for the given method call expression.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MethodNotFound {
+    /// The span where the method call was made.
+    pub method_call_span: Span,
+}
+
+impl Report<&Table> for MethodNotFound {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.method_call_span.clone(),
+            message: "no method found for the given method call expression"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// Adt implementation function cannot be used as a method.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AdtImplementationFunctionCannotBeUsedAsMethod {
+    /// The ID of the ADT implementation function.
+    pub adt_implementation_function_id: GlobalID,
+
+    /// The span of the function call.
+    pub span: Span,
+}
+
+impl Report<&Table> for AdtImplementationFunctionCannotBeUsedAsMethod {
+    fn report(&self, table: &Table) -> Diagnostic {
+        let adt_implementation_function_symbol =
+            table.get_qualified_name(self.adt_implementation_function_id);
+
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the implementation function \
+                 `{adt_implementation_function_symbol}` cannot be used as a \
+                 method",
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The expected argument count does not match the found argument count.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedArgumentCount {
+    /// The ID of the symbol that was supplied with the wrong number of
+    /// arguments.
+    ///
+    /// This can be an enum variant, function, trait function, trait
+    /// implementation function, and ADT implementation function.
+    pub called_id: GlobalID,
+
+    /// The expected argument count.
+    pub expected_count: usize,
+
+    /// The found argument count.
+    pub found_count: usize,
+
+    /// The span of the function call.
+    pub span: Span,
+}
+
+impl Report<&Table> for MismatchedArgumentCount {
+    fn report(&self, table: &Table) -> Diagnostic {
+        let called_symbol = table.get_qualified_name(self.called_id);
+
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the symbol `{}` expects {} argument(s) but found {}",
+                called_symbol, self.expected_count, self.found_count
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// Expected a struct type to access the field but found a different type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectedStructType<M: Model> {
+    /// The span of the expression where the field is accessed.
+    pub span: Span,
+
+    /// The type that is not a struct type.
+    pub r#type: Type<M>,
+}
+
+impl<M: Model> Report<&Table> for ExpectedStructType<M>
+where
+    Type<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "expected a struct type to access the field but found `{}`",
+                DisplayObject { display: &self.r#type, table }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The field access is not allowed to have generic arguments.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnexpectedGenericArgumentsInField {
+    /// The span of the field access.
+    pub field_access_span: Span,
+}
+
+impl Report<&Table> for UnexpectedGenericArgumentsInField {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.field_access_span.clone(),
+            message: "the field access is not allowed to have generic \
+                      arguments"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// Expected a tuple type to access the field but found a different type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectedTuple<M: Model> {
+    /// The span of the expression where the field is accessed.
+    pub span: Span,
+
+    /// The type that is not a tuple type.
+    pub r#type: Type<M>,
+}
+
+impl<M: Model> Report<&Table> for ExpectedTuple<M>
+where
+    Type<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "expected a tuple type to access the field but found `{}`",
+                DisplayObject { display: &self.r#type, table }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The tuple index is too large.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TooLargeTupleIndex {
+    /// The span of the tuple index.
+    pub access_span: Span,
+}
+
+impl Report<&Table> for TooLargeTupleIndex {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.access_span.clone(),
+            message: "the tuple index is too large".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The tuple index is out of bounds.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TupleIndexOutOfBOunds<M: Model> {
+    /// The span of the tuple index.
+    pub access_span: Span,
+
+    /// The index of the tuple.
+    pub tuple_type: r#type::Tuple<M>,
+}
+
+impl<M: Model> Report<&Table> for TupleIndexOutOfBOunds<M>
+where
+    r#type::Tuple<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> Diagnostic {
+        let count = self.tuple_type.elements.len();
+
+        Diagnostic {
+            span: self.access_span.clone(),
+            message: "the tuple index is out of bounds".to_string(),
+            severity: Severity::Error,
+            help_message: Some(format!(
+                "the tuple type is `{}` having {} element(s)",
+                DisplayObject { display: &self.tuple_type, table },
+                count,
+            )),
+            related: Vec::new(),
+        }
+    }
+}
+
+/// Indexing past the unpacked element in tuple is not allowed.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CannotIndexPastUnpackedTuple<M: Model> {
+    /// The span of the index.
+    pub index_span: Span,
+
+    /// The type of the tuple.
+    pub tuple_type: r#type::Tuple<M>,
+}
+
+impl<M: Model> Report<&Table> for CannotIndexPastUnpackedTuple<M>
+where
+    r#type::Tuple<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> Diagnostic {
+        let unpacked_index = self
+            .tuple_type
+            .elements
+            .iter()
+            .position(|x| x.is_unpacked)
+            .unwrap();
+
+        Diagnostic {
+            span: self.index_span.clone(),
+            message: "indexing past the unpacked element in tuple is not \
+                      allowed"
+                .to_string(),
+
+            severity: Severity::Error,
+            help_message: Some(format!(
+                "the tuple type is `{}` having {} element(s) and the unpacked \
+                 element is at index {}",
+                DisplayObject { display: &self.tuple_type, table },
+                self.tuple_type.elements.len(),
+                unpacked_index,
+            )),
+            related: Vec::new(),
+        }
+    }
+}
+
+/// Expected an arrary type to index into elements but found a different type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectArray<M: Model> {
+    /// The span of the expression where the elements are indexed.
+    pub span: Span,
+
+    /// The type that is not an array type.
+    pub r#type: Type<M>,
+}
+
+impl<M: Model> Report<&Table> for ExpectArray<M>
+where
+    Type<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "expected an array type to index into elements but found `{}`",
+                DisplayObject { display: &self.r#type, table }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The given expression is not callable.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpressionIsNotCallable {
+    /// The span of the expression without the call operator.
+    pub span: Span,
+}
+
+impl Report<&Table> for ExpressionIsNotCallable {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the expression `{}` is not callable",
+                self.span.str()
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The given symbol cannot be called.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SymbolIsNotCallable {
+    /// The ID of the symbol that cannot be called.
+    pub called_id: GlobalID,
+
+    /// The span of the call.
+    pub span: Span,
+}
+
+impl Report<&Table> for SymbolIsNotCallable {
+    fn report(&self, table: &Table) -> Diagnostic {
+        let called_symbol = table.get_qualified_name(self.called_id);
+
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!("the symbol `{called_symbol}` cannot be called"),
+            severity: Severity::Error,
+            help_message: None,
             related: Vec::new(),
         }
     }

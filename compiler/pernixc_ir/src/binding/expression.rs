@@ -113,6 +113,7 @@ mod numeric;
 mod panic;
 mod parenthesized;
 mod phantom;
+mod postfix;
 mod qualified_identifier;
 mod string;
 mod r#struct;
@@ -125,7 +126,6 @@ mod express;
 mod if_else;
 mod r#loop;
 mod r#match;
-mod postfix;
 mod prefix;
 mod r#return;
 mod r#while;
@@ -291,8 +291,8 @@ impl Bind<&syntax_tree::expression::Postfixable> for Binder<'_> {
             syntax_tree::expression::Postfixable::Unit(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Postfixable::Postfix(_) => {
-                todo!()
+            syntax_tree::expression::Postfixable::Postfix(syn) => {
+                self.bind(syn, config, handler)
             }
         }
     }

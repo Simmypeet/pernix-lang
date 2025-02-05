@@ -1,88 +1,74 @@
 use std::collections::HashSet;
 
-use pernixc_base::{
-    handler::{Dummy, Handler, Storage},
-    source_file::{SourceElement, Span},
+use pernixc_arena::ID;
+use pernixc_component::{
+    function_signature::FunctionSignature, implementation::Implementation,
 };
+use pernixc_handler::{Handler, Storage};
+use pernixc_resolution::qualified_identifier;
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self,
     expression::{AccessKind, PostfixOperator},
     ConnectedList,
 };
+use pernixc_table::{
+    component::{Implemented, Implements, Import, Member, Parent, SymbolKind},
+    diagnostic::Diagnostic,
+    resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
+    GlobalID,
+};
+use pernixc_term::{
+    constant::Constant,
+    generic_arguments::GenericArguments,
+    generic_parameter::{
+        ConstantParameterID, GenericParameters, LifetimeParameterID,
+        TypeParameterID,
+    },
+    instantiation::{self, Instantiation},
+    lifetime::Lifetime,
+    r#type::{Primitive, Qualifier, Type},
+    Default, Model, Symbol,
+};
+use pernixc_type_system::diagnostic::OverflowOperation;
 
 use super::{Bind, Config, Expression, LValue};
 use crate::{
-    arena::ID,
-    error::{
-        self, AdtImplementationFunctionCannotBeUsedAsMethod,
-        AmbiguousMethodCall, CannotIndexPastUnpackedTuple, ExpectArray,
-        ExpectStructType, ExpressionIsNotCallable, FieldIsNotAccessible,
-        FieldNotFound, InvalidCastType, MethodNotFound,
-        MismatchedArgumentCount, MismatchedQualifierForReferenceOf,
-        OverflowOperation, SymbolIsNotAccessible, SymbolIsNotCallable,
-        SymbolNotFound, TooLargeTupleIndex, TupleExpected,
-        TupleIndexOutOfBOunds, TypeSystemOverflow,
-        UnexpectedGenericArgumentsInField,
-    },
-    ir::{
-        self,
-        address::{self, Address, Memory},
-        instruction::{Instruction, Store},
-        representation::{
-            binding::{
-                expression::Target,
-                infer::{self, InferenceVariable},
-                Binder, Error, InferenceProvider, InternalError, SemanticError,
-            },
-            borrow,
+    address::{self, Address, Memory},
+    binding::{
+        diagnostic::{
+            AdtImplementationFunctionCannotBeUsedAsMethod, AmbiguousMethodCall,
+            CannotIndexPastUnpackedTuple, ExpectArray, ExpectedStructType,
+            ExpectedTuple, ExpressionIsNotCallable, FieldIsNotAccessible,
+            FieldNotFound, InvalidCastType, MethodNotFound,
+            MismatchedArgumentCount, MismatchedQualifierForReferenceOf,
+            SymbolIsNotCallable, TooLargeTupleIndex, TupleIndexOutOfBOunds,
+            UnexpectedGenericArgumentsInField,
         },
-        value::{
-            literal::{self, Literal},
-            register::{
-                Assignment, Borrow, Cast, FunctionCall, Load, Register, Variant,
-            },
-            Value,
-        },
-        Erased, NoConstraint,
+        expression::Target,
+        infer::{self, Expected, InferenceVariable},
+        AbruptError, AddContextExt, Binder, Error, SemanticError,
     },
-    symbol::{
-        table::{
-            self,
-            representation::Index,
-            resolution::{self, MemberGenericID},
-        },
-        AdtID, CallableID, ConstantParameterID, LifetimeParameterID,
-        TraitMemberID, TypeParameterID,
-    },
-    type_system::{
-        self,
-        instantiation::{self, Instantiation},
-        model::{self, Model},
-        simplify,
-        term::{
-            constant::Constant,
-            lifetime::Lifetime,
-            r#type::{self, Constraint, Expected, Primitive, Qualifier, Type},
-            GenericArguments, Symbol,
+    instruction::{Instruction, Store},
+    model::{Constraint, Erased, NoConstraint},
+    value::{
+        literal::{self, Literal},
+        register::{
+            Assignment, Borrow, Cast, FunctionCall, Load, Register, Variant,
         },
     },
+    Value,
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Postfix> for Binder<'t, S, RO, TO>
-{
+// FIXME: the algorithm for searching methods are such a mess
+
+impl Bind<&syntax_tree::expression::Postfix> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Postfix,
         config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree.operator() {
             syntax_tree::expression::PostfixOperator::Call(call) => {
@@ -91,38 +77,22 @@ impl<
 
             syntax_tree::expression::PostfixOperator::Cast(cast_syn) => {
                 // resolve the type
-                let mut cast_type = self
-                    .table
-                    .resolve_type(
-                        cast_syn.r#type(),
-                        self.current_site,
-                        resolution::Config {
-                            elided_lifetime_provider: Some(
-                                &mut InferenceProvider::default(),
-                            ),
-                            elided_type_provider: None,
-                            elided_constant_provider: None,
-                            observer: Some(&mut self.resolution_observer),
-                            higher_ranked_lifetimes: None,
-                        },
-                        handler,
-                    )
-                    .map_err(|_| {
-                        Error::Semantic(SemanticError(syntax_tree.span()))
-                    })?;
+                let cast_type = self
+                    .resolve_type_with_inference(cast_syn.r#type(), handler);
 
-                cast_type =
-                    simplify::simplify(&cast_type, &self.create_environment())
-                        .map_err(|overflow_error| TypeSystemOverflow {
-                            operation: OverflowOperation::TypeOf,
-                            overflow_span: cast_syn.r#type().span(),
-                            overflow_error,
-                        })?
-                        .result;
+                let cast_type = self
+                    .create_environment()
+                    .simplify(cast_type)
+                    .map_err(|x| {
+                    x.into_type_system_overflow(
+                        OverflowOperation::TypeOf,
+                        cast_syn.r#type().span(),
+                    )
+                })?;
 
                 // can only cast between numeric types
                 if !matches!(
-                    cast_type,
+                    &cast_type.result,
                     Type::Primitive(
                         Primitive::Float32
                             | Primitive::Float64
@@ -142,13 +112,15 @@ impl<
                         InvalidCastType {
                             r#type: self
                                 .inference_context
-                                .transform_type_into_constraint_model(cast_type)
-                                .map_err(|overflow_error| {
-                                    TypeSystemOverflow {
-                                        operation: OverflowOperation::TypeOf,
-                                        overflow_span: cast_syn.r#type().span(),
-                                        overflow_error,
-                                    }
+                                .transform_type_into_constraint_model(
+                                    cast_type.result.clone(),
+                                    self.table,
+                                )
+                                .map_err(|x| {
+                                    x.into_type_system_overflow(
+                                        OverflowOperation::TypeOf,
+                                        cast_syn.r#type().span(),
+                                    )
                                 })?,
                             span: cast_syn.r#type().span(),
                         },
@@ -177,7 +149,10 @@ impl<
 
                 Ok(Expression::RValue(Value::Register(
                     self.create_register_assignmnet(
-                        Assignment::Cast(Cast { value, r#type: cast_type }),
+                        Assignment::Cast(Cast {
+                            value,
+                            r#type: cast_type.result.clone(),
+                        }),
                         syntax_tree.span(),
                     ),
                 )))
@@ -196,18 +171,10 @@ enum RecieverKind {
     Reference(Qualifier),
 }
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Binder<'t, S, RO, TO>
-{
+impl Binder<'_> {
     fn is_method(
-        first_parameter_type: &Type<model::Default>,
-        implemented_type: &Type<model::Default>,
+        first_parameter_type: &Type<Default>,
+        implemented_type: &Type<Default>,
     ) -> Option<RecieverKind> {
         if first_parameter_type == implemented_type {
             return Some(RecieverKind::Value);
@@ -231,93 +198,92 @@ impl<
         generic_arguments: &GenericArguments<infer::Model>,
         access_type: &Type<infer::Model>,
         arguments: &[(Span, Value<infer::Model>)],
-        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<
         Vec<(
-            CallableID,
+            GlobalID,
             Instantiation<infer::Model>,
             infer::Context,
             RecieverKind,
         )>,
-        TypeSystemOverflow,
+        AbruptError,
     > {
         let mut candidates = Vec::new();
 
-        let current_module_id =
-            self.table.get_closet_module_id(self.current_site).unwrap();
-        let current_module_sym = self.table.get(current_module_id).unwrap();
+        let current_module_id = GlobalID::new(
+            self.current_site.target_id,
+            self.table.get_closet_module_id(self.current_site),
+        );
 
-        let visible_traits = current_module_sym
-            .imports()
+        let module_import = self.table.get::<Import>(current_module_id);
+        let module_member = self.table.get::<Member>(current_module_id);
+
+        let visible_traits = module_import
             .iter()
-            .filter_map(|(_, (id, _))| (*id).into_trait().ok())
+            .map(|x| x.1.id)
             .chain(
-                current_module_sym
-                    .member_ids_by_name()
+                module_member
                     .values()
                     .copied()
-                    .filter_map(|x| x.into_trait().ok()),
+                    .map(|x| GlobalID::new(current_module_id.target_id, x)),
             )
+            .filter(|x| {
+                let symbol_kind = *self.table.get::<SymbolKind>(*x);
+
+                symbol_kind == SymbolKind::Trait
+            })
             .chain(
                 self.premise
                     .predicates
                     .iter()
-                    .filter_map(|x| x.as_positive_trait().map(|x| x.id)),
+                    .filter_map(|x| x.as_positive_trait().map(|x| x.trait_id)),
             )
             .collect::<HashSet<_>>();
 
-        drop(current_module_sym);
         let starting_inference_context = self.inference_context.clone();
 
         'candidate: for trait_id in visible_traits {
             // looking for a trait function
-            let Some(TraitMemberID::Function(trait_function_id)) = self
+            let Some(trait_function_id) = self
                 .table
-                .get(trait_id)
-                .unwrap()
-                .member_ids_by_name()
+                .get::<Member>(trait_id)
                 .get(method_ident.identifier().span.str())
                 .copied()
+                .map(|x| GlobalID::new(trait_id.target_id, x))
             else {
                 continue;
             };
 
-            // invoke the resolution observer
-            self.resolution_observer.on_item_id_resolved(
-                self.table,
-                self.current_site,
-                &self.create_handler_wrapper(handler),
-                trait_function_id.into(),
-                &method_ident.identifier().span,
-            );
+            let symbol_kind = *self.table.get::<SymbolKind>(trait_function_id);
 
-            let trait_function_sym = self.table.get(trait_function_id).unwrap();
-
-            // argument count mismatched, skip
-            if trait_function_sym.parameters().len() != arguments.len() + 1 {
+            if symbol_kind != SymbolKind::TraitFunction {
                 continue;
             }
 
-            // check accessibility, skip
-            if !self
-                .table
-                .is_accessible_from(
-                    self.current_site,
-                    self.table
-                        .get_accessibility(trait_function_id.into())
-                        .unwrap(),
-                )
-                .unwrap()
+            // invoke the resolution observer
+            let trait_function_signature =
+                self.table.query::<FunctionSignature>(trait_function_id)?;
+
+            // argument count mismatched, skip
+            if trait_function_signature.parameters.len() != arguments.len() + 1
             {
                 continue;
             }
 
-            let trait_sym = self.table.get(trait_id).unwrap();
+            // check accessibility, skip
+            if !self.table.is_accessible_from_globally(
+                self.current_site,
+                self.table
+                    .get_accessibility(trait_function_id)
+                    .into_global(trait_function_id.target_id),
+            ) {
+                continue;
+            }
+
+            let trait_generic_parameter =
+                self.table.query::<GenericParameters>(trait_id)?;
 
             // trait must at least have one type parameter
-            let Some(first_ty_parameter_id) = trait_sym
-                .generic_declaration
-                .parameters
+            let Some(first_ty_parameter_id) = trait_generic_parameter
                 .type_parameters_as_order()
                 .next()
                 .map(|x| x.0)
@@ -327,52 +293,44 @@ impl<
 
             // check if it can be used as a method
             let Some(kind) = Self::is_method(
-                &trait_function_sym
-                    .parameter_as_order()
+                trait_function_signature
+                    .parameter_order
+                    .iter()
+                    .copied()
+                    .map(|x| &trait_function_signature.parameters[x].r#type)
                     .next()
-                    .unwrap()
-                    .1
-                    .r#type,
+                    .unwrap(),
                 &Type::Parameter(TypeParameterID {
-                    parent: trait_id.into(),
+                    parent: trait_id,
                     id: first_ty_parameter_id,
                 }),
             ) else {
                 continue;
             };
 
-            drop(trait_function_sym);
-            drop(trait_sym);
-
             self.inference_context = starting_inference_context.clone();
 
-            let storage = Storage::<Box<dyn error::Error>>::default();
+            let storage = Storage::<Box<dyn Diagnostic>>::default();
             let function_generic_arguments = self
                 .verify_generic_arguments_for_with_inference(
                     generic_arguments.clone(),
-                    trait_function_id.into(),
+                    trait_function_id,
                     method_ident.span(),
                     false,
                     &storage,
-                );
+                )?;
 
             if !storage.as_vec().is_empty() {
                 continue;
             }
 
-            let trait_sym = self.table.get(trait_id).unwrap();
-
             let trait_generic_arguments = GenericArguments {
-                lifetimes: trait_sym
-                    .generic_declaration
-                    .parameters
+                lifetimes: trait_generic_parameter
                     .lifetime_order()
                     .iter()
                     .map(|_| Lifetime::Inference(Erased))
                     .collect(),
-                types: trait_sym
-                    .generic_declaration
-                    .parameters
+                types: trait_generic_parameter
                     .type_order()
                     .iter()
                     .enumerate()
@@ -391,9 +349,7 @@ impl<
                     })
                     .collect(),
                 constants: {
-                    trait_sym
-                        .generic_declaration
-                        .parameters
+                    trait_generic_parameter
                         .constant_order()
                         .iter()
                         .map(|_| {
@@ -409,65 +365,32 @@ impl<
                 },
             };
 
-            let trait_function_resolution =
-                resolution::Resolution::MemberGeneric(
-                    resolution::MemberGeneric {
-                        id: trait_function_id.into(),
-                        parent_generic_arguments: trait_generic_arguments,
-                        generic_arguments: function_generic_arguments,
-                    },
-                );
-
-            self.resolution_observer.on_resolution_resolved(
-                self.table,
-                self.current_site,
-                &self.create_handler_wrapper(handler),
-                &trait_function_resolution,
-                &method_ident.span(),
-            );
-
-            let resolution::Resolution::MemberGeneric(
-                resolution::MemberGeneric {
-                    id:
-                        resolution::MemberGenericID::TraitFunction(
-                            trait_function_id,
-                        ),
-                    parent_generic_arguments: trait_generic_arguments,
-                    generic_arguments: function_generic_arguments,
-                },
-            ) = trait_function_resolution
-            else {
-                unreachable!()
-            };
-
+            let trait_function_generic_params =
+                self.table.query::<GenericParameters>(trait_function_id)?;
             let mut instantiation = Instantiation::from_generic_arguments(
                 trait_generic_arguments.clone(),
-                trait_id.into(),
-                &trait_sym.generic_declaration.parameters,
+                trait_id,
+                &trait_generic_parameter,
             )
             .unwrap();
+
             assert!(instantiation
                 .append_from_generic_arguments(
                     function_generic_arguments,
-                    trait_function_id.into(),
-                    &self
-                        .table
-                        .get(trait_function_id)
-                        .unwrap()
-                        .generic_declaration
-                        .parameters
+                    trait_function_id,
+                    &trait_function_generic_params
                 )
                 .unwrap()
                 .is_empty());
 
-            let trait_function_sym = self.table.get(trait_function_id).unwrap();
-
             for ((argument_span, argument_value), parameter) in
                 arguments.iter().zip(
-                    trait_function_sym
-                        .parameter_as_order()
+                    trait_function_signature
+                        .parameter_order
+                        .iter()
+                        .copied()
                         .skip(1)
-                        .map(|x| x.1),
+                        .map(|x| &trait_function_signature.parameters[x]),
                 )
             {
                 let mut parameter_ty =
@@ -475,20 +398,25 @@ impl<
 
                 instantiation::instantiate(&mut parameter_ty, &instantiation);
 
+                let storage = Storage::<Box<dyn Diagnostic>>::default();
                 if !self.type_check(
                     &self.type_of_value(argument_value).unwrap(),
                     Expected::Known(parameter_ty),
                     argument_span.clone(),
                     false,
-                    &Dummy,
+                    &storage,
                 )? {
                     continue 'candidate;
+                }
+
+                if !storage.as_vec().is_empty() {
+                    continue;
                 }
             }
 
             // check if trait is implemented
             candidates.push((
-                CallableID::TraitFunction(trait_function_id),
+                trait_function_id,
                 instantiation,
                 self.inference_context.clone(),
                 kind,
@@ -506,7 +434,7 @@ impl<
         &mut self,
         reciever: Expression,
         reciever_kind: RecieverKind,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Value<infer::Model>, Error> {
         match (reciever_kind, reciever) {
             (RecieverKind::Value, Expression::RValue(value)) => Ok(value),
@@ -534,8 +462,9 @@ impl<
                         .get(*id)
                         .unwrap()
                         .span
-                        .clone(),
-                    Value::Literal(literal) => literal.span().clone(),
+                        .clone()
+                        .unwrap(),
+                    Value::Literal(literal) => literal.span().cloned().unwrap(),
                 };
                 let type_of_value = self.type_of_value(&value)?;
                 let alloca_id = self.create_alloca(type_of_value, span.clone());
@@ -544,16 +473,14 @@ impl<
                 let _ = self.current_block_mut().add_instruction(
                     Instruction::Store(Store {
                         address: Address::Memory(Memory::Alloca(alloca_id)),
-                        span: span.clone(),
+                        span: Some(span.clone()),
                         value,
                     }),
                 );
 
                 Ok(Value::Register(self.create_register_assignmnet(
                     Assignment::Borrow(Borrow {
-                        address: address::Address::Memory(Memory::Alloca(
-                            alloca_id,
-                        )),
+                        address: Address::Memory(Memory::Alloca(alloca_id)),
                         qualifier: qualifieer,
                         lifetime: Lifetime::Inference(Erased),
                     }),
@@ -592,21 +519,19 @@ impl<
         }
     }
 
-    fn on_binding_adt_method_error<
-        I: Iterator<Item = Box<dyn error::Error>>,
-    >(
+    fn on_binding_adt_method_error<I: Iterator<Item = Box<dyn Diagnostic>>>(
         &mut self,
         method_call_span: Span,
         reciever: Expression,
         mut arguments: Vec<(Span, Value<infer::Model>)>,
         trait_method_candidates: Vec<(
-            CallableID,
+            GlobalID,
             Instantiation<infer::Model>,
             infer::Context,
             RecieverKind,
         )>,
         error: impl FnOnce(&mut Self) -> I,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Value<infer::Model>, Error> {
         if trait_method_candidates.len() == 1 {
             let (callable_id, instantiation, inference_context, kind) =
@@ -620,9 +545,10 @@ impl<
                     .get(*register_id)
                     .unwrap()
                     .span
-                    .clone(),
+                    .clone()
+                    .unwrap(),
                 Expression::RValue(Value::Literal(literal)) => {
-                    literal.span().clone()
+                    literal.span().cloned().unwrap()
                 }
                 Expression::LValue(lvalue) => lvalue.span.clone(),
             };
@@ -666,7 +592,7 @@ impl<
     fn bind_method_call(
         &mut self,
         postfix: &syntax_tree::expression::Postfix,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Value<infer::Model>, Error> {
         let struct_expression_wth_access =
             postfix.postfixable().as_postfix().unwrap();
@@ -690,7 +616,12 @@ impl<
                 .into_l_value()
                 .unwrap();
 
-            let ty = self.type_of_address(&lvalue.address)?;
+            let ty = self.type_of_address(&lvalue.address).map_err(|x| {
+                x.into_type_system_overflow(
+                    OverflowOperation::TypeOf,
+                    lvalue.span.clone(),
+                )
+            })?;
 
             (Expression::LValue(lvalue), ty)
         }
@@ -729,7 +660,6 @@ impl<
             .as_ref()
             .map_or_else(GenericArguments::default, |x| {
                 self.resolve_generic_arguments_with_inference(x, true, handler)
-                    .expect("should have no invalid referring site")
             });
 
         let trait_method_candidates = self.search_trait_method_candidates(
@@ -737,14 +667,12 @@ impl<
             &generic_arguments,
             &access_type,
             &arguments,
-            handler,
         )?;
 
-        let Type::Symbol(Symbol {
-            id: r#type::SymbolID::Adt(adt_id),
-            generic_arguments: adt_generic_arguments,
-        }) = access_type
-        else {
+        let Some(symbol) = access_type.into_symbol().into_iter().find(|x| {
+            let symbol_kind = *self.table.get::<SymbolKind>(x.id);
+            symbol_kind.is_adt()
+        }) else {
             return self.on_binding_adt_method_error(
                 postfix.span(),
                 reciever_expression,
@@ -754,27 +682,31 @@ impl<
                     std::iter::once(Box::new(MethodNotFound {
                         method_call_span: postfix.span(),
                     })
-                        as Box<dyn error::Error>)
+                        as Box<dyn Diagnostic>)
                 },
                 handler,
             );
         };
 
+        let Symbol { id: adt_id, generic_arguments: adt_generic_arguments } =
+            symbol;
+
         // find the method id
-        let Some(adt_implementation_function_id) = self
-            .table
-            .get_adt(adt_id)
-            .unwrap()
-            .implementations()
-            .iter()
-            .find_map(|x| {
-                self.table
-                    .get(*x)
-                    .unwrap()
-                    .member_ids_by_name()
-                    .get(method_ident.identifier().span.str())
-                    .copied()
-            })
+        let Some(adt_implementation_function_id) =
+            self.table.get::<Implemented>(adt_id).iter().copied().find_map(
+                |x| {
+                    self.table
+                        .get::<Member>(x)
+                        .get(method_ident.identifier().span.str())
+                        .copied()
+                        .map(|y| GlobalID::new(x.target_id, y))
+                        .filter(|x| {
+                            let symbol_kind = *self.table.get::<SymbolKind>(*x);
+
+                            symbol_kind == SymbolKind::AdtImplementationFunction
+                        })
+                },
+            )
         else {
             return self.on_binding_adt_method_error(
                 postfix.span(),
@@ -783,33 +715,24 @@ impl<
                 trait_method_candidates,
                 |_| {
                     std::iter::once(Box::new(SymbolNotFound {
-                        searched_item_id: Some(adt_id.into()),
+                        searched_item_id: Some(adt_id),
                         resolution_span: method_ident.span(),
                     })
-                        as Box<dyn error::Error>)
+                        as Box<dyn Diagnostic>)
                 },
                 handler,
             );
         };
 
-        // this is considered as an item id resolution, notify the observer
-        self.resolution_observer.on_item_id_resolved(
-            self.table,
-            self.current_site,
-            handler,
-            adt_implementation_function_id.into(),
-            &method_ident.identifier().span,
-        );
-
-        let storage = Storage::<Box<dyn error::Error>>::default();
+        let storage = Storage::<Box<dyn Diagnostic>>::default();
         let function_generic_arguments = self
             .verify_generic_arguments_for_with_inference(
                 generic_arguments,
-                adt_implementation_function_id.into(),
+                adt_implementation_function_id,
                 method_ident.span(),
-                true,
-                handler,
-            );
+                false,
+                &storage,
+            )?;
 
         let storage = storage.into_vec();
         if !storage.is_empty() {
@@ -823,31 +746,35 @@ impl<
             );
         }
 
-        let adt_implementation_id =
-            self.table.get(adt_implementation_function_id).unwrap().parent_id();
-        let adt_implementation = self.table.get(adt_implementation_id).unwrap();
+        let adt_implementation_id = GlobalID::new(
+            adt_implementation_function_id.target_id,
+            self.table
+                .get::<Parent>(adt_implementation_function_id)
+                .parent
+                .unwrap(),
+        );
+        let adt_implementation_generic_params =
+            self.table.query::<GenericParameters>(adt_implementation_id)?;
+        let adt_implementation_generic_arguments =
+            self.table.query::<Implementation>(adt_implementation_id)?;
 
         let mut type_inferences = Vec::new();
         let mut constant_inferences = Vec::new();
 
         let mut instantiation = Instantiation::<infer::Model> {
-            lifetimes: adt_implementation
-                .generic_declaration
-                .parameters
+            lifetimes: adt_implementation_generic_params
                 .lifetime_parameters_as_order()
                 .map(|(id, _)| {
                     (
                         Lifetime::Parameter(LifetimeParameterID {
-                            parent: adt_implementation_id.into(),
+                            parent: adt_implementation_id,
                             id,
                         }),
                         Lifetime::Inference(Erased),
                     )
                 })
                 .collect(),
-            types: adt_implementation
-                .generic_declaration
-                .parameters
+            types: adt_implementation_generic_params
                 .type_parameters_as_order()
                 .map(|(id, _)| {
                     let inference_variable = InferenceVariable::new();
@@ -855,16 +782,14 @@ impl<
 
                     (
                         Type::Parameter(TypeParameterID {
-                            parent: adt_implementation_id.into(),
+                            parent: adt_implementation_id,
                             id,
                         }),
                         Type::Inference(inference_variable),
                     )
                 })
                 .collect(),
-            constants: adt_implementation
-                .generic_declaration
-                .parameters
+            constants: adt_implementation_generic_params
                 .constant_parameters_as_order()
                 .map(|(id, _)| {
                     let inference_variable = InferenceVariable::new();
@@ -872,7 +797,7 @@ impl<
 
                     (
                         Constant::Parameter(ConstantParameterID {
-                            parent: adt_implementation_id.into(),
+                            parent: adt_implementation_id,
                             id,
                         }),
                         Constant::Inference(inference_variable),
@@ -890,15 +815,17 @@ impl<
 
         let _ = self.type_check(
             &Type::Symbol(Symbol {
-                id: adt_implementation.implemented_id().into(),
-                generic_arguments: adt_generic_arguments.clone(),
+                id: adt_id,
+                generic_arguments: adt_generic_arguments,
             }),
             Expected::Known(Type::Symbol(Symbol {
-                id: adt_implementation.implemented_id().into(),
+                id: adt_id,
                 generic_arguments: {
                     let mut adt_generic_arguments =
                         GenericArguments::from_default_model(
-                            adt_implementation.arguments.clone(),
+                            adt_implementation_generic_arguments
+                                .generic_arguments
+                                .clone(),
                         );
 
                     adt_generic_arguments.instantiate(&instantiation);
@@ -911,40 +838,24 @@ impl<
             handler,
         )?;
 
+        let adt_implementation_function_generic_params =
+            self.table
+                .query::<GenericParameters>(adt_implementation_function_id)?;
+
         assert!(instantiation
             .append_from_generic_arguments(
-                function_generic_arguments.clone(),
-                adt_implementation_function_id.into(),
-                &self
-                    .table
-                    .get(adt_implementation_function_id)
-                    .unwrap()
-                    .generic_declaration
-                    .parameters,
+                function_generic_arguments,
+                adt_implementation_function_id,
+                &adt_implementation_function_generic_params
             )
             .unwrap()
             .is_empty());
 
-        drop(adt_implementation);
+        let adt_implementation_function_signature =
+            self.table
+                .query::<FunctionSignature>(adt_implementation_function_id)?;
 
-        self.resolution_observer.on_resolution_resolved(
-            self.table,
-            self.current_site,
-            handler,
-            &resolution::Resolution::MemberGeneric(resolution::MemberGeneric {
-                id: MemberGenericID::AdtImplementationFunction(
-                    adt_implementation_function_id,
-                ),
-                parent_generic_arguments: adt_generic_arguments,
-                generic_arguments: function_generic_arguments,
-            }),
-            &method_ident.span(),
-        );
-
-        let adt_implementation_function =
-            self.table.get(adt_implementation_function_id).unwrap();
-
-        if adt_implementation_function.parameters().is_empty() {
+        if adt_implementation_function_signature.parameters.is_empty() {
             return self.on_binding_adt_method_error(
                 postfix.span(),
                 reciever_expression,
@@ -957,32 +868,24 @@ impl<
                             span: method_ident.span(),
                         },
                     )
-                        as Box<dyn error::Error>)
+                        as Box<dyn Diagnostic>)
                 },
                 handler,
             );
         }
 
         let implemented_type = Type::Symbol(Symbol {
-            id: r#type::SymbolID::Adt(adt_id),
-            generic_arguments: self
-                .table
-                .get(adt_implementation_id)
-                .unwrap()
-                .arguments
+            id: adt_id,
+            generic_arguments: adt_implementation_generic_arguments
+                .generic_arguments
                 .clone(),
         });
-        let first_parameter_type = &adt_implementation_function
-            .parameters()
-            .get(
-                adt_implementation_function
-                    .parameter_as_order()
-                    .next()
-                    .unwrap()
-                    .0,
-            )
-            .unwrap()
-            .r#type;
+        let first_parameter_type = &adt_implementation_function_signature
+            .parameters[*adt_implementation_function_signature
+            .parameter_order
+            .first()
+            .unwrap()]
+        .r#type;
 
         let Some(reciever_kind) =
             Self::is_method(first_parameter_type, &implemented_type)
@@ -999,13 +902,14 @@ impl<
                             span: method_ident.span(),
                         },
                     )
-                        as Box<dyn error::Error>)
+                        as Box<dyn Diagnostic>)
                 },
                 handler,
             );
         };
 
-        if adt_implementation_function.parameters().len() != arguments.len() + 1
+        if adt_implementation_function_signature.parameters.len()
+            != arguments.len() + 1
         {
             let found_argument_count = arguments.len();
             return self.on_binding_adt_method_error(
@@ -1015,34 +919,30 @@ impl<
                 trait_method_candidates,
                 |_| {
                     std::iter::once(Box::new(MismatchedArgumentCount {
-                        called_id: adt_implementation_function_id.into(),
-                        expected_count: adt_implementation_function
-                            .parameters()
+                        called_id: adt_implementation_function_id,
+                        expected_count: adt_implementation_function_signature
+                            .parameters
                             .len()
                             - 1,
                         found_count: found_argument_count,
                         span: call.span(),
                     })
-                        as Box<dyn error::Error>)
+                        as Box<dyn Diagnostic>)
                 },
                 handler,
             );
         }
 
-        if !self
-            .table
-            .is_accessible_from(
-                self.current_site,
-                self.table
-                    .get_accessibility(adt_implementation_function_id.into())
-                    .unwrap(),
-            )
-            .unwrap()
-        {
+        if !self.table.is_accessible_from_globally(
+            self.current_site,
+            self.table
+                .get_accessibility(adt_implementation_function_id)
+                .into_global(adt_implementation_function_id.target_id),
+        ) {
             self.create_handler_wrapper(handler).receive(Box::new(
                 SymbolIsNotAccessible {
                     referring_site: self.current_site,
-                    referred: adt_implementation_function_id.into(),
+                    referred: adt_implementation_function_id,
                     referred_span: method_ident.span(),
                 },
             ));
@@ -1055,13 +955,11 @@ impl<
         )?;
 
         arguments.insert(0, (struct_expression.span(), reciever_argument));
-        drop(adt_implementation_function);
+        drop(adt_implementation_function_signature);
 
         Ok(Value::Register(self.bind_function_call(
             &arguments,
-            CallableID::AdtImplementationFunction(
-                adt_implementation_function_id,
-            ),
+            adt_implementation_function_id,
             instantiation,
             postfix.span(),
             handler,
@@ -1074,7 +972,7 @@ impl<
         access: &syntax_tree::expression::Access,
         syntax_tree: &syntax_tree::expression::Postfix,
         config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let (lvalue, ty) = match access.operator() {
             // expect the lvalue address
@@ -1085,7 +983,13 @@ impl<
                     handler,
                 )?;
 
-                let ty = self.type_of_address(&lvalue.address)?;
+                let ty =
+                    self.type_of_address(&lvalue.address).map_err(|x| {
+                        x.into_type_system_overflow(
+                            OverflowOperation::TypeOf,
+                            lvalue.span.clone(),
+                        )
+                    })?;
 
                 (lvalue, ty)
             }
@@ -1102,7 +1006,13 @@ impl<
                     .into_l_value()
                     .unwrap();
 
-                let ty = self.type_of_address(&lvalue.address)?;
+                let ty =
+                    self.type_of_address(&lvalue.address).map_err(|x| {
+                        x.into_type_system_overflow(
+                            OverflowOperation::TypeOf,
+                            lvalue.span.clone(),
+                        )
+                    })?;
 
                 (lvalue, ty)
             }
@@ -1114,29 +1024,31 @@ impl<
                 generic_ident,
             ) => {
                 let struct_id = match ty {
-                    Type::Symbol(Symbol {
-                        id: r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
-                        ..
-                    }) => struct_id,
+                    Type::Symbol(Symbol { id: struct_id, .. })
+                        if {
+                            let symbol_kind =
+                                *self.table.get::<SymbolKind>(struct_id);
+
+                            symbol_kind.is_adt()
+                        } =>
+                    {
+                        struct_id
+                    }
 
                     found_type => {
                         self.create_handler_wrapper(handler).receive(Box::new(
-                            ExpectStructType {
+                            ExpectedStructType {
                                 span: syntax_tree.postfixable().span(),
                                 r#type: self
                                     .inference_context
                                     .transform_type_into_constraint_model(
-                                        found_type,
+                                        found_type, self.table,
                                     )
-                                    .map_err(|overflow_error| {
-                                        TypeSystemOverflow {
-                                            operation:
-                                                OverflowOperation::TypeOf,
-                                            overflow_span: syntax_tree
-                                                .postfixable()
-                                                .span(),
-                                            overflow_error,
-                                        }
+                                    .map_err(|x| {
+                                        x.into_type_system_overflow(
+                                            OverflowOperation::TypeOf,
+                                            syntax_tree.postfixable().span(),
+                                        )
                                     })?,
                             },
                         ));
@@ -1157,12 +1069,14 @@ impl<
                 }
 
                 // find field id
-                let Some(field_id) = self
+                let fields = self
                     .table
-                    .get(struct_id)
-                    .unwrap()
-                    .fields()
-                    .get_id(generic_ident.identifier().span.str())
+                    .query::<pernixc_component::fields::Fields>(struct_id)?;
+
+                let Some(field_id) = fields
+                    .field_ids_by_name
+                    .get(generic_ident.identifier().span.str())
+                    .copied()
                 else {
                     self.create_handler_wrapper(handler).receive(Box::new(
                         FieldNotFound {
@@ -1179,21 +1093,13 @@ impl<
                     )));
                 };
 
-                let field_accessibility = self
-                    .table
-                    .get(struct_id)
-                    .unwrap()
-                    .fields()
-                    .get(field_id)
-                    .unwrap()
-                    .accessibility;
+                let field_accessibility = fields.fields[field_id].accessibility;
 
                 // field is not accessible, soft error, keep going
-                if !self
-                    .table
-                    .is_accessible_from(self.current_site, field_accessibility)
-                    .unwrap()
-                {
+                if !self.table.is_accessible_from_globally(
+                    self.current_site,
+                    field_accessibility.into_global(struct_id.target_id),
+                ) {
                     self.create_handler_wrapper(handler).receive(Box::new(
                         FieldIsNotAccessible {
                             field_id,
@@ -1218,22 +1124,18 @@ impl<
                     Type::Tuple(tuple_ty) => tuple_ty,
                     found_type => {
                         self.create_handler_wrapper(handler).receive(Box::new(
-                            TupleExpected {
+                            ExpectedTuple {
                                 span: syntax_tree.postfixable().span(),
                                 r#type: self
                                     .inference_context
                                     .transform_type_into_constraint_model(
-                                        found_type,
+                                        found_type, self.table,
                                     )
-                                    .map_err(|overflow_error| {
-                                        TypeSystemOverflow {
-                                            operation:
-                                                OverflowOperation::TypeOf,
-                                            overflow_span: syntax_tree
-                                                .postfixable()
-                                                .span(),
-                                            overflow_error,
-                                        }
+                                    .map_err(|x| {
+                                        x.into_type_system_overflow(
+                                            OverflowOperation::TypeOf,
+                                            syntax_tree.postfixable().span(),
+                                        )
                                     })?,
                             },
                         ));
@@ -1287,13 +1189,13 @@ impl<
                                 .inference_context
                                 .transform_type_into_constraint_model(
                                     Type::Tuple(tuple_ty),
+                                    self.table,
                                 )
-                                .map_err(|overflow_error| TypeSystemOverflow {
-                                    operation: OverflowOperation::TypeOf,
-                                    overflow_span: syntax_tree
-                                        .postfixable()
-                                        .span(),
-                                    overflow_error,
+                                .map_err(|x| {
+                                    x.into_type_system_overflow(
+                                        OverflowOperation::TypeOf,
+                                        syntax_tree.postfixable().span(),
+                                    )
                                 })?
                                 .into_tuple()
                                 .unwrap(),
@@ -1322,16 +1224,13 @@ impl<
                                     .inference_context
                                     .transform_type_into_constraint_model(
                                         Type::Tuple(tuple_ty),
+                                        self.table,
                                     )
-                                    .map_err(|overflow_error| {
-                                        TypeSystemOverflow {
-                                            operation:
-                                                OverflowOperation::TypeOf,
-                                            overflow_span: syntax_tree
-                                                .postfixable()
-                                                .span(),
-                                            overflow_error,
-                                        }
+                                    .map_err(|x| {
+                                        x.into_type_system_overflow(
+                                            OverflowOperation::TypeOf,
+                                            syntax_tree.postfixable().span(),
+                                        )
                                     })?
                                     .into_tuple()
                                     .unwrap(),
@@ -1366,15 +1265,14 @@ impl<
                             span: syntax_tree.postfixable().span(),
                             r#type: self
                                 .inference_context
-                                .transform_type_into_constraint_model(ty)
-                                .map_err(|overflow_error| {
-                                    TypeSystemOverflow {
-                                        operation: OverflowOperation::TypeOf,
-                                        overflow_span: syntax_tree
-                                            .postfixable()
-                                            .span(),
-                                        overflow_error,
-                                    }
+                                .transform_type_into_constraint_model(
+                                    ty, self.table,
+                                )
+                                .map_err(|x| {
+                                    x.into_type_system_overflow(
+                                        OverflowOperation::TypeOf,
+                                        syntax_tree.postfixable().span(),
+                                    )
                                 })?,
                         },
                     ));
@@ -1388,7 +1286,7 @@ impl<
                 let index_ty = self.type_of_value(&value)?;
                 let _ = self.type_check(
                     &index_ty,
-                    Expected::Known(Type::Primitive(r#type::Primitive::Usize)),
+                    Expected::Known(Type::Primitive(Primitive::Usize)),
                     index.expression().span(),
                     true,
                     handler,
@@ -1427,8 +1325,10 @@ impl<
         &mut self,
         call: &syntax_tree::expression::Call,
         syntax_tree: &syntax_tree::expression::Postfix,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
+        use qualified_identifier::Error::{CyclicDependency, FatalSemantic};
+
         match &**syntax_tree.postfixable() {
             // possibly method call
             syntax_tree::expression::Postfixable::Postfix(postfix)
@@ -1466,14 +1366,24 @@ impl<
                     })
                     .collect::<Result<Vec<_>, _>>()?;
 
+
                 let resolution = self
-                    .resolve_with_inference(
+                    .resolve_qualified_identifier_with_inference(
                         qualified_identifier,
                         handler,
                     )
-                    .ok_or(Error::Semantic(SemanticError(
-                        syntax_tree.span(),
-                    )))?;
+                    .map_err(|x| {
+                        match x{
+                            FatalSemantic => {
+                                Error::Semantic(
+                                    SemanticError(qualified_identifier.span())
+                                )
+                            },
+                            CyclicDependency(x) => {
+                                Error::Abrupt(AbruptError::CyclicDependency(x))
+                            }
+                        }
+                    })?;
 
                 self.bind_postfix_call_with_resolution(
                     arguments,
@@ -1502,21 +1412,28 @@ impl<
     fn bind_variant_call(
         &mut self,
         arguments: Vec<(Span, Value<infer::Model>)>,
-        variant: resolution::Variant<infer::Model>,
+        variant: qualified_identifier::Variant<infer::Model>,
         syntax_tree_span: Span,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<ID<Register<infer::Model>>, InternalError> {
-        let variant_sym = self.table.get(variant.variant).unwrap();
-        let enum_sym = self.table.get(variant_sym.parent_enum_id()).unwrap();
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<ID<Register<infer::Model>>, AbruptError> {
+        let enum_id = GlobalID::new(
+            variant.variant_id.target_id,
+            self.table.get::<Parent>(variant.variant_id).parent.unwrap(),
+        );
+        let enum_generic_params =
+            self.table.query::<GenericParameters>(enum_id)?;
+        let variant_symbol = self
+            .table
+            .query::<pernixc_component::variant::Variant>(variant.variant_id)?;
 
         let instantiation = Instantiation::from_generic_arguments(
             variant.generic_arguments.clone(),
-            variant_sym.parent_enum_id().into(),
-            &enum_sym.generic_declaration.parameters,
+            enum_id,
+            &enum_generic_params,
         )
         .unwrap();
 
-        if let Some(mut variant_type) = variant_sym
+        if let Some(mut variant_type) = variant_symbol
             .associated_type
             .clone()
             .map(infer::Model::from_default_type)
@@ -1527,7 +1444,7 @@ impl<
                 0 => {
                     self.create_handler_wrapper(handler).receive(Box::new(
                         MismatchedArgumentCount {
-                            called_id: variant.variant.into(),
+                            called_id: variant.variant_id,
                             expected_count: 1,
                             found_count: 0,
                             span: syntax_tree_span.clone(),
@@ -1536,14 +1453,14 @@ impl<
 
                     Value::Literal(Literal::Error(literal::Error {
                         r#type: variant_type,
-                        span: (syntax_tree_span.clone()),
+                        span: Some(syntax_tree_span.clone()),
                     }))
                 }
                 len => {
                     if len != 1 {
                         self.create_handler_wrapper(handler).receive(Box::new(
                             MismatchedArgumentCount {
-                                called_id: variant.variant.into(),
+                                called_id: variant.variant_id,
                                 expected_count: 1,
                                 found_count: len,
                                 span: syntax_tree_span.clone(),
@@ -1567,7 +1484,7 @@ impl<
 
             Ok(self.create_register_assignmnet(
                 Assignment::Variant(Variant {
-                    variant_id: variant.variant,
+                    variant_id: variant.variant_id,
                     associated_value: Some(associated_value),
                     generic_arguments: variant.generic_arguments,
                 }),
@@ -1577,7 +1494,7 @@ impl<
             if !arguments.is_empty() {
                 self.create_handler_wrapper(handler).receive(Box::new(
                     MismatchedArgumentCount {
-                        called_id: variant.variant.into(),
+                        called_id: variant.variant_id,
                         expected_count: 0,
                         found_count: arguments.len(),
                         span: syntax_tree_span.clone(),
@@ -1587,7 +1504,7 @@ impl<
 
             Ok(self.create_register_assignmnet(
                 Assignment::Variant(Variant {
-                    variant_id: variant.variant,
+                    variant_id: variant.variant_id,
                     associated_value: None,
                     generic_arguments: variant.generic_arguments,
                 }),
@@ -1599,20 +1516,21 @@ impl<
     fn bind_function_call(
         &mut self,
         arguments: &[(Span, Value<infer::Model>)],
-        callable_id: CallableID,
+        callable_id: GlobalID,
         instantiation: Instantiation<infer::Model>,
         syntax_tree_span: Span,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<ID<Register<infer::Model>>, TypeSystemOverflow> {
-        let callable = self.table.get_callable(callable_id).unwrap();
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<ID<Register<infer::Model>>, AbruptError> {
+        let function_signature =
+            self.table.query::<FunctionSignature>(callable_id)?;
         let mut acutal_arguments = Vec::new();
 
         // mismatched arguments count
-        if arguments.len() != callable.parameter_order().len() {
+        if arguments.len() != function_signature.parameter_order.len() {
             self.create_handler_wrapper(handler).receive(Box::new(
                 MismatchedArgumentCount {
-                    called_id: callable_id.into(),
-                    expected_count: callable.parameter_order().len(),
+                    called_id: callable_id,
+                    expected_count: function_signature.parameter_order.len(),
                     found_count: arguments.len(),
                     span: syntax_tree_span.clone(),
                 },
@@ -1622,10 +1540,11 @@ impl<
         // type check the arguments
         for ((argument_span, argument_value), parameter) in
             arguments.iter().zip(
-                callable
-                    .parameter_order()
+                function_signature
+                    .parameter_order
                     .iter()
-                    .map(|x| callable.parameters().get(*x).unwrap()),
+                    .copied()
+                    .map(|x| &function_signature.parameters[x]),
             )
         {
             let mut parameter_ty =
@@ -1645,11 +1564,14 @@ impl<
         }
 
         // fill the unsupplied arguments with error values
-        let rest_parameter_ids =
-            callable.parameter_order().iter().skip(arguments.len());
+        let rest_parameter_ids = function_signature
+            .parameter_order
+            .iter()
+            .skip(arguments.len())
+            .copied();
 
         for parameter in
-            rest_parameter_ids.map(|x| callable.parameters().get(*x).unwrap())
+            rest_parameter_ids.map(|x| &function_signature.parameters[x])
         {
             let mut parameter_ty =
                 infer::Model::from_default_type(parameter.r#type.clone());
@@ -1658,14 +1580,15 @@ impl<
 
             let error_value = Value::Literal(Literal::Error(literal::Error {
                 r#type: parameter_ty,
-                span: (syntax_tree_span.clone()),
+                span: Some(syntax_tree_span.clone()),
             }));
 
             acutal_arguments.push(error_value);
         }
 
-        let mut return_type =
-            infer::Model::from_default_type(callable.return_type().clone());
+        let mut return_type = infer::Model::from_default_type(
+            function_signature.return_type.clone(),
+        );
 
         instantiation::instantiate(&mut return_type, &instantiation);
 
@@ -1684,14 +1607,14 @@ impl<
         &mut self,
         arguments: Vec<(Span, Value<infer::Model>)>,
         resolution_span: Span,
-        resolution: resolution::Resolution<infer::Model>,
+        resolution: qualified_identifier::Resolution<infer::Model>,
         syntax_tree_span: Span,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         // can be enum variant and functin call
         match resolution {
             // bind as variant
-            resolution::Resolution::Variant(variant) => {
+            qualified_identifier::Resolution::Variant(variant) => {
                 let value = Value::Register(self.bind_variant_call(
                     arguments,
                     variant,
@@ -1702,38 +1625,41 @@ impl<
                 Ok(Expression::RValue(value))
             }
 
-            resolution::Resolution::Generic(resolution::Generic {
-                id,
-                generic_arguments,
-            }) if id.is_trait_implementation_function() || id.is_function() => {
-                let (callable_id, instantiation) = match id {
-                    resolution::GenericID::Function(id) => {
+            qualified_identifier::Resolution::Generic(
+                qualified_identifier::Generic { id, generic_arguments },
+            ) if matches!(
+                *self.table.get::<SymbolKind>(id),
+                SymbolKind::TraitImplementationFunction | SymbolKind::Function
+            ) =>
+            {
+                let symbol_kind = *self.table.get::<SymbolKind>(id);
+
+                let (callable_id, instantiation) = match symbol_kind {
+                    SymbolKind::Function => {
+                        let function_generic_params =
+                            self.table.query::<GenericParameters>(id)?;
+
                         let inst = Instantiation::from_generic_arguments(
                             generic_arguments,
-                            id.into(),
-                            &self
-                                .table
-                                .get(id)
-                                .unwrap()
-                                .generic_declaration
-                                .parameters,
+                            id,
+                            &function_generic_params,
                         )
                         .unwrap();
 
-                        (CallableID::Function(id), inst)
+                        (id, inst)
                     }
-                    resolution::GenericID::TraitImplementationFunction(id) => {
-                        let trait_implementation_sym_id =
-                            self.table.get(id).unwrap().parent_id();
-                        let trait_implementation_sym = self
-                            .table
-                            .get(trait_implementation_sym_id)
-                            .unwrap();
+                    SymbolKind::TraitImplementationFunction => {
+                        let trait_implementation_sym_id = GlobalID::new(
+                            id.target_id,
+                            self.table.get::<Parent>(id).parent.unwrap(),
+                        );
+                        let trait_implementation_generic_parameters =
+                            self.table.query::<GenericParameters>(
+                                trait_implementation_sym_id,
+                            )?;
 
                         let mut inst = Instantiation {
-                            lifetimes: trait_implementation_sym
-                                .generic_declaration
-                                .parameters
+                            lifetimes: trait_implementation_generic_parameters
                                 .lifetime_order()
                                 .iter()
                                 .copied()
@@ -1742,30 +1668,23 @@ impl<
                                         Lifetime::Parameter(
                                             LifetimeParameterID {
                                                 parent:
-                                                    trait_implementation_sym_id
-                                                        .into(),
+                                                    trait_implementation_sym_id,
                                                 id: x,
                                             },
                                         );
 
-                                    (
-                                        lifetime_parameter.clone(),
-                                        lifetime_parameter,
-                                    )
+                                    (lifetime_parameter, lifetime_parameter)
                                 })
                                 .collect(),
 
-                            types: trait_implementation_sym
-                                .generic_declaration
-                                .parameters
+                            types: trait_implementation_generic_parameters
                                 .type_order()
                                 .iter()
                                 .copied()
                                 .map(|x| {
                                     let type_parameter =
                                         Type::Parameter(TypeParameterID {
-                                            parent: trait_implementation_sym_id
-                                                .into(),
+                                            parent: trait_implementation_sym_id,
                                             id: x,
                                         });
 
@@ -1773,9 +1692,7 @@ impl<
                                 })
                                 .collect(),
 
-                            constants: trait_implementation_sym
-                                .generic_declaration
-                                .parameters
+                            constants: trait_implementation_generic_parameters
                                 .constant_order()
                                 .iter()
                                 .copied()
@@ -1784,8 +1701,7 @@ impl<
                                         Constant::Parameter(
                                             ConstantParameterID {
                                                 parent:
-                                                    trait_implementation_sym_id
-                                                        .into(),
+                                                    trait_implementation_sym_id,
                                                 id: x,
                                             },
                                         );
@@ -1798,21 +1714,18 @@ impl<
                                 .collect(),
                         };
 
+                        let trait_function_generic_params =
+                            self.table.query::<GenericParameters>(id)?;
                         assert!(inst
                             .append_from_generic_arguments(
                                 generic_arguments,
-                                id.into(),
-                                &self
-                                    .table
-                                    .get(id)
-                                    .unwrap()
-                                    .generic_declaration
-                                    .parameters,
+                                id,
+                                &trait_function_generic_params,
                             )
                             .unwrap()
                             .is_empty());
 
-                        (CallableID::TraitImplementationFunction(id), inst)
+                        (id, inst)
                     }
 
                     _ => unreachable!(),
@@ -1829,65 +1742,73 @@ impl<
                 Ok(Expression::RValue(value))
             }
 
-            resolution::Resolution::MemberGeneric(
-                resolution::MemberGeneric {
+            qualified_identifier::Resolution::MemberGeneric(
+                qualified_identifier::MemberGeneric {
                     id,
                     parent_generic_arguments,
-                    generic_arguments,
+                    member_generic_arguments,
                 },
-            ) if id.is_trait_function()
-                || id.is_adt_implementation_function() =>
+            ) if matches!(
+                *self.table.get::<SymbolKind>(id),
+                SymbolKind::TraitFunction
+                    | SymbolKind::AdtImplementationFunction
+            ) =>
             {
-                let (callable_id, inst) = match id {
-                    MemberGenericID::TraitFunction(id) => {
-                        let trait_sym_id =
-                            self.table.get(id).unwrap().parent_id();
-                        let trait_sym = self.table.get(trait_sym_id).unwrap();
+                let symbol_kind = *self.table.get::<SymbolKind>(id);
+
+                let (callable_id, inst) = match symbol_kind {
+                    SymbolKind::TraitFunction => {
+                        let trait_sym_id = GlobalID::new(
+                            id.target_id,
+                            self.table.get::<Parent>(id).parent.unwrap(),
+                        );
+                        let trait_generic_params =
+                            self.table
+                                .query::<GenericParameters>(trait_sym_id)?;
 
                         let mut inst = Instantiation::from_generic_arguments(
                             parent_generic_arguments,
-                            trait_sym_id.into(),
-                            &trait_sym.generic_declaration.parameters,
+                            trait_sym_id,
+                            &trait_generic_params,
                         )
                         .unwrap();
 
+                        let trait_func_generic_params =
+                            self.table.query::<GenericParameters>(id)?;
+
                         assert!(inst
                             .append_from_generic_arguments(
-                                generic_arguments,
-                                id.into(),
-                                &self
-                                    .table
-                                    .get(id)
-                                    .unwrap()
-                                    .generic_declaration
-                                    .parameters,
+                                member_generic_arguments,
+                                id,
+                                &trait_func_generic_params
                             )
                             .unwrap()
                             .is_empty());
 
-                        (CallableID::TraitFunction(id), inst)
+                        (id, inst)
                     }
 
-                    MemberGenericID::AdtImplementationFunction(id) => {
-                        let adt_implementation_id =
-                            self.table.get(id).unwrap().parent_id();
-                        let adt_implementation =
-                            self.table.get(adt_implementation_id).unwrap();
+                    SymbolKind::AdtImplementationFunction => {
+                        let adt_implementation_id = GlobalID::new(
+                            id.target_id,
+                            self.table.get::<Parent>(id).parent.unwrap(),
+                        );
+                        let adt_implementation_generic_params =
+                            self.table.query::<GenericParameters>(
+                                adt_implementation_id,
+                            )?;
 
                         let mut type_inferences = Vec::new();
                         let mut constant_inferences = Vec::new();
 
                         let mut instantiation = Instantiation::<infer::Model> {
-                            lifetimes: adt_implementation
-                                .generic_declaration
-                                .parameters
+                            lifetimes: adt_implementation_generic_params
                                 .lifetime_parameters_as_order()
                                 .map(|(id, _)| {
                                     (
                                         Lifetime::Parameter(
                                             LifetimeParameterID {
-                                                parent: adt_implementation_id
-                                                    .into(),
+                                                parent: adt_implementation_id,
                                                 id,
                                             },
                                         ),
@@ -1895,9 +1816,7 @@ impl<
                                     )
                                 })
                                 .collect(),
-                            types: adt_implementation
-                                .generic_declaration
-                                .parameters
+                            types: adt_implementation_generic_params
                                 .type_parameters_as_order()
                                 .map(|(id, _)| {
                                     let inference_variable =
@@ -1906,17 +1825,14 @@ impl<
 
                                     (
                                         Type::Parameter(TypeParameterID {
-                                            parent: adt_implementation_id
-                                                .into(),
+                                            parent: adt_implementation_id,
                                             id,
                                         }),
                                         Type::Inference(inference_variable),
                                     )
                                 })
                                 .collect(),
-                            constants: adt_implementation
-                                .generic_declaration
-                                .parameters
+                            constants: adt_implementation_generic_params
                                 .constant_parameters_as_order()
                                 .map(|(id, _)| {
                                     let inference_variable =
@@ -1927,8 +1843,7 @@ impl<
                                     (
                                         Constant::Parameter(
                                             ConstantParameterID {
-                                                parent: adt_implementation_id
-                                                    .into(),
+                                                parent: adt_implementation_id,
                                                 id,
                                             },
                                         ),
@@ -1949,18 +1864,27 @@ impl<
                                 .register(x, NoConstraint));
                         }
 
+                        let adt_implementation_sig =
+                            self.table.query::<Implementation>(
+                                adt_implementation_id,
+                            )?;
+                        let implemented_id = self
+                            .table
+                            .get::<Implements>(adt_implementation_id)
+                            .0;
+
                         let _ = self.type_check(
                             &Type::Symbol(Symbol {
-                                id: adt_implementation.implemented_id().into(),
+                                id: implemented_id,
                                 generic_arguments: parent_generic_arguments,
                             }),
                             Expected::Known(Type::Symbol(Symbol {
-                                id: adt_implementation.implemented_id().into(),
+                                id: implemented_id,
                                 generic_arguments: {
                                     let mut adt_generic_arguments =
                                         GenericArguments::from_default_model(
-                                            adt_implementation
-                                                .arguments
+                                            adt_implementation_sig
+                                                .generic_arguments
                                                 .clone(),
                                         );
 
@@ -1975,24 +1899,18 @@ impl<
                             handler,
                         )?;
 
+                        let adt_impl_func_generic_params =
+                            self.table.query::<GenericParameters>(id)?;
                         assert!(instantiation
                             .append_from_generic_arguments(
-                                generic_arguments,
-                                id.into(),
-                                &self
-                                    .table
-                                    .get(id)
-                                    .unwrap()
-                                    .generic_declaration
-                                    .parameters,
+                                member_generic_arguments,
+                                id,
+                                &adt_impl_func_generic_params,
                             )
                             .unwrap()
                             .is_empty());
 
-                        (
-                            CallableID::AdtImplementationFunction(id),
-                            instantiation,
-                        )
+                        (id, instantiation)
                     }
 
                     _ => unreachable!(),
@@ -2013,7 +1931,7 @@ impl<
                 // report symbol is not callable
                 self.create_handler_wrapper(handler).receive(Box::new(
                     SymbolIsNotCallable {
-                        called_id: resolution.item_id(),
+                        called_id: resolution.global_id(),
                         span: syntax_tree_span.clone(),
                     },
                 ));

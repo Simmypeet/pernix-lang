@@ -73,7 +73,7 @@ pub enum HierarchyRelationship {
     Default,
     Serialize,
     Deserialize,
-    EnumAsInner
+    EnumAsInner,
 )]
 pub enum Accessibility {
     /// The symbol is accessible from anywhere.

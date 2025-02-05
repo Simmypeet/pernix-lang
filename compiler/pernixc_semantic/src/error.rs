@@ -2833,28 +2833,6 @@ impl Report<&Table<Suboptimal>>
     }
 }
 
-/// The field access is not allowed to have generic arguments.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnexpectedGenericArgumentsInField {
-    /// The span of the field access.
-    pub field_access_span: Span,
-}
-
-impl Report<&Table<Suboptimal>> for UnexpectedGenericArgumentsInField {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
-            span: self.field_access_span.clone(),
-            message: "the field access is not allowed to have generic \
-                      arguments"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        })
-    }
-}
 
 /// The variant expects an associated pattern but none was provided.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
