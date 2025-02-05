@@ -36,6 +36,7 @@ use pernixc_term::{
 use pernixc_type_system::{
     compatible::Compatibility,
     deduction,
+    diagnostic::OverflowOperation,
     environment::Environment,
     normalizer,
     predicate::{
@@ -48,11 +49,7 @@ use pernixc_type_system::{
 };
 
 use crate::type_system::{
-    diagnostic::{
-        OverflowOperation, TypeSystemOverflow, UndecidablePredicate,
-        UnsatisfiedPredicate,
-    },
-    EnvironmentExt, TableExt,
+    diagnostic::UnsatisfiedPredicate, EnvironmentExt, TableExt,
 };
 
 pub mod diagnostic;
@@ -230,12 +227,13 @@ impl PredicateError {
                     return;
                 }
 
-                handler.receive(Box::new(UndecidablePredicate {
-                    predicate,
-                    predicate_declaration_span,
-                    instantiation_span,
-                    overflow_error,
-                }));
+                handler.receive(Box::new(
+                    overflow_error.into_undecidable_predicate(
+                        predicate,
+                        predicate_declaration_span,
+                        instantiation_span,
+                    ),
+                ));
             }
 
             Self::ImplementationIsNotGeneralEnough {
@@ -313,11 +311,10 @@ impl Checker<'_> {
             Err(deduction::Error::Abrupt(AbruptError::Overflow(
                 overflow_error,
             ))) => {
-                self.handler.receive(Box::new(TypeSystemOverflow {
-                    operation: OverflowOperation::TypeCheck,
-                    overflow_span: resolution_span.clone(),
-                    overflow_error,
-                }));
+                self.handler.receive(Box::new(overflow_error.into_diagnostic(
+                    OverflowOperation::TypeCheck,
+                    resolution_span.clone(),
+                )));
 
                 return None;
             }
@@ -1023,12 +1020,13 @@ impl Checker<'_> {
                     }
 
                     Err(AbruptError::Overflow(overflow_error)) => {
-                        self.handler.receive(Box::new(UndecidablePredicate {
-                            predicate: Predicate::TypeOutlives(outlives),
-                            predicate_declaration_span: None,
-                            instantiation_span: instantiation_span.clone(),
-                            overflow_error,
-                        }));
+                        self.handler.receive(Box::new(
+                            overflow_error.into_undecidable_predicate(
+                                Predicate::TypeOutlives(outlives),
+                                None,
+                                instantiation_span.clone(),
+                            ),
+                        ));
                     }
                 }
             }
@@ -1065,16 +1063,14 @@ impl Checker<'_> {
 
                                 Err(AbruptError::Overflow(overflow_error)) => {
                                     self.handler.receive(Box::new(
-                                        UndecidablePredicate {
-                                            predicate:
+                                        overflow_error
+                                            .into_undecidable_predicate(
                                                 Predicate::LifetimeOutlives(
                                                     outlives.clone(),
                                                 ),
-                                            predicate_declaration_span: None,
-                                            instantiation_span:
+                                                None,
                                                 instantiation_span.clone(),
-                                            overflow_error,
-                                        },
+                                            ),
                                     ));
                                 }
                             }
@@ -1096,11 +1092,12 @@ impl Checker<'_> {
                     )) => {}
 
                     Err(AbruptError::Overflow(overflow_error)) => {
-                        self.handler.receive(Box::new(TypeSystemOverflow {
-                            operation: OverflowOperation::TypeCheck,
-                            overflow_span: instantiation_span.clone(),
-                            overflow_error,
-                        }));
+                        self.handler.receive(Box::new(
+                            overflow_error.into_diagnostic(
+                                OverflowOperation::TypeCheck,
+                                instantiation_span.clone(),
+                            ),
+                        ));
                     }
                 }
             }

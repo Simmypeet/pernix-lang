@@ -37,9 +37,7 @@ use crate::{
     builder::Builder,
     generic_parameters::Ext as _,
     occurrences,
-    type_system::{
-        diagnostic::UndecidablePredicate, EnvironmentExt as _, TableExt as _,
-    },
+    type_system::{EnvironmentExt as _, TableExt as _},
 };
 
 /// The intermediate result of calculating the `function_signature` component.
@@ -372,12 +370,13 @@ impl query::Builder<Intermediate> for Builder {
                         .insert(implied_predicate);
                 }
                 Err(AbruptError::Overflow(overflow_error)) => {
-                    handler.receive(Box::new(UndecidablePredicate {
-                        predicate: implied_predicate.into(),
-                        predicate_declaration_span: declared_span,
-                        instantiation_span: inst_span.clone(),
-                        overflow_error,
-                    }));
+                    handler.receive(Box::new(
+                        overflow_error.into_undecidable_predicate(
+                            implied_predicate.into(),
+                            declared_span,
+                            inst_span.clone(),
+                        ),
+                    ));
                 }
 
                 Err(AbruptError::CyclicDependency(CyclicDependencyError))

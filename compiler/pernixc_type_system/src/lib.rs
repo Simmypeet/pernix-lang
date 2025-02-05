@@ -2,10 +2,15 @@
 
 use std::{collections::BTreeSet, sync::Arc};
 
+use diagnostic::OverflowOperation;
 use enum_as_inner::EnumAsInner;
+use pernixc_source_file::Span;
 use pernixc_table::query::CyclicDependencyError;
 use pernixc_term::{
-    constant::Constant, lifetime::Lifetime, predicate::Outlives, r#type::Type,
+    constant::Constant,
+    lifetime::Lifetime,
+    predicate::{Outlives, Predicate},
+    r#type::Type,
     Model,
 };
 use unification::Log;
@@ -13,6 +18,7 @@ use unification::Log;
 pub mod compatible;
 pub mod deduction;
 pub mod definite;
+pub mod diagnostic;
 pub mod environment;
 pub mod equality;
 pub mod equivalences;
@@ -86,6 +92,35 @@ impl<M: Model> unification::Predicate<Constant<M>>
      reported to the user yet as it requires more context"
 )]
 pub struct OverflowError;
+
+impl OverflowError {
+    /// Adds additional context to the [`OverflowError`] and turns it into a
+    /// [`diagnostic::TypeSystemOverflow`] that can be reported to the user.
+    #[must_use]
+    pub fn into_diagnostic(
+        self,
+        operation: OverflowOperation,
+        overflow_span: Span,
+    ) -> diagnostic::TypeSystemOverflow {
+        diagnostic::TypeSystemOverflow::new(operation, overflow_span, self)
+    }
+
+    /// Adds additional context to the [`OverflowError`] and turns it into a
+    /// [`diagnostic::UndecidablePredicate`] that can be reported to the user.
+    pub fn into_undecidable_predicate<M: Model>(
+        self,
+        predicate: Predicate<M>,
+        predicate_declaration_span: Option<Span>,
+        instantiation_span: Span,
+    ) -> diagnostic::UndecidablePredicate<M> {
+        diagnostic::UndecidablePredicate::new(
+            predicate,
+            predicate_declaration_span,
+            instantiation_span,
+            self,
+        )
+    }
+}
 
 /// A common abrupt error that aborts the query and returns the error.
 #[derive(

@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use diagnostic::{OverflowOperation, TypeSystemOverflow, UnsatisfiedPredicate};
+use diagnostic::UnsatisfiedPredicate;
 use pernixc_component::implied_predicates::{
     ImpliedPredicate, ImpliedPredicates,
 };
@@ -20,6 +20,7 @@ use pernixc_term::{
     Model, ModelOf,
 };
 use pernixc_type_system::{
+    diagnostic::OverflowOperation,
     environment::{Environment, Premise},
     normalizer::Normalizer,
     simplify::Simplify,
@@ -83,11 +84,11 @@ where
             | Ok(None) => ty.clone(),
 
             Err(AbruptError::Overflow(error)) => {
-                handler.receive(Box::new(TypeSystemOverflow::new(
+                handler.receive(Box::new(error.into_diagnostic(
                     OverflowOperation::TypeOf,
                     type_span.clone(),
-                    error,
                 )));
+
                 ty.clone()
             }
         }
@@ -120,10 +121,9 @@ where
                             }));
                         }
                         Err(AbruptError::Overflow(error)) => {
-                            handler.receive(Box::new(TypeSystemOverflow::new(
+                            handler.receive(Box::new(error.into_diagnostic(
                                 OverflowOperation::TypeCheck,
                                 span.clone(),
-                                error,
                             )));
                         }
                     }

@@ -39,21 +39,14 @@ use pernixc_term::{
     Default, Kind,
 };
 use pernixc_type_system::{
+    diagnostic::OverflowOperation,
     environment::{Environment, Premise},
     normalizer,
     order::Order,
     AbruptError,
 };
 
-use crate::{
-    occurrences::Checker,
-    type_system::{
-        diagnostic::{
-            OverflowOperation, TypeSystemOverflow, UndecidablePredicate,
-        },
-        TableExt,
-    },
-};
+use crate::{occurrences::Checker, type_system::TableExt};
 
 pub mod diagnostic;
 
@@ -400,15 +393,17 @@ pub(super) fn check_overlapping(
                 continue
             }
             Err(AbruptError::Overflow(overflow_error)) => {
-                handler.receive(Box::new(TypeSystemOverflow {
-                    operation: OverflowOperation::TypeCheck,
-                    overflow_span: table
-                        .get::<LocationSpan>(implementation_id)
-                        .span
-                        .clone()
-                        .unwrap(),
-                    overflow_error,
-                }));
+                handler.receive(Box::new(
+                    overflow_error.into_diagnostic(
+                        OverflowOperation::TypeCheck,
+                        table
+                            .get::<LocationSpan>(implementation_id)
+                            .span
+                            .clone()
+                            .unwrap(),
+                    ),
+                ));
+
                 continue;
             }
         };
@@ -760,12 +755,11 @@ fn extraneous_predicate_check(
         for (pred, decl_span, overflow) in
             errors.into_iter().filter_map(|x| x.into_undecidable().ok())
         {
-            handler.receive(Box::new(UndecidablePredicate {
-                predicate: pred,
-                predicate_declaration_span: decl_span,
-                instantiation_span: span.clone(),
-                overflow_error: overflow,
-            }));
+            handler.receive(Box::new(overflow.into_undecidable_predicate(
+                pred,
+                decl_span,
+                span.clone(),
+            )));
         }
     }
 }
