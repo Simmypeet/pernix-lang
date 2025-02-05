@@ -40,13 +40,13 @@ use pernixc_term::{
 };
 use pernixc_type_system::{
     diagnostic::OverflowOperation,
-    environment::{Environment, Premise},
+    environment::{Environment, GetActivePremiseExt, Premise},
     normalizer,
     order::Order,
     AbruptError,
 };
 
-use crate::{occurrences::Checker, type_system::TableExt};
+use crate::occurrences::Checker;
 
 pub mod diagnostic;
 

@@ -11,13 +11,14 @@ use pernixc_table::{
     diagnostic::Diagnostic,
     query, GlobalID, Table,
 };
-use pernixc_type_system::{environment::Environment, normalizer};
+use pernixc_type_system::{
+    environment::{Environment, GetActivePremiseExt},
+    normalizer,
+};
 
 use crate::{
-    builder::Builder,
-    generic_parameters::Ext as _,
-    occurrences,
-    type_system::{EnvironmentExt, TableExt as _},
+    builder::Builder, generic_parameters::Ext as _, occurrences,
+    type_system::EnvironmentExt,
 };
 
 impl query::Builder<Variant> for Builder {

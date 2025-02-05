@@ -1,30 +1,15 @@
 //! Contains the extension trait for the environment for interacting with the
 //! type system and the term resolution.
 
-use std::collections::BTreeSet;
-
 use diagnostic::UnsatisfiedPredicate;
-use pernixc_component::implied_predicates::{
-    ImpliedPredicate, ImpliedPredicates,
-};
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
-use pernixc_table::{
-    component::SymbolKind, diagnostic::Diagnostic,
-    query::CyclicDependencyError, GlobalID, Table,
-};
-use pernixc_term::{
-    predicate::{Outlives, Predicate},
-    r#type::Type,
-    where_clause::WhereClause,
-    Model, ModelOf,
-};
+use pernixc_table::{diagnostic::Diagnostic, query::CyclicDependencyError};
+use pernixc_term::{predicate::Predicate, r#type::Type, Model};
 use pernixc_type_system::{
-    diagnostic::OverflowOperation,
-    environment::{Environment, Premise},
-    normalizer::Normalizer,
-    simplify::Simplify,
-    AbruptError, LifetimeConstraint,
+    diagnostic::OverflowOperation, environment::Environment,
+    normalizer::Normalizer, simplify::Simplify, AbruptError,
+    LifetimeConstraint,
 };
 
 pub mod diagnostic;
@@ -130,74 +115,5 @@ where
                 }
             }
         }
-    }
-}
-
-/// An extension trait for the table for interacting with the type system .
-pub trait TableExt {
-    /// Retrieves the active premise of the current site.
-    ///
-    /// # Parameters
-    ///
-    /// - `current_site`: The current site to get the active premise of.
-    /// - `handler`: The handler to report the cyclic dependency error to.
-    fn get_active_premise<M: Model>(
-        &self,
-        current_site: GlobalID,
-    ) -> Premise<M>;
-}
-
-impl TableExt for Table {
-    fn get_active_premise<M: Model>(
-        &self,
-        current_site: GlobalID,
-    ) -> Premise<M> {
-        let mut premise = Premise {
-            predicates: BTreeSet::new(),
-            query_site: Some(current_site),
-        };
-
-        for id in self.scope_walker(current_site) {
-            let current_id = GlobalID::new(current_site.target_id, id);
-            let kind = *self.get::<SymbolKind>(current_id);
-
-            if kind.has_where_clause() {
-                if let Ok(where_clause) = self.query::<WhereClause>(current_id)
-                {
-                    premise.predicates.extend(
-                        where_clause.predicates.iter().map(|x| {
-                            Predicate::from_other_model(x.predicate.clone())
-                        }),
-                    );
-                }
-            }
-
-            if kind.has_implied_predicates() {
-                if let Ok(predicates) =
-                    self.query::<ImpliedPredicates>(current_id)
-                {
-                    premise.predicates.extend(
-                        predicates.implied_predicates.iter().map(|x| match x {
-                            ImpliedPredicate::LifetimeOutlives(outlives) => {
-                                Predicate::LifetimeOutlives(
-                                    Outlives::from_other_model(
-                                        outlives.clone(),
-                                    ),
-                                )
-                            }
-                            ImpliedPredicate::TypeOutlives(outlives) => {
-                                Predicate::TypeOutlives(
-                                    Outlives::from_other_model(
-                                        outlives.clone(),
-                                    ),
-                                )
-                            }
-                        }),
-                    );
-                }
-            }
-        }
-
-        premise
     }
 }

@@ -37,7 +37,7 @@ use pernixc_type_system::{
     compatible::Compatibility,
     deduction,
     diagnostic::OverflowOperation,
-    environment::Environment,
+    environment::{Environment, GetActivePremiseExt},
     normalizer,
     predicate::{
         NegativeMarkerSatisfied, NegativeTraitSatisfied,
@@ -48,9 +48,7 @@ use pernixc_type_system::{
     AbruptError, LifetimeConstraint, OverflowError, Satisfied, Succeeded,
 };
 
-use crate::type_system::{
-    diagnostic::UnsatisfiedPredicate, EnvironmentExt, TableExt,
-};
+use crate::type_system::{diagnostic::UnsatisfiedPredicate, EnvironmentExt};
 
 pub mod diagnostic;
 

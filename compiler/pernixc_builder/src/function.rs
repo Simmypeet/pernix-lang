@@ -31,13 +31,14 @@ use pernixc_term::{
     where_clause::WhereClause,
     Default, Tuple,
 };
-use pernixc_type_system::{environment::Environment, normalizer, AbruptError};
+use pernixc_type_system::{
+    environment::{Environment, GetActivePremiseExt},
+    normalizer, AbruptError,
+};
 
 use crate::{
-    builder::Builder,
-    generic_parameters::Ext as _,
-    occurrences,
-    type_system::{EnvironmentExt as _, TableExt as _},
+    builder::Builder, generic_parameters::Ext as _, occurrences,
+    type_system::EnvironmentExt as _,
 };
 
 /// The intermediate result of calculating the `function_signature` component.

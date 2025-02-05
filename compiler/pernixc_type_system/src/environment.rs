@@ -12,13 +12,17 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
-use pernixc_table::{GlobalID, Table};
+use pernixc_component::implied_predicates::{
+    ImpliedPredicate, ImpliedPredicates,
+};
+use pernixc_table::{component::SymbolKind, GlobalID, Table};
 use pernixc_term::{
     generic_arguments::GenericArguments,
-    predicate::{Compatible, Predicate},
+    predicate::{Compatible, Outlives, Predicate},
     r#type::{TraitMember, Type},
     visitor::RecursiveIterator,
-    Kind, Model,
+    where_clause::WhereClause,
+    Kind, Model, ModelOf,
 };
 
 use crate::{
@@ -41,6 +45,75 @@ pub struct Premise<M: Model> {
     /// This can influence the result of resoliving the trait/marker
     /// implementations.
     pub query_site: Option<GlobalID>,
+}
+
+/// An extension trait for the table for interacting with the type system .
+pub trait GetActivePremiseExt {
+    /// Retrieves the active premise of the current site.
+    ///
+    /// # Parameters
+    ///
+    /// - `current_site`: The current site to get the active premise of.
+    /// - `handler`: The handler to report the cyclic dependency error to.
+    fn get_active_premise<M: Model>(
+        &self,
+        current_site: GlobalID,
+    ) -> Premise<M>;
+}
+
+impl GetActivePremiseExt for Table {
+    fn get_active_premise<M: Model>(
+        &self,
+        current_site: GlobalID,
+    ) -> Premise<M> {
+        let mut premise = Premise {
+            predicates: BTreeSet::new(),
+            query_site: Some(current_site),
+        };
+
+        for id in self.scope_walker(current_site) {
+            let current_id = GlobalID::new(current_site.target_id, id);
+            let kind = *self.get::<SymbolKind>(current_id);
+
+            if kind.has_where_clause() {
+                if let Ok(where_clause) = self.query::<WhereClause>(current_id)
+                {
+                    premise.predicates.extend(
+                        where_clause.predicates.iter().map(|x| {
+                            Predicate::from_other_model(x.predicate.clone())
+                        }),
+                    );
+                }
+            }
+
+            if kind.has_implied_predicates() {
+                if let Ok(predicates) =
+                    self.query::<ImpliedPredicates>(current_id)
+                {
+                    premise.predicates.extend(
+                        predicates.implied_predicates.iter().map(|x| match x {
+                            ImpliedPredicate::LifetimeOutlives(outlives) => {
+                                Predicate::LifetimeOutlives(
+                                    Outlives::from_other_model(
+                                        outlives.clone(),
+                                    ),
+                                )
+                            }
+                            ImpliedPredicate::TypeOutlives(outlives) => {
+                                Predicate::TypeOutlives(
+                                    Outlives::from_other_model(
+                                        outlives.clone(),
+                                    ),
+                                )
+                            }
+                        }),
+                    );
+                }
+            }
+        }
+
+        premise
+    }
 }
 
 /// A structure that contains the environment of the semantic logic.
