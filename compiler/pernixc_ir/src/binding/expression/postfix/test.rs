@@ -1,14 +1,19 @@
-use pernixc_handler::{Panic, Storage};
+use pernixc_handler::Storage;
 use pernixc_syntax::{syntax_tree, utility::parse};
-use pernixc_table::diagnostic::Diagnostic;
+use pernixc_table::{
+    component::{Implemented, Member},
+    diagnostic::Diagnostic,
+    GlobalID,
+};
 use pernixc_term::{
     generic_parameter::{GenericParameters, TypeParameterID},
-    r#type::{Primitive, Qualifier, Type},
+    lifetime::Lifetime,
+    r#type::{Primitive, Qualifier, Reference, Type},
 };
 use pernixc_type_system::equality::Equality;
 
 use crate::{
-    address::{self, Address, Offset},
+    address::{self, Address},
     binding::{
         diagnostic::{
             CannotIndexPastUnpackedTuple, ExpectedStructType, ExpectedTuple,
@@ -19,7 +24,7 @@ use crate::{
         },
         test::{build_table, BindExt, CreateBinderAtExt, Template},
     },
-    model::{self, Constraint},
+    model::{self, Constraint, Erased},
 };
 
 #[test]
@@ -706,5 +711,212 @@ fn array_access() {
 
         assert_eq!(error.expected_type, Type::Primitive(Primitive::Usize));
         assert_eq!(error.found_type, Type::Inference(Constraint::Floating));
+    }
+}
+
+const STRUCT_WITH_ADT_METHODS_DECLARATION: &str = r"
+public struct Vector2[T] {
+    public x: T,
+    public y: T,
+}
+
+implements[T] Vector2[T] {
+    public function getX(self: this): T {panic;}
+
+    public function getRefX(self: &this): &T {panic;}
+
+    public function setX(self: &mutable this, x: T) {panic;}
+}
+
+public function test() {}
+";
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn adt_method() {
+    let table = build_table(STRUCT_WITH_ADT_METHODS_DECLARATION);
+    let mut binder = table.create_binder_at(["test", "test"]);
+
+    let (vector_address, _) = binder
+        .bind_variable_declaration(
+            &parse("let vector = Vector2 { x: 32i32, y: 64 };"),
+            &Storage::<Box<dyn Diagnostic>>::new(),
+        )
+        .unwrap();
+
+    let (mutable_vector_address, _) = binder
+        .bind_variable_declaration(
+            &parse("let mutable mutableVector = Vector2 { x: 32i32, y: 64 };"),
+            &Storage::<Box<dyn Diagnostic>>::new(),
+        )
+        .unwrap();
+
+    let vector_id = table.get_by_qualified_name(["test", "Vector2"]).unwrap();
+    let impl_id =
+        table.get::<Implemented>(vector_id).iter().next().copied().unwrap();
+
+    let get_x =
+        GlobalID::new(impl_id.target_id, table.get::<Member>(impl_id)["getX"]);
+    let get_ref_x = GlobalID::new(
+        impl_id.target_id,
+        table.get::<Member>(impl_id)["getRefX"],
+    );
+    let set_x =
+        GlobalID::new(impl_id.target_id, table.get::<Member>(impl_id)["setX"]);
+
+    // getX
+    {
+        let call_register_id = binder
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("vector.getX()"))
+            .into_register()
+            .unwrap();
+
+        let call = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(call_register_id)
+            .unwrap()
+            .assignment
+            .as_function_call()
+            .unwrap();
+
+        assert_eq!(call.arguments.len(), 1);
+        assert_eq!(call.callable_id, get_x);
+
+        let load_register_id =
+            *call.arguments.first().unwrap().as_register().unwrap();
+
+        let load = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(load_register_id)
+            .unwrap()
+            .assignment
+            .as_load()
+            .unwrap();
+
+        assert_eq!(load.address, vector_address);
+
+        assert!(binder
+            .create_environment()
+            .query(&Equality::new(
+                Type::Primitive(Primitive::Int32),
+                binder.type_of_register(call_register_id).unwrap()
+            ))
+            .unwrap()
+            .unwrap()
+            .constraints
+            .is_empty());
+    }
+
+    // getRefX
+    {
+        let call_register_id = binder
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("vector.getRefX()"))
+            .into_register()
+            .unwrap();
+
+        let call = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(call_register_id)
+            .unwrap()
+            .assignment
+            .as_function_call()
+            .unwrap();
+
+        assert_eq!(call.arguments.len(), 1);
+        assert_eq!(call.callable_id, get_ref_x);
+
+        let reference_of_register_id =
+            *call.arguments.first().unwrap().as_register().unwrap();
+
+        let reference_of = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(reference_of_register_id)
+            .unwrap()
+            .assignment
+            .as_borrow()
+            .unwrap();
+
+        assert_eq!(reference_of.address, vector_address);
+        assert_eq!(reference_of.qualifier, Qualifier::Immutable);
+        assert_eq!(reference_of.lifetime, Lifetime::Inference(Erased));
+
+        assert!(binder
+            .create_environment()
+            .query(&Equality::new(
+                Type::Reference(Reference {
+                    lifetime: Lifetime::Inference(Erased),
+                    qualifier: Qualifier::Immutable,
+                    pointee: Box::new(Type::Primitive(Primitive::Int32)),
+                }),
+                binder.type_of_register(call_register_id).unwrap()
+            ))
+            .unwrap()
+            .unwrap()
+            .constraints
+            .is_empty());
+    }
+
+    // set x
+    {
+        let call_register_id = binder
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("mutableVector.setX(0)"))
+            .into_register()
+            .unwrap();
+
+        let call = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(call_register_id)
+            .unwrap()
+            .assignment
+            .as_function_call()
+            .unwrap();
+
+        assert_eq!(call.arguments.len(), 2);
+        assert_eq!(call.callable_id, set_x);
+
+        let reference_of_register_id =
+            *call.arguments.first().unwrap().as_register().unwrap();
+
+        let reference_of = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(reference_of_register_id)
+            .unwrap()
+            .assignment
+            .as_borrow()
+            .unwrap();
+
+        assert_eq!(reference_of.address, mutable_vector_address);
+        assert_eq!(reference_of.qualifier, Qualifier::Mutable);
+        assert_eq!(reference_of.lifetime, Lifetime::Inference(Erased));
+
+        let numeric_literal = call
+            .arguments
+            .get(1)
+            .unwrap()
+            .as_literal()
+            .unwrap()
+            .as_numeric()
+            .unwrap();
+
+        assert_eq!(numeric_literal.decimal_stirng, None);
+        assert_eq!(numeric_literal.integer_string, "0");
     }
 }

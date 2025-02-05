@@ -20,6 +20,7 @@ use pernixc_table::{
 };
 use pernixc_term::{
     constant::Constant,
+    elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
     generic_arguments::GenericArguments,
     generic_parameter::{
         ConstantParameterID, GenericParameters, LifetimeParameterID,
@@ -382,6 +383,23 @@ impl Binder<'_> {
                 )
                 .unwrap()
                 .is_empty());
+
+            let trait_function_elided_lifetimes =
+                self.table.query::<ElidedLifetimes>(trait_function_id)?;
+
+            instantiation.lifetimes.extend(
+                trait_function_elided_lifetimes.elided_lifetimes.ids().map(
+                    |x| {
+                        (
+                            Lifetime::Elided(ElidedLifetimeID::new(
+                                trait_function_id,
+                                x,
+                            )),
+                            Lifetime::Inference(Erased),
+                        )
+                    },
+                ),
+            );
 
             for ((argument_span, argument_value), parameter) in
                 arguments.iter().zip(
@@ -1517,12 +1535,24 @@ impl Binder<'_> {
         &mut self,
         arguments: &[(Span, Value<infer::Model>)],
         callable_id: GlobalID,
-        instantiation: Instantiation<infer::Model>,
+        mut instantiation: Instantiation<infer::Model>,
         syntax_tree_span: Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<ID<Register<infer::Model>>, AbruptError> {
         let function_signature =
             self.table.query::<FunctionSignature>(callable_id)?;
+        let elided_lifetimes =
+            self.table.query::<ElidedLifetimes>(callable_id)?;
+
+        instantiation.lifetimes.extend(
+            elided_lifetimes.elided_lifetimes.ids().map(|x| {
+                (
+                    Lifetime::Elided(ElidedLifetimeID::new(callable_id, x)),
+                    Lifetime::Inference(Erased),
+                )
+            }),
+        );
+
         let mut acutal_arguments = Vec::new();
 
         // mismatched arguments count
