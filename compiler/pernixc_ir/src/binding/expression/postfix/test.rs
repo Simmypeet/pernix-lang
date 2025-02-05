@@ -1,18 +1,24 @@
+use pernixc_handler::Storage;
 use pernixc_syntax::{syntax_tree, utility::parse};
+use pernixc_table::diagnostic::Diagnostic;
 use pernixc_term::{
     generic_parameter::{GenericParameters, TypeParameterID},
-    r#type::{Primitive, Type},
+    r#type::{Primitive, Qualifier, Type},
 };
 use pernixc_type_system::equality::Equality;
 
 use crate::{
+    address::{self, Address},
     binding::{
         diagnostic::{
-            ExpressionIsNotCallable, InvalidCastType, MismatchedArgumentCount,
+            ExpectedStructType, ExpressionIsNotCallable, FieldIsNotAccessible,
+            FieldNotFound, InvalidCastType, MismatchedArgumentCount,
+            UnexpectedGenericArgumentsInField,
         },
         test::{build_table, BindExt, CreateBinderAtExt, Template},
     },
     model,
+    value::register,
 };
 
 #[test]
@@ -275,4 +281,166 @@ fn function_call_mismatched_argument_count_error() {
         assert_eq!(error.found_count, 2);
         assert_eq!(error.called_id, fizz_id);
     }
+}
+
+const STRUCT_DECLARATION: &str = r"
+public module math {
+    public struct Vector2 {
+        public x: float32,
+        public y: float32,
+        
+        private secret: float32,
+    }
+}
+
+public function test() {}
+";
+
+#[test]
+fn struct_field_access() {
+    let table = build_table(STRUCT_DECLARATION);
+    let mut binder = table.create_binder_at(["test", "test"]);
+
+    let address = {
+        let storage = Storage::<Box<dyn Diagnostic>>::new();
+        let (address, _) = binder
+            .bind_variable_declaration(
+                &parse(
+                    "let mutable vector = math::Vector2 { x: 32, y: 64, \
+                     secret: 128 };",
+                ),
+                &storage,
+            )
+            .unwrap();
+
+        assert_eq!(storage.as_vec().len(), 1);
+
+        address
+    };
+    let vector_id =
+        table.get_by_qualified_name(["test", "math", "Vector2"]).unwrap();
+    let fields =
+        table.query::<pernixc_component::fields::Fields>(vector_id).unwrap();
+
+    // x field
+    {
+        let register_id = binder
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("vector.x"))
+            .into_register()
+            .unwrap();
+
+        let load = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(register_id)
+            .unwrap()
+            .assignment
+            .as_load()
+            .unwrap();
+
+        assert_eq!(
+            load.address,
+            Address::Field(address::Field {
+                struct_address: Box::new(address.clone()),
+                id: fields.field_ids_by_name["x"]
+            })
+        );
+    }
+
+    // y field
+    {
+        let lvalue = binder.bind_as_lvalue_success(&parse::<
+            syntax_tree::expression::Postfixable,
+        >("vector.y"));
+
+        assert_eq!(
+            lvalue.address,
+            Address::Field(address::Field {
+                struct_address: Box::new(address),
+                id: fields.field_ids_by_name["y"]
+            })
+        );
+
+        // check if the field is mutable
+        assert_eq!(lvalue.qualifier, Qualifier::Mutable);
+    }
+
+    // not accessible
+    {
+        let (_, errors) =
+            binder.bind_as_rvalue_error(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("vector.secret"));
+
+        assert_eq!(errors.len(), 1);
+
+        let error = errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<FieldIsNotAccessible>()
+            .unwrap();
+
+        assert_eq!(error.field_id, fields.field_ids_by_name["secret"]);
+    }
+
+    // field with generic arguments
+    {
+        let (_, errors) =
+            binder.bind_as_rvalue_error(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("vector.x[int32]"));
+
+        assert_eq!(errors.len(), 1);
+
+        let _ = errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<UnexpectedGenericArgumentsInField>()
+            .unwrap();
+    }
+
+    // field not found
+    {
+        let errors = binder.bind_as_rvalue_error_fatal(&parse::<
+            syntax_tree::expression::Postfixable,
+        >("vector.z"));
+
+        assert_eq!(errors.len(), 1);
+
+        let error = errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<FieldNotFound>()
+            .unwrap();
+
+        assert_eq!(error.struct_id, vector_id);
+        assert_eq!(error.identifier_span.str(), "z");
+    }
+}
+
+#[test]
+fn struct_field_access_on_non_struct() {
+    let template = Template::new();
+    let mut binder = template.create_binder();
+
+    let errors = binder.bind_as_rvalue_error_fatal(&parse::<
+        syntax_tree::expression::Postfixable,
+    >("true.x"));
+
+    assert_eq!(errors.len(), 1);
+
+    let error = errors
+        .first()
+        .unwrap()
+        .as_any()
+        .downcast_ref::<ExpectedStructType<model::Constrained>>()
+        .unwrap();
+
+    assert_eq!(error.r#type, Type::Primitive(Primitive::Bool));
 }
