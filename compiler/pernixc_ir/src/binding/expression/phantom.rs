@@ -1,44 +1,23 @@
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_handler::Handler;
+use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
+use pernixc_table::diagnostic::Diagnostic;
+use pernixc_term::r#type::Type;
 
 use super::{Bind, Config, Expression};
 use crate::{
-    error,
-    ir::{
-        self,
-        representation::{
-            binding::{
-                infer::{self, InferenceVariable},
-                Binder, Error,
-            },
-            borrow,
-        },
-        value::{
-            literal::{self, Literal},
-            Value,
-        },
-    },
-    symbol::table::{self, resolution},
-    type_system::{
-        self,
-        term::r#type::{Constraint, Type},
-    },
+    binding::{infer::InferenceVariable, Binder, Error},
+    model::Constraint,
+    value::literal::{self, Literal},
+    Value,
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Phantom> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::Phantom> for Binder<'_> {
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Phantom,
         _: Config,
-        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let inference = InferenceVariable::new();
 
@@ -49,7 +28,7 @@ impl<
         Ok(Expression::RValue(Value::Literal(Literal::Phantom(
             literal::Phantom {
                 r#type: Type::Inference(inference),
-                span: syntax_tree.span(),
+                span: Some(syntax_tree.span()),
             },
         ))))
     }
