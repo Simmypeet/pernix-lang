@@ -1,13 +1,13 @@
 //! Contains the builder for the generic parameters.
 
-use std::{collections::hash_map::Entry, sync::Arc};
+use std::sync::Arc;
 
 use diagnostic::{
     DefaultGenericParameterMustBeTrailing, DuplicatedGenericParameter,
     MisOrderedGenericParameter,
 };
 use pernixc_handler::Handler;
-use pernixc_resolution::{Config, Ext as _, ExtraNamespace};
+use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use pernixc_table::{
@@ -20,12 +20,11 @@ use pernixc_table::{
 use pernixc_term::{
     constant::Constant,
     generic_parameter::{
-        ConstantParameter, ConstantParameterID, GenericKind, GenericParameters,
-        LifetimeParameter, LifetimeParameterID, TypeParameter, TypeParameterID,
+        ConstantParameter, GenericKind, GenericParameters, LifetimeParameter,
+        TypeParameter,
     },
     lifetime::Lifetime,
     r#type::Type,
-    Model,
 };
 
 use crate::{
@@ -253,79 +252,6 @@ impl query::Builder<GenericParameters> for Builder {
         }
 
         Some(Arc::new(generic_parameters))
-    }
-}
-
-/// An extension for the [`Table`] to get the generic parameters namespace.
-pub trait Ext {
-    /// Creates the [`ExtraNamespace`] that includes the generic parameters.
-    ///
-    /// Includes this [`ExtraNamespace`] to the [`Config`] to enable the
-    /// resolution of generic parameters.
-    fn get_generic_parameter_namepsace<M: Model>(
-        &self,
-        global_id: GlobalID,
-    ) -> ExtraNamespace<M>;
-}
-
-impl Ext for Table {
-    fn get_generic_parameter_namepsace<M: Model>(
-        &self,
-        global_id: GlobalID,
-    ) -> ExtraNamespace<M> {
-        let mut extra_namespace = ExtraNamespace::default();
-
-        for scope in self.scope_walker(global_id) {
-            let scope = GlobalID::new(global_id.target_id, scope);
-            let symbol_kind = *self.get::<SymbolKind>(scope);
-
-            if !symbol_kind.has_generic_parameters() {
-                continue;
-            }
-
-            let Ok(generic_parameter) = self.query::<GenericParameters>(scope)
-            else {
-                continue;
-            };
-
-            for (name, lt) in generic_parameter.lifetime_parameter_ids_by_name()
-            {
-                if let Entry::Vacant(entry) =
-                    extra_namespace.lifetimes.entry(name.clone())
-                {
-                    entry.insert(Lifetime::Parameter(LifetimeParameterID {
-                        parent: scope,
-                        id: *lt,
-                    }));
-                }
-            }
-
-            for (name, ty) in generic_parameter.type_parameter_ids_by_name() {
-                if let Entry::Vacant(entry) =
-                    extra_namespace.types.entry(name.clone())
-                {
-                    entry.insert(Type::Parameter(TypeParameterID {
-                        parent: scope,
-                        id: *ty,
-                    }));
-                }
-            }
-
-            for (name, constant) in
-                generic_parameter.constant_parameter_ids_by_name()
-            {
-                if let Entry::Vacant(entry) =
-                    extra_namespace.constants.entry(name.clone())
-                {
-                    entry.insert(Constant::Parameter(ConstantParameterID {
-                        parent: scope,
-                        id: *constant,
-                    }));
-                }
-            }
-        }
-
-        extra_namespace
     }
 }
 

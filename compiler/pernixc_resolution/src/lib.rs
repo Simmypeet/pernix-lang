@@ -1,6 +1,6 @@
 //! Implements the symbol resolution algorithm.
 
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
@@ -8,11 +8,19 @@ use pernixc_syntax::syntax_tree::{
     self, GenericIdentifier, QualifiedIdentifier, QualifiedIdentifierRoot,
 };
 use pernixc_table::{
-    diagnostic::Diagnostic, query::CyclicDependencyError, GlobalID, Table,
+    component::SymbolKind, diagnostic::Diagnostic,
+    query::CyclicDependencyError, GlobalID, Table,
 };
 use pernixc_term::{
-    constant::Constant, generic_arguments::GenericArguments,
-    lifetime::Lifetime, r#type::Type, Model,
+    constant::Constant,
+    generic_arguments::GenericArguments,
+    generic_parameter::{
+        ConstantParameterID, GenericParameters, LifetimeParameterID,
+        TypeParameterID,
+    },
+    lifetime::Lifetime,
+    r#type::Type,
+    Model,
 };
 use qualified_identifier::Resolution;
 
@@ -34,6 +42,79 @@ pub struct ExtraNamespace<M: Model> {
     pub lifetimes: HashMap<String, Lifetime<M>>,
     pub types: HashMap<String, Type<M>>,
     pub constants: HashMap<String, Constant<M>>,
+}
+
+/// An extension for the [`Table`] to get the generic parameters namespace.
+pub trait GetGenericParameterNamespaceExt {
+    /// Creates the [`ExtraNamespace`] that includes the generic parameters.
+    ///
+    /// Includes this [`ExtraNamespace`] to the [`Config`] to enable the
+    /// resolution of generic parameters.
+    fn get_generic_parameter_namepsace<M: Model>(
+        &self,
+        global_id: GlobalID,
+    ) -> ExtraNamespace<M>;
+}
+
+impl GetGenericParameterNamespaceExt for Table {
+    fn get_generic_parameter_namepsace<M: Model>(
+        &self,
+        global_id: GlobalID,
+    ) -> ExtraNamespace<M> {
+        let mut extra_namespace = ExtraNamespace::default();
+
+        for scope in self.scope_walker(global_id) {
+            let scope = GlobalID::new(global_id.target_id, scope);
+            let symbol_kind = *self.get::<SymbolKind>(scope);
+
+            if !symbol_kind.has_generic_parameters() {
+                continue;
+            }
+
+            let Ok(generic_parameter) = self.query::<GenericParameters>(scope)
+            else {
+                continue;
+            };
+
+            for (name, lt) in generic_parameter.lifetime_parameter_ids_by_name()
+            {
+                if let Entry::Vacant(entry) =
+                    extra_namespace.lifetimes.entry(name.clone())
+                {
+                    entry.insert(Lifetime::Parameter(LifetimeParameterID {
+                        parent: scope,
+                        id: *lt,
+                    }));
+                }
+            }
+
+            for (name, ty) in generic_parameter.type_parameter_ids_by_name() {
+                if let Entry::Vacant(entry) =
+                    extra_namespace.types.entry(name.clone())
+                {
+                    entry.insert(Type::Parameter(TypeParameterID {
+                        parent: scope,
+                        id: *ty,
+                    }));
+                }
+            }
+
+            for (name, constant) in
+                generic_parameter.constant_parameter_ids_by_name()
+            {
+                if let Entry::Vacant(entry) =
+                    extra_namespace.constants.entry(name.clone())
+                {
+                    entry.insert(Constant::Parameter(ConstantParameterID {
+                        parent: scope,
+                        id: *constant,
+                    }));
+                }
+            }
+        }
+
+        extra_namespace
+    }
 }
 
 /// A trait for observing the resolution process.
@@ -169,7 +250,7 @@ impl<'lp, 'tp, 'cp, 'ob, 'ex, M: Model> Config<'lp, 'tp, 'cp, 'ob, 'ex, M> {
 pub trait Ext {
     /// Resolves for [`Resolution`] based on the given [`QualifiedIdentifier`]
     /// syntax tree.
-    /// 
+    ///
     /// # Errors
     ///
     /// See [`qualified_identifier::Error`] for more information.

@@ -13,7 +13,7 @@ use pernixc_handler::Handler;
 use pernixc_resolution::{
     diagnostic::LifetimeParameterNotFound,
     qualified_identifier::{Generic, MemberGeneric, Resolution},
-    Config, Ext as _, ExtraNamespace,
+    Config, Ext, ExtraNamespace, GetGenericParameterNamespaceExt as _,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
@@ -35,7 +35,7 @@ use pernixc_term::{
 
 pub mod diagnostic;
 
-use crate::{builder::Builder, generic_parameters::Ext as _, occurrences};
+use crate::{builder::Builder, occurrences};
 
 fn create_forall_lifetimes(
     table: &Table,

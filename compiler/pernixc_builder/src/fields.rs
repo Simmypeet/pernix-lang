@@ -10,7 +10,7 @@ use diagnostic::FieldDuplication;
 use pernixc_arena::Arena;
 use pernixc_component::fields::{Field, Fields};
 use pernixc_handler::Handler;
-use pernixc_resolution::{Config, Ext as _};
+use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::ConnectedList;
 use pernixc_table::{
@@ -23,10 +23,7 @@ use pernixc_type_system::{
     normalizer,
 };
 
-use crate::{
-    builder::Builder, generic_parameters::Ext as _, occurrences,
-    type_system::EnvironmentExt,
-};
+use crate::{builder::Builder, occurrences, type_system::EnvironmentExt};
 
 pub mod diagnostic;
 

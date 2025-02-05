@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
-use pernixc_resolution::{Config, Ext as _};
+use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
 use pernixc_table::{
     component::{
         syntax_tree::ImplementationQualifiedIdentifier as SyntaxTree, Derived,
@@ -19,7 +19,7 @@ use pernixc_term::{
     generic_parameter::GenericParameters, lifetime::Lifetime, r#type::Type,
 };
 
-use crate::{builder::Builder, generic_parameters::Ext as _, occurrences};
+use crate::{builder::Builder, occurrences};
 
 impl query::Builder<Implementation> for Builder {
     fn build(

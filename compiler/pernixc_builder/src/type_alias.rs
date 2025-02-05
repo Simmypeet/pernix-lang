@@ -4,7 +4,7 @@ use std::{borrow::Cow, sync::Arc};
 
 use pernixc_component::type_alias::TypeAlias;
 use pernixc_handler::Handler;
-use pernixc_resolution::{Config, Ext as _};
+use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
 use pernixc_source_file::SourceElement;
 use pernixc_table::{
     component::{syntax_tree as syntax_tree_component, Derived, SymbolKind},
@@ -16,10 +16,7 @@ use pernixc_type_system::{
     normalizer,
 };
 
-use crate::{
-    builder::Builder, generic_parameters::Ext, occurrences,
-    type_system::EnvironmentExt as _,
-};
+use crate::{builder::Builder, occurrences, type_system::EnvironmentExt as _};
 
 impl query::Builder<TypeAlias> for Builder {
     fn build(

@@ -9,7 +9,9 @@ use pernixc_component::{
     late_bound::LateBound,
 };
 use pernixc_handler::Handler;
-use pernixc_resolution::{Config, ElidedTermProvider, Ext as _};
+use pernixc_resolution::{
+    Config, ElidedTermProvider, Ext, GetGenericParameterNamespaceExt as _,
+};
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::ConnectedList;
 use pernixc_table::{
@@ -36,10 +38,7 @@ use pernixc_type_system::{
     normalizer, AbruptError,
 };
 
-use crate::{
-    builder::Builder, generic_parameters::Ext as _, occurrences,
-    type_system::EnvironmentExt as _,
-};
+use crate::{builder::Builder, occurrences, type_system::EnvironmentExt as _};
 
 /// The intermediate result of calculating the `function_signature` component.
 /// The `implied_predicates` and `ellided_lifetimes` are the byproducts of
