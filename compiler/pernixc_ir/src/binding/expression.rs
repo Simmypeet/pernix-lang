@@ -108,6 +108,7 @@ pub trait Bind<T> {
 mod array;
 mod binary;
 mod boolean;
+mod character;
 mod numeric;
 mod parenthesized;
 mod phantom;
@@ -118,7 +119,6 @@ mod r#struct;
 /*
 mod block;
 mod r#break;
-mod character;
 mod r#continue;
 mod express;
 mod if_else;
@@ -330,8 +330,8 @@ impl Bind<&syntax_tree::expression::Unit> for Binder<'_> {
             syntax_tree::expression::Unit::String(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Character(_) => {
-                todo!()
+            syntax_tree::expression::Unit::Character(syn) => {
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Unit::Panic(_) => {
                 todo!()

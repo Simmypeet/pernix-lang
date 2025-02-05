@@ -1,44 +1,23 @@
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_handler::Handler;
 use pernixc_lexical::token;
+use pernixc_source_file::SourceElement;
+use pernixc_table::diagnostic::Diagnostic;
+use pernixc_term::r#type::Type;
 
 use super::{Bind, Config, Expression};
 use crate::{
-    error,
-    ir::{
-        self,
-        representation::{
-            binding::{
-                infer::{self, InferenceVariable},
-                Binder, Error,
-            },
-            borrow,
-        },
-        value::{
-            literal::{self, Literal},
-            Value,
-        },
-    },
-    symbol::table::{self, resolution},
-    type_system::{
-        self,
-        term::r#type::{Constraint, Type},
-    },
+    binding::{infer::InferenceVariable, Binder, Error},
+    model::Constraint,
+    value::literal::{self, Literal},
+    Value,
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&token::Character> for Binder<'t, S, RO, TO>
-{
+impl Bind<&token::Character> for Binder<'_> {
     fn bind(
         &mut self,
         syntax_tree: &token::Character,
         _: Config,
-        _: &dyn Handler<Box<dyn error::Error>>,
+        _: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let inference_variable = InferenceVariable::new();
 
@@ -51,14 +30,14 @@ impl<
             || {
                 Value::Literal(Literal::Error(literal::Error {
                     r#type: Type::Inference(inference_variable),
-                    span: syntax_tree.span(),
+                    span: Some(syntax_tree.span()),
                 }))
             },
             |character| {
                 Value::Literal(Literal::Character(literal::Character {
                     character,
                     r#type: Type::Inference(inference_variable),
-                    span: syntax_tree.span(),
+                    span: Some(syntax_tree.span()),
                 }))
             },
         );
