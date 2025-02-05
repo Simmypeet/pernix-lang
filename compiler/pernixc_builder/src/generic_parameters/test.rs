@@ -11,7 +11,7 @@ use crate::{
         DefaultGenericParameterMustBeTrailing, DuplicatedGenericParameter,
         MisOrderedGenericParameter,
     },
-    test::build_table,
+    utility::build_table,
 };
 
 const GENERIC_PARAMETERS: &str = r"

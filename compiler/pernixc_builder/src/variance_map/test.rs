@@ -1,7 +1,7 @@
 use pernixc_component::variance_map::VarianceMap;
 use pernixc_term::{generic_parameter::GenericParameters, variance::Variance};
 
-use crate::test::build_table;
+use crate::utility::build_table;
 
 const BASIC_VARIANCES: &str = r"
 public struct Test[Co, In] {

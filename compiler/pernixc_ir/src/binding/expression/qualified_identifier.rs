@@ -1,48 +1,42 @@
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_handler::Handler;
+use pernixc_resolution::qualified_identifier::{self, Resolution};
+use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
+use pernixc_table::{
+    component::{Parent, SymbolKind},
+    diagnostic::Diagnostic,
+    GlobalID,
+};
+use pernixc_term::{
+    generic_parameter::GenericParameters,
+    instantiation::{self, Instantiation},
+    r#type::Qualifier,
+    Model,
+};
 
 use super::{Bind, Config, Expression};
 use crate::{
-    error,
-    ir::{
-        self,
-        representation::{
-            binding::{
-                expression::{LValue, Target},
-                infer, Binder, Error, SemanticError,
-            },
-            borrow,
+    binding::{
+        diagnostic::{
+            ExpectedAssociatedValue, SymbolCannotBeUsedAsAnExpression,
         },
-        value::{
-            literal::{self, Literal},
-            register::{Assignment, Load, Variant},
-            Value,
-        },
+        expression::{LValue, Target},
+        infer, AbruptError, Binder, Error, SemanticError,
     },
-    symbol::table::{self, representation::Index, resolution},
-    type_system::{
-        self,
-        instantiation::{self, Instantiation},
-        model::Model,
-        term::r#type::Qualifier,
+    value::{
+        literal::{self, Literal},
+        register::{Assignment, Load, Variant},
     },
+    Value,
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::QualifiedIdentifier> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::QualifiedIdentifier> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::QualifiedIdentifier,
         config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let is_simple_identifier = syntax_tree.rest().is_empty()
             && syntax_tree
@@ -100,20 +94,43 @@ impl<
             }
         };
 
-        let resolution = self
-            .resolve_with_inference(syntax_tree, handler)
-            .ok_or(Error::Semantic(SemanticError(syntax_tree.span())))?;
+        let resolution = match self
+            .resolve_qualified_identifier_with_inference(syntax_tree, handler)
+        {
+            Ok(resolution) => resolution,
+            Err(qualified_identifier::Error::CyclicDependency(error)) => {
+                return Err(Error::Abrupt(AbruptError::CyclicDependency(
+                    error,
+                )));
+            }
+            Err(qualified_identifier::Error::FatalSemantic) => {
+                return Err(Error::Semantic(SemanticError(syntax_tree.span())));
+            }
+        };
 
-        match resolution {
-            resolution::Resolution::Variant(variant_res) => {
-                let variant = self.table.get(variant_res.variant).unwrap();
+        let id = match resolution {
+            Resolution::Variant(variant_res) => {
+                let variant =
+                    self.table.query::<pernixc_component::variant::Variant>(
+                        variant_res.variant_id,
+                    )?;
+                let parent_enum_id = GlobalID::new(
+                    variant_res.variant_id.target_id,
+                    self.table
+                        .get::<Parent>(variant_res.variant_id)
+                        .parent
+                        .unwrap(),
+                );
+
+                let enum_generic_parameters =
+                    self.table.query::<GenericParameters>(parent_enum_id)?;
 
                 // expected a variant type
                 if variant.associated_type.is_some() {
                     self.create_handler_wrapper(handler).receive(Box::new(
-                        error::ExpectAssociatedValue {
+                        ExpectedAssociatedValue {
                             span: syntax_tree.span(),
-                            variant_id: variant_res.variant,
+                            variant_id: variant_res.variant_id,
                         },
                     ));
                 }
@@ -126,13 +143,8 @@ impl<
 
                     let instantiation = Instantiation::from_generic_arguments(
                         variant_res.generic_arguments.clone(),
-                        variant.parent_enum_id().into(),
-                        &self
-                            .table
-                            .get(variant.parent_enum_id())
-                            .unwrap()
-                            .generic_declaration
-                            .parameters,
+                        parent_enum_id,
+                        &enum_generic_parameters,
                     )
                     .unwrap();
 
@@ -144,7 +156,7 @@ impl<
                     let associated_value =
                         Value::Literal(Literal::Error(literal::Error {
                             r#type: associated_type,
-                            span: syntax_tree.span(),
+                            span: Some(syntax_tree.span()),
                         }));
 
                     Some(associated_value)
@@ -154,36 +166,50 @@ impl<
 
                 let register_id = self.create_register_assignmnet(
                     Assignment::Variant(Variant {
-                        variant_id: variant_res.variant,
+                        variant_id: variant_res.variant_id,
                         associated_value,
                         generic_arguments: variant_res.generic_arguments,
                     }),
                     syntax_tree.span(),
                 );
 
-                Ok(Expression::RValue(Value::Register(register_id)))
+                return Ok(Expression::RValue(Value::Register(register_id)));
             }
 
-            resolution::Resolution::Generic(resolution::Generic {
-                id: resolution::GenericID::Constant(_id),
-                generic_arguments: _,
-            }) => todo!("handle constant evaluation"),
+            Resolution::Generic(generic) => {
+                let symbol_kind = *self.table.get::<SymbolKind>(generic.id);
 
-            resolution::Resolution::Generic(resolution::Generic {
-                id: resolution::GenericID::TraitImplementationConstant(_id),
-                generic_arguments: _,
-            }) => todo!("handle constant evaluation"),
+                if symbol_kind == SymbolKind::Constant {
+                    todo!("handle constant evaluation");
+                }
 
-            resolution => {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    error::SymbolCannotBeUsedAsAnExpression {
-                        span: syntax_tree.span(),
-                        symbol: resolution.item_id(),
-                    },
-                ));
-
-                Err(Error::Semantic(SemanticError(syntax_tree.span())))
+                generic.id
             }
-        }
+
+            Resolution::MemberGeneric(member_generic) => {
+                let symbol_kind =
+                    *self.table.get::<SymbolKind>(member_generic.id);
+
+                if symbol_kind == SymbolKind::TraitImplementationConstant {
+                    todo!("handle constant evaluation");
+                }
+
+                member_generic.id
+            }
+
+            resolution => resolution.global_id(),
+        };
+
+        self.create_handler_wrapper(handler).receive(Box::new(
+            SymbolCannotBeUsedAsAnExpression {
+                span: syntax_tree.span(),
+                symbol: id,
+            },
+        ));
+
+        Err(Error::Semantic(SemanticError(syntax_tree.span())))
     }
 }
+
+#[cfg(test)]
+mod test;

@@ -16,7 +16,7 @@ use pernixc_term::{
 
 use crate::{
     occurrences::diagnostic::ImplementationIsNotGeneralEnough,
-    test::build_table, type_system::diagnostic::UnsatisfiedPredicate,
+    utility::build_table, type_system::diagnostic::UnsatisfiedPredicate,
 };
 
 const PREDICATE_REQUIREMENTS: &str = r"

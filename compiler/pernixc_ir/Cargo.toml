@@ -28,5 +28,8 @@ thiserror = { workspace = true }
 lazy_static = { workspace = true }
 parking_lot = { workspace = true }
 
+[dev-dependencies]
+pernixc_builder = { path = "../pernixc_builder" }
+
 [lints]
 workspace = true

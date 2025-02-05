@@ -305,6 +305,12 @@ pub enum Error {
     Abrupt(#[from] AbruptError),
 }
 
+impl From<CyclicDependencyError> for Error {
+    fn from(value: CyclicDependencyError) -> Self {
+        Self::Abrupt(AbruptError::CyclicDependency(value))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct LifetimeInferenceProvider;
 
@@ -512,7 +518,7 @@ impl<'t> Binder<'t> {
     fn type_of_register(
         &self,
         register_id: ID<Register<infer::Model>>,
-    ) -> Result<Type<infer::Model>, pernixc_type_system::AbruptError> {
+    ) -> Result<Type<infer::Model>, AbruptError> {
         self.intermediate_representation
             .values
             .type_of_register(
@@ -521,13 +527,23 @@ impl<'t> Binder<'t> {
                 &self.create_environment(),
             )
             .map(|x| x.result)
+            .map_err(|x| {
+                x.into_type_system_overflow(
+                    OverflowOperation::TypeOf,
+                    self.intermediate_representation.values.registers
+                        [register_id]
+                        .span
+                        .clone()
+                        .unwrap(),
+                )
+            })
     }
 
     /// Gets the type of the given `value`.
     fn type_of_value(
         &self,
         value: &Value<infer::Model>,
-    ) -> Result<Type<infer::Model>, pernixc_type_system::AbruptError> {
+    ) -> Result<Type<infer::Model>, AbruptError> {
         match value {
             Value::Register(register_id) => self.type_of_register(*register_id),
             Value::Literal(literal) => Ok(literal.r#type()),

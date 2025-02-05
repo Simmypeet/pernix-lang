@@ -5,7 +5,7 @@ use pernixc_term::{
     r#type::Type,
 };
 
-use crate::{fields::diagnostic::FieldDuplication, test::build_table};
+use crate::{fields::diagnostic::FieldDuplication, utility::build_table};
 
 const FIELDS: &str = r"
 public struct Pair[T, U] {

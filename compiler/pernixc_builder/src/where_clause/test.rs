@@ -10,7 +10,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    test::build_table,
+    utility::build_table,
     where_clause::diagnostic::{
         HigherRankedLifetimeRedefinition, PredicateKind,
         UnexpectedSymbolInPredicate,

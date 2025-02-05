@@ -26,7 +26,7 @@ use crate::{
         MismatchedImplementationConstantTypeParameter, OrphanRuleViolation,
         UnusedGenericParameterInImplementation,
     },
-    test::{add_target, build_table},
+    utility::{add_target, build_table},
     type_system::diagnostic::UnsatisfiedPredicate,
 };
 

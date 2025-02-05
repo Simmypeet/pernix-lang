@@ -19,6 +19,7 @@ pernixc_arena = { path = "../pernixc_arena" }
 pernixc_storage = { path = "../pernixc_storage" }
 pernixc_component = { path = "../pernixc_component" }
 pernixc_type_system = { path = "../pernixc_type_system" }
+pernixc_ir = { path = "../pernixc_ir" }
 thiserror = { workspace = true }
 getset = { workspace = true }
 rayon = { workspace = true }

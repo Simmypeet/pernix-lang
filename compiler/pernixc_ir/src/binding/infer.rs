@@ -1354,6 +1354,10 @@ impl Context {
     ///
     /// All type inference variables will be replaced with the constraints they
     /// currently infer.
+    ///
+    /// # Errors
+    ///
+    /// See [`pernixc_type_system::AbruptError`] for more information.
     pub fn transform_type_into_constraint_model(
         &self,
         ty: Type<Model>,
@@ -1379,14 +1383,14 @@ impl Context {
     }
 
     /// Converts the constant with [`Model`] into the constant with the
-    /// [`ConstraintModel`] model.
+    /// [`model::Constrained`] model.
     ///
     /// All type inference variables will be replaced with the constraints they
     /// currently infer.
     ///
     /// # Errors
     ///
-    /// See [`OverflowError`] for more information.
+    /// See [`pernixc_type_system::AbruptError`] for more information.
     pub fn transform_constant_into_constraint_model(
         &self,
         constant: Constant<Model>,

@@ -1,3 +1,5 @@
+//! Contains the utility function used for quickly build the table.
+
 use std::sync::Arc;
 
 use pernixc_handler::Panic;

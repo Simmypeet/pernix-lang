@@ -1,56 +1,40 @@
 use std::num::NonZeroUsize;
 
-use pernixc_base::{
-    handler::Handler,
-    source_file::{SourceElement, Span},
-};
+use pernixc_handler::Handler;
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
+use pernixc_table::diagnostic::Diagnostic;
+use pernixc_term::r#type::{Primitive, Qualifier, Type};
+use pernixc_type_system::diagnostic::OverflowOperation;
 
 use super::{Bind, Config, Expression, LValue, Target};
 use crate::{
-    error::{
-        self, InvalidRelationalOperation, OverflowOperation, TypeSystemOverflow,
+    binding::{
+        diagnostic::{AssignToNonMutable, InvalidRelationalOperation},
+        infer::{self, Expected},
+        AddContextExt, Binder, Error, SemanticError,
     },
-    ir::{
-        self,
-        control_flow_graph::InsertTerminatorError,
-        instruction::{
-            self, Instruction, Jump, ScopePop, ScopePush, Store, Terminator,
-        },
-        representation::{
-            binding::{infer, Binder, Error, SemanticError},
-            borrow,
-        },
-        value::{
-            literal::{self, Boolean, Literal},
-            register::{
-                ArithmeticOperator, Assignment, Binary, BinaryOperator,
-                BitwiseOperator, Load, Phi,
-            },
-            Value,
+    instruction::{
+        self, ConditionalJump, Instruction, Jump, ScopePop, ScopePush, Store,
+        Terminator,
+    },
+    model::Constraint,
+    value::{
+        literal::{self, Boolean, Literal},
+        register::{
+            ArithmeticOperator, Assignment, Binary, BinaryOperator,
+            BitwiseOperator, Load, Phi,
         },
     },
-    symbol::table::{self, resolution},
-    type_system::{
-        self, simplify,
-        term::r#type::{self, Constraint, Expected, Qualifier, Type},
-    },
+    Value,
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Binary> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::Binary> for Binder<'_> {
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Binary,
         config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         // transform the syntax tree into a binary tree
         let binary_node = to_binary_tree(syntax_tree);
@@ -80,9 +64,7 @@ struct BinaryTree<'a> {
 }
 
 impl SourceElement for BinaryTree<'_> {
-    fn span(&self) -> Span {
-        self.left.span().join(&self.right.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.left.span().join(&self.right.span()) }
 }
 
 const fn operator_precedence(
@@ -190,7 +172,7 @@ const fn into_binary_operator(
 ) -> Result<(BinaryOperator, bool), &syntax_tree::expression::BinaryOperator> {
     use syntax_tree::expression::BinaryOperator as BinOpSyn;
 
-    use crate::ir::value::register::{
+    use crate::value::register::{
         ArithmeticOperator as ArithOp, BinaryOperator as BinOp,
         BitwiseOperator as BitOp, RelationalOperator as RelaOp,
     };
@@ -271,24 +253,22 @@ const fn into_binary_operator(
     }
 }
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Binder<'t, S, RO, TO>
-{
+impl Binder<'_> {
     fn bind_assignment(
         &mut self,
         tree: &BinaryTree,
         config: Config,
         lhs_address: LValue,
         rhs_value: Value<infer::Model>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
-        let lhs_ty = self.type_of_address(&lhs_address.address)?;
+        let lhs_ty =
+            self.type_of_address(&lhs_address.address).map_err(|x| {
+                x.into_type_system_overflow(
+                    OverflowOperation::TypeOf,
+                    tree.left.span(),
+                )
+            })?;
         let rhs_ty = self.type_of_value(&rhs_value)?;
 
         let _ = self.type_check(
@@ -300,19 +280,15 @@ impl<
         )?;
 
         if lhs_address.qualifier != Qualifier::Mutable {
-            self.create_handler_wrapper(handler).receive(Box::new(
-                error::AssignToNonMutable {
-                    span: tree.span(),
-                    qualifier: lhs_address.qualifier,
-                },
-            ));
+            self.create_handler_wrapper(handler)
+                .receive(Box::new(AssignToNonMutable { span: tree.span() }));
         }
 
         let _ = self.current_block_mut().add_instruction(Instruction::Store(
             Store {
                 address: lhs_address.address.clone(),
                 value: rhs_value,
-                span: tree.span(),
+                span: Some(tree.span()),
             },
         ));
 
@@ -343,7 +319,7 @@ impl<
         &mut self,
         syntax_tree: &BinaryTree,
         config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let (op, is_compound) =
             into_binary_operator(syntax_tree.operator).unwrap();
@@ -358,21 +334,20 @@ impl<
                     Ok(address) => address,
 
                     Err(Error::Semantic(SemanticError(span))) => {
-                        let inference = self.create_type_inference(
-                            r#type::Constraint::All(false),
-                        );
+                        let inference =
+                            self.create_type_inference(Constraint::All(false));
 
                         break 'out (
                             None,
                             Value::Literal(Literal::Error(literal::Error {
                                 r#type: Type::Inference(inference),
-                                span,
+                                span: Some(span),
                             })),
                         );
                     }
 
-                    Err(Error::Internal(internal_error)) => {
-                        return Err(Error::Internal(internal_error))
+                    Err(Error::Abrupt(internal_error)) => {
+                        return Err(Error::Abrupt(internal_error))
                     }
                 };
 
@@ -419,9 +394,9 @@ impl<
                     ArithmeticOperator::Add
                     | ArithmeticOperator::Subtract
                     | ArithmeticOperator::Multiply
-                    | ArithmeticOperator::Divide => r#type::Constraint::Number,
+                    | ArithmeticOperator::Divide => Constraint::Number,
 
-                    ArithmeticOperator::Modulo => r#type::Constraint::Integer,
+                    ArithmeticOperator::Modulo => Constraint::Integer,
                 };
 
                 let _ = self.type_check(
@@ -433,23 +408,22 @@ impl<
                 )?;
             }
             BinaryOperator::Relational(_) => {
-                let lhs_register_ty = simplify::simplify(
-                    &lhs_register_ty,
-                    &self.create_environment(),
-                )
-                .map_err(|overflow_error| TypeSystemOverflow {
-                    operation: OverflowOperation::TypeOf,
-                    overflow_span: syntax_tree.left.span(),
-                    overflow_error,
-                })?
-                .result;
+                let lhs_register_ty = self
+                    .create_environment()
+                    .simplify(lhs_register_ty)
+                    .map_err(|x| {
+                        x.into_type_system_overflow(
+                            OverflowOperation::TypeOf,
+                            syntax_tree.left.span(),
+                        )
+                    })?;
 
-                let valid = match lhs_register_ty {
+                let valid = match lhs_register_ty.result.reduce_reference() {
                     Type::Primitive(_) => true,
                     Type::Inference(inference) => {
                         let constraint_id = *self
                             .inference_context
-                            .get_inference(inference)
+                            .get_inference(*inference)
                             .unwrap()
                             .as_inferring()
                             .unwrap();
@@ -479,14 +453,14 @@ impl<
                             found_type: self
                                 .inference_context
                                 .transform_type_into_constraint_model(
-                                    lhs_register_ty,
+                                    lhs_register_ty.result.clone(),
+                                    self.table,
                                 )
-                                .map_err(|overflow_error| {
-                                    TypeSystemOverflow {
-                                        operation: OverflowOperation::TypeOf,
-                                        overflow_span: syntax_tree.left.span(),
-                                        overflow_error,
-                                    }
+                                .map_err(|x| {
+                                    x.into_type_system_overflow(
+                                        OverflowOperation::TypeOf,
+                                        syntax_tree.left.span(),
+                                    )
                                 })?,
                             span: syntax_tree.span(),
                         },
@@ -497,23 +471,22 @@ impl<
                 BitwiseOperator::And
                 | BitwiseOperator::Or
                 | BitwiseOperator::Xor => {
-                    let lhs_register_ty = simplify::simplify(
-                        &lhs_register_ty,
-                        &self.create_environment(),
-                    )
-                    .map_err(|overflow_error| TypeSystemOverflow {
-                        operation: OverflowOperation::TypeOf,
-                        overflow_span: syntax_tree.left.span(),
-                        overflow_error,
-                    })?
-                    .result;
+                    let lhs_register_ty = self
+                        .create_environment()
+                        .simplify(lhs_register_ty)
+                        .map_err(|x| {
+                            x.into_type_system_overflow(
+                                OverflowOperation::TypeOf,
+                                syntax_tree.left.span(),
+                            )
+                        })?;
 
-                    let valid = match lhs_register_ty {
+                    let valid = match &lhs_register_ty.result {
                         Type::Primitive(_) => true,
                         Type::Inference(inference) => {
                             let constraint_id = *self
                                 .inference_context
-                                .get_inference(inference)
+                                .get_inference(*inference)
                                 .unwrap()
                                 .as_inferring()
                                 .unwrap();
@@ -544,17 +517,14 @@ impl<
                                 found_type: self
                                     .inference_context
                                     .transform_type_into_constraint_model(
-                                        lhs_register_ty,
+                                        lhs_register_ty.result.clone(),
+                                        self.table,
                                     )
-                                    .map_err(|overflow_error| {
-                                        TypeSystemOverflow {
-                                            operation:
-                                                OverflowOperation::TypeOf,
-                                            overflow_span: syntax_tree
-                                                .left
-                                                .span(),
-                                            overflow_error,
-                                        }
+                                    .map_err(|x| {
+                                        x.into_type_system_overflow(
+                                            OverflowOperation::TypeOf,
+                                            syntax_tree.left.span(),
+                                        )
                                     })?,
                                 span: syntax_tree.span(),
                             },
@@ -563,7 +533,7 @@ impl<
                 }
 
                 BitwiseOperator::LeftShift | BitwiseOperator::RightShift => {
-                    let expected_constraints = r#type::Constraint::Integer;
+                    let expected_constraints = Constraint::Integer;
 
                     let _ = self.type_check(
                         &lhs_register_ty,
@@ -609,22 +579,13 @@ impl<
     }
 }
 
-impl<
-        'x,
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&BinaryTree<'x>> for Binder<'t, S, RO, TO>
-{
+impl Bind<&BinaryTree<'_>> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
-        syntax_tree: &BinaryTree<'x>,
+        syntax_tree: &BinaryTree<'_>,
         config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree.operator {
             syntax_tree::expression::BinaryOperator::Assign(_) => {
@@ -650,7 +611,7 @@ impl<
                 let lhs_ty = self.type_of_value(&lhs)?;
                 let _ = self.type_check(
                     &lhs_ty,
-                    Expected::Known(Type::Primitive(r#type::Primitive::Bool)),
+                    Expected::Known(Type::Primitive(Primitive::Bool)),
                     syntax_tree.left.span(),
                     true,
                     handler,
@@ -665,22 +626,17 @@ impl<
                     .control_flow_graph
                     .new_block();
 
-                if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
+                let _ = self
                     .intermediate_representation
                     .control_flow_graph
                     .insert_terminator(
                         self.current_block_id,
-                        Terminator::Jump(Jump::Conditional(
-                            instruction::ConditionalJump {
-                                condition: lhs,
-                                true_target: true_block_id,
-                                false_target: false_block_id,
-                            },
-                        )),
-                    )
-                {
-                    panic!("invalid block id");
-                }
+                        Terminator::Jump(Jump::Conditional(ConditionalJump {
+                            condition: lhs,
+                            true_target: true_block_id,
+                            false_target: false_block_id,
+                        })),
+                    );
 
                 let (true_branch, false_branch) = {
                     let result = self
@@ -711,7 +667,7 @@ impl<
                     ) {
                         Value::Literal(Literal::Boolean(Boolean {
                             value: true,
-                            span: (syntax_tree.left.span()),
+                            span: Some(syntax_tree.left.span()),
                         }))
                     } else {
                         let rhs = self
@@ -720,9 +676,7 @@ impl<
                         let rhs_ty = self.type_of_value(&rhs)?;
                         let _ = self.type_check(
                             &rhs_ty,
-                            Expected::Known(Type::Primitive(
-                                r#type::Primitive::Bool,
-                            )),
+                            Expected::Known(Type::Primitive(Primitive::Bool)),
                             syntax_tree.right.span(),
                             true,
                             handler,
@@ -741,7 +695,7 @@ impl<
                     );
 
                     // jump to the successor block
-                    if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
+                    let _ = self
                         .intermediate_representation
                         .control_flow_graph
                         .insert_terminator(
@@ -751,10 +705,7 @@ impl<
                                     target: successor_block_id,
                                 },
                             )),
-                        )
-                    {
-                        panic!("invalid block id");
-                    }
+                        );
 
                     (value, self.current_block_id)
                 };
@@ -775,7 +726,7 @@ impl<
                     ) {
                         Value::Literal(Literal::Boolean(Boolean {
                             value: false,
-                            span: (syntax_tree.left.span()),
+                            span: Some(syntax_tree.left.span()),
                         }))
                     } else {
                         let rhs = self
@@ -784,9 +735,7 @@ impl<
                         let rhs_ty = self.type_of_value(&rhs)?;
                         let _ = self.type_check(
                             &rhs_ty,
-                            Expected::Known(Type::Primitive(
-                                r#type::Primitive::Bool,
-                            )),
+                            Expected::Known(Type::Primitive(Primitive::Bool)),
                             syntax_tree.right.span(),
                             true,
                             handler,
@@ -805,7 +754,7 @@ impl<
                     );
 
                     // jump to the successor block
-                    if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
+                    let _ = self
                         .intermediate_representation
                         .control_flow_graph
                         .insert_terminator(
@@ -815,10 +764,7 @@ impl<
                                     target: successor_block_id,
                                 },
                             )),
-                        )
-                    {
-                        panic!("invalid block id");
-                    }
+                        );
 
                     (value, self.current_block_id)
                 };
@@ -834,10 +780,8 @@ impl<
                         // unreachable
                         Value::Literal(Literal::Unreachable(
                             literal::Unreachable {
-                                r#type: Type::Primitive(
-                                    r#type::Primitive::Bool,
-                                ),
-                                span: (syntax_tree.span()),
+                                r#type: Type::Primitive(Primitive::Bool),
+                                span: Some(syntax_tree.span()),
                             },
                         ))
                     }
@@ -865,9 +809,7 @@ impl<
 
                         let register_id = self.create_register_assignmnet(
                             Assignment::Phi(Phi {
-                                r#type: Type::Primitive(
-                                    r#type::Primitive::Bool,
-                                ),
+                                r#type: Type::Primitive(Primitive::Bool),
                                 incoming_values: [
                                     (
                                         true_branch_last_block_id,
@@ -898,21 +840,12 @@ impl<
     }
 }
 
-impl<
-        'x,
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&BinaryNode<'x>> for Binder<'t, S, RO, TO>
-{
+impl Bind<&BinaryNode<'_>> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &BinaryNode<'x>,
+        syntax_tree: &BinaryNode<'_>,
         config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             BinaryNode::Binary(binary) => self.bind(&**binary, config, handler),

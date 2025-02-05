@@ -6,6 +6,10 @@ use pernixc_component::{
     implied_predicates::ImpliedPredicates,
 };
 use pernixc_handler::{Panic, Storage};
+use pernixc_syntax::syntax_tree::{
+    item::{Item, Parameter},
+    ConnectedList,
+};
 use pernixc_table::{
     component::{Member, Name, Parent, SymbolKind},
     diagnostic::Diagnostic,
@@ -13,11 +17,11 @@ use pernixc_table::{
 };
 use pernixc_term::{
     elided_lifetimes::ElidedLifetimes, generic_parameter::GenericParameters,
-    r#type::Type, where_clause::WhereClause, Default,
+    r#type::Type, where_clause::WhereClause, Default, Symbol,
 };
 
 use super::{
-    expression::{Bind, Config, Target},
+    expression::{Bind, Config, LValue, Target},
     infer, Binder,
 };
 use crate::Value;
@@ -57,12 +61,13 @@ impl Template {
         assert!(table.add_component(
             test_root_module_id,
             Member(
-                std::iter::once(("Test".to_string(), test_function_id.id))
+                std::iter::once(("test".to_string(), test_function_id.id))
                     .collect(),
             ),
         ));
 
         assert!(table.add_component(test_function_id, SymbolKind::Function));
+        assert!(table.add_component(test_function_id, Name("test".to_string())));
         assert!(
             table.add_component(test_function_id, GenericParameters::default())
         );
@@ -104,10 +109,71 @@ impl Template {
     }
 }
 
+pub fn build_table(source: impl std::fmt::Display) -> Table {
+    let (table, errors): (Table, _) =
+        pernixc_builder::utility::build_table(source);
+
+    assert!(errors.is_empty());
+
+    table
+}
+
+pub trait CreateBinderAtExt {
+    fn create_binder_at<'a>(
+        &self,
+        qualified_function_name: impl IntoIterator<Item = &'a str>,
+    ) -> Binder<'_>;
+}
+
+impl CreateBinderAtExt for Table {
+    #[allow(clippy::needless_collect)]
+    fn create_binder_at<'a>(
+        &self,
+        qualified_function_name: impl IntoIterator<Item = &'a str>,
+    ) -> Binder<'_> {
+        let function_id =
+            self.get_by_qualified_name(qualified_function_name).unwrap();
+        assert_eq!(*self.get::<SymbolKind>(function_id), SymbolKind::Function);
+
+        let function_signature =
+        self.get::<pernixc_table::component::syntax_tree::FunctionSignature>(
+            function_id,
+        );
+
+        let irrefutable_patterns = function_signature
+            .parameters
+            .connected_list()
+            .as_ref()
+            .into_iter()
+            .flat_map(ConnectedList::elements)
+            .map(Parameter::irrefutable_pattern)
+            .collect::<Vec<_>>();
+
+        Binder::new_function(
+            self,
+            function_id,
+            irrefutable_patterns.into_iter(),
+            &Panic,
+        )
+        .unwrap()
+    }
+}
+
 pub trait BindExt<'a> {
     fn bind_as_rvalue_success<T>(&mut self, syntax: T) -> Value<infer::Model>
     where
         Binder<'a>: Bind<T>;
+
+    fn bind_as_lvalue_success<T>(&mut self, syntax: T) -> LValue
+    where
+        Binder<'a>: Bind<T>;
+
+    fn bind_as_rvalue_error<T>(
+        &mut self,
+        syntax: T,
+    ) -> (Value<infer::Model>, Vec<Box<dyn Diagnostic>>)
+    where
+        Self: Bind<T>;
 
     fn bind_as_rvalue_error_fatal<T>(
         &mut self,
@@ -134,6 +200,43 @@ impl<'a> BindExt<'a> for Binder<'a> {
         assert!(storage.is_empty(), "{storage:?}");
 
         expression
+    }
+
+    fn bind_as_lvalue_success<T>(&mut self, syntax: T) -> LValue
+    where
+        Self: Bind<T>,
+    {
+        let storage = Storage::<Box<dyn Diagnostic>>::new();
+        let lvalue = self
+            .bind(syntax, Config { target: Target::LValue }, &storage)
+            .unwrap()
+            .into_l_value()
+            .unwrap();
+
+        let storage = std::mem::take(&mut *storage.as_vec_mut());
+
+        assert!(storage.is_empty(), "{storage:?}");
+
+        lvalue
+    }
+
+    fn bind_as_rvalue_error<T>(
+        &mut self,
+        syntax: T,
+    ) -> (Value<infer::Model>, Vec<Box<dyn Diagnostic>>)
+    where
+        Self: Bind<T>,
+    {
+        let storage = Storage::<Box<dyn Diagnostic>>::new();
+        let value = self
+            .bind(syntax, Config { target: Target::RValue }, &storage)
+            .unwrap()
+            .into_r_value()
+            .unwrap();
+
+        let storage = std::mem::take(&mut *storage.as_vec_mut());
+
+        (value, storage)
     }
 
     fn bind_as_rvalue_error_fatal<T>(

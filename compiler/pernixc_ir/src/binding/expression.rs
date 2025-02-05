@@ -105,12 +105,13 @@ pub trait Bind<T> {
     ) -> Result<Expression, Error>;
 }
 
+mod binary;
 mod boolean;
 mod numeric;
+mod qualified_identifier;
 
 /*
 mod array;
-mod binary;
 mod block;
 mod r#break;
 mod character;
@@ -124,7 +125,6 @@ mod parenthesized;
 mod phantom;
 mod postfix;
 mod prefix;
-mod qualified_identifier;
 mod r#return;
 mod string;
 mod r#struct;
@@ -154,13 +154,7 @@ impl Binder<'_> {
         )? {
             Expression::RValue(value) => {
                 if create_temporary {
-                    let type_of_value =
-                        self.type_of_value(&value).map_err(|x| {
-                            x.into_type_system_overflow(
-                                OverflowOperation::TypeOf,
-                                syntax_tree.span(),
-                            )
-                        })?;
+                    let type_of_value = self.type_of_value(&value)?;
 
                     let alloca_id =
                         self.create_alloca(type_of_value, syntax_tree.span());
@@ -312,14 +306,14 @@ impl Bind<&syntax_tree::expression::Unit> for Binder<'_> {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            syntax_tree::expression::Unit::Boolean(syntax_tree) => {
-                self.bind(syntax_tree, config, handler)
+            syntax_tree::expression::Unit::Boolean(syn) => {
+                self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Numeric(syntax_tree) => {
-                self.bind(syntax_tree, config, handler)
+            syntax_tree::expression::Unit::Numeric(syn) => {
+                self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::QualifiedIdentifier(_) => {
-                todo!()
+            syntax_tree::expression::Unit::QualifiedIdentifier(syn) => {
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Unit::Parenthesized(_) => {
                 todo!()
@@ -457,8 +451,8 @@ impl Bind<&syntax_tree::expression::Expression> for Binder<'_> {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            syntax_tree::expression::Expression::Binary(_) => {
-                todo!()
+            syntax_tree::expression::Expression::Binary(syn) => {
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Expression::Terminator(syn) => {
                 self.bind(syn, config, handler)

@@ -658,3 +658,108 @@ impl Report<&Table> for FloatingPointLiteralHasIntegralSuffix {
         }
     }
 }
+
+/// The enum variant expects an associated value but none was provided.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectedAssociatedValue {
+    /// The ID of the variant where the associated value is expected.
+    pub variant_id: GlobalID,
+
+    /// The span of the variant.
+    pub span: Span,
+}
+
+impl Report<&Table> for ExpectedAssociatedValue {
+    fn report(&self, table: &Table) -> Diagnostic {
+        let name = table.get::<Name>(self.variant_id);
+
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the enum variant `{}` expects an associated value",
+                name.0
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The symbol cannot be used as an expression.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SymbolCannotBeUsedAsAnExpression {
+    /// The span of the symbol reference.
+    pub span: Span,
+
+    /// The ID of the symbol that cannot be used as an expression.
+    pub symbol: GlobalID,
+}
+
+impl Report<&Table> for SymbolCannotBeUsedAsAnExpression {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the symbol `{}` cannot be used as an expression",
+                self.span.str()
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// Attempts to assign to a non-mutable l-value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AssignToNonMutable {
+    /// The span of the assignment.
+    pub span: Span,
+}
+
+impl Report<&Table> for AssignToNonMutable {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "cannot assign to `{}` since it's immutable",
+                self.span.str(),
+            ),
+            severity: Severity::Error,
+            help_message: Some(
+                "the value must be `mutable` to assign".to_string(),
+            ),
+            related: Vec::new(),
+        }
+    }
+}
+
+/// Can't perform relational operation on the given type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InvalidRelationalOperation<M: Model> {
+    /// The type where the relational operation is not allowed.
+    pub found_type: Type<M>,
+
+    /// The span of the relational operation.
+    pub span: Span,
+}
+
+impl<M: Model> Report<&Table> for InvalidRelationalOperation<M>
+where
+    Type<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "can't perform relational operation on expression with type \
+                 `{}`",
+                DisplayObject { display: &self.found_type, table }
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}

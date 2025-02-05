@@ -12,7 +12,7 @@ use pernixc_term::{
     r#type::{Qualifier, Reference, Type},
 };
 
-use crate::test::build_table;
+use crate::utility::build_table;
 
 const IMPLIED_PREDICATES_AND_ELIDED_LIFETIMES: &str = r"
 public function test[T](x: &T, y: T): &T { return x; }
