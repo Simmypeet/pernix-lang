@@ -1,80 +1,84 @@
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
-use pernixc_base::{
-    handler::Handler,
-    source_file::{SourceElement, Span},
-};
+use pernixc_arena::ID;
+use pernixc_component::fields::Field;
+use pernixc_handler::Handler;
+use pernixc_resolution::qualified_identifier::{self, Generic, Resolution};
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
+use pernixc_table::{component::SymbolKind, diagnostic::Diagnostic};
+use pernixc_term::{
+    generic_parameter::GenericParameters,
+    instantiation::{self, Instantiation},
+    Model,
+};
 
 use super::{Bind, Config, Expression};
 use crate::{
-    arena::ID,
-    error::{
-        self, DuplicatedFieldInitialization, FieldIsNotAccessible,
-        FieldNotFound,
-    },
-    ir::{
-        self,
-        representation::{
-            binding::{infer, Binder, Error, SemanticError},
-            borrow,
+    binding::{
+        diagnostic::{
+            DuplicatedFieldInitialization, ExpectedStruct,
+            FieldIsNotAccessible, FieldNotFound, UninitializedFields,
         },
-        value::{
-            register::{Assignment, Struct},
-            Value,
-        },
+        infer::{self, Expected},
+        AbruptError, Binder, Error, SemanticError,
     },
-    symbol::{
-        table::{self, representation::Index, resolution},
-        Field,
-    },
-    type_system::{
-        self,
-        instantiation::{self, Instantiation},
-        model::Model,
-        term::r#type::Expected,
-    },
+    value::register::{Assignment, Struct},
+    Value,
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Struct> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::Struct> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Struct,
         _: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let resolution = self
-            .resolve_with_inference(syntax_tree.qualified_identifier(), handler)
-            .ok_or(Error::Semantic(SemanticError(syntax_tree.span())))?;
+            .resolve_qualified_identifier_with_inference(
+                syntax_tree.qualified_identifier(),
+                handler,
+            )
+            .map_err(|x| match x {
+                qualified_identifier::Error::FatalSemantic => {
+                    Error::Semantic(SemanticError(syntax_tree.span()))
+                }
+                qualified_identifier::Error::CyclicDependency(
+                    cyclic_dependency_error,
+                ) => Error::Abrupt(AbruptError::CyclicDependency(
+                    cyclic_dependency_error,
+                )),
+            })?;
 
         // must be struct type
-        let resolution::Resolution::Generic(resolution::Generic {
-            id: resolution::GenericID::Struct(struct_id),
-            generic_arguments,
-        }) = resolution
+        let Resolution::Generic(Generic { id: struct_id, generic_arguments }) =
+            resolution
         else {
-            self.create_handler_wrapper(handler).receive(Box::new(
-                error::ExpectStruct { span: syntax_tree.span() },
-            ));
+            self.create_handler_wrapper(handler)
+                .receive(Box::new(ExpectedStruct { span: syntax_tree.span() }));
             return Err(Error::Semantic(SemanticError(syntax_tree.span())));
         };
 
+        let symbol_kind = *self.table.get::<SymbolKind>(struct_id);
+        if symbol_kind != SymbolKind::Struct {
+            self.create_handler_wrapper(handler)
+                .receive(Box::new(ExpectedStruct { span: syntax_tree.span() }));
+            return Err(Error::Semantic(SemanticError(syntax_tree.span())));
+        }
+
+        let struct_generic_parameters =
+            self.table.query::<GenericParameters>(struct_id)?;
+
         let instantiation = Instantiation::from_generic_arguments(
             generic_arguments.clone(),
-            struct_id.into(),
-            &self.table.get(struct_id).unwrap().generic_declaration.parameters,
+            struct_id,
+            &struct_generic_parameters,
         )
         .unwrap();
 
+        let fields =
+            self.table.query::<pernixc_component::fields::Fields>(struct_id)?;
         let mut initializers_by_field_id =
             HashMap::<ID<Field>, (Value<infer::Model>, Span)>::new();
 
@@ -90,10 +94,10 @@ impl<
                 self.bind_value_or_error(&**field_syn.expression(), handler)?;
 
             let (field_id, field_ty, field_accessibility) = {
-                let struct_sym = self.table.get(struct_id).unwrap();
-                let Some(field_id) = struct_sym
-                    .fields()
-                    .get_id(field_syn.identifier().span.str())
+                let Some(field_id) = fields
+                    .field_ids_by_name
+                    .get(field_syn.identifier().span.str())
+                    .copied()
                 else {
                     self.create_handler_wrapper(handler).receive(Box::new(
                         FieldNotFound {
@@ -107,7 +111,7 @@ impl<
                     continue;
                 };
 
-                let field = struct_sym.fields().get(field_id).unwrap();
+                let field = &fields.fields[field_id];
                 let mut field_ty =
                     infer::Model::from_default_type(field.r#type.clone());
 
@@ -117,11 +121,10 @@ impl<
             };
 
             // field accessibility check
-            if !self
-                .table
-                .is_accessible_from(self.current_site, field_accessibility)
-                .unwrap()
-            {
+            if !self.table.is_accessible_from_globally(
+                self.current_site,
+                field_accessibility.into_global(struct_id.target_id),
+            ) {
                 self.create_handler_wrapper(handler).receive(Box::new(
                     FieldIsNotAccessible {
                         field_id,
@@ -160,16 +163,15 @@ impl<
         }
 
         // check for uninitialized fields
-        let struct_sym = self.table.get(struct_id).unwrap();
-        let uninitialized_fields = struct_sym
-            .fields()
+        let uninitialized_fields = fields
+            .fields
             .ids()
             .filter(|field_id| !initializers_by_field_id.contains_key(field_id))
             .collect::<HashSet<_>>();
 
         if !uninitialized_fields.is_empty() {
             self.create_handler_wrapper(handler).receive(Box::new(
-                error::UninitializedFields {
+                UninitializedFields {
                     struct_id,
                     uninitialized_fields,
                     struct_expression_span: syntax_tree.span(),
@@ -194,3 +196,6 @@ impl<
         Ok(Expression::RValue(value))
     }
 }
+
+#[cfg(test)]
+mod test;

@@ -6,10 +6,7 @@ use pernixc_component::{
     implied_predicates::ImpliedPredicates,
 };
 use pernixc_handler::{Panic, Storage};
-use pernixc_syntax::syntax_tree::{
-    item::{Item, Parameter},
-    ConnectedList,
-};
+use pernixc_syntax::syntax_tree::{item::Parameter, ConnectedList};
 use pernixc_table::{
     component::{Member, Name, Parent, SymbolKind},
     diagnostic::Diagnostic,
@@ -17,7 +14,7 @@ use pernixc_table::{
 };
 use pernixc_term::{
     elided_lifetimes::ElidedLifetimes, generic_parameter::GenericParameters,
-    r#type::Type, where_clause::WhereClause, Default, Symbol,
+    r#type::Type, where_clause::WhereClause, Default,
 };
 
 use super::{
@@ -30,6 +27,8 @@ use crate::Value;
 pub struct Template {
     pub table: Table,
     pub function_id: GlobalID,
+
+    #[allow(unused)]
     pub test_module_id: GlobalID,
 }
 

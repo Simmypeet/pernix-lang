@@ -1,8 +1,10 @@
 //! Contains the diagnostic related to the IR binding.
 
+use std::collections::HashSet;
+
 use pernixc_arena::ID;
 use pernixc_component::fields::{Field, Fields};
-use pernixc_diagnostic::{Diagnostic, Report};
+use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
 use pernixc_table::{component::Name, DisplayObject, GlobalID, Table};
@@ -786,6 +788,96 @@ where
                 .to_string(),
             severity: Severity::Error,
             help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The struct type was expected but the found type is different.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectedStruct {
+    /// The span of the qualified identifier.
+    pub span: Span,
+}
+
+impl Report<&Table> for ExpectedStruct {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: "struct type expected".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The field is initialized more than once.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DuplicatedFieldInitialization {
+    /// The ID of the field that is initialized more than once.
+    pub field_id: ID<Field>,
+
+    /// The ID of the struct where the field is initialized.
+    pub struct_id: GlobalID,
+
+    /// The span of the first initialization.
+    pub prior_initialization_span: Span,
+
+    /// The span of the duplicate initialization.
+    pub duplicate_initialization_span: Span,
+}
+
+impl Report<&Table> for DuplicatedFieldInitialization {
+    fn report(&self, table: &Table) -> Diagnostic {
+        let fields = table.query::<Fields>(self.struct_id).unwrap();
+        let field_sym = &fields.fields[self.field_id];
+
+        Diagnostic {
+            span: self.duplicate_initialization_span.clone(),
+            message: format!(
+                "the field `{}` is initialized more than once",
+                field_sym.name
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: vec![Related {
+                span: self.prior_initialization_span.clone(),
+                message: "the field is first initialized here".to_string(),
+            }],
+        }
+    }
+}
+
+/// The struct expression contains uninitialized fields.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UninitializedFields {
+    /// The ID of the struct where the fields are uninitialized.
+    pub struct_id: GlobalID,
+
+    /// The set of uninitialized fields.
+    pub uninitialized_fields: HashSet<ID<Field>>,
+
+    /// The span of the struct expression.
+    pub struct_expression_span: Span,
+}
+
+impl Report<&Table> for UninitializedFields {
+    fn report(&self, table: &Table) -> Diagnostic {
+        let fields = table.query::<Fields>(self.struct_id).unwrap();
+        Diagnostic {
+            span: self.struct_expression_span.clone(),
+            message: "the struct expression contains uninitialized fields"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: Some(format!(
+                "the following fields are uninitialized: {}",
+                self.uninitialized_fields
+                    .iter()
+                    .map(|&field_id| { fields.fields[field_id].name.clone() })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
             related: Vec::new(),
         }
     }
