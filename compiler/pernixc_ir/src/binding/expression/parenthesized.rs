@@ -1,48 +1,29 @@
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_handler::Handler;
+use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
+use pernixc_table::diagnostic::Diagnostic;
+use pernixc_term::r#type::Type;
+use pernixc_type_system::diagnostic::OverflowOperation;
 
 use super::{Bind, Config, Expression};
 use crate::{
-    error::{
-        self, MoreThanOneUnpackedInTupleExpression, OverflowOperation,
-        TypeSystemOverflow,
+    binding::{
+        diagnostic::MoreThanOneUnpackedInTupleExpression, infer, AddContextExt,
+        Binder, Error, SemanticError,
     },
-    ir::{
-        self,
-        representation::{
-            binding::{infer, Binder, Error, SemanticError},
-            borrow,
-        },
-        value::{
-            literal::{self, Literal},
-            register::{self, Assignment},
-            Value,
-        },
+    value::{
+        literal::{self, Literal},
+        register::{self, Assignment},
     },
-    symbol::table::{self, resolution},
-    type_system::{
-        self, simplify,
-        term::{
-            self,
-            r#type::{self, Type},
-        },
-    },
+    Value,
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Parenthesized> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::Parenthesized> for Binder<'_> {
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Parenthesized,
         config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let bind_as_tuple =
             syntax_tree.connected_list().as_ref().map_or(true, |x| {
@@ -71,46 +52,53 @@ impl<
                 });
             }
 
-            let tuple_type = simplify::simplify(
-                &Type::<infer::Model>::Tuple(r#type::Tuple {
+            let tuple_type = self
+                .create_environment()
+                .simplify(Type::<infer::Model>::Tuple(pernixc_term::Tuple {
                     elements: elements
                         .iter()
                         .map(|x| {
                             self.type_of_value(&x.value).map(|ty| {
-                                term::TupleElement {
+                                pernixc_term::TupleElement {
                                     term: ty,
                                     is_unpacked: x.is_unpacked,
                                 }
                             })
                         })
                         .collect::<Result<Vec<_>, _>>()?,
-                }),
-                &self.create_environment(),
-            )
-            .map_err(|overflow_error| TypeSystemOverflow {
-                operation: OverflowOperation::TypeOf,
-                overflow_span: syntax_tree.span(),
-                overflow_error,
-            })?
-            .result
-            .into_tuple()
-            .unwrap();
+                }))
+                .map_err(|x| {
+                    x.into_type_system_overflow(
+                        OverflowOperation::TypeOf,
+                        syntax_tree.span(),
+                    )
+                })?;
 
             // more than one unpacked elements
-            if tuple_type.elements.iter().filter(|x| x.is_unpacked).count() > 1
+            if tuple_type
+                .result
+                .as_tuple()
+                .unwrap()
+                .elements
+                .iter()
+                .filter(|x| x.is_unpacked)
+                .count()
+                > 1
             {
                 self.create_handler_wrapper(handler).receive(Box::new(
                     MoreThanOneUnpackedInTupleExpression {
                         span: syntax_tree.span(),
                         r#type: self
                             .inference_context
-                            .transform_type_into_constraint_model(Type::Tuple(
-                                tuple_type,
-                            ))
-                            .map_err(|overflow_error| TypeSystemOverflow {
-                                operation: OverflowOperation::TypeOf,
-                                overflow_span: syntax_tree.span(),
-                                overflow_error,
+                            .transform_type_into_constraint_model(
+                                tuple_type.result.clone(),
+                                self.table,
+                            )
+                            .map_err(|x| {
+                                x.into_type_system_overflow(
+                                    OverflowOperation::TypeOf,
+                                    syntax_tree.span(),
+                                )
                             })?,
                     },
                 ));
@@ -120,7 +108,7 @@ impl<
                 let value = if elements.is_empty() {
                     // return unit Tuple
                     Value::Literal(Literal::Unit(literal::Unit {
-                        span: (syntax_tree.span()),
+                        span: Some(syntax_tree.span()),
                     }))
                 } else {
                     let create_register_assignmnet = self
@@ -148,3 +136,6 @@ impl<
         }
     }
 }
+
+#[cfg(test)]
+mod test;

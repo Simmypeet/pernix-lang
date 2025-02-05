@@ -109,6 +109,7 @@ mod binary;
 mod boolean;
 mod numeric;
 mod qualified_identifier;
+mod parenthesized;
 
 /*
 mod array;
@@ -121,7 +122,6 @@ mod if_else;
 mod r#loop;
 mod r#match;
 mod panic;
-mod parenthesized;
 mod phantom;
 mod postfix;
 mod prefix;
@@ -315,8 +315,8 @@ impl Bind<&syntax_tree::expression::Unit> for Binder<'_> {
             syntax_tree::expression::Unit::QualifiedIdentifier(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Parenthesized(_) => {
-                todo!()
+            syntax_tree::expression::Unit::Parenthesized(syn) => {
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Unit::Struct(_) => {
                 todo!()

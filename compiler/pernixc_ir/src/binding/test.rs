@@ -230,7 +230,7 @@ impl<'a> BindExt<'a> for Binder<'a> {
         let storage = Storage::<Box<dyn Diagnostic>>::new();
         let value = self
             .bind(syntax, Config { target: Target::RValue }, &storage)
-            .unwrap()
+            .unwrap_or_else(|err| panic!("{err:?} {storage:?}"))
             .into_r_value()
             .unwrap();
 

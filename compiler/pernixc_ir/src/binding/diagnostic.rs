@@ -763,3 +763,30 @@ where
         }
     }
 }
+
+/// The unpack operator can only be used once in a tuple expression.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MoreThanOneUnpackedInTupleExpression<M: Model> {
+    /// The span of the tuple expression.
+    pub span: Span,
+
+    /// The type of the tuple expression.
+    pub r#type: Type<M>,
+}
+
+impl<M: Model> Report<&Table> for MoreThanOneUnpackedInTupleExpression<M>
+where
+    Type<M>: pernixc_table::Display,
+{
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: "the unpack operator can only be used once in a tuple \
+                      expression"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
