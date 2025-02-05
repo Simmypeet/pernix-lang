@@ -515,6 +515,38 @@ impl Representation {
         }
     }
 
+    /// Similar to [`Representation::is_accessible_from`] but with the global ID
+    /// and global accessibility.
+    #[must_use]
+    pub fn is_accessible_from_globally(
+        &self,
+        referring_site: GlobalID,
+        referred_accessibility: GlobalAccessibility,
+    ) -> bool {
+        match referred_accessibility {
+            GlobalAccessibility::Public => true,
+
+            GlobalAccessibility::Scoped(module_id) => {
+                if module_id.target_id != referring_site.target_id {
+                    return false;
+                }
+
+                let referring_site_module_id =
+                    self.get_closet_module_id(referring_site);
+
+                matches!(
+                    self.symbol_hierarchy_relationship(
+                        referring_site.target_id,
+                        module_id.id,
+                        referring_site_module_id,
+                    ),
+                    HierarchyRelationship::Parent
+                        | HierarchyRelationship::Equivalent
+                )
+            }
+        }
+    }
+
     /// Determines whether the given `referred` is accessible from the
     /// `referring_site` as if the `referred` has the given
     /// `referred_accessibility`.

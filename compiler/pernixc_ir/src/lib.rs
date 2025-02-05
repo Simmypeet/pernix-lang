@@ -5,6 +5,7 @@ use std::{fmt::Debug, hash::Hash};
 
 pub mod address;
 pub mod alloca;
+pub mod binding;
 pub mod control_flow_graph;
 pub mod instruction;
 pub mod model;

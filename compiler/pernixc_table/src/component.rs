@@ -22,6 +22,7 @@ use std::{
 };
 
 use derive_more::{Deref, DerefMut};
+use enum_as_inner::EnumAsInner;
 use pernixc_source_file::Span;
 use serde::{Deserialize, Serialize};
 
@@ -72,6 +73,7 @@ pub enum HierarchyRelationship {
     Default,
     Serialize,
     Deserialize,
+    EnumAsInner
 )]
 pub enum Accessibility {
     /// The symbol is accessible from anywhere.

@@ -21,7 +21,8 @@ use pernixc_term::{
     matching,
     predicate::{self, Compatible, Outlives, Predicate},
     r#type::{TraitMember, Type},
-    sub_term, visitor, Model, ModelOf, Never, Symbol, Tuple, TupleElement,
+    sub_term, visitor, Kind, Model, ModelOf, Never, Symbol, Tuple,
+    TupleElement,
 };
 
 use crate::{
@@ -138,6 +139,13 @@ pub trait Term:
 
     #[doc(hidden)]
     fn as_tuple(&self) -> Option<&pernixc_term::Tuple<Self>>;
+
+    /// Tries to convert the [`Kind`] into the term kind.
+    fn try_from_kind(kind: Kind<Self::Model>) -> Option<&'_ Self>;
+
+    /// Tries to convert the term into the [`Self::InferenceVariable`]
+    /// variant.
+    fn as_inference(&self) -> Option<&Self::InferenceVariable>;
 }
 
 impl<M: Model> Term for Lifetime<M> {
@@ -209,6 +217,18 @@ impl<M: Model> Term for Lifetime<M> {
     }
 
     fn as_tuple(&self) -> Option<&pernixc_term::Tuple<Self>> { None }
+
+    fn try_from_kind(kind: Kind<Self::Model>) -> Option<&'_ Self> {
+        kind.into_lifetime().ok()
+    }
+
+    fn as_inference(&self) -> Option<&Self::InferenceVariable> {
+        if let Self::Inference(inference) = self {
+            Some(inference)
+        } else {
+            None
+        }
+    }
 }
 
 fn normalize_trait_member<M: Model>(
@@ -527,6 +547,18 @@ impl<M: Model> Term for Type<M> {
             None
         }
     }
+
+    fn try_from_kind(kind: Kind<Self::Model>) -> Option<&'_ Self> {
+        kind.into_type().ok()
+    }
+
+    fn as_inference(&self) -> Option<&Self::InferenceVariable> {
+        if let Self::Inference(inference) = self {
+            Some(inference)
+        } else {
+            None
+        }
+    }
 }
 
 impl<M: Model> Term for Constant<M> {
@@ -621,4 +653,16 @@ impl<M: Model> Term for Constant<M> {
     }
 
     fn as_tuple(&self) -> Option<&pernixc_term::Tuple<Self>> { None }
+
+    fn try_from_kind(kind: Kind<Self::Model>) -> Option<&'_ Self> {
+        kind.into_constant().ok()
+    }
+
+    fn as_inference(&self) -> Option<&Self::InferenceVariable> {
+        if let Self::Inference(inference) = self {
+            Some(inference)
+        } else {
+            None
+        }
+    }
 }
