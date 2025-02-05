@@ -1,44 +1,26 @@
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_handler::Handler;
+use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
+use pernixc_table::diagnostic::Diagnostic;
+use pernixc_term::r#type::Type;
 
 use super::{Bind, Config, Expression};
 use crate::{
-    error,
-    ir::{
-        self,
-        representation::{
-            binding::{
-                infer::{self, InferenceVariable},
-                Binder, Error,
-            },
-            borrow,
-        },
-        value::{
-            register::{Array, Assignment},
-            Value,
-        },
+    binding::{
+        infer::{Expected, InferenceVariable},
+        Binder, Error,
     },
-    symbol::table::{self, resolution},
-    type_system::{
-        self,
-        term::r#type::{Constraint, Expected, Type},
-    },
+    model::Constraint,
+    value::register::{Array, Assignment},
+    Value,
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Array> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::Array> for Binder<'_> {
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Array,
         _: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let Some(arguments) = syntax_tree.arguments().connected_list() else {
             let inference = InferenceVariable::new();
@@ -84,8 +66,9 @@ impl<
                         .get(*register_id)
                         .unwrap()
                         .span
-                        .clone(),
-                    Value::Literal(literal) => literal.span().clone(),
+                        .clone()
+                        .unwrap(),
+                    Value::Literal(literal) => literal.span().cloned().unwrap(),
                 },
                 true,
                 handler,
@@ -100,3 +83,6 @@ impl<
         Ok(Expression::RValue(value))
     }
 }
+
+#[cfg(test)]
+mod test;
