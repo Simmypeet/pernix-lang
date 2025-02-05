@@ -1998,42 +1998,6 @@ fn expression_is_not_callable_error() {
     });
 }
 
-#[test]
-fn cast() {
-    bind_as_value("32i32 as float64", |binder, value| {
-        let register_id = value.into_register().unwrap();
-
-        let cast = binder
-            .intermediate_representation
-            .values
-            .registers
-            .get(register_id)
-            .unwrap()
-            .assignment
-            .as_cast()
-            .unwrap();
-
-        let numeric = cast.value.as_literal().unwrap().as_numeric().unwrap();
-
-        assert_eq!(numeric.integer_string, "32");
-        assert!(numeric.decimal_stirng.is_none());
-
-        assert_eq!(cast.r#type, Type::Primitive(Primitive::Float64));
-    });
-}
-
-#[test]
-fn invalid_cast_type() {
-    bind_as_value_expect_error("32i32 as ()", |_, result, errors| {
-        assert!(result.is_err());
-
-        assert!(errors.iter().any(|x| {
-            x.as_any()
-                .downcast_ref::<InvalidCastType<ConstraintModel>>()
-                .is_some()
-        }));
-    });
-}
 
 pub struct Check<T> {
     source: String,

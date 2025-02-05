@@ -1941,3 +1941,6 @@ impl Binder<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod test;
