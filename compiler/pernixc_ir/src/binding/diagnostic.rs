@@ -1316,3 +1316,23 @@ impl Report<&Table> for ExpressOutsideBlock {
         }
     }
 }
+
+/// The `return` expression is not allowed in this context.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReturnIsNotAllowed {
+    /// The span of the return expression.
+    pub span: Span,
+}
+
+impl Report<&Table> for ReturnIsNotAllowed {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: "`return` expression is not allowed in this context"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}

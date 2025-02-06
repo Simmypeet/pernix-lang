@@ -119,6 +119,7 @@ mod phantom;
 mod postfix;
 mod prefix;
 mod qualified_identifier;
+mod r#return;
 mod string;
 mod r#struct;
 
@@ -127,7 +128,6 @@ mod r#break;
 mod r#continue;
 mod r#loop;
 mod r#match;
-mod r#return;
 mod r#while;
 */
 
@@ -400,8 +400,8 @@ impl Bind<&syntax_tree::expression::Terminator> for Binder<'_> {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            syntax_tree::expression::Terminator::Return(_) => {
-                todo!()
+            syntax_tree::expression::Terminator::Return(syn) => {
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Terminator::Continue(_) => {
                 todo!()

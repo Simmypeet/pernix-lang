@@ -1,69 +1,52 @@
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_component::function_signature::FunctionSignature;
+use pernixc_handler::Handler;
+use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
+use pernixc_table::{component::SymbolKind, diagnostic::Diagnostic};
+use pernixc_term::{r#type::Type, Model};
 
 use super::{Bind, Config, Expression};
 use crate::{
-    error::{self, ReturnIsNotAllowed},
-    ir::{
-        self,
-        control_flow_graph::InsertTerminatorError,
-        instruction::{self, Instruction, ScopePop, Terminator},
-        representation::{
-            binding::{
-                infer::{self, InferenceVariable},
-                stack::Scope,
-                Binder, Error, SemanticError,
-            },
-            borrow,
-        },
-        value::{
-            literal::{self, Literal, Unit},
-            Value,
-        },
+    binding::{
+        diagnostic::ReturnIsNotAllowed,
+        infer::{self, Expected, InferenceVariable},
+        stack::Scope,
+        Binder, Error, SemanticError,
     },
-    symbol::{
-        table::{self, resolution},
-        CallableID,
-    },
-    type_system::{
-        self,
-        model::Model,
-        term::r#type::{Constraint, Expected, Type},
+    instruction::{self, Instruction, ScopePop, Terminator},
+    model::Constraint,
+    value::{
+        literal::{self, Literal, Unit},
+        Value,
     },
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Return> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::Return> for Binder<'_> {
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Return,
         _: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
-        let Some(callable_id) = CallableID::try_from(self.current_site).ok()
-        else {
+        let current_site_kind = self.table.get::<SymbolKind>(self.current_site);
+        if !current_site_kind.has_function_signature() {
             self.create_handler_wrapper(handler).receive(Box::new(
                 ReturnIsNotAllowed { span: syntax_tree.span() },
             ));
 
             return Err(Error::Semantic(SemanticError(syntax_tree.span())));
-        };
+        }
+        let function_signature =
+            self.table.query::<FunctionSignature>(self.current_site)?;
 
-        let callable = self.table.get_callable(callable_id).unwrap();
-        let return_type =
-            infer::Model::from_default_type(callable.return_type().clone());
+        let return_type = infer::Model::from_default_type(
+            function_signature.return_type.clone(),
+        );
 
         let value = syntax_tree.binary().as_ref().map_or_else(
             || {
                 Ok(Value::Literal(Literal::Unit(Unit {
-                    span: syntax_tree.span(),
+                    span: Some(syntax_tree.span()),
                 })))
             },
             |syn| self.bind_value_or_error(syn, handler),
@@ -71,7 +54,7 @@ impl<
         let value_ty = self.type_of_value(&value)?;
 
         // do type check
-        let _ = self.type_check(
+        self.type_check(
             &value_ty,
             Expected::Known(return_type),
             syntax_tree.span(),
@@ -94,19 +77,13 @@ impl<
         }
 
         // insert the return instruction
-        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
-            .intermediate_representation
-            .control_flow_graph
-            .insert_terminator(
-                self.current_block_id,
-                Terminator::Return(instruction::Return {
-                    value,
-                    span: syntax_tree.span(),
-                }),
-            )
-        {
-            panic!("invalid block id");
-        }
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            self.current_block_id,
+            Terminator::Return(instruction::Return {
+                value,
+                span: Some(syntax_tree.span()),
+            }),
+        );
 
         let value =
             Value::Literal(Literal::Unreachable(literal::Unreachable {
@@ -119,7 +96,7 @@ impl<
 
                     Type::Inference(inference)
                 },
-                span: syntax_tree.span(),
+                span: Some(syntax_tree.span()),
             }));
 
         Ok(Expression::RValue(value))

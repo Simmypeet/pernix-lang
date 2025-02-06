@@ -2833,7 +2833,6 @@ impl Report<&Table<Suboptimal>>
     }
 }
 
-
 /// The variant expects an associated pattern but none was provided.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectAssociatedPattern {
@@ -4496,28 +4495,6 @@ impl Report<&Table<Suboptimal>> for BlockWithGivenLableNameNotFound {
                 "block with label named `{}` was not found",
                 self.span.str()
             ),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        })
-    }
-}
-
-/// The `return` expression is not allowed in this context.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ReturnIsNotAllowed {
-    /// The span of the return expression.
-    pub span: Span,
-}
-
-impl Report<&Table<Suboptimal>> for ReturnIsNotAllowed {
-    type Error = ReportError;
-
-    fn report(&self, _: &Table<Suboptimal>) -> Result<Diagnostic, Self::Error> {
-        Ok(Diagnostic {
-            span: self.span.clone(),
-            message: "`return` expression is not allowed in this context"
-                .to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
