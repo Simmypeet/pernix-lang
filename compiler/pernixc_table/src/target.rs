@@ -1662,7 +1662,7 @@ impl Representation {
                         let function_id = self.insert_member(
                             module_id,
                             &ident,
-                            SymbolKind::Function,
+                            SymbolKind::ExternFunction,
                             Some(
                                 self.create_accessibility(
                                     module_id,

@@ -889,7 +889,7 @@ impl<M: pernixc_term::Model> Register<M> {
                         *table.get::<SymbolKind>(function_call.callable_id);
 
                     let instantiation = match symbol_kind {
-                        SymbolKind::Function => {
+                        SymbolKind::ExternFunction | SymbolKind::Function => {
                             let generic_parameters = table
                                 .query::<GenericParameters>(
                                     function_call.callable_id,

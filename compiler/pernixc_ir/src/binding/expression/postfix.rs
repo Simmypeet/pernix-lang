@@ -1667,7 +1667,7 @@ impl Binder<'_> {
                 let symbol_kind = *self.table.get::<SymbolKind>(id);
 
                 let (callable_id, instantiation) = match symbol_kind {
-                    SymbolKind::Function => {
+                    SymbolKind::Function | SymbolKind::ExternFunction => {
                         let function_generic_params =
                             self.table.query::<GenericParameters>(id)?;
 
