@@ -6,6 +6,7 @@ use pernixc_component::{
     late_bound::LateBound, type_alias::TypeAlias, variance_map::VarianceMap,
     variant::Variant,
 };
+use pernixc_ir::FunctionBody;
 use pernixc_table::{
     component::{Derived, SymbolKind},
     GlobalID, Table, TargetID,
@@ -167,6 +168,10 @@ pub fn build(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
     ));
+    table.set_builder_overwrite::<FunctionBody, _>(Builder::new(
+        on_start_building_component.clone(),
+        on_finish_building_component.clone(),
+    ));
     table.set_builder_overwrite::<VarianceMap, _>(variance_map::Builder::new(
         Builder::new(on_start_building_component, on_finish_building_component),
     ));
@@ -250,6 +255,10 @@ pub fn build(
                 | SymbolKind::TraitImplementationType
         ) {
             check_implementation_member(table, x, &**table.handler());
+        }
+
+        if symbol_kind.has_function_body() {
+            build_component::<FunctionBody>(table, x);
         }
 
         if let Some(callback) = on_done.as_ref() {

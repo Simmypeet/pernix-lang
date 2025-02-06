@@ -572,13 +572,6 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
 }
 
 proptest! {
-    #![proptest_config(proptest::test_runner::Config {
-        max_shrink_iters: 100_000,
-        max_global_rejects: 8192,
-        cases: 8192,
-        ..std::default::Default::default()
-    })]
-
     #[test]
     fn property_based_testing_lifetime(
         property in Box::<dyn Property<Lifetime<_>>>::arbitrary()

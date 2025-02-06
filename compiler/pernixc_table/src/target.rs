@@ -413,7 +413,12 @@ impl Representation {
                     ));
 
                     // add the body
-                    assert!(self.storage.add_component(function_id, body));
+                    assert!(self.storage.add_component(
+                        function_id,
+                        syntax_tree_component::FunctionBody {
+                            statements: body
+                        }
+                    ));
                 }
             };
         }
@@ -564,7 +569,12 @@ impl Representation {
                     ));
 
                     // add the body
-                    assert!(self.storage.add_component(function_id, body));
+                    assert!(self.storage.add_component(
+                        function_id,
+                        syntax_tree_component::FunctionBody {
+                            statements: body
+                        }
+                    ));
 
                     function_id
                 }
@@ -1479,7 +1489,12 @@ impl Representation {
                     ));
 
                     // add the body
-                    assert!(self.storage.add_component(function_id, body));
+                    assert!(self.storage.add_component(
+                        function_id,
+                        syntax_tree_component::FunctionBody {
+                            statements: body,
+                        }
+                    ));
                 }
                 syntax_tree::item::Item::Type(syn) => {
                     let (access_modifier, signature, definition, _) =

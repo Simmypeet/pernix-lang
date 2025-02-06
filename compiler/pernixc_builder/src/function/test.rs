@@ -15,7 +15,7 @@ use pernixc_term::{
 use crate::utility::build_table;
 
 const IMPLIED_PREDICATES_AND_ELIDED_LIFETIMES: &str = r"
-public function test[T](x: &T, y: T): &T { return x; }
+public function test[T](x: &T, y: T): &T { panic; }
 ";
 
 #[test]
@@ -77,7 +77,7 @@ fn implied_predicates_and_elided_lifetimes() {
 }
 
 const ELIDED_LIFETIME_NOT_ALLOWED_IN_RETURN_TYPE: &str = r"
-public function test(first: &int32, second: &int32): &int32 { return first; }
+public function test(first: &int32, second: &int32): &int32 { panic; }
 ";
 
 #[test]

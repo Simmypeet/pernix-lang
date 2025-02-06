@@ -17,7 +17,6 @@ use crate::syntax_tree::{
 
 proptest! {
     #[test]
-    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
     fn target(
         mut target_module_tree in ModuleTree::arbitrary()
     ) {

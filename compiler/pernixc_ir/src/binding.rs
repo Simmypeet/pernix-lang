@@ -139,7 +139,7 @@ impl<'t> Binder<'t> {
     pub fn new_function<'a>(
         table: &'t Table,
         function_id: GlobalID,
-        parameter_pattern_syns: impl ExactSizeIterator<
+        parameter_pattern_syns: impl IntoIterator<
             Item = &'a syntax_tree::pattern::Irrefutable,
         >,
         handler: &dyn Handler<Box<dyn Diagnostic>>,

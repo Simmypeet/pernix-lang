@@ -453,6 +453,17 @@ impl SymbolKind {
     pub const fn has_variance_map(&self) -> bool {
         matches!(self, Self::Struct | Self::Enum)
     }
+
+    /// Checks if the symbol has a function body
+    #[must_use]
+    pub const fn has_function_body(&self) -> bool {
+        matches!(
+            self,
+            Self::Function
+                | Self::TraitImplementationFunction
+                | Self::AdtImplementationFunction
+        )
+    }
 }
 
 /// A **presistent-input** component representing the external linkage of a

@@ -6,6 +6,7 @@ pub mod function;
 pub mod generic_parameters;
 pub mod implementation;
 pub mod implementation_coherence;
+pub mod ir;
 pub mod occurrences;
 pub mod reflector;
 pub mod type_alias;

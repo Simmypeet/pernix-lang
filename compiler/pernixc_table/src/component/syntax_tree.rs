@@ -75,3 +75,13 @@ pub struct Variant {
 }
 
 impl Input for Variant {}
+
+/// A **local-input** component used for creating a function body.
+/// The syntax tree is `function NAME(PARAMS) -> RETURN_TYPE { STATEMENTS }`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FunctionBody {
+    /// The syntax tree that represents the function body statements.
+    pub statements: syntax_tree::statement::Statements,
+}
+
+impl Input for FunctionBody {}

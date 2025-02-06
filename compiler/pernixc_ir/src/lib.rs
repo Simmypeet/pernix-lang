@@ -3,6 +3,9 @@
 
 use std::{fmt::Debug, hash::Hash};
 
+use pernixc_table::component::Derived;
+use serde::{Deserialize, Serialize};
+
 pub mod address;
 pub mod alloca;
 pub mod binding;
@@ -20,7 +23,19 @@ pub trait State {
 }
 
 /// A tag type representing a successfully generated IR.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
 pub struct Success(() /* Prevent arbitrary instantiation */);
 
 impl State for Success {
@@ -28,7 +43,19 @@ impl State for Success {
 }
 
 /// A tag type representing an IR that is suboptimal (contains an error).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
 pub struct Suboptimal;
 
 impl State for Suboptimal {
@@ -53,8 +80,41 @@ pub struct IR<T: State> {
     state: T,
 }
 
+/// An enumeration of intrinsic function
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+pub enum Intrinsic {}
+
+/// A **presistent-derived** component representing the function body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FunctionBody {
+    /// The function body is an intrainsic function. This only applies to the
+    /// functions defined in `core` target.
+    Intrinsic(Intrinsic),
+
+    /// The function body was successfully bound without an errors
+    SuccessIR(IR<Success>),
+
+    /// The function body was bound with some errors, resulting in suboptimal
+    /// ir.
+    SuboptimalIR(IR<Suboptimal>),
+}
+
+impl Derived for FunctionBody {
+    fn component_name() -> &'static str { "function body" }
+}
+
 pub use representation::Representation;
-use serde::{Deserialize, Serialize};
 pub use value::Value;
 
 mod representation {

@@ -125,7 +125,6 @@ pub trait CreateBinderAtExt {
 }
 
 impl CreateBinderAtExt for Table {
-    #[allow(clippy::needless_collect)]
     fn create_binder_at<'a>(
         &self,
         qualified_function_name: impl IntoIterator<Item = &'a str>,
@@ -139,19 +138,16 @@ impl CreateBinderAtExt for Table {
             function_id,
         );
 
-        let irrefutable_patterns = function_signature
-            .parameters
-            .connected_list()
-            .as_ref()
-            .into_iter()
-            .flat_map(ConnectedList::elements)
-            .map(Parameter::irrefutable_pattern)
-            .collect::<Vec<_>>();
-
         Binder::new_function(
             self,
             function_id,
-            irrefutable_patterns.into_iter(),
+            function_signature
+                .parameters
+                .connected_list()
+                .as_ref()
+                .into_iter()
+                .flat_map(ConnectedList::elements)
+                .map(Parameter::irrefutable_pattern),
             &Panic,
         )
         .unwrap()
