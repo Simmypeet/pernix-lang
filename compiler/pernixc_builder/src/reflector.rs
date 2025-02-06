@@ -15,7 +15,7 @@ use pernixc_table::{
     component::{
         Accessibility, Extern, Implemented, Implements, LocationSpan, Member,
         Name, Parent, PositiveTraitImplementation, SymbolKind,
-        TraitImplementation,
+        TraitImplementation, VariantDeclarationOrder,
     },
     GlobalID,
 };
@@ -49,6 +49,7 @@ pub enum ComponentTag {
     SymbolKind,
     Extern,
     LocationSpan,
+    VariantDeclarationOrder,
     Implemented,
     TraitImplementation,
     PositiveTraitImplementation,
@@ -72,6 +73,7 @@ pub enum ComponentTag {
 /// Gets the reflector instance that can be used to serialize all the derived
 /// and input components.
 #[must_use]
+#[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
 pub fn get() -> Reflector<GlobalID, ArcTrait, ComponentTag, String> {
     let mut reflector = Reflector::default();
 
@@ -85,6 +87,9 @@ pub fn get() -> Reflector<GlobalID, ArcTrait, ComponentTag, String> {
     assert!(reflector.register_type::<SymbolKind>(ComponentTag::SymbolKind));
     assert!(reflector.register_type::<Extern>(ComponentTag::Extern));
     assert!(reflector.register_type::<LocationSpan>(ComponentTag::LocationSpan));
+    assert!(reflector.register_type::<VariantDeclarationOrder>(
+        ComponentTag::VariantDeclarationOrder
+    ));
     assert!(reflector.register_type_with_merger::<Implemented>(
         ComponentTag::Implemented,
         &((|a, b| {
