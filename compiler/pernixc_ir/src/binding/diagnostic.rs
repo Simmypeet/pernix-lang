@@ -7,11 +7,16 @@ use pernixc_component::fields::{Field, Fields};
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
-use pernixc_table::{component::Name, DisplayObject, GlobalID, Table};
+use pernixc_table::{
+    component::{LocationSpan, Name},
+    DisplayObject, GlobalID, Table,
+};
 use pernixc_term::{
     r#type::{self, Qualifier, Type},
     Model,
 };
+
+use crate::model;
 
 /// An enumeration of either a `break` or `continue` control flow.
 #[derive(
@@ -1368,6 +1373,56 @@ impl Report<&Table> for NonExhaustiveMatch {
         Diagnostic {
             span: self.match_expression_span.clone(),
             message: "non-exhaustive match expression".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// Not all flow paths in the function return a value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NotAllFlowPathsReturnAValue {
+    /// The function which contains an error.
+    pub callable_id: GlobalID,
+}
+
+impl Report<&Table> for NotAllFlowPathsReturnAValue {
+    fn report(&self, table: &Table) -> Diagnostic {
+        let span =
+            table.get::<LocationSpan>(self.callable_id).span.clone().unwrap();
+
+        Diagnostic {
+            span,
+            message: "not all flow paths in the function return a value"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// Couldn't further infer the type, explicit type annotation is required.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TypeAnnotationRequired {
+    /// The span of the expression/declration where the type annotation is
+    /// required.
+    pub span: Span,
+
+    /// The type that couldn't be further inferred.
+    pub r#type: Type<model::Constrained>,
+}
+
+impl Report<&Table> for TypeAnnotationRequired {
+    fn report(&self, table: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "couldn't further infer the type `{}`, explicit type \
+                 annotation is required",
+                DisplayObject { display: &self.r#type, table }
+            ),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),

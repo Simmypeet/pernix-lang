@@ -56,7 +56,7 @@ pub mod expression;
 pub mod stack;
 pub mod statement;
 
-// mod finalize;
+mod finalize;
 mod infer;
 mod pattern;
 

@@ -53,7 +53,7 @@ impl Builder<IR> for builder::Builder {
                 binder.bind_statement(statement, handler)?;
             }
 
-            Ok(IR::default())
+            binder.finalize(handler)
         }) {
             Ok(result) => Some(Arc::new(result)),
             Err(error) => {

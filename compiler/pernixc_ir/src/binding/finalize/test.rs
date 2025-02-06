@@ -1,60 +1,53 @@
-use pernixc_base::handler::{Panic, Storage};
+use pernixc_handler::Storage;
+use pernixc_syntax::{syntax_tree, utility::parse};
+use pernixc_table::{diagnostic::Diagnostic, Table};
 
-use crate::{
-    error::{self, NotAllFlowPathsReturnAValue},
-    ir::representation::binding::{
-        expression::{Bind, Config, Target},
-        test::{parse_expression, TestTemplate},
-    },
-    symbol::CallableID,
-    type_system::term::r#type::{Primitive, Type},
+use crate::binding::{
+    diagnostic::NotAllFlowPathsReturnAValue,
+    test::{build_table, BindExt, CreateBinderAtExt},
 };
 
-impl TestTemplate {
-    fn contains_not_all_flow_paths_return_a_value(
-        &self,
-        storage: &Storage<Box<dyn error::Error>>,
-    ) {
-        let vec = storage.as_vec();
-        assert_eq!(vec.len(), 1);
-        assert_eq!(
-            vec[0]
-                .as_any()
-                .downcast_ref::<NotAllFlowPathsReturnAValue>()
-                .unwrap()
-                .callable_id,
-            CallableID::Function(self.function_id)
-        );
-    }
+fn contains_not_all_flow_paths_return_a_value(
+    table: &Table,
+    storage: &Storage<Box<dyn Diagnostic>>,
+) {
+    let vec = storage.as_vec();
+    assert_eq!(vec.len(), 1);
+    assert_eq!(
+        vec[0]
+            .as_any()
+            .downcast_ref::<NotAllFlowPathsReturnAValue>()
+            .unwrap()
+            .callable_id,
+        table.get_by_qualified_name(["test", "test"]).unwrap()
+    );
 }
+
+const FUNCTION_DECLARATION: &str = r"
+public function test(): bool {panic;}
+";
 
 #[test]
 fn empty_function_not_return() {
-    let test_tempalte =
-        TestTemplate::new_with_return_type(Type::Primitive(Primitive::Bool));
+    let table = build_table(FUNCTION_DECLARATION);
+    let binder = table.create_binder_at(["test", "test"]);
 
-    let (binder, storage) = test_tempalte.create_binder();
-
+    let storage: Storage<Box<dyn Diagnostic>> = Storage::new();
     let _ = binder.finalize(&storage);
 
-    test_tempalte.contains_not_all_flow_paths_return_a_value(&storage);
+    contains_not_all_flow_paths_return_a_value(&table, &storage);
 }
 
 #[test]
 fn empty_loop_can_dont_return() {
-    let test_tempalte =
-        TestTemplate::new_with_return_type(Type::Primitive(Primitive::Bool));
+    let table = build_table(FUNCTION_DECLARATION);
+    let mut binder = table.create_binder_at(["test", "test"]);
 
-    let (mut binder, storage) = test_tempalte.create_binder();
+    let storage: Storage<Box<dyn Diagnostic>> = Storage::new();
 
-    binder
-        .bind(
-            &parse_expression("loop {}"),
-            Config { target: Target::Statement },
-            &Panic,
-        )
-        .unwrap();
-
+    binder.bind_as_rvalue_success(&parse::<syntax_tree::expression::Loop>(
+        "loop {}",
+    ));
     let _ = binder.finalize(&storage);
 
     assert!(storage.as_vec().is_empty());
@@ -62,41 +55,29 @@ fn empty_loop_can_dont_return() {
 
 #[test]
 fn loop_with_break_not_return() {
-    let test_tempalte =
-        TestTemplate::new_with_return_type(Type::Primitive(Primitive::Bool));
+    let table = build_table(FUNCTION_DECLARATION);
+    let mut binder = table.create_binder_at(["test", "test"]);
 
-    let (mut binder, storage) = test_tempalte.create_binder();
+    let storage: Storage<Box<dyn Diagnostic>> = Storage::new();
 
-    binder
-        .bind(
-            &parse_expression("loop { break; }"),
-            Config { target: Target::Statement },
-            &Panic,
-        )
-        .unwrap();
-
+    binder.bind_as_rvalue_success(&parse::<syntax_tree::expression::Loop>(
+        "loop { break; }",
+    ));
     let _ = binder.finalize(&storage);
 
-    test_tempalte.contains_not_all_flow_paths_return_a_value(&storage);
+    contains_not_all_flow_paths_return_a_value(&table, &storage);
 }
 
 #[test]
 fn exhaustive_match_all_return() {
-    let test_tempalte =
-        TestTemplate::new_with_return_type(Type::Primitive(Primitive::Bool));
+    let table = build_table(FUNCTION_DECLARATION);
+    let mut binder = table.create_binder_at(["test", "test"]);
 
-    let (mut binder, storage) = test_tempalte.create_binder();
+    let storage: Storage<Box<dyn Diagnostic>> = Storage::new();
 
-    binder
-        .bind(
-            &parse_expression(
-                "match (true) { true: return true, false: return false }",
-            ),
-            Config { target: Target::Statement },
-            &Panic,
-        )
-        .unwrap();
-
+    binder.bind_as_rvalue_success(&parse::<syntax_tree::expression::Match>(
+        "match (true) { true: return true, false: return false }",
+    ));
     let _ = binder.finalize(&storage);
 
     assert!(storage.as_vec().is_empty());
@@ -104,27 +85,23 @@ fn exhaustive_match_all_return() {
 
 #[test]
 fn not_all_arms_return() {
-    const SOURCE: &str = r#"
+    const SOURCE: &str = r"
         match (true, false) {
             (true, false): return true,
             (false, false): return false,
             (a, true): (),
         }
-    "#;
-    let test_tempalte =
-        TestTemplate::new_with_return_type(Type::Primitive(Primitive::Bool));
+    ";
 
-    let (mut binder, storage) = test_tempalte.create_binder();
+    let table = build_table(FUNCTION_DECLARATION);
+    let mut binder = table.create_binder_at(["test", "test"]);
 
-    binder
-        .bind(
-            &parse_expression(SOURCE),
-            Config { target: Target::Statement },
-            &Panic,
-        )
-        .unwrap();
+    let storage: Storage<Box<dyn Diagnostic>> = Storage::new();
 
+    binder.bind_as_rvalue_success(&parse::<syntax_tree::expression::Match>(
+        SOURCE,
+    ));
     let _ = binder.finalize(&storage);
 
-    test_tempalte.contains_not_all_flow_paths_return_a_value(&storage);
+    contains_not_all_flow_paths_return_a_value(&table, &storage);
 }
