@@ -1,61 +1,41 @@
 use std::{collections::HashMap, num::NonZeroUsize};
 
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_handler::Handler;
+use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{self, expression::BlockOrIfElse};
+use pernixc_table::diagnostic::Diagnostic;
+use pernixc_term::r#type::{Primitive, Type};
 
 use super::{Bind, Config, Expression};
 use crate::{
-    error::{self},
-    ir::{
-        self,
-        control_flow_graph::InsertTerminatorError,
-        instruction::{Jump, Terminator, UnconditionalJump},
-        representation::{
-            binding::{
-                infer::{self, InferenceVariable},
-                Binder, Error,
-            },
-            borrow,
-        },
-        value::{
-            literal::{self, Literal, Unreachable},
-            register::{Assignment, Phi},
-            Value,
-        },
+    binding::{
+        infer::{Expected, InferenceVariable},
+        Binder, Error,
     },
-    symbol::table::{
-        self,
-        resolution::{self},
-    },
-    type_system::{
-        self,
-        term::r#type::{self, Constraint, Expected, Type},
+    instruction::{ConditionalJump, Jump, Terminator, UnconditionalJump},
+    model::Constraint,
+    value::{
+        literal::{self, Literal, Unreachable},
+        register::{Assignment, Phi},
+        Value,
     },
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::IfElse> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::IfElse> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::IfElse,
         _: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let condition =
             self.bind_value_or_error(syntax_tree.parenthesized(), handler)?;
 
         // expect the type boolean
-        let _ = self.type_check(
+        self.type_check(
             &self.type_of_value(&condition)?,
-            Expected::Known(Type::Primitive(r#type::Primitive::Bool)),
+            Expected::Known(Type::Primitive(Primitive::Bool)),
             syntax_tree.parenthesized().span(),
             true,
             handler,
@@ -81,22 +61,14 @@ impl<
             (scopes[0], scopes[1])
         };
 
-        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
-            .intermediate_representation
-            .control_flow_graph
-            .insert_terminator(
-                self.current_block_id,
-                Terminator::Jump(Jump::Conditional(
-                    crate::ir::instruction::ConditionalJump {
-                        condition,
-                        true_target: then_block_id,
-                        false_target: else_block_id,
-                    },
-                )),
-            )
-        {
-            panic!("invalid block id");
-        }
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            self.current_block_id,
+            Terminator::Jump(Jump::Conditional(ConditionalJump {
+                condition,
+                true_target: then_block_id,
+                false_target: else_block_id,
+            })),
+        );
 
         // bind the then block
         self.current_block_id = then_block_id;
@@ -113,18 +85,14 @@ impl<
 
             let value = self.bind_value_or_error(block_state, handler)?;
 
-            if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
-                .intermediate_representation
+            self.intermediate_representation
                 .control_flow_graph
                 .insert_terminator(
                     successor_then_block_id,
                     Terminator::Jump(Jump::Unconditional(UnconditionalJump {
                         target: if_else_successor_block_id,
                     })),
-                )
-            {
-                panic!("invalid id")
-            }
+                );
 
             (value, successor_then_block_id)
         };
@@ -163,24 +131,18 @@ impl<
             }
             None => (
                 Value::Literal(Literal::Unit(literal::Unit {
-                    span: (syntax_tree.span()),
+                    span: Some(syntax_tree.span()),
                 })),
                 self.current_block_id,
             ),
         };
 
-        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
-            .intermediate_representation
-            .control_flow_graph
-            .insert_terminator(
-                successor_else_block_id,
-                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
-                    target: if_else_successor_block_id,
-                })),
-            )
-        {
-            panic!("invalid id")
-        }
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            successor_else_block_id,
+            Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                target: if_else_successor_block_id,
+            })),
+        );
 
         // change the current block to the if else successor block
         self.current_block_id = if_else_successor_block_id;
@@ -195,7 +157,7 @@ impl<
 
                     Type::Inference(inference)
                 },
-                span: (syntax_tree.span()),
+                span: Some(syntax_tree.span()),
             })),
             1 => {
                 if self
