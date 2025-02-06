@@ -64,6 +64,8 @@ pub enum ComponentTag {
     VarianceMap,
     ForallLifetimeMap,
     LateBound,
+
+    #[serde(rename = "ir")]
     IR,
 }
 
