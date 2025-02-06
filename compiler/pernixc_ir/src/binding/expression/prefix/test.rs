@@ -6,7 +6,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    address::{Address, Reference},
+    address::{Address, Memory, Reference},
     binding::{
         diagnostic::{
             CannotDereference, MismatchedQualifierForReferenceOf,
@@ -14,6 +14,7 @@ use crate::{
         },
         test::{BindExt, Template},
     },
+    instruction::Instruction,
     model::{self, Constraint, Erased},
     value::register::PrefixOperator,
 };
@@ -362,4 +363,47 @@ fn cannot_dereference_error() {
         .unwrap();
 
     assert_eq!(error.found_type, Type::Primitive(Primitive::Int32));
+}
+
+#[test]
+fn create_temporary_lvalue() {
+    let template = Template::new();
+    let mut binder = template.create_binder();
+
+    let register_id = binder
+        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Prefixable>(
+            "&32",
+        ))
+        .into_register()
+        .unwrap();
+
+    let reference_of = binder
+        .intermediate_representation
+        .values
+        .registers
+        .get(register_id)
+        .unwrap()
+        .assignment
+        .as_borrow()
+        .unwrap();
+
+    // this should be an alloca that temporary stores 32 for the reference
+    let alloca_id =
+        reference_of.address.as_memory().unwrap().as_alloca().copied().unwrap();
+
+    // the stored value should be 32
+    assert!(binder.current_block().instructions().iter().any(|x| {
+        let Instruction::Store(store) = x else {
+            return false;
+        };
+
+        store.address == Address::Memory(Memory::Alloca(alloca_id))
+            && store
+                .value
+                .as_literal()
+                .and_then(|x| x.as_numeric())
+                .map_or(false, |x| {
+                    x.integer_string == "32" && x.decimal_stirng.is_none()
+                })
+    }));
 }
