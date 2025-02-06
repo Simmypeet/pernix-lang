@@ -1103,3 +1103,81 @@ fn trait_method() {
             .contains(&method_second_ambiguous_id));
     }
 }
+
+#[test]
+fn arrow_access() {
+    let template = Template::new();
+    let mut binder = template.create_binder();
+
+    let _ = binder
+        .bind_variable_declaration(
+            &parse("let mutable myTuple = (0i8, 1i16, 2i32, 3i64);"),
+            &Panic,
+        )
+        .unwrap();
+
+    let my_tuple_mut_ref_address = {
+        let (address, _) = binder
+            .bind_variable_declaration(
+                &parse("let myTupleMutRef = &mutable myTuple;"),
+                &Panic,
+            )
+            .unwrap();
+
+        address
+    };
+
+    let my_tuple_ref_address = {
+        let (address, _) = binder
+            .bind_variable_declaration(
+                &parse("let myTupleRef = &myTuple;"),
+                &Panic,
+            )
+            .unwrap();
+
+        address
+    };
+
+    // myTupleRef
+    {
+        let lvalue = binder.bind_as_lvalue_success(&parse::<
+            syntax_tree::expression::Postfixable,
+        >("myTupleRef->1"));
+
+        assert_eq!(
+            lvalue.address,
+            Address::Tuple(address::Tuple {
+                tuple_address: Box::new(Address::Reference(
+                    address::Reference {
+                        qualifier: Qualifier::Immutable,
+                        reference_address: Box::new(my_tuple_ref_address)
+                    }
+                )),
+                offset: address::Offset::FromStart(1)
+            })
+        );
+        assert_eq!(lvalue.qualifier, Qualifier::Immutable);
+    }
+
+    // myTupleRefMut
+    {
+        let lvalue =
+            binder.bind_as_lvalue_success(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("myTupleMutRef->2"));
+
+        assert_eq!(
+            lvalue.address,
+            Address::Tuple(address::Tuple {
+                tuple_address: Box::new(Address::Reference(
+                    address::Reference {
+                        qualifier: Qualifier::Mutable,
+                        reference_address: Box::new(my_tuple_mut_ref_address)
+                    }
+                )),
+                offset: address::Offset::FromStart(2)
+            })
+        );
+        assert_eq!(lvalue.qualifier, Qualifier::Mutable);
+    }
+}
