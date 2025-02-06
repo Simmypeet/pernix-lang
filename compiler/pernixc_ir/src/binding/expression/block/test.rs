@@ -116,3 +116,64 @@ fn not_all_flow_path_express_value_error() {
         .downcast_ref::<NotAllFlowPathsExpressValue>()
         .is_some());
 }
+
+#[test]
+fn unrechable_block() {
+    const BLOCK_WITH_EXPRESS: &str = r"
+    {
+        return;
+        express 32i32;
+    }
+    ";
+    const BLOCK_NO_EXPRESS: &str = r"
+    {
+        return;
+    }
+    ";
+
+    let template = Template::new();
+    let mut binder = template.create_binder();
+
+    // block with express
+    {
+        let unreachable = binder
+            .bind_as_rvalue_success(&parse::<syntax_tree::expression::Block>(
+                BLOCK_WITH_EXPRESS,
+            ))
+            .into_literal()
+            .unwrap()
+            .into_unreachable()
+            .unwrap();
+
+        assert_eq!(unreachable.r#type, Type::Primitive(Primitive::Int32));
+    }
+
+    // block with no express
+    {
+        let unreachable = binder
+            .bind_as_rvalue_success(&parse::<syntax_tree::expression::Block>(
+                BLOCK_NO_EXPRESS,
+            ))
+            .into_literal()
+            .unwrap()
+            .into_unreachable()
+            .unwrap();
+
+        let inference = unreachable.r#type.into_inference().unwrap();
+        let constraint_id = binder
+            .inference_context
+            .get_inference(inference)
+            .cloned()
+            .unwrap()
+            .into_inferring()
+            .unwrap();
+
+        assert_eq!(
+            *binder
+                .inference_context
+                .get_constraint::<Type<_>>(constraint_id)
+                .unwrap(),
+            Constraint::All(true)
+        );
+    }
+}
