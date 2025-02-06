@@ -176,13 +176,6 @@ pub trait BindExt<'a> {
     fn bind_as_lvalue_success<T>(&mut self, syntax: T) -> LValue
     where
         Self: Bind<T>;
-
-    fn bind_as_lvalue_error<T>(
-        &mut self,
-        syntax: T,
-    ) -> (LValue, Vec<Box<dyn Diagnostic>>)
-    where
-        Self: Bind<T>;
 }
 
 impl<'a> BindExt<'a> for Binder<'a> {
@@ -256,24 +249,5 @@ impl<'a> BindExt<'a> for Binder<'a> {
         let storage = std::mem::take(&mut *storage.as_vec_mut());
 
         storage
-    }
-
-    fn bind_as_lvalue_error<T>(
-        &mut self,
-        syntax: T,
-    ) -> (LValue, Vec<Box<dyn Diagnostic>>)
-    where
-        Self: Bind<T>,
-    {
-        let storage = Storage::<Box<dyn Diagnostic>>::new();
-        let value = self
-            .bind(syntax, Config { target: Target::LValue }, &storage)
-            .unwrap_or_else(|err| panic!("{err:?} {storage:?}"))
-            .into_l_value()
-            .unwrap();
-
-        let storage = std::mem::take(&mut *storage.as_vec_mut());
-
-        (value, storage)
     }
 }

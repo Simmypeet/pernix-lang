@@ -855,3 +855,6 @@ impl Bind<&BinaryNode<'_>> for Binder<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod test;
