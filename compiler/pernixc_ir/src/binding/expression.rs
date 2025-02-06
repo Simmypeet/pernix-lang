@@ -115,6 +115,7 @@ mod r#continue;
 mod express;
 mod if_else;
 mod r#loop;
+mod r#match;
 mod numeric;
 mod panic;
 mod parenthesized;
@@ -126,10 +127,6 @@ mod r#return;
 mod string;
 mod r#struct;
 mod r#while;
-
-/*
-mod r#match;
-*/
 
 impl Binder<'_> {
     /// Binds the given syntax tree as an address.
@@ -433,8 +430,8 @@ impl Bind<&syntax_tree::expression::Brace> for Binder<'_> {
             syntax_tree::expression::Brace::Loop(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Brace::Match(_) => {
-                todo!()
+            syntax_tree::expression::Brace::Match(syn) => {
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Brace::While(syn) => {
                 self.bind(syn, config, handler)

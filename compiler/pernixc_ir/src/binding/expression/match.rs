@@ -4,96 +4,64 @@ use std::{
 };
 
 use drain_filter_polyfill::VecExt;
-use pernixc_base::{
-    handler::Handler,
-    source_file::{SourceElement, Span},
-};
+use pernixc_arena::ID;
+use pernixc_handler::Handler;
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
+use pernixc_table::{
+    component::{Member, Parent, SymbolKind, VariantDeclarationOrder},
+    diagnostic::Diagnostic,
+    GlobalID, Table,
+};
+use pernixc_term::{
+    r#type::{Primitive, Qualifier, Type},
+    Symbol,
+};
+use pernixc_type_system::diagnostic::OverflowOperation;
 
 use super::{Bind, Config, Expression, Target};
 use crate::{
-    arena::ID,
-    error::{
-        self, NonExhaustiveMatch, OverflowOperation, TypeSystemOverflow,
-        UnreachableMatchArm,
+    address::{Address, Memory},
+    binding::{
+        diagnostic::{NonExhaustiveMatch, UnreachableMatchArm},
+        infer::{self, Expected},
+        pattern::Path,
+        AbruptError, AddContextExt, Binder, Error,
     },
-    ir::{
-        self,
-        address::{Address, Memory},
-        control_flow_graph::Block,
-        instruction::{
-            ConditionalJump, Instruction, Jump, ScopePop, ScopePush,
-            SelectJump, Terminator, UnconditionalJump,
-        },
-        pattern::{NameBindingPoint, Refutable, Wildcard},
-        representation::{
-            binding::{
-                infer::{self},
-                pattern::Path,
-                Binder, Error, InternalError,
-            },
-            borrow,
-        },
-        scope::Scope,
-        value::{
-            literal::{self, Literal, Numeric},
-            register::{
-                Assignment, Binary, BinaryOperator, Load, Phi,
-                RelationalOperator, VariantNumber,
-            },
-            Value,
-        },
+    control_flow_graph::Block,
+    instruction::{
+        ConditionalJump, Instruction, Jump, ScopePop, ScopePush, SelectJump,
+        Terminator, UnconditionalJump,
     },
-    symbol::{
-        table::{self, representation::Index, resolution, Table},
-        AdtID,
-    },
-    type_system::{
-        self, simplify,
-        term::{
-            r#type::{self, Primitive, Qualifier, Type},
-            Symbol,
+    model::Constraint,
+    pattern::{NameBindingPoint, Refutable, Wildcard},
+    scope,
+    value::{
+        literal::{self, Literal, Numeric},
+        register::{
+            Assignment, Binary, BinaryOperator, Load, Phi, RelationalOperator,
+            VariantNumber,
         },
+        Value,
     },
 };
 
 impl Refutable {
-    fn get_conditional_value(
-        &self,
-        table: &Table<impl table::State>,
-    ) -> Option<i128> {
+    fn get_conditional_value(&self, table: &Table) -> Option<i128> {
         match self {
             Self::Boolean(boolean) => Some(i128::from(boolean.value)),
             Self::Integer(integer) => Some(integer.value),
-            Self::Enum(variant) => {
-                let parent_enum_id =
-                    table.get(variant.variant_id).unwrap().parent_enum_id();
-
-                Some(
-                    table
-                        .get(parent_enum_id)
-                        .unwrap()
-                        .variant_declaration_order()
-                        .iter()
-                        .position(|x| *x == variant.variant_id)
-                        .unwrap() as i128,
-                )
-            }
+            Self::Enum(variant) => Some(
+                table.get::<VariantDeclarationOrder>(variant.variant_id).order
+                    as i128,
+            ),
 
             _ => None,
         }
     }
 }
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Binder<'t, S, RO, TO>
-{
+impl Binder<'_> {
     #[allow(clippy::cast_sign_loss)]
     fn is_exhaustive(
         &self,
@@ -129,19 +97,13 @@ impl<
             }
 
             Refutable::Enum(_) => {
-                let Type::Symbol(Symbol {
-                    id: r#type::SymbolID::Adt(AdtID::Enum(enum_id)),
-                    ..
-                }) = ty
-                else {
+                let Type::Symbol(Symbol { id: enum_id, .. }) = ty else {
                     panic!("unexpected type {ty:#?}");
                 };
 
-                let enum_sym = self.table.get(*enum_id).unwrap();
-                let mut variant_handled = bit_vec::BitVec::from_elem(
-                    enum_sym.variant_declaration_order().len(),
-                    false,
-                );
+                let member = self.table.get::<Member>(*enum_id);
+                let mut variant_handled =
+                    bit_vec::BitVec::from_elem(member.len(), false);
 
                 for value in values {
                     assert!(
@@ -166,8 +128,8 @@ impl<
         non_exhaustives: &mut Vec<NonExhaustive>,
         arm_infos: &mut [ArmInfo],
         mut arm_states: Vec<ArmState>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<(), InternalError> {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<(), Error> {
         if arm_states.is_empty() {
             return Ok(());
         }
@@ -243,7 +205,7 @@ impl<
                 &main_path,
                 match_info.address.clone(),
                 match_info.r#type.clone(),
-            );
+            )?;
 
         let is_exhaustive = self.is_exhaustive(
             arm_states_by_value.keys().copied(),
@@ -305,8 +267,7 @@ impl<
                             (alternative_block, block_for_arms)
                         };
 
-                        assert!(self
-                            .intermediate_representation
+                        self.intermediate_representation
                             .control_flow_graph
                             .insert_terminator(
                                 self.current_block_id,
@@ -317,11 +278,7 @@ impl<
                                         false_target: false_block,
                                     },
                                 )),
-                            )
-                            .map_or_else(
-                                |x| !x.is_invalid_block_id(),
-                                |()| true,
-                            ));
+                            );
 
                         let current_block_id = self.current_block_id;
 
@@ -367,8 +324,7 @@ impl<
                             (second.1, first.1)
                         };
 
-                        assert!(self
-                            .intermediate_representation
+                        self.intermediate_representation
                             .control_flow_graph
                             .insert_terminator(
                                 self.current_block_id,
@@ -379,11 +335,7 @@ impl<
                                         false_target: false_block_id,
                                     },
                                 )),
-                            )
-                            .map_or_else(
-                                |x| !x.is_invalid_block_id(),
-                                |()| true,
-                            ));
+                            );
 
                         let current_block_id = self.current_block_id;
 
@@ -478,19 +430,27 @@ impl<
                                                 MissingValue::Known({
                                                     let enum_id = self
                                                         .table
-                                                        .get(a.variant_id)
-                                                        .unwrap()
-                                                        .parent_enum_id();
+                                                        .get::<Parent>(
+                                                            a.variant_id,
+                                                        )
+                                                        .parent
+                                                        .unwrap();
 
                                                     (0..self
-                                                .table
-                                                .get(enum_id)
-                                                .unwrap()
-                                                .variant_declaration_order()
-                                                .len())
-                                                .map(|x| x as i128)
-                                                .filter(|x| *x != first_value)
-                                                .collect()
+                                                        .table
+                                                        .get::<Member>(
+                                                            GlobalID::new(
+                                                                a.variant_id
+                                                                    .target_id,
+                                                                enum_id,
+                                                            ),
+                                                        )
+                                                        .len())
+                                                        .map(|x| x as i128)
+                                                        .filter(|x| {
+                                                            *x != first_value
+                                                        })
+                                                        .collect()
                                                 })
                                             }
                                             _ => unreachable!(),
@@ -521,7 +481,7 @@ impl<
                                             r#type: self.type_of_register(
                                                 numeric_value,
                                             )?,
-                                            span: match_info.span.clone(),
+                                            span: Some(match_info.span.clone()),
                                         },
                                     )),
                                     operator: BinaryOperator::Relational(
@@ -531,8 +491,7 @@ impl<
                                 match_info.span.clone(),
                             );
 
-                        assert!(self
-                            .intermediate_representation
+                        self.intermediate_representation
                             .control_flow_graph
                             .insert_terminator(
                                 self.current_block_id,
@@ -545,11 +504,7 @@ impl<
                                         false_target: alternative_block,
                                     },
                                 )),
-                            )
-                            .map_or_else(
-                                |x| !x.is_invalid_block_id(),
-                                |()| true,
-                            ));
+                            );
 
                         let current_block_id = self.current_block_id;
 
@@ -610,15 +565,19 @@ impl<
                                             MissingValue::Known({
                                                 let enum_id = self
                                                     .table
-                                                    .get(a.variant_id)
-                                                    .unwrap()
-                                                    .parent_enum_id();
+                                                    .get::<Parent>(a.variant_id)
+                                                    .parent
+                                                    .unwrap();
 
                                                 (0..self
                                                     .table
-                                                    .get(enum_id)
-                                                    .unwrap()
-                                                    .variant_declaration_order()
+                                                    .get::<Member>(
+                                                        GlobalID::new(
+                                                            a.variant_id
+                                                                .target_id,
+                                                            enum_id,
+                                                        ),
+                                                    )
                                                     .len())
                                                     .map(|x| x as i128)
                                                     .filter(|x| {
@@ -640,8 +599,7 @@ impl<
                             }))
                         };
 
-                        assert!(self
-                            .intermediate_representation
+                        self.intermediate_representation
                             .control_flow_graph
                             .insert_terminator(
                                 self.current_block_id,
@@ -655,11 +613,7 @@ impl<
                                         .collect(),
                                     otherwise,
                                 })),
-                            )
-                            .map_or_else(
-                                |x| !x.is_invalid_block_id(),
-                                |()| true,
-                            ));
+                            );
 
                         let current_block_id = self.current_block_id;
 
@@ -708,36 +662,30 @@ impl<
         &mut self,
         match_info: &MatchInfo,
         arm_info: &mut ArmInfo,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<(), InternalError> {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<(), Error> {
         // already bound
         if let Some(result) = &arm_info.binding_result {
-            assert!(self
-                .intermediate_representation
+            self.intermediate_representation
                 .control_flow_graph
                 .insert_terminator(
                     self.current_block_id,
                     Terminator::Jump(Jump::Unconditional(UnconditionalJump {
                         target: result.entry_block_id,
                     })),
-                )
-                .map_or_else(|x| !x.is_invalid_block_id(), |()| true));
+                );
 
             return Ok(());
         }
 
         let new_block =
             self.intermediate_representation.control_flow_graph.new_block();
-        assert!(self
-            .intermediate_representation
-            .control_flow_graph
-            .insert_terminator(
-                self.current_block_id,
-                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
-                    target: new_block,
-                })),
-            )
-            .map_or_else(|x| !x.is_invalid_block_id(), |()| true));
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            self.current_block_id,
+            Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                target: new_block,
+            })),
+        );
 
         self.current_block_id = new_block;
         let starting_block_id = self.current_block_id;
@@ -776,16 +724,12 @@ impl<
             Instruction::ScopePop(ScopePop(arm_info.scope_id)),
         );
 
-        assert!(self
-            .intermediate_representation
-            .control_flow_graph
-            .insert_terminator(
-                self.current_block_id,
-                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
-                    target: match_info.exit_block_id,
-                })),
-            )
-            .map_or_else(|x| !x.is_invalid_block_id(), |()| true));
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            self.current_block_id,
+            Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                target: match_info.exit_block_id,
+            })),
+        );
 
         let ending_block_id = self.current_block_id;
 
@@ -817,7 +761,7 @@ pub struct ArmResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ArmInfo<'a> {
     expression: &'a syntax_tree::expression::Expression,
-    scope_id: ID<Scope>,
+    scope_id: ID<scope::Scope>,
     binding_result: Option<ArmResult>,
     reftuable_pattern: Refutable,
 }
@@ -846,21 +790,13 @@ struct NonExhaustive {
     missing_value: MissingValue,
 }
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Match> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Match,
         _config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let exit_block_id =
             self.intermediate_representation.control_flow_graph.new_block();
@@ -893,14 +829,13 @@ impl<
                 Error::Semantic(semantic_error) => {
                     (
                         Address::Memory(Memory::Alloca({
-                            let ty_inference = self.create_type_inference(
-                                r#type::Constraint::All(false),
-                            );
+                            let ty_inference = self
+                                .create_type_inference(Constraint::All(false));
                             self.create_alloca_with_value(
                                 Value::Literal(Literal::Error(
                                     literal::Error {
                                         r#type: Type::Inference(ty_inference),
-                                        span: semantic_error.0,
+                                        span: Some(semantic_error.0),
                                     },
                                 )),
                                 self.stack.current_scope().scope_id(),
@@ -912,21 +847,25 @@ impl<
                         false,
                     )
                 }
-                Error::Internal(internal_error) => {
-                    return Err(Error::Internal(internal_error))
+                Error::Abrupt(abrupt_error) => {
+                    return Err(Error::Abrupt(abrupt_error))
                 }
             },
         };
-        let ty = simplify::simplify(
-            &self.type_of_address(&address)?,
-            &self.create_environment(),
-        )
-        .map_err(|overflow_error| TypeSystemOverflow {
-            operation: OverflowOperation::TypeOf,
-            overflow_span: syntax_tree.parenthesized().span(),
-            overflow_error,
-        })?
-        .result;
+        let ty = self
+            .create_environment()
+            .simplify(self.type_of_address(&address).map_err(|x| {
+                x.into_type_system_overflow(
+                    OverflowOperation::TypeOf,
+                    syntax_tree.parenthesized().span(),
+                )
+            })?)
+            .map_err(|x| {
+                x.into_type_system_overflow(
+                    OverflowOperation::TypeOf,
+                    syntax_tree.parenthesized().span(),
+                )
+            })?;
 
         let arm_count = syntax_tree
             .arms()
@@ -960,7 +899,7 @@ impl<
             .map(|(x, scope_id)| {
                 let mut pat = self
                     .bind_pattern(
-                        &ty,
+                        &ty.result,
                         x.refutable_pattern(),
                         &self.create_handler_wrapper(handler),
                     )?
@@ -977,7 +916,7 @@ impl<
                     reftuable_pattern: pat,
                 })
             })
-            .collect::<Result<Vec<_>, TypeSystemOverflow>>()?;
+            .collect::<Result<Vec<_>, AbruptError>>()?;
 
         let arm_states = arm_infos
             .iter()
@@ -997,7 +936,7 @@ impl<
             &MatchInfo {
                 address,
                 address_span: syntax_tree.parenthesized().span(),
-                r#type: &ty,
+                r#type: &ty.result,
                 qualifier,
                 from_lvalue,
                 span: syntax_tree.span(),
@@ -1010,16 +949,12 @@ impl<
             handler,
         )?;
 
-        assert!(self
-            .intermediate_representation
+        self.intermediate_representation
             .control_flow_graph
-            .insert_terminator(starting_block_id, Terminator::Panic)
-            .map_or_else(|x| !x.is_invalid_block_id(), |()| true));
-        assert!(self
-            .intermediate_representation
+            .insert_terminator(starting_block_id, Terminator::Panic);
+        self.intermediate_representation
             .control_flow_graph
-            .insert_terminator(non_exhaustive_block_id, Terminator::Panic)
-            .map_or_else(|x| !x.is_invalid_block_id(), |()| true));
+            .insert_terminator(non_exhaustive_block_id, Terminator::Panic);
 
         self.current_block_id = exit_block_id;
 
@@ -1037,18 +972,19 @@ impl<
         if arm_infos.is_empty() {
             assert!(!self.current_block().is_reachable());
 
-            let ty = ty.reduce_reference();
+            let ty = ty.result.reduce_reference();
 
-            let mut is_inhabited = false;
-            if let Type::Symbol(Symbol {
-                id: r#type::SymbolID::Adt(AdtID::Enum(enum_id)),
-                ..
-            }) = ty
-            {
-                let symbol = self.table.get(*enum_id).unwrap();
-
-                is_inhabited = symbol.variant_declaration_order().is_empty();
-            }
+            let is_inhabited = match ty {
+                Type::Symbol(Symbol { id: enum_id, .. })
+                    if {
+                        *self.table.get::<SymbolKind>(*enum_id)
+                            == SymbolKind::Enum
+                    } =>
+                {
+                    self.table.get::<Member>(*enum_id).len() == 0
+                }
+                _ => false,
+            };
 
             if !is_inhabited {
                 self.create_handler_wrapper(handler).receive(Box::new(
@@ -1056,8 +992,7 @@ impl<
                         match_expression_span: syntax_tree
                             .match_keyword()
                             .span
-                            .join(&syntax_tree.parenthesized().span())
-                            .unwrap(),
+                            .join(&syntax_tree.parenthesized().span()),
                     },
                 ));
             }
@@ -1072,8 +1007,7 @@ impl<
                         match_expression_span: syntax_tree
                             .match_keyword()
                             .span
-                            .join(&syntax_tree.parenthesized().span())
-                            .unwrap(),
+                            .join(&syntax_tree.parenthesized().span()),
                     },
                 ));
             }
@@ -1106,9 +1040,9 @@ impl<
                     &arm.binding_result.as_ref().unwrap().value,
                 )?;
 
-                let _ = self.type_check(
+                self.type_check(
                     &ty,
-                    r#type::Expected::Known(match_ty.clone()),
+                    Expected::Known(match_ty.clone()),
                     arm.expression.span(),
                     true,
                     handler,

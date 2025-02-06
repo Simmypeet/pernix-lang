@@ -27,6 +27,8 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 lazy_static = { workspace = true }
 parking_lot = { workspace = true }
+bit-vec = { workspace = true }
+drain_filter_polyfill = { workspace = true }
 
 [dev-dependencies]
 pernixc_builder = { path = "../pernixc_builder" }

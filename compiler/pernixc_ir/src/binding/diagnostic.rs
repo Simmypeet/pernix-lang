@@ -1336,3 +1336,41 @@ impl Report<&Table> for ReturnIsNotAllowed {
         }
     }
 }
+
+/// The match arm is unreachable.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnreachableMatchArm {
+    /// The span of the match arm.
+    pub match_arm_span: Span,
+}
+
+impl Report<&Table> for UnreachableMatchArm {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.match_arm_span.clone(),
+            message: "unreachable match arm".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The match expression is non-exhaustive.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NonExhaustiveMatch {
+    /// The span of the match expression.
+    pub match_expression_span: Span,
+}
+
+impl Report<&Table> for NonExhaustiveMatch {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.match_expression_span.clone(),
+            message: "non-exhaustive match expression".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}

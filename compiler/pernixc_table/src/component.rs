@@ -560,3 +560,25 @@ pub struct PositiveTraitImplementation {
 }
 
 impl Input for PositiveTraitImplementation {}
+
+/// The **presistent-input** component for storing the order in which the
+/// variants are declared in an enum.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
+pub struct VariantDeclarationOrder {
+    /// The order of the variant declaration.
+    pub order: usize,
+}
+
+impl Input for VariantDeclarationOrder {}

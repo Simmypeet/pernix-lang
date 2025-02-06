@@ -30,6 +30,7 @@ use crate::{
         self, syntax_tree as syntax_tree_component, Accessibility, Extern,
         Implemented, Implements, Import, LocationSpan, Member, Name, Parent,
         PositiveTraitImplementation, SymbolKind, TraitImplementation, Using,
+        VariantDeclarationOrder,
     },
     diagnostic::{
         ConflictingUsing, Diagnostic, ExpectModule,
@@ -1192,8 +1193,12 @@ impl Representation {
 
         assert!(self.storage.add_component(enum_id, Implemented::default()));
 
-        for variant in
-            body.dissolve().1.into_iter().flat_map(ConnectedList::into_elements)
+        for (index, variant) in body
+            .dissolve()
+            .1
+            .into_iter()
+            .flat_map(ConnectedList::into_elements)
+            .enumerate()
         {
             let (ident, association) = variant.dissolve();
 
@@ -1213,6 +1218,12 @@ impl Representation {
                     variant_association: association
                 }
             ));
+
+            assert!(self
+                .storage
+                .add_component(variant_id, VariantDeclarationOrder {
+                    order: index
+                }));
         }
 
         enum_id
