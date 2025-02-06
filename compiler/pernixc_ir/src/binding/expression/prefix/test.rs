@@ -6,8 +6,12 @@ use pernixc_term::{
 };
 
 use crate::{
+    address::{Address, Reference},
     binding::{
-        diagnostic::{MismatchedQualifierForReferenceOf, MismatchedType},
+        diagnostic::{
+            CannotDereference, MismatchedQualifierForReferenceOf,
+            MismatchedType,
+        },
         test::{BindExt, Template},
     },
     model::{self, Constraint, Erased},
@@ -286,4 +290,76 @@ fn reference_of_mutability_error() {
 
     assert_eq!(borrow.qualifier, Qualifier::Mutable);
     assert_eq!(borrow.address, address);
+}
+
+#[test]
+fn dereference() {
+    const VALUE_VARIABLE_DECLARATION: &str = "let x = 6420i32;";
+    const REFERENCE_VARIABLE_DECLARATION: &str = "let y = &x;";
+    const DEREFERENCE: &str = "*y";
+
+    let template = Template::new();
+    let mut binder = template.create_binder();
+
+    let _ = binder
+        .bind_variable_declaration(&parse(VALUE_VARIABLE_DECLARATION), &Panic)
+        .unwrap();
+
+    let y_address = {
+        let (variable_address, _) = binder
+            .bind_variable_declaration(
+                &parse(REFERENCE_VARIABLE_DECLARATION),
+                &Panic,
+            )
+            .unwrap();
+
+        variable_address
+    };
+
+    let register_id = binder
+        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Prefixable>(
+            DEREFERENCE,
+        ))
+        .into_register()
+        .unwrap();
+
+    let dereference = binder.intermediate_representation.values.registers
+        [register_id]
+        .assignment
+        .as_load()
+        .unwrap();
+
+    assert_eq!(
+        dereference.address,
+        Address::Reference(Reference {
+            qualifier: Qualifier::Immutable,
+            reference_address: Box::new(y_address)
+        })
+    );
+}
+
+#[test]
+fn cannot_dereference_error() {
+    const VALUE_VARIABLE_DECLARATION: &str = "let x = 6420i32;";
+    const DEREFERENCE: &str = "*x";
+
+    let template = Template::new();
+    let mut binder = template.create_binder();
+
+    let _ = binder
+        .bind_variable_declaration(&parse(VALUE_VARIABLE_DECLARATION), &Panic)
+        .unwrap();
+
+    let errors = binder.bind_as_rvalue_error_fatal(&parse::<
+        syntax_tree::expression::Prefixable,
+    >(DEREFERENCE));
+
+    assert_eq!(errors.len(), 1);
+
+    let error = errors[0]
+        .as_any()
+        .downcast_ref::<CannotDereference<model::Constrained>>()
+        .unwrap();
+
+    assert_eq!(error.found_type, Type::Primitive(Primitive::Int32));
 }

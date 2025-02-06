@@ -82,118 +82,6 @@ fn create_dummy_function(
     (table, function_id)
 }
 
-#[test]
-fn dereference_as_value() {
-    const VALUE_VARIABLE_DECLARATION: &str = "let x = 6420i32;";
-    const REFERENCE_VARIABLE_DECLARATION: &str = "let y = &x;";
-    const DEREFERENCE: &str = "*y";
-
-    let test_template = TestTemplate::new();
-    let (mut binder, storage) = test_template.create_binder();
-
-    let value_variable_declaration =
-        parse_statement(VALUE_VARIABLE_DECLARATION)
-            .into_variable_declaration()
-            .unwrap();
-
-    let _ =
-        binder.bind_variable_declaration(&value_variable_declaration, &storage);
-
-    let reference_variable_declaration =
-        parse_statement(REFERENCE_VARIABLE_DECLARATION)
-            .into_variable_declaration()
-            .unwrap();
-
-    let (reference_variable_address, _) = binder
-        .bind_variable_declaration(&reference_variable_declaration, &storage)
-        .unwrap();
-
-    let dereference = parse_expression(DEREFERENCE)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_prefixable()
-        .unwrap()
-        .into_prefix()
-        .unwrap();
-
-    let register_id = binder
-        .bind(&dereference, Config { target: Target::RValue }, &storage)
-        .unwrap()
-        .into_r_value()
-        .unwrap()
-        .into_register()
-        .unwrap();
-
-    assert!(storage.as_vec().is_empty());
-
-    let dereference_register = binder
-        .intermediate_representation
-        .values
-        .registers
-        .get(register_id)
-        .unwrap();
-
-    let dereference = dereference_register.assignment.as_load().unwrap();
-
-    assert_eq!(
-        *dereference.address.as_reference().unwrap().reference_address,
-        reference_variable_address
-    );
-}
-
-#[test]
-fn dereference_as_address() {
-    const VALUE_VARIABLE_DECLARATION: &str = "let mutable x = 6420i32;";
-    const REFERENCE_VARIABLE_DECLARATION: &str = "let y = &mutable x;";
-    const DEREFERENCE: &str = "*y";
-
-    let test_template = TestTemplate::new();
-    let (mut binder, storage) = test_template.create_binder();
-
-    let value_variable_declaration =
-        parse_statement(VALUE_VARIABLE_DECLARATION)
-            .into_variable_declaration()
-            .unwrap();
-
-    let _ =
-        binder.bind_variable_declaration(&value_variable_declaration, &storage);
-
-    let reference_variable_declaration =
-        parse_statement(REFERENCE_VARIABLE_DECLARATION)
-            .into_variable_declaration()
-            .unwrap();
-
-    let (reference_variable_address, _) = binder
-        .bind_variable_declaration(&reference_variable_declaration, &storage)
-        .unwrap();
-
-    let dereference = parse_expression(DEREFERENCE)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_prefixable()
-        .unwrap()
-        .into_prefix()
-        .unwrap();
-
-    let address = binder
-        .bind(&dereference, Config { target: Target::LValue }, &storage)
-        .unwrap()
-        .into_l_value()
-        .unwrap()
-        .address;
-
-    assert!(storage.as_vec().is_empty());
-
-    assert_eq!(
-        *address.into_reference().unwrap().reference_address,
-        reference_variable_address
-    );
-}
-
 impl TestTemplate {
     fn create_struct_template(
         &mut self,
@@ -1350,19 +1238,6 @@ fn create_temporary_lvalue() {
                     })
         }));
     })
-}
-
-#[test]
-fn cannot_dereference_error() {
-    bind_as_value_expect_error("*32", |_, result, errors| {
-        assert!(result.is_err());
-
-        assert!(errors.iter().any(|x| {
-            x.as_any()
-                .downcast_ref::<CannotDereference<ConstraintModel>>()
-                .is_some()
-        }));
-    });
 }
 
 #[test]
