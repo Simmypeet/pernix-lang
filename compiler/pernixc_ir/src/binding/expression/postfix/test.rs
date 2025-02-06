@@ -1,4 +1,4 @@
-use pernixc_handler::Storage;
+use pernixc_handler::{Panic, Storage};
 use pernixc_syntax::{syntax_tree, utility::parse};
 use pernixc_table::{
     component::{Implemented, Member},
@@ -16,11 +16,11 @@ use crate::{
     address::{self, Address},
     binding::{
         diagnostic::{
-            CannotIndexPastUnpackedTuple, ExpectedStructType, ExpectedTuple,
-            ExpressionIsNotCallable, FieldIsNotAccessible, FieldNotFound,
-            InvalidCastType, MismatchedArgumentCount, MismatchedType,
-            TooLargeTupleIndex, TupleIndexOutOfBOunds,
-            UnexpectedGenericArgumentsInField,
+            AmbiguousMethodCall, CannotIndexPastUnpackedTuple,
+            ExpectedStructType, ExpectedTuple, ExpressionIsNotCallable,
+            FieldIsNotAccessible, FieldNotFound, InvalidCastType,
+            MismatchedArgumentCount, MismatchedType, TooLargeTupleIndex,
+            TupleIndexOutOfBOunds, UnexpectedGenericArgumentsInField,
         },
         test::{build_table, BindExt, CreateBinderAtExt, Template},
     },
@@ -918,5 +918,188 @@ fn adt_method() {
 
         assert_eq!(numeric_literal.decimal_stirng, None);
         assert_eq!(numeric_literal.integer_string, "0");
+    }
+}
+
+const TRAIT_METHOD_DECLARATION: &str = r"
+public struct MyStruct {}
+
+public trait NoMethod {
+    public function method(self: MyStruct, myBoolean: bool);
+}
+
+public trait MethodWithBoolean[T] {
+    public function method(self: T, myBoolean: bool);
+}
+
+public trait MethodWithInt32[T] {
+    public function method(self: T, myInt32: int32);
+}
+
+public trait FirstAmbiguousMethod[T] {
+    public function ambiguous(self: T, first: int32);
+}
+
+public trait SecondAmbiguousMethod[T] {
+    public function ambiguous(self: T, second: int64);
+}
+
+public function main() {
+    /*
+    let mutable myStruct = MyStruct {};
+
+    myStruct.method(true); // MethodWithBoolean[int32]::method
+    myStruct.method(0i32); // MethodWithInt32[int32]::method
+
+    myStruct.ambiguous(32); // ??? (ambiguous)
+    */
+}
+";
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn trait_method() {
+    let table = build_table(TRAIT_METHOD_DECLARATION);
+    let mut binder = table.create_binder_at(["test", "main"]);
+
+    let method_with_boolean_id = table
+        .get_by_qualified_name(["test", "MethodWithBoolean", "method"])
+        .unwrap();
+    let method_with_int32_id = table
+        .get_by_qualified_name(["test", "MethodWithInt32", "method"])
+        .unwrap();
+    let method_first_ambiguous_id = table
+        .get_by_qualified_name(["test", "FirstAmbiguousMethod", "ambiguous"])
+        .unwrap();
+    let method_second_ambiguous_id = table
+        .get_by_qualified_name(["test", "SecondAmbiguousMethod", "ambiguous"])
+        .unwrap();
+
+    let my_struct_address = {
+        let (address, _) = binder
+            .bind_variable_declaration(
+                &parse("let mutable myStruct = MyStruct {};"),
+                &Panic,
+            )
+            .unwrap();
+
+        address
+    };
+
+    // method with boolean
+    {
+        let call_register_id = binder
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("myStruct.method(true)"))
+            .into_register()
+            .unwrap();
+
+        let call = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(call_register_id)
+            .unwrap()
+            .assignment
+            .as_function_call()
+            .unwrap();
+
+        assert_eq!(call.arguments.len(), 2);
+        assert_eq!(call.callable_id, method_with_boolean_id);
+
+        let load = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(*call.arguments.first().unwrap().as_register().unwrap())
+            .unwrap()
+            .assignment
+            .as_load()
+            .unwrap();
+
+        assert_eq!(load.address, my_struct_address);
+
+        let boolean_literal = call
+            .arguments
+            .get(1)
+            .unwrap()
+            .as_literal()
+            .unwrap()
+            .as_boolean()
+            .unwrap();
+
+        assert!(boolean_literal.value);
+    }
+
+    // method with i32
+    {
+        let call_register_id = binder
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("myStruct.method(0i32)"))
+            .into_register()
+            .unwrap();
+
+        let call = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(call_register_id)
+            .unwrap()
+            .assignment
+            .as_function_call()
+            .unwrap();
+
+        assert_eq!(call.arguments.len(), 2);
+        assert_eq!(call.callable_id, method_with_int32_id);
+
+        let load = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(*call.arguments.first().unwrap().as_register().unwrap())
+            .unwrap()
+            .assignment
+            .as_load()
+            .unwrap();
+
+        assert_eq!(load.address, my_struct_address);
+
+        let numeric_literal = call
+            .arguments
+            .get(1)
+            .unwrap()
+            .as_literal()
+            .unwrap()
+            .as_numeric()
+            .unwrap();
+
+        assert_eq!(numeric_literal.integer_string, "0");
+        assert!(numeric_literal.decimal_stirng.is_none());
+    }
+
+    // ambiguous
+    {
+        let errors = binder.bind_as_rvalue_error_fatal(&parse::<
+            syntax_tree::expression::Postfixable,
+        >(
+            "myStruct.ambiguous(32)",
+        ));
+
+        assert_eq!(errors.len(), 1);
+
+        let error = errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<AmbiguousMethodCall>()
+            .unwrap();
+
+        assert_eq!(error.callable_candidates.len(), 2);
+        assert!(error.callable_candidates.contains(&method_first_ambiguous_id));
+        assert!(error
+            .callable_candidates
+            .contains(&method_second_ambiguous_id));
     }
 }
