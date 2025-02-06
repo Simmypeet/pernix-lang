@@ -112,6 +112,7 @@ mod boolean;
 mod character;
 mod express;
 mod if_else;
+mod r#loop;
 mod numeric;
 mod panic;
 mod parenthesized;
@@ -126,7 +127,6 @@ mod r#struct;
 /*
 mod r#break;
 mod r#continue;
-mod r#loop;
 mod r#match;
 mod r#while;
 */
@@ -430,8 +430,8 @@ impl Bind<&syntax_tree::expression::Brace> for Binder<'_> {
             syntax_tree::expression::Brace::IfElse(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Brace::Loop(_) => {
-                todo!()
+            syntax_tree::expression::Brace::Loop(syn) => {
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Brace::Match(_) => {
                 todo!()

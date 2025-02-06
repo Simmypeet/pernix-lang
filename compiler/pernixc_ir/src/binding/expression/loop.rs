@@ -1,56 +1,32 @@
 use std::{collections::HashMap, num::NonZeroUsize};
 
-use pernixc_base::{handler::Handler, source_file::SourceElement};
-use pernixc_syntax::syntax_tree::{self};
+use pernixc_handler::Handler;
+use pernixc_source_file::SourceElement;
+use pernixc_syntax::syntax_tree;
+use pernixc_table::diagnostic::Diagnostic;
+use pernixc_term::r#type::Type;
 
 use super::{Bind, Config, Expression};
 use crate::{
-    error::{self},
-    ir::{
-        self,
-        control_flow_graph::InsertTerminatorError,
-        instruction::{
-            Instruction, Jump, ScopePop, ScopePush, Terminator,
-            UnconditionalJump,
-        },
-        representation::{
-            binding::{
-                infer::{self, InferenceVariable},
-                Binder, Error, LoopKind, LoopState,
-            },
-            borrow,
-        },
-        value::{
-            literal::{Literal, Unreachable},
-            register::{Assignment, Phi},
-            Value,
-        },
+    binding::{infer::InferenceVariable, Binder, Error, LoopKind, LoopState},
+    instruction::{
+        Instruction, Jump, ScopePop, ScopePush, Terminator, UnconditionalJump,
     },
-    symbol::table::{
-        self,
-        resolution::{self},
-    },
-    type_system::{
-        self,
-        term::r#type::{Constraint, Type},
+    model::Constraint,
+    value::{
+        literal::{Literal, Unreachable},
+        register::{Assignment, Phi},
+        Value,
     },
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Loop> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::Loop> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Loop,
         _: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let label = syntax_tree
             .block()
@@ -77,18 +53,12 @@ impl<
         };
 
         // jump to the loop header block
-        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
-            .intermediate_representation
-            .control_flow_graph
-            .insert_terminator(
-                self.current_block_id,
-                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
-                    target: loop_block_id,
-                })),
-            )
-        {
-            panic!("invalid block id");
-        }
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            self.current_block_id,
+            Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                target: loop_block_id,
+            })),
+        );
 
         // set the current block to the loop header block
         self.current_block_id = loop_block_id;
@@ -124,18 +94,12 @@ impl<
             self.loop_states_by_scope_id.remove(&loop_scope_id).unwrap();
 
         // jump to the loop header block
-        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
-            .intermediate_representation
-            .control_flow_graph
-            .insert_terminator(
-                self.current_block_id,
-                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
-                    target: loop_block_id,
-                })),
-            )
-        {
-            panic!("invalid block id");
-        }
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            self.current_block_id,
+            Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                target: loop_block_id,
+            })),
+        );
 
         // set the current block to the exit block
         self.current_block_id = loop_state.exit_block_id;
@@ -164,7 +128,7 @@ impl<
             match incoming_values.len() {
                 0 => Value::Literal(Literal::Unreachable(Unreachable {
                     r#type: break_type,
-                    span: (syntax_tree.span()),
+                    span: Some(syntax_tree.span()),
                 })),
 
                 // only one incoming value, just return it
@@ -197,7 +161,7 @@ impl<
 
                     Type::Inference(inference)
                 },
-                span: (syntax_tree.span()),
+                span: Some(syntax_tree.span()),
             }))
         };
 
