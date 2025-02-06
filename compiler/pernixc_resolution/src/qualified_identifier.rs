@@ -38,6 +38,7 @@ pub struct Generic<M: Model> {
     /// # Possible Kind
     /// - [`pernixc_table::SymbolKind::Struct`]
     /// - [`pernixc_table::SymbolKind::Enum`]
+    /// - [`pernixc_table::SymbolKind::ExternFunction`]
     /// - [`pernixc_table::SymbolKind::Function`]
     /// - [`pernixc_table::SymbolKind::Trait`]
     /// - [`pernixc_table::SymbolKind::Constant`]
@@ -153,6 +154,7 @@ fn to_resolution<M: Model>(
         SymbolKind::Struct
         | SymbolKind::Enum
         | SymbolKind::Function
+        | SymbolKind::ExternFunction
         | SymbolKind::Trait
         | SymbolKind::Constant
         | SymbolKind::Type

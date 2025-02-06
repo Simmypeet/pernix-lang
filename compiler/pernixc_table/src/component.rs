@@ -244,6 +244,7 @@ pub enum SymbolKind {
     Type,
     Constant,
     Function,
+    ExternFunction,
     Variant,
     TraitType,
     TraitFunction,
@@ -303,6 +304,7 @@ impl SymbolKind {
             Self::TraitType => "trait type",
             Self::TraitFunction => "trait function",
             Self::TraitConstant => "trait constant",
+            Self::ExternFunction => "extern function",
             Self::PositiveTraitImplementation => {
                 "positive trait implementation"
             }
@@ -352,6 +354,7 @@ impl SymbolKind {
                 | Self::Marker
                 | Self::PositiveMarkerImplementation
                 | Self::NegativeMarkerImplementation
+                | Self::ExternFunction
         )
     }
 
@@ -379,6 +382,7 @@ impl SymbolKind {
                 | Self::Marker
                 | Self::PositiveMarkerImplementation
                 | Self::NegativeMarkerImplementation
+                | Self::ExternFunction
         )
     }
 
@@ -414,6 +418,7 @@ impl SymbolKind {
                 | Self::TraitFunction
                 | Self::TraitImplementationFunction
                 | Self::AdtImplementationFunction
+                | Self::ExternFunction
         )
     }
 
@@ -426,6 +431,7 @@ impl SymbolKind {
                 | Self::TraitFunction
                 | Self::TraitImplementationFunction
                 | Self::AdtImplementationFunction
+                | Self::ExternFunction
         )
     }
 
@@ -438,6 +444,7 @@ impl SymbolKind {
                 | Self::TraitFunction
                 | Self::TraitImplementationFunction
                 | Self::AdtImplementationFunction
+                | Self::ExternFunction
         )
     }
 

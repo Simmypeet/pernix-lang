@@ -416,6 +416,7 @@ impl Representation {
             | SymbolKind::TraitConstant
             | SymbolKind::Marker
             | SymbolKind::AdtImplementationFunction
+            | SymbolKind::ExternFunction
             | SymbolKind::Function => *self.get::<Accessibility>(id),
 
             // based on the parent's accessibility

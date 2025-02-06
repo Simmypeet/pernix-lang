@@ -1659,7 +1659,9 @@ impl Binder<'_> {
                 qualified_identifier::Generic { id, generic_arguments },
             ) if matches!(
                 *self.table.get::<SymbolKind>(id),
-                SymbolKind::TraitImplementationFunction | SymbolKind::Function
+                SymbolKind::TraitImplementationFunction
+                    | SymbolKind::Function
+                    | SymbolKind::ExternFunction
             ) =>
             {
                 let symbol_kind = *self.table.get::<SymbolKind>(id);
